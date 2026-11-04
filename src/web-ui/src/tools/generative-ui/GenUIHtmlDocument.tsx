@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { genUICatalog, type GenUIDesignSpec } from './genUIContract';
 import type { GenUIHtmlDocumentSource } from './genUITypes';
 import { HARMONY_STYLE_RESOURCE_CSS, HARMONY_STYLE_RESOURCE_IDS } from './components/vendor/harmonyStyles';
+import { FLUENT_EMOJI_3D_CSP_SOURCE, fluentEmoji3dUrl } from './components/vendor/fluentEmoji3d';
 
 export interface GenUIHtmlSanitizeResult {
   document: string;
@@ -183,6 +184,20 @@ function inspectionBootstrap(): string {
         const ref = id ? 'id:' + id : label ? 'aria:' + label : /^(H1|H2|H3|BUTTON|INPUT|SELECT|TEXTAREA|SVG)$/.test(element.tagName) && text ? 'text:' + element.tagName.toLowerCase() + ':' + text : '';
         if (ref && !seenRefs.has(ref)) { seenRefs.add(ref); renderedEvidence.push({ ref, label: label || undefined, text: text || undefined, role }); }
       }
+      const seenText = new Set();
+      const textWalker = body ? document.createTreeWalker(body, NodeFilter.SHOW_TEXT) : null;
+      let textIndex = 0;
+      for (let node = textWalker?.nextNode(); node; node = textWalker?.nextNode()) {
+        const text = (node.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 240);
+        if (!text || seenText.has(text)) continue;
+        const parentElement = node.parentElement;
+        if (!parentElement) continue;
+        const style = getComputedStyle(parentElement);
+        if (style.display === 'none' || style.visibility === 'hidden') continue;
+        seenText.add(text);
+        const ref = 'text:' + textIndex++;
+        if (!seenRefs.has(ref)) { seenRefs.add(ref); renderedEvidence.push({ ref, text, role: parentElement.getAttribute('role') || parentElement.tagName.toLowerCase() }); }
+      }
       parent.postMessage({
         kind: 'openbitfun.genui.inspection.report',
         report: {
@@ -263,6 +278,26 @@ export function sanitizeGenUIHtmlSource(source: GenUIHtmlDocumentSource, specifi
       }
     }
   });
+  if (harmony) {
+    parsed.querySelectorAll<HTMLElement>('.hm-icon3d[data-emoji]').forEach(icon => {
+      const emoji = icon.getAttribute('data-emoji')?.trim() ?? '';
+      if (!emoji) return;
+      const src = fluentEmoji3dUrl(emoji);
+      icon.replaceChildren();
+      icon.setAttribute('data-hm-icon3d', src ? 'external' : 'fallback');
+      if (!src) {
+        icon.textContent = emoji;
+        return;
+      }
+      const image = parsed.createElement('img');
+      image.src = src;
+      image.alt = emoji;
+      image.loading = 'eager';
+      image.decoding = 'async';
+      image.setAttribute('referrerpolicy', 'no-referrer');
+      icon.appendChild(image);
+    });
+  }
   parsed.querySelectorAll('style').forEach(style => {
     style.textContent = sanitizeCss(style.textContent ?? '');
   });
@@ -291,7 +326,8 @@ export function sanitizeGenUIHtmlSource(source: GenUIHtmlDocumentSource, specifi
   }
   const policy = parsed.createElement('meta');
   policy.httpEquiv = 'Content-Security-Policy';
-  policy.content = "default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; script-src 'none'";
+  const imageSources = harmony ? `data: blob: ${FLUENT_EMOJI_3D_CSP_SOURCE}` : 'data: blob:';
+  policy.content = `default-src 'none'; style-src 'unsafe-inline'; img-src ${imageSources}; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; script-src 'none'`;
   parsed.head.prepend(policy);
   const scripts = [source.script?.trim() ?? '', inlineScript.trim()].filter(Boolean).join('\n');
   if (scripts) {
@@ -309,7 +345,7 @@ export function sanitizeGenUIHtmlSource(source: GenUIHtmlDocumentSource, specifi
     script.textContent = inspectionBootstrap();
     parsed.body.appendChild(script);
   }
-  if (scriptNonce) policy.setAttribute('content', `default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; script-src 'nonce-${scriptNonce}'`);
+  if (scriptNonce) policy.setAttribute('content', `default-src 'none'; style-src 'unsafe-inline'; img-src ${imageSources}; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; script-src 'nonce-${scriptNonce}'`);
   const rootAttributes = ['data-hm-theme', 'data-hm-font', 'data-hm-scheme']
     .map(name => parsed.documentElement.getAttribute(name) ? ` ${name}="${parsed.documentElement.getAttribute(name)!.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"` : '')
     .join('');

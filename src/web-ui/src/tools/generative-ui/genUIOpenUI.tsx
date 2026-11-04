@@ -159,7 +159,7 @@ function zodForSchema(schema: Record<string, unknown> | undefined): z.ZodTypeAny
  * relationships; renderer implementations stay in the trusted product
  * library. OpenUI owns parsing, streaming and state-field semantics.
  */
-function createGenUIOpenUILibrary(library: GenUILibrary, options: { onInspect?: (event: GenUIOpenUIInspectEvent) => void; asyncRuntime?: GenUIAsyncRuntime; readOnly?: boolean; htmlScriptEnabled?: boolean } = {}) {
+function createGenUIOpenUILibrary(library: GenUILibrary, options: { onInspect?: (event: GenUIOpenUIInspectEvent) => void; asyncRuntime?: GenUIAsyncRuntime; readOnly?: boolean; executeActions?: boolean; htmlScriptEnabled?: boolean } = {}) {
   const components: OpenUIComponent[] = Object.entries(library.contract.components).map(([name, contract]) => {
     const props: Record<string, z.ZodTypeAny> = {};
     // OpenUI uses declaration order for positional arguments. Put child slots
@@ -304,6 +304,7 @@ export default function GenUIOpenUIDocument({
   initialState,
   isStreaming = false,
   readOnly = false,
+  executeActions = true,
   onStateUpdate,
   onError,
   onAction,
@@ -326,6 +327,8 @@ export default function GenUIOpenUIDocument({
   initialState?: GenUIAppState;
   isStreaming?: boolean;
   readOnly?: boolean;
+  /** Keep product side effects out of disposable verification probes. */
+  executeActions?: boolean;
   onStateUpdate?: (state: GenUIAppState) => void;
   onError?: (message: string) => void;
   onAction?: (event: GenUIOpenUIActionEvent) => void | Promise<void>;
@@ -384,8 +387,8 @@ export default function GenUIOpenUIDocument({
   }, []);
   const inspectCallback = onInspect ? inspectAdapter : undefined;
   const openUILibrary = useMemo(
-    () => library.nativeLibrary ?? createGenUIOpenUILibrary(library, { ...(inspectCallback ? { onInspect: inspectCallback } : {}), asyncRuntime: runtime, readOnly, htmlScriptEnabled }),
-    [library, inspectCallback, runtime, readOnly, htmlScriptEnabled],
+    () => library.nativeLibrary ?? createGenUIOpenUILibrary(library, { ...(inspectCallback ? { onInspect: inspectCallback } : {}), asyncRuntime: runtime, readOnly, executeActions, htmlScriptEnabled }),
+    [library, inspectCallback, runtime, readOnly, executeActions, htmlScriptEnabled],
   );
   // The OpenUI runtime uses the initial-state identity as an effect input.
   // Rebuilding the translated object on every parent render makes its store
@@ -400,9 +403,9 @@ export default function GenUIOpenUIDocument({
   const handleAction = useCallback((event: GenUIOpenUIActionEvent) => {
     // Custom actions have a safe product default. The callback still receives
     // the event so an owning host can observe it or add its own delivery.
-    void runGenUIAction(event);
+    if (executeActions) void runGenUIAction(event);
     void onAction?.(event);
-  }, [onAction]);
+  }, [executeActions, onAction]);
   const handleError = useCallback((errors: Array<{ message: string }>) => {
     if (errors.length) onError?.(errors.map(error => error.message).join('; '));
   }, [onError]);

@@ -14,6 +14,7 @@ describe('GenUI library registry', () => {
     const app = { libraryId: 'openbitfun.composable.v1', libraryRevision: 2 } as const;
     expect(resolveGenUILibraryForApp(app, genUICatalog)?.adapterKind).toBe('bitfun');
     expect(getGenUILibraryAdapter(app.libraryId, 3, genUICatalog)).toBeUndefined();
+    expect(resolveGenUILibraryForApp({ libraryId: 'openbitfun.harmony.v1', libraryRevision: 2 }, genUICatalog)).toBeUndefined();
   });
 
   it('keeps renderer provenance inside each adapter contract', () => {
@@ -31,6 +32,6 @@ describe('GenUI library registry', () => {
       harmony: { templates: ['openbitfun.harmony.app'], designSpec: 'harmony.phone.v1' },
     });
     expect(resolveGenUILibraryForApp({ libraryId: 'openui.v1', libraryRevision: 1 }, genUICatalog)?.adapterKind).toBe('openui');
-    expect(resolveGenUILibraryForApp({ libraryId: 'openbitfun.harmony.v1', libraryRevision: 2 }, genUICatalog)?.adapterKind).toBe('harmony-genui');
+    expect(resolveGenUILibraryForApp({ libraryId: 'openbitfun.harmony.v1', libraryRevision: 3 }, genUICatalog)?.adapterKind).toBe('harmony-genui');
   });
 });

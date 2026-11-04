@@ -23,13 +23,16 @@ For GenUI candidate requirement review and tool-client ownership:
 
     cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,tools-miniapp,git --lib -- generative_ui tool_task_context_materialization_preserves_runtime_fields
 
-Review consumes canonical actual user messages only through the originating
-turn and the candidate's owner state. Preserve the producing model client in
-internal tool context, including account and reasoning policy; never resolve a
-fresh primary model for review. The client is not a serialized DTO or model
-tool input. Every repaired candidate is reviewed again. Unknown citations,
-missing interaction checks, malformed responses and timeout reject acceptance.
-Local tests prove evidence/provenance and client identity, not live model
+Harmony coverage review consumes only the originating user request and the
+candidate HTML/UI source plus JavaScript, with CSS omitted and source capped at
+14,000 characters. It asks for a simple JSON list of clearly missing requested
+parts; it does not review screenshots, owner state, host evidence, visual style,
+or inferred requirements. Preserve the producing model client in internal tool
+context, including account and reasoning policy; never resolve a fresh primary
+model for review. The client is not a serialized DTO or model tool input. A
+clear omission asks the generator to repair the candidate. Timeout, provider
+failure, or unreadable output is recorded as `skipped` and does not block host
+acceptance checks. Local tests prove request shaping and parsing, not live model
 quality or remote end-to-end delivery.
 
 For next-input suggestions (turn reasoning settings, one identical retry,

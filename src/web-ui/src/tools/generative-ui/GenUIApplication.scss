@@ -2,7 +2,7 @@
 .gen-ui-application > [role="alert"] { color: var(--openbitfun-color-status-danger-content); }
 
 .gen-ui-host-viewport { min-width: 0; }
-.gen-ui-phone-device { box-sizing: border-box; width: 390px; padding: 13px; border: 1px solid var(--openbitfun-color-border-default); border-radius: 40px; background: var(--openbitfun-color-surface-panel); box-shadow: var(--openbitfun-shadow-lg); }
+.gen-ui-phone-device { box-sizing: border-box; width: 390px; margin-inline: auto; padding: 13px; border: 1px solid var(--openbitfun-color-border-default); border-radius: 40px; background: var(--openbitfun-color-surface-panel); box-shadow: var(--openbitfun-shadow-lg); }
 .gen-ui-phone-viewport { box-sizing: border-box; width: 360px; height: 764px; overflow: hidden; border-radius: 27px; background: var(--openbitfun-color-surface-canvas); color: var(--openbitfun-color-content-primary); }
 .gen-ui-phone-status-bar { box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-surface-canvas); font-family: var(--openbitfun-type-body-sm-font-family); font-size: var(--openbitfun-type-body-sm-font-size); font-weight: var(--openbitfun-type-body-sm-font-weight); line-height: var(--openbitfun-type-body-sm-line-height); }
 .gen-ui-phone-status-bar__indicators { font-size: var(--openbitfun-type-body-sm-font-size); }

@@ -10,6 +10,26 @@ use async_trait::async_trait;
 use openbitfun_services_integrations::generative_ui::GenUIStore;
 use serde_json::{json, Value};
 
+fn genui_checker_failure_feedback(error: &str) -> String {
+    if error.contains("OpenUI action did not reach the owning host") {
+        return format!(
+            "GenUI acceptance infrastructure failure: {error}. The current checker can mis-target its generic button probe when validating @ToAssistant actions. The candidate is saved but not accepted; do not rewrite the application to satisfy this unreliable probe. Report that acceptance could not be completed."
+        );
+    }
+    format!(
+        "GenUI acceptance checker failed before producing reviewable evidence: {error}. The candidate is saved but not accepted. Do not rewrite or regenerate the application solely to clear this checker error. Treat a missing checker, host, transport, timeout, invalid evidence, or unsupported/mis-targeted probe as an acceptance infrastructure failure. Repair the source only when the diagnostic demonstrates a concrete defect in the candidate's source, rendered output, or behavior."
+    )
+}
+
+fn genui_acceptance_infrastructure_feedback(
+    stage: &str,
+    error: &(impl std::fmt::Display + ?Sized),
+) -> String {
+    format!(
+        "GenUI acceptance infrastructure failed during {stage}: {error}. The candidate is not accepted. Do not edit or regenerate the application to address this failure; report that acceptance could not be completed."
+    )
+}
+
 pub struct GenerativeUITool;
 impl GenerativeUITool {
     pub fn new() -> Self {
@@ -187,7 +207,15 @@ impl Tool for GenerativeUITool {
                 output["app"]["title"].as_str().unwrap_or("GenUI")
             );
         }
-        format!("Harmony GenUI answer '{}' finished delivery. Mounted component, declared interaction and layout checks passed; the candidate was saved and reopened. An independent model review checked user requirement coverage. Screenshot visual review: {}. Model review is evidence, not a guarantee of complete requirement coverage.", output["app"]["title"].as_str().unwrap_or("GenUI"), output["verification"]["visual"].as_str().unwrap_or("unverified"))
+        let coverage = output["verification"]["requirementCoverage"]["status"]
+            .as_str()
+            .unwrap_or("skipped");
+        let review_note = if coverage == "passed" {
+            "A model coverage review found no clearly missing requested parts."
+        } else {
+            "The model coverage review was unavailable; host checks passed."
+        };
+        format!("Harmony GenUI answer '{}' finished delivery. Mounted component, declared interaction and layout checks passed; the candidate was saved and reopened. {}", output["app"]["title"].as_str().unwrap_or("GenUI"), review_note)
     }
     fn render_tool_use_message(
         &self,
@@ -293,10 +321,17 @@ impl Tool for GenerativeUITool {
             .await
             .map_err(OpenBitFunError::tool)?;
         let request = json!({ "candidate": candidate, "sessionId": session_id });
-        let mut evidence = crate::agentic::tools::generative_ui_host::check_generative_ui(request).await.map_err(|error| OpenBitFunError::tool(format!("GenUI candidate was not accepted: {error}. Preserve all requested features and repair the source.")))?;
-        evidence
-            .as_object_mut()
-            .ok_or_else(|| OpenBitFunError::tool("GenUI checker returned invalid evidence"))?;
+        let mut evidence = crate::agentic::tools::generative_ui_host::check_generative_ui(request)
+            .await
+            .map_err(|error| OpenBitFunError::tool(genui_checker_failure_feedback(&error)))?;
+        evidence.as_object_mut().ok_or_else(|| {
+            OpenBitFunError::tool(genui_acceptance_infrastructure_feedback(
+                "evidence validation",
+                "the checker returned a non-object payload",
+            ))
+        })?;
+        // This value is part of the evidence committed atomically by
+        // `accept`; it is exposed only when that CAS succeeds.
         evidence["persistence"] = json!("saved");
         evidence["requirementCoverage"] =
             crate::agentic::execution::generative_ui_review::review_candidate(
@@ -306,8 +341,10 @@ impl Tool for GenerativeUITool {
                 &evidence,
             )
             .await
-            .map_err(OpenBitFunError::tool)?;
-        evidence["visual"] = evidence["requirementCoverage"]["report"]["visual"]["status"].clone();
+            .map_err(|error| OpenBitFunError::tool(error.tool_feedback()))?;
+        if evidence["requirementCoverage"]["status"] == "skipped" {
+            evidence["visual"] = json!("unverified");
+        }
         evidence.as_object_mut().unwrap().remove("screenshot");
         let accepted = store
             .accept(&candidate, evidence.clone())
@@ -334,6 +371,19 @@ impl Tool for GenerativeUITool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checker_failures_do_not_automatically_request_source_rewrites() {
+        let feedback = genui_checker_failure_feedback("renderer checker unavailable");
+        assert!(feedback.contains("saved but not accepted"));
+        assert!(feedback.contains("Do not rewrite or regenerate"));
+        assert!(feedback.contains("mis-targeted probe"));
+        assert!(!feedback.contains("repair the source"));
+        let action_feedback =
+            genui_checker_failure_feedback("OpenUI action did not reach the owning host");
+        assert!(action_feedback.contains("generic button probe"));
+        assert!(action_feedback.contains("do not rewrite the application"));
+    }
 
     #[test]
     fn only_explicit_harmony_uses_delivery_pipeline() {
@@ -416,6 +466,7 @@ mod tests {
         let mut app = component_app();
         app["template"] = json!("openbitfun.harmony.app");
         app["libraryId"] = json!("openbitfun.harmony.v1");
+        app["libraryRevision"] = json!(3);
         app["designSpec"] = json!({"id":"harmony.phone.v1","revision":1});
         app["source"] = json!({"kind":"html-document","html":"<section><svg viewBox=\"0 0 10 10\"></svg></section>","css":"section{width:100%;}"});
         app["state"] = json!({});
@@ -430,6 +481,7 @@ mod tests {
         let mut app = component_app();
         app["template"] = json!("openbitfun.harmony.app");
         app["libraryId"] = json!("openbitfun.harmony.v1");
+        app["libraryRevision"] = json!(3);
         app["designSpec"] = json!({"id":"harmony.phone.v1","revision":1});
         app["source"] = json!({"kind":"openui-lang","content":"root = Col([Text(\"Hello\")])"});
         app["state"] = json!({});

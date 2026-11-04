@@ -22,6 +22,10 @@ export function createGenUILibraryPreview(profileId: string, t: (key: string) =>
     `facts = Row([Badge("${quote(t('genui.preview.live'))}"), Badge("${quote(t('genui.preview.progress'))}", "info")], 2)`,
   ];
   const children = ['title', 'intro', 'facts'];
+  if ('Icon3D' in library.components) {
+    statements.push('picture = Icon3D("☀️")');
+    children.push('picture');
+  }
   if ('Input' in library.components) {
     statements.push(`note = Input($previewNote, "${quote(t('genui.preview.note'))}", "text")`);
     statements.push(`noteValue = Text($previewNote, "sm")`);

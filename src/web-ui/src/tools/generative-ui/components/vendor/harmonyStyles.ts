@@ -180,27 +180,27 @@ export const HARMONY_STYLE_RESOURCE_CSS = String.raw`
   --openbitfun-space-4: 16px;
 }
 
-:where(.gen-ui-application--harmony-genui[data-hm-theme="indigo"], html[data-hm-theme="indigo"]) { --hm-brand: #5d69d9; --hm-brand-dark: #7f8ff0; --hm-brand-soft: rgba(93,105,217,.12); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="purple"], html[data-hm-theme="purple"]) { --hm-brand: #9957c4; --hm-brand-dark: #b47dda; --hm-brand-soft: rgba(153,87,196,.12); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="rose"], html[data-hm-theme="rose"]) { --hm-brand: #c6467b; --hm-brand-dark: #dd6e98; --hm-brand-soft: rgba(198,70,123,.12); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="orange"], html[data-hm-theme="orange"]) { --hm-brand: #c2520b; --hm-brand-dark: #dc7a4c; --hm-brand-soft: rgba(194,82,11,.12); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="brown"], html[data-hm-theme="brown"]) { --hm-brand: #996a44; --hm-brand-dark: #b88f6e; --hm-brand-soft: rgba(153,106,68,.12); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="green"], html[data-hm-theme="green"]) { --hm-brand: #3a8357; --hm-brand-dark: #6ca881; --hm-brand-soft: rgba(58,131,87,.12); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="teal"], html[data-hm-theme="teal"]) { --hm-brand: #118186; --hm-brand-dark: #5aa7ab; --hm-brand-soft: rgba(17,129,134,.12); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="ink"], html[data-hm-theme="ink"]) { --hm-brand: #222222; --hm-brand-dark: #e6e6e6; --hm-brand-soft: rgba(34,34,34,.10); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="indigo"], .gen-ui-phone-device[data-hm-theme="indigo"], html[data-hm-theme="indigo"]) { --hm-brand: #5d69d9; --hm-brand-dark: #7f8ff0; --hm-brand-soft: rgba(93,105,217,.12); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="purple"], .gen-ui-phone-device[data-hm-theme="purple"], html[data-hm-theme="purple"]) { --hm-brand: #9957c4; --hm-brand-dark: #b47dda; --hm-brand-soft: rgba(153,87,196,.12); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="rose"], .gen-ui-phone-device[data-hm-theme="rose"], html[data-hm-theme="rose"]) { --hm-brand: #c6467b; --hm-brand-dark: #dd6e98; --hm-brand-soft: rgba(198,70,123,.12); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="orange"], .gen-ui-phone-device[data-hm-theme="orange"], html[data-hm-theme="orange"]) { --hm-brand: #c2520b; --hm-brand-dark: #dc7a4c; --hm-brand-soft: rgba(194,82,11,.12); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="brown"], .gen-ui-phone-device[data-hm-theme="brown"], html[data-hm-theme="brown"]) { --hm-brand: #996a44; --hm-brand-dark: #b88f6e; --hm-brand-soft: rgba(153,106,68,.12); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="green"], .gen-ui-phone-device[data-hm-theme="green"], html[data-hm-theme="green"]) { --hm-brand: #3a8357; --hm-brand-dark: #6ca881; --hm-brand-soft: rgba(58,131,87,.12); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="teal"], .gen-ui-phone-device[data-hm-theme="teal"], html[data-hm-theme="teal"]) { --hm-brand: #118186; --hm-brand-dark: #5aa7ab; --hm-brand-soft: rgba(17,129,134,.12); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="ink"], .gen-ui-phone-device[data-hm-theme="ink"], html[data-hm-theme="ink"]) { --hm-brand: #222222; --hm-brand-dark: #e6e6e6; --hm-brand-soft: rgba(34,34,34,.10); }
 
 /* The reference system casts the neutral page, text and dark surfaces toward
    the selected accent. Keep the cast explicit so a browser that does not
    implement OKLCH still gets the same stable Harmony palette. */
-:where(.gen-ui-application--harmony-genui[data-hm-theme="blue"], html[data-hm-theme="blue"]) { --hm-panel-bg:#eaf4ff; --hm-text-primary:#182431; --hm-text-secondary:rgba(24,36,49,.60); --hm-text-tertiary:rgba(24,36,49,.50); --hm-divider:rgba(24,36,49,.20); --hm-track-bg:rgba(24,36,49,.10); --hm-bg-tertiary:rgba(24,36,49,.05); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="indigo"], html[data-hm-theme="indigo"]) { --hm-panel-bg:#eff2ff; --hm-text-primary:#1e2231; --hm-text-secondary:rgba(30,34,49,.60); --hm-text-tertiary:rgba(30,34,49,.50); --hm-divider:rgba(30,34,49,.20); --hm-track-bg:rgba(30,34,49,.10); --hm-bg-tertiary:rgba(30,34,49,.05); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="purple"], html[data-hm-theme="purple"]) { --hm-panel-bg:#f6f0fc; --hm-text-primary:#271f2e; --hm-text-secondary:rgba(39,31,46,.60); --hm-text-tertiary:rgba(39,31,46,.50); --hm-divider:rgba(39,31,46,.20); --hm-track-bg:rgba(39,31,46,.10); --hm-bg-tertiary:rgba(39,31,46,.05); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="rose"], html[data-hm-theme="rose"]) { --hm-panel-bg:#feeff3; --hm-text-primary:#2f1d23; --hm-text-secondary:rgba(47,29,35,.60); --hm-text-tertiary:rgba(47,29,35,.50); --hm-divider:rgba(47,29,35,.20); --hm-track-bg:rgba(47,29,35,.10); --hm-bg-tertiary:rgba(47,29,35,.05); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="orange"], html[data-hm-theme="orange"]) { --hm-panel-bg:#feefe9; --hm-text-primary:#2f1e17; --hm-text-secondary:rgba(47,30,23,.60); --hm-text-tertiary:rgba(47,30,23,.50); --hm-divider:rgba(47,30,23,.20); --hm-track-bg:rgba(47,30,23,.10); --hm-bg-tertiary:rgba(47,30,23,.05); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="brown"], html[data-hm-theme="brown"]) { --hm-panel-bg:#fcf0e7; --hm-text-primary:#2e1f14; --hm-text-secondary:rgba(46,31,20,.60); --hm-text-tertiary:rgba(46,31,20,.50); --hm-divider:rgba(46,31,20,.20); --hm-track-bg:rgba(46,31,20,.10); --hm-bg-tertiary:rgba(46,31,20,.05); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="green"], html[data-hm-theme="green"]) { --hm-panel-bg:#eaf7ee; --hm-text-primary:#17271c; --hm-text-secondary:rgba(23,39,28,.60); --hm-text-tertiary:rgba(23,39,28,.50); --hm-divider:rgba(23,39,28,.20); --hm-track-bg:rgba(23,39,28,.10); --hm-bg-tertiary:rgba(23,39,28,.05); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="teal"], html[data-hm-theme="teal"]) { --hm-panel-bg:#e6f7f7; --hm-text-primary:#0f2728; --hm-text-secondary:rgba(15,39,40,.60); --hm-text-tertiary:rgba(15,39,40,.50); --hm-divider:rgba(15,39,40,.20); --hm-track-bg:rgba(15,39,40,.10); --hm-bg-tertiary:rgba(15,39,40,.05); }
-:where(.gen-ui-application--harmony-genui[data-hm-theme="ink"], html[data-hm-theme="ink"]) { --hm-panel-bg:#f3f3f3; --hm-text-primary:#232323; --hm-text-secondary:rgba(35,35,35,.60); --hm-text-tertiary:rgba(35,35,35,.50); --hm-divider:rgba(35,35,35,.20); --hm-track-bg:rgba(35,35,35,.10); --hm-bg-tertiary:rgba(35,35,35,.05); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="blue"], .gen-ui-phone-device[data-hm-theme="blue"], html[data-hm-theme="blue"]) { --hm-panel-bg:#eaf4ff; --hm-text-primary:#182431; --hm-text-secondary:rgba(24,36,49,.60); --hm-text-tertiary:rgba(24,36,49,.50); --hm-divider:rgba(24,36,49,.20); --hm-track-bg:rgba(24,36,49,.10); --hm-bg-tertiary:rgba(24,36,49,.05); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="indigo"], .gen-ui-phone-device[data-hm-theme="indigo"], html[data-hm-theme="indigo"]) { --hm-panel-bg:#eff2ff; --hm-text-primary:#1e2231; --hm-text-secondary:rgba(30,34,49,.60); --hm-text-tertiary:rgba(30,34,49,.50); --hm-divider:rgba(30,34,49,.20); --hm-track-bg:rgba(30,34,49,.10); --hm-bg-tertiary:rgba(30,34,49,.05); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="purple"], .gen-ui-phone-device[data-hm-theme="purple"], html[data-hm-theme="purple"]) { --hm-panel-bg:#f6f0fc; --hm-text-primary:#271f2e; --hm-text-secondary:rgba(39,31,46,.60); --hm-text-tertiary:rgba(39,31,46,.50); --hm-divider:rgba(39,31,46,.20); --hm-track-bg:rgba(39,31,46,.10); --hm-bg-tertiary:rgba(39,31,46,.05); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="rose"], .gen-ui-phone-device[data-hm-theme="rose"], html[data-hm-theme="rose"]) { --hm-panel-bg:#feeff3; --hm-text-primary:#2f1d23; --hm-text-secondary:rgba(47,29,35,.60); --hm-text-tertiary:rgba(47,29,35,.50); --hm-divider:rgba(47,29,35,.20); --hm-track-bg:rgba(47,29,35,.10); --hm-bg-tertiary:rgba(47,29,35,.05); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="orange"], .gen-ui-phone-device[data-hm-theme="orange"], html[data-hm-theme="orange"]) { --hm-panel-bg:#feefe9; --hm-text-primary:#2f1e17; --hm-text-secondary:rgba(47,30,23,.60); --hm-text-tertiary:rgba(47,30,23,.50); --hm-divider:rgba(47,30,23,.20); --hm-track-bg:rgba(47,30,23,.10); --hm-bg-tertiary:rgba(47,30,23,.05); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="brown"], .gen-ui-phone-device[data-hm-theme="brown"], html[data-hm-theme="brown"]) { --hm-panel-bg:#fcf0e7; --hm-text-primary:#2e1f14; --hm-text-secondary:rgba(46,31,20,.60); --hm-text-tertiary:rgba(46,31,20,.50); --hm-divider:rgba(46,31,20,.20); --hm-track-bg:rgba(46,31,20,.10); --hm-bg-tertiary:rgba(46,31,20,.05); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="green"], .gen-ui-phone-device[data-hm-theme="green"], html[data-hm-theme="green"]) { --hm-panel-bg:#eaf7ee; --hm-text-primary:#17271c; --hm-text-secondary:rgba(23,39,28,.60); --hm-text-tertiary:rgba(23,39,28,.50); --hm-divider:rgba(23,39,28,.20); --hm-track-bg:rgba(23,39,28,.10); --hm-bg-tertiary:rgba(23,39,28,.05); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="teal"], .gen-ui-phone-device[data-hm-theme="teal"], html[data-hm-theme="teal"]) { --hm-panel-bg:#e6f7f7; --hm-text-primary:#0f2728; --hm-text-secondary:rgba(15,39,40,.60); --hm-text-tertiary:rgba(15,39,40,.50); --hm-divider:rgba(15,39,40,.20); --hm-track-bg:rgba(15,39,40,.10); --hm-bg-tertiary:rgba(15,39,40,.05); }
+:where(.gen-ui-application--harmony-genui[data-hm-theme="ink"], .gen-ui-phone-device[data-hm-theme="ink"], html[data-hm-theme="ink"]) { --hm-panel-bg:#f3f3f3; --hm-text-primary:#232323; --hm-text-secondary:rgba(35,35,35,.60); --hm-text-tertiary:rgba(35,35,35,.50); --hm-divider:rgba(35,35,35,.20); --hm-track-bg:rgba(35,35,35,.10); --hm-bg-tertiary:rgba(35,35,35,.05); }
 
 @media (prefers-color-scheme: dark) {
   :where(.gen-ui-application--harmony-genui[data-hm-scheme="auto"], html[data-hm-scheme="auto"]) {
@@ -419,6 +419,16 @@ export const HARMONY_STYLE_RESOURCE_CSS = String.raw`
 /* Shared Harmony anatomy. The HTML renderer and trusted OpenUI renderer use
    the same class vocabulary, so a generated document can move between them
    without losing the HarmonyOS proportions or control states. */
+:where(.gen-ui-phone-device[data-hm-theme]) .gen-ui-phone-viewport,
+:where(.gen-ui-phone-device[data-hm-theme]) .gen-ui-phone-status-bar { background: var(--hm-panel-bg); color: var(--hm-text-primary); }
+:where(.gen-ui-application--harmony-genui, html[data-hm-theme]) .hm-icon3d {
+  position: relative; display: inline-grid; flex: none; width: 40px; height: 40px;
+  place-items: center; vertical-align: middle; font-size: 30px; line-height: 1;
+}
+:where(.gen-ui-application--harmony-genui, html[data-hm-theme]) .hm-icon3d.large { width: 64px; height: 64px; font-size: 48px; }
+:where(.gen-ui-application--harmony-genui, html[data-hm-theme]) .hm-icon3d > img,
+:where(.gen-ui-application--harmony-genui, html[data-hm-theme]) .hm-icon3d > .hm-icon3d-fallback { grid-area: 1 / 1; }
+:where(.gen-ui-application--harmony-genui, html[data-hm-theme]) .hm-icon3d > img { display: block; width: 100%; height: 100%; object-fit: contain; }
 :where(.gen-ui-application--harmony-genui, html[data-hm-theme]) .list-item-icon {
   flex: none; width: var(--hm-icon-size); height: var(--hm-icon-size);
   display: inline-flex; align-items: center; justify-content: center;

@@ -35,6 +35,10 @@ global reset or dynamic code loader is imported.
   trusted component/HTML renderer boundary and is not exposed as a generated
   global stylesheet. The unmodified HMSymbolVF.ttf file is bundled under
   src/web-ui/public/fonts/hm-symbol with Huawei's accompanying license notice.
+  Harmony object pictograms use the Fluent Emoji 3D index from
+  `task_genui/harmony-genui/apps/app/src/lib/icon3d-index.json`; image assets
+  are loaded from the pinned Microsoft commit listed in that index. The index
+  and its asset license are retained in this directory.
 Every registered component has a renderer and mounted inspector. Components with
 an event also supply an isolated exercise adapter. Settings previews use ordinary
 app descriptions and the production interpreter, with local disposable state.

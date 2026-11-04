@@ -38,6 +38,24 @@ function tool(overrides: Partial<FlowToolItem> = {}): FlowToolItem {
 }
 
 describe('generative widget projection', () => {
+  it.each([false, true])('identifies Harmony loading from native stream metadata before source arrives, deferred=%s', deferred => {
+    const projection = projectGenerativeWidgetTool(session(), tool({
+      toolName: deferred ? 'CallDeferredTool' : 'GenerativeUI',
+      toolCall: { id: 'call', input: deferred ? { tool_name: 'GenerativeUI', args: {} } : {} },
+      _genUIStream: { messageId: 'source', format: 'openui-lang', content: '', nextSeq: 1, libraryId: 'openbitfun.harmony.v1', libraryRevision: 3 },
+    }));
+    expect(projection).toMatchObject({ deliveryMode: 'delivery', libraryId: 'openbitfun.harmony.v1', isStreaming: true, sourceAvailable: false });
+    expect(projection?.app).toBeUndefined();
+  });
+
+  it('exposes the stream profile from its declared template before the source arrives', () => {
+    const projection = projectGenerativeWidgetTool(session(), tool({
+      toolCall: { id: 'call', input: {} },
+      _genUIStream: { messageId: 'source', format: 'openui-lang', content: '', nextSeq: 1, template: 'openbitfun.harmony.app' },
+    }));
+    expect(projection).toMatchObject({ deliveryMode: 'delivery', libraryId: 'openbitfun.harmony.v1', sourceAvailable: false });
+  });
+
   it.each([false, true])('projects a source document while parameters stream, deferred=%s', deferred => {
     const app = { schemaVersion: 2, id: 'stream-source', title: 'Stream source', template: 'openbitfun.app', libraryId: 'openbitfun.composable.v1', libraryRevision: 2, designSpec: { id: 'openbitfun.desktop.v1', revision: 1 }, root: 'root', state: {}, source: { kind: 'openui-lang', content: 'root = Col([Text("Hello")])' } } as GenUIAppDefinition;
     const parsed = deferred ? { tool_name: 'GenerativeUI', args: { app } } : { app };

@@ -184,23 +184,50 @@ try {
   assert.notEqual(await page.$eval('[aria-label="Shared note"]', element => element.value), 'Temporary demo');
   assert.equal(await page.$eval('select', element => element.value), 'harmony');
   assert.deepEqual(errors, []);
-  for (const deferred of [false, true]) {
+  for (const scenario of [
+    { deferred: false, harmony: false },
+    { deferred: true, harmony: false },
+    { deferred: false, harmony: true },
+    { deferred: true, harmony: true },
+  ]) {
+    const { deferred, harmony } = scenario;
     const streamUrl = new URL(url); streamUrl.searchParams.set('streaming', '');
     if (deferred) streamUrl.searchParams.set('deferred', '');
+    if (harmony) streamUrl.searchParams.set('harmony', '');
+    streamUrl.searchParams.set('profile', harmony ? 'harmony' : 'openui');
     await page.goto(streamUrl.href); await verify();
+    if (harmony) {
+      await page.waitForSelector('.gen-ui-phone-loading[aria-busy="true"]');
+      assert.equal(await page.$('[data-gen-ui-host-shell="phone"]') !== null, true);
+      assert(await page.$eval('.gen-ui-phone-loading__preview', element => element.getBoundingClientRect().height <= 460));
+    } else {
+      await page.waitForSelector('.openbitfun-generative-widget-panel__skeleton');
+      assert.equal(await page.$('.gen-ui-phone-loading'), null);
+    }
     const next = async stage => {
       await page.click('[data-testid="stream-advance"]');
       await page.waitForSelector('[data-testid="genui-stream"][data-stage="' + stage + '"]');
     };
     await next(1);
-    await page.waitForSelector('[data-gen-ui-app]');
+    if (!harmony) await page.waitForSelector('[data-gen-ui-app]');
     await next(2);
-    assert(await page.$('[data-gen-ui-app]'));
+    assert.equal(await page.$('.gen-ui-phone-skeleton') !== null, harmony);
+    assert.equal(await page.$('[data-gen-ui-app]') !== null, !harmony);
     assert(await page.$eval('[data-testid="genui-stream"]', element => Number(element.dataset.sent) < Number(element.dataset.total)));
+    if (harmony && process.env.OPENBITFUN_GENUI_SCREENSHOT_DIR) {
+      await mkdir(process.env.OPENBITFUN_GENUI_SCREENSHOT_DIR, { recursive: true });
+      await page.screenshot({ path: join(process.env.OPENBITFUN_GENUI_SCREENSHOT_DIR, `harmony-phone-skeleton-${deferred ? 'deferred' : 'native'}.png`), fullPage: true });
+    }
     await next(3);
-    await page.waitForSelector('[data-gen-ui-app]');
-    assert.match(await page.$eval('[data-gen-ui-app]', element => element.textContent ?? ''), /Streaming source/);
+    if (harmony) await page.waitForSelector('.gen-ui-phone-skeleton');
+    else await page.waitForSelector('[data-gen-ui-app]');
+    if (!harmony) assert.match(await page.$eval('[data-gen-ui-app]', element => element.textContent ?? ''), /Streaming source/);
     await next(4);
+    if (harmony) {
+      await page.waitForSelector('[data-gen-ui-app]');
+      assert.equal(await page.$('.gen-ui-phone-loading'), null);
+      assert.equal(await page.$('[data-gen-ui-host-shell="phone"]') !== null, true);
+    }
     await page.waitForSelector('[data-gen-ui-postcheck="passed"]');
     assert.equal(await page.$$eval('[role="alert"]', elements => elements.length), 0);
   }

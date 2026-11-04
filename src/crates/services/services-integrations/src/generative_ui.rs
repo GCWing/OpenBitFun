@@ -87,6 +87,30 @@ mod tests {
             .await
             .is_err());
     }
+
+    #[tokio::test]
+    async fn failed_first_candidate_never_becomes_accepted() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = GenUIStore::new(directory.path().to_owned());
+        let candidate = store.begin(app(), None).await.unwrap();
+        let mut rejected = evidence(&candidate);
+        rejected["render"] = json!("failed");
+        assert!(store.accept(&candidate, rejected).await.is_err());
+        assert!(store.accepted("test").await.unwrap().is_none());
+
+        // A repair can stage a replacement over the failed candidate and only
+        // the replacement that passes acceptance becomes durable owner state.
+        let replacement = store.begin(app(), None).await.unwrap();
+        assert_ne!(replacement.value.revision, candidate.value.revision);
+        assert!(store
+            .accept(&replacement, evidence(&replacement))
+            .await
+            .is_ok());
+        assert_eq!(
+            store.accepted("test").await.unwrap().unwrap().revision,
+            replacement.value.revision
+        );
+    }
     #[tokio::test]
     async fn accepted_ui_spec_survives_profile_changes_and_legacy_records_are_rejected() {
         let directory = tempfile::tempdir().unwrap();
@@ -94,6 +118,7 @@ mod tests {
         let mut selected = app();
         selected["template"] = json!("openbitfun.harmony.app");
         selected["libraryId"] = json!("openbitfun.harmony.v1");
+        selected["libraryRevision"] = json!(3);
         selected["designSpec"] = json!({"id":"harmony.phone.v1","revision":1});
         let first = store.begin(selected.clone(), None).await.unwrap();
         assert_eq!(first.value.app["designSpec"]["id"], "harmony.phone.v1");
@@ -165,10 +190,10 @@ mod tests {
         let mut rejected = evidence(&candidate);
         rejected["requirementCoverage"] = json!({"status":"unverified"});
         assert!(store.accept(&candidate, rejected).await.is_err());
-        store
-            .accept(&candidate, evidence(&candidate))
-            .await
-            .unwrap();
+        let mut skipped_review = evidence(&candidate);
+        skipped_review["requirementCoverage"] =
+            json!({"status":"skipped","method":"coverage_review","reason":"review_timed_out"});
+        store.accept(&candidate, skipped_review).await.unwrap();
         assert_eq!(
             store.accepted("test").await.unwrap().unwrap().extra["futureRevision"],
             json!([1, 2])
@@ -193,6 +218,7 @@ mod tests {
         let mut document = app();
         document["template"] = json!("openbitfun.harmony.app");
         document["libraryId"] = json!("openbitfun.harmony.v1");
+        document["libraryRevision"] = json!(3);
         document["designSpec"] = json!({"id":"harmony.phone.v1","revision":1});
         document["source"] = json!({"kind":"html-document","html":"<p>Phone</p>"});
         document["state"] = json!({});
@@ -435,7 +461,10 @@ impl GenUIStore {
                 );
             }
         }
-        if evidence["requirementCoverage"]["status"] != "passed" {
+        if !matches!(
+            evidence["requirementCoverage"]["status"].as_str(),
+            Some("passed" | "skipped")
+        ) {
             return Err("Candidate requirement review has not passed".into());
         }
         let design_spec_id = candidate.value.app["designSpec"]["id"]

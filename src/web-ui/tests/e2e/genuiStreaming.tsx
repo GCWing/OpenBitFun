@@ -8,9 +8,11 @@ import type { GenUIAppDefinition } from '../../src/tools/generative-ui/genUIType
 import GenerativeWidgetPanel from '../../src/tools/generative-widget/GenerativeWidgetPanel';
 
 /** Production parameter ingestion -> store -> subscribed panel -> source renderer. */
-export default function GenUIStreamingFixture({ deferred }: { deferred: boolean }) {
+export default function GenUIStreamingFixture({ deferred, harmony }: { deferred: boolean; harmony: boolean }) {
   const [fixture] = useState(() => {
-    const app: GenUIAppDefinition = { schemaVersion: 2, id: 'stream-source', title: 'Streaming source', template: 'openui.app', libraryId: 'openbitfun.composable.v1', libraryRevision: 2, designSpec: { id: 'openbitfun.desktop.v1', revision: 1 }, source: { kind: 'openui-lang', content: 'root = Col([Text("Streaming source")])' }, state: {} };
+    const app: GenUIAppDefinition = harmony
+      ? { schemaVersion: 2, id: 'stream-source', title: 'Plant garden', template: 'openbitfun.harmony.app', libraryId: 'openbitfun.harmony.v1', libraryRevision: 3, designSpec: { id: 'harmony.phone.v1', revision: 1 }, source: { kind: 'openui-lang', content: 'root = Col([Title("Garden is ready"), Text("Streaming source")])' }, state: {} }
+      : { schemaVersion: 2, id: 'stream-source', title: 'Streaming source', template: 'openbitfun.app', libraryId: 'openbitfun.composable.v1', libraryRevision: 2, designSpec: { id: 'openbitfun.desktop.v1', revision: 1 }, source: { kind: 'openui-lang', content: 'root = Col([Text("Streaming source")])' }, state: {} };
     const generation = describeGenUIApp(app);
     const source = app.source.kind === 'openui-lang' ? app.source.content : '';
     const checkpoints = [Math.floor(source.length / 3), Math.floor(source.length * 2 / 3), source.length];
@@ -52,6 +54,6 @@ export default function GenUIStreamingFixture({ deferred }: { deferred: boolean 
   const projection = projectGenerativeWidgetTool(session, item, { turnId: 'stream-turn' });
   return <div data-testid="genui-stream" data-stage={stage} data-sent={fixture.offset} data-total={fixture.source.length}>
     <button data-testid="stream-advance" disabled={stage > fixture.checkpoints.length} onClick={advance}>Advance stream</button>
-    {projection && <GenerativeWidgetPanel origin={projection.origin} />}
+    {projection && <GenerativeWidgetPanel origin={projection.origin} presentation="inline" />}
   </div>;
 }

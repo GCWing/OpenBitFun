@@ -59,7 +59,7 @@ import { notificationAppearanceDescriptor } from '@/shared/notification-system/a
 import { imageLightboxAppearanceDescriptor } from '@/shared/ui/ImageLightbox.appearance';
 import { productBrandIconAppearanceDescriptor } from '@/shared/ui/ProductBrandIcon.appearance';
 import { generativeWidgetAppearanceDescriptor } from '@/tools/generative-widget/appearance';
-import { genUIApplicationAppearanceDescriptor, genUIComponentsAppearanceDescriptor, genUIGalleryAppearanceDescriptor } from '@/tools/generative-ui/appearance';
+import { genUIApplicationAppearanceDescriptor, genUIComponentsAppearanceDescriptor, genUIGalleryAppearanceDescriptor, genUIPhoneSkeletonAppearanceDescriptor } from '@/tools/generative-ui/appearance';
 import { editorToolAppearanceDescriptor } from '@/tools/editor/appearance';
 import { fileSystemAppearanceDescriptor } from '@/tools/file-system/appearance';
 import { gitToolAppearanceDescriptor } from '@/tools/git/appearance';
@@ -332,6 +332,7 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(productBrandIconAppearanceDescriptor)
     .registerComponent(generativeWidgetAppearanceDescriptor)
     .registerComponent(genUIApplicationAppearanceDescriptor)
+    .registerComponent(genUIPhoneSkeletonAppearanceDescriptor)
     .registerComponent(genUIComponentsAppearanceDescriptor)
     .registerComponent(genUIGalleryAppearanceDescriptor)
     .registerComponent(editorToolAppearanceDescriptor)

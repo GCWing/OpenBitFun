@@ -21,7 +21,7 @@ export function useGenerativeWidgetProjection(
     if (!origin) return null;
     const next = findGenerativeWidgetProjection(flowChatStore.getState(), origin, true);
     const nextKey = next
-      ? `${key}:${JSON.stringify(next.origin)}:${next.status}:${next.interactionState}:${next.deliveryMode}:${next.isFailed}:${next.readOnly}:${next.readOnlyReason}:${next.ownerRevision}:${next.title}:${JSON.stringify(next.app ?? null)}:${JSON.stringify(next.appState ?? null)}:${JSON.stringify(next.deliveryEvidence ?? null)}`
+      ? `${key}:${JSON.stringify(next.origin)}:${next.status}:${next.interactionState}:${next.deliveryMode}:${next.libraryId}:${next.isFailed}:${next.readOnly}:${next.readOnlyReason}:${next.ownerRevision}:${next.title}:${JSON.stringify(next.app ?? null)}:${JSON.stringify(next.appState ?? null)}:${JSON.stringify(next.deliveryEvidence ?? null)}`
       : `${key}:missing`;
     const cache = cacheRef.current;
     if (cache.key !== key) {

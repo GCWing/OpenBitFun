@@ -121,4 +121,19 @@ describe('GenerativeWidgetInline', () => {
     act(() => (container.querySelector('button') as HTMLButtonElement).click());
     expect(openContentInBestTarget).toHaveBeenCalledTimes(1);
   });
+
+  it('removes failed candidates from the answer and lets the subsequent retry render', () => {
+    projectGenerativeWidgetTool.mockReturnValue({ ...projection, isFailed: true, status: 'error' });
+    act(() => root.render(<GenerativeWidgetInline toolItem={item} sessionId="session-1" turnId="turn-1" />));
+    expect(container.innerHTML).toBe('');
+    expect(openContentInBestTarget).not.toHaveBeenCalled();
+
+    projectGenerativeWidgetTool.mockReturnValue({ ...projection, isFailed: false, status: 'rejected' });
+    act(() => root.render(<GenerativeWidgetInline toolItem={item} sessionId="session-1" turnId="turn-1" />));
+    expect(container.innerHTML).toBe('');
+
+    projectGenerativeWidgetTool.mockReturnValue({ ...projection, isStreaming: true, isComplete: false, status: 'streaming' });
+    act(() => root.render(<GenerativeWidgetInline toolItem={{ ...item, id: 'retry' }} sessionId="session-1" turnId="turn-1" />));
+    expect(container.querySelector('[data-testid="inline-panel"]')).not.toBeNull();
+  });
 });

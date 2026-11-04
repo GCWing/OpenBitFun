@@ -520,8 +520,13 @@ mod tests {
             harmony,
             serde_json::json!({"id":"harmony.phone.v1","revision":1})
         );
-        let mut app = serde_json::json!({"template":"openbitfun.harmony.app","libraryId":"openbitfun.harmony.v1","libraryRevision":2,"designSpec":harmony});
+        let mut app = serde_json::json!({"template":"openbitfun.harmony.app","libraryId":"openbitfun.harmony.v1","libraryRevision":3,"designSpec":harmony});
         assert!(validate_design_spec(&app).is_ok());
+        app["libraryRevision"] = Value::from(2);
+        assert!(validate_design_spec(&app)
+            .unwrap_err()
+            .contains("unavailable library revision for openbitfun.harmony.v1"));
+        app["libraryRevision"] = Value::from(3);
         app["template"] = Value::String("openbitfun.app".into());
         app["libraryId"] = Value::String("openbitfun.composable.v1".into());
         app["libraryRevision"] = Value::from(2);
@@ -573,7 +578,7 @@ mod tests {
             "title": "Phone HTML",
             "template": "openbitfun.harmony.app",
             "libraryId": "openbitfun.harmony.v1",
-            "libraryRevision": 2,
+            "libraryRevision": 3,
             "designSpec": {"id": "harmony.phone.v1", "revision": 1},
             "source": {"kind": "html-document", "html": "<section><svg viewBox=\"0 0 10 10\"></svg></section>", "css": "section { width: 100%; }"},
             "state": {}
@@ -603,7 +608,7 @@ mod tests {
             "title": "OpenUI phone",
             "template": "openbitfun.harmony.app",
             "libraryId": "openbitfun.harmony.v1",
-            "libraryRevision": 2,
+            "libraryRevision": 3,
             "designSpec": {"id": "harmony.phone.v1", "revision": 1},
             "source": {"kind": "openui-lang", "content": "root = Col([Text(\"Hello\")])"},
             "state": {}

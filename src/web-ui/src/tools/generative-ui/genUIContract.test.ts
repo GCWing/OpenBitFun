@@ -8,6 +8,7 @@ import { preflightGenUIApp, genUICatalog } from './genUIContract';
 import { genUIProduct } from './genUIProduct';
 import { validateGenUIState } from './genUIState';
 import type { GenUIAppDefinition } from './genUITypes';
+import { HM_ICON_CODEPOINTS } from './components/vendor/hm-icons';
 describe('product library generation contract', () => {
   it.each(fixtures)('$name matches Rust validation', fixture => expect(preflightGenUIApp(fixture.app as GenUIAppDefinition).accepted).toBe(fixture.valid));
   it('derives prompt, schema and runtime contracts from the same library declarations', () => {
@@ -17,6 +18,20 @@ describe('product library generation contract', () => {
     expect(genUICatalog.genuiSystemPrompts?.openui).toContain('root = Card([title, stepper, list, copy])');
     expect(genUICatalog.genuiSystemPrompts?.openui).not.toContain('Life plan');
     expect(genUICatalog.genuiSystemPrompts?.harmony).toContain('Input(value: string | number');
+    expect(genUICatalog.genuiSystemPrompts?.harmony).toContain('Icon3D(emoji: string');
+    expect(genUICatalog.genuiSystemPrompts?.harmony).toContain('Use Icon3D(emoji) for a small colored picture');
+    expect(genUICatalog.genuiSystemPrompts?.harmony).toContain('declared by the Harmony library schema');
+    expect(genUICatalog.genuiSystemPrompts?.harmony).toContain('thermometer, wind, sun_max');
+    expect(genUICatalog.genuiSystemPrompts?.harmony).toContain('never invent names such as shirt, shoeprints');
+    expect(genUICatalog.genuiSystemPrompts?.openbitfun).not.toContain('Icon3D');
+    expect(genUICatalog.libraries['openbitfun.harmony.v1'].metadata.revision).toBe(3);
+    expect(genUICatalog.libraries['openbitfun.harmony.v1'].components.Icon3D).toBeDefined();
+    expect(genUICatalog.libraries['openbitfun.composable.v1'].components.Icon3D).toBeUndefined();
+    const harmony = genUICatalog.libraries['openbitfun.harmony.v1'];
+    const harmonyIconNames = harmony.components.Icon.props.properties.name.enum as string[];
+    expect(harmonyIconNames.every(name => Object.hasOwn(HM_ICON_CODEPOINTS, name))).toBe(true);
+    expect(harmony.components.Button.props.properties.icon.enum).toEqual(harmonyIconNames);
+    expect(harmony.components.IconButton.props.properties.icon.enum).toEqual(harmonyIconNames);
     expect(genUICatalog.genuiSystemPrompts?.openui).toContain('## Important Rules');
     expect(genUICatalog.profiles?.openui?.templates).toEqual(['openui.app']);
     expect(genUICatalog.profiles?.openbitfun?.templates).toEqual(['openbitfun.app']);

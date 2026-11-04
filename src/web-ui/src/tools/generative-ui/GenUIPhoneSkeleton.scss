@@ -1,0 +1,131 @@
+.gen-ui-phone-loading {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+}
+
+.gen-ui-phone-loading__preview {
+  position: relative;
+  width: fit-content;
+  margin-inline: auto;
+}
+
+.gen-ui-phone-loading__device {
+  position: relative;
+}
+
+.gen-ui-phone-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 100%;
+  animation: gen-ui-phone-skeleton-pulse 1.8s ease-in-out infinite;
+}
+
+.gen-ui-phone-skeleton__header,
+.gen-ui-phone-skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.gen-ui-phone-skeleton__heading {
+  flex: 1;
+  display: grid;
+  gap: 10px;
+}
+
+.gen-ui-phone-skeleton__line,
+.gen-ui-phone-skeleton__icon,
+.gen-ui-phone-skeleton__avatar,
+.gen-ui-phone-skeleton__pill {
+  display: block;
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 14%, transparent);
+}
+
+.gen-ui-phone-skeleton__line {
+  width: 56%;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.gen-ui-phone-skeleton__line--title {
+  width: 76%;
+  height: 16px;
+}
+
+.gen-ui-phone-skeleton__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+.gen-ui-phone-skeleton__hero,
+.gen-ui-phone-skeleton__tile,
+.gen-ui-phone-skeleton__list {
+  border-radius: 24px;
+  background: var(--openbitfun-color-surface-panel);
+}
+
+.gen-ui-phone-skeleton__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 24px;
+}
+
+.gen-ui-phone-skeleton__ring {
+  box-sizing: border-box;
+  width: 100px;
+  height: 100px;
+  border: 10px solid color-mix(in srgb, var(--openbitfun-color-accent-default) 20%, transparent);
+  border-radius: 50%;
+}
+
+.gen-ui-phone-skeleton__pill {
+  width: 80px;
+  height: 26px;
+  border-radius: 999px;
+}
+
+.gen-ui-phone-skeleton__tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.gen-ui-phone-skeleton__tile {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.gen-ui-phone-skeleton__icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+}
+
+.gen-ui-phone-skeleton__list {
+  display: grid;
+  gap: 20px;
+  padding: 18px;
+}
+
+.gen-ui-phone-skeleton__navigation {
+  display: flex;
+  justify-content: space-around;
+  margin-top: auto;
+  padding: 0 16px 4px;
+}
+
+@keyframes gen-ui-phone-skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .8; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gen-ui-phone-skeleton { animation: none; }
+}

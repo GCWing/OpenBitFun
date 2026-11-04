@@ -4,6 +4,7 @@ import type { GenUIComponentProps, GenUIImplementations } from '../genUILibrary'
 import { formatGenUINumber } from '../genUIFormatting';
 import { hmPlotKit } from './vendor/harmonyPlot';
 import { HM_ICON_CODEPOINTS } from './vendor/hm-icons';
+import { fluentEmoji3dUrl } from './vendor/fluentEmoji3d';
 import { oiComponents } from './oiComponents';
 const plot = hmPlotKit();
 
@@ -33,6 +34,17 @@ function HarmonyIcon({ name, size }: { name: unknown; size?: unknown }) {
   const resolved = harmonyIconName(name);
   const sizeClass = size === 'sm' ? ' small' : size === 'lg' || size === 'xl' ? ' large' : '';
   return <span className={`hm-icon${sizeClass}`} data-icon={resolved ?? text(name)} aria-hidden="true" />;
+}
+
+function HarmonyIcon3D({ view }: GenUIComponentProps) {
+  const emoji = text(view.props.emoji).trim();
+  const imageUrl = fluentEmoji3dUrl(emoji);
+  const [failedUrl, setFailedUrl] = useState<string>();
+  const showImage = imageUrl && failedUrl !== imageUrl;
+  const sizeClass = view.props.size === 'large' ? ' large' : '';
+  return <span className={`hm-icon3d${sizeClass}`} data-emoji={emoji} data-hm-icon3d={showImage ? 'external' : 'fallback'}>
+    {showImage ? <img src={imageUrl} alt={emoji} loading="eager" decoding="async" draggable={false} referrerPolicy="no-referrer" onError={() => setFailedUrl(imageUrl)} /> : <span role="img" aria-label={emoji}>{emoji}</span>}
+  </span>;
 }
 
 function HarmonyButton({ view, emit, disabled, isStreaming }: GenUIComponentProps) {
@@ -90,10 +102,19 @@ function Plot({ view }: GenUIComponentProps) {
   return <figure className="gen-ui-plot"><figcaption>{String(view.props.label)}</figcaption><div ref={ref} dangerouslySetInnerHTML={{ __html: result.svg.split('hm-pl-clip').join('genui-plot-' + id) + result.table }} /></figure>;
 }
 export const harmonyComponents: GenUIImplementations['components'] = {
+  Icon3D: { render: HarmonyIcon3D, inspect: (element, view) => element.querySelector('.hm-icon3d')?.getAttribute('data-emoji') === text(view.props.emoji).trim() },
   Button: { ...oiComponents.Button, render: HarmonyButton, inspect: (element, view) => element.querySelector('button')?.textContent?.trim() === text(view.props.label) },
   IconButton: { ...oiComponents.IconButton, render: HarmonyIconButton, inspect: (element, view) => element.querySelector('button')?.getAttribute('aria-label') === text(view.props.label || view.props.icon) },
   Badge: { render: HarmonyBadge, inspect: (element, view) => element.querySelector('.gen-ui-oi-badge')?.textContent?.trim() === text(view.props.text) },
-  Icon: { render: ({ view }) => <HarmonyIcon name={view.props.name} size={view.props.size} />, inspect: (element, view) => element.querySelector('[data-icon]')?.getAttribute('data-icon') === harmonyIconName(view.props.name) },
+  Icon: {
+    render: ({ view }) => <HarmonyIcon name={view.props.name} size={view.props.size} />,
+    inspect: (element, view) => {
+      const requested = text(view.props.name);
+      const resolved = harmonyIconName(requested);
+      if (!resolved) throw new Error(`Unsupported Harmony icon name: ${requested}`);
+      return element.querySelector('[data-icon]')?.getAttribute('data-icon') === resolved;
+    },
+  },
   Metric: {
     render: Metric,
     inspect: (element, view) => element.querySelector('[data-gen-ui-metric-label]')?.textContent === view.props.label && element.querySelector('[data-gen-ui-metric-value]')?.textContent === display(view.props.value) + (view.props.unit ? ' ' + view.props.unit : '') && (element.querySelector('[data-gen-ui-metric-detail]')?.textContent ?? '') === (view.props.detail ?? ''),

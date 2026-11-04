@@ -46,7 +46,9 @@ export const GenerativeWidgetInline: React.FC<GenerativeWidgetInlineProps> = ({ 
     });
   }, []);
 
-  if (!projection) return null;
+  // Failed candidates remain in tool history for the model's repair loop, but
+  // do not leave an error card (or duplicate a later repair) in the answer.
+  if (!projection || projection.isFailed || projection.status === 'rejected') return null;
   // OpenUI can produce a usable prefix while the model is still thinking;
   // let the thinking handoff release this successor immediately.
   return (

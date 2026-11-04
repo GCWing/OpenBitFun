@@ -14,6 +14,9 @@ describe('Harmony GenUI design resources', () => {
     expect(HARMONY_STYLE_RESOURCE_CSS).toContain('--color-background-secondary: var(--hm-panel-bg)');
     expect(HARMONY_STYLE_RESOURCE_CSS).toContain('data-hm-action="ink"');
     expect(HARMONY_STYLE_RESOURCE_CSS).toContain('[data-hm-theme="green"]');
+    expect(HARMONY_STYLE_RESOURCE_CSS).toContain('.gen-ui-phone-device[data-hm-theme="teal"]');
+    expect(HARMONY_STYLE_RESOURCE_CSS).toContain('.gen-ui-phone-status-bar { background: var(--hm-panel-bg)');
+    expect(HARMONY_STYLE_RESOURCE_CSS).toContain('.hm-icon3d.large { width: 64px; height: 64px');
     expect(HARMONY_STYLE_RESOURCE_CSS).toContain('input[type="range"]::-webkit-slider-runnable-track');
     for (const anatomy of ['.hero-ring', '.progress-bar', '.switch', '.chips', '.steps', '.list-item-icon', '.list-item-trailing', '.hm-records', '.hm-plan']) {
       expect(HARMONY_STYLE_RESOURCE_CSS).toContain(anatomy);
@@ -22,6 +25,7 @@ describe('Harmony GenUI design resources', () => {
 
   it('uses Harmony renderers for symbols and interactive controls', () => {
     expect(harmonyComponents.Icon).toBeDefined();
+    expect(harmonyComponents.Icon3D?.render).toBeDefined();
     expect(harmonyComponents.Button?.render).toBeDefined();
     expect(harmonyComponents.IconButton?.render).toBeDefined();
     expect(harmonyComponents.Steps?.render).toBeDefined();

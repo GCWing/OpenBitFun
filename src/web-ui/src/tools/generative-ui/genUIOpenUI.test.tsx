@@ -89,6 +89,20 @@ describe('OpenUI source adapter', () => {
     expect(container.textContent).toContain('Pasta night');
   });
 
+  it('renders a Harmony object pictogram from the pinned Fluent Emoji asset map', async () => {
+    await act(async () => root.render(<GenUIOpenUIDocument
+      source={{ kind: 'openui-lang', content: 'root = Col([picture])\npicture = Icon3D("🧥")' }}
+      library={genUIProduct.libraries['openbitfun.harmony.v1']}
+    />));
+    const picture = container.querySelector<HTMLElement>('.hm-icon3d');
+    expect(picture?.dataset.emoji).toBe('🧥');
+    expect(picture?.querySelector('img')?.getAttribute('src')).toContain('/assets/Coat/3D/coat_3d.png');
+    expect(picture?.querySelector('img')?.getAttribute('alt')).toBe('🧥');
+    await act(async () => picture?.querySelector('img')?.dispatchEvent(new Event('error')));
+    expect(picture?.querySelector('img')).toBeNull();
+    expect(picture?.textContent).toBe('🧥');
+  });
+
   it('runs only explicitly registered Query capabilities', async () => {
     const provider = vi.fn(async () => ({ value: 'from owner' }));
     await act(async () => root.render(<GenUIOpenUIDocument

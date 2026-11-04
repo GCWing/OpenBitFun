@@ -52,6 +52,27 @@ describe('GenUI HTML documents', () => {
     expect(result.document).toContain('<html data-hm-theme="green" data-hm-font="sans" data-hm-scheme="light">');
   });
 
+  it('maps Harmony object pictograms to pinned Fluent Emoji assets under a narrow image CSP', () => {
+    const result = sanitizeGenUIHtmlSource(
+      { kind: 'html-document', html: '<span class="hm-icon3d" data-emoji="🧥" aria-hidden="true"></span>' },
+      genUICatalog.designSpecs?.['harmony.phone.v1'],
+    );
+    expect(result.document).toContain('https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@1ffb34c752ecf5d402f04cfb4b392c77f57c54bc/assets/Coat/3D/coat_3d.png');
+    expect(result.document).toContain('img-src data: blob: https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@1ffb34c752ecf5d402f04cfb4b392c77f57c54bc/assets/');
+    expect(result.document).toContain('referrerpolicy="no-referrer"');
+    expect(result.document).toContain('connect-src \'none\'');
+  });
+
+  it('does not enable Harmony pictograms or external image sources for other profiles', () => {
+    const result = sanitizeGenUIHtmlSource(
+      { kind: 'html-document', html: '<span class="hm-icon3d" data-emoji="🧥" aria-hidden="true"></span>' },
+      genUICatalog.designSpecs?.['openbitfun.desktop.v1'],
+    );
+    expect(result.document).toContain('data-emoji="🧥"');
+    expect(result.document).toContain('img-src data: blob:;');
+    expect(result.document).not.toContain('cdn.jsdelivr.net');
+  });
+
   it('can opt HtmlView into a local inline animation script without opening a host bridge', () => {
     const source = sanitizeGenUIHtmlSource(
       { kind: 'html-document', html: '<canvas id="pendulum"></canvas><script>requestAnimationFrame(() => {}); eval("blocked")</script>' },

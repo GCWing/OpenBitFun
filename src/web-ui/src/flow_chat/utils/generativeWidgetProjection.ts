@@ -33,6 +33,8 @@ export interface GenerativeWidgetProjection {
   deliveryEvidence?: Record<string, unknown>;
   /** OpenUI is transient by default; Harmony is the explicit delivery mode. */
   deliveryMode: 'transient' | 'delivery';
+  /** Declared identity, available before source; excludes renderer defaults. */
+  libraryId?: string;
   status: FlowToolItem['status'];
   isStreaming: boolean;
   isComplete: boolean;
@@ -188,6 +190,9 @@ export function projectGenerativeWidgetTool(
   // event is the only renderable representation and is replaced by the final
   // result later.
   let appCandidate = parseObject(result?.app ?? input?.app);
+  const declaredTemplate = firstString(appCandidate?.template, projected._genUIStream?.template);
+  const libraryId = firstString(appCandidate?.libraryId, projected._genUIStream?.libraryId)
+    ?? (declaredTemplate ? genUICatalog.templates[declaredTemplate]?.library : undefined);
   const streamedOpenUI = !isComplete && projected._genUIStream?.content
     ? projected._genUIStream
     : undefined;
@@ -204,10 +209,13 @@ export function projectGenerativeWidgetTool(
   const title = app?.title ?? firstString(result?.title, input?.title) ?? 'Generative UI';
   const widgetId = firstString(result?.widget_id, input?.widget_id, projected.toolCall?.id, projected.id) ?? projected.id;
   const deliveryEvidence = parseObject(result?.verification);
-  const appIdentity = app as unknown as Record<string, unknown> | undefined;
+  // Loading presentation needs only the native stream's profile identity;
+  // it must not wait for a renderable source/envelope or parse partial source.
+  const appIdentity = appCandidate;
   const deliveryMode: GenerativeWidgetProjection['deliveryMode'] = deliveryEvidence?.mode === 'delivery'
     || (typeof appIdentity?.libraryId === 'string' && appIdentity.libraryId.includes('.harmony.'))
     || (typeof appIdentity?.template === 'string' && appIdentity.template.includes('.harmony.'))
+    || (!isComplete && (projected._genUIStream?.libraryId?.includes('.harmony.') || projected._genUIStream?.template?.includes('.harmony.')))
     ? 'delivery'
     : 'transient';
   const readOnlyReason = resolveSessionDriverId(session.sessionId, session) === 'dispatch' ? 'GenUI state updates are unsupported for target-owned dispatch sessions' : undefined;
@@ -225,6 +233,7 @@ export function projectGenerativeWidgetTool(
     ownerRevision: typeof result?.owner_revision === 'string' ? result.owner_revision : undefined,
     deliveryEvidence,
     deliveryMode,
+    libraryId,
     status: projected.status,
     isStreaming: !isComplete,
     isComplete,
