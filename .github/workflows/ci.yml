@@ -129,8 +129,10 @@ jobs:
         include:
           - os: ubuntu-latest
             cache_key: ubuntu
-          - os: macos-15
-            cache_key: macos
+          # Pin the Intel pool for macOS OS-contract validation; release jobs
+          # select their Apple Silicon / Intel targets independently.
+          - os: macos-15-intel
+            cache_key: macos-intel
           - os: windows-latest
             cache_key: windows
     steps:
@@ -211,7 +213,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-15
+          - macos-15-intel
           - windows-latest
     steps:
       - uses: actions/checkout@v5

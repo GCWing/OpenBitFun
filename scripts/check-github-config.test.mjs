@@ -429,7 +429,7 @@ test('keeps Rust CI independent, restore-only on PRs, and target-focused', () =>
   );
   assert.deepEqual(
     rustJob.strategy.matrix.os,
-    ['ubuntu-latest', 'macos-15', 'windows-latest'],
+    ['ubuntu-latest', 'macos-15-intel', 'windows-latest'],
     'Rust validation must retain the reviewed Linux, macOS, and Windows matrix',
   );
   assert.equal(
@@ -472,6 +472,15 @@ test('keeps Rust CI independent, restore-only on PRs, and target-focused', () =>
   }
 
   const cliJob = workflow.jobs['cli-test'];
+  assert.deepEqual(
+    cliJob.strategy.matrix.include.map((entry) => entry.os),
+    rustJob.strategy.matrix.os,
+    'CLI and Rust validation must exercise the same Linux, Intel macOS, and Windows hosts',
+  );
+  assert.equal(
+    cliJob.strategy.matrix.include.find((entry) => entry.os === 'macos-15-intel').cache_key,
+    'macos-intel',
+  );
   assert.equal(cliJob['timeout-minutes'], 30);
   assert.ok(
     cliJob.strategy.matrix.include.some((entry) => entry.os === 'windows-latest'),
