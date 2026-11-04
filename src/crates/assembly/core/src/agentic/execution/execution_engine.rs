@@ -1773,7 +1773,7 @@ impl ExecutionEngine {
     ) -> OpenBitFunResult<String> {
         // The GenUI profile is a fixed product route, just like the upstream
         // Open Intelligent UI pages. Keep its official lang-core prompt in the
-        // system message, but scope it to the GenerativeUI tool because BitFun
+        // system message, but scope it to the GenerativeUI tool because OpenBitFun
         // still runs a general agent whose outer response is a JSON tool call.
         // Include the profile in the cache key so changing the setting cannot
         // reuse a prompt generated for the previous component library.

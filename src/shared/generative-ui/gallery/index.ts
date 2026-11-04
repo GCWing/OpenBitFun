@@ -38,7 +38,7 @@ export const toolGalleryPrograms = toolPrograms.map(program => asGalleryProgram(
 }));
 
 /**
- * A BitFun-specific fixture for the request that motivated this migration.
+ * A OpenBitFun-specific fixture for the request that motivated this migration.
  * It combines the patterns from savings, steps, garden and analytics instead
  * of falling back to a static Text-only answer.
  */

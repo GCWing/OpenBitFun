@@ -267,7 +267,7 @@
     "unknown": "This collection is unavailable. Its selection is preserved; choose an installed collection to continue.",
     "collections": {
       "openui": "Open Intelligent UI: streamed OpenUI Lang answers with local state and actions in FlowChat.",
-      "openbitfun": "OpenBitFun: the current BitFun component library and desktop styling.",
+      "openbitfun": "OpenBitFun: the current OpenBitFun component library and desktop styling.",
       "harmony": "Harmony phone: durable delivery with a fixed phone viewport, host status bar and acceptance checks."
     },
     "specification": "UI specification",

@@ -67,7 +67,7 @@ describe('product library generation contract', () => {
     expect(preflightGenUIApp(old as GenUIAppDefinition).accepted).toBe(false);
     expect(JSON.stringify(old)).toBe(before);
   });
-  it('accepts the historical openui template paired with the old BitFun library', () => {
+  it('accepts the historical openui template paired with the old OpenBitFun library', () => {
     const legacy = {
       schemaVersion: 2,
       id: 'legacy-openui',

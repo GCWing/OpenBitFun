@@ -23,7 +23,7 @@ describe('OpenUI Lang gallery fixtures', () => {
     container.remove();
   });
 
-  it('registers the original gallery groups and the BitFun life-plan fixture', () => {
+  it('registers the original gallery groups and the OpenBitFun life-plan fixture', () => {
     expect(gallerySections.find(section => section.id === 'composition')?.programs).toHaveLength(4);
     expect(toolGalleryPrograms.filter(program => program.example !== 'life-plan')).toHaveLength(18);
     expect(gallerySections.find(section => section.id === 'components')?.programs.length).toBeGreaterThan(10);
@@ -33,7 +33,7 @@ describe('OpenUI Lang gallery fixtures', () => {
     expect(lifePlanProgram.code).toContain('@Toggle');
   });
 
-  it('turns every fixture into a valid BitFun app envelope', () => {
+  it('turns every fixture into a valid OpenBitFun app envelope', () => {
     for (const program of gallerySections.flatMap(section => section.programs)) {
       const app = galleryProgramToApp(program);
       expect(preflightGenUIApp(app).accepted, program.id).toBe(true);

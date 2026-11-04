@@ -4,7 +4,7 @@
 
 当前实现进度：FlowChat 内联、显式 Harmony 交付展开、原生 `GenUIStream`、OpenUI 增量渲染、首屏生命周期状态、严格的 `messageId + seq` 重排、P0 布局/标题原语和默认内容组件已落地。默认 `openui` 路径采用 Open Intelligent UI 的即时交互语义，不进入右侧工作台；`harmony` 才进入交付 checker/owner/CAS。固定 benchmark 仍不作为门槛。
 
-本文把 BitFun GenUI 的首屏体验、流式协议和交付边界对齐到 Open Intelligent UI，并记录当前实现边界。现有的 owner、CAS、远程归属、候选验收和安全边界继续有效；本规划调整的是这些能力进入用户体验的时机和承载方式。
+本文把 OpenBitFun GenUI 的首屏体验、流式协议和交付边界对齐到 Open Intelligent UI，并记录当前实现边界。现有的 owner、CAS、远程归属、候选验收和安全边界继续有效；本规划调整的是这些能力进入用户体验的时机和承载方式。
 
 ## 已确认的产品决定
 
@@ -247,7 +247,7 @@ owner、CAS、远程归属、安全检查和 visual review 保留，但执行时
 
 ### Query/Mutation 与异步数据通道（已落地）
 
-OpenUI `Renderer` 仍负责 Query/Mutation 的 cache、loading、error、retry 和 invalidate。BitFun 在 `GenUIAsyncRuntimeController` 外包一层宿主边界，给每次调用补上 `appId`、`sourceKey`、`requestId`、operation、AbortSignal、permission、target 和 targetId。provider 只实现 `call(name, args, context)`，组件不接触权限和远程归属。
+OpenUI `Renderer` 仍负责 Query/Mutation 的 cache、loading、error、retry 和 invalidate。OpenBitFun 在 `GenUIAsyncRuntimeController` 外包一层宿主边界，给每次调用补上 `appId`、`sourceKey`、`requestId`、operation、AbortSignal、permission、target 和 targetId。provider 只实现 `call(name, args, context)`，组件不接触权限和远程归属。
 
 - `query`、`mutation`、`image-search`、`map-query` 共用同一 capability registry；未注册、未授权、目标不匹配或 peer 缺少 target id 时直接返回结构化拒绝。
 - 语义 source 替换和卸载会 abort 当前 generation；同一 OpenUI source 的 token 增量不会改变 runtime identity。组件自己的 query 变化还会 abort 本地请求，旧结果即使底层 promise 忽略 signal 也不会回写当前 UI。
@@ -256,7 +256,7 @@ OpenUI `Renderer` 仍负责 Query/Mutation 的 cache、loading、error、retry �
 - 地图 marker 选择通过 `GenUITargetEvent` 回传 owner，并带目标端身份；provider 可同时把事件投递到远端 mailbox。事件不会把 Query 结果混进普通 conversational action。
 - Chat MCP catalog 通过 `createGenUIMcpProvider` 接入 Query/Mutation：catalog 是唯一准入清单，默认工具按 Query 处理，写操作需宿主显式声明；MCP JSON-RPC 结果、结构化内容、错误和 AbortSignal 均在 provider 边界处理。
 
-这与 Open Intelligent UI 的差异主要在宿主层，而不是重新实现 OpenUI 语义：OpenUI 本身仍管理 Query/Mutation 生命周期，BitFun 只增加 capability admission、取消、远程 target 和 owner event delivery。Open Intelligent UI 的 `SearchImage` 默认直接访问 `/api/wiki` 与 `/api/image-search`；BitFun 保持宿主安全边界，通过已授权 catalog 映射的显式 `image.search` provider，并兼容直接数组、`photos`/`images`、结果列表以及 wiki/image-search 分桶返回。地图已经使用 MapLibre、OpenStreetMap 派生 vector style、raster fallback、地图控件和可展开探索；路线由显式 `map.route` provider 提供 OSRM/GeoJSON 等街道几何，provider 暂不可用时保留可用的 marker 直连 overview。Open Intelligent UI 还提供 `CopyToClipboard` 等本地 custom action，BitFun 已注册同名 action，优先使用 Clipboard API，失败时走 WebView 可用的 `execCommand` fallback，同时把结构化 action event 交给 owner。OpenUI runtime 当前不会把 AbortSignal 传给 `ToolProvider`，所以 BitFun 的 controller 负责补齐这一层，并在 source 生命周期结束时强制终止旧请求。
+这与 Open Intelligent UI 的差异主要在宿主层，而不是重新实现 OpenUI 语义：OpenUI 本身仍管理 Query/Mutation 生命周期，OpenBitFun 只增加 capability admission、取消、远程 target 和 owner event delivery。Open Intelligent UI 的 `SearchImage` 默认直接访问 `/api/wiki` 与 `/api/image-search`；OpenBitFun 保持宿主安全边界，通过已授权 catalog 映射的显式 `image.search` provider，并兼容直接数组、`photos`/`images`、结果列表以及 wiki/image-search 分桶返回。地图已经使用 MapLibre、OpenStreetMap 派生 vector style、raster fallback、地图控件和可展开探索；路线由显式 `map.route` provider 提供 OSRM/GeoJSON 等街道几何，provider 暂不可用时保留可用的 marker 直连 overview。Open Intelligent UI 还提供 `CopyToClipboard` 等本地 custom action，OpenBitFun 已注册同名 action，优先使用 Clipboard API，失败时走 WebView 可用的 `execCommand` fallback，同时把结构化 action event 交给 owner。OpenUI runtime 当前不会把 AbortSignal 传给 `ToolProvider`，所以 OpenBitFun 的 controller 负责补齐这一层，并在 source 生命周期结束时强制终止旧请求。
 
 交付条件：核心场景可以在当前 FlowChat 消息内完成主要操作。
 

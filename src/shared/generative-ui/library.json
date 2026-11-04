@@ -3884,7 +3884,7 @@
     "metadata": {
       "revision": 2,
       "label": "OpenBitFun",
-      "adapterKind": "bitfun",
+      "adapterKind": "openbitfun",
       "designSpecIds": [
         "openbitfun.desktop.v1"
       ],
@@ -3915,7 +3915,7 @@
       "metadata": {
         "revision": 2,
         "label": "OpenBitFun read-only",
-        "adapterKind": "bitfun",
+        "adapterKind": "openbitfun",
         "designSpecIds": [
           "openbitfun.desktop.v1"
         ],

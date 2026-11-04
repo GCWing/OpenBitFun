@@ -10,7 +10,7 @@ const requireOpenUI = createRequire(new URL('../../web-ui/package.json', import.
 const { generateSystemPrompt } = requireOpenUI('@openuidev/lang-core');
 // The default profile is a faithful Open Intelligent UI port. Keep the
 // upstream worked examples and wording as a checked-in resource instead of
-// silently regenerating them from BitFun's component catalog.
+// silently regenerating them from OpenBitFun's component catalog.
 const upstreamOpenUISystemPrompt = readFileSync(new URL('./openui-system-prompt.txt', import.meta.url), 'utf8').trim();
 
 /** Product declarations -> immutable libraries -> one generation/validation schema. */

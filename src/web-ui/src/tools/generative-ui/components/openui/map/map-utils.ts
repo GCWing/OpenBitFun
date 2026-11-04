@@ -37,7 +37,7 @@ export function partialLine(points: LatLng[], progress: number): LatLng[] {
 // is an emoji, so a word or letter from the model can't overflow the pin.
 export function pinEmoji(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  // Keep the vendored component compatible with BitFun's ES2020 TypeScript
+  // Keep the vendored component compatible with OpenBitFun's ES2020 TypeScript
   // target. Array.from still preserves surrogate pairs; the first code point
   // is sufficient for the marker's emoji validation and avoids requiring the
   // newer Intl.Segmenter API in every host WebView.

@@ -54,9 +54,9 @@ flowchart TD
 
 OpenUI 提供共同的 Lang/parser/state/Renderer 运行时，同时注册三套可独立选择的 profile：`openui` 使用上游 `openui.v1` native library，`openbitfun` 使用 `openbitfun.composable.v1`，`harmony` 使用 `openbitfun.harmony.v1`。每套 profile 都绑定自己的 adapter、prompt、CSS/style resources、design spec 和 revision；只读契约是同一 adapter 的明确权限变体，不能改变其来源身份。
 
-`openbitfun` adapter 用 `@openbitfun/ui` 承载 Button、IconButton、Input、Textarea、Select、SegmentedControl、Checkbox、Radio 和 Card 等基础控件，再用 `oiComponents` 保留 Chart、Map、Svg、HtmlView、Table 和媒体等 GenUI 专用 renderer；所有实现都先绑定 BitFun 的 contract 和 positional signature，再经过 adapter 自己的 DOM inspector、action/query bridge、CSS/token scope 和 revision 校验。`openui` profile 则直接使用 vendored `open-intelligent-ui/src/lib/library.ts`、其 `components/*` 和 CSS；它不经过 `oiComponents`。任何 profile 都不会携带第二套 parser、state 或旧 graph runtime。
+`openbitfun` adapter 用 `@openbitfun/ui` 承载 Button、IconButton、Input、Textarea、Select、SegmentedControl、Checkbox、Radio 和 Card 等基础控件，再用 `oiComponents` 保留 Chart、Map、Svg、HtmlView、Table 和媒体等 GenUI 专用 renderer；所有实现都先绑定 OpenBitFun 的 contract 和 positional signature，再经过 adapter 自己的 DOM inspector、action/query bridge、CSS/token scope 和 revision 校验。`openui` profile 则直接使用 vendored `open-intelligent-ui/src/lib/library.ts`、其 `components/*` 和 CSS；它不经过 `oiComponents`。任何 profile 都不会携带第二套 parser、state 或旧 graph runtime。
 
-应用保存 `libraryId` 与 `libraryRevision`，并在 owner readback、candidate evidence、远程请求和重开时逐字段校验。设置页只改变下一次生成使用的 registry entry；已接受应用由保存的 identity 解析 schema、prompt、designSpec、renderer 和 bridge，不能通过 template 或全局配置重新推断组件库。未知或缺少 identity 的记录保留原始内容并显示不可运行状态，禁止换成 OpenUI、BitFun 或 graph fallback。
+应用保存 `libraryId` 与 `libraryRevision`，并在 owner readback、candidate evidence、远程请求和重开时逐字段校验。设置页只改变下一次生成使用的 registry entry；已接受应用由保存的 identity 解析 schema、prompt、designSpec、renderer 和 bridge，不能通过 template 或全局配置重新推断组件库。未知或缺少 identity 的记录保留原始内容并显示不可运行状态，禁止换成 OpenUI、OpenBitFun 或 graph fallback。
 
 HOS7 暂不属于受支持的 GenUI 目标，不进入当前 library registry、生成 schema 或交付路径。后续如重新支持，必须以独立 adapter、明确许可、目标端能力协商和单独验收契约重新接入。Harmony-genui 只提取 design-system、token 和 Plot 能力，不嵌入旧 graph/schema/action runtime。
 

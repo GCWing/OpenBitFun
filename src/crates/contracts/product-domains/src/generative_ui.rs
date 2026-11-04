@@ -626,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_openui_template_keeps_the_saved_bitfun_library_identity() {
+    fn legacy_openui_template_keeps_the_saved_openbitfun_library_identity() {
         let app = serde_json::json!({
             "schemaVersion": 2,
             "id": "legacy-openui",

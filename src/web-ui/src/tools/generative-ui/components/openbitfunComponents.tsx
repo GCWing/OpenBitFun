@@ -64,14 +64,14 @@ const cardPadding = (value: unknown): 'none' | 'sm' | 'md' => {
 };
 
 const exerciseButton = (element: HTMLElement, event: string) => {
-  if (event !== 'click') throw new Error('BitFun button event is unavailable');
+  if (event !== 'click') throw new Error('OpenBitFun button event is unavailable');
   element.querySelector<HTMLButtonElement>('button')?.click();
 };
 
 const exerciseInput = (selector: string, element: HTMLElement, event: string, value: unknown) => {
-  if (event !== 'change') throw new Error('BitFun input event is unavailable');
+  if (event !== 'change') throw new Error('OpenBitFun input event is unavailable');
   const input = element.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector);
-  if (!input || input.disabled) throw new Error('BitFun input is unavailable');
+  if (!input || input.disabled) throw new Error('OpenBitFun input is unavailable');
   const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')?.set;
   setter?.call(input, text(value));
   input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -89,11 +89,11 @@ const define = (render: GenUIComponentImplementation['render'], exercise?: GenUI
 });
 
 /**
- * BitFun's product controls are deliberately an adapter layer. OpenUI Lang
+ * OpenBitFun's product controls are deliberately an adapter layer. OpenUI Lang
  * keeps its component names and event contract, while the mounted DOM comes
  * from @openbitfun/ui and therefore follows the product's tokens and themes.
  */
-export const bitfunComponents: GenUIImplementations['components'] = {
+export const openbitfunComponents: GenUIImplementations['components'] = {
   Card: define(({ slots, view }) => (
     <Card
       appearance={view.props.variant === 'soft' ? 'subtle' : 'neutral'}
@@ -207,7 +207,7 @@ export const bitfunComponents: GenUIImplementations['components'] = {
       onValueChange={value => emit('change', value)}
     />
   ), (element, event, value) => {
-    if (event !== 'change') throw new Error('BitFun segmented control event is unavailable');
+    if (event !== 'change') throw new Error('OpenBitFun segmented control event is unavailable');
     const button = Array.from(element.querySelectorAll<HTMLButtonElement>('[data-openbitfun-value]')).find(candidate => candidate.getAttribute('data-openbitfun-value') === text(value));
     button?.click();
   }),
@@ -220,7 +220,7 @@ export const bitfunComponents: GenUIImplementations['components'] = {
       onCheckedChange={checked => emit('change', checked)}
     />
   ), (element, event, value) => {
-    if (event !== 'change') throw new Error('BitFun checkbox event is unavailable');
+    if (event !== 'change') throw new Error('OpenBitFun checkbox event is unavailable');
     const input = element.querySelector<HTMLInputElement>('input[type="checkbox"]');
     if (!input || input.checked !== Boolean(value)) input?.click();
   }),
@@ -240,7 +240,7 @@ export const bitfunComponents: GenUIImplementations['components'] = {
     return withField(view.props.label, control);
   }, (element, event, value) => exerciseInput('input[type="date"]', element, event, value)),
   RadioGroup: define(({ view, emit, disabled }) => {
-    const name = `bitfun-radio-${view.key}`;
+    const name = `openbitfun-radio-${view.key}`;
     return (
       <fieldset data-openbitfun-genui="radio-group">
         {view.props.label ? <legend>{text(view.props.label)}</legend> : null}
@@ -259,10 +259,10 @@ export const bitfunComponents: GenUIImplementations['components'] = {
       </fieldset>
     );
   }, (element, event, value) => {
-    if (event !== 'change') throw new Error('BitFun radio group event is unavailable');
+    if (event !== 'change') throw new Error('OpenBitFun radio group event is unavailable');
     const input = Array.from(element.querySelectorAll<HTMLInputElement>('input[type="radio"]')).find(candidate => candidate.value === text(value));
     input?.click();
   }),
 };
 
-export const bitfunComponentNames = Object.keys(bitfunComponents);
+export const openbitfunComponentNames = Object.keys(openbitfunComponents);

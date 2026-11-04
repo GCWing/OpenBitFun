@@ -10,7 +10,7 @@ global reset or dynamic code loader is imported.
   including `components/*`, actions, functions and the registered CSS. This
   profile uses the native `@openuidev/react-lang` library directly.
 
-- OpenBitFun (`openbitfun`): `bitfunComponents.tsx` adapts the OpenUI Lang
+- OpenBitFun (`openbitfun`): `openbitfunComponents.tsx` adapts the OpenUI Lang
   contract to the product's `@openbitfun/ui` Button, IconButton, Input,
   Textarea, Select, SegmentedControl, Checkbox, Radio and Card controls. Their
   mounted DOM and token styling come from the product library. Chart, Map, Svg,
@@ -19,9 +19,9 @@ global reset or dynamic code loader is imported.
 - Harmony reuses these product controls and adds its own renderers. The Harmony
   `Steps` renderer is
   sourced from `packages/react-ui/src/components/Steps/Steps.tsx` and is
-  exposed through the BitFun adapter's contract, positional signature, DOM
+  exposed through the OpenBitFun adapter's contract, positional signature, DOM
   inspector, action bridge and token scope. `Metric` and `Table` remain
-  BitFun-owned renderers for declarative presentation patterns. MIT attribution
+  OpenBitFun-owned renderers for declarative presentation patterns. MIT attribution
   is retained in OPENUI-LICENSE.txt.
 - Harmony GenUI: task_genui/harmony-genui, revision
   325488c1494b19c4867213f951eb336787f685f6. harmonyPlot.ts ports the pure

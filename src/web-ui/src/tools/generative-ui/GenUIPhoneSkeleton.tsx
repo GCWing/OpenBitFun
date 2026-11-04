@@ -36,4 +36,3 @@ export default function GenUIPhoneSkeleton({ app, label }: { app?: GenUIAppEnvel
     </div>
   </div>;
 }
-import { useLayoutEffect, useRef, useState } from 'react';

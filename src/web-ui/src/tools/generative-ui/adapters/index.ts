@@ -1,6 +1,6 @@
 import { harmonyComponents } from '../components/harmonyComponents';
 import { oiComponents } from '../components/oiComponents';
-import { bitfunComponents } from '../components/bitfunComponents';
+import { openbitfunComponents } from '../components/openbitfunComponents';
 import { openUILibrary } from '../components/openuiLibrary';
 import { functions } from '../genUIPrimitives';
 import type { GenUIImplementations, GenUIRendererSource } from '../genUILibrary';
@@ -12,16 +12,16 @@ const sourcesFor = (
   Object.keys(components).map(name => [name, source]),
 );
 
-// Keep the OpenUI component contract stable while mounting BitFun's product
+// Keep the OpenUI component contract stable while mounting OpenBitFun's product
 // controls for the composable profile. Data visualizations and other GenUI
 // primitives remain owned by oiComponents below.
-const bitfunAdapterComponents = { ...oiComponents, ...bitfunComponents };
-const bitfunRendererSources: Record<string, GenUIRendererSource> = sourcesFor(oiComponents, {
+const openbitfunAdapterComponents = { ...oiComponents, ...openbitfunComponents };
+const openbitfunRendererSources: Record<string, GenUIRendererSource> = sourcesFor(oiComponents, {
   kind: 'openui-react',
   source: 'open-intelligent-ui component contract adapter',
 });
-Object.assign(bitfunRendererSources, sourcesFor(bitfunComponents, {
-  kind: 'bitfun-host',
+Object.assign(openbitfunRendererSources, sourcesFor(openbitfunComponents, {
+  kind: 'openbitfun-host',
   source: '@openbitfun/ui component adapter',
 }));
 const harmonyRendererSources: Record<string, GenUIRendererSource> = {
@@ -48,9 +48,9 @@ const harmonyRendererSources: Record<string, GenUIRendererSource> = {
  * objects own the component renderer, inspector, event and capability bridge
  * for one registered library family.
  */
-export const bitfunAdapter: GenUIImplementations = {
-  components: bitfunAdapterComponents,
-  rendererSources: bitfunRendererSources,
+export const openbitfunAdapter: GenUIImplementations = {
+  components: openbitfunAdapterComponents,
+  rendererSources: openbitfunRendererSources,
   functions,
 };
 
@@ -70,6 +70,6 @@ export const harmonyGenUIAdapter: GenUIImplementations = {
 
 export const genUIAdapterImplementations: Record<string, GenUIImplementations> = {
   openui: openUIAdapter,
-  bitfun: bitfunAdapter,
+  openbitfun: openbitfunAdapter,
   'harmony-genui': harmonyGenUIAdapter,
 };

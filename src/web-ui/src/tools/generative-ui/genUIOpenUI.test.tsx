@@ -454,11 +454,11 @@ describe('OpenUI source adapter', () => {
     expect(container.querySelector<HTMLImageElement>('.iui-image img')?.src).toBe('https://example.com/shanghai.jpg');
   });
 
-  it('mounts BitFun controls through @openbitfun/ui while keeping GenUI visuals local', async () => {
+  it('mounts OpenBitFun controls through @openbitfun/ui while keeping GenUI visuals local', async () => {
     await act(async () => root.render(<GenUIOpenUIDocument
       source={{ kind: 'openui-lang', content: 'root = Col([card, chart])\ncard = Card([Button("Continue"), Input($name, "Name", "text")], "soft")\nchart = Chart("line", [{label: "A", value: 1}, {label: "B", value: 2}], "label", ["value"])' }}
       library={genUIProduct.libraries['openbitfun.composable.v1']}
-      initialState={{ name: 'BitFun' }}
+      initialState={{ name: 'OpenBitFun' }}
     />));
     expect(container.querySelector('[data-openbitfun-component="card"]')).not.toBeNull();
     expect(container.querySelector('[data-openbitfun-component="button"]')).not.toBeNull();

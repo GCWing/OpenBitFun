@@ -3,7 +3,7 @@
  * task_genui/open-intelligent-ui/src/lib/library.ts.
  *
  * This is intentionally a native @openuidev/react-lang library. It does not
- * pass through BitFun's oiComponents adapter: the selected `openui` profile
+ * pass through OpenBitFun's oiComponents adapter: the selected `openui` profile
  * must render the same registered components and CSS as the upstream app.
  */
 import { createLibrary } from '@openuidev/react-lang';
