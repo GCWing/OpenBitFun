@@ -1705,6 +1705,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     workspaceId: effectiveTargetSession?.workspaceId || contextWorkspace?.id,
     workspaceKind: contextWorkspace?.workspaceKind,
   });
+  /*
+   * The add menu's "additional modes" item is built from these skills. Fetched
+   * only on open, it arrived after the rest of the menu and pushed it down.
+   * Warm them once the composer has been shown a moment (or the moment the
+   * pointer reaches the add button), so the menu opens whole; each opening
+   * still revalidates in place.
+   */
+  const [modeSkillsWarm, setModeSkillsWarm] = useState(false);
+  useEffect(() => {
+    if (modeSkillsWarm || !isSceneActive || !canUseSkillsForTarget) return;
+    const timer = window.setTimeout(() => setModeSkillsWarm(true), 600);
+    return () => window.clearTimeout(timer);
+  }, [canUseSkillsForTarget, isSceneActive, modeSkillsWarm]);
   const {
     skills: resolvedModeSkills,
     loading: resolvedModeSkillsLoading,
@@ -1715,6 +1728,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     retry: retryResolvedModeSkills,
   } = useResolvedModeSkills({
     enabled: isSceneActive && canUseSkillsForTarget && (
+      modeSkillsWarm ||
       isModeDropdownOpen ||
       contextTriggerState.isActive ||
       (slashCommandState.isActive && (slashCommandState.kind === 'all' || slashCommandState.kind === 'skills'))
@@ -6981,7 +6995,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   ref={agentBoostRef}
                 >
                   {!isAcpTargetSession && (
-                    <span className="openbitfun-chat-input__agent-boost-trigger" ref={boostTriggerRef} data-openbitfun-component="chat-input" data-openbitfun-part="boostTrigger" data-openbitfun-state={modeState.dropdownOpen ? 'open' : undefined}>
+                    <span className="openbitfun-chat-input__agent-boost-trigger" ref={boostTriggerRef} onPointerEnter={() => setModeSkillsWarm(true)} data-openbitfun-component="chat-input" data-openbitfun-part="boostTrigger" data-openbitfun-state={modeState.dropdownOpen ? 'open' : undefined}>
                       <Tooltip content={t('chatInput.addBoostTooltip')}>
                         <ChatComposerActionButton
                           aria-label={t('chatInput.addBoostTooltip')}
@@ -6993,6 +7007,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                             e.stopPropagation();
                             if (!modeState.dropdownOpen) {
                               void refreshWorkspaceModeCatalog();
+                              if (modeSkillsWarm) retryResolvedModeSkills();
+                              else setModeSkillsWarm(true);
                             }
                             dispatchMode({ type: 'TOGGLE_DROPDOWN' });
                           }}
