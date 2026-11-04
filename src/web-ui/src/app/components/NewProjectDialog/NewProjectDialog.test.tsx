@@ -518,4 +518,69 @@ describe('NewProjectDialog composition', () => {
     expect(createAssistant).not.toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
   });
+
+  describe('creating on another device', () => {
+    const devices = [
+      { surfaceId: 'peer-mac', name: 'Studio Mac', hostKind: 'desktop' as const, rendered: false, controllable: true },
+      { surfaceId: 'peer-old', name: 'Old Laptop', hostKind: 'desktop' as const, rendered: false, controllable: false },
+    ];
+    const deviceOption = (surfaceId: string) => document.querySelector<HTMLButtonElement>(
+      `[data-testid="new-project-device-option"][data-device-surface="${surfaceId}"] button, button[data-testid="new-project-device-option"][data-device-surface="${surfaceId}"]`,
+    )!;
+    const open = async (extra: Record<string, unknown>) => {
+      await act(async () => root.render(<NewProjectDialog isOpen onClose={close} onConfirm={confirm}
+        onCreateAssistant={vi.fn()} onPickRemoteFolder={vi.fn()} {...extra} />));
+    };
+
+    it('renders the chosen device before showing the same project form there', async () => {
+      const selectDevice = vi.fn(async (target: string) => {
+        activateSurface(surfaceIdForDevice(target === 'local' ? null : target));
+        return true;
+      });
+      await open({ onSelectDevice: selectDevice, deviceOptions: devices });
+      expect(document.querySelectorAll('[data-openbitfun-component="action-card"] button')).toHaveLength(3);
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="nav-session-group-add-device-project"]')!.click(); });
+      expect(document.querySelector('[data-testid="new-project-device-list"]')).not.toBeNull();
+      expect(deviceOption('peer-old').disabled).toBe(true);
+      expect(selectDevice).not.toHaveBeenCalled();
+
+      await act(async () => { deviceOption('peer-mac').click(); });
+      expect(selectDevice).toHaveBeenCalledWith('peer-mac');
+      expect(nameInput()).toBe(document.activeElement);
+      expect(document.body.textContent).toContain('newWorkspace.createProjectOn');
+      enterName('Remote app');
+      await add('/Users/me/app');
+      await click('newWorkspace.createProjectOn');
+      expect(confirm).toHaveBeenCalledWith({ name: 'Remote app', folders: [{ path: '/Users/me/app' }] });
+    });
+
+    it('keeps the device list when the switch is superseded or fails', async () => {
+      const selectDevice = vi.fn().mockResolvedValueOnce(false).mockRejectedValueOnce(new Error('Device offline'));
+      await open({ onSelectDevice: selectDevice, deviceOptions: devices });
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="nav-session-group-add-device-project"]')!.click(); });
+      await act(async () => { deviceOption('peer-mac').click(); });
+      expect(nameInput()).toBeNull();
+      await act(async () => { deviceOption('peer-mac').click(); });
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain('Device offline');
+      expect(document.querySelector('[data-testid="new-project-device-list"]')).not.toBeNull();
+    });
+
+    it('explains an empty or signed-out device list', async () => {
+      await open({ onSelectDevice: vi.fn(), deviceOptions: [] });
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="nav-session-group-add-device-project"]')!.click(); });
+      expect(document.body.textContent).toContain('newWorkspace.noOtherDevices');
+      await open({ onSelectDevice: vi.fn(), deviceOptions: undefined });
+      expect(document.body.textContent).toContain('newWorkspace.signInForDevices');
+    });
+
+    it('creates the personal assistant on this machine', async () => {
+      const order: string[] = [];
+      const selectDevice = vi.fn(async (target: string) => { order.push(`select:${target}`); return true; });
+      const createAssistant = vi.fn(async () => { order.push('create'); });
+      await open({ onSelectDevice: selectDevice, deviceOptions: devices, onCreateAssistant: createAssistant });
+      await choose('assistant');
+      expect(order).toEqual(['select:local', 'create']);
+      expect(close).toHaveBeenCalledOnce();
+    });
+  });
 });

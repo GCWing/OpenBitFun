@@ -3,7 +3,7 @@ import {
   ActionCard, Button, Card, CardBody, Dialog, DialogBody, DialogClose, DialogDescription, DialogFooter,
   DialogHeader, DialogHeading, DialogTitle, Icon, IconButton, Input, OverflowText, Tooltip,
 } from '@openbitfun/ui';
-import { FolderPlus, Server } from 'lucide-react';
+import { FolderPlus, Loader2, Monitor, MonitorSmartphone, Server, SquareTerminal } from 'lucide-react';
 import React, { useState, useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
@@ -20,6 +20,20 @@ import './NewProjectDialog.scss';
 
 const log = createLogger('NewProjectDialog');
 
+/** Another online host of the account that a project can be created on. */
+export interface NewProjectDeviceOption {
+  surfaceId: string;
+  name: string;
+  hostKind: 'desktop' | 'cli' | null;
+  /** The window renders this device right now. */
+  rendered: boolean;
+  /** Relay-confirmed mutual control; an incompatible build is listed but disabled. */
+  controllable: boolean;
+}
+
+/** `local` is this machine; any other value is a device surface id. */
+export type NewProjectDeviceTarget = 'local' | string;
+
 export interface NewProjectDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -29,11 +43,21 @@ export interface NewProjectDialogProps {
   onSelectRemoteHost?: (target: WorkspaceConnectionTarget, preset?: WorkspaceConnectionPreset) => Promise<NonNullable<ProjectFolder['remote']> | null>;
   /** Sidebar entry starts with a choice when assistant creation is available. */
   onCreateAssistant?: () => Promise<void>;
+  /**
+   * Render the device a new item is created on before its form opens, so the
+   * folder picker, recent workspaces and sources all belong to that device.
+   * Resolves false when a newer device switch superseded this one. Absent
+   * keeps the rendered device and hides the other-device choice.
+   */
+  onSelectDevice?: (target: NewProjectDeviceTarget) => Promise<boolean>;
+  /** Other online hosts of the account; undefined while signed out. */
+  deviceOptions?: readonly NewProjectDeviceOption[];
   'data-testid'?: string;
 }
 
 export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
-  isOpen, onClose, onConfirm, defaultParentPath, onPickRemoteFolder, onSelectRemoteHost, onCreateAssistant, 'data-testid': testId,
+  isOpen, onClose, onConfirm, defaultParentPath, onPickRemoteFolder, onSelectRemoteHost, onCreateAssistant,
+  onSelectDevice, deviceOptions, 'data-testid': testId,
 }) => {
   const { t } = useI18n('common');
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
@@ -48,7 +72,11 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
   const [error, setError] = useState('');
-  const [step, setStep] = useState<'choice' | 'project'>(onCreateAssistant ? 'choice' : 'project');
+  const [step, setStep] = useState<'choice' | 'device' | 'project'>(onCreateAssistant ? 'choice' : 'project');
+  /** Device chosen through the other-device entry; null for this machine. */
+  const [projectDevice, setProjectDevice] = useState<NewProjectDeviceOption | null>(null);
+  const [selectingDevice, setSelectingDevice] = useState<string | null>(null);
+  const deviceChoiceRef = useRef<HTMLButtonElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const assistantChoiceRef = useRef<HTMLButtonElement>(null);
   const submissionPending = useRef(false);
@@ -57,7 +85,8 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
   const formId = useId();
   const sourceLabelId = useId();
   const nameHintId = useId();
-  const busy = isCreating || isSelecting;
+  const busy = isCreating || isSelecting || selectingDevice !== null;
+  const offersDevices = Boolean(onCreateAssistant && onSelectDevice);
   const name = projectName.trim();
   const needsName = folders.length !== 1;
   const invalidDirectoryName = folders.length === 0 && (/[\\/]/.test(name) || name === '.' || name === '..');
@@ -91,6 +120,8 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
       setSelectedHostOption(undefined);
       setConnectedRemote(undefined);
       setError('');
+      setProjectDevice(null);
+      setSelectingDevice(null);
       setStep(onCreateAssistant ? 'choice' : 'project');
     }
     wasOpen.current = isOpen;
@@ -99,6 +130,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     if (step === 'project') nameInputRef.current?.focus();
+    else if (step === 'device') deviceChoiceRef.current?.focus();
     else assistantChoiceRef.current?.focus();
   }, [isOpen, step]);
 
@@ -133,6 +165,43 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
     if (busy || submissionPending.current) return;
     setError('');
     setStep(next);
+  };
+
+  /**
+   * Render the target device, then continue there. Everything the project form
+   * reads afterwards (folders, recent workspaces, sources) belongs to it.
+   */
+  const enterDevice = async (target: NewProjectDeviceTarget, device: NewProjectDeviceOption | null): Promise<boolean> => {
+    if (!onSelectDevice) return true;
+    setSelectingDevice(target);
+    setError('');
+    try {
+      if (!(await onSelectDevice(target))) return false;
+      formSurface.current = getActiveSurfaceScope();
+      setProjectDevice(device);
+      setFolders([]);
+      setSource('host');
+      setSelectedOption(undefined);
+      setSelectedHostOption(undefined);
+      setConnectedRemote(undefined);
+      return true;
+    } catch (cause) {
+      log.error('Failed to render device for creation', cause);
+      setError(cause instanceof Error && cause.message ? cause.message : t('newWorkspace.deviceError'));
+      return false;
+    } finally {
+      setSelectingDevice(null);
+    }
+  };
+
+  const handleChooseLocalProject = async () => {
+    if (busy || submissionPending.current) return;
+    if (await enterDevice('local', null)) setStep('project');
+  };
+
+  const handleChooseDevice = async (device: NewProjectDeviceOption) => {
+    if (busy || submissionPending.current || !device.controllable) return;
+    if (await enterDevice(device.surfaceId, device)) setStep('project');
   };
 
   const handleAddFolder = useCallback(async () => {
@@ -172,6 +241,11 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
     setIsCreating(true);
     setError('');
     try {
+      if (onSelectDevice) {
+        // The personal assistant always lives on this machine.
+        if (!(await onSelectDevice('local'))) return;
+        formSurface.current = getActiveSurfaceScope();
+      }
       formSurface.current.assertCurrent('create assistant');
       await onCreateAssistant();
       formSurface.current.assertCurrent('finish assistant creation');
@@ -183,7 +257,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
       submissionPending.current = false;
       setIsCreating(false);
     }
-  }, [busy, onCreateAssistant, onClose, t]);
+  }, [busy, onCreateAssistant, onClose, onSelectDevice, t]);
 
   const handleConfirm = useCallback(async () => {
     if (busy || sourceOptions.loading || !sourceReady || submissionPending.current || step !== 'project' || (needsName && !name) || invalidDirectoryName) return;
@@ -294,24 +368,30 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
     {options.error && <span className="new-project-dialog__source-status" role="alert">{options.error}</span>}
   </div>;
 
-  const projectTitle = t(onCreateAssistant ? 'newWorkspace.createProject' : 'newProject.title');
+  const projectTitle = projectDevice
+    ? t('newWorkspace.createProjectOn', { name: projectDevice.name })
+    : t(onCreateAssistant ? 'newWorkspace.createProject' : 'newProject.title');
+  const dialogTitle = step === 'choice' ? t('newWorkspace.title')
+    : step === 'device' ? t('newWorkspace.chooseDevice') : projectTitle;
 
   return (
     <Dialog open={isOpen} onOpenChange={() => { if (!busy) onClose(); }}
-      initialFocusRef={step === 'choice' ? assistantChoiceRef : nameInputRef}
+      initialFocusRef={step === 'choice' ? assistantChoiceRef : step === 'device' ? deviceChoiceRef : nameInputRef}
       size="md" data-testid={testId}>
       <DialogHeader>
         <DialogHeading>
           <DialogTitle data-openbitfun-component="new-project-dialog" data-openbitfun-part="title">
-            {step === 'choice' ? t('newWorkspace.title') : projectTitle}
+            {dialogTitle}
           </DialogTitle>
           {step === 'choice' && <DialogDescription>{t('newWorkspace.description')}</DialogDescription>}
+          {step === 'device' && <DialogDescription>{t('newWorkspace.chooseDeviceDescription')}</DialogDescription>}
         </DialogHeading>
         <DialogClose aria-label={t('actions.close')} disabled={busy} />
       </DialogHeader>
       <DialogBody className="new-project-dialog__body">
         {step === 'choice' && (
-          <div className="new-project-dialog__choices" data-openbitfun-component="new-project-dialog" data-openbitfun-part="choices">
+          <div className={`new-project-dialog__choices${offersDevices ? ' new-project-dialog__choices--three' : ''}`}
+            data-openbitfun-component="new-project-dialog" data-openbitfun-part="choices">
             <ActionCard ref={assistantChoiceRef} size="md" className="new-project-dialog__choice-card"
               triggerClassName="new-project-dialog__choice-trigger" leading={<Icon name="user" size="md" />}
               aria-label={t('newWorkspace.createAssistant')} aria-busy={isCreating} disabled={busy}
@@ -326,14 +406,61 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
               )} />
             <ActionCard size="md" className="new-project-dialog__choice-card"
               triggerClassName="new-project-dialog__choice-trigger" leading={<Icon name="folder" size="md" />}
-              aria-label={t('newWorkspace.createProject')} disabled={busy}
-              onClick={() => changeStep('project')} data-testid="nav-session-group-add-project"
+              aria-label={t('newWorkspace.createProject')} aria-busy={selectingDevice === 'local'} disabled={busy}
+              onClick={() => { if (offersDevices) void handleChooseLocalProject(); else changeStep('project'); }}
+              data-testid="nav-session-group-add-project"
               body={(
                 <span className="new-project-dialog__choice-content">
-                  <span className="new-project-dialog__choice-title">{t('newWorkspace.projectTitle')}</span>
-                  <span className="new-project-dialog__choice-description">{t('newWorkspace.projectDescription')}</span>
+                  <span className="new-project-dialog__choice-title">{t(offersDevices ? 'newWorkspace.localProjectTitle' : 'newWorkspace.projectTitle')}</span>
+                  <span className="new-project-dialog__choice-description" aria-live="polite">
+                    {selectingDevice === 'local' ? t('newWorkspace.connecting')
+                      : t(offersDevices ? 'newWorkspace.localProjectDescription' : 'newWorkspace.projectDescription')}
+                  </span>
                 </span>
               )} />
+            {offersDevices && (
+              <ActionCard size="md" className="new-project-dialog__choice-card"
+                triggerClassName="new-project-dialog__choice-trigger" leading={<Icon glyph={MonitorSmartphone} size="md" />}
+                aria-label={t('newWorkspace.createDeviceProject')} disabled={busy}
+                onClick={() => changeStep('device')} data-testid="nav-session-group-add-device-project"
+                body={(
+                  <span className="new-project-dialog__choice-content">
+                    <span className="new-project-dialog__choice-title">{t('newWorkspace.deviceProjectTitle')}</span>
+                    <span className="new-project-dialog__choice-description">{t('newWorkspace.deviceProjectDescription')}</span>
+                  </span>
+                )} />
+            )}
+          </div>
+        )}
+        {step === 'device' && (
+          <div className="new-project-dialog__devices" role="list" data-openbitfun-component="new-project-dialog" data-openbitfun-part="devices"
+            data-testid="new-project-device-list">
+            {deviceOptions === undefined && <span className="new-project-dialog__source-status" role="status">{t('newWorkspace.signInForDevices')}</span>}
+            {deviceOptions?.length === 0 && <span className="new-project-dialog__source-status" role="status">{t('newWorkspace.noOtherDevices')}</span>}
+            {deviceOptions?.map((device, index) => {
+              const hostLabel = device.hostKind === 'cli' ? t('nav.devices.hostCli') : device.hostKind === 'desktop' ? t('nav.devices.hostDesktop') : null;
+              const connecting = selectingDevice === device.surfaceId;
+              const meta = connecting ? t('newWorkspace.connecting')
+                : !device.controllable ? t('deviceOverview.deviceClientIncompatible')
+                  : [hostLabel, device.rendered ? t('newWorkspace.deviceCurrent') : null].filter(Boolean).join(' · ');
+              return (
+                <div role="listitem" key={device.surfaceId}>
+                  <ActionCard ref={index === 0 ? deviceChoiceRef : undefined} size="sm" className="new-project-dialog__device-card"
+                    triggerClassName="new-project-dialog__device-trigger"
+                    leading={<Icon glyph={connecting ? Loader2 : device.hostKind === 'cli' ? SquareTerminal : Monitor} size="md"
+                      className={connecting ? 'new-project-dialog__device-spinner' : undefined} />}
+                    aria-label={t('newWorkspace.createProjectOn', { name: device.name })} aria-busy={connecting}
+                    disabled={busy || !device.controllable} onClick={() => { void handleChooseDevice(device); }}
+                    data-testid="new-project-device-option" data-device-surface={device.surfaceId}
+                    body={(
+                      <span className="new-project-dialog__choice-content">
+                        <OverflowText className="new-project-dialog__device-name">{device.name}</OverflowText>
+                        {meta && <span className="new-project-dialog__choice-description" aria-live="polite">{meta}</span>}
+                      </span>
+                    )} />
+                </div>
+              );
+            })}
           </div>
         )}
         {step === 'project' && (
@@ -418,10 +545,18 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
         )}
         {error && <div role="alert" data-openbitfun-component="new-project-dialog" data-openbitfun-part="error" className="new-project-dialog__error"><Icon name="info" size="sm" /><span>{error}</span></div>}
       </DialogBody>
+      {step === 'device' && (
+        <DialogFooter className="new-project-dialog__footer" data-openbitfun-component="new-project-dialog" data-openbitfun-part="footer">
+          <Button variant="fill" leadingIcon={<Icon name="arrow-left" size="sm" />} disabled={busy} onClick={() => changeStep('choice')}>
+            {t('newWorkspace.back')}
+          </Button>
+        </DialogFooter>
+      )}
       {step === 'project' && (
         <DialogFooter className="new-project-dialog__footer" data-openbitfun-component="new-project-dialog" data-openbitfun-part="footer">
           {onCreateAssistant && (
-            <Button variant="fill" leadingIcon={<Icon name="arrow-left" size="sm" />} disabled={busy} onClick={() => changeStep('choice')}>
+            <Button variant="fill" leadingIcon={<Icon name="arrow-left" size="sm" />} disabled={busy}
+              onClick={() => changeStep(projectDevice ? 'device' : 'choice')}>
               {t('newWorkspace.back')}
             </Button>
           )}
