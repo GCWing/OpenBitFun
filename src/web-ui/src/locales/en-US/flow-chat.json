@@ -1214,6 +1214,12 @@
     "currentStatus": "Current status: {{status}}"
   },
   "contextPicker": {
+    "sessions": {
+      "label": "Sessions",
+      "empty": "No sessions available to reference",
+      "loadFailed": "Could not load sessions. Go back and try again.",
+      "unsupportedHost": "Session browsing is unavailable on this host."
+    },
     "mcp": {
       "label": "MCP",
       "server": "MCP server",
