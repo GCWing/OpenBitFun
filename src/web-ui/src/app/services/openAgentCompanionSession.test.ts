@@ -22,6 +22,7 @@ function flushDoubleRequestAnimationFrame(): void {
   animationFrameCallbacks.shift()?.(16);
 }
 
+vi.mock('@/flow_chat/services/RelaySessionHistory', () => ({ prewarmRelaySessionHistory: vi.fn() }));
 vi.mock('@/flow_chat/services/btwSessionPane', () => ({
   openBtwSessionInAuxPane: (...args: unknown[]) => mocks.openBtwSessionInAuxPane(...args),
 }));

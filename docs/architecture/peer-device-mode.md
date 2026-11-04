@@ -235,8 +235,10 @@ machine included while a peer is rendered, is drawn from a read-only catalog
   refreshes are held while the window is hidden or a cross-device open runs and
   run once afterwards; the device that just became rendered is not re-read;
   catalog notifications are coalesced per task.
-  A host without the stream is re-read when the window becomes visible. The
-  stream is released 30 s after the section closes.
+  A host without the stream is re-read when the window becomes visible and
+  every 60 s while it is visible. The stream is released 30 s after the section
+  closes. A newer session read of a workspace replaces an older one in flight,
+  and a host that refuses a read is asked again how it addresses sessions.
 - A failed read keeps the last rendered catalog and offers a retry. An
   incompatible build is listed but not read.
 
@@ -257,7 +259,18 @@ session's tab is held in front (`sceneStore.holdSessionScene`) from the click th
 and the main area shows the session's open overlay from the click on. Low-priority peer
 requests (git, search, file tree, watchers, mini apps) queued during the open
 wait in the adapter and run once it settles; session-status reconciliation
-waits likewise, and `set_active_workspace` is high priority.
+waits likewise (held for at most 8 s, so a slow host cannot starve them), and
+`set_active_workspace` is high priority.
+
+The open is ordered by what the user waits for. On click, the session's host
+stream is subscribed directly (`prewarmRelaySessionHistory`; the
+`account_subscribe_session` relay command does not depend on the rendered
+surface), so the host reads the session while the switch runs. The session's
+history owner adopts that stream and its buffered events once the device is
+rendered; an unadopted stream closes after 30 s. The switch does not wait for
+the device's config while an open runs: it reloads in the background (the
+config cache is already scoped to the surface epoch). A host that refuses
+device-control status is not polled again on that surface.
 
 The one write the catalog sends without rendering a device is "mark all
 read": `save_session_metadata` limited to `unreadCompletion` and
@@ -276,7 +289,21 @@ always created on this machine.
 The Agent companion lists background-device sessions next to the rendered
 device's, labelled with their device. Opening one renders its device first;
 replying from the companion is offered only for the rendered device. A switch
-reloads the target's config and workspace catalog concurrently.
+reloads the target's config and workspace catalog concurrently, unless a
+cross-device open defers the config.
+
+### Session tabs across devices
+
+The top bar keeps one tab per session (`getSessionSceneTabId` keys surface,
+workspace and session), so several sessions of one workspace and sessions of
+other devices each have their own tab; past 12 session tabs the least recently
+used idle one closes. Session tabs of every device survive a switch.
+Reconciliation retires only tabs of the rendered device whose session is gone.
+A tab of another device shows that device's name and is never selected without
+its device: activating it runs the same cross-device open as a sidebar row, a
+pane never falls back onto it, and an open that fails or is superseded leaves
+it in the bar, unselected. Returning to a device reselects the kept tab of its
+active session.
 
 ## Cloud account sync vs Peer Remote
 

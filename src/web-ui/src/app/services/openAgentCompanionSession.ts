@@ -1,6 +1,7 @@
 import { FlowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { openBtwSessionInAuxPane } from '@/flow_chat/services/btwSessionPane';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
+import { prewarmRelaySessionHistory } from '@/flow_chat/services/RelaySessionHistory';
 import { resolveSessionRelationship } from '@/flow_chat/utils/sessionMetadata';
 import { resolveSessionSceneWorkspace } from './sessionSceneTarget';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
@@ -25,6 +26,8 @@ export async function openAgentCompanionSession(
     // Same presentation as a sidebar open: the session's tab and loading state
     // are shown at once and held through the device switch.
     const intent = beginDeviceOpen({ surfaceId, key: `session:${sessionId}`, sessionId });
+    // The host starts reading the session while the device switch runs.
+    if (!isLocalSurface(surfaceId)) prewarmRelaySessionHistory(surfaceId, sessionId);
     try {
       if (sourceWorkspaceId) {
         useSceneStore.getState().holdSessionScene({

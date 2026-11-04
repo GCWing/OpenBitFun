@@ -69,6 +69,12 @@ export interface PeerDeviceSurfaceControllerDependencies {
   getLocalAdapter: () => Promise<ITransportAdapter>;
   resetProductSurface: (assertCurrent: () => void) => Promise<void>;
   reloadConfig: (scope: SurfaceScope) => Promise<void>;
+  /**
+   * True while a cross-device open waits for this switch: the device's config
+   * then reloads after the switch instead of holding it, since the session
+   * the user opened does not need it to show.
+   */
+  deferConfigReload?: () => boolean;
   rebootstrapWorkspaces: (scope: SurfaceScope) => Promise<void>;
   setPeerControllerActive: (active: boolean, required: boolean) => Promise<void>;
   commitSurface: (target: ResolvedSurfaceTarget) => SurfaceScope;
@@ -429,8 +435,14 @@ export class PeerDeviceSurfaceController {
 
     // Config and the workspace catalog are independent reads of the same host;
     // fetching them together halves the round trips a switch waits for.
+    const deferConfig = this.dependencies.deferConfigReload?.() === true;
+    if (deferConfig) {
+      void this.dependencies.reloadConfig(activationScope).catch(error => {
+        if (!isSurfaceChangedError(error)) log.warn('Deferred device config reload failed', { error });
+      });
+    }
     await Promise.all([
-      this.awaitIntent(
+      deferConfig ? Promise.resolve() : this.awaitIntent(
         intent,
         this.dependencies.reloadConfig(activationScope),
         activationScope,

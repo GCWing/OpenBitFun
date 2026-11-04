@@ -17,6 +17,7 @@ import { workspaceManager } from '@/infrastructure/services/business/workspaceMa
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
+import { prewarmRelaySessionHistory } from '@/flow_chat/services/RelaySessionHistory';
 import { findReusableEmptySessionId, flowChatSessionConfigForWorkspace } from '@/app/utils/projectSessionWorkspace';
 import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
 import { openLatestAssistantSession } from '../workspaces/openLatestAssistantSession';
@@ -92,6 +93,9 @@ export async function openDeviceSession(
   // From the click on, the main area shows this session's tab and its loading
   // presentation; the tab is held through the switch until the open settles.
   if (getActiveSurfaceId() !== slot.surfaceId) {
+    // The session is what the user waits for: its host starts reading it now,
+    // while the device switch runs, instead of after it.
+    if (!slot.isLocal) prewarmRelaySessionHistory(slot.surfaceId, sessionId);
     useSceneStore.getState().holdSessionScene({
       surfaceId: slot.surfaceId, workspaceKey: sessionSceneWorkspaceKey(workspaceId), sessionId,
     });

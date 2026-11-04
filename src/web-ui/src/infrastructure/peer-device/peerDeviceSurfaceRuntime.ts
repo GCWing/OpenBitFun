@@ -1,6 +1,7 @@
 /** Production composition for the window-wide device-surface controller. */
 
 import type { ITransportAdapter } from '@/infrastructure/api/adapters/base';
+import { getDeviceOpenIntent } from './deviceOpenIntent';
 import {
   createTransportAdapter,
   getTransportAdapter,
@@ -149,6 +150,7 @@ function createDependencies(): PeerDeviceSurfaceControllerDependencies {
     },
     resetProductSurface,
     reloadConfig: reloadConfigFromCurrentTransport,
+    deferConfigReload: () => getDeviceOpenIntent() !== null,
     rebootstrapWorkspaces: async (scope) => {
       await workspaceManager.reinitializeForPeerModeSwitch();
       scope.assertCurrent('rebootstrap device surface workspaces');

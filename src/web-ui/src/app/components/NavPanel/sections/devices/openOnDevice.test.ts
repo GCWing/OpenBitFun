@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  prewarm: vi.fn(),
   sessions: new Map<string, unknown>(),
   adopt: vi.fn(async (_workspaceId: string, sessions: Array<{ sessionId: string }>) => {
     for (const session of sessions) mocks.sessions.set(session.sessionId, session);
@@ -35,6 +36,7 @@ vi.mock('@/infrastructure/i18n', () => ({ i18nService: { t: (key: string) => key
 vi.mock('@/shared/utils/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn() }) }));
 vi.mock('@/flow_chat/services/FlowChatManager', () => ({ flowChatManager: { createChatDraft: mocks.createChatDraft } }));
 vi.mock('@/flow_chat/services/sessionActivation', () => ({ openMainSession: mocks.openMainSession }));
+vi.mock('@/flow_chat/services/RelaySessionHistory', () => ({ prewarmRelaySessionHistory: mocks.prewarm }));
 vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
   workspaceManager: { getState: () => ({ openedWorkspaces: mocks.workspaces }), setActiveWorkspace: vi.fn() },
 }));
@@ -96,6 +98,9 @@ describe('openOnDevice', () => {
     expect(mocks.hold.mock.invocationCallOrder[0]).toBeLessThan(peer.switchToDevice.mock.invocationCallOrder[0]);
     expect(mocks.intent.mock.invocationCallOrder[0]).toBeLessThan(peer.switchToDevice.mock.invocationCallOrder[0]);
     expect(peer.switchToDevice).toHaveBeenCalledWith('peer-a', 'Studio Mac');
+    // The session's stream starts before the switch, not after it.
+    expect(mocks.prewarm).toHaveBeenCalledWith('peer-a', 's-1');
+    expect(mocks.prewarm.mock.invocationCallOrder[0]).toBeLessThan(peer.switchToDevice.mock.invocationCallOrder[0]);
     expect(mocks.promote).toHaveBeenCalledOnce();
     expect(mocks.adopt).not.toHaveBeenCalled();
     expect(mocks.ensureMetadata).not.toHaveBeenCalled();
