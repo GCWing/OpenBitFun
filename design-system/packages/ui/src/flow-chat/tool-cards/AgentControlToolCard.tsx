@@ -30,6 +30,7 @@ export interface AgentControlToolCardProps
   };
   requiresConfirmation?: boolean;
   status: FlowChatToolStatus;
+  /** Pass null to hide both the label and the fallback status glyph. */
   statusLabel?: ReactNode;
   statusTone?: 'danger' | 'neutral' | 'success' | 'warning';
   summary?: ReactNode;
@@ -82,8 +83,10 @@ export function AgentControlToolCard({
       <dl className={styles.previewMetadata}>
         <dt>{preview.labels.agentType}</dt>
         <dd data-openbitfun-part="previewAgentType">{preview.agentType}</dd>
-        <dt>{preview.labels.model}</dt>
-        <dd data-openbitfun-part="previewModel">{preview.model}</dd>
+        {preview.model && <>
+          <dt>{preview.labels.model}</dt>
+          <dd data-openbitfun-part="previewModel">{preview.model}</dd>
+        </>}
       </dl>
       <div className={styles.previewTask}>
         <span className={styles.previewCaption}>{preview.labels.description}</span>
@@ -145,7 +148,7 @@ export function AgentControlToolCard({
                   <OverflowText className={styles.status} data-openbitfun-part="agentStatus" data-tone={tone}>
                     {statusLabel}
                   </OverflowText>
-                ) : !['completed', 'confirmed', 'cancelled', 'rejected'].includes(status) ? (
+                ) : statusLabel !== null && !['completed', 'confirmed', 'cancelled', 'rejected'].includes(status) ? (
                   <ToolCardStatusSlot size={12} status={status} />
                 ) : null}
                 <Icon name="arrow-up-right" size="xs" className={styles.openIcon} data-openbitfun-icon="open-panel-right" />
@@ -154,8 +157,10 @@ export function AgentControlToolCard({
                 <span className={styles.metadata}>
                   <OverflowText className={styles.agentType} data-openbitfun-part="agentType"
                     aria-label={preview.labels.agentType}>{preview.agentType}</OverflowText>
-                  <OverflowText className={styles.model} data-openbitfun-part="agentModel"
-                    aria-label={preview.labels.model}>{preview.model}</OverflowText>
+                  {preview.model && (
+                    <OverflowText className={styles.model} data-openbitfun-part="agentModel"
+                      aria-label={preview.labels.model}>{preview.model}</OverflowText>
+                  )}
                 </span>
               )}
             </span>

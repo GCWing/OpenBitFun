@@ -210,6 +210,12 @@ cargo test --locked -p openbitfun-core --no-default-features --features agent-ru
 These fixtures cover prompt name mappings and simulated workspace policies;
 they do not establish live SSH, relay, Peer, or Detached Dispatch behavior.
 
+For ordinary subagent shared concurrency, permit release, and cancelled/timed-out waits:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib subagent_concurrency_
+```
+
 For smart routing, unchanged subagent model policy and resumed subagent choices:
 
 ```bash

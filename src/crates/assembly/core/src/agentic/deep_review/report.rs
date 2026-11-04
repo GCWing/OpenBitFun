@@ -4,14 +4,13 @@
 //! updates are owned by `openbitfun-agent-runtime::deep_review::report`. This file
 //! keeps core-only context lookup, diagnostics logging, and session metadata IO.
 
-use crate::agentic::agents::get_agent_registry;
-use crate::agentic::context_profile::ContextProfilePolicy;
 use crate::agentic::coordination::get_global_coordinator;
 use crate::agentic::core::CompressionContract;
 use crate::agentic::deep_review_policy::{
     deep_review_capacity_skip_count, deep_review_concurrency_cap_rejection_count,
     deep_review_runtime_diagnostics_snapshot,
 };
+use crate::agentic::session::DEFAULT_COMPRESSION_CONTRACT_LIMIT;
 use crate::agentic::tools::framework::ToolUseContext;
 use crate::util::errors::OpenBitFunResult;
 use log::debug;
@@ -38,42 +37,14 @@ pub(crate) fn compression_contract_for_context(
     let session_id = context.session_id.as_deref()?;
     let coordinator = get_global_coordinator()?;
     let session = coordinator.get_session_manager().get_session(session_id)?;
-    let agent_type = Some(session.agent_type.as_str());
-    let model_id = session.config.model_id.as_deref();
-    let limit = reliability_contract_limit(agent_type, model_id);
     let contract = coordinator
         .get_session_manager()
-        .compression_contract_for_session(session_id, limit)?;
+        .compression_contract_for_session(session_id, DEFAULT_COMPRESSION_CONTRACT_LIMIT)?;
     should_report_compression_preserved(
         session.compression_state.compression_count,
         Some(&contract),
     )
     .then_some(contract)
-}
-
-pub(crate) fn reliability_contract_limit(
-    agent_type: Option<&str>,
-    model_id: Option<&str>,
-) -> usize {
-    let agent_type = agent_type
-        .map(str::trim)
-        .filter(|agent_type| !agent_type.is_empty())
-        .unwrap_or("DeepReview");
-    let model_id = model_id
-        .map(str::trim)
-        .filter(|model_id| !model_id.is_empty())
-        .unwrap_or_default();
-    let is_review_subagent = get_agent_registry()
-        .get_subagent_is_review(agent_type)
-        .unwrap_or(false);
-
-    ContextProfilePolicy::for_agent_context_and_model(
-        agent_type,
-        is_review_subagent,
-        model_id,
-        model_id,
-    )
-    .compression_contract_limit
 }
 
 pub(crate) fn should_report_compression_preserved(

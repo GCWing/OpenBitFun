@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   openBtwSessionInAuxPane: vi.fn(),
   listeners: new Set<() => void>(),
   includeChildSession: true,
+  includeChildTurn: true,
+  childPersistedStatus: undefined as 'completed' | undefined,
   locale: 'en-US',
   modelName: 'Test model',
   childTurnStatus: 'processing' as DialogTurn['status'],
@@ -30,6 +32,7 @@ vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({
         return names[key.split('.').at(-1) as keyof typeof names];
       }
       if (key === 'flowChatHeader.agentTreeStatus.running') return 'Running';
+      if (key === 'toolCards.default.preparing') return 'Preparing';
       if (key === 'flowChatHeader.agentTreeStatus.completed') return 'Completed';
       if (key === 'toolCards.taskTool.defaultAgentKind') return 'Agent';
       if (typeof options?.defaultValue === 'string') return options.defaultValue;
@@ -74,13 +77,14 @@ vi.mock('../store/FlowChatStore', () => ({
           title: 'SwarmWorker: inspect parser',
           createdAt: 1000,
           status: 'active',
+          persistedStatus: mocks.childPersistedStatus,
           needsUserAttention: mocks.needsUserAttention,
           config: { agentType: 'SwarmWorker', modelName: mocks.modelName },
-          dialogTurns: [{
+          dialogTurns: mocks.includeChildTurn ? [{
             id: 'child-turn',
             status: mocks.childTurnStatus,
             modelRounds: [],
-          }],
+          }] : [],
         });
       }
       return { sessions };
@@ -175,6 +179,8 @@ describeWithJsdom('AgentControlToolCard', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 
     mocks.includeChildSession = true;
+    mocks.includeChildTurn = true;
+    mocks.childPersistedStatus = undefined;
     mocks.locale = 'en-US';
     mocks.modelName = 'Test model';
     mocks.childTurnStatus = 'processing';
@@ -243,6 +249,76 @@ describeWithJsdom('AgentControlToolCard', () => {
     },
   );
 
+  it.each([
+    { status: 'preparing' },
+    { status: 'streaming' },
+    { status: 'receiving' },
+    { status: 'running', isParamsStreaming: true },
+  ] as const)('shows Preparing while spawn parameters stream: %j', async (streamingState) => {
+    mocks.includeChildSession = false;
+    const render = (overrides: Partial<FlowToolItem>) => act(async () => root.render(
+      <AgentControlToolCard toolItem={agentToolItem('AgentSpawn', overrides)} config={config} sessionId="parent-session" />,
+    ));
+
+    await render(streamingState);
+    expect(container.querySelector('[data-openbitfun-part="agentSummary"]')?.textContent).toBe(flowChatEn.subagentIdentity.names.cloudHopper);
+    expect(container.querySelector('[data-openbitfun-part="statusSlot"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="agentStatus"]')?.textContent).toBe('Preparing');
+    expect(container.textContent).not.toContain('Running');
+    expect(container.querySelector('[data-agent-capsule-trigger]')?.getAttribute('aria-label')).not.toContain('Running');
+
+    mocks.includeChildSession = true;
+    await render({ status: 'running', isParamsStreaming: false });
+    expect(container.querySelector('[data-openbitfun-part="agentStatus"]')?.textContent).toBe('Running');
+  });
+
+  it.each([false, true])('keeps Running through the spawn receipt and child hydration (JSON result: %s)', async (serialized) => {
+    mocks.includeChildSession = false;
+    mocks.includeChildTurn = false;
+    const item = agentToolItem('AgentSpawn', {
+      status: 'running', subagentSessionId: undefined, subagentDialogTurnId: undefined,
+    });
+    const render = () => act(async () => root.render(
+      <AgentControlToolCard toolItem={{ ...item }} config={config} sessionId="parent-session" />,
+    ));
+    const publish = () => act(() => { mocks.listeners.forEach(listener => listener()); });
+    const expectRunning = () => {
+      expect(container.querySelector('[data-openbitfun-part="agentStatus"]')?.textContent).toBe('Running');
+      expect(container.querySelector('[data-openbitfun-tool-card="agent-control"]')?.getAttribute('data-openbitfun-status')).toBe('running');
+    };
+
+    await render();
+    expectRunning();
+    const receipt = { status: 'started', agent_id: 'worker', bg_task_id: 'worker_bg1' };
+    item.status = 'completed';
+    item.toolResult = { success: true, result: serialized ? JSON.stringify(receipt) : receipt };
+    await render();
+    expectRunning();
+    expect(container.querySelector('[data-openbitfun-part="agentSummary"]')?.textContent).toBe('toolCards.interaction.unknownAgent');
+
+    mocks.includeChildSession = true;
+    publish();
+    expectRunning();
+    expect(container.querySelector('[data-openbitfun-part="agentSummary"]')?.textContent).toBe(flowChatEn.subagentIdentity.names.cloudHopper);
+
+    mocks.includeChildTurn = true;
+    mocks.childTurnStatus = 'pending';
+    publish();
+    expectRunning();
+    mocks.childTurnStatus = 'processing';
+    publish();
+    expectRunning();
+    mocks.childTurnStatus = 'completed';
+    publish();
+    expect(container.querySelector('[data-openbitfun-part="agentStatus"]')).toBeNull();
+
+    mocks.includeChildTurn = false;
+    mocks.childPersistedStatus = 'completed';
+    publish();
+    expect(container.querySelector('[data-openbitfun-part="agentStatus"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-tool-card="agent-control"]')?.getAttribute('data-openbitfun-status')).toBe('completed');
+  });
+
   it('keeps a finishing child labelled Running and stops the highlight when waiting or complete', async () => {
     await act(async () => root.render(
       <AgentControlToolCard toolItem={agentToolItem('AgentSpawn')} config={config} sessionId="parent-session" />,
@@ -291,6 +367,10 @@ describeWithJsdom('AgentControlToolCard', () => {
     const button = container.querySelector<HTMLButtonElement>('[data-agent-capsule-trigger]')!;
     expect(button.getAttribute('aria-disabled')).toBe('true');
     expect(button.hasAttribute('aria-expanded')).toBe(false);
+    expect(container.querySelector('[data-openbitfun-part="agentSummary"]')?.textContent)
+      .toBe('toolCards.interaction.unknownAgent');
+    expect(container.querySelector('[data-openbitfun-part="statusSlot"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="agentStatus"]')?.textContent).toBe('Preparing');
     await act(async () => button.click());
     expect(mocks.openBtwSessionInAuxPane).not.toHaveBeenCalled();
     mocks.includeChildSession = true;
@@ -404,5 +484,19 @@ describeWithJsdom('AgentControlToolCard', () => {
     await act(async () => button.click());
     expect(mocks.openBtwSessionInAuxPane).toHaveBeenCalledOnce();
     expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  });
+
+  it('hides model metadata when an AgentSpawn has no model information', async () => {
+    mocks.modelName = '';
+    const item = agentToolItem('AgentSpawn');
+    item.toolCall!.input = { agent_type: 'SwarmWorker', prompt: 'Inspect the parser.' };
+    await act(async () => root.render(
+      <AgentControlToolCard toolItem={item} config={config} sessionId="parent-session" />,
+    ));
+
+    expect(container.querySelector('[data-openbitfun-part="agentModel"]')).toBeNull();
+    const popup = await revealPreview();
+    expect(popup.querySelector('[data-openbitfun-part="previewModel"]')).toBeNull();
+    expect(popup.textContent).not.toContain(flowChatEn.subagentIdentity.preview.model);
   });
 });

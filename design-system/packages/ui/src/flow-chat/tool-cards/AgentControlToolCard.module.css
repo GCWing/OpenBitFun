@@ -96,6 +96,7 @@
     line-height: var(--openbitfun-type-label-sm-line-height);
   }
   .agentType { flex: 0 1 auto; min-inline-size: 0; max-inline-size: 45%; }
+  .agentType:only-child { flex: 1 1 0; max-inline-size: 100%; }
   .model { flex: 1 1 0; min-inline-size: 0; }
   .model:not([data-overflow='true']) { text-align: end; }
   .status,

@@ -2763,16 +2763,6 @@ export function runManifestParserSelfTest({
       contracts: ['[features]', 'default = []'],
     },
     {
-      path: 'src/crates/execution/agent-runtime/src/context_profile.rs',
-      contracts: [
-        'ContextProfile',
-        'ModelCapabilityProfile',
-        'ContextProfilePolicy',
-        'for_subagent_context_and_models',
-        'model_capability_weak_for_mini',
-      ],
-    },
-    {
       path: 'src/crates/execution/agent-runtime/src/session_state.rs',
       contracts: [
         'SessionState',

@@ -732,33 +732,6 @@ export const requiredContentRules = [
     ],
   },
   {
-    path: 'src/crates/execution/agent-runtime/src/context_profile.rs',
-    reason:
-      'agent-runtime must own provider-neutral context profile and model capability policy facts',
-    patterns: [
-      {
-        regex: /\bpub enum ContextProfile\b/,
-        message: 'missing context profile fact',
-      },
-      {
-        regex: /\bpub enum ModelCapabilityProfile\b/,
-        message: 'missing model capability profile fact',
-      },
-      {
-        regex: /\bpub struct ContextProfilePolicy\b/,
-        message: 'missing context profile policy fact',
-      },
-      {
-        regex: /\bfor_subagent_context_and_models\b/,
-        message: 'missing subagent context/model policy helper',
-      },
-      {
-        regex: /\bmodel_capability_weak_for_mini\b/,
-        message: 'missing weak-model regression',
-      },
-    ],
-  },
-  {
     path: 'src/crates/execution/agent-runtime/src/session_state.rs',
     reason:
       'agent-runtime must own provider-neutral session state facts and event-label projection',
