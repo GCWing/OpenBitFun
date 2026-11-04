@@ -34,22 +34,28 @@
   }
 
   // The device a session tab belongs to when it is not the rendered one.
-  // Same capsule as the sidebar's device tags, so a device reads the same everywhere.
+  // The device a tab belongs to: a quiet, smaller line of metadata set off by
+  // a hairline divider and a device glyph, never a second title.
   &__tab-device {
+    display: inline-flex;
     flex: 0 0 auto;
-    max-inline-size: 7em;
+    align-items: center;
+    gap: 3px;
     margin-inline-start: var(--openbitfun-space-1);
-    padding: 0 5px;
-    overflow: hidden;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--openbitfun-color-content-muted) 55%, transparent);
-    color: var(--openbitfun-color-surface-chrome);
+    padding-inline-start: var(--openbitfun-space-1);
+    border-inline-start: var(--openbitfun-border-width-default) solid
+      color-mix(in srgb, var(--openbitfun-color-content-muted) 45%, transparent);
+    color: var(--openbitfun-color-content-muted);
     font-size: var(--openbitfun-type-micro-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
     line-height: 14px;
-    letter-spacing: normal;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+
+    svg { flex: 0 0 auto; }
+  }
+
+  &__tab-device-name {
+    display: block;
+    min-inline-size: 0;
+    max-inline-size: 6em;
   }
 
   &__tab-region {

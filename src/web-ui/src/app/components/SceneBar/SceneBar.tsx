@@ -6,13 +6,13 @@
  */
 
 import React, { useCallback, useState, useEffect, useMemo, useSyncExternalStore } from 'react';
-import { Pin, CircleAlert } from 'lucide-react';
+import { Pin, CircleAlert, Monitor } from 'lucide-react';
 import { useSceneStore } from '../../stores/sceneStore';
 import { useContextMenuStore } from '@/shared/context-menu-system/store/ContextMenuStore';
 import { ContextType } from '@/shared/context-menu-system/types/context.types';
 import type { MenuItem } from '@/shared/context-menu-system/types/menu.types';
 
-import { Icon, TabGroup, type TabGroupItem } from '@openbitfun/ui';
+import { Icon, OverflowText, TabGroup, type TabGroupItem } from '@openbitfun/ui';
 import { useSceneTabNavigation } from './useSceneTabNavigation';
 import { useSceneManager } from '../../hooks/useSceneManager';
 import { useSessionTabLabels } from '../../hooks/useSessionTabLabels';
@@ -222,7 +222,11 @@ const SceneBar: React.FC<SceneBarProps> = ({
       labelSuffix: sessionLabel?.number || deviceLabels[tab.id] || tab.pinned || (tab.contentId && (resources[tab.contentId]?.isDirty || resources[tab.contentId]?.fileMissing)) ? <>
         {sessionLabel?.number && <SessionTitleNumber number={sessionLabel.number} />}
         {deviceLabels[tab.id] && <span className="openbitfun-scene-bar__tab-device"
-          data-openbitfun-component="scene-bar" data-openbitfun-part="tabDevice">{deviceLabels[tab.id]}</span>}
+          data-openbitfun-component="scene-bar" data-openbitfun-part="tabDevice">
+          <Monitor size={11} aria-hidden="true" />
+          {/* Scrolls with the title: the tab is the overflow trigger of both. */}
+          <OverflowText behavior="marquee" className="openbitfun-scene-bar__tab-device-name">{deviceLabels[tab.id]}</OverflowText>
+        </span>}
         {tab.pinned && <Pin size={12} aria-label={tComponents('tabs.unpin')} />}
         {tab.contentId && resources[tab.contentId]?.isDirty && <span aria-label={tComponents('tabs.unsaved')}>•</span>}
         {tab.contentId && resources[tab.contentId]?.fileMissing && <CircleAlert size={12} aria-label={tComponents('tabs.fileDeleted')} />}
