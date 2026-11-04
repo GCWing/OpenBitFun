@@ -586,8 +586,8 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                       role="group"
                       aria-label={[displayedDevice.name, deviceActivity(displayedDevice)].join(' · ')}
                       data-control-state={displayedControlState}>
-                      {/* One round action: the glyph says what it does, the tooltip and
-                          the accessible name carry the words. */}
+                      {/* One round action: the glyph says what it does and the accessible
+                          name carries the words. */}
                       <IconButton
                         className="openbitfun-device-overview__connection-status"
                         variant={displayedIncompatible ? 'fill' : 'primary'}
@@ -599,7 +599,8 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                             : displayedDevice.local ? <Icon glyph={Undo2} size="md" />
                               : <Icon glyph={ArrowRightLeft} size="md" />}
                         aria-label={`${displayedDevice.name} · ${displayedActionText}`}
-                        title={switchingDevice ? displayedActionText : displayedActionLabel}
+                        // The glyph says what it does; only an incompatible device needs words.
+                        title={displayedIncompatible ? displayedActionLabel : undefined}
                         // An incompatible device stays focusable so its version notice
                         // (the tooltip) is reachable; it simply has no action.
                         disabled={!displayedIncompatible && ((!displayedActive && !isPreviewing) || !peerContext || switchingDevice || previewMotion.isTransitioning)}
