@@ -148,8 +148,11 @@ const SceneViewport: React.FC<SceneViewportProps> = ({ workspacePath, isEntering
           const isActive = tabId === selectedId && paneVisible;
           const isOutgoing = !isActive && tabId === transition.outgoingTabId;
           const isIncoming = isActive && transition.pendingTransition?.incomingTabId === tabId;
-          const isVisible = paneVisible && (transition.pendingTransition?.phase === 'holding' && transition.outgoingTabId
-            ? isOutgoing : isActive);
+          const phase = transition.pendingTransition?.phase;
+          // Holding shows only the outgoing scene; once the incoming one is
+          // ready both are shown and the outgoing one fades out above it.
+          const isVisible = paneVisible && (phase === 'holding' && transition.outgoingTabId
+            ? isOutgoing : isActive || (!paned && isOutgoing && (phase === 'preparing' || phase === 'running')));
           const Host: React.ElementType = paned ? SplitViewSurface : 'div';
           const focusScene = () => {
             if (isActive) useSceneStore.getState().focusPane(location);
