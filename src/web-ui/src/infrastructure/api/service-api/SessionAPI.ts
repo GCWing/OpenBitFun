@@ -380,12 +380,12 @@ export class SessionAPI {
   }
 
   async searchReferenceableSessions(
-    query: string,
+    query: string | undefined,
     limit = 30,
   ): Promise<SessionReferenceCandidate[]> {
     try {
       return await api.invoke('search_referenceable_sessions', {
-        request: { query, limit },
+        request: query === undefined ? { limit } : { query, limit },
       });
     } catch (error) {
       throw createTauriCommandError('search_referenceable_sessions', error, { query, limit });

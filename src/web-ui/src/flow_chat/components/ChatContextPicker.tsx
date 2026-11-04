@@ -1,10 +1,10 @@
 import { subscribeOverlayInteraction, createOverlayPortal, Disclosure } from '@openbitfun/ui';
 /**
  * Unified chat context picker.
- * The source level exposes files, skills, MCP, and images; typing searches providers together.
+ * The source level exposes files, sessions, skills, MCP, and images; typing searches providers together.
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import {
   Icon,
   IconButton,
@@ -18,6 +18,9 @@ import {
 import { useTranslation } from 'react-i18next';
 import { File, Loader2, MessageCircle, Plug, RotateCcw } from 'lucide-react';
 import { sessionAPI, workspaceAPI } from '@/infrastructure/api';
+import { getActiveSurfaceScope, isLocalSurface, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
+import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
+import { isTauriRuntime } from '@/infrastructure/runtime/environment';
 import {
   externalSourcesAPI,
   type WorkspaceReferenceEntry,
@@ -47,6 +50,12 @@ import './ChatContextPicker.scss';
 const log = createLogger('ChatContextPicker');
 const CONTEXT_PICKER_SEARCH_DEBOUNCE_MS = 300;
 const CONTEXT_PICKER_MAX_RESULTS = 30;
+const SOURCE_LABELS = {
+  files: 'chatInput.boostAddContext',
+  skills: 'chatInput.boostSkills',
+  mcp: 'contextPicker.mcp.label',
+  sessions: 'contextPicker.sessions.label',
+} as const;
 
 export interface ChatContextPickerProps {
   isOpen: boolean;
@@ -91,14 +100,14 @@ export interface ContextPickerSkill {
 
 export type ChatContextPickerEntryView = 'sources' | 'files';
 
-type ContextPickerView = ChatContextPickerEntryView | 'skills' | 'mcp';
+type ContextPickerView = ChatContextPickerEntryView | keyof typeof SOURCE_LABELS;
 
 type ContextPickerItem =
   | { kind: 'file'; item: FileItem }
   | { kind: 'session'; item: SessionReferenceCandidate }
   | { kind: 'skill'; item: ContextPickerSkill }
   | { kind: 'mcp'; item: ContextPickerMcpItem }
-  | { kind: 'source'; id: 'files' | 'skills' | 'mcp' }
+  | { kind: 'source'; id: keyof typeof SOURCE_LABELS }
   | { kind: 'action'; id: 'add-image' | 'retry-skills' };
 
 function mergeFileSearchResults(
@@ -154,15 +163,21 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
   onAddImage,
 }) => {
   const { t } = useTranslation('flow-chat');
+  const surfaceScope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope);
+  const peer = usePeerDeviceModeOptional();
+  const canBrowseSessions = isLocalSurface(surfaceScope.surfaceId)
+    ? isTauriRuntime()
+    : peer?.peerMode.active === true
+      && peer.peerMode.deviceId === surfaceScope.surfaceId
+      && peer.currentPeerCapabilities?.sessionReferenceBrowseV1 === true;
   const skillScanFailures = skillDiagnostics.filter(item => !item.unsupportedField);
   const unsupportedSkills = skillDiagnostics.filter(item => item.unsupportedField);
   const [results, setResults] = useState<FileItem[]>([]);
-  const [sessionResults, setSessionResults] = useState<SessionReferenceCandidate[]>([]);
+  const [sessionLookup, setSessionLookup] = useState<{ key: string; items: SessionReferenceCandidate[] | null }>();
   const [workspaceReferences, setWorkspaceReferences] = useState<WorkspaceReferenceEntry[]>([]);
   const [currentFiles, setCurrentFiles] = useState<FileItem[]>([]);
   const [isDirectoryLoading, setIsDirectoryLoading] = useState(false);
   const [isFileSearchLoading, setIsFileSearchLoading] = useState(false);
-  const [isSessionLoading, setIsSessionLoading] = useState(false);
   const [directoryLoadError, setDirectoryLoadError] = useState(false);
   const [fileSearchError, setFileSearchError] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -173,12 +188,10 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
   const fallbackAnchorRef = useRef<HTMLElement>(null);
   const fileAbortControllerRef = useRef<AbortController | null>(null);
   const fileSearchDebounceTimerRef = useRef<number | null>(null);
-  const sessionSearchDebounceTimerRef = useRef<number | null>(null);
   const selectedItemHistoryRef = useRef<string[]>([]);
   const targetSelectedPathRef = useRef<string | null>(null);
   const directoryLoadRequestIdRef = useRef(0);
   const fileSearchRequestIdRef = useRef(0);
-  const sessionSearchRequestIdRef = useRef(0);
   const workspaceReferenceRequestIdRef = useRef(0);
   const skipNextPathLoadRef = useRef(false);
 
@@ -265,16 +278,15 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
   }, [entryView, pathHistory, view]);
 
   useEffect(() => {
+    setView(entryView);
     if (!isOpen) return;
     // Suppress the path effect once while the picker resets from its previous
     // view. Direct file entry is loaded explicitly below.
     skipNextPathLoadRef.current = true;
-    setView(entryView);
     setCurrentPath('');
     setPathHistory([]);
     setCurrentFiles([]);
     setResults([]);
-    setSessionResults([]);
     setDirectoryLoadError(false);
     setFileSearchError(false);
     setSelectedIndex(0);
@@ -409,47 +421,44 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     };
   }, [isOpen, searchQuery, searchFiles]);
 
-  useEffect(() => {
-    if (sessionSearchDebounceTimerRef.current !== null) {
-      window.clearTimeout(sessionSearchDebounceTimerRef.current);
-      sessionSearchDebounceTimerRef.current = null;
-    }
-    const query = searchQuery.trim();
-    if (!isOpen || !query) {
-      sessionSearchRequestIdRef.current += 1;
-      setSessionResults([]);
-      setIsSessionLoading(false);
-      return;
-    }
+  const trimmedQuery = searchQuery.trim();
+  const isSearchMode = trimmedQuery.length > 0;
+  const isSessionBrowse = view === 'sessions' && !isSearchMode;
+  const sessionLookupKey = isOpen && (isSearchMode || (isSessionBrowse && canBrowseSessions))
+    ? surfaceScope.key(surfaceScope.epoch, trimmedQuery)
+    : null;
+  const currentSessionLookup = sessionLookup?.key === sessionLookupKey ? sessionLookup : undefined;
+  const isSessionLoading = sessionLookupKey !== null && !currentSessionLookup;
+  const sessionBrowseFailed = isSessionBrowse && currentSessionLookup?.items === null;
 
-    const requestId = ++sessionSearchRequestIdRef.current;
-    setIsSessionLoading(true);
-    sessionSearchDebounceTimerRef.current = window.setTimeout(() => {
-      sessionSearchDebounceTimerRef.current = null;
-      void sessionAPI.searchReferenceableSessions(query, CONTEXT_PICKER_MAX_RESULTS)
-        .then((items) => {
-          if (requestId === sessionSearchRequestIdRef.current) {
-            setSessionResults(items.filter(item => item.sessionId !== excludeSessionId));
+  useEffect(() => {
+    setSessionLookup(undefined);
+    if (sessionLookupKey === null) return;
+
+    let cancelled = false;
+    const loadSessions = () => {
+      if (!surfaceScope.isCurrent()) return;
+      void sessionAPI.searchReferenceableSessions(trimmedQuery || undefined, CONTEXT_PICKER_MAX_RESULTS)
+        .then(items => {
+          if (!cancelled && surfaceScope.isCurrent()) {
+            setSessionLookup({ key: sessionLookupKey, items });
           }
         })
-        .catch((error) => {
-          log.error('Context picker session search failed', error);
-          if (requestId === sessionSearchRequestIdRef.current) setSessionResults([]);
-        })
-        .finally(() => {
-          if (requestId === sessionSearchRequestIdRef.current) setIsSessionLoading(false);
+        .catch(error => {
+          if (cancelled || !surfaceScope.isCurrent()) return;
+          log.error('Context picker session lookup failed', error);
+          setSessionLookup({ key: sessionLookupKey, items: null });
         });
-    }, CONTEXT_PICKER_SEARCH_DEBOUNCE_MS);
-    return () => {
-      if (sessionSearchDebounceTimerRef.current !== null) {
-        window.clearTimeout(sessionSearchDebounceTimerRef.current);
-        sessionSearchDebounceTimerRef.current = null;
-      }
     };
-  }, [excludeSessionId, isOpen, searchQuery]);
+    const timer = isSearchMode ? window.setTimeout(loadSessions, CONTEXT_PICKER_SEARCH_DEBOUNCE_MS) : null;
+    if (timer === null) loadSessions();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [isSearchMode, sessionLookupKey, surfaceScope, trimmedQuery]);
 
-  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
-  const isSearchMode = normalizedSearchQuery.length > 0;
+  const normalizedSearchQuery = trimmedQuery.toLocaleLowerCase();
   const isFileLoading = isSearchMode
     ? isFileSearchLoading
     : view === 'files' && isDirectoryLoading;
@@ -488,6 +497,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     { kind: 'source', id: 'files' },
     ...(onSelectSkill ? [{ kind: 'source' as const, id: 'skills' as const }] : []),
     ...(onSelectMcp ? [{ kind: 'source' as const, id: 'mcp' as const }] : []),
+    { kind: 'source', id: 'sessions' },
     ...(onAddImage ? [{ kind: 'action' as const, id: 'add-image' as const }] : []),
   ], [onAddImage, onSelectSkill, onSelectMcp]);
   const mcpItems = useMemo<ContextPickerItem[]>(() => (
@@ -502,6 +512,12 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     }
     return filteredSkills.map(item => ({ kind: 'skill', item }));
   }, [filteredSkills, onRetrySkills, skillsLoadFailed, skillsLoading]);
+  const sessionItems = useMemo<ContextPickerItem[]>(
+    () => (currentSessionLookup?.items ?? [])
+      .filter(item => item.sessionId !== excludeSessionId)
+      .map(item => ({ kind: 'session', item })),
+    [currentSessionLookup, excludeSessionId],
+  );
   const displayItems = useMemo<ContextPickerItem[]>(() => {
     if (isSearchMode) {
       const addImageMatches = Boolean(onAddImage)
@@ -512,7 +528,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
         ...(onSelectSkill
           ? filteredSkills.map(item => ({ kind: 'skill' as const, item }))
           : []),
-        ...sessionResults.map(item => ({ kind: 'session' as const, item })),
+        ...sessionItems,
         ...mcpItems,
         ...(onSelectSkill && skillsLoadFailed && onRetrySkills
           ? [{ kind: 'action' as const, id: 'retry-skills' as const }]
@@ -525,6 +541,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     if (entryView === 'sources' && view === 'sources') return sourceItems;
     if (view === 'skills') return skillItems;
     if (view === 'mcp') return mcpItems;
+    if (view === 'sessions') return sessionItems;
     return [
       ...currentFiles.map(item => ({ kind: 'file' as const, item })),
       ...(currentPath ? [] : referenceItems.map(item => ({ kind: 'file' as const, item }))),
@@ -541,7 +558,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     referenceItems,
     results,
     sourceItems,
-    sessionResults,
+    sessionItems,
     entryView,
     skillItems,
     mcpItems,
@@ -568,13 +585,9 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     return directorySegments.join('/');
   }, [currentPath, getRelativePath, t, workspacePath]);
   const currentDirectoryTailStart = Math.max(0, currentDirectoryPath.lastIndexOf('/'));
-  const currentViewLabel = view === 'skills'
-    ? t('chatInput.boostSkills')
-    : view === 'mcp'
-      ? t('contextPicker.mcp.label')
-    : view === 'sources'
-      ? t('contextPicker.menuTitle')
-      : currentDirectoryPath;
+  const currentViewLabel = view === 'sources' ? t('contextPicker.menuTitle')
+    : view === 'files' ? currentDirectoryPath
+    : t(SOURCE_LABELS[view]);
   const canNavigateBack = !isSearchMode && (
     pathHistory.length > 0 || (entryView === 'sources' && view !== 'sources')
   );
@@ -591,7 +604,6 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
 
   useEffect(() => () => {
     if (fileSearchDebounceTimerRef.current !== null) window.clearTimeout(fileSearchDebounceTimerRef.current);
-    if (sessionSearchDebounceTimerRef.current !== null) window.clearTimeout(sessionSearchDebounceTimerRef.current);
     fileAbortControllerRef.current?.abort();
   }, []);
 
@@ -634,6 +646,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
 
     const timestamp = Date.now();
     if (selection.kind === 'session') {
+      if (!surfaceScope.isCurrent()) return;
       const session = selection.item;
       onSelectContext({
         id: `session-reference-${timestamp}-${Math.random().toString(36).slice(2, 9)}`,
@@ -668,7 +681,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
       timestamp,
     });
     onClose();
-  }, [onAddImage, onClose, onRetrySkills, onSelectContext, onSelectSkill, onSelectMcp, openSource]);
+  }, [onAddImage, onClose, onRetrySkills, onSelectContext, onSelectSkill, onSelectMcp, openSource, surfaceScope]);
 
   const handleItemClick = useCallback((selection: ContextPickerItem, event: React.MouseEvent<HTMLElement>) => {
     // Browsing keeps its own affordance: the trailing chevron opens a directory,
@@ -698,21 +711,18 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
         break;
       }
       case 'ArrowRight': {
-        const selected = displayItems[selectedIndex];
-        if (isSearchMode || !selected) break;
-        if (selected.kind !== 'source'
-          && !(selected.kind === 'file' && selected.item.isDirectory)) break;
         event.preventDefault();
         event.stopPropagation();
+        const selected = displayItems[selectedIndex];
+        if (isSearchMode || !selected) break;
         if (selected.kind === 'source') openSource(selected.id);
-        if (selected.kind === 'file') enterDirectory(selected.item);
+        if (selected.kind === 'file' && selected.item.isDirectory) enterDirectory(selected.item);
         break;
       }
       case 'ArrowLeft': {
-        if (!canNavigateBack) break;
         event.preventDefault();
         event.stopPropagation();
-        goBack();
+        if (canNavigateBack) goBack();
         break;
       }
       case 'Enter':
@@ -781,7 +791,9 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
       ? t('chatInput.boostSkillsEmpty')
       : view === 'mcp'
         ? mcpStatus ?? t('contextPicker.mcp.empty')
-      : t('contextPicker.emptyDirectory');
+      : isSessionBrowse
+        ? t(canBrowseSessions ? 'contextPicker.sessions.empty' : 'contextPicker.sessions.unsupportedHost')
+        : t('contextPicker.emptyDirectory');
 
   const picker = (
     <div
@@ -789,7 +801,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
       data-openbitfun-part="root"
       data-openbitfun-state={[
         isLoading && 'loading',
-        (fileLoadError || (showMcpStatus && mcpLoadFailed)) && 'error',
+        (fileLoadError || sessionBrowseFailed || (showMcpStatus && mcpLoadFailed)) && 'error',
       ].filter(Boolean).join(' ') || undefined}
       data-openbitfun-placement={isOverlay ? overlayLayout?.placement ?? 'top' : undefined}
       ref={containerRef}
@@ -863,6 +875,10 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
               ? 'contextPicker.searchUnavailable'
               : 'contextPicker.browseUnavailable')}</span>
           </ListboxEmpty>
+        ) : sessionBrowseFailed ? (
+          <ListboxEmpty data-openbitfun-state="error" className="chat-context-picker__empty">
+            <span>{t('contextPicker.sessions.loadFailed')}</span>
+          </ListboxEmpty>
         ) : displayItems.length === 0 && isLoading ? (
           <ListboxEmpty className="chat-context-picker__loading"><Icon glyph={Loader2} size="sm" className="chat-context-picker__spinner" /><span>{t('contextPicker.loading')}</span></ListboxEmpty>
         ) : displayItems.length === 0 ? (
@@ -887,11 +903,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
                         ? mcp.key
                       : `file-${file?.referenceStableKey || file?.path}`;
               const label = selection.kind === 'source'
-                ? t(selection.id === 'files'
-                  ? 'chatInput.boostAddContext'
-                  : selection.id === 'mcp'
-                    ? 'contextPicker.mcp.label'
-                  : 'chatInput.boostSkills')
+                ? t(SOURCE_LABELS[selection.id])
                 : selection.kind === 'action'
                   ? t(selection.id === 'add-image'
                     ? 'input.addImage'
@@ -920,7 +932,9 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
                   leading={selection.kind === 'source'
                     ? selection.id === 'mcp'
                       ? <Plug aria-hidden="true" />
-                      : <Icon name={selection.id === 'files' ? 'files' : 'book-open'} size="lg" aria-hidden="true" />
+                      : selection.id === 'sessions'
+                        ? <MessageCircle aria-hidden="true" />
+                        : <Icon name={selection.id === 'files' ? 'files' : 'book-open'} size="lg" aria-hidden="true" />
                     : selection.kind === 'action'
                       ? selection.id === 'add-image'
                         ? <Icon name="image" size="lg" aria-hidden="true" />

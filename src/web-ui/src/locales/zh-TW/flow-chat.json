@@ -1216,6 +1216,12 @@
     "currentStatus": "目前狀態: {{status}}"
   },
   "contextPicker": {
+    "sessions": {
+      "label": "工作階段",
+      "empty": "沒有可引用的工作階段",
+      "loadFailed": "無法載入工作階段，請返回後再試一次。",
+      "unsupportedHost": "目前的主機不支援瀏覽工作階段。"
+    },
     "mcp": {
       "label": "MCP",
       "server": "MCP 服務",

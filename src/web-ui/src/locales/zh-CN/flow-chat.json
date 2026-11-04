@@ -1216,6 +1216,12 @@
     "currentStatus": "当前状态: {{status}}"
   },
   "contextPicker": {
+    "sessions": {
+      "label": "会话",
+      "empty": "没有可引用的会话",
+      "loadFailed": "无法加载会话，请返回后重试。",
+      "unsupportedHost": "当前主机不支持浏览会话。"
+    },
     "mcp": {
       "label": "MCP",
       "server": "MCP 服务",
