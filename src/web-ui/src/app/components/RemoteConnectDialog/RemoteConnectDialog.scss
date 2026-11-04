@@ -302,7 +302,7 @@
   display: grid;
   width: 100%;
   min-height: 72px;
-  grid-template-columns: 40px minmax(0, 1fr) auto 32px;
+  grid-template-columns: 40px minmax(0, 1fr) auto 16px;
   align-items: center;
   gap: surface.$row-gap;
   padding: surface.$row-block surface.$row-inline;
@@ -368,21 +368,12 @@
 
 .openbitfun-remote-connect__overview-action-chevron {
   @include surface.chevron;
-  // A round glass control, like the card's arrows.
-  box-sizing: content-box;
-  inline-size: 16px;
-  block-size: 16px;
-  padding: 8px;
-  border-radius: var(--openbitfun-radius-pill);
-  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 6%, transparent);
   transition:
     color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-    background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
     transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 }
 
 .openbitfun-remote-connect__overview-action:hover:not(:disabled) .openbitfun-remote-connect__overview-action-chevron {
-  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 13%, transparent);
   transform: translateX(2px);
 }
 
