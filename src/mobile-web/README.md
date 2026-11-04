@@ -1,9 +1,13 @@
 # Mobile web remote control
 
-Open a desktop invitation and sign in with the desktop's GitHub account. The
-browser remembers this login: refreshing, opening another tab with the same
-invitation, or reopening the browser does not require another GitHub login while
+Open a host invitation and sign in with the host's OpenBitFun account, using the
+same GitHub or email-code login method. The browser remembers this login: refreshing, opening another tab with the same
+invitation, or reopening the browser does not require another sign-in while
 the Relay token remains valid.
+
+The official Relay needs no user deployment. Desktop also supports same-network
+invitations; both paths need internet access for sign-in. See the
+[Relay FAQ](../apps/relay-server/FAQ.md) for connection and privacy boundaries.
 
 ## Account and connection scope
 

@@ -1,3 +1,5 @@
+import { deviceWorkspaceCatalog } from '@/infrastructure/peer-device/deviceWorkspaceCatalog';
+import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import { FlowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { FlowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { aiExperienceConfigService } from '@/infrastructure/config/services/AIExperienceConfigService';
@@ -20,7 +22,8 @@ export type AgentCompanionPetCommand =
   /** Right-click menu: turn the companion off ("Show Agent companion"). */
   | { type: 'close-desktop-pet' }
   /** Bubble right-click menu: the user acknowledged this bubble. */
-  | { type: 'dismiss-task'; sessionId: string }
+  /** `surfaceId` names a background device that owns the session. */
+  | { type: 'dismiss-task'; sessionId: string; surfaceId?: string }
   /** Bubble composer: send a message straight into the bubble's session. */
   | { type: 'send-message'; sessionId: string; message: string };
 
@@ -98,7 +101,10 @@ export async function handleAgentCompanionPetCommand(
       await closeAgentCompanionDesktopPet();
       return;
     case 'dismiss-task':
-      if (command.sessionId) {
+      if (command.sessionId && command.surfaceId && command.surfaceId !== getActiveSurfaceId()) {
+        // A background device's session is acknowledged on its own host.
+        void deviceWorkspaceCatalog.markSessionRead(command.surfaceId, command.sessionId);
+      } else if (command.sessionId) {
         dismissAgentCompanionTask(command.sessionId);
       }
       return;

@@ -8,6 +8,7 @@ import React, { Suspense, useState } from 'react';
 import { TabGroup } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
+import GallerySkeleton from '@/app/components/GalleryLayout/GallerySkeleton';
 import './MiniAppGalleryScene.scss';
 
 const MiniAppLibraryView = lazyWithRecovery(() => import('./views/MiniAppLibraryView'));
@@ -57,7 +58,7 @@ const MiniAppGalleryScene: React.FC<MiniAppGallerySceneProps> = ({ initialDetail
   return (
     <div className="miniapp-gallery-scene" data-openbitfun-scene="miniapp-gallery" data-openbitfun-part="root">
       <div className="miniapp-gallery-scene__content">
-        <Suspense fallback={null}>
+        <Suspense fallback={<GallerySkeleton />}>
           {activeTab === 'submissions'
             ? <MiniAppSubmissionsView renderLayout={renderLibrary} />
             : renderLibrary()}

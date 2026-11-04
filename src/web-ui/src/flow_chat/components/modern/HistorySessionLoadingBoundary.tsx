@@ -14,14 +14,25 @@ interface Props {
 }
 
 type Phase = 'idle' | 'loading' | 'exiting' | 'revealing';
-const EXIT_DURATION = 400;
-const REVEAL_DURATION = 360;
+const EXIT_DURATION = 240;
+const REVEAL_DURATION = 200;
+/**
+ * A load shorter than this never showed its skeleton (it fades in after a
+ * delay, see the stylesheet): the transcript just fades in, without the
+ * skeleton hand-over, so a fast open is not made to wait on choreography.
+ */
+const QUICK_LOAD_MS = 260;
+const QUICK_REVEAL_DURATION = 140;
 
 /** Presentation only. The existing viewport owner decides when the transcript is settled. */
 export function HistorySessionLoadingBoundary({
   identity, loading, hasTranscript, disabled, intent, label, onPresentationChange, children,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const coverStartedAt = useRef<{ identity: string; at: number } | null>(null);
+  if (loading && coverStartedAt.current?.identity !== identity) {
+    coverStartedAt.current = { identity, at: performance.now() };
+  }
   const [state, setState] = useState<{ identity: string; phase: Phase }>({
     identity, phase: loading ? 'loading' : 'idle',
   });
@@ -98,6 +109,17 @@ export function HistorySessionLoadingBoundary({
       if (!root || !content || !view) return;
       const skeleton = root.querySelector<HTMLElement>('.history-session-skeleton');
       if (!skeleton) { settle(); return; }
+      const shownFor = coverStartedAt.current?.identity === identity
+        ? performance.now() - coverStartedAt.current.at : Infinity;
+      if (shownFor < QUICK_LOAD_MS) {
+        setPhase('revealing');
+        const quick = animate(content, [{ opacity: 0 }, { opacity: 1 }], {
+          duration: QUICK_REVEAL_DURATION, easing: 'ease-out', fill: 'forwards',
+        });
+        await quick.finished;
+        if (!cancelled) settle();
+        return;
+      }
       const viewport = content.getBoundingClientRect();
       // Read only the bounded rendered window, once, after its opening placement.
       // Animate the decorative overlay, never the measured rows or their geometry.
@@ -147,26 +169,7 @@ export function HistorySessionLoadingBoundary({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity, loading, hasTranscript, disabled]);
 
-  const skeleton = (
-    <div className="history-session-skeleton" aria-hidden="true" data-openbitfun-component="modern-flow-chat" data-openbitfun-part="historySkeleton">
-      <div className="history-session-skeleton__column">
-        <div className="history-session-skeleton__user"><span /><span /></div>
-        <div className="history-session-skeleton__group history-session-skeleton__group--first">
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-        </div>
-        <div className="history-session-skeleton__group history-session-skeleton__group--second">
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-        </div>
-        <div className="history-session-skeleton__group history-session-skeleton__group--third">
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-        </div>
-      </div>
-    </div>
-  );
+  const skeleton = <HistorySessionSkeleton />;
   const overlayProps = {
     className: 'history-session-loading__overlay',
     hidden: !loading && phase === 'revealing',
@@ -196,6 +199,30 @@ export function HistorySessionLoadingBoundary({
           {skeleton}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** The history loading skeleton, shared with presentations that precede a session (a device switch). */
+export function HistorySessionSkeleton() {
+  return (
+    <div className="history-session-skeleton" aria-hidden="true" data-openbitfun-component="modern-flow-chat" data-openbitfun-part="historySkeleton">
+      <div className="history-session-skeleton__column">
+        <div className="history-session-skeleton__user"><span /><span /></div>
+        <div className="history-session-skeleton__group history-session-skeleton__group--first">
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+        </div>
+        <div className="history-session-skeleton__group history-session-skeleton__group--second">
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+        </div>
+        <div className="history-session-skeleton__group history-session-skeleton__group--third">
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+        </div>
+      </div>
     </div>
   );
 }

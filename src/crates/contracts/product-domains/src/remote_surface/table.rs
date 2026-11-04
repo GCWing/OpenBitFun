@@ -371,7 +371,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("get_session_stats",                                          Unaudited,   Proxied,          HANDLED),
     op("get_session_thread_goal",                                    Unaudited,   Proxied,          HANDLED),
     op("get_session_turns",                                          Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
-    op("get_session_usage_report",                                   Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
+    op("get_session_usage_report",                                   Unaudited,   Proxied,          HANDLED),
     op("get_skill_configs",                                          Unaudited,   Proxied,          HANDLED),
     op("get_snapshot_sessions",                                      Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_snapshot_system_stats",                                  Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),

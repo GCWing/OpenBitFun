@@ -1,6 +1,19 @@
 @use './remote-connect-surface' as surface;
 
 .openbitfun-remote-connect-dialog {
+  // The device card's atmosphere: one soft light from above in a single
+  // silver, glass panes on it, round glass actions. No second colour.
+  --_rc-ambient: var(--openbitfun-color-content-secondary);
+  --_rc-ambient-strength: 9%;
+  background:
+    radial-gradient(80% 55% at 50% 0%, color-mix(in srgb, var(--_rc-ambient) var(--_rc-ambient-strength), transparent), transparent 75%),
+    radial-gradient(60% 45% at 100% 100%, color-mix(in srgb, var(--_rc-ambient) calc(var(--_rc-ambient-strength) / 3), transparent), transparent 70%),
+    var(--openbitfun-color-surface-raised);
+
+  :where([data-color-scheme='dark']) & {
+    --_rc-ambient-strength: 18%;
+  }
+
   block-size: min(620px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
   min-block-size: min(620px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
   max-block-size: min(620px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
@@ -53,8 +66,8 @@
   flex-direction: column;
   gap: var(--openbitfun-space-5);
   padding: surface.$page-block-start var(--openbitfun-space-3) var(--openbitfun-space-4);
-  border-inline-end: surface.$divider;
-  background: var(--openbitfun-color-surface-panel);
+  // The same lit surface; the column is set apart by space, not a band.
+  background: transparent;
 }
 
 .openbitfun-remote-connect__sidebar-brand {
@@ -104,12 +117,12 @@
   transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
   &:hover {
-    background: var(--openbitfun-color-action-neutral-surface);
+    background: color-mix(in srgb, var(--openbitfun-color-content-primary) 6%, transparent);
     color: var(--openbitfun-color-content-primary);
   }
 
   &:active {
-    background: var(--openbitfun-color-action-neutral-surface-pressed);
+    background: color-mix(in srgb, var(--openbitfun-color-content-primary) 9%, transparent);
   }
 
   &:focus-visible {
@@ -118,7 +131,8 @@
   }
 
   &[aria-current] {
-    background: var(--openbitfun-color-action-neutral-surface);
+    background: color-mix(in srgb, var(--openbitfun-color-content-primary) 10%, transparent);
+    backdrop-filter: var(--openbitfun-effect-blur-subtle);
     color: var(--openbitfun-color-content-primary);
     font-weight: var(--openbitfun-type-label-selected-font-weight);
   }
@@ -284,10 +298,11 @@
 }
 
 .openbitfun-remote-connect__overview-action {
+  @include surface.state-light(--_rc-light);
   display: grid;
   width: 100%;
   min-height: 72px;
-  grid-template-columns: surface.$icon-slot minmax(0, 1fr) auto 16px;
+  grid-template-columns: 40px minmax(0, 1fr) auto 16px;
   align-items: center;
   gap: surface.$row-gap;
   padding: surface.$row-block surface.$row-inline;
@@ -299,7 +314,7 @@
   cursor: pointer;
 
   & + & {
-    @include surface.card-divider;
+    @include surface.card-divider(calc(40px + #{surface.$row-gap}));
   }
 
   &:hover:not(:disabled) .openbitfun-remote-connect__overview-action-chevron {
@@ -315,7 +330,15 @@
 }
 
 .openbitfun-remote-connect__overview-action-icon {
-  @include surface.icon-slot;
+  @include surface.icon-disc(--_rc-light);
+}
+
+.openbitfun-remote-connect__overview-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 4%, transparent);
+}
+
+.openbitfun-remote-connect__overview-action:hover:not(:disabled) .openbitfun-remote-connect__overview-action-icon {
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 11%, transparent);
 }
 
 .openbitfun-remote-connect__overview-action-copy {
@@ -345,7 +368,13 @@
 
 .openbitfun-remote-connect__overview-action-chevron {
   @include surface.chevron;
-  transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  transition:
+    color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+    transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+
+.openbitfun-remote-connect__overview-action:hover:not(:disabled) .openbitfun-remote-connect__overview-action-chevron {
+  transform: translateX(2px);
 }
 
 // ==================== Cards ====================
@@ -353,6 +382,8 @@
 .openbitfun-remote-connect__network-card,
 .openbitfun-remote-connect__bot-card {
   @include surface.card;
+  @include surface.state-light(--_rc-light);
+  @include surface.lit-card(--_rc-light);
 }
 
 .openbitfun-remote-connect__card-header,
@@ -360,12 +391,13 @@
   @include surface.card-row;
 }
 
-.openbitfun-remote-connect__card-header-icon {
-  @include surface.icon-slot;
+.openbitfun-remote-connect__card-header-icon,
+.openbitfun-remote-connect__bot-identity-icon {
+  @include surface.icon-disc(--_rc-light);
 }
 
+// A brand mark keeps its own colours inside the disc.
 .openbitfun-remote-connect__bot-identity-icon {
-  @include surface.icon-slot;
   color: var(--openbitfun-color-content-primary);
 }
 
@@ -389,6 +421,50 @@
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
+}
+
+// State as the device card draws it: a dot and a quiet word; a live link breathes.
+.openbitfun-remote-connect__state-mark {
+  --_state-tone: var(--openbitfun-color-content-muted);
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-label-md-font-family);
+  font-size: var(--openbitfun-type-label-md-font-size);
+  line-height: var(--openbitfun-type-label-md-line-height);
+  white-space: nowrap;
+
+  &[data-tone='success'] { --_state-tone: var(--openbitfun-color-status-success-content); }
+  &[data-tone='warning'] { --_state-tone: var(--openbitfun-color-status-warning-content); }
+}
+
+.openbitfun-remote-connect__state-dot {
+  position: relative;
+  flex: 0 0 auto;
+  inline-size: var(--openbitfun-space-2);
+  block-size: var(--openbitfun-space-2);
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--_state-tone);
+
+  [data-live] > &::after {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    content: '';
+    animation: openbitfun-remote-connect-live 1.8s var(--openbitfun-motion-easing-decelerate) infinite;
+  }
+}
+
+@keyframes openbitfun-remote-connect-live {
+  from { opacity: 0.6; transform: scale(1); }
+  to { opacity: 0; transform: scale(2.6); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-remote-connect__state-dot::after { animation: none; }
 }
 
 .openbitfun-remote-connect__card-section {
@@ -518,7 +594,7 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--openbitfun-radius-pill);
-  background: var(--openbitfun-color-action-neutral-surface);
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 8%, transparent);
   color: var(--openbitfun-color-content-primary);
   font-family: var(--openbitfun-type-micro-font-family);
   font-size: var(--openbitfun-type-micro-font-size);
@@ -589,14 +665,14 @@
   align-items: center;
   justify-content: center;
   padding: 6px;
-  border: surface.$divider;
+  border: 0;
   border-radius: var(--openbitfun-radius-lg);
   background: var(--openbitfun-color-content-on-dark);
   cursor: pointer;
-  transition: border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
   &:hover {
-    border-color: var(--openbitfun-color-border-default);
+    transform: scale(1.02);
   }
 
   &:focus-visible {
@@ -613,9 +689,8 @@
 .openbitfun-remote-connect__pairing-code {
   max-width: 100%;
   padding: var(--openbitfun-space-3) var(--openbitfun-space-5);
-  border: surface.$divider;
   border-radius: var(--openbitfun-radius-base);
-  background: var(--openbitfun-color-surface-canvas);
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 6%, transparent);
   color: var(--openbitfun-color-content-primary);
   font-family: var(--openbitfun-type-code-md-font-family);
   font-size: var(--openbitfun-type-heading-dialog-font-size);
@@ -702,7 +777,6 @@
 .openbitfun-remote-connect__weixin-qr-svg-wrap {
   display: inline-flex;
   padding: 2px;
-  border: surface.$divider;
   border-radius: var(--openbitfun-radius-lg);
   background: var(--openbitfun-color-content-on-dark);
 
@@ -776,7 +850,7 @@
 }
 
 .openbitfun-remote-connect__client-icon {
-  @include surface.icon-slot;
+  @include surface.icon-disc(--_rc-light, 28px);
 }
 
 .openbitfun-remote-connect__client-name {

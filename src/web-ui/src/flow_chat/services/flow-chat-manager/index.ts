@@ -35,6 +35,7 @@ export {
   createChatSession,
   hydrateSessionHistoryForDetail,
   preloadHistoricalSessionForOpen,
+  prewarmHistoricalSession,
   switchChatSession,
   deleteChatSession,
   archiveChatSession,

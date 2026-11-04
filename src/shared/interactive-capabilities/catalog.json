@@ -4313,8 +4313,8 @@
       "categoryId": "connect",
       "titleZh": "Remote Connect 与多设备",
       "titleEn": "Remote Connect & devices",
-      "summaryZh": "从手机、Bot 或另一台 OpenBitFun 设备连接当前主机，远程查看会话、回答权限并继续工作。",
-      "summaryEn": "Connect to this host from mobile, a bot, or another OpenBitFun device to inspect sessions, answer permissions, and continue work remotely.",
+      "summaryZh": "从手机、Bot 或另一台 OpenBitFun 设备远程查看会话、回答权限并继续工作。手机与同账号设备互控默认使用官方 Relay，无需部署服务器；官方与局域网模式登录时均需联网。",
+      "summaryEn": "Inspect sessions, answer permissions, and continue work from mobile, a bot, or another OpenBitFun device. Mobile and same-account device control use the official Relay by default, with no server deployment; both official and LAN modes need internet access for sign-in.",
       "keywordsZh": [
         "Remote Connect",
         "远程控制",
@@ -4324,7 +4324,8 @@
         "微信",
         "多设备",
         "Peer Device",
-        "GitHub"
+        "GitHub",
+        "邮箱登录"
       ],
       "keywordsEn": [
         "remote connect",
@@ -4335,31 +4336,34 @@
         "WeChat",
         "multi-device",
         "peer device",
-        "GitHub"
+        "GitHub",
+        "email sign-in"
       ],
       "highlightsZh": [
-        "通过局域网或官方 Relay 连接",
+        "官方 Relay 无需部署；桌面端可同时运行局域网 Relay",
         "接入飞书、Telegram 或微信 Bot",
-        "使用 GitHub 身份管理设备并进入 Peer Device Mode"
+        "使用同一种登录方式与同一账号管理设备并进入 Peer Device Mode"
       ],
       "highlightsEn": [
-        "Connect through LAN or the official Relay",
+        "Use the official Relay without deployment; Desktop can also run a LAN Relay concurrently",
         "Use Feishu, Telegram, or WeChat bots",
-        "Use GitHub identity to manage devices and enter Peer Device Mode"
+        "Use the same login method and account to manage devices and enter Peer Device Mode"
       ],
       "items": [
         {
           "id": "connection-methods",
-          "titleZh": "选择局域网或官方 Relay",
-          "titleEn": "Choose LAN or the official Relay",
+          "titleZh": "使用官方 Relay 或桌面内置局域网 Relay；两者可同时运行，登录均需联网",
+          "titleEn": "Use the official or Desktop-hosted LAN Relay; both can run together and need internet for sign-in",
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“选择局域网或官方 Relay”需要结合当前网络与设备状态，确认目标主机后才能连接；智能体打开连接入口，由用户完成选择。",
-            "reasonEn": "“Choose LAN or the official Relay” depends on the current network and device state and requires the user to confirm the target host; the Agent opens the connection entry for that choice."
+            "reasonZh": "“使用官方 Relay 或桌面内置局域网 Relay；两者可同时运行，登录均需联网”需要结合当前网络与设备状态，由用户确认目标主机。官方 Relay 无需部署；私有 Relay 需配套客户端构建，界面没有自定义服务器地址或部署向导。",
+            "reasonEn": "“Use the official or Desktop-hosted LAN Relay; both can run together and need internet for sign-in” depends on network and device state and requires target confirmation. The official Relay needs no deployment; a private Relay requires matching client builds, with no custom-server field or deployment wizard in the UI."
           },
           "evidence": [
-            "command:remote_connect_get_methods"
+            "command:remote_connect_get_methods",
+            "source:src/apps/desktop/src/api/remote_connect_api/relay_routes_tests.rs#dual_relay_rpc_persistence_and_teardown_are_independent",
+            "source:src/crates/services/relay-service/src/identity.rs#IDENTITY_ME_URL"
           ]
         },
         {
@@ -4427,20 +4431,21 @@
         },
         {
           "id": "account",
-          "titleZh": "使用 GitHub 登录、退出并查看身份状态",
-          "titleEn": "Sign in with GitHub, sign out, and inspect identity status",
+          "titleZh": "通过共享登录页使用 GitHub 或邮箱验证码登录、退出并查看身份状态",
+          "titleEn": "Sign in through the shared page with GitHub or an email code, sign out, and inspect identity status",
           "control": {
             "kind": "open",
             "reasonCode": "externalAuth",
-            "reasonZh": "GitHub 账户登录必须由用户在外部认证页面确认；智能体可以打开入口并读取非秘密状态，但不能冒充账户持有人。",
-            "reasonEn": "GitHub account sign-in requires confirmation on an external authentication page; the Agent may open the entry and read non-secret status but cannot impersonate the account holder."
+            "reasonZh": "登录必须由用户在外部认证页面完成。GitHub 与邮箱是独立账号，各设备需使用同一种方式和同一账号；旧客户端或服务可能仅支持 GitHub。智能体可打开入口并读取非秘密状态，不能代替用户认证。",
+            "reasonEn": "The user must complete sign-in on the external authentication page. GitHub and email are independent accounts; devices need the same method and account. Older clients or services may support GitHub only. The Agent may open the entry and read non-secret status, but cannot authenticate for the user."
           },
           "evidence": [
             "command:account_github_start",
             "command:account_github_poll",
             "command:account_github_info",
             "command:account_logout",
-            "command:account_status"
+            "command:account_status",
+            "source:src/crates/services/services-integrations/src/account_identity/mod.rs#/auth/desktop/start?methods=all"
           ]
         },
         {
@@ -4483,14 +4488,16 @@
         }
       ],
       "stepsZh": [
-        "打开 Remote Connect",
-        "选择网络、Bot 或账户",
-        "按向导连接并确认安全提示"
+        "打开 Remote Connect，选择网络、Bot 或账户入口",
+        "手机或设备互控：宿主与控制端以相同方式登录同一账号，官方 Relay 无需部署",
+        "手机可扫描官方或桌面局域网邀请，确认目标设备；二维码不授予访问权，目标宿主须保持在线",
+        "Bot 远控：在对应平台完成机器人配置与配对，检查监听状态"
       ],
       "stepsEn": [
-        "Open Remote Connect",
-        "Choose Network, Bot, or Account",
-        "Follow the connection flow and review its security notice"
+        "Open Remote Connect and choose Network, Bot, or Account",
+        "For mobile or device control, sign in on the host and controller with the same method and account; the official Relay needs no deployment",
+        "On mobile, scan an official or Desktop LAN invitation and confirm the target; the QR code grants no access and the host must stay online",
+        "For bot control, configure and pair the bot on its platform, then check listener status"
       ],
       "agentExamplesZh": [
         "打开 Remote Connect",
@@ -4980,12 +4987,12 @@
         }
       ],
       "stepsZh": [
-        "使用 GitHub 登录",
+        "登录 OpenBitFun 账号（GitHub 或服务支持的邮箱验证码）",
         "打开 Pages",
         "选择页面并确认发布与可见性"
       ],
       "stepsEn": [
-        "Sign in to a GitHub account",
+        "Sign in to OpenBitFun with GitHub or an email code supported by the service",
         "Open Pages",
         "Choose a page and confirm publishing and visibility"
       ],

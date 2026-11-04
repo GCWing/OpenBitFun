@@ -982,6 +982,20 @@ describe('Session usage report UI components', () => {
     expect(container.querySelector('button[aria-label="Copy Markdown"]')).not.toBeNull();
   });
 
+  it('shows a host without the usage report as a calm unsupported state instead of a failure', () => {
+    render(<SessionUsagePanel unsupported="Context usage is not available on this device." />);
+
+    expect(container.textContent).toContain('Context usage is not available on this device.');
+    expect(container.textContent).not.toContain('usage.panel.failed');
+  });
+
+  it('localizes the unsupported context usage copy in every shipped locale', () => {
+    for (const locale of [enFlowChat, zhCnFlowChat, zhTwFlowChat]) {
+      expect(locale.usage.context.unsupported).toBeTruthy();
+      expect(locale.usage.context.updateRequired).toBeTruthy();
+    }
+  });
+
   it('shows an immediate usage loading card before report data exists', () => {
     render(
       <SessionUsageReportCard

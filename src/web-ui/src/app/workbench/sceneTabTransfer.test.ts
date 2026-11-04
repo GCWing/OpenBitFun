@@ -1,6 +1,6 @@
 import { createPaneState, selectedScene } from './scenePaneModel';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { registerSessionSceneNavigation, useSceneStore } from '../stores/sceneStore';
+import { registerSessionSceneNavigation, useSceneStore, resetSceneStoreForTest } from '../stores/sceneStore';
 import { getSessionSceneTabId } from '../components/SceneBar/types';
 import { sessionPaneLayoutStore, selectSessionPaneMode } from '../scenes/session/sessionPaneLayoutStore';
 import { dropSceneTab, endSceneTabDrag, isSceneTabDrag, writeSceneTabDrag } from './sceneTabTransfer';
@@ -21,7 +21,7 @@ function transfer() {
 beforeEach(() => {
   endSceneTabDrag();
   resetSettingsDraftRegistryForTests();
-  useSceneStore.getState().resetForPeerSwitch();
+  resetSceneStoreForTest();
   sessionPaneLayoutStore.setState(sessionPaneLayoutStore.getInitialState());
 });
 

@@ -10,6 +10,15 @@ import {
   TRANSIENT_TURN_STATUSES,
 } from './askUserQuestionState';
 import { effectiveToolInvocation } from './toolInvocationIdentity';
+import { resolvePersistedSessionTitle } from './sessionTitle';
+import { i18nService } from '@/infrastructure/i18n';
+import { resolveDeviceName, useDeviceDirectory } from '@/infrastructure/account/deviceDirectory';
+import { isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
+import {
+  listBackgroundDeviceSessions,
+  subscribeCrossDeviceSessions,
+  type CrossDeviceSession,
+} from '../services/crossDeviceSessions';
 
 export type AgentCompanionTaskState =
   | 'running'
@@ -35,6 +44,13 @@ export interface AgentCompanionTaskStatus {
    * parent turn context that only the main window composer can supply.
    */
   canReply?: boolean;
+  /**
+   * Set for a session on a device this window is not rendering. Opening it
+   * renders that device first; replying from the pet is not offered there.
+   */
+  surfaceId?: string;
+  workspaceId?: string;
+  deviceName?: string;
 }
 
 export interface AgentCompanionActivityPayload {
@@ -360,6 +376,48 @@ function isIndependentCompanionSession(session: Session): boolean {
   return !resolveSessionRelationship(session).isSubagent;
 }
 
+function deviceLabel(surfaceId: string): string {
+  if (!isLocalSurface(surfaceId)) return resolveDeviceName(surfaceId);
+  const localId = useDeviceDirectory.getState().localId;
+  return localId ? resolveDeviceName(localId) : i18nService.t('common:nav.devices.thisDevice');
+}
+
+/** A session on a background device, known only through its host summary. */
+function backgroundDeviceTask(row: CrossDeviceSession): AgentCompanionTaskStatus | null {
+  const activity = row.activity;
+  if (!activity) return null;
+  const at = row.session.lastActiveAt || row.session.createdAt;
+  const base = {
+    sessionId: row.session.sessionId,
+    title: toWellFormedText(resolvePersistedSessionTitle(row.session, key => i18nService.t(key))),
+    startedAt: at,
+    updatedAt: at,
+    canReply: false,
+    surfaceId: row.surfaceId,
+    workspaceId: row.workspaceId,
+    deviceName: toWellFormedText(deviceLabel(row.surfaceId)),
+  };
+  if (activity.pendingApprovals > 0) {
+    return { ...base, mood: 'waiting', state: 'attention', labelKey: 'agentCompanion.activity.waitingApproval', defaultLabel: 'Waiting for approval' };
+  }
+  if (activity.pendingQuestions > 0) {
+    return { ...base, mood: 'waiting', state: 'attention', labelKey: 'agentCompanion.activity.needsInput', defaultLabel: 'Needs input' };
+  }
+  if (activity.execution === 'running' || activity.execution === 'queued') {
+    return { ...base, mood: 'working', state: 'running', labelKey: 'agentCompanion.activity.working', defaultLabel: 'Working' };
+  }
+  if (activity.unreadCompletion === 'completed') {
+    return { ...base, mood: 'rest', state: 'completed', labelKey: 'agentCompanion.activity.completed', defaultLabel: 'Completed' };
+  }
+  if (activity.unreadCompletion === 'interrupted') {
+    return { ...base, mood: 'rest', state: 'interrupted', labelKey: 'agentCompanion.activity.interrupted', defaultLabel: 'Interrupted' };
+  }
+  if (activity.unreadCompletion === 'error' || activity.execution === 'error') {
+    return { ...base, mood: 'rest', state: 'error', labelKey: 'agentCompanion.activity.failed', defaultLabel: 'Failed' };
+  }
+  return null;
+}
+
 export function buildAgentCompanionActivity(): AgentCompanionActivityPayload {
   const sessions = Array.from(FlowChatStore.getInstance().getState().sessions.values())
     .filter(isIndependentCompanionSession);
@@ -402,6 +460,17 @@ export function buildAgentCompanionActivity(): AgentCompanionActivityPayload {
     }
   });
 
+  // Other devices' sessions coexist with this one's in the companion.
+  const listed = new Set(tasks.map(task => task.sessionId));
+  for (const row of listBackgroundDeviceSessions()) {
+    if (listed.has(row.session.sessionId)) continue;
+    const task = backgroundDeviceTask(row);
+    if (task) {
+      tasks.push(task);
+      listed.add(task.sessionId);
+    }
+  }
+
   if (!tasks.length) {
     pruneTaskOrder(tasks);
     return EMPTY_ACTIVITY;
@@ -427,17 +496,26 @@ export function buildAgentCompanionActivity(): AgentCompanionActivityPayload {
 export function subscribeAgentCompanionActivity(
   listener: (payload: AgentCompanionActivityPayload) => void,
 ): () => void {
+  // Stores notify far more often than the companion's facts change (streaming
+  // tokens, catalog page reads); only a changed payload crosses to its window.
+  let last = '';
   const emitCurrent = () => {
-    listener(buildAgentCompanionActivity());
+    const activity = buildAgentCompanionActivity();
+    const key = JSON.stringify(activity);
+    if (key === last) return;
+    last = key;
+    listener(activity);
   };
 
   const unsubscribeStore = FlowChatStore.getInstance().subscribe(emitCurrent);
   const unsubscribeMachines = stateMachineManager.subscribeGlobal(emitCurrent);
+  const unsubscribeDevices = subscribeCrossDeviceSessions(emitCurrent);
 
   emitCurrent();
 
   return () => {
     unsubscribeStore();
     unsubscribeMachines();
+    unsubscribeDevices();
   };
 }

@@ -60,13 +60,16 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   line-height: var(--openbitfun-type-body-sm-line-height);
 }
 
+// A card is a pane of frosted glass over the lit dialog, not a dark well:
+// no outline, only a faint lift.
 @mixin card {
   display: flex;
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
-  border-radius: var(--openbitfun-layout-field-group-radius);
-  background: var(--openbitfun-color-field-group-background);
+  border-radius: var(--openbitfun-radius-xl);
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 5%, transparent);
+  backdrop-filter: var(--openbitfun-effect-blur-subtle);
 }
 
 @mixin card-row {
@@ -77,8 +80,13 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   padding: $row-block $row-inline;
 }
 
-@mixin card-divider {
-  border-top: $divider;
+// Rows are separated by a hairline inset from the card's edges (and past a
+// row's icon by `$lead`), so a card reads as one surface, not a stack of boxes.
+@mixin card-divider($lead: 0px) {
+  background-image: linear-gradient(var(--openbitfun-color-border-subtle), var(--openbitfun-color-border-subtle));
+  background-position: top 0 right #{$row-inline};
+  background-repeat: no-repeat;
+  background-size: calc(100% - #{$row-inline} * 2 - #{$lead}) var(--openbitfun-border-width-default);
 }
 
 @mixin icon-slot {
@@ -89,6 +97,32 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   inline-size: $icon-slot;
   block-size: $icon-slot;
   color: var(--openbitfun-color-content-secondary);
+}
+
+// One neutral material for every surface. Colour is kept for meaning only
+// (a state dot, a destructive word), never for decoration, so a page full of
+// rows still reads calm. `$light` names the private property a surface may
+// use for its own neutral accents (underlines, carets).
+@mixin state-light($light) {
+  #{$light}: var(--openbitfun-color-content-secondary);
+}
+
+// A row's icon in a quiet neutral disc.
+@mixin icon-disc($light, $size: 40px) {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: $size;
+  block-size: $size;
+  border-radius: var(--openbitfun-radius-pill);
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 9%, transparent);
+  color: var(--openbitfun-color-content-primary);
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+
+@mixin lit-card($light) {
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 4%, transparent);
 }
 
 @mixin row-copy {
@@ -132,7 +166,7 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   justify-content: flex-end;
   gap: var(--openbitfun-space-2);
   padding: var(--openbitfun-space-3) $row-inline;
-  border-top: $divider;
+  @include card-divider;
 }
 
 @mixin notice {

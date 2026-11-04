@@ -3,6 +3,7 @@ import { Icon } from '@openbitfun/ui';
 import { CircleAlert, CircleCheck, CirclePause, CircleStop, CloudOff, Hand, Loader2, MessageCircleQuestion } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
 import { useSessionNavStatus } from '@/flow_chat/hooks/useSessionNavStatus';
+import type { SessionNavStatus } from '@/flow_chat/utils/sessionNavStatus';
 import './SessionStatusIndicator.scss';
 
 const presentation = {
@@ -17,20 +18,15 @@ const presentation = {
   syncing: { glyph: CloudOff, tone: 'secondary', label: 'nav.sessions.status.syncing' },
 } as const;
 
-export const SessionStatusIndicator = memo(function SessionStatusIndicator({
-  sessionId,
+/** The status cell for a status the caller already derived. */
+export const SessionStatusMark = memo(function SessionStatusMark({
+  status,
   idleFallback,
 }: {
-  sessionId: string;
-  /**
-   * Rendered in the same trailing cell while the session has nothing to report,
-   * so a second row mark can sit on the row's right edge without claiming a
-   * second cell. The cell still yields to the row menu on hover or focus.
-   */
+  status: SessionNavStatus;
   idleFallback?: ReactNode;
 }) {
   const { t } = useI18n('common');
-  const status = useSessionNavStatus(sessionId);
   const appearance = status.kind === 'idle' ? null : presentation[status.kind];
   const label = appearance
     ? status.kind === 'approval' && status.pendingCount > 1
@@ -65,4 +61,20 @@ export const SessionStatusIndicator = memo(function SessionStatusIndicator({
       />
     </span>
   ) : null;
+});
+
+export const SessionStatusIndicator = memo(function SessionStatusIndicator({
+  sessionId,
+  idleFallback,
+}: {
+  sessionId: string;
+  /**
+   * Rendered in the same trailing cell while the session has nothing to report,
+   * so a second row mark can sit on the row's right edge without claiming a
+   * second cell. The cell still yields to the row menu on hover or focus.
+   */
+  idleFallback?: ReactNode;
+}) {
+  const status = useSessionNavStatus(sessionId);
+  return <SessionStatusMark status={status} idleFallback={idleFallback} />;
 });

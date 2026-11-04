@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useSceneStore } from '@/app/stores/sceneStore';
+import { useSceneStore, resetSceneStoreForTest } from '@/app/stores/sceneStore';
 import { resolveSessionSceneTarget } from '@/app/services/sessionSceneTarget';
 import { appManager } from '@/app/services/AppManager';
 import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
@@ -60,7 +60,7 @@ describe('subagent pane navigation through production stores', () => {
     activateSurface('local');
     clearAgentCanvasForPeerSwitch();
     useContentResourceStore.setState({ resources: {} });
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: null }));
     appManager.updateLayout({ chatCollapsed: false, rightPanelCollapsed: true });
   });
@@ -70,7 +70,7 @@ describe('subagent pane navigation through production stores', () => {
     clearAgentCanvasForPeerSwitch();
     flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: null }));
     useContentResourceStore.setState({ resources: {} });
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
   });
 
   it('resolves unknown continuation policy without reloading an already complete transcript', async () => {

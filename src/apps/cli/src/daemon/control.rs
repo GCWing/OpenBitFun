@@ -445,7 +445,19 @@ mod tests {
             "A replacement daemon must wait for bot and account cleanup, even after discovery is withdrawn"
         );
         drop(cleanup_owner);
-        assert!(Server::reserve_in(root.path().to_path_buf()).await.is_ok());
+        // Other tests in this binary spawn processes. A child forked while the
+        // lock file is open shares its open file description until it execs,
+        // so the release can land a moment after the last lease is dropped.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            match Server::reserve_in(root.path().to_path_buf()).await {
+                Ok(_) => break,
+                Err(error) if std::time::Instant::now() >= deadline => {
+                    panic!("The owner lock must be free once every lease is dropped: {error:#}")
+                }
+                Err(_) => tokio::time::sleep(std::time::Duration::from_millis(20)).await,
+            }
+        }
     }
 
     #[tokio::test]

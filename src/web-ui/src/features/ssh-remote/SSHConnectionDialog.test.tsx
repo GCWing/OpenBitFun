@@ -519,31 +519,25 @@ describe('SSHConnectionDialog', () => {
     expect(remoteContextMock.connect.mock.calls[0]?.[0]).not.toBe(remoteContextMock.connect.mock.calls[1]?.[0]);
   });
 
-  it.each([
-    [{ supported: false, distributions: [] }, 'ssh.remote.wslUnsupported'],
-    [{ supported: true, distributions: [] }, 'ssh.remote.wslNoDistributions'],
-  ])('gates WSL when discovery returns %j', async (result, hint) => {
-    sshApiMock.listWslDistributions.mockResolvedValue(result);
+  it('offers WSL with a hint when it is supported but has no distributions', async () => {
+    sshApiMock.listWslDistributions.mockResolvedValue({ supported: true, distributions: [] });
     await renderDialog();
     await selectWsl();
-    if (result.supported) expect(container.textContent).toContain(hint);
-    else expect(container.textContent).not.toContain(hint);
+    expect(container.textContent).toContain('ssh.remote.wslNoDistributions');
     expect(findConnectButton()?.disabled).toBe(true);
     expect(remoteContextMock.connect).not.toHaveBeenCalled();
   });
 
-  it('shows a failed discovery and lets the user retry', async () => {
-    sshApiMock.listWslDistributions.mockRejectedValueOnce(new Error('wsl.exe unavailable'));
+  it.each([
+    ['unsupported', () => sshApiMock.listWslDistributions.mockResolvedValue({ supported: false, distributions: [] })],
+    ['failed', () => sshApiMock.listWslDistributions.mockRejectedValue(new Error('wsl.exe unavailable'))],
+  ])('shows no WSL choice and no error when discovery is %s', async (_case, arrange) => {
+    arrange();
     await renderDialog();
-    await selectWsl();
-    expect(container.textContent).toContain('ssh.remote.wslDiscoveryFailed');
-    expect(findConnectButton()?.disabled).toBe(true);
-    expect(sourceOption(1, 'wsl').disabled).toBe(true);
-    const refresh = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'workspaceSource.refreshOptions')!;
-    await act(async () => refresh.click());
-    expect(sourceOption(1, 'wsl').disabled).toBe(false);
-    await selectWsl();
-    expect(findConnectButton()?.disabled).toBe(false);
+    await act(async () => sourceOption(0, 'current').click());
+    expect(sourceOption(1, 'wsl')).toBeNull();
+    expect(container.textContent).not.toContain('ssh.remote.wslDiscoveryFailed');
+    expect(container.textContent).not.toContain('workspaceSource.refreshOptions');
   });
 
   it('retains WSL target and Linux user when editing and quick connecting a saved profile', async () => {

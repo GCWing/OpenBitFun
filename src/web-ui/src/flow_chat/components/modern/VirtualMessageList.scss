@@ -197,6 +197,11 @@
     &[data-history-paging-sentinel='error'] {
       visibility: visible;
     }
+
+    // A page that arrives quickly never flashes its spinner.
+    &[data-history-paging-sentinel='loading'] > * {
+      animation: history-paging-reveal 160ms ease-out 200ms both;
+    }
   }
 
   &__history-paging-spinner {
@@ -248,4 +253,11 @@
     -webkit-mask-image: none;
     mask-image: none;
   }
+}
+
+// A wait that ends quickly shows nothing: the indicator fades in only once
+// the wait has lasted long enough to be noticed.
+@keyframes history-paging-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

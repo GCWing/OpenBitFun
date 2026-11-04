@@ -359,7 +359,7 @@ function mapWorkspaceWorktree(
   };
 }
 
-function mapWorkspaceInfo(workspace: APIWorkspaceInfo): WorkspaceInfo {
+export function mapWorkspaceInfo(workspace: APIWorkspaceInfo): WorkspaceInfo {
   return {
     id: workspace.id,
     name: workspace.name,

@@ -203,7 +203,10 @@ describe('SceneViewport transitions', () => {
       await Promise.resolve();
     });
 
-    expect(visibleScenes().map(scene => scene.getAttribute('data-scene-id'))).toEqual(['agents']);
+    // Crossfade: the scene being left stays drawn, inert, above the new one
+    // until it has faded out.
+    expect(visibleScenes().map(scene => scene.getAttribute('data-scene-id')).sort()).toEqual(['agents', 'session']);
+    expect(container.querySelector('[data-scene-id="session"]')?.classList.contains('openbitfun-scene-viewport__scene--outgoing')).toBe(true);
     expect(container.querySelector('[data-scene-id="session"]')?.getAttribute('aria-hidden')).toBe('true');
     expect(container.querySelector('[data-scene-id="session"]')?.hasAttribute('inert')).toBe(true);
     expect(container.querySelector('[data-scene-id="agents"]')?.classList.contains(
@@ -224,6 +227,7 @@ describe('SceneViewport transitions', () => {
     expect(container.querySelector('[data-scene-id="agents"]')?.classList.contains(
       'openbitfun-scene-viewport__scene--incoming',
     )).toBe(false);
+    expect(visibleScenes().map(scene => scene.getAttribute('data-scene-id'))).toEqual(['agents']);
 
     sceneHarness.state = {
       ...sceneHarness.state,
@@ -232,7 +236,9 @@ describe('SceneViewport transitions', () => {
     };
     act(() => root.render(<SceneViewport />));
 
-    expect(visibleScenes().map(scene => scene.getAttribute('data-scene-id'))).toEqual(['session']);
+    // A ready target crossfades at once: the left scene fades above it.
+    expect(visibleScenes().map(scene => scene.getAttribute('data-scene-id')).sort()).toEqual(['agents', 'session']);
+    expect(container.querySelector('[data-scene-id="session"]')?.getAttribute('aria-hidden')).toBe('false');
     expect(container.querySelector('[data-scene-id="agents"]')?.getAttribute('aria-hidden')).toBe('true');
     expect(container.querySelector('[data-scene-id="agents"]')?.hasAttribute('inert')).toBe(true);
     expect(container.querySelector('[data-scene-id="agents"]')?.hasAttribute('hidden')).toBe(false);

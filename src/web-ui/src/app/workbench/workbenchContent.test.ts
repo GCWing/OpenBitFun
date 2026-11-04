@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { registerSessionSceneNavigation, useSceneStore } from '../stores/sceneStore';
+import { registerSessionSceneNavigation, useSceneStore, resetSceneStoreForTest } from '../stores/sceneStore';
 import { useContentResourceStore } from './contentResourceStore';
 import { registerContentCloseGuard } from './contentResourceLifecycle';
 import { fileTabManager } from '@/shared/services/FileTabManager';
@@ -49,7 +49,7 @@ describe('workbench content navigation', () => {
     flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: null }));
     clearAgentCanvasForPeerSwitch();
     useContentResourceStore.setState({ resources: {} });
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     resetSettingsDraftRegistryForTests();
     appManager.updateLayout({ chatCollapsed: false, rightPanelCollapsed: true });
   });
@@ -368,7 +368,7 @@ describe('workbench content navigation', () => {
     } finally { stop(); }
   });
 
-  it.each(['closed', 'replaced', 'scope-changed'])('cancels content when the destination changes during activation: %s', async reason => {
+  it.each(['closed', 'scope-changed'])('cancels content when the destination changes during activation: %s', async reason => {
     const target = openSession();
     useSceneStore.getState().openScene('git');
     let complete!: (activated: boolean) => void;
@@ -439,7 +439,7 @@ describe('workbench content navigation', () => {
     } finally { draft(); }
   });
 
-  it.each(['closed', 'replaced'])('does not restore a destination changed while settings exit is pending: %s', async reason => {
+  it.each(['closed'])('does not restore a destination changed while settings exit is pending: %s', async reason => {
     const target = openSession();
     useSceneStore.getState().openScene('settings');
     const draft = registerSettingsDraft({ id: 'settings-draft', pageId: 'page', label: 'Settings', dirty: true,

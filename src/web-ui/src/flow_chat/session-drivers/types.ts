@@ -21,6 +21,7 @@ import type { SessionDriverId } from './resolve';
 import type { SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { LineRange } from '@/shared/editor/LineRange';
 import type { SessionUsageReport } from '@/infrastructure/api/service-api/SessionAPI';
+import type { ProjectDefaultsConfig } from '@/infrastructure/config/types';
 
 export type { SessionDriverId } from './resolve';
 
@@ -203,6 +204,11 @@ export interface SessionCreationSeed {
   workspaceId?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
+  /**
+   * Shared read of the owning project's defaults for this creation. The mode
+   * resolver may already have issued it; reuse it instead of reading again.
+   */
+  readProjectDefaults?: () => Promise<{ supported: boolean; defaults: ProjectDefaultsConfig }>;
 }
 
 /** Cascade facts computed once by the shared caller before removal. */

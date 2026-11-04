@@ -3,6 +3,7 @@ import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurfac
 import { openAgentCanvasTabForSession, useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores/canvasStore';
 import { flowChatStore } from '../store/FlowChatStore';
 import { resolveSessionDriverId } from '../session-drivers/resolve';
+import { classifyPeerHostRefusal } from '@/infrastructure/peer-device/peerHostRefusal';
 
 const PREVIEW_FILE_NAMES: Record<UsageContextCategory, string> = {
   systemPrompt: 'system-prompt.md',
@@ -28,13 +29,21 @@ export async function openSessionContextPreview(params: {
   if (!workspaceId || params.sessionId !== params.reportSessionId
     || resolveSessionDriverId(params.sessionId, session) !== 'local') return 'unavailable';
 
-  const report = await sessionAPI.getSessionUsageReport({
-    sessionId: params.sessionId,
-    workspaceId,
-    includeHiddenSubagents: false,
-    contextPreviewCategory: params.category,
-    ...(params.category === 'systemPrompt' ? { includeSystemPromptPreview: true } : {}),
-  });
+  let report;
+  try {
+    report = await sessionAPI.getSessionUsageReport({
+      sessionId: params.sessionId,
+      workspaceId,
+      includeHiddenSubagents: false,
+      contextPreviewCategory: params.category,
+      ...(params.category === 'systemPrompt' ? { includeSystemPromptPreview: true } : {}),
+    });
+  } catch (error) {
+    // A peer host without the report (for example an older CLI host) does not
+    // offer previews either; that is the calm unavailable state, not a failure.
+    if (classifyPeerHostRefusal(error)) return surface.isCurrent() ? 'unavailable' : 'stale';
+    throw error;
+  }
   if (!surface.isCurrent()) return 'stale';
   if (report.sessionId !== params.sessionId) return 'unavailable';
   const snapshot = report.contextPreview;

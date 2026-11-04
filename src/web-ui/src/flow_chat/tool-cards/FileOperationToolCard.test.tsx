@@ -398,11 +398,11 @@ describe('FileOperationToolCard', () => {
     const { useContentResourceStore } = await vi.importActual<
       typeof import('../../app/workbench/contentResourceStore')
     >('../../app/workbench/contentResourceStore');
-    const { useSceneStore } = await vi.importActual<typeof import('../../app/stores/sceneStore')>(
+    const { useSceneStore, resetSceneStoreForTest } = await vi.importActual<typeof import('../../app/stores/sceneStore')>(
       '../../app/stores/sceneStore',
     );
     useContentResourceStore.setState({ resources: {} });
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     mocks.createDiffEditorTab.mockImplementation(tabUtils.createDiffEditorTab);
     const config = {
       toolName: 'Edit', displayName: 'Edit', icon: 'EDIT',

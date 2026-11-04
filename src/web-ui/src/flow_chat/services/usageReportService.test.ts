@@ -254,6 +254,33 @@ describe('runUsageReportCommand', () => {
     expect(transcriptOf()).toEqual([]);
   });
 
+  it('shows an older peer host without the report as a calm unsupported state and no error toast', async () => {
+    const { notificationService } = await import('@/shared/notification-system');
+    vi.mocked(notificationService.error).mockClear();
+    sessionApiMocks.getSessionUsageReport.mockRejectedValueOnce(new Error(
+      "command 'get_session_usage_report' is not supported on CLI peer host: the CLI peer host has no handler for this command",
+    ));
+    const { runUsageReportCommand } = await import('./usageReportService');
+
+    await expect(runUsageReportCommand({ session: createSession(), ...uiParams }))
+      .rejects.toThrow('not supported on CLI peer host');
+
+    expect(notificationService.error).not.toHaveBeenCalled();
+    expect(panelData()).toMatchObject({ isLoading: false });
+    expect(panelData()?.error).toBeUndefined();
+    expect(typeof panelData()?.unsupported).toBe('string');
+  });
+
+  it('keeps the error toast for ordinary report failures', async () => {
+    const { notificationService } = await import('@/shared/notification-system');
+    vi.mocked(notificationService.error).mockClear();
+    sessionApiMocks.getSessionUsageReport.mockRejectedValueOnce(new Error('report failed'));
+    const { runUsageReportCommand } = await import('./usageReportService');
+
+    await expect(runUsageReportCommand({ session: createSession(), ...uiParams })).rejects.toThrow();
+    expect(notificationService.error).toHaveBeenCalledTimes(1);
+  });
+
   it('does not open at all when there is no workspace to report on', async () => {
     const { runUsageReportCommand } = await import('./usageReportService');
 

@@ -4,6 +4,6 @@ export const newProjectDialogAppearanceDescriptor: AppearanceSurfaceDescriptor =
   parts: [
     { id: 'root' }, { id: 'title' }, { id: 'content' },
     { id: 'field' }, { id: 'pathSelector' },
-    { id: 'error' }, { id: 'footer' }, { id: 'choices' },
+    { id: 'error' }, { id: 'footer' }, { id: 'choices' }, { id: 'devices' },
   ],
 };

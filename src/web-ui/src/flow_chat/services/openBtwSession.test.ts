@@ -93,6 +93,7 @@ vi.mock('../store/FlowChatStore', () => ({
       sessions,
       activeSessionId,
     }),
+    hasUnpromotedSeed: () => false,
     ensurePersistedSessionMetadata: (...args: unknown[]) => mocks.ensurePersistedSessionMetadata(...args),
     addExternalSession: (...args: unknown[]) =>
       mocks.addExternalSession(...args),

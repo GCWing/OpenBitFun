@@ -25,7 +25,11 @@ describe('session action confirmation policy', () => {
     expect(source).not.toContain('data-testid="nav-session-menu-manage-sessions"');
     expect(source).not.toContain('flowChatManager.deleteChatSession');
     expect(archiveHandler).not.toMatch(/confirm(?:Danger|Warning)\(/);
-    expect(archiveHandler).toContain('await flowChatManager.archiveChatSession(sessionId)');
+    expect(archiveHandler).toContain('await archiveSessionRow(sessionId, t);');
+    const rowActions = readSource('./sessionRowActions.ts');
+    const sharedArchive = sliceBetween(rowActions, 'export async function archiveSessionRow(', 'export async function duplicateSessionRow(');
+    expect(sharedArchive).not.toMatch(/confirm(?:Danger|Warning)\(/);
+    expect(sharedArchive).toContain('await flowChatManager.archiveChatSession(sessionId)');
   });
 
   it('archives selected sessions immediately and uses danger confirmation for deletion', () => {

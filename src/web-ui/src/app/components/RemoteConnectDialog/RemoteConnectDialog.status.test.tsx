@@ -272,7 +272,7 @@ describe('Remote Connect shared status through the real dialog and sidebar', () 
     await tick();
     const connections = element('[data-openbitfun-part="connections"]');
     expect(connections.querySelector('.openbitfun-remote-connect__card-header [role="status"]')).toBeNull();
-    expect(connections.querySelectorAll('[data-openbitfun-component="status-pill"]')).toHaveLength(1);
+    expect(connections.querySelectorAll('[data-openbitfun-part="stateMark"]')).toHaveLength(1);
     expect(cardStatus()).toBe('remoteConnect.stateWaiting');
     await clickText('remoteConnect.cancelInvitation');
     expect(element('[data-openbitfun-part="connections"] .openbitfun-remote-connect__card-header [role="status"]').textContent)

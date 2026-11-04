@@ -131,6 +131,40 @@ describe('localSessionDriver conversation creation', () => {
     expect(poolMocks.read).not.toHaveBeenCalled();
   });
 
+  it('reuses the creation-scoped project defaults read instead of reading again', async () => {
+    const shared = vi.fn(async () => ({ supported: true, defaults: { primary_model: 'shared-model' } }));
+    const createSession = vi.fn();
+    await localSessionDriver.createSession({ flowChatStore: { createSession } } as any, {
+      ...seed(), config: {}, readProjectDefaults: shared,
+    });
+    expect(shared).toHaveBeenCalledTimes(1);
+    expect(projectDefaults.read).not.toHaveBeenCalled();
+    expect(createSession.mock.calls[0][1].modelName).toBe('shared-model');
+  });
+
+  it('opens an assistant session before its title metadata is synchronized', async () => {
+    const { initializeSessionTitleMetadata } = await import('../../services/sessionTitleMetadata');
+    let finishTitle!: (descriptor: unknown) => void;
+    vi.mocked(initializeSessionTitleMetadata).mockImplementationOnce(() => new Promise(resolve => {
+      finishTitle = resolve as (descriptor: unknown) => void;
+    }));
+    const descriptor = { text: 'New chat', source: 'i18n' as const, key: 'flow-chat:session.new' };
+    let state = { sessions: new Map<string, any>() };
+    const createSession = vi.fn((id: string) => {
+      state = { sessions: new Map(state.sessions).set(id, { sessionId: id, titleSource: 'i18n' }) };
+    });
+    const setState = vi.fn((update: (current: typeof state) => typeof state) => { state = update(state); });
+    await expect(localSessionDriver.createSession(
+      { flowChatStore: { createSession, setState } } as any,
+      { ...seed('Claw'), titleDescriptor: descriptor },
+    )).resolves.toBe('host-session');
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(createSession.mock.calls[0].at(-1)).toBe(descriptor);
+
+    finishTitle({ ...descriptor, workspaceSessionNumber: 3 });
+    await vi.waitFor(() => expect(state.sessions.get('host-session')?.workspaceSessionNumber).toBe(3));
+  });
+
   it('preserves an explicit single-model choice even when a default pool exists', async () => {
     poolMocks.supported.mockReturnValue(true);
     const createSession = vi.fn();

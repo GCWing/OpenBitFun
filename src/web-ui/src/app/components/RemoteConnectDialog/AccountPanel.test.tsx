@@ -210,9 +210,9 @@ it('adopts the account-bound local device ID without reconnecting', async () => 
   mocks.getDeviceInfo.mockReset().mockResolvedValueOnce({ device_id: 'before-auth' })
     .mockReturnValueOnce(new Promise(resolve => { finishInfo = resolve; }));
   await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
-  expect(container.textContent).not.toContain('accountLogin.thisDevice');
+  expect(container.querySelector('[aria-label="accountLogin.thisDevice"]')).toBeNull();
   await act(async () => { finishInfo({ device_id: 'local' }); });
-  expect(container.textContent).toContain('accountLogin.thisDevice');
+  expect(container.querySelector('[aria-label="accountLogin.thisDevice"]')).not.toBeNull();
   expect(mocks.accountConnectDevices).toHaveBeenCalledTimes(1);
   expect(mocks.accountStatus).toHaveBeenCalledTimes(1);
 });
@@ -251,9 +251,9 @@ it('ignores pre-auth device information that arrives after the adopted ID', asyn
     .mockReturnValueOnce(new Promise(resolve => { finishOldInfo = resolve; }))
     .mockResolvedValueOnce({ device_id: 'local' });
   await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
-  expect(container.textContent).toContain('accountLogin.thisDevice');
+  expect(container.querySelector('[aria-label="accountLogin.thisDevice"]')).not.toBeNull();
   await act(async () => { finishOldInfo({ device_id: 'before-auth' }); });
-  expect(container.textContent).toContain('accountLogin.thisDevice');
+  expect(container.querySelector('[aria-label="accountLogin.thisDevice"]')).not.toBeNull();
   expect(mocks.accountConnectDevices).toHaveBeenCalledTimes(1);
 });
 

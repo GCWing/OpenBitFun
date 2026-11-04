@@ -1,5 +1,5 @@
 import { useEffect, useId, type ReactNode } from 'react';
-import { Button, OverflowText, SegmentedControl } from '@openbitfun/ui';
+import { OverflowText, SegmentedControl } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { DeviceSystemGlyph } from '@/app/components/NavPanel/components/DeviceSystemGlyph';
@@ -37,9 +37,12 @@ export function WorkspaceSourceSelector({
   const { location, environment } = workspaceSourceCoordinates(value);
   const wsl = useWslSupport(location === 'current' && showEnvironment);
   const wslSupported = wsl.status === 'supported';
-  const showWslHint = location === 'current' && (wsl.status === 'checking' || wsl.status === 'unavailable');
   useEffect(() => { onWslSupportChange?.(wslSupported); }, [onWslSupportChange, wslSupported]);
-  const wslHintId = useId();
+  const wslHidden = wsl.status === 'unsupported' || wsl.status === 'unavailable';
+  // A hidden WSL choice never stays selected.
+  useEffect(() => {
+    if (wslHidden && location === 'current' && environment === 'wsl') onValueChange?.(workspaceSourceFor('current', 'system'));
+  }, [environment, location, onValueChange, wslHidden]);
   const peerActive = peer?.peerMode.active === true;
   const deviceId = peer?.peerMode.active ? peer.peerMode.deviceId : undefined;
   const metadata = directory.devices.find(device => device.device_id === deviceId);
@@ -76,20 +79,18 @@ export function WorkspaceSourceSelector({
       <div className="workspace-source-selector__heading">
       <span id={environmentId} className="workspace-source-selector__label" data-openbitfun-component="ssh-remote" data-openbitfun-part="sourceLabel">{t('workspaceSource.environment')}</span>
       <SegmentedControl className="workspace-source-selector__control" size="sm" distribution="content" aria-labelledby={environmentId}
-        value={environment} disabled={disabled} aria-describedby={showWslHint ? wslHintId : undefined}
+        value={environment} disabled={disabled}
         options={[
           { value: 'system', label: t('workspaceSource.system'), disabled: location === 'current' && !allowHostDirectory },
           { value: 'container', label: t('workspaceSource.container') },
-          { value: 'wsl', label: t('workspaceSource.wsl'), disabled: location === 'other' || !wslSupported },
+          // WSL is offered only where the host has it: a host without it (or
+          // whose discovery failed) shows no WSL choice and no error.
+          ...(location === 'current' && !wslHidden
+            ? [{ value: 'wsl', label: t('workspaceSource.wsl'), disabled: !wslSupported }] : []),
         ]}
         onValueChange={value => onValueChange?.(workspaceSourceFor(location, value as WorkspaceEnvironment))} />
       {environmentActions && <div className="workspace-source-selector__actions">{environmentActions}</div>}
       </div>
-      {showWslHint && <div id={wslHintId} className="workspace-source-selector__device" role="status">
-        <span>{t(wsl.status === 'checking' ? 'workspaceSource.checkingWsl'
-          : 'ssh.remote.wslDiscoveryFailed')}</span>
-        {wsl.status === 'unavailable' && <Button size="sm" variant="quiet" disabled={disabled} onClick={wsl.retry}>{t('workspaceSource.refreshOptions')}</Button>}
-      </div>}
       {environmentOptions}
     </div>}
   </div>;

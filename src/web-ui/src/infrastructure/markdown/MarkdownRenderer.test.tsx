@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MenuItem } from '@/shared/context-menu-system/types';
 import { MarkdownRenderer, ThinkingMarkdownRenderer } from './MarkdownRenderer';
 import { useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores/canvasStore';
-import { useSceneStore } from '@/app/stores/sceneStore';
+import { useSceneStore, resetSceneStoreForTest } from '@/app/stores/sceneStore';
 import { selectSessionPaneMode, sessionPaneLayoutStore } from '@/app/scenes/session/sessionPaneLayoutStore';
 import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
 import { appManager } from '@/app/services/AppManager';
@@ -196,7 +196,7 @@ describe('Markdown file links', () => {
     activateSurface('local');
     flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: null }));
     useContentResourceStore.setState({ resources: {} });
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     appManager.updateLayout({ chatCollapsed: false, rightPanelCollapsed: true });
 
     container = document.createElement('div');
@@ -227,7 +227,7 @@ describe('Markdown file links', () => {
     container.remove();
     flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: null }));
     useContentResourceStore.setState({ resources: {} });
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     vi.clearAllMocks();
   });
 

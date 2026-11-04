@@ -1102,3 +1102,28 @@ function captureOutcome<T>(request: Promise<T>) {
 function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
+
+describe('background requests during a cross-device open', () => {
+  it('holds low-priority reads until the open settles while session reads proceed', async () => {
+    const { beginDeviceOpen, endDeviceOpen } = await import('@/infrastructure/peer-device/deviceOpenIntent');
+    const ok = JSON.stringify({ resp: 'host_invoke_result', ok: true, value: [] });
+    const rpc = vi.fn().mockResolvedValue(ok);
+    const adapter = new PeerDeviceTransportAdapter('peer-gate', rpc);
+    const intent = beginDeviceOpen({ surfaceId: 'peer-gate', key: 'session:s', sessionId: 's' });
+    try {
+      const background = adapter.request('git_get_status', { request: {} });
+      await adapter.request('set_active_workspace', { request: { workspaceId: 'w' } });
+      const commands = () => rpc.mock.calls.map(call => JSON.parse(call[1]).command);
+      expect(commands()).toEqual(['set_active_workspace']);
+      endDeviceOpen(intent);
+      await background;
+      expect(commands()).toEqual(['set_active_workspace', 'git_get_status']);
+    } finally {
+      endDeviceOpen(intent);
+    }
+  });
+
+  it('activates a session workspace at high priority', () => {
+    expect(peerInvokePriorityFor('set_active_workspace')).toBe('high');
+  });
+});

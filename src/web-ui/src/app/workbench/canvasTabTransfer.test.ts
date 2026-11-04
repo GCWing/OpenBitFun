@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SESSION_TAB_DRAG_TYPE, dropSessionTabOnWorkbench, popOutCanvasTab, writeSessionTabDrag } from './canvasTabTransfer';
 import { useContentResourceStore } from './contentResourceStore';
-import { useSceneStore } from '../stores/sceneStore';
+import { useSceneStore, resetSceneStoreForTest } from '../stores/sceneStore';
 import { clearAgentCanvasForPeerSwitch, switchAgentCanvasScope, useAgentCanvasStore } from '../components/panels/content-canvas/stores';
 import { openCanvasContent, openWorkbenchContent } from '@/shared/services/workbenchContentService';
 import { getEditorDocument, releaseEditorDocument } from '@/tools/editor/services/EditorDocument';
@@ -37,7 +37,7 @@ describe('canvas-to-workbench view transfer', () => {
     activateSurface('local');
     clearAgentCanvasForPeerSwitch();
     useContentResourceStore.setState({ resources: {} });
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
   });
   afterEach(() => {
     for (const tab of useAgentCanvasStore.getState().getAllTabs()) releaseEditorDocument(canvasTabDocumentId(tab));

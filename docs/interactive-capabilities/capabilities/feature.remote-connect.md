@@ -11,22 +11,22 @@ title_en: "Remote Connect & devices"
 
 > 功能 / Feature
 
-从手机、Bot 或另一台 OpenBitFun 设备连接当前主机，远程查看会话、回答权限并继续工作。
+从手机、Bot 或另一台 OpenBitFun 设备远程查看会话、回答权限并继续工作。手机与同账号设备互控默认使用官方 Relay，无需部署服务器；官方与局域网模式登录时均需联网。
 
-Connect to this host from mobile, a bot, or another OpenBitFun device to inspect sessions, answer permissions, and continue work remotely.
+Inspect sessions, answer permissions, and continue work from mobile, a bot, or another OpenBitFun device. Mobile and same-account device control use the official Relay by default, with no server deployment; both official and LAN modes need internet access for sign-in.
 
 ## 完整功能清单 / Everything included
 
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 选择局域网或官方 Relay
-  - Choose LAN or the official Relay
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 使用官方 Relay 或桌面内置局域网 Relay；两者可同时运行，登录均需联网
+  - Use the official or Desktop-hosted LAN Relay; both can run together and need internet for sign-in
 - **智能体可直接控制 / Direct Agent control** · 启动、停止 Remote Connect 并查看实时连接状态和设备信息
   - Start or stop Remote Connect and inspect live status and device information
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看局域网 IP、网络信息与可分享的连接配置
   - Inspect LAN IP, network details, and shareable connection configuration
 - **智能体可直接控制 / Direct Agent control** · 配置飞书、Telegram、微信等 Bot 并单独停止 Bot
   - Configure Feishu, Telegram, WeChat, and other bots, and stop a bot independently
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 使用 GitHub 登录、退出并查看身份状态
-  - Sign in with GitHub, sign out, and inspect identity status
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 通过共享登录页使用 GitHub 或邮箱验证码登录、退出并查看身份状态
+  - Sign in through the shared page with GitHub or an email code, sign out, and inspect identity status
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 列出、连接、查看设备型号与系统、设置别名和删除同账户设备
   - List, connect, inspect model and OS, set aliases, and remove same-account devices
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 进入 Peer Device Mode，把另一台 OpenBitFun 设备作为命令与事件数据面
@@ -34,12 +34,14 @@ Connect to this host from mobile, a bot, or another OpenBitFun device to inspect
 
 ## 怎么用 / How to use it
 
-1. 打开 Remote Connect
-   Open Remote Connect
-2. 选择网络、Bot 或账户
-   Choose Network, Bot, or Account
-3. 按向导连接并确认安全提示
-   Follow the connection flow and review its security notice
+1. 打开 Remote Connect，选择网络、Bot 或账户入口
+   Open Remote Connect and choose Network, Bot, or Account
+2. 手机或设备互控：宿主与控制端以相同方式登录同一账号，官方 Relay 无需部署
+   For mobile or device control, sign in on the host and controller with the same method and account; the official Relay needs no deployment
+3. 手机可扫描官方或桌面局域网邀请，确认目标设备；二维码不授予访问权，目标宿主须保持在线
+   On mobile, scan an official or Desktop LAN invitation and confirm the target; the QR code grants no access and the host must stay online
+4. Bot 远控：在对应平台完成机器人配置与配对，检查监听状态
+   For bot control, configure and pair the bot on its platform, then check listener status
 
 入口 / Entry: OpenBitFun 内的对应控制界面
 

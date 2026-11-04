@@ -175,7 +175,7 @@ SMTP 错误不得包含地址、凭据或验证码。认证接口保留 body、�
 
 The verification email uses `src/email/sign-in.html` as a multipart/alternative
 HTML body with a complete UTF-8 plain-text fallback. Layout uses presentation
-tables, inline styles and system fonts; the six digits stay selectable text.
+tables, inline styles and system fonts; the eight digits stay selectable text.
 Media queries add compact spacing and dark-mode colors without being required
 for readability. There are no scripts, forms, tracking pixels or recipient data
 in image URLs. The HTML branch is multipart/related with the original application

@@ -7,7 +7,7 @@ import {
   type WorkspaceSessionSourceAgent,
 } from '../../workspaceSessionView';
 import { getWorkspaceSessionHierarchy } from './sessionNavHierarchy';
-import { getSessionDisplayLimit, getSessionExpandToggleState } from './sessionNavExpand';
+import { getSessionDisplayLimit, getSessionExpandToggleState, SESSIONS_INITIAL_COUNT } from './sessionNavExpand';
 
 const session = (sessionId: string, workspaceId: string, extra: Partial<Session> = {}): Session => ({
   sessionId, workspaceId, projectWorkspaceId: 'main', title: sessionId,
@@ -38,12 +38,12 @@ describe('workspace-owned navigation counts', () => {
     expect(records).toHaveLength(659);
     expect(getWorkspaceSessionHierarchy(records, ['main', 'ui', 'cli']).topLevelSessions).toHaveLength(655);
     for (const [source, total, remaining] of [
-      ['openbitfun', 24, 19], ['codex', 432, 427], ['all', 456, 451],
+      ['openbitfun', 24, 21], ['codex', 432, 429], ['all', 456, 453],
     ] as const) {
       const rows = visibleParents(records, 'main', source);
       expect(rows).toHaveLength(total);
-      expect(getSessionExpandToggleState(rows.length, 0).collapsedRemainingCount).toBe(remaining);
-      expect(getSessionDisplayLimit({ loadedTopLevelCount: rows.length, expandLevel: 0, level2DisplayCount: 200, showAllWithoutLimit: false })).toBe(5);
+      expect(getSessionExpandToggleState(rows.length, SESSIONS_INITIAL_COUNT).remainingCount).toBe(remaining);
+      expect(getSessionDisplayLimit({ loadedTopLevelCount: rows.length, displayCount: SESSIONS_INITIAL_COUNT, showAllWithoutLimit: false })).toBe(3);
     }
     expect(visibleParents(records, 'ui')).toHaveLength(94);
     expect(visibleParents(records, 'cli')).toHaveLength(105);
@@ -51,8 +51,8 @@ describe('workspace-owned navigation counts', () => {
   });
 
   it('tracks creates, deletes and archives from the same filtered rows', () => {
-    let records = Array.from({ length: 6 }, (_, index) => session(`row-${index}`, 'main'));
-    const remaining = () => getSessionExpandToggleState(visibleParents(records, 'main').length, 0).collapsedRemainingCount;
+    let records = Array.from({ length: 4 }, (_, index) => session(`row-${index}`, 'main'));
+    const remaining = () => getSessionExpandToggleState(visibleParents(records, 'main').length, SESSIONS_INITIAL_COUNT).remainingCount;
     expect(remaining()).toBe(1);
     records.push(session('created', 'main'));
     expect(remaining()).toBe(2);
@@ -60,7 +60,7 @@ describe('workspace-owned navigation counts', () => {
     expect(remaining()).toBe(1);
     records[0] = { ...records[0], persistedStatus: 'archived' };
     expect(remaining()).toBe(0);
-    expect(getSessionExpandToggleState(visibleParents(records, 'main').length, 0).shouldRender).toBe(false);
+    expect(getSessionExpandToggleState(visibleParents(records, 'main').length, SESSIONS_INITIAL_COUNT).shouldRender).toBe(false);
   });
 
   it('keeps unresolved children visible and excludes transient and subagent records', () => {

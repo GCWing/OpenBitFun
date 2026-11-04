@@ -37,12 +37,24 @@ export async function activateMainSession(sessionId: string, options?: SessionAc
   const request = ++activationRequest;
   const isCurrent = () => scope.isCurrent() && request === activationRequest && (options?.isCurrent?.() ?? true);
   if (!isCurrent()) return false;
+  // A session first seen on a background device is promoted (model window,
+  // state machine) before anything opens it, whichever entry point is used.
+  if (flowChatStore.hasUnpromotedSeed(sessionId)) {
+    await flowChatStore.promoteSeededSessions();
+    if (!isCurrent()) return false;
+  }
   const session = flowChatStore.getState().sessions.get(sessionId);
   const workspace = session && resolveSessionSceneWorkspace(session, workspaceManager.getState().openedWorkspaces.values());
   const workspaceId = options?.workspaceId ?? workspace?.id;
   if (session && sessionProjectWorkspacePath(session) && !workspaceId
     && workspaceManager.getState().currentWorkspace) {
     throw new Error(i18nService.t('common:sceneBar.workspaceUnavailable'));
+  }
+  if (workspaceId && workspaceManager.getState().activeWorkspaceId !== workspaceId) {
+    // Read the session's history while its workspace is being activated
+    // instead of after: the read addresses the session's own workspace, and
+    // the switch below adopts the read already in flight.
+    flowChatManager.prewarmHistoricalSession(sessionId);
   }
   if (workspaceId) {
     // Workspace activation mutates the host as well as the frontend. Serialize

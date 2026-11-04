@@ -131,6 +131,16 @@ describe('PersistenceModule', () => {
     }), 'workspace-local', ['unreadCompletion', 'needsUserAttention']);
   });
 
+  it('names the host receipt when the transcript was never loaded', async () => {
+    const receipt = { turnId: 'host-turn', turnIndex: 4, status: 'cancelled' as const, executionGeneration: 3, recoveryPending: true };
+    await updateSessionMetadata(createContext(createDialogTurn('completed')), SESSION_ID,
+      ['unreadCompletion', 'needsUserAttention'], { unreadReceipt: receipt });
+    expect(mockSaveSessionMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      lastTurn: receipt,
+      customMetadata: expect.objectContaining({ unreadCompletionTarget: receipt }),
+    }), 'workspace-local', ['unreadCompletion', 'needsUserAttention']);
+  });
+
   it('addresses session storage through the owning project for a worktree session', async () => {
     const turn = createDialogTurn('completed');
     const context = createContext(turn, {

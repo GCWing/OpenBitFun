@@ -17,8 +17,8 @@ use openbitfun_events::{project_agentic_frontend_event, AgenticEvent};
 use openbitfun_product_domains::product_search::SessionContentSearchRequest;
 use openbitfun_runtime_ports::{
     AgentSessionArchiveRequest, AgentSessionCreateRequest, AgentSessionDeleteRequest,
-    AgentSessionModeUpdateRequest, AgentSessionRenameRequest, AgentThreadGoalGetRequest,
-    SessionStoragePathRequest, SessionTurnWindowRequest,
+    AgentSessionModeUpdateRequest, AgentSessionRenameRequest, AgentSessionUsageRequest,
+    AgentThreadGoalGetRequest, SessionStoragePathRequest, SessionTurnWindowRequest,
 };
 
 use crate::diagnostics::{OUTCOME_UNKNOWN_ERROR_CODE, SESSION_IN_USE_ERROR_CODE};
@@ -1056,6 +1056,71 @@ pub(crate) async fn get_session_stats(
     }))
 }
 
+/// Builds the session usage / context-breakdown report with the same shared
+/// runtime port the Desktop command uses, so a controller reading this host's
+/// session gets an identical `SessionUsageReport` DTO. Read-only: the report
+/// owner opens its own consistent persisted-session view.
+pub(crate) async fn get_session_usage_report(
+    state: &PeerHostState,
+    args: &Value,
+) -> Result<Value, String> {
+    let request = request_value(args);
+    let session_id = validated_session_id(request)?;
+    let scope = session_storage_request(state, request).await?;
+    let options = usage_report_options(request)?;
+    let path_label = scope.workspace_path.to_string_lossy().into_owned();
+    let mut report = state
+        .agent_runtime
+        .generate_session_usage(AgentSessionUsageRequest {
+            workspace_id: optional_string(request, "workspaceId"),
+            session_id,
+            workspace_path: Some(path_label.clone()),
+            remote_connection_id: scope.remote_connection_id.clone(),
+            remote_ssh_host: scope.remote_ssh_host.clone(),
+            include_hidden_subagents: options.include_hidden_subagents,
+            include_system_prompt_preview: options.include_system_prompt_preview,
+            context_preview_category: options.context_preview_category,
+        })
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to generate session usage report: {}",
+                error.into_message()
+            )
+        })?;
+    report.workspace.path_label = Some(path_label);
+    report.workspace.remote_connection_id = scope.remote_connection_id;
+    report.workspace.remote_ssh_host = scope.remote_ssh_host;
+    serde_json::to_value(report).map_err(|error| format!("serialize usage report: {error}"))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct UsageReportOptions {
+    include_hidden_subagents: bool,
+    include_system_prompt_preview: bool,
+    context_preview_category: Option<openbitfun_core_types::UsageContextCategory>,
+}
+
+/// Reads the Desktop `GetSessionUsageReportRequest` option fields with the
+/// same defaults (hidden subagents included, no prompt preview). Accepts both
+/// the snake_case Tauri shape and camelCase, and ignores absent/null fields so
+/// older controllers keep working.
+fn usage_report_options(request: &Value) -> Result<UsageReportOptions, String> {
+    let context_preview_category = ["contextPreviewCategory", "context_preview_category"]
+        .iter()
+        .find_map(|key| request.get(*key))
+        .filter(|value| !value.is_null())
+        .map(|value| serde_json::from_value(value.clone()))
+        .transpose()
+        .map_err(|error| format!("Invalid context preview category: {error}"))?;
+    Ok(UsageReportOptions {
+        include_hidden_subagents: optional_bool(request, "includeHiddenSubagents").unwrap_or(true),
+        include_system_prompt_preview: optional_bool(request, "includeSystemPromptPreview")
+            .unwrap_or(false),
+        context_preview_category,
+    })
+}
+
 fn session_stats_validation_error(error: impl std::fmt::Display) -> String {
     format!("Failed to get session stats: Validation error: {error}")
 }
@@ -1103,6 +1168,42 @@ pub(crate) async fn save_session_turn(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn usage_report_options_match_desktop_defaults_and_legacy_payloads() {
+        use openbitfun_core_types::UsageContextCategory;
+        use serde_json::json;
+        assert_eq!(
+            super::usage_report_options(&json!({ "session_id": "s" })).unwrap(),
+            super::UsageReportOptions {
+                include_hidden_subagents: true,
+                include_system_prompt_preview: false,
+                context_preview_category: None,
+            }
+        );
+        let snake = json!({
+            "include_hidden_subagents": false,
+            "include_system_prompt_preview": true,
+            "context_preview_category": "toolDefinitions",
+        });
+        assert_eq!(
+            super::usage_report_options(&snake).unwrap(),
+            super::UsageReportOptions {
+                include_hidden_subagents: false,
+                include_system_prompt_preview: true,
+                context_preview_category: Some(UsageContextCategory::ToolDefinitions),
+            }
+        );
+        // A category a newer controller knows maps to Unknown instead of failing.
+        let future = json!({ "contextPreviewCategory": "somethingNew" });
+        assert_eq!(
+            super::usage_report_options(&future)
+                .unwrap()
+                .context_preview_category,
+            Some(UsageContextCategory::Unknown)
+        );
+        assert!(super::usage_report_options(&json!({ "context_preview_category": 3 })).is_err());
+    }
+
     use super::{
         overlay_live_session_state, peer_core_session_error, peer_runtime_session_error,
         restored_session_to_json, runtime_event_snapshot_to_json, session_stats_validation_error,

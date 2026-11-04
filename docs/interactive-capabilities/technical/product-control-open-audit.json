@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "09a0ad7ff1b5e8e9a53d7833f98d60a5e0defd9485bd3927a53219522a6e6b17",
+  "catalogDigest": "17f5700a9faf966a376680ae8480c1ce1cf06d69caab971e88c33e1c96a1802a",
   "count": 200,
   "reasonCounts": {
     "externalAuth": 4,
@@ -1887,17 +1887,19 @@
     {
       "capabilityId": "feature.remote-connect",
       "itemId": "connection-methods",
-      "titleZh": "选择局域网或官方 Relay",
-      "titleEn": "Choose LAN or the official Relay",
+      "titleZh": "使用官方 Relay 或桌面内置局域网 Relay；两者可同时运行，登录均需联网",
+      "titleEn": "Use the official or Desktop-hosted LAN Relay; both can run together and need internet for sign-in",
       "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“选择局域网或官方 Relay”需要结合当前网络与设备状态，确认目标主机后才能连接；智能体打开连接入口，由用户完成选择。",
-      "reasonEn": "“Choose LAN or the official Relay” depends on the current network and device state and requires the user to confirm the target host; the Agent opens the connection entry for that choice.",
+      "reasonZh": "“使用官方 Relay 或桌面内置局域网 Relay；两者可同时运行，登录均需联网”需要结合当前网络与设备状态，由用户确认目标主机。官方 Relay 无需部署；私有 Relay 需配套客户端构建，界面没有自定义服务器地址或部署向导。",
+      "reasonEn": "“Use the official or Desktop-hosted LAN Relay; both can run together and need internet for sign-in” depends on network and device state and requires target confirmation. The official Relay needs no deployment; a private Relay requires matching client builds, with no custom-server field or deployment wizard in the UI.",
       "presentationTarget": {
         "kind": "event",
         "eventName": "openbitfun:open-remote-connect"
       },
       "evidence": [
-        "command:remote_connect_get_methods"
+        "command:remote_connect_get_methods",
+        "source:src/apps/desktop/src/api/remote_connect_api/relay_routes_tests.rs#dual_relay_rpc_persistence_and_teardown_are_independent",
+        "source:src/crates/services/relay-service/src/identity.rs#IDENTITY_ME_URL"
       ]
     },
     {
@@ -1922,11 +1924,11 @@
     {
       "capabilityId": "feature.remote-connect",
       "itemId": "account",
-      "titleZh": "使用 GitHub 登录、退出并查看身份状态",
-      "titleEn": "Sign in with GitHub, sign out, and inspect identity status",
+      "titleZh": "通过共享登录页使用 GitHub 或邮箱验证码登录、退出并查看身份状态",
+      "titleEn": "Sign in through the shared page with GitHub or an email code, sign out, and inspect identity status",
       "reasonCode": "externalAuth",
-      "reasonZh": "GitHub 账户登录必须由用户在外部认证页面确认；智能体可以打开入口并读取非秘密状态，但不能冒充账户持有人。",
-      "reasonEn": "GitHub account sign-in requires confirmation on an external authentication page; the Agent may open the entry and read non-secret status but cannot impersonate the account holder.",
+      "reasonZh": "登录必须由用户在外部认证页面完成。GitHub 与邮箱是独立账号，各设备需使用同一种方式和同一账号；旧客户端或服务可能仅支持 GitHub。智能体可打开入口并读取非秘密状态，不能代替用户认证。",
+      "reasonEn": "The user must complete sign-in on the external authentication page. GitHub and email are independent accounts; devices need the same method and account. Older clients or services may support GitHub only. The Agent may open the entry and read non-secret status, but cannot authenticate for the user.",
       "presentationTarget": {
         "kind": "event",
         "eventName": "openbitfun:open-remote-connect"
@@ -1936,7 +1938,8 @@
         "command:account_github_poll",
         "command:account_github_info",
         "command:account_logout",
-        "command:account_status"
+        "command:account_status",
+        "source:src/crates/services/services-integrations/src/account_identity/mod.rs#/auth/desktop/start?methods=all"
       ]
     },
     {
