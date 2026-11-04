@@ -147,26 +147,7 @@ export function HistorySessionLoadingBoundary({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity, loading, hasTranscript, disabled]);
 
-  const skeleton = (
-    <div className="history-session-skeleton" aria-hidden="true" data-openbitfun-component="modern-flow-chat" data-openbitfun-part="historySkeleton">
-      <div className="history-session-skeleton__column">
-        <div className="history-session-skeleton__user"><span /><span /></div>
-        <div className="history-session-skeleton__group history-session-skeleton__group--first">
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-        </div>
-        <div className="history-session-skeleton__group history-session-skeleton__group--second">
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-        </div>
-        <div className="history-session-skeleton__group history-session-skeleton__group--third">
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-          <span className="history-session-skeleton__bar" data-history-loading-line />
-        </div>
-      </div>
-    </div>
-  );
+  const skeleton = <HistorySessionSkeleton />;
   const overlayProps = {
     className: 'history-session-loading__overlay',
     hidden: !loading && phase === 'revealing',
@@ -196,6 +177,30 @@ export function HistorySessionLoadingBoundary({
           {skeleton}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** The history loading skeleton, shared with presentations that precede a session (a device switch). */
+export function HistorySessionSkeleton() {
+  return (
+    <div className="history-session-skeleton" aria-hidden="true" data-openbitfun-component="modern-flow-chat" data-openbitfun-part="historySkeleton">
+      <div className="history-session-skeleton__column">
+        <div className="history-session-skeleton__user"><span /><span /></div>
+        <div className="history-session-skeleton__group history-session-skeleton__group--first">
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+        </div>
+        <div className="history-session-skeleton__group history-session-skeleton__group--second">
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+        </div>
+        <div className="history-session-skeleton__group history-session-skeleton__group--third">
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+          <span className="history-session-skeleton__bar" data-history-loading-line />
+        </div>
+      </div>
     </div>
   );
 }

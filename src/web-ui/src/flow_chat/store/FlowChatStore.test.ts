@@ -9308,3 +9308,80 @@ describe('FlowChatStore reconstructable history residency', () => {
     expect(flowChatStore.getState().sessions.get(session.sessionId)?.dialogTurns).toBe(liveTurns);
   });
 });
+
+describe('background device session seeding', () => {
+  const metadata = (sessionId: string, extra: Record<string, unknown> = {}) => ({
+    sessionId, sessionName: sessionId, agentType: 'agentic', modelName: 'm', createdAt: 10, lastActiveAt: 20,
+    turnCount: 1, messageCount: 1, toolCallCount: 0, status: 'active', tags: [], workspaceId: 'peer-ws', ...extra,
+  }) as never;
+  const page = (sessions: never[]) => [{ workspaceId: 'peer-ws', workspacePath: '/srv/app', sessions }];
+
+  afterEach(() => {
+    activateSurface(LOCAL_SURFACE_ID);
+    flowChatStore.discardSurfaceState('peer-seed');
+  });
+
+  it('projects a background device into its own container, never the rendered one', () => {
+    const listener = vi.fn();
+    const unsubscribe = flowChatStore.subscribeSurfaceSessions(listener);
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1'), metadata('archived', { status: 'archived' })]));
+    flowChatStore.seedSurfaceSessions(LOCAL_SURFACE_ID, page([metadata('local-1')]));
+    unsubscribe();
+    const seeded = flowChatStore.getSurfaceSessions('peer-seed');
+    expect([...seeded.keys()]).toEqual(['s-1']);
+    expect(seeded.get('s-1')).toMatchObject({ workspaceId: 'peer-ws', historyState: 'metadata-only', dialogTurns: [] });
+    expect(flowChatStore.getState().sessions.has('local-1')).toBe(false);
+    expect(listener).toHaveBeenCalledWith('peer-seed');
+    // An identical page does not notify again.
+    listener.mockClear();
+    flowChatStore.subscribeSurfaceSessions(listener);
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('finds the seeds after a switch and rebuilds them through the metadata path', async () => {
+    workspaceFixtures.set('peer-ws', { id: 'peer-ws', rootPath: '/srv/app', workspaceKind: 'normal' });
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
+    activateSurface('peer-seed');
+    expect(flowChatStore.getState().sessions.get('s-1')?.workspaceId).toBe('peer-ws');
+    await flowChatStore.promoteSeededSessions();
+    expect(stateMachineManagerMock.getOrCreate).toHaveBeenCalledWith('s-1');
+    expect(flowChatStore.getState().sessions.get('s-1')).toMatchObject({ workspaceId: 'peer-ws', historyState: 'metadata-only' });
+    workspaceFixtures.delete('peer-ws');
+  });
+
+  it('never replaces a seeded session once it has history', async () => {
+    workspaceFixtures.set('peer-ws', { id: 'peer-ws', rootPath: '/srv/app', workspaceKind: 'normal' });
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
+    activateSurface('peer-seed');
+    flowChatStore.setState(state => {
+      const sessions = new Map(state.sessions);
+      sessions.set('s-1', { ...sessions.get('s-1')!, historyState: 'ready', dialogTurns: [{ id: 'turn' } as never] });
+      return { ...state, sessions };
+    });
+    await flowChatStore.promoteSeededSessions();
+    expect(flowChatStore.getState().sessions.get('s-1')?.dialogTurns).toHaveLength(1);
+    workspaceFixtures.delete('peer-ws');
+  });
+
+  it('refreshes navigation facts of a loaded background session without dropping its state', () => {
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
+    activateSurface('peer-seed');
+    flowChatStore.setState(state => {
+      const sessions = new Map(state.sessions);
+      sessions.set('s-1', { ...sessions.get('s-1')!, historyState: 'ready', dialogTurns: [{ id: 'turn' } as never] });
+      return { ...state, sessions };
+    });
+    activateSurface(LOCAL_SURFACE_ID);
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1', { sessionName: 'Renamed', lastActiveAt: 99 })]));
+    const session = flowChatStore.getSurfaceSessions('peer-seed').get('s-1');
+    expect(session).toMatchObject({ title: 'Renamed', lastActiveAt: 99 });
+    expect(session?.dialogTurns).toHaveLength(1);
+  });
+
+  it('drops only seeds when the account changes', () => {
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
+    flowChatStore.discardSeededSessions('peer-seed');
+    expect(flowChatStore.getSurfaceSessions('peer-seed').size).toBe(0);
+  });
+});

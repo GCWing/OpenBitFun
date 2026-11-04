@@ -1,5 +1,6 @@
  
 
+import { setWorkspaceDisplayOrder, stableWorkspaceOrder } from './workspaceDisplayOrder';
 import type {
   RemoteWorkspaceSnapshot,
   WorkspaceInfo,
@@ -181,6 +182,11 @@ class WorkspaceManager {
         void this.syncWorkspaceStateAfterIdentityListenerReady();
       }
     });
+  }
+
+  /** Opened workspaces last loaded for a surface, rendered or not. */
+  public getSurfaceOpenedWorkspaces(surfaceId: DeviceSurfaceId): WorkspaceInfo[] {
+    return Array.from(this.surfaceContainers.get(surfaceId)?.state.openedWorkspaces.values() ?? []);
   }
 
   private surfaceContainer(surfaceId: DeviceSurfaceId): WorkspaceSurfaceContainer {
@@ -447,7 +453,10 @@ class WorkspaceManager {
     error: string | null,
     event?: WorkspaceEvent
   ): void {
-    const openedWorkspaceMap = this.buildOpenedWorkspaceMap(openedWorkspaces);
+    // Every list a host returns is shown in this surface's one display order.
+    const openedWorkspaceMap = this.buildOpenedWorkspaceMap(
+      stableWorkspaceOrder(getActiveSurfaceId(), openedWorkspaces),
+    );
 
     const resolvedCurrentWorkspace = currentWorkspace
       ? openedWorkspaceMap.get(currentWorkspace.id) ?? currentWorkspace
@@ -1502,6 +1511,7 @@ class WorkspaceManager {
       return;
     }
 
+    setWorkspaceDisplayOrder(getActiveSurfaceId(), reorderedOpenedWorkspaces.map(workspace => workspace.id));
     this.updateWorkspaceState(
       previousCurrentWorkspace,
       previousRecentWorkspaces,
@@ -1518,6 +1528,7 @@ class WorkspaceManager {
         throw error;
       }
       const errorMessage = error instanceof Error ? error.message : String(error);
+      setWorkspaceDisplayOrder(getActiveSurfaceId(), previousOpenedWorkspaces.map(workspace => workspace.id));
       const rollbackEventWorkspace = previousCurrentWorkspace
         ?? workspaceMap.get(sourceWorkspaceId)
         ?? previousOpenedWorkspaces[0]

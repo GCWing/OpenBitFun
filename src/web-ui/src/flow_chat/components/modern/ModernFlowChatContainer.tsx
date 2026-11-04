@@ -520,7 +520,11 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const { requests: permissionRequests } = usePermissionRequests(activeSession?.sessionId);
   const visibleTurnInfo = useVisibleTurnInfo();
   const [queuedTurnNavigation, setQueuedTurnNavigation] = useState<QueuedTurnNavigation | null>(null);
-  const [pendingHistoryOpenSession, setPendingHistoryOpenSession] = useState<HistorySessionOpenIntentDetail | null>(null);
+  // A view mounted mid-open (for example by a device switch) adopts it.
+  const [pendingHistoryOpenSession, setPendingHistoryOpenSession] = useState<HistorySessionOpenIntentDetail | null>(() => {
+    const transition = getHistorySessionOpenTransitionSnapshot();
+    return transition ? { sessionId: transition.sessionId, sessionTitle: transition.sessionTitle, maxMs: transition.maxMs } : null;
+  });
   const [searchOpenRequest, setSearchOpenRequest] = useState(0);
   const backgroundCommandActivities = useBackgroundCommandActivityStore(state => state.activities);
   const [stoppingBackgroundCommandIds, setStoppingBackgroundCommandIds] = useState<Set<string>>(() => new Set());
@@ -885,6 +889,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       setPendingHistoryOpenSession({
         sessionId: detail.sessionId,
         sessionTitle: detail.sessionTitle,
+        maxMs: detail.maxMs,
       });
       startupTrace.markPhase('historical_session_open_intent_overlay', {
         sessionId: detail.sessionId,
@@ -917,7 +922,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
         }
         return current;
       });
-    }, 4000);
+    }, pendingHistoryOpenSession.maxMs ?? 4000);
 
     return () => {
       window.clearTimeout(timeoutId);

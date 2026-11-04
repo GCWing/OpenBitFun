@@ -34,6 +34,7 @@ vi.mock('@/app/stores/sceneStore', () => ({
 vi.mock('../store/FlowChatStore', () => ({
   flowChatStore: {
     getState: () => mocks.flowChatState,
+    hasUnpromotedSeed: () => false,
   },
 }));
 

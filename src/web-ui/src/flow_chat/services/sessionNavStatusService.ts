@@ -312,6 +312,10 @@ export const sessionNavStatusService = {
   },
   getSortTimestamp: (session: Session): number => ordering.get(getActiveSurfaceId(), session.sessionId)?.sortTimestamp
     ?? session.lastFinishedAt ?? session.createdAt,
+  /** The same order key for a device the window is not rendering. */
+  getSurfaceSortTimestamp: (surfaceId: DeviceSurfaceId, session: Session): number => ordering.get(surfaceId, session.sessionId)?.sortTimestamp
+    ?? session.lastFinishedAt ?? session.createdAt,
+  isSurfaceRunning: (surfaceId: DeviceSurfaceId, sessionId: string): boolean => ordering.get(surfaceId, sessionId)?.status.kind === 'running',
   isRunning: (sessionId: string): boolean => ordering.get(getActiveSurfaceId(), sessionId)?.status.kind === 'running',
   getSnapshot: (sessionId: string): SessionNavStatus => rows.get(sessionId)?.status ?? IDLE,
   subscribe(sessionId: string, notify: () => void): () => void {

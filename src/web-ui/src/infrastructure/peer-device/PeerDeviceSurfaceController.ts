@@ -427,18 +427,22 @@ export class PeerDeviceSurfaceController {
     // catalog is authoritative.
     this.dependencies.setPeerDeviceModeActiveFlag(true);
 
-    await this.awaitIntent(
-      intent,
-      this.dependencies.reloadConfig(activationScope),
-      activationScope,
-      'reload device surface config',
-    );
-    await this.awaitIntent(
-      intent,
-      this.dependencies.rebootstrapWorkspaces(activationScope),
-      activationScope,
-      'rebootstrap device surface workspaces',
-    );
+    // Config and the workspace catalog are independent reads of the same host;
+    // fetching them together halves the round trips a switch waits for.
+    await Promise.all([
+      this.awaitIntent(
+        intent,
+        this.dependencies.reloadConfig(activationScope),
+        activationScope,
+        'reload device surface config',
+      ),
+      this.awaitIntent(
+        intent,
+        this.dependencies.rebootstrapWorkspaces(activationScope),
+        activationScope,
+        'rebootstrap device surface workspaces',
+      ),
+    ]);
 
     if (target.deviceId === null) {
       await this.awaitIntent(

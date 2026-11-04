@@ -72,6 +72,7 @@ import type {
   SessionContextUsage,
   SessionActivitySummary,
   SessionKind,
+  SessionMetadata,
   SessionTurnCatalog,
 } from '@/shared/types/session-history';
 import {
@@ -2111,6 +2112,29 @@ interface SurfaceStateContainer {
   /** Sessions rebuilding from a restarted host stream until its replay is ready. */
   readonly relayResyncingSessions: Set<string>;
   readonly relaySessionHistory: Map<string, RelaySessionHistory>;
+  /**
+   * Sessions projected from a background device's catalog while this surface
+   * was not rendered. They carry no history or state machine yet; the first
+   * metadata pass after activation rebuilds them through the normal path.
+   */
+  readonly seededSessions: Map<string, SeededSessionRecord>;
+}
+
+interface SeededSessionRecord {
+  metadata: SessionMetadata;
+  workspaceId: string;
+  workspacePath: string;
+  remoteConnectionId?: string;
+  remoteSshHost?: string;
+}
+
+/** One workspace page of a background device's catalog. */
+export interface BackgroundSessionPage {
+  workspaceId: string;
+  workspacePath: string;
+  remoteConnectionId?: string;
+  remoteSshHost?: string;
+  sessions: readonly SessionMetadata[];
 }
 
 function createSurfaceStateContainer(surfaceId: DeviceSurfaceId): SurfaceStateContainer {
@@ -2134,12 +2158,98 @@ function createSurfaceStateContainer(surfaceId: DeviceSurfaceId): SurfaceStateCo
     relayPendingRecordTurns: new Map(),
     relayResyncingSessions: new Set(),
     relaySessionHistory: new Map(),
+    seededSessions: new Map(),
   };
 }
 
 const isTerminalRelayTurnStatus = (status: DialogTurn['status']): boolean => (
   status === 'completed' || status === 'cancelled' || status === 'error'
 );
+
+/**
+ * The FlowChat projection of one persisted session record, before any history
+ * is loaded. Shared by metadata pages and background-device seeding so a
+ * session looks the same whichever path put it in a surface container.
+ */
+function sessionFromPersistedMetadata(metadata: any, context: {
+  workspaceId?: string;
+  projectWorkspaceId?: string;
+  workspacePath: string;
+  remoteConnectionId?: string;
+  remoteSshHost?: string;
+  maxContextTokens: number;
+}): Session {
+  const { workspaceId, projectWorkspaceId, workspacePath, maxContextTokens } = context;
+  const relationship = deriveSessionRelationshipFromMetadata(metadata);
+  const lastFinishedAt = deriveLastFinishedAtFromMetadata(metadata);
+  const titleState = deriveSessionTitleStateFromMetadata(metadata);
+  const hasDynamicDefaultTitle = titleState.titleSource === 'i18n';
+  const remoteScope = persistedSessionRemoteScope(metadata, context.remoteConnectionId, context.remoteSshHost);
+  const persistedCurrentContextUsage = persistedCurrentContextUsageValue(metadata);
+  const restoredAgentType = resolveRestoredAgentType(metadata.agentType);
+  const restoredCurrentTokenUsage = isAcpAgentType(restoredAgentType)
+    ? undefined
+    : deriveRestoredCurrentTokenUsage(persistedCurrentContextUsage);
+
+  return {
+    sessionId: metadata.sessionId,
+    workspaceId, projectWorkspaceId,
+    title: titleState.title,
+    titleSource: titleState.titleSource,
+    titleI18nKey: titleState.titleI18nKey,
+    titleI18nParams: titleState.titleI18nParams,
+    workspaceSessionNumber: titleState.workspaceSessionNumber,
+    titleStatus: hasDynamicDefaultTitle ? undefined : 'generated',
+    dialogTurns: [],
+    status: 'idle',
+    persistedStatus: metadata.status,
+    persistedTurnCount: metadata.turnCount,
+    importedSource: metadata.customMetadata?.importedFrom,
+    externalHistory: externalHistoryFromMetadata(metadata.customMetadata),
+    externalBranchOf: metadata.customMetadata?.externalBranchOf,
+    config: {
+      agentType: restoredAgentType,
+      modelName: metadata.modelName,
+      workspaceId, projectWorkspaceId,
+      workspacePath: metadata.workspacePath || workspacePath,
+      projectWorkspacePath: metadata.projectWorkspacePath || workspacePath,
+      executionTarget: metadata.executionTarget,
+    },
+    createdAt: metadata.createdAt,
+    lastActiveAt: metadata.lastActiveAt,
+    lastFinishedAt,
+    error: null,
+    isHistorical: true,
+    historyState: 'metadata-only',
+    todos: (metadata as any).todos || [],
+    maxContextTokens,
+    currentTokenUsage: restoredCurrentTokenUsage,
+    mode: restoredAgentType,
+    lastUserDialogMode: metadata.lastUserDialogAgentType,
+    lastSubmittedMode: metadata.lastSubmittedAgentType,
+    workspacePath: (metadata as any).workspacePath || workspacePath,
+    projectWorkspacePath: metadata.projectWorkspacePath || workspacePath,
+    remoteConnectionId: remoteScope.remoteConnectionId,
+    remoteSshHost: remoteScope.remoteSshHost,
+    workspaceHostname: metadata.workspaceHostname,
+    parentSessionId: relationship.parentSessionId,
+    sessionKind: relationship.sessionKind,
+    parentToolCallId: relationship.parentToolCallId,
+    subagentType: relationship.subagentType,
+    continuationPolicy: relationship.continuationPolicy,
+    btwThreads: [],
+    btwOrigin: relationship.btwOrigin,
+    hasUnreadCompletion: metadata.unreadCompletion,
+    needsUserAttention: metadata.needsUserAttention,
+    deepReviewRunManifest: metadata.deepReviewRunManifest,
+    reviewTargetEvidence: metadata.reviewTargetEvidence,
+    isTransient: false,
+  };
+}
+
+const EMPTY_SESSION_MAP: ReadonlyMap<string, Session> = new Map();
+/** Placeholder until promotion reads the device's model configuration. */
+const DEFAULT_SEEDED_CONTEXT_TOKENS = 128128;
 
 export class FlowChatStore {
   private static instance: FlowChatStore;
@@ -7751,7 +7861,8 @@ export class FlowChatStore {
       try {
         logPersistedDispatchMetadataOverlap(metadata, 'metadata-page');
         scope.assertCurrent('processPersistedSessionMetadata');
-        const existingSession = this.state.sessions.get(metadata.sessionId);
+        const seededSession = this.isRebuildableSeed(metadata.sessionId);
+        const existingSession = seededSession ? undefined : this.state.sessions.get(metadata.sessionId);
         if ((existingSession?.workspaceId || existingSession?.config.workspaceId)
           && !(existingSession?.sessionKind === 'subagent' && existingSession.continuationPolicy === undefined)
           && !existingSession?.externalHistory && !existingSession?.externalBranchOf
@@ -7793,19 +7904,17 @@ export class FlowChatStore {
           workspacePath: metadata.projectWorkspacePath || workspacePath, remoteConnectionId, remoteSshHost,
         }, legacyRecords)?.id;
         const relationship = deriveSessionRelationshipFromMetadata(metadata);
-        const lastFinishedAt = deriveLastFinishedAtFromMetadata(metadata);
         const titleState = deriveSessionTitleStateFromMetadata(metadata);
-        const hasDynamicDefaultTitle = titleState.titleSource === 'i18n';
         const remoteScope = persistedSessionRemoteScope(
           metadata,
           remoteConnectionId,
           remoteSshHost,
         );
-        const persistedCurrentContextUsage = persistedCurrentContextUsageValue(metadata);
 
         this.setState(prev => {
           if (!scope.isCurrent()) return prev;
-          const existing = prev.sessions.get(metadata.sessionId);
+          const existing = seededSession ? undefined : prev.sessions.get(metadata.sessionId);
+          this.activeSurface.seededSessions.delete(metadata.sessionId);
           if (existing) {
             const continuationPolicy = existing.continuationPolicy ?? relationship.continuationPolicy;
             const importedSource = metadata.customMetadata?.importedFrom ?? existing.importedSource;
@@ -7836,65 +7945,9 @@ export class FlowChatStore {
             return { ...prev, sessions };
           }
 
-          const restoredAgentType = resolveRestoredAgentType(metadata.agentType);
-          const restoredCurrentTokenUsage = isAcpAgentType(restoredAgentType)
-            ? undefined
-            : deriveRestoredCurrentTokenUsage(persistedCurrentContextUsage);
-
-          const session: Session = {
-            sessionId: metadata.sessionId,
-            workspaceId, projectWorkspaceId,
-            title: titleState.title,
-            titleSource: titleState.titleSource,
-            titleI18nKey: titleState.titleI18nKey,
-            titleI18nParams: titleState.titleI18nParams,
-            workspaceSessionNumber: titleState.workspaceSessionNumber,
-            titleStatus: hasDynamicDefaultTitle ? undefined : 'generated',
-            dialogTurns: [],
-            status: 'idle',
-            persistedStatus: metadata.status,
-            persistedTurnCount: metadata.turnCount,
-            importedSource: metadata.customMetadata?.importedFrom,
-            externalHistory: externalHistoryFromMetadata(metadata.customMetadata),
-            externalBranchOf: metadata.customMetadata?.externalBranchOf,
-            config: {
-              agentType: restoredAgentType,
-              modelName: metadata.modelName,
-              workspaceId, projectWorkspaceId,
-              workspacePath: metadata.workspacePath || workspacePath,
-              projectWorkspacePath: metadata.projectWorkspacePath || workspacePath,
-              executionTarget: metadata.executionTarget,
-            },
-            createdAt: metadata.createdAt,
-            lastActiveAt: metadata.lastActiveAt,
-            lastFinishedAt,
-            error: null,
-            isHistorical: true,
-            historyState: 'metadata-only',
-            todos: (metadata as any).todos || [],
-            maxContextTokens,
-            currentTokenUsage: restoredCurrentTokenUsage,
-            mode: restoredAgentType,
-            lastUserDialogMode: metadata.lastUserDialogAgentType,
-            lastSubmittedMode: metadata.lastSubmittedAgentType,
-            workspacePath: (metadata as any).workspacePath || workspacePath,
-            projectWorkspacePath: metadata.projectWorkspacePath || workspacePath,
-            remoteConnectionId: remoteScope.remoteConnectionId,
-            remoteSshHost: remoteScope.remoteSshHost,
-            workspaceHostname: metadata.workspaceHostname,
-            parentSessionId: relationship.parentSessionId,
-            sessionKind: relationship.sessionKind,
-            parentToolCallId: relationship.parentToolCallId,
-            subagentType: relationship.subagentType,
-            continuationPolicy: relationship.continuationPolicy,
-            btwThreads: [],
-            btwOrigin: relationship.btwOrigin,
-            hasUnreadCompletion: metadata.unreadCompletion,
-            needsUserAttention: metadata.needsUserAttention,
-            deepReviewRunManifest: metadata.deepReviewRunManifest,
-            reviewTargetEvidence: metadata.reviewTargetEvidence,
-            isTransient: false,
-          };
+          const session = sessionFromPersistedMetadata(metadata, {
+            workspaceId, projectWorkspaceId, workspacePath, remoteConnectionId, remoteSshHost, maxContextTokens,
+          });
 
           const newSessions = new Map(prev.sessions);
           newSessions.set(metadata.sessionId, session);
@@ -7924,6 +7977,153 @@ export class FlowChatStore {
     } finally {
       this.endStateBatch(scope);
     }
+  }
+
+  /** Whether the rendered surface still holds an unpromoted background seed. */
+  public hasUnpromotedSeed(sessionId: string): boolean {
+    return this.isRebuildableSeed(sessionId);
+  }
+
+  /** A seed may be replaced only until the session has history or runtime state. */
+  private isRebuildableSeed(sessionId: string): boolean {
+    const container = this.activeSurface;
+    if (!container.seededSessions.has(sessionId)) return false;
+    const session = container.state.sessions.get(sessionId);
+    if (session && session.dialogTurns.length === 0 && session.historyState === 'metadata-only') return true;
+    container.seededSessions.delete(sessionId);
+    return false;
+  }
+
+  private surfaceSessionListeners = new Set<(surfaceId: DeviceSurfaceId) => void>();
+
+  /** Sessions of any surface's container, for background-device navigation. */
+  public getSurfaceSessions(surfaceId: DeviceSurfaceId): ReadonlyMap<string, Session> {
+    return this.surfaceContainers.get(surfaceId)?.state.sessions ?? EMPTY_SESSION_MAP;
+  }
+
+  /** Fires when a surface's sessions change: background seeding and active-state updates. */
+  public subscribeSurfaceSessions(listener: (surfaceId: DeviceSurfaceId) => void): () => void {
+    this.surfaceSessionListeners.add(listener);
+    return () => { this.surfaceSessionListeners.delete(listener); };
+  }
+
+  private notifySurfaceSessions(surfaceId: DeviceSurfaceId): void {
+    for (const listener of Array.from(this.surfaceSessionListeners)) {
+      try {
+        listener(surfaceId);
+      } catch (error) {
+        log.warn('Surface session listener threw', { error });
+      }
+    }
+  }
+
+  /**
+   * Project a background device's catalog pages into that device's container,
+   * using the same Session projection as a metadata page. Navigation then
+   * draws the device the same way before and after it is rendered, and a
+   * switch finds its sessions already present. The rendered surface is never
+   * seeded: its live reads own it.
+   */
+  public seedSurfaceSessions(surfaceId: DeviceSurfaceId, pages: readonly BackgroundSessionPage[]): void {
+    if (surfaceId === getActiveSurfaceId()) return;
+    let container = this.surfaceContainers.get(surfaceId);
+    if (!container) {
+      container = createSurfaceStateContainer(surfaceId);
+      this.surfaceContainers.set(surfaceId, container);
+    }
+    const sessions = new Map(container.state.sessions);
+    let changed = false;
+    for (const page of pages) {
+      for (const metadata of page.sessions) {
+        if (metadata.status === 'archived') continue;
+        const existing = sessions.get(metadata.sessionId);
+        let seeded = container.seededSessions.has(metadata.sessionId);
+        if (seeded && existing && (existing.dialogTurns.length > 0 || existing.historyState !== 'metadata-only')) {
+          // Opened since it was seeded: it is a loaded session now.
+          container.seededSessions.delete(metadata.sessionId);
+          seeded = false;
+        }
+        if (existing && !seeded) {
+          // A session this window loaded keeps its state; only the catalog
+          // facts navigation shows are refreshed.
+          const titleState = deriveSessionTitleStateFromMetadata(metadata);
+          const lastFinishedAt = deriveLastFinishedAtFromMetadata(metadata);
+          if (existing.title === titleState.title && existing.lastActiveAt === metadata.lastActiveAt
+            && existing.lastFinishedAt === lastFinishedAt && existing.persistedStatus === metadata.status) continue;
+          sessions.set(metadata.sessionId, {
+            ...existing, title: titleState.title, titleSource: titleState.titleSource,
+            titleI18nKey: titleState.titleI18nKey, titleI18nParams: titleState.titleI18nParams,
+            lastActiveAt: metadata.lastActiveAt, lastFinishedAt, persistedStatus: metadata.status,
+          });
+          changed = true;
+          continue;
+        }
+        const record: SeededSessionRecord = {
+          metadata, workspaceId: metadata.workspaceId ?? page.workspaceId, workspacePath: page.workspacePath,
+          remoteConnectionId: page.remoteConnectionId, remoteSshHost: page.remoteSshHost,
+        };
+        const previous = container.seededSessions.get(metadata.sessionId);
+        if (previous && JSON.stringify(previous.metadata) === JSON.stringify(metadata)) continue;
+        container.seededSessions.set(metadata.sessionId, record);
+        sessions.set(metadata.sessionId, sessionFromPersistedMetadata(metadata, {
+          workspaceId: record.workspaceId,
+          projectWorkspaceId: metadata.projectWorkspaceId ?? record.workspaceId,
+          workspacePath: record.workspacePath,
+          remoteConnectionId: record.remoteConnectionId,
+          remoteSshHost: record.remoteSshHost,
+          maxContextTokens: DEFAULT_SEEDED_CONTEXT_TOKENS,
+        }));
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    container.state = { ...container.state, sessions };
+    this.notifySurfaceSessions(surfaceId);
+  }
+
+  /**
+   * Rebuild the rendered surface's seeded sessions through the normal
+   * metadata path (model context window, state machines) before they are
+   * opened. Untouched seeds only; a session that already has history stays.
+   */
+  public async promoteSeededSessions(): Promise<void> {
+    const container = this.activeSurface;
+    const byWorkspace = new Map<string, SeededSessionRecord[]>();
+    for (const [sessionId, record] of container.seededSessions) {
+      if (!this.isRebuildableSeed(sessionId)) continue;
+      const group = byWorkspace.get(record.workspaceId) ?? [];
+      group.push(record);
+      byWorkspace.set(record.workspaceId, group);
+    }
+    for (const records of byWorkspace.values()) {
+      const [first] = records;
+      await this.processPersistedSessionMetadataList(
+        records.map(record => record.metadata), first.workspacePath, first.remoteConnectionId, first.remoteSshHost,
+      );
+    }
+  }
+
+  /** Drop seeds of a surface (account change); loaded sessions are untouched. */
+  public discardSeededSessions(surfaceId: DeviceSurfaceId): void {
+    const container = this.surfaceContainers.get(surfaceId);
+    if (!container || container.seededSessions.size === 0 || surfaceId === getActiveSurfaceId()) return;
+    const sessions = new Map(container.state.sessions);
+    for (const sessionId of container.seededSessions.keys()) sessions.delete(sessionId);
+    container.seededSessions.clear();
+    container.state = { ...container.state, sessions };
+    this.notifySurfaceSessions(surfaceId);
+  }
+
+  /**
+   * Adopt metadata the rendered device's host already returned (for example a
+   * device catalog page read just before this device was rendered), so a
+   * cross-device open needs no second round trip. Records are host-authored;
+   * they go through the same projection as a metadata page.
+   */
+  public async adoptHostSessionMetadata(workspaceId: string, sessions: readonly SessionMetadata[]): Promise<void> {
+    if (sessions.length === 0) return;
+    const { workspacePath, remoteConnectionId, remoteSshHost } = this.workspaceForId(workspaceId);
+    await this.processPersistedSessionMetadataList([...sessions], workspacePath, remoteConnectionId, remoteSshHost);
   }
 
   /**

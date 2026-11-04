@@ -9,18 +9,22 @@ const RECENT_HISTORY_OPEN_INTENT_MS = 750;
 const HISTORY_SESSION_OPEN_TRANSITION_MAX_MS = 4_000;
 
 let recentHistoryOpenIntent: { sessionId: string; atMs: number } | null = null;
-let activeHistorySessionOpenTransition: { sessionId: string; atMs: number } | null = null;
+let activeHistorySessionOpenTransition: HistorySessionOpenTransitionSnapshot | null = null;
 let activeHistorySessionOpenTransitionTimer: ReturnType<typeof setTimeout> | null = null;
 const transitionListeners = new Set<() => void>();
 
 export interface HistorySessionOpenIntentDetail {
   sessionId: string;
   sessionTitle?: string;
+  /** How long the overlay may wait; a cross-device open first renders another device. */
+  maxMs?: number;
 }
 
 export interface HistorySessionOpenTransitionSnapshot {
   sessionId: string;
   atMs: number;
+  sessionTitle?: string;
+  maxMs: number;
 }
 
 const nowMs = (): number => (
@@ -72,14 +76,18 @@ export function shouldShowHistorySessionOpenIntent(
   return session.historyState === 'ready' && session.contextRestoreState === 'pending';
 }
 
-export function dispatchHistorySessionOpenIntent(sessionId: string, sessionTitle?: string): void {
+export function dispatchHistorySessionOpenIntent(
+  sessionId: string,
+  sessionTitle?: string,
+  maxMs = HISTORY_SESSION_OPEN_TRANSITION_MAX_MS,
+): void {
   const atMs = nowMs();
   beginHistorySessionDiagnostics(sessionId, 'history_open_intent_dispatched');
   recentHistoryOpenIntent = {
     sessionId,
     atMs,
   };
-  activeHistorySessionOpenTransition = { sessionId, atMs };
+  activeHistorySessionOpenTransition = { sessionId, atMs, sessionTitle, maxMs };
   clearHistorySessionOpenTransitionTimer();
   activeHistorySessionOpenTransitionTimer = setTimeout(() => {
     if (
@@ -87,13 +95,13 @@ export function dispatchHistorySessionOpenIntent(sessionId: string, sessionTitle
       activeHistorySessionOpenTransition.atMs === atMs
     ) {
       recordHistorySessionDiagnosticEvent(sessionId, 'history_open_transition_expired', {
-        durationMs: HISTORY_SESSION_OPEN_TRANSITION_MAX_MS,
+        durationMs: maxMs,
       });
       activeHistorySessionOpenTransition = null;
       activeHistorySessionOpenTransitionTimer = null;
       notifyHistorySessionOpenTransitionListeners();
     }
-  }, HISTORY_SESSION_OPEN_TRANSITION_MAX_MS);
+  }, maxMs);
   notifyHistorySessionOpenTransitionListeners();
 
   if (typeof window === 'undefined') {
@@ -102,7 +110,7 @@ export function dispatchHistorySessionOpenIntent(sessionId: string, sessionTitle
 
   window.dispatchEvent(new CustomEvent<HistorySessionOpenIntentDetail>(
     HISTORY_SESSION_OPEN_INTENT_EVENT,
-    { detail: { sessionId, sessionTitle } },
+    { detail: { sessionId, sessionTitle, maxMs } },
   ));
 }
 
@@ -137,7 +145,7 @@ export function getHistorySessionOpenTransitionSnapshot(): HistorySessionOpenTra
     return null;
   }
 
-  if (nowMs() - transition.atMs > HISTORY_SESSION_OPEN_TRANSITION_MAX_MS) {
+  if (nowMs() - transition.atMs > transition.maxMs) {
     return null;
   }
 
