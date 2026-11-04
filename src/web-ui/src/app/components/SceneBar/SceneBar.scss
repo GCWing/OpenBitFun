@@ -35,12 +35,11 @@
 
   // The device a session tab belongs to when it is not the rendered one.
   // The device a tab belongs to: a quiet, smaller line of metadata set off by
-  // a hairline divider and a device glyph, never a second title.
+  // a hairline divider, never a second title.
   &__tab-device {
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 3px;
     margin-inline-start: var(--openbitfun-space-1);
     padding-inline-start: var(--openbitfun-space-1);
     border-inline-start: var(--openbitfun-border-width-default) solid
@@ -49,7 +48,6 @@
     font-size: var(--openbitfun-type-micro-font-size);
     line-height: 14px;
 
-    svg { flex: 0 0 auto; }
   }
 
   &__tab-device-name {

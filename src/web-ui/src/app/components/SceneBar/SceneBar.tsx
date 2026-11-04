@@ -6,7 +6,7 @@
  */
 
 import React, { useCallback, useState, useEffect, useMemo, useSyncExternalStore } from 'react';
-import { Pin, CircleAlert, Monitor } from 'lucide-react';
+import { Pin, CircleAlert } from 'lucide-react';
 import { useSceneStore } from '../../stores/sceneStore';
 import { useContextMenuStore } from '@/shared/context-menu-system/store/ContextMenuStore';
 import { ContextType } from '@/shared/context-menu-system/types/context.types';
@@ -223,7 +223,6 @@ const SceneBar: React.FC<SceneBarProps> = ({
         {sessionLabel?.number && <SessionTitleNumber number={sessionLabel.number} />}
         {deviceLabels[tab.id] && <span className="openbitfun-scene-bar__tab-device"
           data-openbitfun-component="scene-bar" data-openbitfun-part="tabDevice">
-          <Monitor size={11} aria-hidden="true" />
           {/* Scrolls with the title: the tab is the overflow trigger of both. */}
           <OverflowText behavior="marquee" className="openbitfun-scene-bar__tab-device-name">{deviceLabels[tab.id]}</OverflowText>
         </span>}
