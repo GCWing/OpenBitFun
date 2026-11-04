@@ -1555,42 +1555,71 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     targetWorkspacePath,
   ]);
 
+  // Catalog refreshes (e.g. opening the "+" menu) publish new mode objects with
+  // identical content. Key tool resolution on stable values so a refresh does
+  // not hide tool-gated actions; explicit config events bump the revision.
+  const targetModeId = targetModeInfo?.id ?? null;
+  const targetModeSource = targetModeInfo?.source ?? null;
+  const targetModeDefaultToolsKey = targetModeInfo?.defaultTools
+    ? targetModeInfo.defaultTools.join('\n')
+    : null;
+  const targetModeInfoRef = useRef(targetModeInfo);
+  targetModeInfoRef.current = targetModeInfo;
+  const resolvedTargetModeKeyRef = useRef<string | null>(null);
+  const [targetModeConfigRevision, setTargetModeConfigRevision] = useState(0);
+
   useEffect(() => {
-    if (isSubagentInputTarget) {
+    const bumpRevision = () => setTargetModeConfigRevision(revision => revision + 1);
+    globalEventBus.on('mode:config:updated', bumpRevision);
+    globalEventBus.on('custom-agent:updated', bumpRevision);
+    return () => {
+      globalEventBus.off('mode:config:updated', bumpRevision);
+      globalEventBus.off('custom-agent:updated', bumpRevision);
+    };
+  }, []);
+
+  useEffect(() => {
+    const clearTargetModeTools = () => {
+      resolvedTargetModeKeyRef.current = null;
       setTargetModeEnabledTools(null);
       setTargetModeToolsResolved(false);
+    };
+
+    if (isSubagentInputTarget || !targetModeId) {
+      clearTargetModeTools();
       return;
     }
 
-    if (!targetModeInfo) {
-      setTargetModeEnabledTools(null);
-      setTargetModeToolsResolved(false);
-      return;
-    }
-    if (targetModeInfo.source === 'external') {
-      setTargetModeEnabledTools(targetModeInfo.defaultTools ?? null);
+    const modeKey = `${targetModeSource ?? ''}:${targetModeId}`;
+    if (targetModeSource === 'external') {
+      resolvedTargetModeKeyRef.current = modeKey;
+      setTargetModeEnabledTools(targetModeInfoRef.current?.defaultTools ?? null);
       setTargetModeToolsResolved(true);
       return;
     }
 
+    // Keep the last known tools while re-resolving the same mode so gated
+    // actions do not flicker; only a different mode starts unresolved.
+    if (resolvedTargetModeKeyRef.current !== modeKey) {
+      clearTargetModeTools();
+    }
+
     let cancelled = false;
-    setTargetModeEnabledTools(null);
-    setTargetModeToolsResolved(false);
     (async () => {
       try {
-        const config = await configAPI.getAgentProfileConfig(targetModeInfo.id);
+        const config = await configAPI.getAgentProfileConfig(targetModeId);
         if (!cancelled) {
+          resolvedTargetModeKeyRef.current = modeKey;
           setTargetModeEnabledTools(config.enabled_tools ?? null);
           setTargetModeToolsResolved(true);
         }
       } catch (err) {
         log.error('Failed to load mode tool config for chat input', {
           err,
-          targetAgentType: targetModeInfo.id,
+          targetAgentType: targetModeId,
         });
         if (!cancelled) {
-          setTargetModeEnabledTools(null);
-          setTargetModeToolsResolved(false);
+          clearTargetModeTools();
         }
       }
     })();
@@ -1598,7 +1627,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isSubagentInputTarget, targetModeInfo]);
+  }, [
+    isSubagentInputTarget,
+    targetModeId,
+    targetModeSource,
+    targetModeDefaultToolsKey,
+    targetModeConfigRevision,
+  ]);
 
   const canUseThreadGoal =
     caps.threadGoal &&
