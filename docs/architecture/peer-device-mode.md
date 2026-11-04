@@ -204,6 +204,72 @@ retain replayable request state and expose it through an attach/snapshot path.
 A one-shot frontend event plus an unresolved channel is not a complete
 multi-device implementation.
 
+### Sidebar device catalog
+
+The session list shows every online host of the account in place, grouped by
+device in a fixed order (this machine first, then peers by name). The rendered
+device's section is its live workspace container. Every other section, this
+machine included while a peer is rendered, is drawn from a read-only catalog
+(`infrastructure/peer-device/deviceWorkspaceCatalog.ts`):
+
+- Every online, compatible host's catalog is kept current while the sidebar
+  lists it, including the first session page of each of its workspaces
+  (bounded to two concurrent reads per device). That is what lets device
+  headers, session rows and the Agent companion show running, waiting and
+  unread sessions of every device at once. Desktop hosts do not fan
+  `agentic://` events out to controllers, so the host's catalog summary is the
+  freshest status for a background device; observed events only fill sessions
+  the catalog has no summary for.
+- A peer is read through a raw `host_invoke` device RPC limited to
+  `peer_mode_ping`, `get_opened_workspaces` and `list_persisted_sessions_page`
+  (`deviceCatalogTransport.ts`). It needs no control attachment and does not
+  fan out events. This machine is read through its own Tauri transport. Session
+  reads use `workspace_id` only when the host advertises
+  `workspace_id_references_v1`; older hosts get their own root path.
+- Freshness comes from invalidations, not polling. While a peer section is open
+  the controller subscribes the peer's `@host/catalog` stream. Its
+  `host-catalog-changed` hint is surface-scoped, so only the catalog observer
+  sees it. The catalog also observes local and attached-peer lifecycle events.
+  Hints are debounced (300 ms) and coalesced into one in-flight read per device.
+  A hint whose `workspacesRevision` did not move refreshes session pages only;
+  refreshes are held while the window is hidden or a cross-device open runs and
+  run once afterwards; the device that just became rendered is not re-read;
+  catalog notifications are coalesced per task.
+  A host without the stream is re-read when the window becomes visible. The
+  stream is released 30 s after the section closes.
+- A failed read keeps the last rendered catalog and offers a retry. An
+  incompatible build is listed but not read.
+
+Navigation draws a background device from its own FlowChat container, seeded
+from the catalog through the same metadata-to-Session projection a metadata
+page uses (`flowChatStore.seedSurfaceSessions`; never the rendered surface).
+Rows use the live list's hierarchy, comparator, view filters, first-level
+limit and project disclosure (window-wide, keyed by surface), so a device looks
+the same before, during and after a switch. Seeds carry no history or state
+machine; they are promoted through the normal metadata path before any open,
+and a seed that has been opened is never replaced by a later seed.
+
+A cross-device open publishes a `DeviceOpenIntent` for its whole duration. While
+it is set, every device keeps its background rows (the rendered device hands
+over to its live list once, after the open, so the live list's reads never
+compete with the open), catalog refreshes are held and run once afterwards, the
+session's tab is held in front (`sceneStore.holdSessionScene`) from the click through both switch resets and session-tab reconciliation,
+and the main area shows the session's open overlay from the click on.
+
+Acting on a catalog entry (open a session or assistant, new session) first
+renders its device through `switchToDevice` / `switchToLocal`. It then runs the
+local handler on the now-rendered surface. Every mutation therefore keeps
+Peer Device Mode's ownership, capability gates, permission mailboxes and surface
+fences. The catalog never mutates a host. The create dialog does the same: it
+renders the chosen device before opening the project form, so folder picking,
+recent workspaces and sources belong to that device. The personal assistant is
+always created on this machine.
+
+The Agent companion lists background-device sessions next to the rendered
+device's, labelled with their device. Opening one renders its device first;
+replying from the companion is offered only for the rendered device. A switch
+reloads the target's config and workspace catalog concurrently.
+
 ## Cloud account sync vs Peer Remote
 
 | Concern | Account cloud sync | Peer Device Mode |
