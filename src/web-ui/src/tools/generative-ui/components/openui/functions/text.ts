@@ -1,8 +1,7 @@
 import { defineFunction } from "@openuidev/react-lang";
 import { z } from "zod/v4";
 import { list, MAX_ITEMS, read } from "./shared";
-
-const LOCALE = "en-US";
+import { i18nService } from "@/infrastructure/i18n";
 
 function currencyCode(code: string | undefined): string {
   const upper = (code ?? "USD").toUpperCase();
@@ -12,9 +11,9 @@ function currencyCode(code: string | undefined): string {
 /** Formats with Intl; an unknown currency code falls back to USD instead of throwing. */
 function format(value: number, options: Intl.NumberFormatOptions): string {
   try {
-    return value.toLocaleString(LOCALE, options);
+    return i18nService.formatNumber(value, options);
   } catch {
-    return value.toLocaleString(LOCALE, { ...options, currency: "USD" });
+    return i18nService.formatNumber(value, { ...options, currency: "USD" });
   }
 }
 

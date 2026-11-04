@@ -1,6 +1,7 @@
 import { defineFunction } from "@openuidev/react-lang";
 import { z } from "zod/v4";
 import { date } from "./shared";
+import { i18nService } from "@/infrastructure/i18n";
 
 const DAY = 86_400_000;
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -90,7 +91,7 @@ export const FormatDate = defineFunction({
     if (style === "iso") return isoDay(day);
     // A calendar date formats in UTC so its day never shifts with the viewer's zone
     const at = instant ?? new Date(day * DAY);
-    return at.toLocaleString("en-US", { ...STYLES[style], ...(instant ? {} : { timeZone: "UTC" }) });
+    return i18nService.formatDate(at, { ...STYLES[style], ...(instant ? {} : { timeZone: "UTC" }) });
   },
 });
 

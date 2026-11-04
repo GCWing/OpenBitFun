@@ -2,6 +2,7 @@
 
 import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod/v4";
+import { i18nService } from "@/infrastructure/i18n";
 import { inline } from "./markdown";
 import { cx } from "./style";
 
@@ -24,7 +25,7 @@ export const Table = defineComponent({
       return cells.length > 0 && cells.every((v) => typeof v === "number" || (typeof v === "string" && NUMERIC.test(v.trim())));
     });
     const cell = (value: unknown) =>
-      isElement(value) ? renderNode(value) : typeof value === "number" ? value.toLocaleString("en-US", { maximumFractionDigits: 2 }) : inline(String(value ?? ""));
+      isElement(value) ? renderNode(value) : typeof value === "number" ? i18nService.formatNumber(value, { maximumFractionDigits: 2 }) : inline(String(value ?? ""));
     return (
       <div className="iui-table-scroll">
         <table className="iui-table">

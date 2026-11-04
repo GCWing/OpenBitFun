@@ -14,6 +14,7 @@ import {
 } from "@openuidev/react-lang";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { z } from "zod/v4";
+import { i18nService } from "@/infrastructure/i18n";
 import { Glyph } from "./glyph";
 import { bg, children, color, onColor, cx, option, radius, radiusSchema, space, textOf, toOption, type Option } from "./style";
 
@@ -37,7 +38,7 @@ function useFieldName(label: unknown, statementId?: string) {
 
 const numberText = (value: unknown) => {
   if (typeof value !== "number" || !Number.isFinite(value)) return "";
-  return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return i18nService.formatNumber(value, { maximumFractionDigits: 2 });
 };
 
 function Field({ label, children: content }: { label?: string; children: ReactNode }) {

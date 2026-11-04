@@ -3,6 +3,7 @@
 import { defineComponent } from "@openuidev/react-lang";
 import { useId, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { z } from "zod/v4";
+import { i18nService } from "@/infrastructure/i18n";
 
 type Row = Record<string, unknown>;
 type Format = (value: number, compact?: boolean) => string;
@@ -28,7 +29,7 @@ function makeFormat(kind: string | undefined, currency: string | undefined): For
     if (kind === "percent") return `${Number(value.toFixed(compact ? 1 : 2))}%`;
     const big = Math.abs(value) >= (compact ? 1000 : 1e6);
     const options: Intl.NumberFormatOptions = { minimumFractionDigits: 0, maximumFractionDigits: compact && big ? 1 : 2, ...(big ? { notation: "compact" } : {}) };
-    return value.toLocaleString("en-US", kind === "currency" ? { ...options, style: "currency", currency: code } : options);
+    return i18nService.formatNumber(value, kind === "currency" ? { ...options, style: "currency", currency: code } : options);
   };
 }
 
@@ -207,7 +208,7 @@ function Scatter({ spec, width }: { spec: Spec; width: number }) {
             <text x={pad.left - 10} y={py(t) + 4} textAnchor="end" className="iui-chart-tick">{format(t, true)}</text>
           </g>
         ))}
-        {xa.ticks.map((t, k) => (k % every === 0 ? <text key={`x${t}`} x={px(t)} y={height - 6} textAnchor="middle" className="iui-chart-tick">{Number(t.toFixed(6)).toLocaleString("en-US", { notation: Math.abs(t) >= 1e4 ? "compact" : "standard" })}</text> : null))}
+        {xa.ticks.map((t, k) => (k % every === 0 ? <text key={`x${t}`} x={px(t)} y={height - 6} textAnchor="middle" className="iui-chart-tick">{i18nService.formatNumber(Number(t.toFixed(6)), { notation: Math.abs(t) >= 1e4 ? "compact" : "standard" })}</text> : null))}
         {series.map((s, si) =>
           rows.map((r, i) => (
             <circle key={`${si}-${i}`} cx={px(num(r[x]))} cy={py(num(r[s]))} r={hover?.i === i && hover.si === si ? 6.5 : 5} fill={seriesColor(si)} fillOpacity={0.78} stroke="var(--iui-canvas)" strokeWidth={1.5} onPointerEnter={() => setHover({ i, si })} />
@@ -217,7 +218,7 @@ function Scatter({ spec, width }: { spec: Spec; width: number }) {
       {tip && hover && (
         <div className="iui-chart-tooltip" style={{ left: Math.min(Math.max(px(num(tip[x])), 70), width - 70), top: Math.max(0, py(num(tip[series[hover.si]])) - 70) }}>
           <strong>{name ? String(tip[name]) : series[hover.si]}</strong>
-          <span>{x} <b>{num(tip[x]).toLocaleString("en-US", { maximumFractionDigits: 2 })}</b></span>
+          <span>{x} <b>{i18nService.formatNumber(num(tip[x]), { maximumFractionDigits: 2 })}</b></span>
           <span><i style={{ background: seriesColor(hover.si) }} />{series[hover.si]} <b>{format(num(tip[series[hover.si]]))}</b></span>
         </div>
       )}

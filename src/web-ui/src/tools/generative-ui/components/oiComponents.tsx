@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { DynamicIcon, iconNames, type IconName } from 'lucide-react/dynamic';
 import { ImageIcon } from 'lucide-react';
+import { i18nService } from '@/infrastructure/i18n';
 import type { GenUIComponentImplementation, GenUIComponentProps, GenUIImplementations } from '../genUILibrary';
 import { sanitizeGenUIHtmlSource } from '../GenUIHtmlDocument';
 import type { GenUIAsyncRuntime, GenUIAsyncExecuteOptions } from '../genUIAsyncCapabilities';
@@ -230,7 +231,7 @@ function chartFormat(value: number, kind: unknown, currency: unknown, compact = 
   if (kind === 'percent') return `${Number(value.toFixed(compact ? 1 : 2))}%`;
   const code = typeof currency === 'string' && /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : 'USD';
   const options: Intl.NumberFormatOptions = { maximumFractionDigits: compact ? 1 : 2, notation: compact && Math.abs(value) >= 1000 ? 'compact' : 'standard' };
-  return value.toLocaleString('en-US', kind === 'currency' ? { ...options, style: 'currency', currency: code } : options);
+  return i18nService.formatNumber(value, kind === 'currency' ? { ...options, style: 'currency', currency: code } : options);
 }
 function chartAxis(values: number[]) {
   const min = Math.min(0, ...values), max = Math.max(1, ...values), step = (max - min || 1) / 4;
@@ -363,7 +364,7 @@ export const oiComponents: GenUIImplementations['components'] = {
     const name = normalizedIconName(view.props.name);
     return <span className="gen-ui-oi-icon" aria-label={str(view.props.name)}>{name ? <DynamicIcon name={name} size={({ sm: 14, md: 18, lg: 24, xl: 32 } as Record<string, number>)[str(view.props.size)] ?? 18} strokeWidth={1.8} aria-hidden /> : null}</span>;
   }),
-  Table: define(({ view, renderNode }) => { const columns = Array.isArray(view.props.columns) ? view.props.columns as unknown[] : []; const rows = Array.isArray(view.props.rows) ? view.props.rows.filter((row): row is unknown[] => Array.isArray(row)) : []; const numeric = columns.map((_, index) => { const cells = rows.map(row => row[index]).filter(value => value != null && value !== ''); return cells.length > 0 && cells.every(isNumericTableCell); }); const tableCell = (value: unknown) => node(value) ? renderNode(value) : typeof value === 'number' ? value.toLocaleString('en-US', { maximumFractionDigits: 2 }) : Array.isArray(value) ? render(value, renderNode) : inlineText(str(value ?? '')); return <div className="gen-ui-oi-table"><table><thead><tr>{columns.map((column, index) => <th key={index} className={numeric[index] ? 'is-numeric' : undefined}>{str(column)}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index}>{columns.map((_, column) => <td key={column} className={numeric[column] ? 'is-numeric' : undefined}>{tableCell(row[column])}</td>)}</tr>)}</tbody></table></div>; }),
+  Table: define(({ view, renderNode }) => { const columns = Array.isArray(view.props.columns) ? view.props.columns as unknown[] : []; const rows = Array.isArray(view.props.rows) ? view.props.rows.filter((row): row is unknown[] => Array.isArray(row)) : []; const numeric = columns.map((_, index) => { const cells = rows.map(row => row[index]).filter(value => value != null && value !== ''); return cells.length > 0 && cells.every(isNumericTableCell); }); const tableCell = (value: unknown) => node(value) ? renderNode(value) : typeof value === 'number' ? i18nService.formatNumber(value, { maximumFractionDigits: 2 }) : Array.isArray(value) ? render(value, renderNode) : inlineText(str(value ?? '')); return <div className="gen-ui-oi-table"><table><thead><tr>{columns.map((column, index) => <th key={index} className={numeric[index] ? 'is-numeric' : undefined}>{str(column)}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index}>{columns.map((_, column) => <td key={column} className={numeric[column] ? 'is-numeric' : undefined}>{tableCell(row[column])}</td>)}</tr>)}</tbody></table></div>; }),
   Chart: define(ChartView),
   Map: define(({ view, emit, asyncRuntime }) => <MapView view={view} emit={emit} asyncRuntime={asyncRuntime} />, (element, event, value) => { if (event !== 'change') throw new Error('Map event is unavailable'); const marker = Array.from(element.querySelectorAll<HTMLElement>('[role="button"][aria-label]')).find(item => item.getAttribute('aria-label') === String(value)); if (!marker) throw new Error('Map marker is unavailable'); marker.dispatchEvent(new MouseEvent('click', { bubbles: true })); }),
   MapMarker: define(() => null),
