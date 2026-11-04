@@ -13,6 +13,9 @@ pub struct ReadFileResult {
     pub content_truncated: bool,
     /// Selected source lines whose contents were clipped by the per-line limit.
     pub truncated_lines: Vec<usize>,
+    /// Characters the lines after `end_line` would occupy in a follow-up call
+    /// that starts at `end_line + 1`, rendered with the same per-line limit.
+    pub remaining_chars: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,8 +26,8 @@ pub struct ReadFilePresentation {
 }
 
 /// Per-call budgets a Read implementation advertises in its continuation
-/// guidance. A follow-up call that omits `limit` and stays within these budgets
-/// returns the whole remaining window in one step.
+/// guidance. A follow-up call that omits `limit` returns the whole remaining
+/// window in one step only when it fits both budgets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReadCallBudget {
     pub max_lines: usize,
@@ -90,29 +93,35 @@ pub fn build_read_file_presentation_with_budget(
     if let Some(next_start) = next_start_line {
         // State what one more call can still return. Without the remaining
         // count and the per-call budget, callers page a large file window by
-        // window instead of continuing in one step.
+        // window instead of continuing in one step. "Fits" must hold for both
+        // budgets, or a long-line tail would be promised and then cut again.
         let remaining_lines = result.total_lines - result.end_line;
-        if result.hit_total_char_limit {
-            result_for_assistant.push_str(&format!(
-                "\n\n[Output truncated after reaching the Read tool size limit (remaining: {}). Use offset={} without limit to read up to {} characters per call.]",
-                remaining_lines, next_start, budget.max_total_chars
-            ));
-        } else if remaining_lines <= budget.max_lines {
-            result_for_assistant.push_str(&format!(
-                "\n\n[Showing lines {}-{} of {} total (remaining: {}). All of it fits in one call: use offset={} without limit.]",
-                result.start_line, result.end_line, result.total_lines, remaining_lines, next_start
-            ));
+        let fits_in_one_call =
+            remaining_lines <= budget.max_lines && result.remaining_chars <= budget.max_total_chars;
+        let window = if result.hit_total_char_limit {
+            "Output truncated after reaching the Read tool size limit".to_string()
         } else {
-            result_for_assistant.push_str(&format!(
-                "\n\n[Showing lines {}-{} of {} total (remaining: {}). Use offset={} without limit to read up to {} lines per call, or offset/limit for a known range.]",
-                result.start_line,
-                result.end_line,
-                result.total_lines,
-                remaining_lines,
-                next_start,
-                budget.max_lines
-            ));
-        }
+            format!(
+                "Showing lines {}-{} of {} total",
+                result.start_line, result.end_line, result.total_lines
+            )
+        };
+        let next_step = if fits_in_one_call {
+            format!("All of it fits in one call: use offset={next_start} without limit.")
+        } else {
+            format!(
+                "Use offset={} without limit to read up to {} lines and {} characters per call, or offset/limit for a known range.",
+                next_start, budget.max_lines, budget.max_total_chars
+            )
+        };
+        let unit = if remaining_lines == 1 {
+            "line"
+        } else {
+            "lines"
+        };
+        result_for_assistant.push_str(&format!(
+            "\n\n[{window} ({remaining_lines} {unit} remaining). {next_step}]"
+        ));
     }
     if !result.truncated_lines.is_empty() {
         result_for_assistant.push_str(&format!(
@@ -469,6 +478,7 @@ struct ReadLineSelection {
     hit_total_char_limit: bool,
     content_truncated: bool,
     truncated_lines: Vec<usize>,
+    remaining_chars: usize,
     tail_lines: Option<VecDeque<(usize, String, bool)>>,
 }
 
@@ -504,18 +514,24 @@ impl ReadLineSelection {
             hit_total_char_limit: false,
             content_truncated: false,
             truncated_lines: Vec::new(),
+            remaining_chars: 0,
             tail_lines: tail.then(VecDeque::new),
         })
     }
 
     fn push(&mut self, line: String, truncated: bool) {
         self.total_lines += 1;
-        if self.tail_lines.is_none()
-            && (self.total_lines < self.start_line
-                || self.total_lines > self.end_line
-                || self.hit_total_char_limit)
-        {
-            return;
+        if self.tail_lines.is_none() {
+            if self.total_lines < self.start_line {
+                return;
+            }
+            if self.total_lines > self.end_line || self.hit_total_char_limit {
+                // Measure without rendering: everything past the returned
+                // window only feeds the continuation guidance.
+                let chars = rendered_line_chars(self.total_lines, line.chars().count(), truncated);
+                self.add_remaining(chars);
+                return;
+            }
         }
         let line = if truncated {
             format!("{line} [truncated]")
@@ -534,13 +550,19 @@ impl ReadLineSelection {
 
     fn select(&mut self, line_number: usize, line: String, truncated: bool) {
         let rendered = format!("{line_number:>6}\t{line}");
+        let rendered_chars = rendered.chars().count();
+        if self.hit_total_char_limit {
+            self.add_remaining(rendered_chars);
+            return;
+        }
         let next_chars = self
             .selected_chars
             .saturating_add(usize::from(!self.selected_lines.is_empty()))
-            .saturating_add(rendered.chars().count());
+            .saturating_add(rendered_chars);
         if next_chars > self.max_total_chars {
             self.hit_total_char_limit = true;
             self.content_truncated = true;
+            self.add_remaining(rendered_chars);
         } else {
             self.content_truncated |= truncated;
             if truncated {
@@ -549,6 +571,15 @@ impl ReadLineSelection {
             self.selected_chars = next_chars;
             self.selected_lines.push(rendered);
         }
+    }
+
+    fn add_remaining(&mut self, rendered_chars: usize) {
+        // Rendered lines are never empty, so a non-zero total means a newline
+        // separator precedes this line in the follow-up output.
+        self.remaining_chars = self
+            .remaining_chars
+            .saturating_add(usize::from(self.remaining_chars > 0))
+            .saturating_add(rendered_chars);
     }
 
     fn finish(mut self) -> Result<ReadFileResult, String> {
@@ -561,6 +592,7 @@ impl ReadLineSelection {
                 hit_total_char_limit: false,
                 content_truncated: false,
                 truncated_lines: Vec::new(),
+                remaining_chars: 0,
             });
         }
         if let Some(tail_lines) = self.tail_lines.take() {
@@ -570,9 +602,6 @@ impl ReadLineSelection {
                 .saturating_add(1);
             for (number, line, truncated) in tail_lines {
                 self.select(number, line, truncated);
-                if self.hit_total_char_limit {
-                    break;
-                }
             }
         }
         if self.start_line > self.total_lines {
@@ -596,15 +625,28 @@ impl ReadLineSelection {
             hit_total_char_limit: self.hit_total_char_limit,
             content_truncated: self.content_truncated,
             truncated_lines: self.truncated_lines,
+            remaining_chars: self.remaining_chars,
         })
     }
+}
+
+/// Character count of `format!("{line_number:>6}\t{line}")`, with the
+/// `[truncated]` marker `push` appends to clipped lines.
+fn rendered_line_chars(line_number: usize, line_chars: usize, truncated: bool) -> usize {
+    const TRUNCATED_MARKER_CHARS: usize = " [truncated]".len();
+    let digits = line_number
+        .checked_ilog10()
+        .map_or(1, |log| log as usize + 1);
+    let number_width = digits.max(6);
+    number_width + 1 + line_chars + if truncated { TRUNCATED_MARKER_CHARS } else { 0 }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        build_read_file_presentation, read_file, read_file_bytes_bounded, read_file_lines_read,
-        read_file_tail, read_text, read_text_tail, ReadFileResult,
+        build_read_file_presentation, build_read_file_presentation_with_budget, read_file,
+        read_file_bytes_bounded, read_file_lines_read, read_file_tail, read_text, read_text_tail,
+        ReadCallBudget, ReadFileResult,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -891,6 +933,7 @@ mod tests {
             hit_total_char_limit: false,
             content_truncated: false,
             truncated_lines: Vec::new(),
+            remaining_chars: 0,
         };
 
         let presentation = build_read_file_presentation("src/lib.rs", &result);
@@ -917,23 +960,107 @@ mod tests {
         assert_eq!(presentation.next_offset, Some(11));
         assert!(presentation
             .result_for_assistant
-            .contains("(remaining: 2491)"));
-        assert!(presentation
+            .contains("(2491 lines remaining)"));
+        assert!(presentation.result_for_assistant.contains(
+            "Use offset=11 without limit to read up to 2000 lines and 64000 characters per call"
+        ));
+        assert!(!presentation
             .result_for_assistant
-            .contains("Use offset=11 without limit to read up to 2000 lines per call"));
+            .contains("fits in one call"));
     }
 
     #[test]
-    fn continuation_guidance_names_the_character_cap_when_a_call_is_cut() {
+    fn remaining_chars_match_the_follow_up_call_output() {
+        let text = "one\ntwo\nabcdefgh\nfour\n";
+        let first = read_text(text, 1, 1, 5, 1000).unwrap();
+        let follow_up = read_text(text, 2, 10, 5, 1000).unwrap();
+
+        assert_eq!(first.remaining_chars, follow_up.content.chars().count());
+        assert_eq!(follow_up.remaining_chars, 0);
+    }
+
+    #[test]
+    fn remaining_chars_cover_lines_cut_by_the_character_budget() {
+        let text = "abcdefghij\nnext\nlast\n";
+        let cut = read_text(text, 1, 10, 10, 20).unwrap();
+        let follow_up = read_text(text, 2, 10, 10, 1000).unwrap();
+
+        assert!(cut.hit_total_char_limit);
+        assert_eq!(cut.end_line, 1);
+        assert_eq!(cut.remaining_chars, follow_up.content.chars().count());
+
+        let tail_cut = read_text_tail(text, 3, 10, 20).unwrap();
+        assert!(tail_cut.hit_total_char_limit);
+        assert_eq!(tail_cut.remaining_chars, follow_up.content.chars().count());
+    }
+
+    #[test]
+    fn continuation_guidance_does_not_promise_one_call_when_characters_exceed_the_budget() {
+        let text = format!("short\n{}", format!("{}\n", "x".repeat(50)).repeat(3));
+        let result = read_text(&text, 1, 1, 2000, 64_000).unwrap();
+        let presentation = build_read_file_presentation_with_budget(
+            "wide.txt",
+            &result,
+            ReadCallBudget::new(2000, 100),
+        );
+
+        assert_eq!(presentation.next_offset, Some(2));
+        assert!(result.remaining_chars > 100);
+        assert!(presentation
+            .result_for_assistant
+            .contains("(3 lines remaining)"));
+        assert!(!presentation
+            .result_for_assistant
+            .contains("fits in one call"));
+        assert!(presentation.result_for_assistant.contains(
+            "Use offset=2 without limit to read up to 2000 lines and 100 characters per call"
+        ));
+    }
+
+    #[test]
+    fn continuation_guidance_uses_the_callers_budget() {
+        let text = "line\n".repeat(150);
+        let result = read_text(&text, 1, 20, 2000, 64_000).unwrap();
+
+        let tight = build_read_file_presentation_with_budget(
+            "custom.txt",
+            &result,
+            ReadCallBudget::new(100, 5000),
+        );
+        assert!(tight.result_for_assistant.contains("(130 lines remaining)"));
+        assert!(tight
+            .result_for_assistant
+            .contains("read up to 100 lines and 5000 characters per call"));
+
+        let roomy = build_read_file_presentation_with_budget(
+            "custom.txt",
+            &result,
+            ReadCallBudget::new(200, 5000),
+        );
+        assert!(roomy
+            .result_for_assistant
+            .contains("All of it fits in one call: use offset=21 without limit."));
+    }
+
+    #[test]
+    fn continuation_guidance_after_a_character_cut_still_reports_a_fit() {
         let result = read_text("abcdefghij\nnext\n", 1, 10, 10, 20).unwrap();
         let presentation = build_read_file_presentation("long.txt", &result);
 
         assert!(result.hit_total_char_limit);
         assert_eq!(presentation.next_offset, Some(2));
-        assert!(presentation.result_for_assistant.contains("(remaining: 1)"));
-        assert!(presentation
+        assert!(presentation.result_for_assistant.contains(
+            "[Output truncated after reaching the Read tool size limit (1 line remaining). All of it fits in one call"
+        ));
+
+        let tight = build_read_file_presentation_with_budget(
+            "long.txt",
+            &result,
+            ReadCallBudget::new(2000, 10),
+        );
+        assert!(tight
             .result_for_assistant
-            .contains("read up to 64000 characters per call"));
+            .contains("read up to 2000 lines and 10 characters per call"));
     }
 
     #[test]
@@ -961,6 +1088,7 @@ mod tests {
             hit_total_char_limit: false,
             content_truncated: false,
             truncated_lines: Vec::new(),
+            remaining_chars: 0,
         };
 
         assert_eq!(read_file_lines_read(&result), 0);

@@ -362,9 +362,11 @@ Use pages to select units after inspecting page_kind/page_count, especially when
 
         Ok(format!(
             r#"Read a file from the active workspace, including a remote workspace. Use LS/Glob for directories and an image tool for images.
-Returns numbered lines (line number, tab, text). Prefer one call per file: omit limit to use the whole per-call budget of up to {} lines and {} characters, which covers most files at once. Set offset/limit only for a range you already know, or after Grep located it in a file larger than that budget; do not page a large file window by window. The continuation note states how many lines remain and whether one more call can return all of them. File content is capped at {} characters per line. A truncated line needs another inspection method; rereading the same line window cannot recover its omitted characters. Use only complete source text for Edit.
+Returns numbered lines (line number, tab, text). Prefer one call per file: omit limit to use the whole per-call budget of up to {max_lines} lines and {max_total_chars} characters in total, which covers most files at once. Set offset/limit only for a range you already know, or after Grep located it in a file larger than that budget; do not page a large file window by window. The continuation note states how many lines remain and whether one more call can return all of them. Separately, each returned line is capped at {max_line_chars} characters and a longer line ends with [truncated]. A truncated line needs another inspection method; rereading the same line window cannot recover its omitted characters. Use only complete source text for Edit.
 {document_guidance}"#,
-            self.default_max_lines_to_read, self.max_total_chars, self.max_line_chars
+            max_lines = self.default_max_lines_to_read,
+            max_total_chars = self.max_total_chars,
+            max_line_chars = self.max_line_chars,
         ))
     }
 
