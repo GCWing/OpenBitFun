@@ -8049,11 +8049,14 @@ export class FlowChatStore {
           const titleState = deriveSessionTitleStateFromMetadata(metadata);
           const lastFinishedAt = deriveLastFinishedAtFromMetadata(metadata);
           if (existing.title === titleState.title && existing.lastActiveAt === metadata.lastActiveAt
-            && existing.lastFinishedAt === lastFinishedAt && existing.persistedStatus === metadata.status) continue;
+            && existing.lastFinishedAt === lastFinishedAt && existing.persistedStatus === metadata.status
+            && existing.hasUnreadCompletion === metadata.unreadCompletion
+            && existing.needsUserAttention === metadata.needsUserAttention) continue;
           sessions.set(metadata.sessionId, {
             ...existing, title: titleState.title, titleSource: titleState.titleSource,
             titleI18nKey: titleState.titleI18nKey, titleI18nParams: titleState.titleI18nParams,
             lastActiveAt: metadata.lastActiveAt, lastFinishedAt, persistedStatus: metadata.status,
+            hasUnreadCompletion: metadata.unreadCompletion, needsUserAttention: metadata.needsUserAttention,
           });
           changed = true;
           continue;

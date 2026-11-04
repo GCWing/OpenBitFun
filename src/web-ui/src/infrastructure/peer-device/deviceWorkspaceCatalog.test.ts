@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/shared/utils/logger', () => ({
   createLogger: () => ({ trace: vi.fn(), debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
-vi.mock('./deviceCatalogTransport', () => ({ invokeOnDevice: vi.fn(), deviceCatalogLocalTransport: vi.fn() }));
+vi.mock('./deviceCatalogTransport', () => ({ invokeOnDevice: vi.fn(), acknowledgeOnDevice: vi.fn(), deviceCatalogLocalTransport: vi.fn() }));
 vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', () => ({ remoteConnectAPI: {} }));
 
 import {
@@ -62,6 +62,7 @@ describe('DeviceWorkspaceCatalog', () => {
     });
     io = {
       invoke: invoke as DeviceWorkspaceCatalogIO['invoke'],
+      acknowledge: vi.fn(async () => undefined),
       subscribeCatalog: vi.fn(async () => 'sub-1'),
       unsubscribeCatalog: vi.fn(async () => undefined),
       listen: vi.fn(() => () => undefined),
@@ -312,5 +313,25 @@ describe('DeviceWorkspaceCatalog', () => {
     // Unbatched, a read of three workspaces publishes 9 updates (status, list,
     // and loading/ready per page); updates within one task share a notification.
     expect(listener.mock.calls.length).toBeLessThan(9);
+  });
+
+  it('marks a device read on its host, updating rows at once', async () => {
+    invoke.mockImplementation(async (_device: string | null, command: string) => {
+      if (command === 'peer_mode_ping') return { capabilities };
+      if (command === 'get_opened_workspaces') return [workspace('ws-1')];
+      return {
+        sessions: [session('done', { unreadCompletion: 'completed' }), session('quiet')],
+        totalTopLevelCount: 2, loadedTopLevelCount: 2, hasMore: false,
+        activities: [{ sessionId: 'done', execution: 'idle', pendingApprovals: 0, pendingQuestions: 0, unreadCompletion: 'completed' }],
+      };
+    });
+    catalog.retainActivity('peer-a');
+    await flush();
+    const marked = catalog.markAllRead('peer-a');
+    // Optimistic: cleared before the host answers.
+    expect(catalog.getSessions('peer-a', 'ws-1').activities.done?.unreadCompletion).toBeUndefined();
+    expect(await marked).toBe(1);
+    expect(io.acknowledge).toHaveBeenCalledOnce();
+    expect(io.acknowledge).toHaveBeenCalledWith('peer-a', { workspace_id: 'ws-1' }, expect.objectContaining({ sessionId: 'done' }));
   });
 });

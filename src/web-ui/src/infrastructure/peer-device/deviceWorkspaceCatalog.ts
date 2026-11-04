@@ -37,7 +37,7 @@ import {
   type DeviceSurfaceId,
 } from './deviceSurface';
 import { observeSurfaceEvents } from './deviceSurfaceRouting';
-import { deviceCatalogLocalTransport, invokeOnDevice } from './deviceCatalogTransport';
+import { acknowledgeOnDevice, deviceCatalogLocalTransport, invokeOnDevice } from './deviceCatalogTransport';
 import { stableWorkspaceOrder } from '@/infrastructure/services/business/workspaceDisplayOrder';
 import { getDeviceOpenIntent, useDeviceOpenIntent } from './deviceOpenIntent';
 
@@ -142,6 +142,7 @@ type Listener = (surfaceId: DeviceSurfaceId) => void;
 
 export interface DeviceWorkspaceCatalogIO {
   invoke: <T>(deviceId: string | null, command: string, args: Record<string, unknown>) => Promise<T>;
+  acknowledge: (deviceId: string | null, workspaceRequest: Record<string, unknown>, metadata: Record<string, unknown>) => Promise<void>;
   subscribeCatalog: (deviceId: string) => Promise<string>;
   unsubscribeCatalog: (subscriptionId: string) => Promise<void>;
   /** Registers the native listeners that feed `observeSurfaceEvents`. */
@@ -150,6 +151,7 @@ export interface DeviceWorkspaceCatalogIO {
 
 const defaultIO: DeviceWorkspaceCatalogIO = {
   invoke: invokeOnDevice,
+  acknowledge: acknowledgeOnDevice,
   subscribeCatalog: deviceId => remoteConnectAPI.subscribeSession(deviceId, HOST_CATALOG_ID),
   unsubscribeCatalog: subscriptionId => remoteConnectAPI.unsubscribeSession(subscriptionId),
   listen: (event, callback) => deviceCatalogLocalTransport().listen(event, callback),
@@ -272,6 +274,46 @@ export class DeviceWorkspaceCatalog {
     const target = Math.min(limit ?? current.limit + DEVICE_CATALOG_SESSION_STEP, MAX_REFRESHED_SESSIONS);
     if (target <= current.limit && current.status !== 'error') return Promise.resolve();
     return this.loadSessions(entry, workspaceId, target);
+  }
+
+  /**
+   * Mark every loaded session of a device read, on its host. The catalog is
+   * updated at once (rows, device status, companion), then re-read. Returns
+   * the number of sessions acknowledged.
+   */
+  async markAllRead(surfaceId: DeviceSurfaceId): Promise<number> {
+    const entry = this.entries.get(surfaceId);
+    if (!entry || entry.snapshot.status !== 'ready') return 0;
+    const targets: Array<{ workspace: WorkspaceInfo; metadata: SessionMetadata }> = [];
+    for (const workspace of entry.snapshot.workspaces) {
+      const page = entry.snapshot.sessions[workspace.id];
+      if (!page) continue;
+      for (const metadata of page.records) {
+        if (metadata.unreadCompletion || metadata.needsUserAttention || page.activities[metadata.sessionId]?.unreadCompletion) {
+          targets.push({ workspace, metadata });
+        }
+      }
+    }
+    if (targets.length === 0) return 0;
+    const cleared = new Set(targets.map(target => target.metadata.sessionId));
+    const sessions = Object.fromEntries(Object.entries(entry.snapshot.sessions).map(([workspaceId, page]) => [workspaceId, {
+      ...page,
+      records: page.records.map(record => (cleared.has(record.sessionId)
+        ? { ...record, unreadCompletion: undefined, needsUserAttention: undefined } : record)),
+      sessions: page.sessions.map(record => (cleared.has(record.sessionId)
+        ? { ...record, unreadCompletion: undefined, needsUserAttention: undefined } : record)),
+      activities: Object.fromEntries(Object.entries(page.activities).map(([sessionId, activity]) => [sessionId,
+        cleared.has(sessionId) ? { ...activity, unreadCompletion: undefined, unreadTurn: undefined } : activity])),
+    }]));
+    this.update(entry, { sessions });
+    await this.negotiate(entry);
+    const results = await Promise.allSettled(targets.map(({ workspace, metadata }) => this.io.acknowledge(
+      entry.deviceId, this.workspaceRequest(entry, workspace), metadata as unknown as Record<string, unknown>,
+    )));
+    const failed = results.filter(result => result.status === 'rejected');
+    if (failed.length > 0) log.warn('Some sessions could not be marked read on their device', { surfaceId, failed: failed.length });
+    this.invalidate(surfaceId, 'sessions');
+    return targets.length - failed.length;
   }
 
   /** Explicit retry after a visible failure; bypasses the debounce. */

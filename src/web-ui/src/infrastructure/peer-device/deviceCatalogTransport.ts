@@ -11,8 +11,11 @@
  *   it may run);
  * - this machine through its own Tauri transport.
  *
- * Only the catalog reads below may use this path. Mutations always go through
- * the rendered surface after activation so they keep Peer Device Mode's
+ * Only the catalog reads below may use this path, plus one acknowledgement
+ * write (`acknowledgeOnDevice`): clearing a session's read state touches no
+ * workspace, tool or permission, and asking the user to render every device
+ * to mark it read would defeat the action. Every other mutation goes through
+ * the rendered surface after activation so it keeps Peer Device Mode's
  * capability gates, permission mailboxes and surface fences.
  */
 
@@ -55,6 +58,24 @@ export function deviceCatalogLocalTransport(): TauriTransportAdapter {
   return localTransport;
 }
 
+/** The only metadata fields `acknowledgeOnDevice` may write. */
+export const ACKNOWLEDGE_FIELDS = ['unreadCompletion', 'needsUserAttention'] as const;
+
+/** Clear a session's read state on a device the window may not render. */
+export function acknowledgeOnDevice(
+  deviceId: string | null,
+  workspaceRequest: Record<string, unknown>,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  return send<void>(deviceId, 'save_session_metadata', {
+    request: {
+      ...workspaceRequest,
+      metadata: { ...metadata, unreadCompletion: undefined, needsUserAttention: undefined },
+      fields: [...ACKNOWLEDGE_FIELDS],
+    },
+  });
+}
+
 /**
  * Run one catalog read on `deviceId`, or on this machine when it is `null`.
  */
@@ -66,6 +87,10 @@ export async function invokeOnDevice<T>(
   if (!DEVICE_CATALOG_READ_COMMANDS.has(command)) {
     throw new Error(`'${command}' is not a device catalog read`);
   }
+  return send<T>(deviceId, command, args);
+}
+
+async function send<T>(deviceId: string | null, command: string, args: Record<string, unknown>): Promise<T> {
   if (deviceId === null) {
     return deviceCatalogLocalTransport().request<T>(command, args);
   }

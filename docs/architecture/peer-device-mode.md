@@ -256,6 +256,11 @@ compete with the open), catalog refreshes are held and run once afterwards, the
 session's tab is held in front (`sceneStore.holdSessionScene`) from the click through both switch resets and session-tab reconciliation,
 and the main area shows the session's open overlay from the click on.
 
+The one write the catalog sends without rendering a device is "mark all
+read": `save_session_metadata` limited to `unreadCompletion` and
+`needsUserAttention`, applied optimistically and followed by a session-page
+refresh. It touches no workspace, tool or permission.
+
 Acting on a catalog entry (open a session or assistant, new session) first
 renders its device through `switchToDevice` / `switchToLocal`. It then runs the
 local handler on the now-rendered surface. Every mutation therefore keeps
