@@ -3,7 +3,12 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getSessionDisplayLimit, nextSessionDisplayCount } from './sessionNavExpand';
-import { useSessionNavExpansion } from './useSessionNavExpansion';
+import { resetSessionNavExpansion, useSessionNavExpansion } from './useSessionNavExpansion';
+import { surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
+import { setWorkspaceSessionsCollapsed } from '../workspaces/workspaceDisclosure';
+import { useWorkspaceSessionViewStore } from '../../workspaceSessionView';
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('session list expansion state', () => {
   let container: HTMLDivElement;
@@ -11,7 +16,7 @@ describe('session list expansion state', () => {
   const renders: Array<{ scope: string; rows: number }> = [];
 
   function List({ scope, count, visible = true }: { scope: string; count: number; visible?: boolean }) {
-    const { displayCount, setDisplayCount } = useSessionNavExpansion(scope, { visible, shouldHandOff: () => visible });
+    const { displayCount, setDisplayCount } = useSessionNavExpansion(scope, { visible });
     const rows = getSessionDisplayLimit({ loadedTopLevelCount: count, displayCount, showAllWithoutLimit: false });
     renders.push({ scope, rows });
     return <>
@@ -25,6 +30,7 @@ describe('session list expansion state', () => {
   const count = () => Number(container.querySelector('output')?.textContent);
 
   beforeEach(() => {
+    resetSessionNavExpansion();
     renders.length = 0;
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -68,12 +74,54 @@ describe('session list expansion state', () => {
     expect(count()).toBe(3);
   });
 
+  it('keeps the count when live and background lists replace each other in the same commit', () => {
+    const scope = 'same-commit:project:all';
+    const replace = (key: string) => act(() => {
+      root.render(<List key={key} scope={scope} count={12} />);
+    });
+    replace('live');
+    click();
+    expect(count()).toBe(8);
+    renders.length = 0;
+    replace('background');
+    expect(renders.every(entry => entry.rows === 8)).toBe(true);
+    expect(count()).toBe(8);
+    click();
+    click();
+    expect(count()).toBe(3);
+    renders.length = 0;
+    replace('live-again');
+    expect(renders.every(entry => entry.rows === 3)).toBe(true);
+  });
+
+  it('does not let StrictMode replay consume a previous expansion', () => {
+    const scope = 'strict:project:all';
+    act(() => root.render(<React.StrictMode><List key="live" scope={scope} count={12} /></React.StrictMode>));
+    click();
+    renders.length = 0;
+    act(() => root.render(<React.StrictMode><List key="background" scope={scope} count={12} /></React.StrictMode>));
+    expect(renders.every(entry => entry.rows === 8)).toBe(true);
+  });
+
   it('starts over at three rows when a collapsed workspace opens again', () => {
     render('local:project:all', 30);
     click();
     expect(count()).toBe(8);
     act(() => { root.render(<List scope="local:project:all" count={30} visible={false} />); });
     act(() => { root.render(<List scope="local:project:all" count={30} />); });
+    expect(count()).toBe(3);
+  });
+
+  it('collapses all source views of one workspace without resetting the same workspace on another device', () => {
+    const local = `${surfaceScopedKey('local', 'shared')}:all`;
+    const peer = `${surfaceScopedKey('peer', 'shared')}:all`;
+    const source = `${surfaceScopedKey('peer', 'shared')}:codex`;
+    for (const scope of [local, peer, source]) { render(scope, 12); click(); }
+    act(() => setWorkspaceSessionsCollapsed('peer', 'shared', true));
+    for (const scope of [peer, source]) { render(scope, 12); expect(count()).toBe(3); }
+    render(local, 12);
+    expect(count()).toBe(8);
+    act(() => useWorkspaceSessionViewStore.getState().requestCollapseAll());
     expect(count()).toBe(3);
   });
 

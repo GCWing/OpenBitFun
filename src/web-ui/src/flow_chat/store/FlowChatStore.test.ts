@@ -8690,12 +8690,13 @@ describe('FlowChatStore device surfaces', () => {
       // Known history and paging state survive; nothing claims a complete empty transcript.
       expect(session().historyState).toBe('failed');
       expect(session().isPartial).toBe(true);
-      expect(texts('peer-overdue')).toHaveLength(2);
+      expect(texts('peer-overdue')).toHaveLength(1);
       // The stalled read is closed, so its late page cannot mark it ready.
       expect(apiMocks.relayReady).toBeNull();
 
       // The retry receives the late page from the host cache and recovers.
       apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord('peer-overdue', 0, 1));
         apiMocks.relayRecord?.(itemRecord('peer-overdue', 0, 2));
         apiMocks.relayReady?.({ sessionId: 'peer-overdue', hasMore: false, oldestSeq: 1, cursor: 9 });
         return 'peer-overdue-retry';
@@ -8705,16 +8706,36 @@ describe('FlowChatStore device surfaces', () => {
       expect(texts('peer-overdue')).toHaveLength(3);
     });
 
-    it('applies each drained page in one pass', async () => {
+    it('keeps an incomplete historical Turn out of the replica and publishes all its items together', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-atomic');
+      vi.useFakeTimers();
+      try {
+        apiMocks.subscribeRelaySession.mockResolvedValueOnce('peer-atomic-subscription');
+        const opening = flowChatStore.loadRelaySessionHistory('peer-atomic');
+        await vi.advanceTimersByTimeAsync(0);
+        apiMocks.relayRecord?.(itemRecord('peer-atomic', 0, 0));
+        await vi.advanceTimersByTimeAsync(1000);
+        // Runtime/mailbox controls may flush while a page is crossing the bridge.
+        flowChatStore.settleRelaySessionRecords('peer-atomic');
+        expect(flowChatStore.getState().sessions.get('peer-atomic')!.dialogTurns).toHaveLength(0);
+        apiMocks.relayRecord?.(itemRecord('peer-atomic', 0, 1));
+        apiMocks.relayReady?.({ sessionId: 'peer-atomic', hasMore: false, oldestSeq: 1, cursor: 2 });
+        await opening;
+        expect(texts('peer-atomic')).toHaveLength(2);
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('applies each admitted whole-Turn batch in one pass', async () => {
       activateSurface(PEER_SURFACE_ID);
       seedSession('peer-drain');
       const pages = 6;
       const recordsPerPage = 50;
       const deliver = (page: number) => {
-        // Newest first, as the host reads history backward through one long turn.
+        // Newest Turn first; Rust admits whole Turns before the ready boundary.
         const start = (pages - 1 - page) * recordsPerPage;
         for (let index = 0; index < recordsPerPage; index += 1) {
-          apiMocks.relayRecord?.(itemRecord('peer-drain', 0, start + index));
+          apiMocks.relayRecord?.(itemRecord('peer-drain', pages - 1 - page, index));
         }
         apiMocks.relayReady?.({ sessionId: 'peer-drain', hasMore: page < pages - 1, oldestSeq: start + 1, cursor: pages * recordsPerPage });
       };
@@ -8748,7 +8769,8 @@ describe('FlowChatStore device surfaces', () => {
       snapshot.mockRestore();
       // Ready and catalog bookkeeping add a small constant per page, not per record.
       expect(storeUpdates).toBeLessThanOrEqual(pages * 4);
-      expect(texts('peer-drain')).toHaveLength(pages * recordsPerPage);
+      expect(session().dialogTurns).toHaveLength(pages);
+      for (let turn = 0; turn < pages; turn++) expect(texts('peer-drain', turn)).toHaveLength(recordsPerPage);
     });
 
     it('renders good turns past a failed one, stays failed, and retries the held turn', async () => {
@@ -9350,7 +9372,7 @@ describe('background device session seeding', () => {
     expect([...seeded.keys()]).toEqual(['s-1']);
     expect(seeded.get('s-1')).toMatchObject({ workspaceId: 'peer-ws', historyState: 'metadata-only', dialogTurns: [] });
     expect(flowChatStore.getState().sessions.has('local-1')).toBe(false);
-    expect(listener).toHaveBeenCalledWith('peer-seed');
+    expect(listener).toHaveBeenCalledWith('peer-seed', 'updated');
     // An identical page does not notify again.
     listener.mockClear();
     flowChatStore.subscribeSurfaceSessions(listener);

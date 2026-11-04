@@ -1,3 +1,4 @@
+import { toFlowChatNativeScrollTop } from './flowChatScrollCoordinates';
 /**
  * The register, wired to a live scroller.
  *
@@ -116,13 +117,13 @@ export function useFlowChatViewportOwner(
     );
     if (!granted) return false;
     if (behavior === 'smooth') {
-      scroller.scrollTo({ top: request.topPx, behavior });
+      scroller.scrollTo({ top: toFlowChatNativeScrollTop(scroller, request.topPx), behavior });
     } else {
       // Assigned rather than `scrollTo({behavior:'auto'})`: an assignment also
       // cancels any animation still running, which is what a writer taking the
       // viewport from an animated one means to do.
       const before = scroller.scrollTop;
-      scroller.scrollTop = request.topPx;
+      scroller.scrollTop = toFlowChatNativeScrollTop(scroller, request.topPx);
       writtenTravelRef.current += scroller.scrollTop - before;
     }
     return true;

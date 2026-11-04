@@ -125,6 +125,18 @@ records and responses from a device that is no longer rendered. Desktop
 `RelaySessionHistory` owns the subscription across initial loading, realtime
 delivery and older-page prefetch.
 
+Desktop/Web FlowChat history publishes complete Turns. New host Turn roots
+carry optional `turnRecordIds` membership on the record envelope. The Rust
+subscriber joins byte/event-bounded pages until all listed members arrive;
+a terminal root alone is not proof, since live updates can move it ahead of
+unchanged items. Legacy hosts without membership remain readable: the controller
+finishes the available history read before publication, which can make their
+first open slower. Missing members, non-advancing pages and epoch changes fail
+without exposing a partial Turn. No persisted shape or command changed.
+`RelaySessionHistory` stages the resulting replay outside the store replica until
+ready; timers and direct live-control flushes cannot publish its intermediate
+records. Normal live updates retain their incremental behavior.
+
 Native mobile history keeps these record-page boundaries; a page is not a
 complete conversation turn. The initial replay and each older-history request
 reduce all received records before publishing one transcript projection. A turn
@@ -250,6 +262,16 @@ limit and project disclosure (window-wide, keyed by surface), so a device looks
 the same before, during and after a switch. Seeds carry no history or state
 machine; they are promoted through the normal metadata path before any open,
 and a seed that has been opened is never replaced by a later seed.
+
+The displayed row count belongs to the surface/workspace/source view and is
+published when the user expands or collapses it. Live and background lists
+read the same snapshot during replacement; an unmount-time handoff is too late
+for React's incoming render. Collapsing a workspace resets its source views;
+Collapse All resets every view. Counts are window-local presentation state.
+Disconnecting a control attachment disposes transcripts but leaves the
+independent catalog read lease intact. Disposal invalidates the projection's
+array deduplication and immediately reseeds metadata from that catalog, so
+the still-visible sidebar does not empty while waiting for another read.
 
 A cross-device open publishes a `DeviceOpenIntent` for its whole duration. While
 it is set, every device keeps its background rows (the rendered device hands

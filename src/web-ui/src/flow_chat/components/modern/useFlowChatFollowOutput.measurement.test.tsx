@@ -16,6 +16,10 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); activateSurface('
 // synchronous resizeItem notifications, not native WebView rendering.
 it('places once through real measurement notifications and remains idle after deactivation', async () => {
   activateSurface('local');
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+    const height = this.offsetHeight;
+      return { top: 0, bottom: height, height, width: this.offsetWidth } as DOMRect;
+  });
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
   vi.stubGlobal('cancelAnimationFrame', vi.fn());

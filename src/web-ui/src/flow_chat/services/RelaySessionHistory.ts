@@ -13,12 +13,6 @@ const log = createLogger('RelaySessionHistory');
 const RECORD_FLUSH_DELAY_MS = 16;
 
 /**
- * A page in flight renders as one batch at its ready event, even when its record
- * events span frames. Only a backstop, so a stalled page cannot hold live records.
- */
-const PAGE_RECORD_FLUSH_DELAY_MS = 250;
-
-/**
  * How long opening may wait for the host's first page. Past it, opening fails
  * with a retryable error instead of parking the surface in hydration.
  */
@@ -109,6 +103,7 @@ export class RelaySessionHistory {
   private readonly listeners: Array<() => void> = [];
   private subscriptionId: string | null = null;
   private closed = false;
+  private failed = false;
   private ready: RelayHistoryReady | null = null;
   private resolveReady!: () => void;
   private rejectReady!: (error: unknown) => void;
@@ -124,6 +119,10 @@ export class RelaySessionHistory {
   private visible = false;
   private prefetchCredit = 0;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  // History enters the replica only at ready. Otherwise direct runtime/mailbox
+  // flushes can expose half a Turn even when this owner's timer is disabled.
+  private collectingHistory = true;
+  private historyRecords: SessionRecord[] = [];
   private readonly fail: (error: unknown) => void;
   private readonly resumeInteraction: (() => Promise<void>) | undefined;
   private readonly warm: WarmSessionStream | undefined;
@@ -146,16 +145,24 @@ export class RelaySessionHistory {
     private readonly onFlush?: () => void,
     onResync?: () => void,
   ) {
-    this.fail = error => { this.rejectReady(error); this.rejectPage?.(error); onError(error); };
+    this.fail = error => {
+      if (this.failed) return;
+      this.failed = true;
+      this.rejectReady(error); this.rejectPage?.(error); onError(error);
+    };
     this.resumeInteraction = onResumed;
     // Taken before this owner listens, so no event is both buffered and live.
     this.warm = takeWarmStream(this.scope.surfaceId, sessionId);
     // Register before asking Rust to replay its cache or fetch the first page.
     this.listeners.push(remoteConnectAPI.onSessionRecord(this.handlers.record = value => {
-      if (!this.isCurrent()) return;
+      if (!this.isCurrent() || this.failed) return;
       const record = value as SessionRecord;
       if (record.sessionId !== this.sessionId) return;
       try {
+        if (this.collectingHistory) {
+          this.historyRecords.push(record);
+          return;
+        }
         if (onRecord(record) === true) this.flush();
         else this.scheduleFlush();
       } catch (error) { this.fail(error); }
@@ -167,6 +174,8 @@ export class RelaySessionHistory {
     this.listeners.push(remoteConnectAPI.onSessionGap(this.handlers.gap = gap => {
       if (!this.isCurrent() || gap.sessionId !== this.sessionId || gap.resync !== true) return;
       this.flush();
+      this.collectingHistory = true;
+      this.historyRecords = [];
       try { onResync?.(); } catch (error) { this.fail(error); }
     }));
     this.listeners.push(remoteConnectAPI.onSessionSyncError(this.handlers.syncError = error => {
@@ -176,9 +185,14 @@ export class RelaySessionHistory {
       this.fail(new Error(error.message));
     }));
     this.listeners.push(remoteConnectAPI.onSessionReady(this.handlers.ready = ready => {
-      if (!this.isCurrent() || ready.sessionId !== this.sessionId) return;
+      if (!this.isCurrent() || this.failed || ready.sessionId !== this.sessionId) return;
+      try {
+        for (const record of this.historyRecords) onRecord(record);
+        this.historyRecords = [];
+        this.collectingHistory = false;
+      } catch (error) { this.fail(error); return; }
       if (!this.flush()) return;
-      const resumed = this.pageApplied === null;
+      const resumed = this.ready !== null && this.pageApplied === null;
       this.ready = ready;
       if (resumed && onResumed) void onResumed().catch(error => {
         log.warn('Session interaction mailbox refresh failed', { sessionId: this.sessionId, error });
@@ -208,8 +222,7 @@ export class RelaySessionHistory {
 
   private scheduleFlush(): void {
     if (this.flushTimer !== null) return;
-    const pageInFlight = this.ready === null || this.pageApplied !== null;
-    this.flushTimer = setTimeout(() => this.flush(), pageInFlight ? PAGE_RECORD_FLUSH_DELAY_MS : RECORD_FLUSH_DELAY_MS);
+    this.flushTimer = setTimeout(() => this.flush(), RECORD_FLUSH_DELAY_MS);
   }
 
   private flush(): boolean {
@@ -238,6 +251,11 @@ export class RelaySessionHistory {
   private async start(): Promise<void> {
     this.scope.assertCurrent('open relay session history');
     if (this.closed) throw new Error('Session subscription is closed');
+    // History may span several transport pages on an older host. Its blocking
+    // interactions must be answerable while the complete Turn is still loading.
+    if (this.resumeInteraction) void this.resumeInteraction().catch(error => {
+      log.warn('Session interaction mailbox refresh failed', { sessionId: this.sessionId, error });
+    });
     try {
       // A stream warmed by the click: what it buffered is applied first, in order.
       const warm = this.warm;
@@ -281,11 +299,6 @@ export class RelaySessionHistory {
     if (!this.isCurrent()) throw error;
     log.warn('Relay session first page overdue; failing the open as retryable', { sessionId: this.sessionId });
     this.flush();
-    if (this.resumeInteraction) {
-      void this.resumeInteraction().catch(mailboxError => {
-        log.warn('Session interaction mailbox refresh failed', { sessionId: this.sessionId, error: mailboxError });
-      });
-    }
     this.fail(error);
     throw error;
   }
@@ -319,9 +332,15 @@ export class RelaySessionHistory {
     this.scope.assertCurrent('load older relay history');
     if (!this.ready?.hasMore) return false;
     if (!this.subscriptionId) throw new Error('Session subscription is closed');
+    if (this.flushTimer !== null) this.flush();
+    this.collectingHistory = true;
     const applied = new Promise<void>((resolve, reject) => { this.pageApplied = resolve; this.rejectPage = reject; });
     try {
       await Promise.all([remoteConnectAPI.loadOlderSession(this.subscriptionId), applied]);
+    } catch (error) {
+      this.fail(error);
+      this.close();
+      throw error;
     } finally { this.pageApplied = null; this.rejectPage = null; }
     this.scope.assertCurrent('finish loading older relay history');
     return true;
@@ -333,6 +352,7 @@ export class RelaySessionHistory {
     if (this.flushTimer !== null) this.flush();
     if (this.closed) return;
     this.closed = true;
+    this.historyRecords = [];
     if (this.historyTimer !== null) clearTimeout(this.historyTimer);
     this.historyTimer = null;
     this.listeners.splice(0).forEach(unlisten => unlisten());

@@ -45,6 +45,11 @@ slices that are outside pure product logic but still platform-neutral.
   `limit` is a budget for history reads: a page grows to the first record of its
   oldest turn so no turn splits across pages, within the hard event and byte
   bounds. Controllers must not assume a page holds at most `limit` events.
+  Root records carry optional `turnRecordIds` membership. The Rust subscriber
+  joins bounded history pages until those members are present, even if a live
+  root moved ahead of its unchanged children; legacy hosts without membership
+  finish their available history read before presentation. Never treat a page
+  limit, a terminal header or a timeout as proof of a complete Turn.
 - The `remote-persistence` feature is the lightweight persisted-shape owner shared
   by Remote Connect, remote SSH, and offline migration. Keep it free of network,
   SSH transport, and runtime orchestration dependencies so owner readers and

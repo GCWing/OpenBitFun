@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { DeviceSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
+import { surfaceScopedKey, type DeviceSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import { useWorkspaceSessionViewStore } from '../../workspaceSessionView';
+import { resetSessionNavExpansion } from '../sessions/useSessionNavExpansion';
 
 /**
  * Which project rows are collapsed, per device. Window-wide rather than
@@ -33,6 +34,7 @@ export function isWorkspaceSessionsCollapsed(surfaceId: DeviceSurfaceId, workspa
 }
 
 export function setWorkspaceSessionsCollapsed(surfaceId: DeviceSurfaceId, workspaceId: string, collapsed: boolean): void {
+  if (collapsed) resetSessionNavExpansion(surfaceScopedKey(surfaceId, workspaceId));
   const requestId = useWorkspaceSessionViewStore.getState().collapseAllRequestId;
   useWorkspaceDisclosureStore.setState(state => ({
     requestId,

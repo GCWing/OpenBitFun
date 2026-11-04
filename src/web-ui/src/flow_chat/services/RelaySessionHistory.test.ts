@@ -135,12 +135,12 @@ describe('RelaySessionHistory', () => {
       name: 'RelayHistoryFirstPageOverdueError', retryable: true, sessionId: 'session',
     });
     await vi.advanceTimersByTimeAsync(0);
-    // Records that did arrive are known history and must stay rendered.
+    // A received fragment is not a complete Turn and must never be published.
     fixture.record?.({ sessionId: 'session', id: 'item/known' });
     await vi.advanceTimersByTimeAsync(15_000);
     await outcome;
 
-    expect(apply).toHaveBeenCalledOnce();
+    expect(apply).not.toHaveBeenCalled();
     expect(flushed).toHaveBeenCalled();
     // A blocking question is answerable from the mailbox without the page.
     expect(resumed).toHaveBeenCalledOnce();
@@ -186,7 +186,7 @@ describe('RelaySessionHistory', () => {
     await closing;
     await vi.advanceTimersByTimeAsync(15_000);
     expect(closedError).not.toHaveBeenCalled();
-    expect(closedResume).not.toHaveBeenCalled();
+    expect(closedResume).toHaveBeenCalledOnce(); // Opening read only; no work after close.
 
     const switchedError = vi.fn();
     const switchedResume = vi.fn(async () => {});
@@ -197,7 +197,7 @@ describe('RelaySessionHistory', () => {
     await vi.advanceTimersByTimeAsync(15_000);
     await switching;
     expect(switchedError).not.toHaveBeenCalled();
-    expect(switchedResume).not.toHaveBeenCalled();
+    expect(switchedResume).toHaveBeenCalledOnce(); // Opening read only; no work on the new surface.
   });
 
   it('drops stale replay and unsubscribes when the surface changes during grant', async () => {
@@ -227,15 +227,19 @@ describe('RelaySessionHistory', () => {
     history.close();
   });
 
-  it('keeps a page in one batch across frames but cannot be stalled by it', async () => {
+  it('does not expose historical fragments through timers, visibility, or close', async () => {
     vi.useFakeTimers();
+    const listeners: Array<() => void> = [];
+    vi.stubGlobal('document', { visibilityState: 'visible',
+      addEventListener: (_: string, listener: () => void) => listeners.push(listener), removeEventListener: vi.fn() });
     fixture.subscribe.mockImplementation(async () => {
       fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 150 });
       return 'subscription';
     });
     fixture.older.mockImplementation(() => new Promise<void>(() => {}));
     const flush = vi.fn();
-    const history = new RelaySessionHistory('session', vi.fn(), vi.fn(), vi.fn(), undefined, flush);
+    const apply = vi.fn();
+    const history = new RelaySessionHistory('session', apply, vi.fn(), vi.fn(), undefined, flush);
     await history.open();
     flush.mockClear();
 
@@ -245,14 +249,13 @@ describe('RelaySessionHistory', () => {
       fixture.record?.({ sessionId: 'session', id: `item/${index}` });
       await vi.advanceTimersByTimeAsync(5);
     }
+    await vi.advanceTimersByTimeAsync(1000);
+    listeners.forEach(listener => listener());
+    expect(apply).not.toHaveBeenCalled();
     expect(flush).not.toHaveBeenCalled();
     fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 150 });
+    expect(apply).toHaveBeenCalledTimes(20);
     expect(flush).toHaveBeenCalledOnce();
-
-    void history.loadOlder().catch(() => {});
-    fixture.record?.({ sessionId: 'session', id: 'item/stalled' });
-    await vi.advanceTimersByTimeAsync(250);
-    expect(flush).toHaveBeenCalledTimes(2);
     history.close();
   });
 
@@ -341,7 +344,7 @@ describe('RelaySessionHistory', () => {
     expect(ready).not.toHaveBeenCalled();
   });
 
-  it('renders received records before a sync error and on close', async () => {
+  it('flushes admitted live records on failure and rejects delivery from the failed read', async () => {
     vi.useFakeTimers();
     fixture.subscribe.mockImplementation(async () => {
       fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 0 });
@@ -358,9 +361,9 @@ describe('RelaySessionHistory', () => {
 
     fixture.record?.({ sessionId: 'session', id: 'item/2' });
     history.close();
-    expect(flush).toHaveBeenCalledTimes(2);
+    expect(flush).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(16);
-    expect(flush).toHaveBeenCalledTimes(2);
+    expect(flush).toHaveBeenCalledOnce();
   });
 
   it('leaves records pending when the surface changed before the flush', async () => {
@@ -392,6 +395,7 @@ describe('RelaySessionHistory', () => {
     await history.open();
     fixture.older.mockImplementation(async () => {
       fixture.record?.({ sessionId: 'session', id: 'invalid' });
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 150 });
     });
     await expect(history.loadOlder()).rejects.toThrow('Invalid historical record');
     history.close();
@@ -426,7 +430,7 @@ describe('RelaySessionHistory', () => {
 
 });
 
-it('refreshes the small mailbox on initial ready and reconnect, but never on older-page ready', async () => {
+it('refreshes the small mailbox at open and reconnect, but never on older-page ready', async () => {
   fixture.current = true;
   const resumed = vi.fn(async () => {});
   fixture.subscribe.mockImplementation(async () => { fixture.ready?.({sessionId:'session',hasMore:true,oldestSeq:5,cursor:10}); return 'subscription'; });

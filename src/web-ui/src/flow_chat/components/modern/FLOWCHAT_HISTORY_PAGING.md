@@ -45,71 +45,79 @@ read never navigates to the tail as a fallback. Session, surface and navigation
 generation fence the result. Failures expose retry, while stale reads may warm
 the cache without replacing a newer reader intent.
 
-## Prepend geometry snapshot
+## Complete Turns are the history publication unit
 
-`FlowChatPrependSnapshot` captures the old DOM scroll height in React's
-`getSnapshotBeforeUpdate`, only when a new head precedes the previous first
-item. The parent layout effect consumes that snapshot after mutation using the
-existing compensation bounds and viewport register. Ordinary virtual-window
-updates, tail appends and head trims do not read scroll height for this baseline.
-This avoids a synchronous layout read on every scroll-driven commit while
-including geometry changes since the last React render. Tests model growth at
-DOM mutation and verify snapshot ordering; runtime performance and remote
-scenarios require separate validation.
+A history transport page is not a render transaction. The Rust controller joins
+bounded record pages until each Turn's root membership (`turnRecordIds`) is
+present, including unchanged items older than a republished terminal root.
+Only then does it emit the records followed by ready. Missing members, a stalled
+cursor or an epoch change fail the read without publishing fragments. The field
+is optional and lives on the wire root, never on persisted Turns or every child.
+For older hosts without membership evidence, the controller completes the
+available history read before publishing; their first open can take longer.
 
-The anchor renews its settle budget only when a correction reduces its measured
-residual (or reaches tolerance), or while a missing Turn is still awaited.
-An ineffective correction is remembered for that exact anchor/viewport geometry;
-it is retried after geometry changes or a new anchor is captured, not on every
-frame. Identical resize notifications do not renew the budget. The comparison
-includes the anchor's content coordinate, so displacement at unchanged total
-height still opens a settle. Item changes, snapshot restores and host resumes
-remain explicit settle triggers. No sign-change count or overall time limit
-terminates valid corrections.
+`RelaySessionHistory` stages replay records outside the replica until ready.
+There is no 250ms history flush: timers, document visibility, immediate terminal
+records, mailbox reads and direct runtime flushes cannot expose half a Turn.
+Live updates after a ready batch retain frame batching and immediate terminal
+settling. Already published history survives a failed read; retry replays the
+unpublished batch. Local restore/window APIs already return whole Turn bodies.
 
-Older Turns are fetched when the reader approaches the head of the loaded
-window, prepended above them, and paid for by moving the viewport down by
-exactly what arrived. This document covers the whole of that: when the ask goes
-out, what may refuse it, how the displacement is repaid, and how the reading
-position survives the measurement that follows.
+## Native history origin
 
-Read alongside `FLOWCHAT_VIEWPORT_REGISTER.md` — the two repairs described here
-are the only writers that do not take their turn in the priority order — and
-`FLOWCHAT_VIRTUALIZATION.md`, which owns the measurement behaviour they depend
-on.
+Historical viewing uses a native bottom scroll origin. The scroller is a
+`column-reverse` flex container with one non-shrinking extent; rows inside that
+extent remain in chronological DOM order. The latest complete Turn has a CSS
+minimum extent of one viewport minus the header gap, with flexible trailing
+space after its content. A short Turn therefore starts at the top; older Turns
+insert outside that reservation. No content-height estimate determines its
+position. Native `scrollTop` is zero at the latest content and
+negative toward earlier content.
 
-## A Page Is Asked For a Screenful Early
+Earlier complete Turns extend the extent upward. Partial historical Turns never
+enter the rendered projection. Neither the old first item's
+estimated height nor the total height difference determines the viewport.
+`FlowChatPrependSnapshot`, leading-extent floors and passive follow corrections
+are disabled for this layout. The container's repeated `scrollToTurnEnd` opening
+request only acknowledges a rendered latest row; it cannot re-aim the native
+history tail when the Turn-summary count changes. Delayed card measurements and width reflow above
+the visible tail do not need scroll writes or animation.
 
-A history page is not a quiet event, and no amount of care makes it one. The
-items arrive above the reader and everything below them moves; the virtualizer
-picks its window from a scroll offset it only learns from scroll events, so for
-one commit it renders from a position the reader has already been moved off and
-the transcript below the junction goes blank; the rows then measure and the
-whole thing settles a second time. Watched frame by frame, at 1/8 speed: the
-loading notice disappears, the tail of the previous Turn leaks out, everything
-past the junction goes white, the viewport shifts up and clips the top of a user
-message, and then it is fine. Four frames, twice, at the two junctions the
-reader crossed.
+The virtualizer traverses this layout from newest to oldest. An older prepend
+appends to that internal sequence, leaving the tail's coordinates unchanged.
+Height estimates reserve unmounted rows for range selection; they never decide
+how far to move the historical tail. The adapter translates back to chronological
+indexes for renderers, selection, navigation and pagination. See
+`FLOWCHAT_VIRTUALIZATION.md` for measurement and index details.
 
-Every one of those steps is correct. The reader still called it a flicker and a
-jolt, because they were looking at it.
+Layout lifetime is separate from hydration. `Session.isHistorical` becomes false
+when the first page is ready, so it cannot select the coordinate convention.
+An idle transcript opens in native history layout and keeps it through all
+background pages. Actual runtime processing or explicit submission hands it to
+the live layout. Explicit history-reading mode selects native history layout.
+`FlowChatScrollOriginBoundary` preserves an existing painted row during that
+coordinate handoff and publishes the new offset before window selection.
+A page arriving in the same layout never enters this transaction.
 
-So the ask goes out while the boundary is still a screenful away —
-`HISTORY_BOUNDARY_LEAD_SCREENS`, measured against live geometry rather than an
-item count, since one item here is anything from a 38px user message to a
-5012px model round. The page then lands above the viewport: the mis-aimed
-window, the blank and the re-measurement all happen where nobody is looking, and
-the reader scrolls up into content that is already there and already measured.
-It costs one page of history fetched sooner than strictly needed, and nothing on
-session open, where the boundary is a whole transcript away.
+The reading anchor still preserves a reader-selected, actually mounted block
+when content below it changes. It measures that block's screen relationship,
+not unseen prefix heights. The anchor and reader-demand accounting use native
+scroll travel: increasing the history range is not a user scroll. A wheel at a
+short transcript's stationary tail asks for earlier content without selecting
+a stationary user bubble as an anchor. New older content continues upward.
 
-The pixel rule is a union with the item rule, not a replacement. A window short
-enough that its head is on screen has no screenful of lead to offer, and that
-case is the one the item slack was written for.
+Navigation and persisted snapshots retain their existing top-origin convention.
+`flowChatScrollCoordinates.ts` converts those offsets at the viewport adapter.
+Old bookmarks remain readable; no stored field or remote protocol changes.
 
-**The lead decides proximity, not permission.** `historyBoundariesReached`
-reports the physical item boundary; `historyBoundariesForVisibleRange` adds the
-one-screen prefetch lead. Permission belongs to `FlowChatHistoryPager`.
+## A page is asked for a screenful early
+
+`HISTORY_BOUNDARY_LEAD_SCREENS` requests a page while its boundary is within a
+viewport of the reader, with the existing item-boundary fallback for short
+transcripts. The lead is a proximity signal; the pager still owns permission,
+request tickets, commit acknowledgement and fresh directional reader demand.
+Do not use overscan rows as a visible range, or infer user travel from a growing
+native history range.
 
 ## Request, Layout, and Reader Demand
 
@@ -134,7 +142,7 @@ never reached the physical boundary had the same structural weakness.
 
 The list reserves a ticket before invoking the handler. Its existing
 `prepareViewportForPresentationCommit` callback checks that the ticket is still
-current. A layout effect **after** measurement, prepend compensation, and
+current. A layout effect **after** measurement, window reconciliation, and
 prepared navigation acknowledges the presentation. Layout can precede or follow
 the promise result. A completion acknowledgement also renders when the returned
 page was already projected. This acknowledges a commit, not convergence of all
@@ -143,7 +151,7 @@ future row measurements; later measurement callbacks cannot create reader demand
 Directional wheel/touch/key intent can ask even at scrollTop=0, where no native
 scroll event occurs. Native travel covers scrollbar dragging and inertia. The
 viewport register subtracts its actual synchronous writes/shifts (including
-clamping), so a delayed scroll event caused by compensation adds no demand.
+clamping), so a delayed scroll event caused by a registered repair adds no demand.
 Owned smooth navigation/follow scrolls are excluded. Content commits rebaseline
 travel because replacing content can clamp the browser's scroll position.
 
@@ -171,332 +179,32 @@ resolved in the September 22 reproduction. The broader input-device matrix and
 remote transports still require separate manual validation; unit geometry is
 not performance evidence.
 
-## Keeping the Viewport on the Reader's Content
+## Reading continuity and live-layout compatibility
 
-When history is prepended, the items arriving above the reader push their content
-down by their own height while `scrollTop` stays the number it was.
-`VirtualMessageList` adds that height back, in a layout effect, before anything
-else observes the new transcript. The amount is read from the virtualizer's
-placement of the item that *used to be first* — the height of exactly what
-arrived, a delta and not a total.
+Native historical tail loading has no prepend compensation pass. Its earlier
+content grows above the fixed native origin, including delayed measurements.
+When the reader scrolls into history, the existing DOM anchor tracks the actual
+visible block. Structural changes below that block preserve its screen offset
+through `TimelineMutationBoundary` and the viewport register. Publish accepted
+reader repairs to the virtualizer immediately; waiting for a native scroll event
+can select an intermediate window that removes and recreates the same row.
 
-This is the half of `firstItemIndex` that keying measurements on item identity
-does not supply, and it was left out of the TanStack migration. Everything
-downstream assumes it holds, and three separate failures were that one
-assumption breaking:
+The live layout retains its top-origin leading extent, prepend snapshot and
+follow rules. Those apply to an active reply and its reserved trailing space,
+not to the default historical open. A history-to-live handoff preserves current
+DOM identity; a submitted message then performs its existing one-shot placement.
+The virtualizer refreshes its measurement-index attributes at that handoff so
+later ResizeObserver entries cannot resize the old index.
 
-- The virtualizer re-windows from its own scroll offset, which lags a frame, so
-  it renders the head. The paging rule reads that as the reader having arrived
-  at the head, and pages again — **five pages in 890ms on session open, and a
-  single junction paging a transcript back to its first Turn**.
-- The anchored Turn falls outside that window, so the anchor cannot find its
-  element, drops the anchor, and corrects nothing. Measured: **655px of history
-  arrived and `scrollTop` held at 23**, leaving the reader at the top of a block
-  they never asked to see.
-- With the reader left at the head, the paging boundary never re-arms and
-  history becomes unreachable.
-
-The arriving items are estimates until they measure, so this lands close rather
-than exactly; the anchor — which can now find its Turn — takes it the rest of the
-way. It writes as `layout-correction`, so the register refuses it while anything
-above is moving the viewport on purpose: a navigation reaching a Turn, or the
-follow loop re-asserting its target, both of which already say where the reader
-belongs.
-
-## A Displacement Is Not a Movement
-
-Two things repair displacement rather than choose a position, and neither goes
-through the priority order in `FLOWCHAT_VIEWPORT_REGISTER.md`: the prepend
-compensation, and the viewport anchor. Both are `viewportOwner.shift`, which
-asks a different question — content moving under the reader changes what their
-offset *means*, and restoring that meaning is not competing with anyone over
-where the viewport should be. So they are refused only by an owner that holds a
-target and will re-assert it: follow-output or a navigation still reaching its
-Turn.
-
-The two are not redundant. The compensation is a pixel delta applied in the
-commit that prepends, and it is the only thing that can act when the reader's
-Turn is not rendered. The anchor restores a relationship, so it is the only
-thing that can act on a re-measurement landing *after* that commit — which is
-the majority of the movement, since the arrived items measure over the frames
-that follow. Measured: a compensation of exactly the DOM's own growth (949px)
-still left the reader at the end of the transcript, because the transcript then
-shrank 200px in the next 21ms.
-
-**The anchor cannot act in the prepend commit itself.** The virtualizer chooses
-its rendered window from a scroll offset it only learns from scroll events
-(`calculateRange` is memoised on `getScrollOffset()`, and `scrollOffset` is
-assigned in the `observeElementOffset` callback and nowhere else), so the commit
-that prepends is still windowing the position the reader has just been moved
-off. Their Turn is in the DOM a frame later. This is why the anchor keeps an
-anchor whose Turn is missing rather than dropping it on the first miss: dropping
-threw the reading position away one frame before it could be used, at four
-junctions in a row and not one correction between them.
-
-**A gesture is not one of them, and must not be.** The reader chose a position
-in the transcript, not a number of pixels. Ranking these under `user-gesture`
-was a total failure rather than an intermittent one, because history pages in
-*only* while the reader scrolls up into the boundary — so the gesture was
-holding the viewport every single time either of them had work to do. Measured:
-2494px of history arrived and the compensation was refused, `scrollTop` held at
-40, and the transcript jumped back thirteen Turns; in the same session the
-anchor stood down 23 times and corrected nothing at all.
-
-Correcting during a gesture is safe for the reason the anchor already re-anchors
-on every scroll of the reader's: within that window the anchor is tracking them,
-so a correction is zero unless something else really moved. Outside it, nothing
-changed — the claim had already lapsed.
-
-**The amount is the smallest of three bounds**, because each of them
-over-states and they do so for different reasons:
-
-| Bound | Over-states when |
-|---|---|
-| `prependedPx` — height the arrived items measure, read back from the cache | the arrived items are not all rendered, so some of them are still estimates |
-| `scrollRangeGrowthPx` — what the scroll range actually gained | the transcript also grew *below* the reader in the same commit |
-| `contentEndPx - scrollTop` — what the range can absorb | never; content arriving above the reader cannot push them past the end |
-
-Overshooting is the expensive direction. It puts the reader below the content
-end inside the reserved blank. Undershooting leaves them looking at slightly
-earlier content, which the anchor removes.
-
-**The cache is measured before it is read.** Left alone it is not close:
-measured twice in one session, 2174px reserved against 670px of real growth,
-then 2494px against 949px — and the whole nineteen-item transcript came to
-1236px once measured. That gap is not a virtualizer being approximate, it is a
-guard in the library. `measureElement` resizes an item inline only when the
-reader is holding still:
-
-```js
-if ((!this.isScrolling || this.scrollState) && ...) this.resizeItem(...)
-```
-
-History pages in precisely when they are not. So at a junction the rows are in
-the DOM at their real heights, the cache holds the estimates it reserved for
-them, and the ResizeObserver that would have reconciled the two does not deliver
-until after the layout effects of the commit that added them — one frame later
-than the compensation, which has to move the reader in the same paint as the
-rows that displaced them. `virtualizer.measureRenderedItems()` does that
-reconciliation itself, first thing: the same work, a frame earlier, and free for
-any row whose height was already right (`resizeItem` returns on a zero delta).
-
-`prependCompensated` still records all three numbers, so the remaining gap
-between `prependedPx` and `scrollRangeGrowthPx` is a reading rather than an
-inference — and now it is a reading of how much of the arrived block was never
-rendered, not of how far behind the cache is.
-
-## The Viewport Anchor Owns Scroll Compensation
-
-A virtualizer places items in the scroll range before it knows how tall they
-are, so every late measurement rewrites the offset of everything below it.
-Correcting for that is unavoidable. Doing it with `scrollTop` is not possible:
-the same number means a different place after every measurement. The reading
-position is therefore recorded as a **Turn and its offset from the viewport
-top**, and restored as a relationship rather than replayed as a delta. That
-makes the correction idempotent — when nothing moved it is zero.
-
-**The anchor is the only compensator.** The virtualizer's own adjustment is
-turned off (see `FLOWCHAT_VIRTUALIZATION.md`) because it replays a delta against
-a scroll position it learns about a frame late. Restoring a relationship has no
-base to go stale, which is the whole reason this is the one that stays.
-
-This was not always true, and what happened when it was not is why the rule is
-written down. react-virtuoso corrected by the change in *total* list height,
-which assumes the change happened above the viewport — scrolling up into a
-freshly paged block guarantees it did not, and one item measuring 38px -> 1003px
-moved the viewport 965px, across a whole Turn. Worse, the correction was gated
-on scroll direction, and its own prepend compensation set that direction to
-`down`, disabling it for exactly the measurements that followed: `scrollHeight`
-went 8393 -> 10073 with `scrollTop` held at 1133 and no correction at all,
-sliding the transcript down by the full 1680px. Those corrections had to be
-intercepted at `scrollBy` and answered by re-anchoring. **Do not reintroduce a
-compensator whose amount is a total rather than a delta.**
-
-**Capture is qualified by intent, not by geometry.** A scroll event cannot say
-whether the user moved or the transcript moved under them, so a *new* Turn is
-taken as the reading position only within `USER_DRIVEN_SCROLL_WINDOW_MS` of a
-wheel, touch, key, or scrollbar press — the same distinction follow-output
-draws. Two rules were tried and measured first, and both failed in ways worth
-recording:
-
-- Capturing at the intent event itself records the position *before* the scroll
-  it causes, which drags a scrolling viewport backwards.
-- Gating on "the content height did not change" blocks almost every capture,
-  because lazy measurement changes it on nearly every frame: 1075 blocked
-  captures against 8 accepted ones, and a 1037px correction issued against the
-  user's own gesture.
-
-**A scroll may not replace an anchor that is owed a repair.** While the anchored
-Turn is missing from the rendered window the displacement exists and cannot yet
-be measured, and re-reading the anchor from the DOM takes whatever *is* rendered
-at its already-displaced position — which files the displacement away as the
-reader's own choice. Measured across five history junctions: the anchor was owed
-104px, then 140px, then an amount never established, and at three of the five a
-scroll 77ms later replaced it before the Turn came back. Two of the three were
-never corrected at all.
-
-Refusing the scroll outright is not the answer either — paging up is something
-the reader does *while scrolling*, so the anchor would fight them for the whole
-settle. So the anchor is **carried** instead: their travel is a change to
-`scrollTop`, and it is subtracted from where the Turn is expected to be, leaving
-only the part the transcript moved outstanding. When the Turn renders, the
-correction is that part and none of their scrolling — however far they got.
-
-**Falling outside the intent window is not grounds for ignoring a scroll.** The
-window runs from the *input* event while the scrolling it authorises outlives
-it: a wheel notch smooth-scrolls for longer than 200ms, and a main thread busy
-with streaming delivers one coalesced event carrying the whole travel after the
-window has closed. Ignoring it leaves the reader's own movement credited to
-nobody, and the next settle undoes it in full. Measured over 181 seconds of
-reading: fourteen gestures, **one** capture, and seven corrections between 308px
-and 618px that each returned the viewport to exactly where its gesture had
-started — the reader could not get anywhere.
-
-So a scroll has three answers, not two, and the third is the same **carry**:
-
-| | |
-|---|---|
-| **Captured** | A recent intent event. The Turn they arrived at is the new reading position. |
-| **Carried** | Not provably theirs, and no registered writer owns the viewport. Nothing else changes `scrollTop`, so it is theirs. |
-| **Left alone** | A registered writer owns the viewport. It chose that position; the stored relationship is not rewritten on its account. |
-
-Carrying is safe here for the same reason it is safe anywhere: a displacement
-moves the transcript *under* a viewport whose `scrollTop` does not change, so
-carrying is a no-op for exactly the case the anchor exists to repair.
-
-The third row changes nothing the reader can see — a restore carries the anchor
-through whatever moved the viewport anyway, by the rule below — and it is kept
-because the stored offset then goes on meaning "where the Turn was when the
-reader last agreed to it", which is what the trail is read as.
-
-**A displacement moves the transcript under a `scrollTop` that stays put.** That
-is what makes it a displacement, and it is the rule the correction is computed
-from: whatever `scrollTop` has changed by since the anchor's offset was agreed
-belongs to whoever changed it, and only what is left over is drift to repair.
-
-The alternative was in place for a long time and is what "scrolling down pulls
-me back" turned out to be. The settle loop reads `scrollTop` from the DOM; a
-commit opens a window on almost every frame; the scroll event carrying the
-reader's travel is delivered after all of that. So a correction routinely runs
-against a reading position agreed hundreds of pixels ago, with no capture in
-between, and reads their own scrolling as drift. Measured over one reproduction,
-ten corrections: **every one of them was the reader's travel**, the largest
-putting a 508px scroll back where it started while the transcript had really
-moved 7.8px.
-
-Note what this does *not* weaken. A displacement contributes nothing to
-`scrollTop`, so taking the movement out never takes any of the repair with it —
-when the reader has not moved, the correction is what it always was.
-
-**The offset and the viewport position it was agreed at are two halves of one
-fact, and every writer moves both.** That is the invariant, and it is the whole
-of why the movement is taken *into* the anchor at the top of a restore rather
-than subtracted inside the correction. Subtracting it leaves the two halves free
-to drift apart: a frame with nothing to correct advanced only the position, and
-the reader's travel became a debt the next frame collected. Measured, with the
-subtraction in place: a 32px scroll and an 81px scroll each reported back a
-frame later as a correction of exactly itself, the anchored Turn provably not
-having moved. Worse, the subtraction made that frame the *ordinary* outcome —
-with the movement taken out, a frame in which only the reader moved corrects by
-exactly zero.
-
-There is one movement of `scrollTop` that must not be taken into the offset, and
-it is the repair itself: the shift puts the Turn back at the stored offset, so
-the position advances by the correction and the offset stays.
-
-The baseline is therefore carried, not re-taken. It used to be re-set to the
-current position every time a settle window opened, on the grounds that the
-prepend compensation had written from the layout effect just before and that
-write is not the reader — which was true of the compensation and false of
-everything else the reset swallowed, the reader's own travel first among them.
-The compensation now says so itself, through `absorbViewportShift`: it is the
-one movement made on the anchor's behalf, so it is the one that must not count
-as somebody moving the viewport.
-
-**The anchor must be a Turn the reader can see, at both edges.** A Turn's marker
-is its user message, which is short, so a reader inside an answer taller than
-the viewport has no marker on screen — and "the first marker below the top
-edge" then answers with the *next* Turn, however far down it is. Measured: an
-anchor held at an offset of 1695.5px in a scroller at most 1325.7px tall, at
-least 370px past the bottom edge.
-
-The two directions are not symmetrical, which is why the bottom edge is a bound
-and not a preference. Content above the viewport re-measuring moves everything
-below it, the on-screen transcript included, so a marker above the fold is a
-faithful proxy for what the reader sees. Content *below* the viewport
-re-measuring moves nothing they can see — so a marker down there reports
-movement that never reached the screen, and correcting to it **creates** a
-displacement instead of repairing one. No anchor is the honest answer, and it is
-what this already gave once every marker had gone off the top.
-
-**A navigation replaces the reading position; it does not displace it.** Standing
-down for the register is not enough — that postpones the correction for the
-length of the hold and no longer. A Turn navigation therefore drops the anchor
-outright before it aims, and the settle window opened by the commit that renders
-the placement takes the new one. Measured over four clicks on one Turn: the aim
-placed the viewport at 287px each time, and each time the anchor put it back
-1653px away on the first frame after `ONE_SHOT_NAVIGATION_HOLD_MS` lapsed, still
-anchored to the Turn the reader had jumped away from. The re-capture cannot
-happen in the aim's own task: the target is commonly outside the rendered window
-when the aim is issued, so reading the DOM there anchors to whatever the reader
-was moved off.
-
-**Restoring needs a window, not a callback.** A prepend settles over several
-frames — a margin holds the position, the real heights land in padding, then the
-margin is released — and *a margin change fires no ResizeObserver at all*, so no
-single callback covers it. Every signal that the transcript moved therefore
-opens `ANCHOR_SETTLE_FRAMES`, and a frame that had to correct refreshes it — as
-does one still waiting for the anchored Turn to be rendered, since "not there
-yet" is neither a repair nor a failure. Without that, the settle outlasts the
-wait only for as long as `ANCHOR_SETTLE_FRAMES` and
-`ANCHOR_MISSING_TURN_ATTEMPTS` happen to be the same number, which is a
-coincidence and not a design. Measured before the window existed: four
-consecutive painted frames displaced by 896px.
-
-The observer feeding this had to be repointed. `scrollerRef.firstElementChild`
-is a viewport-sized box that stays at the scroller's height no matter how much
-transcript there is — it never reported a content change at all, despite a
-comment claiming it watched content. The item list is the element that grows,
-and `border-box` is required because the virtualizer parks item space in
-padding.
-
-**The keeper does not know there is a virtualizer.** It lives in
-`flowChatViewportAnchor.ts` (geometry and the DOM contract for the anchor
-element) and `useFlowChatViewportAnchor.ts` (capture, restore, and the settle
-window), and it talks to a scroller element and the Turns rendered inside it and
-to nothing else. That is what let the virtualizer underneath it be replaced
-without the keeper changing at all.
-
-One consequence of the refresh rule is worth stating plainly: a frame that finds
-the anchor already in place consumes the remaining settle budget rather than
-refreshing it. The cost is a `querySelectorAll` and two rect reads per frame for
-the bounded settle window. A correction or a Turn still waiting to render
-refreshes the window, while a stable anchor winds it down and another owner
-holding the viewport still stands it down.
-
-The anchor is skipped entirely while follow-output owns the viewport. Restoring
-a pre-prepend position is only meaningful when the user owns it — and a frame
-spent standing down is *not* evidence the settle is still running. It looked at
-nothing. The loop used to refresh on the missing-Turn count instead, which is a
-fact about the last frame that did look, and that count can only advance on a
-frame that does not stand down: the same condition jammed the loop and put its
-only exit out of reach. Measured at the tail after a jump-to-latest, where
-follow-output does not release because resting there is what it is for: 27
-seconds of `anchor.stoodDown`, one per frame, zero travel, ending only when the
-reader scrolled. The wait it reported for that — `waitedFrames: 6609`,
-`waitedForMs: 28116`, against 20 attempts — was of a reading position that had
-been correct the whole time.
-
-So the outcome of a restore is five-valued inside the loop, not a boolean.
-`false` covers a stand-down, a Turn not rendered yet, and no anchor at all, and
-the loop has to treat those differently; the public `restoreAnchor` still
-answers the only question its other callers ask.
-
-**What the anchor cannot fix on its own** is a scroll range that was wrong to
-begin with. Holding the reading position across a burst of measurement is worth
-nothing if the burst blocks the main thread for 295ms. That is a property of how
-unmeasured items are reserved, not of the anchor, and it is why the virtualizer
-underneath it takes a per-item estimate.
+`VirtualMessageList.timeline-prepend.test.tsx` exercises the production timeline
+with real virtualization, ownership and follow hooks. It covers complete-Turn publication, structural edits above a reader, short text
+and tool histories, consecutive pages, delayed sizes,
+width-independent origin lifetime, navigation, existing bookmark shapes and live
+handoff on local and simulated Peer surfaces. Native-history tail assertions
+require the same DOM node and screen position before observer callbacks, and
+zero scroll writes through the page/measurement sequence. Geometry is supplied
+because jsdom has no layout engine; these are not native WebView or live remote
+verification results.
 
 ## The Ask Is Derived From the Transcript, Not From the Window
 

@@ -477,6 +477,14 @@ fn relay_records_carry_attachment_pixels_on_the_turn_record_alone() {
         .find(|record| record["id"] == "turn/turn-1")
         .expect("turn record is published");
     assert_eq!(
+        turn_record["turnRecordIds"],
+        serde_json::json!(["turn/turn-1", "round/round-1", "item/item-1"])
+    );
+    assert!(records
+        .iter()
+        .skip(1)
+        .all(|record| record.get("turnRecordIds").is_none()));
+    assert_eq!(
         images_of(turn_record),
         vec![
             format!("data:image/png;base64,{TINY_PNG_BASE64}"),

@@ -17,7 +17,7 @@ const item = (id: string, kind = 'content') => ({ type: 'model-round', turnId: '
 const cleanups: Array<() => void> = [];
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); });
 
-function setup() {
+function setup(readReaderScrollPosition?: () => number) {
   const host = document.createElement('div');
   const scroller = document.createElement('div');
   const extent = document.createElement('div');
@@ -35,7 +35,8 @@ function setup() {
   let rebases = 0;
   function Test({ scope }: { scope: string }) {
     api = useFlowChatLeadingExtent({ scope, items, virtualizer: { getItemBounds: index => bounds[index] ?? null },
-      scrollerRef: { current: scroller }, extentRef: { current: extent }, onAnchorRebased: () => { rebases++; } });
+      scrollerRef: { current: scroller }, extentRef: { current: extent }, readReaderScrollPosition,
+      onAnchorRebased: () => { rebases++; } });
     return null;
   }
   const render = (scope = 'session:turn') => act(() => root.render(<Test scope={scope} />));
@@ -50,6 +51,20 @@ function setup() {
 }
 
 describe('desktop leading extent lifecycle', () => {
+  it('rejects a stale leading row when native reader travel precedes its scroll listener', () => {
+    let readerPosition = 2200;
+    const view = setup(() => readerPosition);
+    view.scroller.scrollTop = 2200;
+    view.api.capture(2200);
+    expect(view.api.snapshot()?.key).toBe('block:member');
+    // Registered displacements do not change this reader-travel coordinate.
+    view.scroller.scrollTop = 2600;
+    expect(view.api.snapshot()?.key).toBe('block:member');
+    readerPosition += 300;
+    expect(view.api.snapshot()).toBeNull();
+    view.api.capture(2500);
+    expect(view.api.snapshot()?.key).toBe('block:member');
+  });
   it('reuses the current scroll read phase without measuring rows again', () => {
     const view = setup();
     const row = document.createElement('div');

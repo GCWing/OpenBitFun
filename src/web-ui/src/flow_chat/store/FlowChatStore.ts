@@ -6039,6 +6039,7 @@ export class FlowChatStore {
     if (surfaceId === getActiveSurfaceId()) {
       this.notifyListeners();
     }
+    this.notifySurfaceSessions(surfaceId, 'discarded');
     return removedSessionIds;
   }
 
@@ -8040,23 +8041,23 @@ export class FlowChatStore {
     return false;
   }
 
-  private surfaceSessionListeners = new Set<(surfaceId: DeviceSurfaceId) => void>();
+  private surfaceSessionListeners = new Set<(surfaceId: DeviceSurfaceId, change: 'updated' | 'discarded') => void>();
 
   /** Sessions of any surface's container, for background-device navigation. */
   public getSurfaceSessions(surfaceId: DeviceSurfaceId): ReadonlyMap<string, Session> {
     return this.surfaceContainers.get(surfaceId)?.state.sessions ?? EMPTY_SESSION_MAP;
   }
 
-  /** Fires when a surface's sessions change: background seeding and active-state updates. */
-  public subscribeSurfaceSessions(listener: (surfaceId: DeviceSurfaceId) => void): () => void {
+  /** Directory projections also need to know when their container was disposed. */
+  public subscribeSurfaceSessions(listener: (surfaceId: DeviceSurfaceId, change: 'updated' | 'discarded') => void): () => void {
     this.surfaceSessionListeners.add(listener);
     return () => { this.surfaceSessionListeners.delete(listener); };
   }
 
-  private notifySurfaceSessions(surfaceId: DeviceSurfaceId): void {
+  private notifySurfaceSessions(surfaceId: DeviceSurfaceId, change: 'updated' | 'discarded' = 'updated'): void {
     for (const listener of Array.from(this.surfaceSessionListeners)) {
       try {
-        listener(surfaceId);
+        listener(surfaceId, change);
       } catch (error) {
         log.warn('Surface session listener threw', { error });
       }

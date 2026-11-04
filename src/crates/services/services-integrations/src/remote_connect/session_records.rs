@@ -64,6 +64,7 @@ pub fn records_from_turns(
 ) -> Result<Vec<Value>> {
     let mut records = Vec::new();
     for source in turns {
+        let turn_start = records.len();
         let mut turn = serde_json::to_value(source)?;
         turn.as_object_mut()
             .expect("turn serializes as object")
@@ -95,6 +96,15 @@ pub fn records_from_turns(
                 }
             }
         }
+        // A transport page is byte/event bounded and can split even one Turn.
+        // Put membership on its root only, so a controller can prove it has the
+        // whole snapshot without duplicating this list on every item. This is
+        // an optional wire field; persisted Turns and older readers are unchanged.
+        let record_ids: Vec<Value> = records[turn_start..]
+            .iter()
+            .map(|record| record["id"].clone())
+            .collect();
+        records[turn_start]["turnRecordIds"] = Value::Array(record_ids);
     }
     Ok(records)
 }

@@ -139,6 +139,15 @@ export function installBackgroundSurfaceSeeding(): () => void {
   installs += 1;
   if (installs === 1) {
     const unsubscribe = deviceWorkspaceCatalog.subscribe(seedBackgroundSurface);
+    const unsubscribeDisposal = flowChatStore.subscribeSurfaceSessions((surfaceId, change) => {
+      if (change !== 'discarded') return;
+      // Attachment disposal retires transcript/runtime state. The directory
+      // has an independent read lease and still owns its metadata rows. A
+      // previously projected array is not proof that the new container has it.
+      seededRecords.delete(surfaceId);
+      listedIds.delete(surfaceId);
+      seedBackgroundSurface(surfaceId);
+    });
     for (const surfaceId of deviceWorkspaceCatalog.loadedSurfaces()) seedBackgroundSurface(surfaceId);
     // Synchronous with the activation commit, before navigation draws the
     // device just left from its container.
@@ -148,7 +157,7 @@ export function installBackgroundSurfaceSeeding(): () => void {
       rendered = getActiveSurfaceId();
       if (left !== rendered) seedLeftSurface(left);
     });
-    teardown = () => { unsubscribe(); unsubscribeActivation(); };
+    teardown = () => { unsubscribe(); unsubscribeActivation(); unsubscribeDisposal(); };
   }
   let released = false;
   return () => {

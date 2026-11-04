@@ -49,6 +49,7 @@ const mocks = vi.hoisted(() => ({
   isFollowingOutput: false,
   followsNow: false,
   scheduleFollowToLatest: vi.fn(),
+  shiftFollowLayout: vi.fn(() => false),
   startAtTailOnMount: true,
   virtualizerStartsAtTail: false,
   estimateWidth: undefined as number | undefined,
@@ -223,7 +224,8 @@ vi.mock('../../store/modernFlowChatStore', () => {
 vi.mock('../../trajectory/trajectoryPanel', () => ({ openTrajectoryPanel: mocks.trajectoryPanel }));
 
 vi.mock('../../hooks/useActiveSessionState', () => ({
-  useActiveSessionState: () => ({ isProcessing: false }),
+  // This suite supplies top-origin virtual bounds for the live layout.
+  useActiveSessionState: () => ({ isProcessing: true }),
 }));
 
 vi.mock('../../store/chatInputStateStore', () => ({
@@ -248,6 +250,7 @@ vi.mock('./useFlowChatFollowOutput', () => ({
       enterFollowOutput: mocks.enterFollowOutput,
       exitFollowOutput: mocks.exitFollowOutput,
       scheduleFollowToLatest: mocks.scheduleFollowToLatest,
+      shiftLayout: mocks.shiftFollowLayout,
       isFollowingOutputNow: () => mocks.followsNow,
       // Nothing streams here, so the frame loop is never correcting: the band is
       // judged on the viewport itself, exactly as it is for a resting transcript.
@@ -401,6 +404,7 @@ describe('VirtualMessageList natural scroll contract', () => {
     mocks.handleUserScrollIntent.mockReset();
     mocks.handleFollowScroll.mockReset();
     mocks.scheduleFollowToLatest.mockReset();
+    mocks.shiftFollowLayout.mockReset().mockReturnValue(false);
     mocks.startAtTailOnMount = true;
     mocks.placeSubmittedMessage = null;
     mocks.viewportOwner = null;
@@ -513,6 +517,18 @@ describe('VirtualMessageList natural scroll contract', () => {
       expect(scroller.scrollTop).toBe(880);
       expect(rows[0].getBoundingClientRect().top).toBe(100);
     } finally { restore(); }
+  });
+
+  it('passes a measured displacement refused by follow ownership back to its follower', () => {
+    act(() => root.render(<VirtualMessageList />));
+    mocks.viewportOwner!.claim('follow-output');
+    mocks.shiftFollowLayout.mockReturnValue(true);
+    act(() => { expect(mocks.shiftMeasurement!(-120)).toBe(true); });
+    expect(mocks.shiftFollowLayout).toHaveBeenCalledWith(-120);
+    mocks.shiftFollowLayout.mockClear();
+    mocks.viewportOwner!.claim('user-gesture');
+    act(() => { expect(mocks.shiftMeasurement!(80)).toBe(true); });
+    expect(mocks.shiftFollowLayout).not.toHaveBeenCalled();
   });
 
   it.each([false, true])('restores the unfaded start after scroll round trips with synchronous virtualizer commits=%s', async commitDuringScroll => {
@@ -1931,6 +1947,7 @@ describe('VirtualMessageList natural scroll contract', () => {
       const render = (history = false) => root.render(
         <VirtualMessageList
           presentationMode={history ? 'history-window' : 'tail'}
+          viewportMode="live-tail"
           historyWindow={history ? {
             startOrdinal: 36, endOrdinalExclusive: 46, targetTurnId: null, mode: 'history-window',
           } : null}
@@ -2188,7 +2205,7 @@ describe('VirtualMessageList natural scroll contract', () => {
       Object.defineProperty(scroller, 'scrollTop', {
         configurable: true,
         writable: true,
-        value: 400,
+        value: -1000, // Native end origin; persisted top offset remains 400.
       });
 
       const snapshot = listRef.current?.captureViewportSnapshot();
@@ -2209,7 +2226,7 @@ describe('VirtualMessageList natural scroll contract', () => {
       });
 
       expect(restored).toBe(true);
-      expect(scroller.scrollTop).toBe(540);
+      expect(scroller.scrollTop).toBe(-860);
     } finally {
       restoreLayout();
     }

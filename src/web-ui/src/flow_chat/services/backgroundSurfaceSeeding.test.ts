@@ -72,4 +72,15 @@ describe('background surface seeding across a switch', () => {
     for (const listener of [...catalog.listeners]) listener('peer-seed');
     expect(flowChatStore.getSurfaceSessions('peer-seed').get('r1')?.title).toBe('new title');
   });
+
+  it('keeps directory rows when an explicit disconnect disposes the previously rendered container', () => {
+    publish('peer-seed', { repos: [record('r1', 'repos'), record('r2', 'repos')] });
+    activateSurface('peer-seed');
+    activateSurface('local');
+    flowChatStore.discardSurfaceState('peer-seed');
+    // No new RPC or changed record array: the still-visible device catalog
+    // owns these metadata rows independently of the disposed transcript.
+    expect(ids('peer-seed')).toEqual(['r1', 'r2']);
+    expect(flowChatStore.getSurfaceSessions('peer-seed').get('r1')?.historyState).toBe('metadata-only');
+  });
 });

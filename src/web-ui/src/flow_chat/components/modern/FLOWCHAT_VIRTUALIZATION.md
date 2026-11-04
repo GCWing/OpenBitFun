@@ -2,49 +2,53 @@
 
 ## Historical scrolling and measurement
 
-Manual scrolling keeps the host's native wheel/touch behavior. Perceived
-smoothness depends on stable content coordinates as well as frame time; adding
-an easing loop to a height correction would expose the correction as motion.
-The implementation follows the read-before-write guidance in
-[rendering performance](https://web.dev/articles/rendering-performance) and
-[layout thrashing](https://web.dev/articles/avoid-large-complex-layouts-and-layout-thrashing).
-No new motion is introduced, so the existing reduced-motion policy and follow
-targets remain unchanged.
+`useFlowChatVirtualizer` supports two coordinate conventions behind one public
+API. Live output uses chronological indexes and a top-origin native scroller.
+History uses a bottom-origin scroller and newest-first internal indexes. Public
+row indexes, stable keys, DOM order, navigation and viewport snapshots remain
+chronological. `data-virtual-index` is public; `data-flowchat-measure-index` is
+private to the adapter and is refreshed for surviving rows after each commit.
 
-Newly attached rows are measured as one batch in the layout phase, including
-while the reader is scrolling. The library's `measureElement` still registers
-observation, but it skips its inline size update during a gesture; the adapter
-therefore supplies the already-read height through `resizeItem` in that commit.
-In this flow layout the real row heights affect following content immediately.
-Waiting for ResizeObserver lets the old virtual padding and real rows disagree
-for a visible frame.
+For native history, internal offset is `-scrollTop`, index zero is the newest
+row, and the footer is the scroll margin. The internal window's before/after
+padding maps to physical bottom/top padding. Earlier records extend only the
+older side of the virtual range. Selecting a window does not require adding up
+unseen prefix heights to place the latest content.
 
-Explicit item/offset aims retain the library's own attachment-measurement policy.
-A smooth aim intentionally leaves distant rows estimated: forcing their sizes
-can move its target and make the library replace the animation with an `auto`
-jump. Reader intent cancels the aim before scrolling, so newly attached rows
-resume synchronous measurement in the first reader-controlled commit.
+Historical range selection admits all blocks of each selected Turn together.
+The latest complete Turn stays resident and owns the CSS trailing-space shell;
+older Turns still virtualize. Stable Turn wrappers are present in live layout
+as well, so changing the origin does not reparent/remount visible blocks. An
+unmounted interval between selected Turns lives outside the tail's reservation.
+This trades per-block residency inside an individual historical Turn for atomic
+Turn presentation; a very large single Turn still requires rendering that Turn.
 
-Above-viewport measurement shifts pass through the viewport register and credit
-the DOM anchor with the **actual applied** displacement. Otherwise the anchor
-counts that repair as reader travel and applies it again. The anchor remains
-independent of the virtualizer; the list joins these two owners.
+Estimates still reserve space for unmounted content. Keyed measurements and
+fractional border-box sizes replace those reservations as rows mount. Preserve
+surviving reservations across width/font changes, prune retired keys, and keep
+range selection based on viewport overscan, expanded to complete Turns. An older measurement cannot
+shift the historical tail. Only a measured newer row wholly below a reader can
+shift their chosen position; that uses the viewport register and publishes its
+actual readback before another window is selected.
 
-The native scroll handler shares one `flowChatViewportGeometry` sample among
-leading-extent, anchor and session-snapshot readers. It is local to that event,
-and discarded if a follow write changes the offset. Layout commits, resize and
-navigation read fresh geometry; this is not a cross-frame cache.
+History rows stay in normal chronological DOM flow inside the bottom-origin
+extent. No CSS transform reverses text or selection. The scroller's native
+layout holds visible tail content while earlier rows arrive or reflow, before
+any ResizeObserver callback. The history layout does not run prepend snapshots,
+leading extent calculation or passive follow easing.
 
-The packaged macOS WebView fixture (80 Turns with Markdown, code, tables and
-collapsed tool groups) reproduced 17 reverse frames during 72 fast upward wheel
-actions, with a maximum 499.45px reversal. After these changes the same five
-slow/fast bidirectional phases had zero reversals over 4px and zero blank frames;
-row/scroller rectangle reads fell from 37,331 to 28,489 across those phases.
-Fast-up frame intervals still reached 26ms at p95 and 53ms at maximum in the
-final run; continuity is established here, not a constant 60fps guarantee.
-These are instrumented native-WebView samples, not physical trackpad or
-cross-platform latency measurements. See `FLOWCHAT_VERIFICATION.md` for the
-repeatable fixture and its limits.
+For insertion inside the reader's window, retain committed keys until the
+registered reading relationship and offset readback are complete. Pure older
+history append in the internal sequence requires no retained-window correction.
+The live layout keeps its prior reservation/follow behavior. Switching origins
+preserves the same visible row and refreshes mounted measurement indexes.
+
+Regression fixtures cover actual timeline projection, hydration flags, short and
+long histories, width changes, delayed measurements, native-scroll delivery,
+search/Turn navigation and existing bookmark coordinates. Native tail cases
+assert zero scroll writes as well as node and screen-position continuity.
+These supplied-geometry tests do not establish native paint or live remote
+behavior.
 
 ## Accepted steering display
 
@@ -280,7 +284,7 @@ than its content's.
 
 ## What Belongs to the Virtualizer
 
-On a tail-following open, the virtualizer seeds its initial offset at the last
+On a live top-origin open, the virtualizer seeds its initial offset at the last
 item's estimated start. A desktop trace previously mounted rows 0..13 before
 moving to 22..33, with 372.3ms charged to the first head-row measurement. The
 seed selects a tail window without first mounting the head; real heights and
@@ -325,13 +329,9 @@ takeover; runtime savings and remote behavior still require separate validation.
 
 FlowChat virtualizes with **TanStack Virtual**, behind `useFlowChatVirtualizer.ts`.
 Nothing else imports it. The rest of FlowChat asks for offsets in scroller
-coordinates and gets them back; there is no index space of the virtualizer's own
-to convert at the edges, because measurements are cached against **item keys**,
-so a history prepend leaves every measured item exactly where it was.
-
-That is only half of what react-virtuoso's `firstItemIndex` did, and the other
-half has to be supplied — see *Keeping the Viewport on the Reader's Content* in
-`FLOWCHAT_HISTORY_PAGING.md`.
+coordinates and gets them back. History's reverse internal indexes and native
+negative offsets are converted only in this adapter. Measurements remain cached
+against stable item keys in either convention.
 
 The reason it is TanStack and not react-virtuoso is one line of its measurement
 pass: `size = measured ?? estimateSize(i)`. A per-item estimate for everything
@@ -344,9 +344,10 @@ directly. The estimate is owned by the data shape in
 Explore groups, and tool families each derive a bounded height from their
 content, status, width, and expansion state. This code is pure and runs before
 a row has a DOM node. Once mounted, DOM measurement remains authoritative and
-replaces the estimate. Width and volatile Explore expansion changes invalidate
-only the derived position pass; TanStack's key-based measured-size cache is
-retained.
+replaces the estimate. Estimate inputs apply when a key first reserves space. Existing reservations
+stay stable across width changes; actual mounted measurements replace them.
+Collected rows still receive their explicit known-height updates. TanStack's
+key-based measured-size cache is retained.
 
 **Items stay in normal flow inside a padded window**, not absolutely positioned.
 Everything outside the window stands in as `padding-top` and `padding-bottom`
@@ -357,8 +358,9 @@ the items have not moved yet.
 
 **The virtualizer does not use TanStack's own late-measurement adjustment.**
 `shouldAdjustScrollPositionOnItemSizeChange` reads the real scroller position
-and asks the viewport owner to apply the delta only when the whole item is above
-the viewport. A partly visible row is left alone because its changed content is
+and asks the viewport owner to apply a real measured delta only when the whole
+item precedes the viewport in its internal coordinate direction: above the
+reader for live layout, below the reader for bottom-origin history. A partly visible row is left alone because its changed content is
 inside what the reader is looking at. TanStack's adjustment is always refused:
 it applies its delta to `scrollOffset`, the library's copy refreshed only from
 scroll events. Every continuous writer here assigns `scrollTop` directly and
@@ -373,13 +375,13 @@ which is exactly when history arrives, so the cache holds reserved estimates
 until the ResizeObserver delivers a frame later.
 `virtualizer.measureRenderedItems()` does that reconciliation itself — the same
 work, a frame earlier, free for any row whose height was already right. The
-evidence and the numbers are in *A Displacement Is Not a Movement* in
-`FLOWCHAT_HISTORY_PAGING.md`.
+history layout and reading contracts are in `FLOWCHAT_HISTORY_PAGING.md`.
 
 **Alignment is asked for, not computed, wherever it fits.** `scrollItemIntoView`
 goes through the virtualizer so that its re-aim keeps chasing the item while the
 measurements under it move; an offset computed once is already stale by then.
-The gap above a top-aligned Turn is the virtualizer's `scrollPaddingStart`, for
+The gap above a top-aligned Turn is `scrollPaddingStart` in live layout and
+`scrollPaddingEnd` in native history, for
 the same reason. Only two places compute an offset by hand, and both do it
 because the target is not an item: the end of *real content*, which is above the
 resident tail spacer, and the end of a Turn.

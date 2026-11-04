@@ -7,16 +7,19 @@ use super::{
 };
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 const KEEPALIVE: Duration = Duration::from_secs(4 * 60);
 /// Event budget of the first page of an open: enough to fill a transcript view,
 /// so the session shows after one small read instead of a full 200-event /
 /// 768 KiB page over the relay. Older pages follow in the background. Every
-/// host honours `limit`, so no capability is needed; current hosts extend the
-/// page to the first record of the turn the budget ran out in, older ones cut it
-/// mid-turn and their boundary turn fills in with the next page.
+/// host honours `limit`. Transport pages are joined until their Turn membership
+/// is complete; no transport budget is a presentation boundary.
 const FIRST_PAGE_EVENTS: usize = 48;
 const UNSUPPORTED_HOST_MESSAGE: &str = "The controlled device runs an older OpenBitFun version that does not support on-demand session streaming. Update OpenBitFun on that device to continue.";
 
@@ -130,6 +133,101 @@ impl Reader {
         Ok(page)
     }
 
+    /// A root's optional membership list proves which records form a whole
+    /// Turn, even when live updates moved that root ahead of unchanged items.
+    /// Old hosts have no such proof: finish their bounded pages before exposing
+    /// history, rather than guessing from a header, count, or elapsed time.
+    async fn read_history(&self, request: StreamReadRequest) -> Result<StreamPage> {
+        let mut page = self.read(request).await?;
+        let mut record_ids = HashSet::<String>::new();
+        let mut turns = HashMap::<String, Option<(u64, Vec<String>)>>::new();
+        let mut batches = Vec::new();
+        loop {
+            for event in &page.events {
+                if event.event != "session-record" {
+                    continue;
+                }
+                let payload = &event.payload;
+                let Some(id) = payload["id"].as_str() else {
+                    continue;
+                };
+                record_ids.insert(id.to_owned());
+                let Some(turn_id) = payload.pointer("/turn/turnId").and_then(|id| id.as_str())
+                else {
+                    continue;
+                };
+                let membership = turns.entry(turn_id.to_owned()).or_default();
+                if id == format!("turn/{turn_id}") {
+                    if let Some(ids) = payload.get("turnRecordIds") {
+                        let ids: Vec<String> = serde_json::from_value(ids.clone())
+                            .context("Invalid history Turn membership")?;
+                        if !ids.iter().any(|key| key == id) {
+                            bail!("History Turn membership omitted its root");
+                        }
+                        let revision = payload["revision"].as_u64().unwrap_or(event.seq);
+                        if membership.as_ref().is_none_or(|(old, _)| revision > *old) {
+                            *membership = Some((revision, ids));
+                        }
+                    }
+                }
+            }
+            let complete = !turns.is_empty()
+                && turns.values().all(|membership| {
+                    membership
+                        .as_ref()
+                        .is_some_and(|(_, ids)| ids.iter().all(|id| record_ids.contains(id)))
+                });
+            let missing_record = turns
+                .values()
+                .flatten()
+                .any(|(_, ids)| ids.iter().any(|id| !record_ids.contains(id)));
+            if complete || !page.has_more {
+                if !complete && (page.truncated || missing_record) {
+                    bail!("The host could not provide a complete history Turn; reopen the session to retry");
+                }
+                // Reads travel backwards; delivery stays chronological. This
+                // also preserves ordering of runtime controls between records.
+                for batch in batches.into_iter().rev() {
+                    page.events.extend(batch);
+                }
+                return Ok(page);
+            }
+            let before = page
+                .events
+                .first()
+                .map(|event| event.seq)
+                .context("History page did not advance")?;
+            let older = self
+                .read(StreamReadRequest {
+                    stream_id: self.session_id.clone(),
+                    before: Some(before),
+                    epoch: Some(page.epoch),
+                    subscribe: true,
+                    ..Default::default()
+                })
+                .await?;
+            if older.epoch != page.epoch {
+                bail!(
+                    "Session history restarted while reading a Turn; reopen the session to retry"
+                );
+            }
+            if older
+                .events
+                .first()
+                .is_some_and(|event| event.seq >= before)
+                || (older.events.is_empty() && older.has_more)
+            {
+                bail!("History page did not advance");
+            }
+            batches.push(page.events);
+            // Forward catch-up starts at the snapshot with which this read
+            // began. Later appends must still be delivered by catch_up.
+            let cursor = page.cursor;
+            page = older;
+            page.cursor = cursor;
+        }
+    }
+
     fn emit_page(&self, page: &StreamPage) -> Result<()> {
         for event in &page.events {
             (self.emit)(SessionEvent {
@@ -152,7 +250,7 @@ impl Reader {
     /// Latest page first, like opening a chat at its bottom.
     async fn resync(&mut self) -> Result<()> {
         let page = self
-            .read(StreamReadRequest {
+            .read_history(StreamReadRequest {
                 stream_id: self.session_id.clone(),
                 subscribe: true,
                 limit: Some(FIRST_PAGE_EVENTS),
@@ -214,7 +312,7 @@ impl Reader {
             return Ok(true);
         }
         let page = self
-            .read(StreamReadRequest {
+            .read_history(StreamReadRequest {
                 stream_id: self.session_id.clone(),
                 before: Some(self.oldest),
                 epoch: Some(self.epoch),
@@ -502,7 +600,175 @@ mod tests {
     }
 
     fn record(session: &str, turn: &str, status: &str) -> serde_json::Value {
-        serde_json::json!({"sessionId":session,"id":format!("turn/{turn}"),"turn":{"turnId":turn,"sessionId":session,"status":status}})
+        serde_json::json!({"sessionId":session,"id":format!("turn/{turn}"),"turnRecordIds":[format!("turn/{turn}")],"turn":{"turnId":turn,"sessionId":session,"status":status}})
+    }
+
+    struct ScriptedHistory {
+        pages: Mutex<std::collections::VecDeque<StreamPage>>,
+        reads: Mutex<Vec<StreamReadRequest>>,
+    }
+    #[async_trait::async_trait]
+    impl StreamTransport for ScriptedHistory {
+        async fn read_stream(&self, request: StreamReadRequest) -> Result<StreamPage> {
+            self.reads.lock().unwrap().push(request);
+            self.pages
+                .lock()
+                .unwrap()
+                .pop_front()
+                .context("Unexpected history read")
+        }
+        async fn unsubscribe_stream(&self, _: &str) -> Result<()> {
+            Ok(())
+        }
+    }
+    fn history_page(seq: u64, records: Vec<serde_json::Value>, has_more: bool) -> StreamPage {
+        use super::super::host_stream::StreamEvent;
+        StreamPage {
+            stream_id: "s".into(),
+            epoch: 1,
+            events: records
+                .into_iter()
+                .enumerate()
+                .map(|(index, mut payload)| {
+                    payload["revision"] = (seq + index as u64).into();
+                    StreamEvent {
+                        seq: seq + index as u64,
+                        event: "session-record".into(),
+                        payload,
+                    }
+                })
+                .collect(),
+            has_more,
+            cursor: 100,
+            oldest_seq: 1,
+            truncated: false,
+        }
+    }
+    fn scripted_reader(
+        pages: Vec<StreamPage>,
+    ) -> (Reader, Arc<ScriptedHistory>, Arc<Mutex<Vec<SessionEvent>>>) {
+        let transport = Arc::new(ScriptedHistory {
+            pages: Mutex::new(pages.into()),
+            reads: Mutex::new(Vec::new()),
+        });
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let output = events.clone();
+        (
+            Reader {
+                transport: transport.clone(),
+                session_id: "s".into(),
+                emit: Arc::new(move |event| {
+                    output.lock().unwrap().push(event);
+                    Ok(())
+                }),
+                epoch: 0,
+                cursor: 0,
+                oldest: 1,
+                has_more: false,
+            },
+            transport,
+            events,
+        )
+    }
+    fn item(id: &str) -> serde_json::Value {
+        serde_json::json!({"sessionId":"s","id":format!("item/{id}"),"turn":{"turnId":"one","sessionId":"s","status":"completed"},"round":{"id":"r","turnId":"one"},"item":{"type":"text","data":{"id":id}}})
+    }
+
+    #[tokio::test]
+    async fn history_waits_for_all_members_even_when_the_terminal_root_arrived_first() {
+        let mut root = record("s", "one", "completed");
+        root["turnRecordIds"] = serde_json::json!(["turn/one", "item/a", "item/b", "item/c"]);
+        let (mut reader, transport, events) = scripted_reader(vec![
+            history_page(8, vec![root, item("c")], true),
+            history_page(5, vec![item("b")], true),
+            history_page(2, vec![item("a")], true),
+        ]);
+        reader.resync().await.unwrap();
+        let reads = transport.reads.lock().unwrap();
+        assert_eq!(
+            reads.iter().map(|read| read.before).collect::<Vec<_>>(),
+            vec![None, Some(8), Some(5)]
+        );
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 5);
+        assert_eq!(events[0].payload["id"], "item/a");
+        assert_eq!(events[3].payload["id"], "item/c");
+        assert_eq!(events[4].event, "relay://session-ready");
+        assert_eq!(events[4].payload["hasMore"], true);
+        assert_eq!(events[4].payload["oldestSeq"], 2);
+        assert_eq!(events[4].payload["cursor"], 100);
+    }
+
+    #[tokio::test]
+    async fn legacy_pages_without_membership_remain_readable_and_publish_once_complete() {
+        let mut root = record("s", "one", "completed");
+        root.as_object_mut().unwrap().remove("turnRecordIds");
+        // Round trip the old wire shape, without inventing a new capability.
+        let first: StreamPage = serde_json::from_value(
+            serde_json::to_value(history_page(8, vec![root], true)).unwrap(),
+        )
+        .unwrap();
+        let (mut reader, transport, events) = scripted_reader(vec![
+            first,
+            history_page(5, vec![item("b")], true),
+            history_page(1, vec![item("a")], false),
+        ]);
+        reader.resync().await.unwrap();
+        assert_eq!(transport.reads.lock().unwrap().len(), 3);
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 4);
+        assert_eq!(events.last().unwrap().payload["hasMore"], false);
+        assert_eq!(events[0].payload["item"]["data"]["id"], "a");
+    }
+
+    #[tokio::test]
+    async fn missing_members_and_failed_continuations_never_emit_partial_turns() {
+        for has_more in [false, true] {
+            let mut root = record("s", "one", "completed");
+            root["turnRecordIds"] = serde_json::json!(["turn/one", "item/missing"]);
+            let (mut reader, _, events) =
+                scripted_reader(vec![history_page(8, vec![root], has_more)]);
+            assert!(reader.resync().await.is_err());
+            assert!(events.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn continuation_epoch_changes_and_stalled_cursors_never_publish_fragments() {
+        for kind in ["epoch", "empty", "same-cursor"] {
+            let mut root = record("s", "one", "completed");
+            root["turnRecordIds"] = serde_json::json!(["turn/one", "item/a"]);
+            let mut older = history_page(
+                if kind == "same-cursor" { 8 } else { 2 },
+                vec![item("a")],
+                true,
+            );
+            if kind == "epoch" {
+                older.epoch = 2;
+            }
+            if kind == "empty" {
+                older.events.clear();
+            }
+            let (mut reader, _, events) =
+                scripted_reader(vec![history_page(8, vec![root], true), older]);
+            assert!(reader.resync().await.is_err(), "{kind}");
+            assert!(events.lock().unwrap().is_empty(), "{kind}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_control_only_page_does_not_complete_an_empty_transcript() {
+        let mut controls = history_page(8, vec![serde_json::json!({"sessionId":"s"})], true);
+        controls.events[0].event = "session-interaction-changed".into();
+        let (mut reader, transport, events) = scripted_reader(vec![
+            controls,
+            history_page(2, vec![record("s", "one", "completed")], true),
+        ]);
+        reader.resync().await.unwrap();
+        assert_eq!(transport.reads.lock().unwrap().len(), 2);
+        let events = events.lock().unwrap();
+        assert_eq!(events[0].payload["id"], "turn/one");
+        assert_eq!(events[2].event, "relay://session-ready");
     }
 
     #[tokio::test]
