@@ -285,7 +285,7 @@
     }
 
     // Preserve title geometry while the project name yields to row actions.
-    // Rows without actions (other devices) keep their name visible.
+    // Rows without actions keep their name visible.
     .openbitfun-nav-panel__inline-item:has(.openbitfun-nav-panel__inline-item-actions):hover .openbitfun-nav-panel__inline-item-workspace-name,
     .openbitfun-nav-panel__inline-item:has(.openbitfun-nav-panel__inline-item-actions):focus-within .openbitfun-nav-panel__inline-item-workspace-name,
     .openbitfun-nav-panel__inline-item.is-menu-open .openbitfun-nav-panel__inline-item-workspace-name {

@@ -11,6 +11,7 @@ import { ActionItem, Button, Icon, OverflowText, Tooltip } from '@openbitfun/ui'
 import { History, Loader2, MessageCirclePlus, Settings2 } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
+import { peerReplyLostMessage } from '@/infrastructure/peer-device/peerReplyLost';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { deviceWorkspaceCatalog, type DeviceCatalogSnapshot } from '@/infrastructure/peer-device/deviceWorkspaceCatalog';
 import { peerConnectionManager } from '@/infrastructure/peer-device/PeerConnectionManager';
@@ -46,7 +47,8 @@ function useCatalogActions(surfaceId: string): CatalogActions {
     const next = beginDeviceOpen({ surfaceId, key, ...extra });
     void action().catch(error => {
       if (isSurfaceChangedError(error)) return;
-      notificationService.error(error instanceof Error && error.message ? error.message : t(failureKey), { duration: 4000 });
+      notificationService.error(peerReplyLostMessage(error, t)
+        ?? (error instanceof Error && error.message ? error.message : t(failureKey)), { duration: 4000 });
     }).finally(() => endDeviceOpen(next));
   }, [surfaceId, t]);
   return { pendingKey: intent?.surfaceId === surfaceId ? intent.key : null, run };
@@ -126,6 +128,8 @@ const CatalogProjectRow: React.FC<{ slot: SidebarDeviceSlot; workspace: Workspac
   const remote = workspace.workspaceKind === WorkspaceKind.Remote;
   const badge = remote ? remoteWorkspaceBadge(workspace) : undefined;
   const toggle = () => setWorkspaceSessionsCollapsed(slot.surfaceId, workspace.id, expanded);
+  const workspaceIds = useMemo(() => [workspace.id], [workspace.id]);
+  const workspaceNames = useMemo(() => new Map([[workspace.id, workspace.name]]), [workspace.id, workspace.name]);
   return (
     <div className={['openbitfun-nav-panel__workspace-item', single && 'is-single', !expanded && 'is-sessions-collapsed'].filter(Boolean).join(' ')}
       data-openbitfun-product-component="workspace-item" data-openbitfun-product-part="root" data-openbitfun-variant="workspace"
@@ -203,7 +207,7 @@ const CatalogProjectRow: React.FC<{ slot: SidebarDeviceSlot; workspace: Workspac
         <div className="openbitfun-nav-panel__workspace-item-sessions openbitfun-nav-panel__workspace-item-sessions--project"
           data-openbitfun-product-component="workspace-item" data-openbitfun-product-part="sessions">
           <div className="openbitfun-nav-panel__workspace-item-sessions-inner">
-            <BackgroundSessionList slot={slot} workspaceIds={[workspace.id]} actions={actions} />
+            <BackgroundSessionList slot={slot} workspaceIds={workspaceIds} actions={actions} workspaceNames={workspaceNames} />
           </div>
         </div>
       )}

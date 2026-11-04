@@ -80,6 +80,7 @@
       "sessionsLoadFailed": "Couldn't load sessions",
       "noSessions": "No sessions yet",
       "sessionUnavailable": "This session is no longer on that device.",
+      "sessionActionFailed": "Couldn't do that on the other device. Try again.",
       "connecting": "Connecting to {{name}}…"
     },
     "aria": {

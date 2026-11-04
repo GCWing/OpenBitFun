@@ -8,8 +8,8 @@
  * after a switch, and the hand-over to the live list moves nothing.
  */
 
-import React, { useCallback, useMemo, useSyncExternalStore } from 'react';
-import { Icon, OverflowText, StatusPill } from '@openbitfun/ui';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Icon, IconButton, Input, OverflowText, StatusPill, Tooltip } from '@openbitfun/ui';
 import { Loader2 } from 'lucide-react';
 import { useI18n, i18nService } from '@/infrastructure/i18n';
 import { surfaceScopedKey, type DeviceSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
@@ -47,6 +47,7 @@ import { useSessionTitleNumbers } from '@/flow_chat/hooks/useSessionTitleNumbers
 import { resolveSessionRelationship } from '@/flow_chat/utils/sessionMetadata';
 import { sessionBelongsToWorkspaceNavRow } from '@/flow_chat/utils/sessionOrdering';
 import type { SidebarDeviceSlot } from './useSidebarDevices';
+import { CatalogSessionMenu, catalogSessionActionKey, runCatalogSessionAction } from './CatalogSessionMenu';
 
 export interface BackgroundActions {
   pendingKey: string | null;
@@ -88,16 +89,45 @@ const BackgroundSessionRow: React.FC<{
   /** Owning workspace name, shown in the flat view like the live row. */
   workspaceName?: string;
   titleNumber?: string;
-}> = ({ slot, session, level, activity, actions, flat, workspaceName, titleNumber }) => {
+  /** Owning workspace name for menu copy (archived delete confirmation). */
+  ownerWorkspaceName: string;
+}> = ({ slot, session, level, activity, actions, flat, workspaceName, titleNumber, ownerWorkspaceName }) => {
+  const { t } = useI18n('common');
   const peer = usePeerDeviceModeOptional();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editingTitle, setEditingTitle] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
   const status = useCatalogSessionStatus(slot.surfaceId, session.sessionId, activity);
   const title = getTitle(session);
   const relationship = resolveSessionRelationship(session);
   const isChildSession = level === 1 && relationship.displayAsChild;
   const key = `session:${session.sessionId}`;
   const opening = actions.pendingKey === key;
+  // A menu action renders the device too; the row shows the same progress.
+  const acting = actions.pendingKey?.startsWith(catalogSessionActionKey(session.sessionId, '')) ?? false;
   const workspaceId = session.workspaceId ?? session.config.workspaceId ?? '';
-  const open = () => actions.run(key, () => openDeviceSession(peer, slot, workspaceId, {
+  useEffect(() => {
+    if (!editing) return;
+    editInputRef.current?.focus();
+    editInputRef.current?.select();
+  }, [editing]);
+  const startRename = () => {
+    setEditingTitle(title);
+    setEditing(true);
+  };
+  const cancelRename = () => {
+    setEditing(false);
+    setEditingTitle('');
+  };
+  const confirmRename = () => {
+    if (!editing) return;
+    const trimmed = editingTitle.trim();
+    cancelRename();
+    if (!trimmed || trimmed === title) return;
+    runCatalogSessionAction(actions, peer, slot, session.sessionId, { kind: 'rename', title: trimmed }, t);
+  };
+  const open = () => editing ? undefined : actions.run(key, () => openDeviceSession(peer, slot, workspaceId, {
     sessionId: session.sessionId,
   } as SessionMetadata, title), 'nav.sessions.openFailed', { sessionId: session.sessionId, title });
   return (
@@ -109,24 +139,69 @@ const BackgroundSessionRow: React.FC<{
         level === 1 && 'is-child',
         isChildSession && 'is-btw-child',
         flat && workspaceName && !isChildSession && 'has-workspace-name',
-        opening && 'is-active',
+        (opening || acting) && 'is-active',
+        editing && 'is-editing',
+        menuOpen && 'is-menu-open',
       ].filter(Boolean).join(' ')}
       data-openbitfun-component="sessions-section"
       data-openbitfun-part="row"
-      data-openbitfun-state={opening ? 'active' : undefined}
+      data-openbitfun-state={[
+        (opening || acting) && 'active',
+        editing && 'editing',
+        menuOpen && 'menuOpen',
+      ].filter(Boolean).join(' ') || undefined}
       data-overflow-trigger
       data-testid="nav-device-session-item"
       data-session-id={session.sessionId}
       data-session-level={String(level)}
       aria-label={title}
-      aria-busy={opening || undefined}
+      aria-busy={opening || acting || undefined}
       onClick={open}
       onKeyDown={event => {
+        // Keys typed in the row's own controls (menu button, rename field) stay theirs.
+        if (event.target !== event.currentTarget) return;
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         open();
       }}
     >
+      {editing ? (
+        <div className="openbitfun-nav-panel__inline-item-edit" data-openbitfun-component="sessions-section" data-openbitfun-part="edit"
+          onClick={event => event.stopPropagation()}>
+          <Input
+            ref={editInputRef}
+            className="openbitfun-nav-panel__inline-item-edit-field"
+            value={editingTitle}
+            onChange={event => setEditingTitle(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') { event.preventDefault(); confirmRename(); }
+              else if (event.key === 'Escape') { event.preventDefault(); cancelRename(); }
+            }}
+            onBlur={confirmRename}
+            size="sm"
+            data-testid="nav-device-session-rename-input"
+          />
+          <Tooltip content={t('nav.sessions.confirmEdit')} placement="top">
+            <IconButton
+              aria-label={t('nav.sessions.confirmEdit')}
+              variant="quiet"
+              size="sm"
+              className="openbitfun-nav-panel__inline-item-edit-btn confirm"
+              onClick={event => { event.stopPropagation(); confirmRename(); }}
+              icon={<Icon name="check-line" size="2xs" />}
+            />
+          </Tooltip>
+          <Tooltip content={t('nav.sessions.cancelEdit')} placement="top">
+            <IconButton
+              aria-label={t('nav.sessions.cancelEdit')}
+              size="sm"
+              className="openbitfun-nav-panel__inline-item-edit-btn cancel"
+              onMouseDown={event => { event.preventDefault(); event.stopPropagation(); cancelRename(); }}
+              icon={<Icon name="xmark" size="2xs" />}
+            />
+          </Tooltip>
+        </div>
+      ) : <>
       <span className="openbitfun-nav-panel__inline-item-main" data-openbitfun-component="sessions-section" data-openbitfun-part="rowMain">
         <span className="openbitfun-nav-panel__inline-item-copy">
           <span className="openbitfun-nav-panel__inline-item-primary">
@@ -151,10 +226,15 @@ const BackgroundSessionRow: React.FC<{
         </span>
       </span>
       <div className="openbitfun-nav-panel__inline-item-trailing">
-        {opening
+        {opening || acting
           ? <span className="session-status-indicator openbitfun-nav-panel__inline-item-status"><Icon glyph={Loader2} size="xs" className="openbitfun-nav-panel__device-spinner" aria-hidden="true" /></span>
           : <SessionStatusMark status={status} />}
+        <CatalogSessionMenu slot={slot} session={session} title={title}
+          workspaceName={ownerWorkspaceName}
+          running={status.kind === 'running' || sessionNavStatusService.isSurfaceRunning(slot.surfaceId, session.sessionId)}
+          actions={actions} open={menuOpen} onOpenChange={setMenuOpen} onRename={startRename} />
       </div>
+      </>}
     </div>
   );
 };
@@ -168,7 +248,7 @@ export const BackgroundSessionList: React.FC<{
   workspaceIds: readonly string[];
   actions: BackgroundActions;
   flat?: boolean;
-  /** Workspace id to name, for the flat view's workspace labels. */
+  /** Workspace id to name: the flat view's workspace labels and menu copy. */
   workspaceNames?: ReadonlyMap<string, string>;
 }> = ({ slot, workspaceIds, actions, flat = false, workspaceNames }) => {
   const { t } = useI18n('common');
@@ -236,12 +316,17 @@ export const BackgroundSessionList: React.FC<{
   return (
     <div className={`openbitfun-nav-panel__inline-list${flat ? ' is-flat-workspace-view' : ''}`} data-testid="nav-device-session-list"
       data-workspace-id={primaryWorkspaceId}>
-      {visibleItems.map(({ session, level }) => (
-        <BackgroundSessionRow key={session.sessionId} slot={slot} session={session} level={level}
-          activity={activities[session.sessionId]} actions={actions} flat={flat}
-          titleNumber={titleNumbers.get(session.sessionId)}
-          workspaceName={flat ? workspaceNames?.get(workspaceIds.find(id => sessionBelongsToWorkspaceNavRow(session, id)) ?? '') : undefined} />
-      ))}
+      {visibleItems.map(({ session, level }) => {
+        const ownerId = workspaceIds.find(id => sessionBelongsToWorkspaceNavRow(session, id)) ?? '';
+        const ownerName = workspaceNames?.get(ownerId);
+        return (
+          <BackgroundSessionRow key={session.sessionId} slot={slot} session={session} level={level}
+            activity={activities[session.sessionId]} actions={actions} flat={flat}
+            titleNumber={titleNumbers.get(session.sessionId)}
+            workspaceName={flat ? ownerName : undefined}
+            ownerWorkspaceName={ownerName || ownerId} />
+        );
+      })}
       {visibleItems.length === 0 && (loading ? (
         <div className="openbitfun-nav-panel__inline-loading" role="status" aria-live="polite">
           <Loader2 className="openbitfun-nav-panel__inline-loading-icon" aria-hidden="true" />

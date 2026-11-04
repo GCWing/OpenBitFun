@@ -16,7 +16,30 @@ const mocks = vi.hoisted(() => ({
   createChatDraft: vi.fn(async () => 'new-session'),
   openLatestAssistant: vi.fn(async () => undefined),
   workspaces: new Map<string, { id: string; workspaceKind: string; rootPath: string }>(),
+  archiveRow: vi.fn(async () => undefined),
+  duplicateRow: vi.fn(async () => undefined),
+  renameRow: vi.fn(async () => undefined),
+  worktreeRow: vi.fn(async () => undefined),
+  isRunning: vi.fn(() => false),
+  capabilities: null as null | { wholeSessionCopyV1?: boolean },
+  canReveal: vi.fn(() => false),
+  reveal: vi.fn(async () => undefined),
+  exportMarkdown: vi.fn(async () => ({ status: 'saved' })),
 }));
+vi.mock('../sessions/sessionRowActions', () => ({
+  archiveSessionRow: mocks.archiveRow,
+  duplicateSessionRow: mocks.duplicateRow,
+  renameSessionRow: mocks.renameRow,
+  openWorktreeWorkspaceRow: mocks.worktreeRow,
+}));
+vi.mock('@/flow_chat/services/sessionNavStatusService', () => ({ sessionNavStatusService: { isRunning: mocks.isRunning } }));
+vi.mock('@/infrastructure/peer-device/PeerConnectionManager', () => ({
+  peerConnectionManager: { get: () => (mocks.capabilities ? { getState: () => ({ capabilities: mocks.capabilities }) } : undefined) },
+}));
+vi.mock('@/infrastructure/api/service-api/SessionAPI', () => ({
+  sessionAPI: { canRevealStorageDirectory: mocks.canReveal, revealStorageDirectory: mocks.reveal },
+}));
+vi.mock('@/flow_chat/services/sessionMarkdownExport', () => ({ exportSessionToMarkdown: mocks.exportMarkdown }));
 
 vi.mock('@/flow_chat/store/FlowChatStore', () => ({
   flowChatStore: {
@@ -49,7 +72,7 @@ vi.mock('@/shared/types', () => ({ WorkspaceKind: { Assistant: 'assistant', Norm
 
 import { activateSurface, resetDeviceSurfaceForTest, surfaceIdForDevice } from '@/infrastructure/peer-device/deviceSurface';
 import type { PeerDeviceContextValue } from '@/infrastructure/peer-device/peerDeviceContextState';
-import { activateDeviceSlot, createDeviceSession, openDeviceAssistant, openDeviceSession } from './openOnDevice';
+import { activateDeviceSlot, createDeviceSession, openDeviceAssistant, openDeviceSession, runDeviceSessionAction } from './openOnDevice';
 import type { SidebarDeviceSlot } from './useSidebarDevices';
 
 const peerSlot: SidebarDeviceSlot = {
@@ -81,6 +104,7 @@ describe('openOnDevice', () => {
     mocks.workspaces.clear();
     mocks.sessions.clear();
     mocks.workspaces.set('ws-1', { id: 'ws-1', workspaceKind: 'normal', rootPath: '/p' });
+    mocks.capabilities = null;
   });
 
   it('does not switch when the device is already rendered', async () => {
@@ -151,5 +175,66 @@ describe('openOnDevice', () => {
   it('fails loudly when the workspace is gone on the device', async () => {
     const peer = peerContext();
     await expect(createDeviceSession(peer, peerSlot, 'missing')).rejects.toThrow('missing');
+  });
+
+  describe('session row actions', () => {
+    const t = (key: string) => key;
+    const seeded = { sessionId: 's-1', workspaceId: 'ws-1', config: {} };
+
+    it('renders the device first, then runs the live handler on it', async () => {
+      mocks.sessions.set('s-1', seeded);
+      const peer = peerContext();
+      for (const action of [
+        { kind: 'archive' as const },
+        { kind: 'rename' as const, title: 'Renamed' },
+        { kind: 'open-worktree' as const, worktreePath: '/wt' },
+      ]) await runDeviceSessionAction(peer, peerSlot, 's-1', action, t);
+      await runDeviceSessionAction(peer, peerSlot, 's-1', { kind: 'export', scope: 'full', title: 'Chat' }, t);
+      expect(peer.switchToDevice).toHaveBeenCalledWith('peer-a', 'Studio Mac');
+      const switchedAt = peer.switchToDevice.mock.invocationCallOrder[0];
+      expect(mocks.promote.mock.invocationCallOrder[0]).toBeGreaterThan(switchedAt);
+      expect(mocks.archiveRow).toHaveBeenCalledWith('s-1', t);
+      expect(mocks.archiveRow.mock.invocationCallOrder[0]).toBeGreaterThan(mocks.promote.mock.invocationCallOrder[0]);
+      expect(mocks.renameRow).toHaveBeenCalledWith('s-1', 'Renamed', t);
+      expect(mocks.worktreeRow).toHaveBeenCalledWith('/wt', t);
+      expect(mocks.exportMarkdown).toHaveBeenCalledWith({ sessionId: 's-1', title: 'Chat', workspaceId: 'ws-1' }, 'full');
+    });
+
+    it('runs nothing when a newer switch superseded the action', async () => {
+      mocks.sessions.set('s-1', seeded);
+      await runDeviceSessionAction(peerContext('superseded'), peerSlot, 's-1', { kind: 'archive' }, t);
+      expect(mocks.archiveRow).not.toHaveBeenCalled();
+    });
+
+    it('fails loudly when the rendered device no longer has the session', async () => {
+      await expect(runDeviceSessionAction(peerContext(), peerSlot, 'gone', { kind: 'archive' }, t))
+        .rejects.toThrow('common:nav.devices.sessionUnavailable');
+      expect(mocks.archiveRow).not.toHaveBeenCalled();
+    });
+
+    it('re-checks copy gates on the rendered device instead of faking success', async () => {
+      mocks.sessions.set('s-1', seeded);
+      mocks.capabilities = { wholeSessionCopyV1: false };
+      await expect(runDeviceSessionAction(peerContext(), peerSlot, 's-1', { kind: 'duplicate' }, t))
+        .rejects.toThrow('nav.sessions.duplicateHostUnsupported');
+      mocks.capabilities = { wholeSessionCopyV1: true };
+      mocks.isRunning.mockReturnValueOnce(true);
+      await expect(runDeviceSessionAction(peerContext(), peerSlot, 's-1', { kind: 'duplicate' }, t))
+        .rejects.toThrow('nav.sessions.duplicateRunning');
+      expect(mocks.duplicateRow).not.toHaveBeenCalled();
+      await runDeviceSessionAction(peerContext(), peerSlot, 's-1', { kind: 'duplicate' }, t);
+      expect(mocks.duplicateRow).toHaveBeenCalledWith('s-1', t);
+    });
+
+    it('opens a storage directory only where the rendered surface can', async () => {
+      mocks.sessions.set('s-1', seeded);
+      await expect(runDeviceSessionAction(peerContext(), peerSlot, 's-1', { kind: 'reveal-storage' }, t))
+        .rejects.toThrow('nav.sessions.storageDirectoryDesktopOnly');
+      expect(mocks.reveal).not.toHaveBeenCalled();
+      activateSurface(surfaceIdForDevice('peer-a'));
+      mocks.canReveal.mockReturnValueOnce(true);
+      await runDeviceSessionAction(peerContext(), localSlot, 's-1', { kind: 'reveal-storage' }, t);
+      expect(mocks.reveal).toHaveBeenCalledWith('ws-1', 's-1');
+    });
   });
 });

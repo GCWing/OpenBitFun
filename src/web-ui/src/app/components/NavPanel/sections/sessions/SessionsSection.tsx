@@ -23,7 +23,6 @@ import { useSceneStore } from '../../../../stores/sceneStore';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { sessionAPI, type SessionCatalogQuery, type SessionMetadataPage } from '@/infrastructure/api/service-api/SessionAPI';
 import { createLogger } from '@/shared/utils/logger';
-import { isSamePath } from '@/shared/utils/pathUtils';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
 import {
@@ -60,7 +59,7 @@ import { useSessionTitleNumbers } from '@/flow_chat/hooks/useSessionTitleNumbers
 import { SessionTitleNumber } from '@/flow_chat/components/SessionTitleNumber';
 import { getChildSessionBadge } from './sessionRowBadges';
 import { useSessionComposerStore } from '@/flow_chat/store/sessionComposerStore';
-import { getActiveSurfaceId, getActiveSurfaceScope, isSurfaceChangedError, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceId, getActiveSurfaceScope, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
 import { EXTERNAL_SESSION_NAMES, isExternalSessionEcosystem } from '@/shared/types/external-session';
 import { getWorkspaceSessionHierarchy } from './sessionNavHierarchy';
 import { useWorkspaceSessionCatalog } from './useWorkspaceSessionCatalog';
@@ -92,7 +91,6 @@ import { exportSessionToMarkdown } from '@/flow_chat/services/sessionMarkdownExp
 import type { TranscriptExportScope } from '@/flow_chat/utils/dialogTranscriptExport';
 import { AssistantAvatar } from '@/app/components/AssistantAvatar';
 import { notificationService } from '@/shared/notification-system';
-import { isOutcomeUnknownError } from '@/infrastructure/api/errors/TauriCommandError';
 import { scheduleAfterStartupPaint, scheduleAfterStartupSignal } from '@/shared/utils/startupTaskScheduling';
 import {
   isNonLocalDispatchTarget,
@@ -124,6 +122,7 @@ import {
 import { useSessionRowRemovalTransition } from './sessionRowShift';
 import { SessionStatusIndicator } from './SessionStatusIndicator';
 import { createSessionsNavSelector } from './sessionsNavSelector';
+import { archiveSessionRow, duplicateSessionRow, openWorktreeWorkspaceRow, renameSessionRow } from './sessionRowActions';
 import './SessionsSection.scss';
 
 /** A limited flat list reads each workspace's newest rows in steps of this many. */
@@ -259,7 +258,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   const isAggregateList = layout === 'flat' && Boolean(workspaceScopes?.length);
   const showAllWithoutLimit = isAggregateList && !limitFlatRows;
   const sessionListClassName = `openbitfun-nav-panel__inline-list${layout === 'flat' ? ' is-flat-workspace-view' : ''}`;
-  const { setActiveWorkspace, openWorkspace, openedWorkspacesList, currentWorkspace } = useWorkspaceContext();
+  const { setActiveWorkspace, openedWorkspacesList, currentWorkspace } = useWorkspaceContext();
   const activeTabId = useSceneStore(s => s.activeTabId);
   const activeBtwSessionTab = useAgentCanvasStore(state => selectActiveBtwSessionTab(state as any));
   const activeBtwSessionData = activeBtwSessionTab?.content.data as
@@ -1179,13 +1178,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   const handleArchive = useCallback(
     async (e: React.MouseEvent, sessionId: string) => {
       e.stopPropagation();
-      try {
-        await flowChatManager.archiveChatSession(sessionId);
-        window.dispatchEvent(new CustomEvent('openbitfun:session-archived'));
-        notificationService.success(t('nav.sessions.archivedAll', { count: 1 }), { duration: 3000 });
-      } catch (err) {
-        log.error('Failed to archive session', err);
-      }
+      await archiveSessionRow(sessionId, t);
     },
     [t]
   );
@@ -1203,27 +1196,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
 
       setDuplicatingSessionId(sessionId);
       try {
-        const copied = await flowChatManager.duplicateChatSession(sessionId);
-        if (copied.metadataProjected) {
-          notificationService.success(
-            t('nav.sessions.duplicateSuccess', { name: copied.sessionName }),
-            { duration: 3000 },
-          );
-        } else {
-          notificationService.warning(
-            t('nav.sessions.duplicateCreatedRefreshFailed', { name: copied.sessionName }),
-            { duration: 5000 },
-          );
-        }
-      } catch (error) {
-        if (isSurfaceChangedError(error)) return;
-        log.error('Failed to copy session', { sessionId, error });
-        notificationService.error(
-          error instanceof Error && error.message
-            ? error.message
-            : t('nav.sessions.duplicateFailed'),
-          { duration: 4000 },
-        );
+        await duplicateSessionRow(sessionId, t);
       } finally {
         setDuplicatingSessionId(null);
       }
@@ -1231,34 +1204,14 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     [closeSessionMenu, duplicatingSessionId, t],
   );
 
-  /**
-   * A worktree directory is registered for execution but not opened, so the
-   * session row is the only place it can be reached from. Opening it as a
-   * workspace is an explicit user action; if the worktree happens to be open
-   * already, activating it is the whole effect.
-   */
+  /** Open (or activate) the worktree directory a session runs in as a workspace. */
   const handleOpenWorktreeWorkspace = useCallback(
     async (e: React.MouseEvent, worktreePath: string) => {
       e.stopPropagation();
       closeSessionMenu();
-      const opened = openedWorkspacesList.find(workspace =>
-        isSamePath(workspace.rootPath ?? '', worktreePath)
-      );
-      try {
-        if (opened) {
-          await setActiveWorkspace(opened.id);
-          return;
-        }
-        await openWorkspace(worktreePath);
-      } catch (err) {
-        log.error('Failed to open the worktree directory as a workspace', {
-          worktreePath,
-          error: err,
-        });
-        notificationService.error(t('nav.sessions.openWorktreeWorkspaceFailed'), { duration: 3000 });
-      }
+      await openWorktreeWorkspaceRow(worktreePath, t);
     },
-    [closeSessionMenu, openWorkspace, openedWorkspacesList, setActiveWorkspace, t]
+    [closeSessionMenu, t]
   );
 
   const handleStartEdit = useCallback(
@@ -1274,22 +1227,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     if (!editingSessionId) return;
     const trimmed = editingTitle.trim();
     if (trimmed) {
-      try {
-        await flowChatManager.renameChatSessionTitle(editingSessionId, trimmed);
-      } catch (err) {
-        log.error('Failed to update session title', { sessionId: editingSessionId, error: err });
-        if (isOutcomeUnknownError(err)) {
-          notificationService.warning(t('nav.sessions.renameOutcomeUnknown'), { duration: 6000 });
-          try {
-            await flowChatManager.reloadSessionTitle(editingSessionId);
-          } catch (refreshError) {
-            log.error('Failed to reload the session title after an unknown rename outcome', {
-              sessionId: editingSessionId,
-              error: refreshError,
-            });
-          }
-        }
-      }
+      await renameSessionRow(editingSessionId, trimmed, t);
     }
     setEditingSessionId(null);
     setEditingTitle('');

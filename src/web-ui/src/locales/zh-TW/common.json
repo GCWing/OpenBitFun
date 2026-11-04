@@ -80,6 +80,7 @@
       "sessionsLoadFailed": "無法讀取會話",
       "noSessions": "尚無會話",
       "sessionUnavailable": "該裝置上已找不到這個會話。",
+      "sessionActionFailed": "無法在另一台裝置上完成此操作，請重試。",
       "connecting": "正在連線 {{name}}…"
     },
     "aria": {

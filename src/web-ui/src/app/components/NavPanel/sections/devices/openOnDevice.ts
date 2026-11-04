@@ -30,6 +30,22 @@ import {
 } from '../workspaces/pendingWorkspaceAction';
 import { sessionSceneWorkspaceKey } from '@/app/services/sessionSceneTarget';
 import type { SidebarDeviceSlot } from './useSidebarDevices';
+import type { Session } from '@/flow_chat/types/flow-chat';
+import { isNonLocalDispatchTarget } from '@/features/dispatch/types';
+import { sessionAPI } from '@/infrastructure/api/service-api/SessionAPI';
+import { peerConnectionManager } from '@/infrastructure/peer-device/PeerConnectionManager';
+import { canCopySessionsOnSurface } from '@/infrastructure/peer-device/peerCapabilityResolution';
+import { sessionNavStatusService } from '@/flow_chat/services/sessionNavStatusService';
+import { requireSessionOwningWorkspaceId } from '@/flow_chat/utils/sessionOrdering';
+import { exportSessionToMarkdown } from '@/flow_chat/services/sessionMarkdownExport';
+import type { TranscriptExportScope } from '@/flow_chat/utils/dialogTranscriptExport';
+import {
+  archiveSessionRow,
+  duplicateSessionRow,
+  openWorktreeWorkspaceRow,
+  renameSessionRow,
+  type SessionRowTranslate,
+} from '../sessions/sessionRowActions';
 
 const log = createLogger('OpenOnDevice');
 
@@ -177,4 +193,83 @@ export async function createDeviceSession(
     ?? await flowChatManager.createChatDraft(flowChatSessionConfigForWorkspace(workspace), mode);
   scope.assertCurrent('open new device session');
   await openMainSession(sessionId, { workspaceId, activateWorkspace, isCurrent: scope.isCurrent });
+}
+
+/** A session row menu action started on a device the window is not rendering. */
+export type DeviceSessionAction =
+  | { kind: 'rename'; title: string }
+  | { kind: 'duplicate' }
+  | { kind: 'export'; scope: TranscriptExportScope; title: string }
+  | { kind: 'open-worktree'; worktreePath: string }
+  | { kind: 'reveal-storage' }
+  | { kind: 'archive' };
+
+/**
+ * Render `slot`'s device and return the session as the rendered surface knows
+ * it, or null when a newer switch won. A session the host no longer lists
+ * fails loudly instead of acting on a stale catalog row.
+ */
+export async function activateDeviceForSession(
+  peer: PeerDeviceContextValue | null,
+  slot: SidebarDeviceSlot,
+  sessionId: string,
+): Promise<Session | null> {
+  if (await activateDeviceSlot(peer, slot) !== 'activated') return null;
+  const session = flowChatStore.getState().sessions.get(sessionId);
+  if (!session) throw new Error(i18nService.t('common:nav.devices.sessionUnavailable'));
+  return session;
+}
+
+/** Whole-session copy is negotiated per host; this machine always has it. */
+function deviceCanCopySessions(slot: SidebarDeviceSlot): boolean {
+  if (slot.isLocal) return true;
+  const capabilities = slot.deviceId ? peerConnectionManager.get(slot.deviceId)?.getState().capabilities ?? null : null;
+  return canCopySessionsOnSurface(true, capabilities);
+}
+
+/**
+ * Render the session's device, then run the live row's handler for `action`
+ * on the now-rendered surface. Gates the live menu evaluates from rendered
+ * state (host capability, running turn, dispatch ownership) are re-checked
+ * here and fail loudly; nothing runs against another device.
+ */
+export async function runDeviceSessionAction(
+  peer: PeerDeviceContextValue | null,
+  slot: SidebarDeviceSlot,
+  sessionId: string,
+  action: DeviceSessionAction,
+  t: SessionRowTranslate,
+): Promise<void> {
+  const session = await activateDeviceForSession(peer, slot, sessionId);
+  if (!session) return;
+  const dispatched = isNonLocalDispatchTarget(session.config.dispatchTarget);
+  switch (action.kind) {
+    case 'rename':
+      await renameSessionRow(sessionId, action.title, t);
+      return;
+    case 'duplicate':
+      if (dispatched) throw new Error(t('nav.sessions.duplicateDispatchUnsupported'));
+      if (!deviceCanCopySessions(slot)) throw new Error(t('nav.sessions.duplicateHostUnsupported'));
+      if (sessionNavStatusService.isRunning(sessionId)) throw new Error(t('nav.sessions.duplicateRunning'));
+      await duplicateSessionRow(sessionId, t);
+      return;
+    case 'export':
+      await exportSessionToMarkdown(
+        { sessionId, title: action.title, workspaceId: requireSessionOwningWorkspaceId(session) },
+        action.scope,
+      );
+      return;
+    case 'open-worktree':
+      await openWorktreeWorkspaceRow(action.worktreePath, t);
+      return;
+    case 'reveal-storage':
+      if (!sessionAPI.canRevealStorageDirectory() || dispatched) {
+        throw new Error(t('nav.sessions.storageDirectoryDesktopOnly'));
+      }
+      await sessionAPI.revealStorageDirectory(requireSessionOwningWorkspaceId(session), sessionId);
+      return;
+    case 'archive':
+      await archiveSessionRow(sessionId, t);
+      return;
+  }
 }
