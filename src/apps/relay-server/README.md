@@ -1,29 +1,41 @@
 # OpenBitFun Relay Server
 
-The official Relay connects devices signed in to the same GitHub identity.
-GitHub identity is shared with the marketplaces. Users sign in
-from OpenBitFun; they do not create a Relay account or deploy a server.
+The official Relay connects devices signed in to the same OpenBitFun account.
+The identity service is shared with the marketplaces. Current clients offer
+GitHub or email verification-code sign-in when enabled by the identity service;
+these are independent accounts, so use the same method and account on each device.
+Users sign in from OpenBitFun; they do not provision a separate Relay account or
+deploy a server. Older clients can remain on the GitHub-only authorization flow.
+
+For connection choices, internet requirements, privacy, service limits, and
+self-hosting, see the user FAQ: [English](FAQ.md) / [中文](FAQ.zh-CN.md).
 
 The official endpoint is `https://remote.openbitfun.com/v/1.0.2`. This release is deployed with
 its own process, database, assets, and reverse-proxy location. An existing
 `/relay` deployment remains on its existing binary and data directory.
 
-The Relay forwards opaque encrypted messages. Each device generates an X25519
-private key locally and registers its public key after GitHub identity
-verification. Peers obtain public keys through the authenticated same-account
+For device-to-device control, the Relay forwards opaque encrypted payloads.
+Each device generates an X25519 private key locally and registers its public key
+after account identity verification. Peers obtain public keys through the authenticated same-account
 directory and derive an AES-GCM key with X25519 and HKDF-SHA256. The Relay does
 not receive device private keys or upload copies of settings and sessions.
-Sessions and files are read from the owning online device on demand.
+Sessions and files are read from the owning online device on demand. Account,
+device, public-key, and routing metadata remain visible to the service. Published
+Pages and their server-side storage/functions are separate from this encrypted
+device-control path; see the [privacy boundary](FAQ.md#what-can-the-services-see).
 
 Selecting **Same network** starts the same Relay implementation inside the
 Desktop host at `http://<LAN-IP>:9700`. Its SQLite database is local to that
 host (`<product-home>/relay-v1.0.0/local-server/relay.db`), separate from the
-official server database. Login, device registration, device discovery,
-public-key lookup, RPC and presence all use the selected Relay endpoint.
-The two modes differ only in endpoint and host startup; no device traffic is
-forwarded from the local Relay to the official Relay.
+official server database. The official and embedded LAN connections can run
+concurrently. Each connection uses its own Relay for device registration,
+discovery, public-key lookup, RPC, and presence; the local Relay does not forward
+its device traffic to the official Relay. **My devices**, Peer Device Mode,
+account synchronization, and account-device Detached Dispatch continue to use
+the official account endpoint. Starting or stopping LAN mode does not switch
+that endpoint. See the [Desktop connection lifecycle](../desktop/README.md#remote-connect).
 
-Both modes verify GitHub identity through `auth.openbitfun.com`, so signing in
+Both modes verify account identity through `auth.openbitfun.com`, so signing in
 requires internet access. An invitation contains only the selected endpoint
 and device id (`/#/pair?did=<device-id>`); scanning it grants no authority.
 The controller must sign in and resolve that id in its same-account directory.
@@ -38,16 +50,17 @@ Relay URL. A private Relay therefore needs a matching client build.
 
 1. Fork this workspace and read `CONTRIBUTING.md`. Build the Relay and mobile
    controller from the same revision. Keep your fork's changes in source control.
-2. Select your HTTPS endpoint in `product-domains/src/account.rs`, then align
+2. Select your HTTPS endpoint in `src/crates/contracts/product-domains/src/account.rs`, then align
    the frontend constants in `src/web-ui/src/infrastructure/remote-connect/remoteConnectionState.ts`
    and `src/mobile-web/src/services/pairingLink.ts`. Native clients have
    matching constants in KMP `core-transport/AccountDeviceLink.kt` and HarmonyOS
    `services/AccountDeviceLink.ets`; update the HarmonyOS account-link parser too.
    Search for `https://remote.openbitfun.com/v/1.0.2` to verify every runtime
    reference and corresponding test before building your distribution.
-3. Decide who owns identity. You can retain the official GitHub identity
+3. Decide who owns identity. You can retain the official OpenBitFun identity
    authority, or run the [shared identity service](../../../deploy/miniapp-market/README.md)
-   with your own GitHub OAuth application. For an independent authority, change
+   with your own GitHub OAuth application and/or email delivery configuration.
+   For an independent authority, change
    `IDENTITY_ME_URL` in `relay-service/src/identity.rs` and
    `DEFAULT_ACCOUNT_API_URL` in `services-integrations/src/account_identity/mod.rs`
    together, and adapt the market sign-in links and callback/completion host.
@@ -56,7 +69,7 @@ Relay URL. A private Relay therefore needs a matching client build.
    readable. Relay never accepts an identity authority from a client request.
 4. Use separate persistent data and asset directories, configure exact browser
    CORS origins, then put the service behind your own TLS reverse proxy. Build
-   and exercise two devices using the same GitHub identity before distributing
+   and exercise two devices using the same login method and account before distributing
    your fork. The public web controller must come from that matching build.
 
 The scripts remain in this directory: `deploy.sh` deploys on the machine where
@@ -65,7 +78,7 @@ it runs, `common.sh` contains Docker/health helpers, and `mirror.sh` and
 `bash deploy.sh --help` first. For fork code use
 `bash deploy.sh --build-from-source --global-mirror`; the default image path
 pulls a published upstream release, so it will not include your modifications.
-An empty account database is normal: successful GitHub verification creates an
+An empty account database is normal: successful account verification creates an
 identity. Do not run retired `add-user` or password-reset commands.
 
 The legacy script uses its own Compose project and defaults. For a fresh
@@ -82,7 +95,7 @@ shared HTTP/WebSocket implementation lives in `src/crates/services/relay-service
 
 Set `RELAY_DB_PATH` to a persistent SQLite database before starting the service.
 Startup fails if it is missing; anonymous public relay mode is unsupported.
-The service validates OpenBitFun access tokens against the fixed GitHub identity
+The service validates OpenBitFun access tokens against the fixed OpenBitFun identity
 authority at `https://auth.openbitfun.com/api/v1/me`.
 
 ```bash
@@ -96,7 +109,7 @@ Use the isolated [v1 Compose project](../../../deploy/relay-v1/README.md).
 Set `RELAY_LISTEN_ADDR=127.0.0.1:19702` with host networking so the service can
 verify the immediate loopback proxy peer. Invalid listener values fail startup.
 Expose only the TLS reverse proxy. Keep the database and asset paths distinct from older deployments.
-`relay-admin` supports listing and explicitly deleting accounts; GitHub login
+`relay-admin` supports listing and explicitly deleting accounts; verified sign-in
 creates identities. Password provisioning, password reset, and user-entered
 Relay server URLs are retired.
 
@@ -112,7 +125,7 @@ They are implemented in the shared Relay service, not in the agent loop.
 | Concurrent HTTP API requests | 2,048; overload returns 503 |
 | Body read / API handler | 15 seconds / 130 seconds |
 | HTTP request rate | 6,000/minute per source IP, and per account on the device API; overload returns 429 |
-| GitHub authorization start / poll | 10 / 120 per minute per IP |
+| Account authorization start / poll | 10 / 120 per minute per IP |
 | Identity verification | 10 attempts/minute per IP; 3-second connect and 5-second response timeout; 64 concurrent outbound requests |
 | WebSocket connections | 4,096 active sockets per Relay process; a further handshake is rejected with `connection capacity exceeded` |
 | WebSocket connect / heartbeat | Namespace connect must finish within 15 seconds; ping every 15 seconds with a 45-second pong timeout; 30-second acknowledgement lifetime |
@@ -217,7 +230,7 @@ location and process.
 | Endpoint | Purpose |
 |---|---|
 | `GET /health`, `GET /api/info` | Health and service version |
-| `POST /api/auth/github/start`, `/api/auth/github/poll` | Browser GitHub authorization |
+| `POST /api/auth/github/start`, `/api/auth/github/poll` | Shared browser authorization with `methods=all` on start; legacy requests keep GitHub-only authorization |
 | `POST /api/auth/login` | Exchange verified identity for a keyed device credential |
 | `POST /api/auth/logout` | Revoke a credential |
 | `POST /api/auth/delegate` | Issue a separately keyed, restricted controller credential |

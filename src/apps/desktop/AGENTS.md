@@ -26,7 +26,7 @@ Peer Device Mode ownership and boundaries:
 Frontend regression guards:
 `src/web-ui/src/infrastructure/peer-device/README.md`.
 
-GitHub identity is shared through `account_identity_api.rs`. Relay device
+OpenBitFun account identity (GitHub or email-code sign-in) is shared through `account_identity_api.rs`. Relay device
 registration and lifecycle live in `src/api/remote_connect_api.rs`; settings
 remain on their owning device and there is no cloud/local sync choice.
 

@@ -3,6 +3,12 @@
 This directory is a community self-deployment template. Example domains and
 paths must be replaced with your own environment.
 
+Normal Remote Connect use goes through the official Relay and does not require
+this deployment. A private endpoint requires matching client builds; setting
+these server variables alone does not redirect released clients. Follow the
+[fork setup](../../src/apps/relay-server/README.md#for-community-developers-and-forks)
+and read the [connection FAQ](../../src/apps/relay-server/FAQ.md) first.
+
 The owner guide is [Relay Server](../../src/apps/relay-server/README.md).
 Use this independent Compose project for `/v/1.0.2/`. Keep the `/v/1.0.1/` Compose project
 (`openbitfun-relay-v1.0.1`, port `19701`, `/srv/openbitfun-relay-v1.0.1`) running with its own
