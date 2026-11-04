@@ -254,7 +254,10 @@ it is set, every device keeps its background rows (the rendered device hands
 over to its live list once, after the open, so the live list's reads never
 compete with the open), catalog refreshes are held and run once afterwards, the
 session's tab is held in front (`sceneStore.holdSessionScene`) from the click through both switch resets and session-tab reconciliation,
-and the main area shows the session's open overlay from the click on.
+and the main area shows the session's open overlay from the click on. Low-priority peer
+requests (git, search, file tree, watchers, mini apps) queued during the open
+wait in the adapter and run once it settles; session-status reconciliation
+waits likewise, and `set_active_workspace` is high priority.
 
 The one write the catalog sends without rendering a device is "mark all
 read": `save_session_metadata` limited to `unreadCompletion` and

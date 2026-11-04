@@ -2,6 +2,7 @@ import { DEFAULT_RPC_TIMEOUT_MS } from '../../../../../shared/relay-transport/Rp
 import { translateAgentIdentityCommand, translateAgentIdentityFields, translateAgentIdentityResponse } from '../../../../../shared/agent-harness/wire';
 import { ITransportAdapter, type TransportRequestTiming } from './base';
 import { TauriTransportAdapter } from './tauri-adapter';
+import { getDeviceOpenIntent, useDeviceOpenIntent } from '@/infrastructure/peer-device/deviceOpenIntent';
 import {
   SurfaceChangedError,
   getActiveSurfaceScope,
@@ -60,6 +61,8 @@ const HIGH_PRIORITY_COMMANDS = new Set([
   'get_current_workspace',
   'worktree_list_projects',
   'open_workspace',
+  // A session open activates its workspace; it must not wait behind data reads.
+  'set_active_workspace',
   'get_workspace_info',
   'reload_config',
   'get_config',
@@ -209,6 +212,8 @@ export function isPeerRetryableIdempotentMutation(
 }
 
 export type PeerInvokePriority = 'high' | 'normal' | 'low';
+
+const isDeviceOpenRunning = () => getDeviceOpenIntent() !== null;
 
 const LOW_PRIORITY_EXACT = new Set([
   'get_file_metadata',
@@ -832,7 +837,29 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
   private dequeueNext(): QueuedPeerRequest | undefined {
     // Order the current dispatch burst without a second in-flight limit.
     // Slow data requests cannot hold control calls behind adapter-owned slots.
-    return this.queues.high.shift() ?? this.queues.normal.shift() ?? this.queues.low.shift();
+    const next = this.queues.high.shift() ?? this.queues.normal.shift();
+    if (next) return next;
+    // While a cross-device open runs, background work (git, search, file
+    // tree, watchers, mini apps) waits for it instead of sharing the link with
+    // the session being opened. It is released when the open settles.
+    if (this.queues.low.length > 0 && isDeviceOpenRunning()) {
+      this.resumeLowAfterOpen();
+      return undefined;
+    }
+    return this.queues.low.shift();
+  }
+
+  private lowResumeArmed = false;
+
+  private resumeLowAfterOpen(): void {
+    if (this.lowResumeArmed) return;
+    this.lowResumeArmed = true;
+    const unsubscribe = useDeviceOpenIntent.subscribe(state => {
+      if (state.intent) return;
+      unsubscribe();
+      this.lowResumeArmed = false;
+      this.pump();
+    });
   }
 
   private async invokePeerCommand<T extends PeerDeviceCommandResponse>(
