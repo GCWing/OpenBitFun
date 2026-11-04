@@ -69,7 +69,10 @@ import ArchivedSessionMenuItems from './ArchivedSessionMenuItems';
 import { captureWorkspaceSessionCatalogQuery, countPersistedWorkspaceCatalogSessions, resolveWorkspaceSessionCatalogSource, workspaceSessionCatalogQuery, workspaceSessionCatalogSources, workspaceSessionCatalogTotal } from './workspaceSessionCatalogQuery';
 import { useWorkspaceSessionDiscovery } from './useWorkspaceSessionDiscovery';
 import { useSessionNavExpansion } from './useSessionNavExpansion';
-import { knownWorkspaceSessionTotal, presentedSessionTotal, rememberWorkspaceSessionTotal } from '@/flow_chat/services/workspaceSessionTotals';
+import {
+  DEFAULT_SESSION_VIEW_KEY, knownWorkspaceSessionTotal, presentedSessionTotal, rememberWorkspaceSessionTotal,
+} from '@/flow_chat/services/workspaceSessionTotals';
+
 import { isSessionNavRowActive } from './sessionNavSelection';
 import { isSessionRowPointerTarget } from './sessionOpenPointer';
 import {
@@ -123,6 +126,8 @@ import { SessionStatusIndicator } from './SessionStatusIndicator';
 import { createSessionsNavSelector } from './sessionsNavSelector';
 import './SessionsSection.scss';
 
+/** A limited flat list reads each workspace's newest rows in steps of this many. */
+const AGGREGATE_READ_BUCKET = 20;
 const log = createLogger('SessionsSection');
 const reportedDiscoveryNotificationKeys = new Set<string>();
 const ScheduledJobsModal = lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
@@ -284,10 +289,12 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   const [aggregateReloadRequestId, setAggregateReloadRequestId] = useState(0);
   /** Host-reported top-level total of a limited flat list. */
   const [aggregateTotal, setAggregateTotal] = useState(0);
-  // Rows a limited flat list keeps loaded: shown rows plus one step. It only
-  // grows, so collapsing never re-reads.
+  // Rows a limited flat list keeps loaded: shown rows plus one step, rounded
+  // up so a few "show more" clicks share one read. It only grows, so
+  // collapsing never re-reads.
   const aggregateTargetRef = useRef(0);
-  aggregateTargetRef.current = Math.max(aggregateTargetRef.current, displayCount + SESSIONS_PREFETCH_COUNT);
+  aggregateTargetRef.current = Math.max(aggregateTargetRef.current,
+    Math.ceil((displayCount + SESSIONS_PREFETCH_COUNT) / AGGREGATE_READ_BUCKET) * AGGREGATE_READ_BUCKET);
   const aggregateTarget = aggregateTargetRef.current;
   const [catalogRefreshVersion, setCatalogRefreshVersion] = useState(0);
   const onDiscoveryCompleted = useCallback(() => {
@@ -835,15 +842,17 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
 
   // Only an acknowledged workspace query provides a scoped total. Include
   // newly-created local rows while their metadata publication is in flight.
+  // Host totals count every top-level session, so they only bound the default
+  // view; a filtered or source-scoped list counts its own rows.
+  const totalViewKey = workspaceSessionViewKey(sourceAgent, sessionShow, sessionFilters);
   const liveTopLevelTotal = Math.max(
     workspaceSessionCatalogTotal(topLevelSessions.length, catalog),
-    limitFlatRows && isAggregateList ? aggregateTotal : 0,
+    limitFlatRows && isAggregateList && totalViewKey === DEFAULT_SESSION_VIEW_KEY ? aggregateTotal : 0,
   );
   // While the catalog reader restarts (device switch, refresh, new epoch) only
   // loaded rows are countable; keep the last settled total so the "show more"
   // row and its count never vanish and come back.
   const catalogSettled = catalog.complete && !catalog.loading;
-  const totalViewKey = workspaceSessionViewKey(sourceAgent, sessionShow, sessionFilters);
   const rememberedTotal = workspaceId && !workspaceScopes?.length
     ? knownWorkspaceSessionTotal(surface.surfaceId, workspaceId, totalViewKey) : undefined;
   const totalTopLevelSessionCount = presentedSessionTotal(catalogSettled, liveTopLevelTotal, rememberedTotal);

@@ -23,8 +23,8 @@ import { openLatestAssistantSession } from '../workspaces/openLatestAssistantSes
 import { useSceneStore } from '@/app/stores/sceneStore';
 import { projectResourceSceneId } from '@/app/scenes/project-resources/projectResourceTarget';
 import {
+  clearWorkspaceAction,
   requestWorkspaceAction,
-  usePendingWorkspaceAction,
   type PendingWorkspaceActionKind,
 } from '../workspaces/pendingWorkspaceAction';
 import { sessionSceneWorkspaceKey } from '@/app/services/sessionSceneTarget';
@@ -97,21 +97,25 @@ export async function openDeviceSession(
     });
     dispatchHistorySessionOpenIntent(sessionId, title, CROSS_DEVICE_OPEN_OVERLAY_MS);
   }
-  if (await activateDeviceSlot(peer, slot) !== 'activated') {
-    clearHistorySessionOpenTransition(sessionId);
-    return;
+  let settled = false;
+  try {
+    if (await activateDeviceSlot(peer, slot) !== 'activated') return;
+    const scope = getActiveSurfaceScope();
+    if (!flowChatStore.getState().sessions.has(sessionId) && session.createdAt !== undefined) {
+      // Not seeded yet (opened before the catalog read finished): the row's own
+      // record is the host's, so no second read is needed.
+      await flowChatStore.adoptHostSessionMetadata(workspaceId, [session as SessionMetadata]);
+      scope.assertCurrent('adopt device catalog session');
+    }
+    if (!flowChatStore.getState().sessions.has(sessionId)) {
+      throw new Error(i18nService.t('common:nav.devices.sessionUnavailable'));
+    }
+    settled = true;
+  } finally {
+    // A failed or superseded switch must not leave the overlay up.
+    if (!settled) clearHistorySessionOpenTransition(sessionId);
   }
   const scope = getActiveSurfaceScope();
-  if (!flowChatStore.getState().sessions.has(sessionId) && session.createdAt !== undefined) {
-    // Not seeded yet (opened before the catalog read finished): the row's own
-    // record is the host's, so no second read is needed.
-    await flowChatStore.adoptHostSessionMetadata(workspaceId, [session as SessionMetadata]);
-    scope.assertCurrent('adopt device catalog session');
-  }
-  if (!flowChatStore.getState().sessions.has(sessionId)) {
-    clearHistorySessionOpenTransition(sessionId);
-    throw new Error(i18nService.t('common:nav.devices.sessionUnavailable'));
-  }
   dispatchHistorySessionOpenIntent(sessionId, title, CROSS_DEVICE_OPEN_OVERLAY_MS);
   flowChatStore.clearSessionUnreadCompletion(sessionId);
   await openMainSession(sessionId, { workspaceId, activateWorkspace, isCurrent: scope.isCurrent });
@@ -135,8 +139,14 @@ export async function openDeviceWorkspaceAction(
   workspaceId: string,
   kind: PendingWorkspaceActionKind,
 ): Promise<void> {
-  requestWorkspaceAction({ surfaceId: slot.surfaceId, workspaceId, kind });
-  if (await activateDeviceSlot(peer, slot) !== 'activated') usePendingWorkspaceAction.setState({ action: null });
+  const action = { surfaceId: slot.surfaceId, workspaceId, kind };
+  requestWorkspaceAction(action);
+  let activated = false;
+  try {
+    activated = await activateDeviceSlot(peer, slot) === 'activated';
+  } finally {
+    if (!activated) clearWorkspaceAction(action);
+  }
 }
 
 export async function openDeviceProjectResources(

@@ -1471,9 +1471,16 @@ impl WorkspaceManager {
     }
 
     fn find_next_workspace_id_after_close(&self, preferred_kind: &WorkspaceKind) -> Option<String> {
-        let same_kind = self
-            .opened_workspace_ids
+        // The opened list keeps the user's arrangement, so recency comes from
+        // the recent lists: the most recently used opened workspace wins.
+        let by_recency = self
+            .recent_workspaces
             .iter()
+            .chain(self.recent_assistant_workspaces.iter())
+            .filter(|id| self.opened_workspace_ids.contains(id))
+            .chain(self.opened_workspace_ids.iter());
+        let same_kind = by_recency
+            .clone()
             .find(|id| {
                 self.workspaces
                     .get(id.as_str())
@@ -1493,7 +1500,7 @@ impl WorkspaceManager {
             return None;
         }
 
-        self.opened_workspace_ids.first().cloned()
+        by_recency.next().cloned()
     }
 
     /// Ensures a workspace is in the opened list. A newly opened workspace goes
@@ -1709,6 +1716,39 @@ mod tests {
         assert_eq!(manager.opened_workspace_ids, vec!["a", "b", "c"]);
         manager.ensure_workspace_open("d");
         assert_eq!(manager.opened_workspace_ids, vec!["d", "a", "b", "c"]);
+    }
+
+    #[tokio::test]
+    async fn closing_the_current_workspace_activates_the_most_recently_used_one() {
+        use super::{WorkspaceInfo, WorkspaceInfoRuntimeExt, WorkspaceKind, WorkspaceOpenOptions};
+
+        let mut manager = super::WorkspaceManager::new(super::WorkspaceManagerConfig::default());
+        let options = WorkspaceOpenOptions {
+            workspace_kind: WorkspaceKind::Remote,
+            remote_connection_id: Some("ssh-recent".into()),
+            remote_ssh_host: Some("remote.example".into()),
+            auto_set_current: false,
+            ..Default::default()
+        };
+        let mut ids = Vec::new();
+        for root in ["/srv/a", "/srv/b", "/srv/c"] {
+            let workspace = WorkspaceInfo::new_without_worktree(root.into(), options.clone())
+                .await
+                .unwrap();
+            ids.push(workspace.id.clone());
+            manager.workspaces.insert(workspace.id.clone(), workspace);
+        }
+        manager.opened_workspace_ids = ids.clone();
+        manager.recent_workspaces = vec![ids[2].clone(), "closed".into(), ids[0].clone()];
+        assert_eq!(
+            manager.find_next_workspace_id_after_close(&WorkspaceKind::Remote),
+            Some(ids[2].clone())
+        );
+        manager.recent_workspaces.clear();
+        assert_eq!(
+            manager.find_next_workspace_id_after_close(&WorkspaceKind::Remote),
+            Some(ids[0].clone())
+        );
     }
 
     #[tokio::test]

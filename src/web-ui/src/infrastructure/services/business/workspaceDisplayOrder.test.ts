@@ -25,4 +25,11 @@ describe('stableWorkspaceOrder', () => {
     expect(ids(stableWorkspaceOrder('local', list('a', 'b')))).toEqual(['b', 'a']);
     expect(ids(stableWorkspaceOrder('peer', list('a', 'b')))).toEqual(['b', 'a']);
   });
+
+  it('adopts an order the host was arranged into on purpose', () => {
+    stableWorkspaceOrder('peer', list('a', 'b', 'c', 'd'));
+    // Another controller reordered the host: more than a move to the front.
+    expect(ids(stableWorkspaceOrder('peer', list('b', 'a', 'd', 'c')))).toEqual(['b', 'a', 'd', 'c']);
+    expect(ids(stableWorkspaceOrder('peer', list('c', 'b', 'a', 'd')))).toEqual(['b', 'a', 'd', 'c']);
+  });
 });

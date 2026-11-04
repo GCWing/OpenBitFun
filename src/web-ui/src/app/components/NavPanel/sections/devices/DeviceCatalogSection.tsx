@@ -12,7 +12,7 @@ import { History, Loader2, MessageCirclePlus, Settings2 } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
-import { deviceWorkspaceCatalog } from '@/infrastructure/peer-device/deviceWorkspaceCatalog';
+import { deviceWorkspaceCatalog, type DeviceCatalogSnapshot } from '@/infrastructure/peer-device/deviceWorkspaceCatalog';
 import { peerConnectionManager } from '@/infrastructure/peer-device/PeerConnectionManager';
 import { useDeviceWorkspaceCatalog } from '@/infrastructure/peer-device/useDeviceWorkspaceCatalog';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
@@ -237,12 +237,15 @@ function cancelPrewarm(): void {
 
 /**
  * Workspaces of a background device, in the host's order: the device catalog
- * when it has read the host, else the list this window last loaded for it.
+ * once it has answered (an empty or failed read is shown as such), and until
+ * then the list this window last loaded for it, so the first read draws no
+ * loading row where the list already stood.
  */
-function useBackgroundWorkspaces(slot: SidebarDeviceSlot, catalogWorkspaces: readonly WorkspaceInfo[]): readonly WorkspaceInfo[] {
+function useBackgroundWorkspaces(slot: SidebarDeviceSlot, catalog: DeviceCatalogSnapshot): readonly WorkspaceInfo[] {
+  const answered = catalog.status === 'ready' || catalog.status === 'error';
   return useMemo(
-    () => catalogWorkspaces.length > 0 ? catalogWorkspaces : workspaceManager.getSurfaceOpenedWorkspaces(slot.surfaceId),
-    [catalogWorkspaces, slot.surfaceId],
+    () => answered ? catalog.workspaces : workspaceManager.getSurfaceOpenedWorkspaces(slot.surfaceId),
+    [answered, catalog.workspaces, slot.surfaceId],
   );
 }
 
@@ -250,7 +253,7 @@ function useBackgroundWorkspaces(slot: SidebarDeviceSlot, catalogWorkspaces: rea
 const DeviceCatalogSection: React.FC<{ slot: SidebarDeviceSlot }> = ({ slot }) => {
   const { t } = useI18n('common');
   const catalog = useDeviceWorkspaceCatalog(slot.surfaceId, slot.controllable);
-  const workspaces = useBackgroundWorkspaces(slot, catalog.workspaces);
+  const workspaces = useBackgroundWorkspaces(slot, catalog);
   const actions = useCatalogActions(slot.surfaceId);
   const grouping = useWorkspaceSessionViewStore(state => state.grouping);
   const groups = useMemo(() => projectWorkspaceBackedSessionGroups(workspaces, 'all'), [workspaces]);

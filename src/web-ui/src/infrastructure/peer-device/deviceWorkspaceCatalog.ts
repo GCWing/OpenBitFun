@@ -52,6 +52,8 @@ const MAX_PAGES_PER_READ = 5;
 /** Session reads one device runs at once; a refresh never floods its relay link. */
 const SESSION_READ_CONCURRENCY = 2;
 export const DEVICE_CATALOG_INVALIDATE_DEBOUNCE_MS = 300;
+/** How often a device whose host has no catalog stream is re-read while shown. */
+export const DEVICE_CATALOG_POLL_MS = 60_000;
 export const DEVICE_CATALOG_RELEASE_GRACE_MS = 30_000;
 
 /**
@@ -125,6 +127,10 @@ interface Entry {
   readonly sync: InvalidationSync;
   /** `workspace_id_references_v1`; null until the host answered a ping. */
   workspaceIdReferences: boolean | null;
+  /** The ping in flight, shared by every read that needs its answer. */
+  negotiation: Promise<void> | null;
+  /** Latest session read per workspace; an older read's answer is dropped. */
+  readonly sessionReads: Map<string, number>;
   streamSubscriptionId: string | null;
   streamPending: boolean;
   stopped: boolean;
@@ -398,6 +404,8 @@ export class DeviceWorkspaceCatalog {
       activityRetain: 0,
       sync: new InvalidationSync(() => this.read(entry)),
       workspaceIdReferences: isLocalSurface(surfaceId) ? true : null,
+      negotiation: null,
+      sessionReads: new Map(),
       streamSubscriptionId: null,
       streamPending: false,
       stopped: false,
@@ -504,12 +512,14 @@ export class DeviceWorkspaceCatalog {
   }
 
   /** Learn whether the host addresses sessions by workspace id. */
-  private async negotiate(entry: Entry): Promise<void> {
-    if (entry.workspaceIdReferences !== null) return;
-    const ping = await this.io.invoke<{ capabilities?: Record<string, boolean> } | undefined>(
+  private negotiate(entry: Entry): Promise<void> {
+    if (entry.workspaceIdReferences !== null) return Promise.resolve();
+    entry.negotiation ??= this.io.invoke<{ capabilities?: Record<string, boolean> } | undefined>(
       entry.deviceId, 'peer_mode_ping', {},
-    );
-    entry.workspaceIdReferences = ping?.capabilities?.workspace_id_references_v1 === true;
+    ).then(ping => {
+      entry.workspaceIdReferences = ping?.capabilities?.workspace_id_references_v1 === true;
+    }).finally(() => { entry.negotiation = null; });
+    return entry.negotiation;
   }
 
   private workspaceRequest(entry: Entry, workspace: WorkspaceInfo): Record<string, unknown> {
@@ -540,6 +550,9 @@ export class DeviceWorkspaceCatalog {
     if (!this.isCurrent(entry)) return;
     const workspace = entry.snapshot.workspaces.find(candidate => candidate.id === workspaceId);
     if (!workspace) return;
+    const read = (entry.sessionReads.get(workspaceId) ?? 0) + 1;
+    entry.sessionReads.set(workspaceId, read);
+    const latest = () => this.isCurrent(entry) && entry.sessionReads.get(workspaceId) === read;
     this.updateSessions(entry, workspaceId, { status: 'loading', limit, error: undefined });
     try {
       await this.negotiate(entry);
@@ -557,7 +570,7 @@ export class DeviceWorkspaceCatalog {
             ...(cursor ? { cursor } : {}),
           },
         });
-        if (!this.isCurrent(entry)) return;
+        if (!latest()) return;
         for (const session of result?.sessions ?? []) {
           if (session.status === 'archived') continue;
           records.push(session);
@@ -580,8 +593,13 @@ export class DeviceWorkspaceCatalog {
         error: undefined,
       });
     } catch (error) {
-      if (!this.isCurrent(entry)) return;
+      if (!latest()) return;
       log.warn('Failed to read device sessions', { surfaceId: entry.surfaceId, workspaceId, error });
+      // A host that refused the request may have been replaced by another
+      // build (upgrade or downgrade): ask again how it addresses sessions.
+      if ((error as Error | undefined)?.name === 'DeviceCatalogCommandError' && !isLocalSurface(entry.surfaceId)) {
+        entry.workspaceIdReferences = null;
+      }
       const current = this.getSessions(entry.surfaceId, workspaceId);
       this.updateSessions(entry, workspaceId, {
         status: current.sessions.length > 0 ? 'ready' : 'error',
@@ -680,6 +698,18 @@ export class DeviceWorkspaceCatalog {
       document.addEventListener('visibilitychange', onVisible);
       disposers.push(() => document.removeEventListener('visibilitychange', onVisible));
     }
+    // A host without the catalog stream sends no hints: re-read the devices
+    // shown from it now and then, only while the window is visible.
+    const poll = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      const rendered = getActiveSurfaceId();
+      for (const entry of this.entries.values()) {
+        if (!entry.snapshot.live && entry.surfaceId !== rendered && entry.snapshot.status === 'ready') {
+          this.invalidate(entry.surfaceId);
+        }
+      }
+    }, DEVICE_CATALOG_POLL_MS);
+    disposers.push(() => clearInterval(poll));
     this.teardownEvents = () => {
       for (const dispose of disposers) dispose();
     };

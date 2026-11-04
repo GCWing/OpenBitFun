@@ -213,7 +213,17 @@ export function isPeerRetryableIdempotentMutation(
 
 export type PeerInvokePriority = 'high' | 'normal' | 'low';
 
-const isDeviceOpenRunning = () => getDeviceOpenIntent() !== null;
+/**
+ * How long a cross-device open may hold background requests. A slow host must
+ * not starve them: past this, they share the link again.
+ */
+const DEVICE_OPEN_LOW_PRIORITY_HOLD_MS = 8_000;
+
+/** Milliseconds the running open may still hold background requests, or 0. */
+function deviceOpenHoldRemaining(): number {
+  const intent = getDeviceOpenIntent();
+  return intent ? Math.max(0, intent.startedAt + DEVICE_OPEN_LOW_PRIORITY_HOLD_MS - (typeof performance !== 'undefined' ? performance.now() : Date.now())) : 0;
+}
 
 const LOW_PRIORITY_EXACT = new Set([
   'get_file_metadata',
@@ -842,8 +852,9 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     // While a cross-device open runs, background work (git, search, file
     // tree, watchers, mini apps) waits for it instead of sharing the link with
     // the session being opened. It is released when the open settles.
-    if (this.queues.low.length > 0 && isDeviceOpenRunning()) {
-      this.resumeLowAfterOpen();
+    const hold = this.queues.low.length > 0 ? deviceOpenHoldRemaining() : 0;
+    if (hold > 0) {
+      this.resumeLowAfterOpen(hold);
       return undefined;
     }
     return this.queues.low.shift();
@@ -851,15 +862,18 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
 
   private lowResumeArmed = false;
 
-  private resumeLowAfterOpen(): void {
+  private resumeLowAfterOpen(hold: number): void {
     if (this.lowResumeArmed) return;
     this.lowResumeArmed = true;
-    const unsubscribe = useDeviceOpenIntent.subscribe(state => {
-      if (state.intent) return;
-      unsubscribe();
+    const release: Array<() => void> = [];
+    const resume = () => {
+      for (const dispose of release.splice(0)) dispose();
       this.lowResumeArmed = false;
       this.pump();
-    });
+    };
+    const timer = setTimeout(resume, hold);
+    release.push(() => clearTimeout(timer));
+    release.push(useDeviceOpenIntent.subscribe(state => { if (!state.intent) resume(); }));
   }
 
   private async invokePeerCommand<T extends PeerDeviceCommandResponse>(

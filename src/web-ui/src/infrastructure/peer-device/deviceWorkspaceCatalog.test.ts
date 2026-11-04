@@ -9,6 +9,7 @@ vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', () => ({ remoteConn
 
 import {
   DEVICE_CATALOG_INVALIDATE_DEBOUNCE_MS,
+  DEVICE_CATALOG_POLL_MS,
   DEVICE_CATALOG_RELEASE_GRACE_MS,
   DeviceWorkspaceCatalog,
   type DeviceWorkspaceCatalogIO,
@@ -28,7 +29,7 @@ const session = (sessionId: string, extra: Record<string, unknown> = {}) => ({
 });
 
 async function flush(): Promise<void> {
-  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+  for (let i = 0; i < 20; i += 1) await Promise.resolve();
 }
 
 describe('DeviceWorkspaceCatalog', () => {
@@ -197,6 +198,10 @@ describe('DeviceWorkspaceCatalog', () => {
     await vi.advanceTimersByTimeAsync(DEVICE_CATALOG_INVALIDATE_DEBOUNCE_MS);
     await flush();
     expect(invoke).toHaveBeenCalledWith('peer-a', 'get_opened_workspaces', { request: {} });
+    invoke.mockClear();
+    await vi.advanceTimersByTimeAsync(DEVICE_CATALOG_POLL_MS + DEVICE_CATALOG_INVALIDATE_DEBOUNCE_MS);
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('peer-a', 'get_opened_workspaces', { request: {} });
   });
 
   it('re-reads open sections under a new account', async () => {
@@ -333,5 +338,46 @@ describe('DeviceWorkspaceCatalog', () => {
     expect(await marked).toBe(1);
     expect(io.acknowledge).toHaveBeenCalledOnce();
     expect(io.acknowledge).toHaveBeenCalledWith('peer-a', { workspace_id: 'ws-1' }, expect.objectContaining({ sessionId: 'done' }));
+  });
+
+  it('drops the answer of a session read a newer read replaced', async () => {
+    catalog.retain('peer-a');
+    await flush();
+    let releaseSlow: (value: unknown) => void = () => undefined;
+    let calls = 0;
+    invoke.mockImplementation(async (_device: string | null, command: string) => {
+      if (command === 'get_opened_workspaces') return workspaces;
+      if (command !== 'list_persisted_sessions_page') return { capabilities };
+      calls += 1;
+      if (calls === 1) return new Promise(resolve => { releaseSlow = resolve; });
+      return { sessions: [session('new'), session('older')], totalTopLevelCount: 2, hasMore: false };
+    });
+    catalog.retainSessions('peer-a', 'ws-1');
+    await flush();
+    void catalog.loadMoreSessions('peer-a', 'ws-1');
+    await flush();
+    releaseSlow({ sessions: [session('stale')], totalTopLevelCount: 1, hasMore: false });
+    await flush();
+    expect(catalog.getSessions('peer-a', 'ws-1').sessions.map(item => item.sessionId)).toEqual(['new', 'older']);
+  });
+
+  it('asks a host that refused a session read how it addresses sessions again', async () => {
+    catalog.retain('peer-a');
+    await flush();
+    const refused = Object.assign(new Error('unknown field workspace_id'), { name: 'DeviceCatalogCommandError' });
+    invoke.mockImplementation(async (_device: string | null, command: string) => {
+      if (command === 'get_opened_workspaces') return workspaces;
+      if (command === 'peer_mode_ping') return { capabilities: {} };
+      throw refused;
+    });
+    catalog.retainSessions('peer-a', 'ws-1');
+    await flush();
+    invoke.mockClear();
+    await catalog.retry('peer-a');
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('peer-a', 'peer_mode_ping', {});
+    expect(invoke).toHaveBeenCalledWith('peer-a', 'list_persisted_sessions_page', {
+      request: expect.objectContaining({ workspace_path: '/home/me/ws-1' }),
+    });
   });
 });

@@ -15,15 +15,31 @@ interface PendingWorkspaceAction {
   kind: PendingWorkspaceActionKind;
 }
 
+/** An action whose row never mounted (the workspace closed meanwhile) lapses. */
+const PENDING_WORKSPACE_ACTION_TTL_MS = 30_000;
+let requestedAt = 0;
+
 export const usePendingWorkspaceAction = create<{ action: PendingWorkspaceAction | null }>(() => ({ action: null }));
 
 export function requestWorkspaceAction(action: PendingWorkspaceAction): void {
+  requestedAt = Date.now();
   usePendingWorkspaceAction.setState({ action });
+}
+
+/** Withdraw `action` if it is still the pending one. */
+export function clearWorkspaceAction(action: PendingWorkspaceAction): void {
+  const pending = usePendingWorkspaceAction.getState().action;
+  if (pending && pending.surfaceId === action.surfaceId && pending.workspaceId === action.workspaceId
+    && pending.kind === action.kind) usePendingWorkspaceAction.setState({ action: null });
 }
 
 /** Take the action if it belongs to this row; it runs at most once. */
 export function takeWorkspaceAction(surfaceId: DeviceSurfaceId, workspaceId: string): PendingWorkspaceActionKind | null {
   const { action } = usePendingWorkspaceAction.getState();
+  if (action && Date.now() - requestedAt > PENDING_WORKSPACE_ACTION_TTL_MS) {
+    usePendingWorkspaceAction.setState({ action: null });
+    return null;
+  }
   if (!action || action.surfaceId !== surfaceId || action.workspaceId !== workspaceId) return null;
   usePendingWorkspaceAction.setState({ action: null });
   return action.kind;

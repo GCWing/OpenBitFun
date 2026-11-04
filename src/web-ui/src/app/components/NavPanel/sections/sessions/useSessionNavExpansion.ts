@@ -39,7 +39,10 @@ export function useSessionNavExpansion(
   useEffect(() => () => {
     const { scope: last, displayCount } = latest.current;
     if (displayCount > SESSIONS_INITIAL_COUNT && (shouldHandOff.current?.() ?? true)) {
-      handoffs.set(last, { displayCount, at: Date.now() });
+      const now = Date.now();
+      // Unclaimed hand-offs (a list that never remounted) lapse here.
+      for (const [key, entry] of handoffs) if (now - entry.at > HANDOFF_MS) handoffs.delete(key);
+      handoffs.set(last, { displayCount, at: now });
     }
   }, []);
   useEffect(() => {

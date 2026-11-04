@@ -60,8 +60,9 @@ export const DeviceSwitchCurtain: React.FC = () => {
   if (phase === 'hidden') return null;
   return (
     <div className="openbitfun-device-switch-curtain" data-phase={phase} data-testid="device-switch-curtain"
+      data-openbitfun-component="device-switch-curtain" data-openbitfun-part="root"
       role="status" aria-busy={phase === 'covering'} aria-label={t('loading.scenes')}>
-      <div className="openbitfun-device-switch-curtain__spinner"><Spinner size="md" /></div>
+      <div className="openbitfun-device-switch-curtain__spinner" data-openbitfun-component="device-switch-curtain" data-openbitfun-part="spinner"><Spinner size="md" /></div>
     </div>
   );
 };

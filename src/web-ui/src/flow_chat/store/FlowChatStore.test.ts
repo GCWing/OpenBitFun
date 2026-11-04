@@ -9379,6 +9379,15 @@ describe('background device session seeding', () => {
     expect(session?.dialogTurns).toHaveLength(1);
   });
 
+  it('drops sessions its host deleted or archived, never the rendered device or drafts', () => {
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1'), metadata('s-2')]));
+    flowChatStore.dropSurfaceSessions('peer-seed', ['s-2', 'missing']);
+    expect([...flowChatStore.getSurfaceSessions('peer-seed').keys()]).toEqual(['s-1']);
+    flowChatStore.seedSurfaceSessions(LOCAL_SURFACE_ID, page([metadata('local-1')]));
+    flowChatStore.dropSurfaceSessions(LOCAL_SURFACE_ID, ['s-1']);
+    expect([...flowChatStore.getSurfaceSessions('peer-seed').keys()]).toEqual(['s-1']);
+  });
+
   it('drops only seeds when the account changes', () => {
     flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
     flowChatStore.discardSeededSessions('peer-seed');

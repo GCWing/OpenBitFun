@@ -8121,6 +8121,28 @@ export class FlowChatStore {
     }
   }
 
+  /**
+   * Remove sessions a background device's host no longer lists (deleted or
+   * archived there). Never touches the rendered surface or a draft.
+   */
+  public dropSurfaceSessions(surfaceId: DeviceSurfaceId, sessionIds: readonly string[]): void {
+    if (surfaceId === getActiveSurfaceId() || sessionIds.length === 0) return;
+    const container = this.surfaceContainers.get(surfaceId);
+    if (!container) return;
+    const sessions = new Map(container.state.sessions);
+    let changed = false;
+    for (const sessionId of sessionIds) {
+      const session = sessions.get(sessionId);
+      if (!session || session.isTransient || isUnmaterializedSessionDraft(session)) continue;
+      sessions.delete(sessionId);
+      container.seededSessions.delete(sessionId);
+      changed = true;
+    }
+    if (!changed) return;
+    container.state = { ...container.state, sessions };
+    this.notifySurfaceSessions(surfaceId);
+  }
+
   /** Drop seeds of a surface (account change); loaded sessions are untouched. */
   public discardSeededSessions(surfaceId: DeviceSurfaceId): void {
     const container = this.surfaceContainers.get(surfaceId);
