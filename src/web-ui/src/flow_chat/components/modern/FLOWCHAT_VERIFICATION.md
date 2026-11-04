@@ -84,6 +84,12 @@ each missing what the other had.
 | `SessionTreePopover.test.tsx` | Agent selection/cancellation/deletion menus, type-only metadata, active branch filtering with ancestor retention, restoring all agents, and the active empty state |
 | `../../services/deleteSessionTreeBranch.test.ts` | Unloaded descendant deletion in child-first order, remote location forwarding, failure retention, and device surface guards |
 
+The resize and production-timeline geometry fixtures cache recursive heights only
+within one synchronous read and deliver ResizeObserver entries only for changed
+boxes. Their caches never span a DOM/style/row-height change. This keeps repeated
+frame checks affordable on CI without relaxing position assertions or timeouts;
+test duration is not a product performance measurement.
+
 ## Native history-scroll fixture
 
 When UI verification is authorized, build Desktop and current frontend assets,

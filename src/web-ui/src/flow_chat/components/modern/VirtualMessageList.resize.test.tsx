@@ -40,14 +40,23 @@ vi.mock('./VirtualItemRenderer', () => ({
 describe('settled transcript resizing (real controllers, supplied DOM geometry)', () => {
   let root: Root, host: HTMLDivElement;
   let frames: Map<number, FrameRequestCallback>, frameId: number, now: number;
-  let observers: Array<{ callback: ResizeObserverCallback; targets: Set<Element> }>;
+  let observers: Array<{ callback: ResizeObserverCallback; targets: Set<Element>; sizes: WeakMap<Element, string> }>;
   let columnWidth = 900;
   let containerFirst = false;
   const heights = new Map<string, number>();
   const offsets = new WeakMap<HTMLElement, number>();
   const px = (value: string) => Number.parseFloat(value || '0') || 0;
   const reversed = (element: HTMLElement) => element.dataset.flowchatScrollOrigin === 'end';
-  function height(element: HTMLElement): number {
+  // Cache only within one synchronous geometry read. DOM/style and supplied
+  // row heights can change between any two reads, so no frame-level cache is safe.
+  function height(element: HTMLElement, measured = new WeakMap<HTMLElement, number>()): number {
+    const cached = measured.get(element);
+    if (cached !== undefined) return cached;
+    const result = measureHeight(element, measured);
+    measured.set(element, result);
+    return result;
+  }
+  function measureHeight(element: HTMLElement, measured: WeakMap<HTMLElement, number>): number {
     if (element.hasAttribute('data-flowchat-scroller')) return 600;
     if (element.dataset.virtualItemKey) return heights.get(element.dataset.virtualItemKey) ?? 100;
     if (element.style.height) return px(element.style.height);
@@ -56,24 +65,24 @@ describe('settled transcript resizing (real controllers, supplied DOM geometry)'
       const minimum = px(scroller.style.getPropertyValue('--_flow-chat-history-turn-min-height'));
       if (element.classList.contains('virtual-message-list__footer-block')) {
         const turn = element.parentElement!;
-        const preceding = [...turn.children].filter(child => child !== element).reduce((sum, child) => sum + height(child as HTMLElement), 0);
-        const natural = [...element.children].reduce((sum, child) => sum + height(child as HTMLElement), 0);
+        const preceding = [...turn.children].filter(child => child !== element).reduce((sum, child) => sum + height(child as HTMLElement, measured), 0);
+        const natural = [...element.children].reduce((sum, child) => sum + height(child as HTMLElement, measured), 0);
         return Math.max(natural, minimum - preceding);
       }
-      if (element.dataset.historyTail === 'true') return Math.max(minimum, [...element.children].reduce((sum, child) => sum + height(child as HTMLElement), 0));
+      if (element.dataset.historyTail === 'true') return Math.max(minimum, [...element.children].reduce((sum, child) => sum + height(child as HTMLElement, measured), 0));
     }
     return Math.max(element.classList.contains('virtual-message-list__extent') && reversed(element.parentElement!) ? 600 : px(element.style.minHeight), px(element.style.paddingTop) + px(element.style.paddingBottom)
-      + [...element.children].reduce((sum, child) => sum + height(child as HTMLElement), 0));
+      + [...element.children].reduce((sum, child) => sum + height(child as HTMLElement, measured), 0));
   }
-  function contentTop(element: HTMLElement): number {
+  function contentTop(element: HTMLElement, measured: WeakMap<HTMLElement, number>): number {
     let top = 0;
     let current = element;
     while (current.parentElement && !current.hasAttribute('data-flowchat-scroller')) {
       let sibling = current.previousElementSibling;
-      while (sibling) { top += height(sibling as HTMLElement); sibling = sibling.previousElementSibling; }
+      while (sibling) { top += height(sibling as HTMLElement, measured); sibling = sibling.previousElementSibling; }
       current = current.parentElement;
       top += px(current.style.paddingTop);
-      if (current.hasAttribute('data-flowchat-scroller') && reversed(current)) top += 600 - height(current.firstElementChild as HTMLElement);
+      if (current.hasAttribute('data-flowchat-scroller') && reversed(current)) top += 600 - height(current.firstElementChild as HTMLElement, measured);
     }
     return top;
   }
@@ -96,10 +105,18 @@ describe('settled transcript resizing (real controllers, supplied DOM geometry)'
   };
   const resize = () => act(() => {
     for (const observer of (containerFirst ? [...observers].reverse() : [...observers])) {
-      const entries = [...observer.targets].filter(target => target.isConnected).map(target => ({
-        target, borderBoxSize: [{ inlineSize: 900, blockSize: height(target as HTMLElement) }],
-        contentRect: target.getBoundingClientRect(),
-      }) as ResizeObserverEntry);
+      // ResizeObserver delivers changed boxes, not every observed node on every
+      // frame. Collect sizes before calling back, since callbacks can mutate DOM.
+      const measured = new WeakMap<HTMLElement, number>();
+      const entries = [...observer.targets].filter(target => target.isConnected).flatMap(target => {
+        const blockSize = height(target as HTMLElement, measured);
+        const inlineSize = target.classList.contains('virtual-item-wrapper') ? columnWidth : 900;
+        const size = `${inlineSize}:${blockSize}`;
+        if (observer.sizes.get(target) === size) return [];
+        observer.sizes.set(target, size);
+        return [{ target, borderBoxSize: [{ inlineSize, blockSize }],
+          contentRect: target.getBoundingClientRect() } as ResizeObserverEntry];
+      });
       if (entries.length) observer.callback(entries, {} as ResizeObserver);
     }
   });
@@ -115,10 +132,11 @@ describe('settled transcript resizing (real controllers, supplied DOM geometry)'
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })));
     vi.stubGlobal('ResizeObserver', class {
       targets = new Set<Element>();
+      sizes = new WeakMap<Element, string>();
       constructor(public callback: ResizeObserverCallback) { observers.push(this); }
       observe(target: Element) { this.targets.add(target); }
-      unobserve(target: Element) { this.targets.delete(target); }
-      disconnect() { this.targets.clear(); }
+      unobserve(target: Element) { this.targets.delete(target); this.sizes.delete(target); }
+      disconnect() { this.targets.clear(); this.sizes = new WeakMap(); }
     });
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () { return Math.round(height(this)); });
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function () { return Math.round(height(this)); });
@@ -136,9 +154,10 @@ describe('settled transcript resizing (real controllers, supplied DOM geometry)'
       offsets.set(this, reversed(this) ? Math.max(-range, Math.min(0, value)) : Math.max(0, Math.min(value, range)));
     });
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const measured = new WeakMap<HTMLElement, number>();
       const scroller = this.closest<HTMLElement>('[data-flowchat-scroller]');
-      const top = this === scroller ? 0 : contentTop(this) - (scroller?.scrollTop ?? 0);
-      return { x: 0, y: top, left: 0, right: 900, top, bottom: top + height(this), height: height(this), width: this.classList.contains('virtual-item-wrapper') ? columnWidth : 900, toJSON() {} };
+      const top = this === scroller ? 0 : contentTop(this, measured) - (scroller?.scrollTop ?? 0);
+      return { x: 0, y: top, left: 0, right: 900, top, bottom: top + height(this, measured), height: height(this, measured), width: this.classList.contains('virtual-item-wrapper') ? columnWidth : 900, toJSON() {} };
     });
     state.items = turn('latest', 180);
     state.session = { sessionId: 'history-session', config: {}, dialogTurns: [], isHistorical: false } as unknown as Session;
