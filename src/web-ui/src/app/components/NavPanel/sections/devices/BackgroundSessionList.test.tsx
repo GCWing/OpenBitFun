@@ -7,7 +7,7 @@ vi.mock('@/infrastructure/i18n', async importOriginal => ({
   ...await importOriginal<typeof import('@/infrastructure/i18n')>(),
   useI18n: () => ({ t: (key: string) => key }),
 }));
-const catalogState = vi.hoisted(() => ({ snapshot: { sessions: {} as Record<string, unknown> } }));
+const catalogState = vi.hoisted(() => ({ snapshot: { status: 'ready', sessions: {} as Record<string, unknown> } }));
 vi.mock('@/infrastructure/peer-device/deviceWorkspaceCatalog', () => ({
   deviceWorkspaceCatalog: {
     getSnapshot: () => catalogState.snapshot,
@@ -55,6 +55,8 @@ describe('BackgroundSessionList', () => {
     act(() => root.unmount());
     host.remove();
     flowChatStore.discardSurfaceState('peer-list');
+    flowChatStore.discardSurfaceState('peer-empty');
+    catalogState.snapshot = { status: 'ready', sessions: {} };
     useWorkspaceSessionViewStore.getState().setOrdering('updated');
   });
 
@@ -90,5 +92,37 @@ describe('BackgroundSessionList', () => {
       workspaceNames={new Map([['ws', 'OpenBitFun']])} />));
     const names = [...host.querySelectorAll('.openbitfun-nav-panel__inline-item-workspace-name')].map(node => node.textContent);
     expect(names).toEqual(['OpenBitFun', 'OpenBitFun', 'OpenBitFun']);
+  });
+
+  describe('with no rows in the container', () => {
+    const emptySlot = { ...slot, surfaceId: 'peer-empty', deviceId: 'peer-empty' };
+    const renderEmpty = () => act(() => root.render(<BackgroundSessionList slot={emptySlot} workspaceIds={['ws']} actions={actions} />));
+    const page = (sessions: unknown[]) => ({
+      status: 'ready', sessions, records: sessions, activities: {}, hasMore: true, total: 8, limit: 8,
+    });
+    const empty = () => host.querySelector('.openbitfun-nav-panel__inline-empty');
+    const loadingRow = () => host.querySelector('.openbitfun-nav-panel__inline-loading');
+    const toggle = () => host.querySelector('[data-testid="nav-device-session-list-toggle"]');
+
+    it('shows progress, not "no sessions" under a known total, while the rows the catalog lists are not drawn yet', () => {
+      catalogState.snapshot = { status: 'ready', sessions: { ws: page([record('listed', 1, 1)]) } };
+      renderEmpty();
+      expect(empty()).toBeNull();
+      expect(loadingRow()).not.toBeNull();
+      expect(toggle()).toBeNull();
+    });
+
+    it('treats a workspace page not read yet as loading', () => {
+      renderEmpty();
+      expect(empty()).toBeNull();
+      expect(loadingRow()).not.toBeNull();
+    });
+
+    it('says "no sessions" once the host listed none', () => {
+      catalogState.snapshot = { status: 'ready', sessions: { ws: { ...page([]), hasMore: false, total: 0 } } };
+      renderEmpty();
+      expect(empty()).not.toBeNull();
+      expect(loadingRow()).toBeNull();
+    });
   });
 });

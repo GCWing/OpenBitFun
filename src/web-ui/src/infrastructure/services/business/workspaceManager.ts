@@ -1,6 +1,11 @@
  
 
-import { setWorkspaceDisplayOrder, stableWorkspaceOrder } from './workspaceDisplayOrder';
+import {
+  noteWorkspaceActivated,
+  orderWorkspacesForDisplay,
+  setWorkspaceDisplayOrder,
+  stableWorkspaceOrder,
+} from './workspaceDisplayOrder';
 import type {
   RemoteWorkspaceSnapshot,
   WorkspaceInfo,
@@ -169,6 +174,14 @@ class WorkspaceManager {
     // The activation commit swaps transport before listeners run, so consumers
     // can safely render this surface's cached workspace snapshot immediately.
     onSurfaceActivated(scope => {
+      // While this device was in the background its catalog may have changed
+      // its display order; show the cached list in that order at once, so the
+      // hand-over from the catalog projection moves no row.
+      const cached = this.getOpenedWorkspacesList();
+      const ordered = orderWorkspacesForDisplay(scope.surfaceId, cached);
+      if (ordered.some((workspace, index) => workspace !== cached[index])) {
+        this.state = { ...this.state, openedWorkspaces: this.buildOpenedWorkspaceMap(ordered) };
+      }
       this.emit({
         type: 'workspace:active-changed',
         workspace: this.state.currentWorkspace,
@@ -186,7 +199,12 @@ class WorkspaceManager {
 
   /** Opened workspaces last loaded for a surface, rendered or not. */
   public getSurfaceOpenedWorkspaces(surfaceId: DeviceSurfaceId): WorkspaceInfo[] {
-    return Array.from(this.surfaceContainers.get(surfaceId)?.state.openedWorkspaces.values() ?? []);
+    // In the order the device is shown now: a background catalog read may
+    // have changed it since this list was loaded.
+    return orderWorkspacesForDisplay(
+      surfaceId,
+      Array.from(this.surfaceContainers.get(surfaceId)?.state.openedWorkspaces.values() ?? []),
+    );
   }
 
   private surfaceContainer(surfaceId: DeviceSurfaceId): WorkspaceSurfaceContainer {
@@ -353,22 +371,15 @@ class WorkspaceManager {
       : workspace.workspaceKind !== 'assistant';
   }
 
+  /**
+   * A host list in this surface's display order. The same order the device
+   * catalog applies, so the live list and the device's background projection
+   * never disagree (see `workspaceDisplayOrder`). Ordering by this window's
+   * previous list instead let the two projections adopt each other's order on
+   * every switch.
+   */
   private preserveOpenedWorkspaceOrder(workspaces: WorkspaceInfo[]): WorkspaceInfo[] {
-    const currentOrder = Array.from(this.state.openedWorkspaces.keys());
-    const nextWorkspaceMap = this.buildOpenedWorkspaceMap(workspaces);
-    const orderedWorkspaces = currentOrder
-      .map(workspaceId => nextWorkspaceMap.get(workspaceId))
-      .filter((workspace): workspace is WorkspaceInfo => Boolean(workspace));
-
-    const existingIds = new Set(orderedWorkspaces.map(workspace => workspace.id));
-
-    for (const workspace of workspaces) {
-      if (!existingIds.has(workspace.id)) {
-        orderedWorkspaces.push(workspace);
-      }
-    }
-
-    return orderedWorkspaces;
+    return stableWorkspaceOrder(getActiveSurfaceId(), workspaces);
   }
 
   private buildReorderedOpenedWorkspaceIds(
@@ -1441,6 +1452,9 @@ class WorkspaceManager {
         ? await globalStateAPI.openWorkspaceById(workspaceId)
         : await globalStateAPI.setActiveWorkspace(workspaceId);
       this.assertSurfaceUnchanged(surface, 'set active workspace');
+      // An older host moved it to the front of its opened list; that is not
+      // an arrangement the display order should adopt.
+      noteWorkspaceActivated(surface.scope.surfaceId, workspace.id);
       // The host has switched: show it now, from the lists this window holds.
       // The recent and opened lists are refreshed afterwards, off the path the
       // user waits on (opening a session in another workspace waits on this).

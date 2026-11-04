@@ -9,10 +9,15 @@
  * needs no extra read.
  */
 
-import { getActiveSurfaceId, type DeviceSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
-import { deviceWorkspaceCatalog } from '@/infrastructure/peer-device/deviceWorkspaceCatalog';
+import { getActiveSurfaceId, onSurfaceActivated, type DeviceSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
+import { deviceWorkspaceCatalog, type DeviceCatalogSnapshot } from '@/infrastructure/peer-device/deviceWorkspaceCatalog';
 import { flowChatStore, type BackgroundSessionPage } from '../store/FlowChatStore';
-import { DEFAULT_SESSION_VIEW_KEY, forgetSurfaceSessionTotals, rememberWorkspaceSessionTotal } from './workspaceSessionTotals';
+import {
+  DEFAULT_SESSION_VIEW_KEY,
+  forgetSurfaceSessionTotals,
+  knownWorkspaceSessionTotal,
+  rememberWorkspaceSessionTotal,
+} from './workspaceSessionTotals';
 
 let installs = 0;
 /** Page record arrays already projected, per surface; the catalog replaces arrays on change. */
@@ -20,6 +25,30 @@ const seededRecords = new Map<DeviceSurfaceId, WeakSet<object>>();
 /** Top-level session ids each workspace page listed last time, per surface. */
 const listedIds = new Map<DeviceSurfaceId, Map<string, Set<string>>>();
 let teardown: (() => void) | null = null;
+
+function seenRecords(surfaceId: DeviceSurfaceId): WeakSet<object> {
+  let seen = seededRecords.get(surfaceId);
+  if (!seen) seededRecords.set(surfaceId, seen = new WeakSet());
+  return seen;
+}
+
+function listedFor(surfaceId: DeviceSurfaceId): Map<string, Set<string>> {
+  let listed = listedIds.get(surfaceId);
+  if (!listed) listedIds.set(surfaceId, listed = new Map());
+  return listed;
+}
+
+function pageFor(workspace: DeviceCatalogSnapshot['workspaces'][number], records: BackgroundSessionPage['sessions']): BackgroundSessionPage {
+  const remote = workspace.workspaceKind === 'remote';
+  return {
+    workspaceId: workspace.id,
+    workspacePath: workspace.rootPath,
+    remoteConnectionId: remote ? workspace.connectionId : undefined,
+    remoteSshHost: remote ? workspace.sshHost : undefined,
+    sessions: records,
+  };
+}
+
 export function seedBackgroundSurface(surfaceId: DeviceSurfaceId): void {
   const snapshot = deviceWorkspaceCatalog.getSnapshot(surfaceId);
   if (snapshot.status === 'idle') {
@@ -30,12 +59,17 @@ export function seedBackgroundSurface(surfaceId: DeviceSurfaceId): void {
     listedIds.delete(surfaceId);
     return;
   }
-  let listed = listedIds.get(surfaceId);
-  if (!listed) listedIds.set(surfaceId, listed = new Map());
+  // The rendered device is drawn from its live container, which its own reads
+  // own. Pages read meanwhile stay unprojected (not marked seen), so leaving
+  // the device can still fill what its live list never loaded
+  // (`seedLeftSurface`). Marking them here left every workspace the live list
+  // had not read empty after a switch, under a known total, until the next
+  // catalog read replaced the arrays.
+  if (surfaceId === getActiveSurfaceId()) return;
+  const listed = listedFor(surfaceId);
   const removed: string[] = [];
   const pages: BackgroundSessionPage[] = [];
-  let seen = seededRecords.get(surfaceId);
-  if (!seen) seededRecords.set(surfaceId, seen = new WeakSet());
+  const seen = seenRecords(surfaceId);
   for (const workspace of snapshot.workspaces) {
     const page = snapshot.sessions[workspace.id];
     if (!page || page.status === 'idle') continue;
@@ -59,18 +93,45 @@ export function seedBackgroundSurface(surfaceId: DeviceSurfaceId): void {
       listed.set(workspace.id, current);
     }
     if (page.total !== null) rememberWorkspaceSessionTotal(surfaceId, workspace.id, DEFAULT_SESSION_VIEW_KEY, page.total);
-    const remote = workspace.workspaceKind === 'remote';
-    pages.push({
-      workspaceId: workspace.id,
-      workspacePath: workspace.rootPath,
-      remoteConnectionId: remote ? workspace.connectionId : undefined,
-      remoteSshHost: remote ? workspace.sshHost : undefined,
-      sessions: page.records,
-    });
+    pages.push(pageFor(workspace, page.records));
   }
-  if (surfaceId === getActiveSurfaceId()) return;
   flowChatStore.seedSurfaceSessions(surfaceId, pages);
   flowChatStore.dropSurfaceSessions(surfaceId, removed);
+}
+
+/**
+ * The window stopped rendering `surfaceId`. Its container holds what the live
+ * list loaded, which can be less than the catalog pages navigation draws (a
+ * workspace the live list never read, a switch before its reads landed). Fill
+ * only the sessions it lacks, from the pages the catalog already holds, so the
+ * device's rows stay where they were instead of emptying until the catalog
+ * re-reads the host.
+ *
+ * Those pages predate what the live list loaded, so they never overwrite a
+ * session the container has nor remove one, and they are marked seen: the
+ * read that follows the switch is what refreshes the device.
+ */
+export function seedLeftSurface(surfaceId: DeviceSurfaceId): void {
+  if (surfaceId === getActiveSurfaceId()) return;
+  const snapshot = deviceWorkspaceCatalog.getSnapshot(surfaceId);
+  if (snapshot.status === 'idle') return;
+  const listed = listedFor(surfaceId);
+  const seen = seenRecords(surfaceId);
+  const pages: BackgroundSessionPage[] = [];
+  for (const workspace of snapshot.workspaces) {
+    const page = snapshot.sessions[workspace.id];
+    if (!page || page.status === 'idle' || seen.has(page.records)) continue;
+    seen.add(page.records);
+    if (page.status === 'ready' && !page.error) {
+      listed.set(workspace.id, new Set(page.sessions.map(session => session.sessionId)));
+    }
+    // The live list's own total wins; the page's covers a workspace it never read.
+    if (page.total !== null && knownWorkspaceSessionTotal(surfaceId, workspace.id, DEFAULT_SESSION_VIEW_KEY) === undefined) {
+      rememberWorkspaceSessionTotal(surfaceId, workspace.id, DEFAULT_SESSION_VIEW_KEY, page.total);
+    }
+    pages.push(pageFor(workspace, page.records));
+  }
+  flowChatStore.seedSurfaceSessions(surfaceId, pages, { onlyMissing: true });
 }
 
 /** Reference-counted; navigation installs it while it lists several devices. */
@@ -79,7 +140,15 @@ export function installBackgroundSurfaceSeeding(): () => void {
   if (installs === 1) {
     const unsubscribe = deviceWorkspaceCatalog.subscribe(seedBackgroundSurface);
     for (const surfaceId of deviceWorkspaceCatalog.loadedSurfaces()) seedBackgroundSurface(surfaceId);
-    teardown = unsubscribe;
+    // Synchronous with the activation commit, before navigation draws the
+    // device just left from its container.
+    let rendered = getActiveSurfaceId();
+    const unsubscribeActivation = onSurfaceActivated(() => {
+      const left = rendered;
+      rendered = getActiveSurfaceId();
+      if (left !== rendered) seedLeftSurface(left);
+    });
+    teardown = () => { unsubscribe(); unsubscribeActivation(); };
   }
   let released = false;
   return () => {

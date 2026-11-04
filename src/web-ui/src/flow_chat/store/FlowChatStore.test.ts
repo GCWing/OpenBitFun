@@ -9407,6 +9407,14 @@ describe('background device session seeding', () => {
     expect([...flowChatStore.getSurfaceSessions('peer-seed').keys()]).toEqual(['s-1']);
   });
 
+  it('adds only missing sessions from an older page', () => {
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1', { sessionName: 'Current' })]));
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1', { sessionName: 'Older' }), metadata('s-2')]), { onlyMissing: true });
+    const sessions = flowChatStore.getSurfaceSessions('peer-seed');
+    expect([...sessions.keys()]).toEqual(['s-1', 's-2']);
+    expect(sessions.get('s-1')?.title).toBe('Current');
+  });
+
   it('drops only seeds when the account changes', () => {
     flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
     flowChatStore.discardSeededSessions('peer-seed');

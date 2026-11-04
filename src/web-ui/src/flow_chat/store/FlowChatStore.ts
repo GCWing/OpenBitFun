@@ -8069,8 +8069,15 @@ export class FlowChatStore {
    * draws the device the same way before and after it is rendered, and a
    * switch finds its sessions already present. The rendered surface is never
    * seeded: its live reads own it.
+   *
+   * `onlyMissing` adds sessions the container lacks and leaves every other
+   * one as it is: for pages older than what the container already holds.
    */
-  public seedSurfaceSessions(surfaceId: DeviceSurfaceId, pages: readonly BackgroundSessionPage[]): void {
+  public seedSurfaceSessions(
+    surfaceId: DeviceSurfaceId,
+    pages: readonly BackgroundSessionPage[],
+    options: { onlyMissing?: boolean } = {},
+  ): void {
     if (surfaceId === getActiveSurfaceId()) return;
     let container = this.surfaceContainers.get(surfaceId);
     if (!container) {
@@ -8083,6 +8090,7 @@ export class FlowChatStore {
       for (const metadata of page.sessions) {
         if (metadata.status === 'archived') continue;
         const existing = sessions.get(metadata.sessionId);
+        if (existing && options.onlyMissing) continue;
         let seeded = container.seededSessions.has(metadata.sessionId);
         if (seeded && existing && (existing.dialogTurns.length > 0 || existing.historyState !== 'metadata-only')) {
           // Opened since it was seeded: it is a loaded session now.

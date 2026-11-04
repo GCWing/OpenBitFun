@@ -6,7 +6,7 @@
  * that device first and then runs the local handler (see `openOnDevice`).
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { ActionItem, Button, Icon, OverflowText, Tooltip } from '@openbitfun/ui';
 import { History, Loader2, MessageCirclePlus, Settings2 } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
@@ -17,6 +17,11 @@ import { deviceWorkspaceCatalog, type DeviceCatalogSnapshot } from '@/infrastruc
 import { peerConnectionManager } from '@/infrastructure/peer-device/PeerConnectionManager';
 import { useDeviceWorkspaceCatalog } from '@/infrastructure/peer-device/useDeviceWorkspaceCatalog';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
+import {
+  getWorkspaceDisplayOrderRevision,
+  orderWorkspacesForDisplay,
+  subscribeWorkspaceDisplayOrder,
+} from '@/infrastructure/services/business/workspaceDisplayOrder';
 import { WorkspaceIconArt } from '@/app/components/WorkspaceIcon/WorkspaceIcon';
 import { AssistantAvatar } from '@/app/components/AssistantAvatar';
 import { notificationService } from '@/shared/notification-system';
@@ -240,16 +245,27 @@ function cancelPrewarm(): void {
 }
 
 /**
- * Workspaces of a background device, in the host's order: the device catalog
- * once it has answered (an empty or failed read is shown as such), and until
- * then the list this window last loaded for it, so the first read draws no
- * loading row where the list already stood.
+ * Workspaces of a background device, in the device's display order: the
+ * device catalog once it has answered (an empty or failed read is shown as
+ * such), and until then the list this window last loaded for it, so the first
+ * read draws no loading row where the list already stood.
+ *
+ * Both lists are drawn in the order the device is shown now, not the order
+ * they were read in: the catalog of a device is not re-read while the window
+ * renders it, so its last read can predate an order the live list settled on,
+ * and the hand-over between the two projections must move no row.
  */
 function useBackgroundWorkspaces(slot: SidebarDeviceSlot, catalog: DeviceCatalogSnapshot): readonly WorkspaceInfo[] {
   const answered = catalog.status === 'ready' || catalog.status === 'error';
+  const orderRevision = useSyncExternalStore(subscribeWorkspaceDisplayOrder, getWorkspaceDisplayOrderRevision);
   return useMemo(
-    () => answered ? catalog.workspaces : workspaceManager.getSurfaceOpenedWorkspaces(slot.surfaceId),
-    [answered, catalog.workspaces, slot.surfaceId],
+    () => {
+      void orderRevision;
+      return answered
+        ? orderWorkspacesForDisplay(slot.surfaceId, catalog.workspaces)
+        : workspaceManager.getSurfaceOpenedWorkspaces(slot.surfaceId);
+    },
+    [answered, catalog.workspaces, orderRevision, slot.surfaceId],
   );
 }
 

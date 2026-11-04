@@ -67,15 +67,22 @@ function useCatalogActivities(surfaceId: DeviceSurfaceId, workspaceIds: readonly
     let loading = false;
     let hasMore = false;
     let limit = 0;
+    /** Top-level sessions the host listed for these workspaces. */
+    const listed: string[] = [];
     for (const workspaceId of workspaceIds) {
       const page = snapshot.sessions[workspaceId];
-      if (!page) continue;
+      // Not read yet: its rows are still coming, unless the device cannot be read.
+      if (!page || page.status === 'idle') {
+        loading ||= snapshot.status !== 'error';
+        continue;
+      }
       Object.assign(activities, page.activities);
       loading ||= page.status === 'loading' && page.records.length === 0;
       hasMore ||= page.hasMore;
       limit = Math.max(limit, page.limit);
+      for (const session of page.sessions) listed.push(session.sessionId);
     }
-    return { activities, loading, hasMore, limit };
+    return { activities, loading, hasMore, limit, listed };
   }, [snapshot, workspaceIds]);
 }
 
@@ -258,7 +265,7 @@ export const BackgroundSessionList: React.FC<{
   const show = useWorkspaceSessionViewStore(state => state.show);
   const filters = useWorkspaceSessionViewStore(state => state.filters);
   const sourceAgent = useWorkspaceSessionViewStore(state => state.sourceAgent);
-  const { activities, loading, hasMore, limit: loadedLimit } = useCatalogActivities(slot.surfaceId, workspaceIds);
+  const { activities, loading, hasMore, limit: loadedLimit, listed } = useCatalogActivities(slot.surfaceId, workspaceIds);
   const primaryWorkspaceId = workspaceIds[0] ?? '';
   const { displayCount, setDisplayCount } = useSessionNavExpansion(
     `${surfaceScopedKey(slot.surfaceId, flat ? undefined : primaryWorkspaceId)}:${sourceAgent}`,
@@ -301,6 +308,11 @@ export const BackgroundSessionList: React.FC<{
     return { visibleItems: items, total: Math.max(parents.length, reported ?? 0), shown: limit };
   }, [displayCount, filters, isRunning, ordering, primaryWorkspaceId, sessions, show, slot.surfaceId, sourceAgent, workspaceIds]);
 
+  // "No sessions" only once the host said so. Rows the catalog lists that the
+  // container does not hold yet are on their way (seeding follows the catalog),
+  // and a page not read yet is loading, not empty: either way the list shows
+  // progress rather than an empty state under a known total.
+  const awaitingRows = loading || listed.some(sessionId => !sessions.has(sessionId));
   const toggle = getSessionExpandToggleState(total, displayCount);
   const handleToggle = () => {
     const next = nextSessionDisplayCount(displayCount, total);
@@ -327,7 +339,7 @@ export const BackgroundSessionList: React.FC<{
             ownerWorkspaceName={ownerName || ownerId} />
         );
       })}
-      {visibleItems.length === 0 && (loading ? (
+      {visibleItems.length === 0 && (awaitingRows ? (
         <div className="openbitfun-nav-panel__inline-loading" role="status" aria-live="polite">
           <Loader2 className="openbitfun-nav-panel__inline-loading-icon" aria-hidden="true" />
           <OverflowText>{t('nav.sessions.loading')}</OverflowText>
@@ -335,7 +347,8 @@ export const BackgroundSessionList: React.FC<{
       ) : (
         <div className="openbitfun-nav-panel__inline-empty" aria-disabled="true">{t('nav.sessions.noSessions')}</div>
       ))}
-      {toggle.shouldRender && (
+      {/* Like the live list, "show more" belongs under rows, never under an empty or loading list. */}
+      {toggle.shouldRender && visibleItems.length > 0 && (
         <button data-overflow-trigger type="button" className="openbitfun-nav-panel__inline-toggle"
           data-openbitfun-component="sessions-section" data-openbitfun-part="toggle"
           data-testid="nav-device-session-list-toggle" data-session-nav-toggle-action={toggle.action}

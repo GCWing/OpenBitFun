@@ -675,6 +675,33 @@ describe('WorkspaceManager device surface switching', () => {
     expect(manager.getState().currentWorkspace?.id).toBe('workspace-b');
   });
 
+  it('shows a device in the order its background catalog settled on, live and cached alike', async () => {
+    const workspace = (id: string) => ({ ...workspaceA, id, name: id, rootPath: `/${id}` });
+    const [a, b, c] = [workspace('a'), workspace('b'), workspace('c')];
+    globalStateMocks.initializeWorkspaceStartupState
+      .mockResolvedValueOnce({ ...startupSnapshot(a), openedWorkspaces: [a, b, c] })
+      .mockResolvedValueOnce(startupSnapshot(workspaceB));
+    const { manager, deviceSurface } = await getFreshWorkspaceHarness();
+    const displayOrder = await import('./workspaceDisplayOrder');
+    await manager.initialize();
+    deviceSurface.activateSurface('peer-b');
+    await manager.reinitializeForPeerModeSwitch();
+
+    // While another device is rendered, this device's catalog reads a list
+    // arranged on another controller.
+    expect(displayOrder.stableWorkspaceOrder(deviceSurface.LOCAL_SURFACE_ID, [c, b, a]).map(item => item.id)).toEqual(['c', 'b', 'a']);
+    // The background section's fallback and the live list returned to both
+    // draw that order; the live list's next host read keeps it.
+    expect(manager.getSurfaceOpenedWorkspaces(deviceSurface.LOCAL_SURFACE_ID).map(item => item.id)).toEqual(['c', 'b', 'a']);
+    deviceSurface.activateSurface(deviceSurface.LOCAL_SURFACE_ID);
+    expect([...manager.getState().openedWorkspaces.keys()]).toEqual(['c', 'b', 'a']);
+    globalStateMocks.setActiveWorkspace.mockResolvedValue(b);
+    globalStateMocks.getOpenedWorkspaces.mockResolvedValue([b, c, a]);
+    await manager.setActiveWorkspace(b.id);
+    await flushAsyncWork();
+    expect([...manager.getState().openedWorkspaces.keys()]).toEqual(['c', 'b', 'a']);
+  });
+
   it('keeps a cached surface visible when its refresh fails', async () => {
     globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue(
       startupSnapshot(workspaceA),
