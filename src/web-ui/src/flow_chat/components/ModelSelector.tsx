@@ -12,6 +12,7 @@ import { createOverlayPortal, useDismissibleLayer, Button, IconButton, Input, Lo
 import React, { useState, useEffect, useId, useRef, useCallback, useLayoutEffect, useMemo, useSyncExternalStore } from 'react';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
+import { createAcpStartupRequestId, emitAcpSessionStartup } from '../services/acpSessionStartup';
 import { Gem, LayoutGrid, Rocket, Zap } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
@@ -399,6 +400,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const configLoadState = configEpoch === deviceSurfaceScope.epoch ? configState : 'loading';
   const [acpOptions, setAcpOptions] = useState<AcpSessionOptions | null>(null);
   const [acpOptionsLoadState, setAcpOptionsLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const acpStartupDismissRef = useRef<(() => void) | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [keyboardNavigationOpen, setKeyboardNavigationOpen] = useState(false);
   /** Provider whose models the menu is currently showing; null is the provider level. */
@@ -666,7 +668,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     return () => { configLoadRequestRef.current += 1; unsubscribe(); };
   }, [loadConfigData, deviceSurfaceScope.epoch]);
 
-  const loadAcpOptions = useCallback(async () => {
+  const loadAcpOptions: () => Promise<void> = useCallback(async () => {
+    const scope = deviceSurfaceScope;
+    if (!scope.isCurrent()) return;
     const requestId = ++acpOptionsLoadRequestRef.current;
     if (!isAcpSession || !acpClientId || !sessionId) {
       setAcpOptions(null);
@@ -676,15 +680,24 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
     setAcpOptionsLoadState('loading');
     const shouldShowRestoreToast = !acpOptionsRef.current && acpRestoreToastShownRef.current !== sessionId;
-    const restoreRequestId = `acp-options:${sessionId}:${acpClientId}`;
+    const startup = {
+      requestId: createAcpStartupRequestId(), clientId: acpClientId, action: 'restore' as const, scope,
+      retry: async () => {
+        if (!scope.isCurrent() || modelSelectionScopeRef.current !== modelSelectionScopeKey
+          || requestId !== acpOptionsLoadRequestRef.current) return;
+        acpRestoreToastShownRef.current = null;
+        await loadAcpOptions();
+      },
+    };
+    const dismissStartup = () => emitAcpSessionStartup({ ...startup, phase: 'finish', cancelled: true });
     if (shouldShowRestoreToast) {
       acpRestoreToastShownRef.current = sessionId;
-      window.dispatchEvent(new CustomEvent('openbitfun:acp-session-creation', {
-        detail: { phase: 'start', clientId: acpClientId, action: 'restore', requestId: restoreRequestId },
-      }));
+      emitAcpSessionStartup({ ...startup, phase: 'start' });
+      acpStartupDismissRef.current = dismissStartup;
     }
 
     let succeeded = false;
+    let failure: string | undefined;
     try {
       const options = await withTimeout(
         ACPClientAPI.getSessionOptions({
@@ -699,25 +712,20 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         `Timed out restoring ACP session options for ${acpClientId}`,
       );
       succeeded = true;
-      if (requestId !== acpOptionsLoadRequestRef.current) return;
+      if (requestId !== acpOptionsLoadRequestRef.current || !scope.isCurrent()) return;
       setAcpOptions(options);
       setAcpOptionsLoadState('ready');
       syncAcpContextUsageToStore(sessionId, options);
     } catch (error) {
-      if (requestId !== acpOptionsLoadRequestRef.current) return;
+      failure = error instanceof Error ? error.message : String(error);
+      if (requestId !== acpOptionsLoadRequestRef.current || !scope.isCurrent()) return;
       log.warn('Failed to load ACP session model options', { sessionId, acpClientId, error });
       setAcpOptionsLoadState('error');
     } finally {
       if (shouldShowRestoreToast) {
-        window.dispatchEvent(new CustomEvent('openbitfun:acp-session-creation', {
-          detail: {
-            phase: 'finish',
-            clientId: acpClientId,
-            action: 'restore',
-            requestId: restoreRequestId,
-            succeeded,
-          },
-        }));
+        emitAcpSessionStartup({ ...startup, phase: 'finish',
+          succeeded: succeeded || requestId !== acpOptionsLoadRequestRef.current, error: failure });
+        if (acpStartupDismissRef.current === dismissStartup) acpStartupDismissRef.current = null;
       }
     }
   }, [
@@ -730,6 +738,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     sessionId,
     activeSession?.config.workspaceId,
     activeSession?.workspaceId,
+    modelSelectionScopeKey,
+    deviceSurfaceScope,
   ]);
 
   useEffect(() => {
@@ -738,14 +748,19 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     acpRestoreToastShownRef.current = null;
     setAcpOptions(null);
     setAcpOptionsLoadState('loading');
-  }, [acpClientId, sessionId]);
+  }, [acpClientId, sessionId, deviceSurfaceScope.epoch]);
 
   useEffect(() => {
     acpOptionsRef.current = acpOptions;
   }, [acpOptions]);
 
   useEffect(() => {
-    loadAcpOptions();
+    void loadAcpOptions();
+    return () => {
+      acpOptionsLoadRequestRef.current += 1;
+      acpStartupDismissRef.current?.();
+      acpStartupDismissRef.current = null;
+    };
   }, [loadAcpOptions]);
 
   useEffect(() => {

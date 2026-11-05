@@ -1,14 +1,70 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { activateSurface, resetDeviceSurfaceForTest } from '@/infrastructure/peer-device/deviceSurface';
 
-import type { AcpAvailableCommand } from '@/infrastructure/api/service-api/ACPClientAPI';
+import { ACPClientAPI, type AcpAvailableCommand } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { acpSessionRef, acpSlashCommandText } from '../utils/acpSession';
-import { filterSlashCommands } from './useAcpSlashCommands';
+import { filterSlashCommands, useAcpSlashCommands } from './useAcpSlashCommands';
+
+vi.mock('@/infrastructure/api/service-api/ACPClientAPI', () => ({
+  ACPClientAPI: { getSessionCommands: vi.fn(), onAvailableCommandsUpdated: vi.fn() },
+}));
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const commands: AcpAvailableCommand[] = [
   { name: 'compact', description: 'Compact the conversation context' },
   { name: 'init', description: 'Initialize the project' },
   { name: 'create_plan', description: 'Draft an execution plan', inputHint: 'what to plan' },
 ];
+
+describe('ACP command subscriptions', () => {
+  let root: Root;
+  let container: HTMLDivElement;
+  const session = { sessionId: 'same-session', clientId: 'codex', workspaceId: 'same-workspace' };
+  function View() {
+    const { commands: list } = useAcpSlashCommands(session);
+    return createElement('div', null, list.map(command => command.name).join(','));
+  }
+  beforeEach(() => {
+    resetDeviceSurfaceForTest();
+    vi.clearAllMocks();
+    vi.mocked(ACPClientAPI.onAvailableCommandsUpdated).mockReturnValue(vi.fn());
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('reloads commands and subscribes again when devices have identical session IDs', async () => {
+    vi.mocked(ACPClientAPI.getSessionCommands).mockResolvedValueOnce(commands)
+      .mockResolvedValueOnce([{ name: 'peer-command', description: 'Peer' }]);
+    await act(async () => root.render(createElement(View)));
+    expect(container.textContent).toContain('compact');
+    await act(async () => { activateSurface('peer-b'); });
+    expect(ACPClientAPI.getSessionCommands).toHaveBeenCalledTimes(2);
+    expect(ACPClientAPI.onAvailableCommandsUpdated).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toBe('peer-command');
+    const oldCallback = vi.mocked(ACPClientAPI.onAvailableCommandsUpdated).mock.calls[0][0];
+    act(() => oldCallback({ sessionId: session.sessionId, clientId: session.clientId, commands }));
+    expect(container.textContent).toBe('peer-command');
+  });
+
+  it('does not overwrite the new device commands with an old pending read', async () => {
+    let resolve!: (value: AcpAvailableCommand[]) => void;
+    vi.mocked(ACPClientAPI.getSessionCommands).mockReturnValueOnce(new Promise(done => { resolve = done; }))
+      .mockResolvedValueOnce([{ name: 'peer-command', description: 'Peer' }]);
+    await act(async () => root.render(createElement(View)));
+    await act(async () => { activateSurface('peer-b'); });
+    await act(async () => resolve(commands));
+    expect(container.textContent).toBe('peer-command');
+  });
+});
 
 describe('filterSlashCommands', () => {
   it('returns all commands for an empty query', () => {

@@ -39,7 +39,7 @@ import { isMacOSDesktopRuntime } from '@/infrastructure/runtime';
 import { flowChatSessionConfigForWorkspace } from '../utils/projectSessionWorkspace';
 import { startSessionSceneLifecycle } from '../services/sessionSceneLifecycle';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
-import { notificationService } from '@/shared/notification-system';
+import { AcpSessionNotifications } from './AcpSessionNotifications';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 import { AppearanceBackgroundMediaLayer, appearanceRuntime, useAppearance } from '@/infrastructure/appearance';
 import { PeerConnectionStatus } from '@/infrastructure/peer-device/PeerConnectionStatus';
@@ -63,14 +63,6 @@ const WorkspaceManager = lazyWithRecovery(() => import('../../tools/workspace/co
 
 interface AppLayoutProps {
   className?: string;
-}
-
-interface AcpSessionCreationEventDetail {
-  phase?: 'start' | 'finish';
-  clientId?: string;
-  action?: 'create' | 'restore';
-  requestId?: string;
-  succeeded?: boolean;
 }
 
 interface WindowModeHint {
@@ -596,35 +588,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     return () => window.removeEventListener('openbitfun:create-acp-session', handler);
   }, [currentWorkspace]);
 
-  React.useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<AcpSessionCreationEventDetail>).detail;
-      const clientId = detail?.clientId?.trim() || 'ACP';
-      const action = detail?.action === 'restore' ? 'restore' : 'create';
-      const id = detail?.requestId?.trim() || `${action}:${clientId}`;
-      if (detail?.phase === 'start') {
-        notificationService.silent({
-          title: clientId,
-          message: tCommon('nav.workspaces.startingAcpSession'),
-          type: 'info',
-          metadata: { source: 'acp-session', clientId, action, requestId: id, phase: 'start' },
-        });
-      } else if (detail?.phase === 'finish') {
-        const succeeded = detail.succeeded !== false;
-        notificationService.silent({
-          title: clientId,
-          message: succeeded
-            ? tCommon('nav.workspaces.acpSessionStarted')
-            : tCommon('nav.workspaces.acpSessionStartFailed'),
-          type: succeeded ? 'success' : 'error',
-          metadata: { source: 'acp-session', clientId, action, requestId: id, phase: 'finish', succeeded },
-        });
-      }
-    };
-    window.addEventListener('openbitfun:acp-session-creation', handler);
-    return () => window.removeEventListener('openbitfun:acp-session-creation', handler);
-  }, [tCommon]);
-
   // Global drag-and-drop
   React.useEffect(() => {
     const handleDragStart = (e: DragEvent) => {
@@ -674,6 +637,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     return (
       <>
         <DailyAppUpdateGate />
+        <AcpSessionNotifications />
         {aboutDialog}
         <div
           className={`${containerClassName} openbitfun-app-layout--toolbar-mode`}
@@ -700,6 +664,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
   return (
     <>
       <DailyAppUpdateGate />
+      <AcpSessionNotifications />
       <WindowResizeLayout />
       <div
         className={containerClassName}
