@@ -36,6 +36,7 @@ export type SettingsViewId =
 export type SettingsSectionId =
   | 'sidebar-navigation'
   | 'message-sending'
+  | 'btw-close-confirmation'
   | 'text-selection'
   | 'pet'
   | 'desktop-cards'

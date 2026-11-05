@@ -340,6 +340,7 @@
     "close": "关闭",
     "closeBtwTitle": "关闭侧问？",
     "confirmCloseBtw": "关闭后对话将消失，无法恢复。",
+    "skipCloseBtwConfirmation": "不再提示",
     "saveBtwAsFork": "保存为 Fork 会话",
     "saveBtwFailed": "保存失败，侧问已保留，请重试。",
     "closeBtwFailed": "暂时无法关闭侧问，标签页已保留，请重试。",

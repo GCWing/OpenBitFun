@@ -8,7 +8,7 @@
  * - Pin action -> pinned
  */
 
-import { useCallback, useEffect } from 'react';
+import { createElement, useCallback, useEffect } from 'react';
 import {
   useCanvasStore,
   useAgentCanvasStore,
@@ -28,6 +28,8 @@ import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { canSaveBtwSessionAsFork, discardBtwSession, saveBtwSessionAsFork } from '@/flow_chat/services/BtwSessionLifecycle';
 import { getActiveSurfaceScope, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import { notificationService } from '@/shared/notification-system';
+import { shouldConfirmBtwClose, setConfirmBtwClose } from '@/infrastructure/preferences/btwCloseConfirmation';
+import { BtwCloseConfirmation } from './BtwCloseConfirmation';
 
 const log = createLogger('useTabLifecycle');
 interface UseTabLifecycleOptions {
@@ -94,9 +96,12 @@ export const useTabLifecycle = (options: UseTabLifecycleOptions = {}): UseTabLif
   const confirmBtwClose = useCallback(async (tabs: { title: string; content: PanelContent }[]) => {
     const btwTabs = tabs.filter(isBtwTab);
     if (btwTabs.length === 0) return 'confirm';
-    return confirmDialogChoice({
+    if (!shouldConfirmBtwClose()) return 'confirm';
+
+    let skipConfirmation = false;
+    const choice = await confirmDialogChoice({
       title: t('tabs.closeBtwTitle'),
-      message: t('tabs.confirmCloseBtw'),
+      message: createElement(BtwCloseConfirmation, { onSkipChange: (checked) => { skipConfirmation = checked; } }),
       type: 'warning',
       confirmDanger: true,
       confirmText: t('tabs.close'),
@@ -105,6 +110,8 @@ export const useTabLifecycle = (options: UseTabLifecycleOptions = {}): UseTabLif
       secondaryText: btwTabs.some(tab => canSaveBtwSessionAsFork(tab.content.data.childSessionId))
         ? t('tabs.saveBtwAsFork') : undefined,
     });
+    if (choice === 'confirm' && skipConfirmation) setConfirmBtwClose(false);
+    return choice;
   }, [isBtwTab, t]);
 
   const closeTerminalSession = useCallback(async (tab: { content: PanelContent }): Promise<boolean> => {

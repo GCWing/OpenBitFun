@@ -24,6 +24,11 @@
     "loadFailed": "加载文本选择偏好失败",
     "saveFailed": "保存文本选择偏好失败"
   },
+  "btwCloseConfirmation": {
+    "title": "侧问关闭",
+    "label": "关闭侧问前确认",
+    "description": "关闭侧问会永久丢弃对话内容；关闭后不再显示确认提示。"
+  },
   "applicationGroups": {
     "startupAndUpdates": {
       "title": "启动与更新",

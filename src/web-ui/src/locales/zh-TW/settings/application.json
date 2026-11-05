@@ -24,6 +24,11 @@
     "loadFailed": "載入文字選取偏好失敗",
     "saveFailed": "儲存文字選取偏好失敗"
   },
+  "btwCloseConfirmation": {
+    "title": "側問關閉",
+    "label": "關閉側問前確認",
+    "description": "關閉側問會永久捨棄對話內容；關閉後不再顯示確認提示。"
+  },
   "applicationGroups": {
     "startupAndUpdates": {
       "title": "啟動與更新",

@@ -101,6 +101,7 @@
     "sections": {
       "text-selection": "Text selection",
       "message-sending": "Message sending",
+      "btw-close-confirmation": "Side conversation closing",
       "voice": "Voice",
       "shortcuts": "Keyboard Shortcuts",
       "session": "Session Defaults",

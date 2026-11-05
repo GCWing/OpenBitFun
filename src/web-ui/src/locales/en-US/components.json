@@ -342,6 +342,7 @@
     "saveBtwAsFork": "Save as fork",
     "saveBtwFailed": "Could not save. The side thread is still open; try again.",
     "confirmCloseBtw": "Closing discards the conversation permanently.",
+    "skipCloseBtwConfirmation": "Don't ask again",
     "closeBtwFailed": "Could not close the side conversation. The tab is still open; please try again.",
     "popOut": "Pop out as scene",
     "closeOthers": "Close Others",
