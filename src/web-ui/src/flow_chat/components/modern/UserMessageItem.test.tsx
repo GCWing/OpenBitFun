@@ -512,6 +512,19 @@ describe('UserMessageItem steering tag', () => {
     expect(container.querySelector('.user-message-item__edit-rollback-btn')).toBeNull();
   });
 
+  it('presents GenUI host repair input as evidence instead of a user message', () => {
+    act(() => root.render(
+      <FlowChatContext.Provider value={{ allowUserMessageRollback: true, allowUserMessageEdit: true }}>
+        <UserMessageItem message={{ id: 'genui-evidence', content: 'internal diagnostics payload', timestamp: 1000,
+          metadata: { genUIHostRepair: true } }} turnId="genui-repair-turn" />
+      </FlowChatContext.Provider>,
+    ));
+    expect(container.querySelector('.user-message-item__host-evidence')?.textContent).toContain('toolCards.generativeUI.hostEvidence');
+    expect(container.querySelector('[data-testid="chat-user-message-content"]')).toBeNull();
+    expect(container.querySelector('.user-message-item__edit-rollback-btn')).toBeNull();
+    expect(container.textContent).not.toContain('internal diagnostics payload');
+  });
+
   it('does not render a steering tag after steering is triggered', () => {
     act(() => {
       root.render(

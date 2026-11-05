@@ -1,7 +1,7 @@
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { Children, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { Portal } from '@openbitfun/ui';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -311,17 +311,11 @@ export const oiComponents: GenUIImplementations['components'] = {
     }, [open]);
     useEffect(() => {
       if (!open) return;
-      const close = (event: Event) => {
-        const target = event.target as Node;
-        if (event.type === 'keydown' ? (event as KeyboardEvent).key === 'Escape' : !trigger.current?.contains(target) && !panel.current?.contains(target)) setOpen(false);
-      };
       const onScroll = () => setOpen(false);
-      document.addEventListener('pointerdown', close);
-      document.addEventListener('keydown', close);
       window.addEventListener('scroll', onScroll, true);
-      return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', close); window.removeEventListener('scroll', onScroll, true); };
+      return () => window.removeEventListener('scroll', onScroll, true);
     }, [open]);
-    return <><button ref={trigger} type="button" className="gen-ui-oi-popover-trigger" aria-expanded={open} onClick={() => setOpen(value => !value)}>{render(view.props.trigger, renderNode)}</button>{open && position && typeof document !== 'undefined' ? createPortal(<div ref={panel} role="dialog" className="gen-ui-oi-popover-content" style={{ left: position.left, top: position.top, transform: position.up ? 'translateY(-100%)' : undefined }}>{render(view.props.content, renderNode)}</div>, getAppearanceOverlayHost()) : null}</>;
+    return <><button ref={trigger} type="button" className="gen-ui-oi-popover-trigger" aria-expanded={open} onClick={() => setOpen(value => !value)}>{render(view.props.trigger, renderNode)}</button>{open && position && typeof document !== 'undefined' ? <Portal target={getAppearanceOverlayHost()} ownerRef={trigger} surfaceRef={panel} onDismiss={() => setOpen(false)} dismissOnPointerOutside><div ref={panel} role="dialog" className="gen-ui-oi-popover-content" style={{ left: position.left, top: position.top, transform: position.up ? 'translateY(-100%)' : undefined }}>{render(view.props.content, renderNode)}</div></Portal> : null}</>;
   }),
   Divider: define(() => <hr className="gen-ui-oi-divider" />),
   Spacer: define(() => <div className="gen-ui-oi-spacer" aria-hidden="true" />),
@@ -376,7 +370,7 @@ export const oiComponents: GenUIImplementations['components'] = {
     useEffect(() => { const next = view.props.when === true; if (previous.current === false && next) setBurst(value => value + 1); previous.current = next; }, [view.props.when]);
     useEffect(() => { if (!burst) return; const timer = window.setTimeout(() => setBurst(0), 2200); return () => window.clearTimeout(timer); }, [burst]);
     if (!burst || typeof document === 'undefined') return null;
-    return createPortal(<div className="gen-ui-oi-confetti" role="status" aria-label="Celebration">{Array.from({ length: 48 }, (_, index) => <i key={index} style={{ left: `${(index * 37) % 100}%`, background: chartColor(index), animationDelay: `${(index % 10) * 40}ms`, rotate: `${(index * 97) % 720}deg` }} />)}</div>, getAppearanceOverlayHost());
+    return <Portal target={getAppearanceOverlayHost()} passive><div className="gen-ui-oi-confetti" role="status" aria-label="Celebration">{Array.from({ length: 48 }, (_, index) => <i key={index} style={{ left: `${(index * 37) % 100}%`, background: chartColor(index), animationDelay: `${(index % 10) * 40}ms`, rotate: `${(index * 97) % 720}deg` }} />)}</div></Portal>;
   }),
   Svg: define(({ view, slots }) => {
     const width = view.props.width as string | number | undefined;

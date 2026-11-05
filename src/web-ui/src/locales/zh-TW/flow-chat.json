@@ -2161,6 +2161,7 @@
       "verification": "執行驗收",
       "repair": "附帶診斷修復",
       "repairFailed": "無法提交修復請求",
+      "hostEvidence": "已將宿主渲染診斷傳送給智慧體",
       "unverified": "未驗證",
       "passed": "通過",
       "failed": "$t(shared:statuses.failed)",

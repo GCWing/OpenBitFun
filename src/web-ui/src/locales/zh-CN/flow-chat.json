@@ -2161,6 +2161,7 @@
       "verification": "运行验收",
       "repair": "携带诊断修复",
       "repairFailed": "无法提交修复请求",
+      "hostEvidence": "已将宿主渲染诊断发送给智能体",
       "unverified": "未验证",
       "passed": "通过",
       "failed": "$t(shared:statuses.failed)",

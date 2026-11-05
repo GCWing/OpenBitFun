@@ -5,7 +5,8 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import { Check, ChevronLeft, ChevronRight, Copy } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { Portal } from "@openbitfun/ui";
+import { getAppearanceOverlayHost } from "@/infrastructure/appearance/runtime/AppearanceOverlayHost";
 import { z } from "zod/v4";
 import { inline } from "./markdown";
 import { children, cx } from "./style";
@@ -83,19 +84,9 @@ export const Popover = defineComponent({
     }, [open]);
     useEffect(() => {
       if (!open) return;
-      const close = (event: Event) => {
-        const target = event.target as Node;
-        if (event.type === "keydown" ? (event as KeyboardEvent).key === "Escape" : !panel.current?.contains(target) && !button.current?.contains(target)) setOpen(false);
-      };
       const onScroll = () => setOpen(false);
-      document.addEventListener("pointerdown", close);
-      document.addEventListener("keydown", close);
       window.addEventListener("scroll", onScroll, true);
-      return () => {
-        document.removeEventListener("pointerdown", close);
-        document.removeEventListener("keydown", close);
-        window.removeEventListener("scroll", onScroll, true);
-      };
+      return () => window.removeEventListener("scroll", onScroll, true);
     }, [open]);
     return (
       <>
@@ -104,7 +95,7 @@ export const Popover = defineComponent({
         </button>
         {open &&
           at &&
-          createPortal(
+          <Portal target={getAppearanceOverlayHost()} ownerRef={button} surfaceRef={panel} onDismiss={() => setOpen(false)} dismissOnPointerOutside>
             <div
               ref={panel}
               role="dialog"
@@ -113,9 +104,8 @@ export const Popover = defineComponent({
               data-theme={button.current?.closest("[data-theme]")?.getAttribute("data-theme") ?? undefined}
             >
               {renderSlot(props.content, renderNode)}
-            </div>,
-            document.body,
-          )}
+            </div>
+          </Portal>}
       </>
     );
   },
@@ -246,7 +236,7 @@ export const Celebration = defineComponent({
       return () => clearTimeout(t);
     }, [burst]);
     if (!burst || typeof document === "undefined") return null;
-    return createPortal(
+    return <Portal target={getAppearanceOverlayHost()} passive>
       <div className="iui-confetti" aria-hidden key={burst}>
         {Array.from({ length: 70 }, (_, i) => (
           <i
@@ -261,9 +251,8 @@ export const Celebration = defineComponent({
             }}
           />
         ))}
-      </div>,
-      document.body,
-    );
+      </div>
+    </Portal>;
   },
 });
 

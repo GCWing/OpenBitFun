@@ -197,6 +197,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       [restoredComposerContexts],
     );
     const isUsageReportMessage = message?.metadata?.localCommandKind === 'usage_report';
+    const isGenUIHostEvidence = Boolean(message?.metadata?.genUIHostRepair);
     const isGoalLoadingMessage = Boolean(message?.metadata?.threadGoalKickoff);
     const isThreadGoalContinuationCheck = Boolean(message?.metadata?.threadGoalContinuation);
     const isThreadGoalSystemMessage = Boolean(
@@ -210,7 +211,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       () => resolveSessionRelationship(activeSession),
       [activeSession]
     );
-    const canShowRollbackAction = allowUserMessageRollback && !sessionRelationship.isSubagent;
+    const canShowRollbackAction = allowUserMessageRollback && !sessionRelationship.isSubagent && !isGenUIHostEvidence;
 
     const currentSession = activeSessionOverride
       ?? (sessionId ? flowChatStore.getState().sessions.get(sessionId) ?? null : null)
@@ -262,10 +263,11 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       !isRemoteSession &&
       !isFollowedSource &&
       !isThreadGoalSystemMessage &&
+      !isGenUIHostEvidence &&
       !isSystemTriggered &&
       !steeringStatus && !hostQueueStatus;
     const canEdit = canEditBase && isSessionIdle && !isEditSubmitting && !sessionMutation;
-    const canShowEditAction = allowUserMessageEdit && !isFailed && !isThreadGoalSystemMessage && !hostQueueStatus;
+    const canShowEditAction = allowUserMessageEdit && !isFailed && !isThreadGoalSystemMessage && !isGenUIHostEvidence && !hostQueueStatus;
     const canShowRollbackMenuItem = !isFailed && canShowRollbackAction && !steeringStatus && !hostQueueStatus;
     const canShowActionMenu = canShowEditAction || canShowRollbackMenuItem;
     const rollbackPending = sessionMutation?.kind === 'rollback' && sessionMutation.targetTurnId === turnId;
@@ -690,9 +692,10 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
           </div>
         ) : (
           <div className="user-message-item__main" data-openbitfun-product-component="user-message-item" data-openbitfun-product-part="main">
+          {isGenUIHostEvidence ? <p className="user-message-item__host-evidence" role="note">{t('toolCards.generativeUI.hostEvidence')}</p> : null}
           {backgroundDeliveryFromMetadata(message.metadata, turnId)?.reason === 'recovery_completed'
                     ? <p>{t('backgroundDelivery.recoveryCompleted')}</p> : null}
-          <div
+          {isGenUIHostEvidence ? null : <div
             className={
               isFailed
                 ? 'user-message-item__failed-inline-cluster'
@@ -747,7 +750,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
                 )}
               </>
             )}
-            </div>
+            </div>}
           </div>
         )}
 

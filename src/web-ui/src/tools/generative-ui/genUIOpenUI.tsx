@@ -1,4 +1,5 @@
 import './disableOpenUIDevtools';
+import type { OpenUIError } from '@openuidev/lang-core';
 import { action, createLibrary, defineComponent, defineFunction, reactive, Renderer, useIsStreaming, useStateField, useTriggerAction, type ActionPlan } from '@openuidev/react-lang';
 import { z } from 'zod/v4';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
@@ -342,7 +343,7 @@ export default function GenUIOpenUIDocument({
   /** Keep product side effects out of disposable verification probes. */
   executeActions?: boolean;
   onStateUpdate?: (state: GenUIAppState) => void;
-  onError?: (message: string) => void;
+  onError?: (errors: OpenUIError[]) => void;
   onAction?: (event: GenUIOpenUIActionEvent) => void | Promise<void>;
   onInspect?: (event: GenUIOpenUIInspectEvent) => void;
   /** Explicit owner-registered Query/Mutation capabilities; absent by default. */
@@ -418,8 +419,8 @@ export default function GenUIOpenUIDocument({
     if (executeActions) void runGenUIAction(event);
     void onAction?.(event);
   }, [executeActions, onAction]);
-  const handleError = useCallback((errors: Array<{ message: string }>) => {
-    if (errors.length) onError?.(errors.map(error => error.message).join('; '));
+  const handleError = useCallback((errors: OpenUIError[]) => {
+    onError?.(errors);
   }, [onError]);
   return <OpenUIAsyncRuntimeContext.Provider value={runtime}>
     <Renderer

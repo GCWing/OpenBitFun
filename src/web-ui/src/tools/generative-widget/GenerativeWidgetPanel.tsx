@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import {
   type GenerativeWidgetOrigin,
@@ -14,6 +14,11 @@ import { createGenUIMcpProvider } from '@/tools/generative-ui/genUIMcpProvider';
 import { createGenUINativeProvider, mergeGenUIProviders } from '@/tools/generative-ui/genUINativeProvider';
 import type { GenUITargetEvent } from '@/tools/generative-ui/genUIAsyncCapabilities';
 import { requiresGenUIAsyncProvider } from '@/tools/generative-ui/genUIAsyncSource';
+import type { GenUIVerification } from '@/tools/generative-ui/genUIVerification';
+import { requestGenUIAutoRepair } from '@/tools/generative-ui/genUIAutoRepair';
+import { isFatalGenUIError } from '@/tools/generative-ui/genUIRenderDiagnostics';
+import { genUIContentKey } from '@/tools/generative-ui/genUIState';
+import { requestGenUIRepair } from '@/tools/generative-ui/genUIRepair';
 import './GenerativeWidgetPanel.scss';
 
 export interface GenerativeWidgetPanelProps {
@@ -62,6 +67,37 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
     return mergeGenUIProviders(mcp, createGenUINativeProvider(asyncTarget), onTargetEvent);
   }, [asyncTarget, mcpCatalog.catalog, onTargetEvent]);
   const requiresDelivery = false;
+  const [verification, setVerification] = useState<GenUIVerification>();
+  const originKey = JSON.stringify(origin);
+  const observedStreaming = useRef({ originKey, live: false });
+  if (observedStreaming.current.originKey !== originKey) {
+    observedStreaming.current = { originKey, live: false };
+  }
+  const autoRepairKey = useRef('');
+  const [repairPending, setRepairPending] = useState(false);
+  const [repairQueued, setRepairQueued] = useState(false);
+  const [repairError, setRepairError] = useState('');
+  useEffect(() => {
+    autoRepairKey.current = '';
+    setRepairPending(false);
+    setRepairQueued(false);
+    setRepairError('');
+  }, [originKey]);
+  if (projection?.isStreaming && !projection.readOnly
+    && flowChatStore.getState().activeSessionId === origin?.sessionId
+    && document.visibilityState !== 'hidden') observedStreaming.current.live = true;
+  const onVerification = (report: GenUIVerification) => {
+    setVerification(report);
+    if (!projection?.origin || !projection.app || !observedStreaming.current.live || projection.isStreaming || projection.readOnly || projection.isFailed) return;
+    const repairKey = `${report.definitionKey}:${JSON.stringify(report.diagnostics ?? [])}`;
+    if (report.definitionKey !== genUIContentKey(projection.app) || report.render !== 'failed' || !report.diagnostics?.some(isFatalGenUIError)
+      || autoRepairKey.current === repairKey) return;
+    autoRepairKey.current = repairKey;
+    setRepairPending(true);
+    void requestGenUIAutoRepair(projection.origin, report).then(setRepairQueued, error => {
+      setRepairError(error instanceof Error ? error.message : String(error));
+    }).finally(() => setRepairPending(false));
+  };
   const canInteract = Boolean(app && !projection?.readOnly && !projection?.isFailed && projection?.status !== 'cancelled' && projection?.status !== 'rejected');
   const interactionState = resolveGenUIInteractionState({
     app,
@@ -81,6 +117,23 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
   // Keep the tool failure available to the model without surfacing a failed
   // candidate while it repairs the source. Owner/save errors remain visible.
   if (projection?.isFailed || projection?.status === 'rejected') return null;
+  const currentVerification = app && verification?.definitionKey === genUIContentKey(app) ? verification : undefined;
+  const fatalRender = currentVerification?.render === 'failed';
+  let repairControl: React.ReactNode = null;
+  if (fatalRender && currentVerification) {
+    const repairable = Boolean(projection?.origin && currentVerification.diagnostics?.some(isFatalGenUIError));
+    if (repairable && !projection?.readOnly && !repairQueued && !repairPending) repairControl = <div className="openbitfun-generative-widget-panel__repair" data-openbitfun-component="generative-widget" data-openbitfun-state="repair-required">
+      <button type="button" disabled={repairPending} onClick={() => {
+        if (!projection?.origin) return;
+        setRepairPending(true);
+        setRepairError('');
+        void requestGenUIRepair(projection.origin, currentVerification).catch(error => {
+          setRepairError(error instanceof Error ? error.message : String(error));
+        }).finally(() => setRepairPending(false));
+      }}>{t('toolCards.generativeUI.repair')}</button>
+      {repairError ? <span role="alert">{t('toolCards.generativeUI.repairFailed')}</span> : null}
+    </div>;
+  }
   if (app) {
     return (
       <div
@@ -89,7 +142,7 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
         data-openbitfun-part="application"
         data-openbitfun-state={interactionState}
       >
-        {showToolbar ? <div className="openbitfun-generative-widget-panel__toolbar" data-openbitfun-component="generative-widget" data-openbitfun-part="toolbar">
+        {showToolbar && !fatalRender ? <div className="openbitfun-generative-widget-panel__toolbar" data-openbitfun-component="generative-widget" data-openbitfun-part="toolbar">
           <span className="openbitfun-generative-widget-panel__title">{app.title}</span>
           <span className="openbitfun-generative-widget-panel__status" role="status" aria-live="polite">{terminalStatus}</span>
           {presentation === 'inline' && projection?.origin && onExpand ? <button
@@ -100,7 +153,8 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
           >↗</button> : null}
         </div> : null}
         {projection?.readOnlyReason ? <p role="status">{projection.readOnlyReason}</p> : null}
-        <div className="openbitfun-generative-widget-panel__app" data-openbitfun-component="generative-widget" data-openbitfun-part="app">
+        {repairControl}
+        <div hidden={fatalRender} className="openbitfun-generative-widget-panel__app" data-openbitfun-component="generative-widget" data-openbitfun-part="app">
           <GenUIApplication
             key={JSON.stringify([projection?.origin ?? origin, app.id])}
             definition={app}
@@ -113,6 +167,7 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
             asyncTarget={asyncTarget}
             asyncTargetId={asyncTargetId}
             onTargetEvent={onTargetEvent}
+            onVerification={onVerification}
           />
         </div>
       </div>

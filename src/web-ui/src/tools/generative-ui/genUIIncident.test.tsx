@@ -48,7 +48,7 @@ describe('source GenUI incident regressions', () => {
     }
   });
 
-  it('shows a readable parser error instead of leaving an invalid HtmlView blank', async () => {
+  it('reports invalid HtmlView source without exposing internal diagnostics', async () => {
     const element = document.createElement('div');
     const root = createRoot(element);
     const definition: GenUIAppDefinition = {
@@ -61,8 +61,9 @@ describe('source GenUI incident regressions', () => {
     };
     try {
       await act(async () => root.render(<GenUIApplication definition={definition} />));
-      expect(element.querySelector('[role="alert"]')?.textContent).toContain('HtmlView');
-      expect(element.querySelector('[data-gen-ui-postcheck="failed"]')).not.toBeNull();
+      expect(element.querySelector('iframe')).not.toBeNull();
+      expect(element.querySelector('[role="alert"]')).toBeNull();
+      expect(element.querySelector('[data-gen-ui-postcheck="failed"]')).toBeNull();
     } finally {
       await act(async () => root.unmount());
     }
@@ -107,7 +108,9 @@ describe('source GenUI incident regressions', () => {
     try {
       await act(async () => root.render(<Owner />));
       await act(async () => { await Promise.resolve(); });
-      expect(reports).toHaveBeenCalledTimes(1);
+      expect(reports).toHaveBeenCalledTimes(2);
+      await act(async () => root.render(<Owner />));
+      expect(reports).toHaveBeenCalledTimes(2);
     } finally {
       await act(async () => root.unmount());
     }

@@ -805,6 +805,7 @@ mod tests {
                 "ReadMCPResource",
                 "ListMCPPrompts",
                 "GetMCPPrompt",
+                "GenerativeUI",
                 "Worktree",
                 "ReviewPlatform",
                 "MiniAppBrowser",

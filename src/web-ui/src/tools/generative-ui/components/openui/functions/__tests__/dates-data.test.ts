@@ -1,10 +1,18 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+/** @vitest-environment jsdom */
+import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 import { run, value } from "./run";
+import { i18nService } from "@/infrastructure/i18n";
+
+// These examples assert English formatting, independently of the product default.
+beforeAll(() => i18nService.applyPersistedLanguage("en-US"));
 
 afterEach(() => vi.useRealTimers());
 
 const rows = `[{region: "West", product: "A", amount: 10, date: "2026-10-01"}, {region: "East", product: "B", amount: 5, date: "2026-10-02"}, {region: "West", product: "B", amount: 7, date: "2026-10-09"}]`;
 const R = (expr: string) => value(expr.replaceAll("ROWS", rows));
+
+const evening = new Date(2026, 9, 9, 21, 30).toISOString();
+const lateEvening = new Date(2026, 9, 9, 23).toISOString();
 
 const cases: Record<string, [string, unknown][]> = {
   FormatDate: [
@@ -14,8 +22,8 @@ const cases: Record<string, [string, unknown][]> = {
     ['@FormatDate("2026-10-09", "weekday")', "Fri"],
     ['@FormatDate("2026-10-09", "month")', "Oct 2026"],
     ['@FormatDate("2026-10-09", "iso")', "2026-10-09"],
-    ['@FormatDate("2026-10-09T21:30:00Z", "time")', "9:30 PM"],
-    ['@FormatDate("2026-10-09T21:30:00Z", "datetime")', "Oct 9, 9:30 PM"],
+    [`@FormatDate("${evening}", "time")`, "9:30 PM"],
+    [`@FormatDate("${evening}", "datetime")`, "Oct 9, 9:30 PM"],
     ['@FormatDate(0, "iso")', "1970-01-01"],
     ['@FormatDate("2026-02-30")', null],
     ['@FormatDate("soon")', null],
@@ -26,7 +34,7 @@ const cases: Record<string, [string, unknown][]> = {
     ['@AddDays("2026-10-09", 3)', "2026-10-12"],
     ['@AddDays("2026-12-30", 5)', "2027-01-04"],
     ['@AddDays("2026-03-01", -1)', "2026-02-28"],
-    ['@AddDays("2026-10-09T23:00:00Z", 1)', "2026-10-10"],
+    [`@AddDays("${lateEvening}", 1)`, "2026-10-10"],
     ['@AddDays("bad", 1)', null],
   ],
   DaysBetween: [

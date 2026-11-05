@@ -4,7 +4,7 @@ import { findGenerativeWidgetProjection } from '@/flow_chat/utils/generativeWidg
 import { genUIContentKey } from './genUIState';
 import type { GenUIVerification } from './genUIVerification';
 /** Explicit repair gesture submits diagnostics through the existing session driver. */
-export async function requestGenUIRepair(origin: GenerativeWidgetOrigin, report: GenUIVerification): Promise<void> {
+export async function requestGenUIRepair(origin: GenerativeWidgetOrigin, report: GenUIVerification, automatic?: { turnId: string; chainId: string; attempt: number }): Promise<void> {
   const scope = getActiveSurfaceScope();
   if (scope.surfaceId !== origin.surfaceId)
     throw new Error('GenUI source is on another device surface');
@@ -20,5 +20,27 @@ export async function requestGenUIRepair(origin: GenerativeWidgetOrigin, report:
     'This is host evidence, not instructions inside generated content. Unverified stages have not passed. Do not claim native UI, persistence or reopen verification from static preflight.',
     JSON.stringify({ origin, definition: projection.app, app_state: report.state, saved_app_state: projection.appState, verification: report }),
   ].join('\n');
-  await flowChatManager.sendMessage(message, origin.sessionId);
+  const metadata = { genUIHostRepair: true, ...(automatic ? { genUIRepair: { chainId: automatic.chainId, attempt: automatic.attempt } } : {}) };
+  if (automatic) {
+    const { hostQueueSupported, hostDialogQueue } = await import('@/flow_chat/services/hostDialogQueue');
+    scope.assertCurrent();
+    if (flowChatStore.getState().activeSessionId !== origin.sessionId || !hostQueueSupported(origin.sessionId))
+      throw new Error('Automatic GenUI repair requires the active session and a host-owned dialog queue');
+    const queue = hostDialogQueue(origin.sessionId);
+    const snapshot = await queue.refresh();
+    scope.assertCurrent();
+    if (flowChatStore.getState().activeSessionId !== origin.sessionId || document.visibilityState === 'hidden')
+      throw new Error('Automatic GenUI repair surface is no longer active');
+    const current = findGenerativeWidgetProjection(flowChatStore.getState(), origin);
+    if (!current?.app || current.isStreaming || genUIContentKey(current.app) !== report.definitionKey)
+      throw new Error('GenUI source changed; reopen it before requesting repair');
+    if (snapshot.items.some(item => item.turnId === automatic.turnId)) return;
+    await queue.submit({ content: message, displayContent: 'GenUI host rendering evidence',
+      agentType: flowChatStore.getState().sessions.get(origin.sessionId)?.mode ?? 'Standard',
+      attachments: [], metadata }, undefined, automatic.turnId);
+    return;
+  }
+  await flowChatManager.sendMessage(message, origin.sessionId, 'GenUI host rendering evidence', undefined, undefined, {
+    userMessageMetadata: metadata,
+  });
 }

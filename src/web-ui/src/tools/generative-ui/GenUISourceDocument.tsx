@@ -1,4 +1,5 @@
 import type { GenUIDesignSpec } from './genUIContract';
+import type { OpenUIError } from '@openuidev/lang-core';
 import GenUIHtmlDocument from './GenUIHtmlDocument';
 import type { GenUIHtmlBridge } from './GenUIHtmlDocument';
 import GenUIOpenUIDocument from './genUIOpenUI';
@@ -49,7 +50,7 @@ export default function GenUISourceDocument({
   isStreaming?: boolean;
   readOnly?: boolean;
   onStateUpdate?: (state: GenUIAppState) => void;
-  onError?: (message: string) => void;
+  onError?: (errors: OpenUIError[]) => void;
   onAction?: (event: GenUIOpenUIActionEvent) => void | Promise<void>;
   toolProvider?: GenUIOpenUIToolProvider;
   asyncProvider?: GenUIProviderInput;

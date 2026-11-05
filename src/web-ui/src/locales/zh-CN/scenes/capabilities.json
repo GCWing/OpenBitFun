@@ -377,6 +377,13 @@
             "drag-restore": "拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复",
             "desktop-pinning": "在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态"
           }
+        },
+        "generative-ui": {
+          "title": "生成式界面",
+          "summary": "在会话中使用所选组件库生成可交互界面。",
+          "items": {
+            "app-generation": "生成可交互的 GenUI 应用并由宿主渲染"
+          }
         }
       },
       "setting": {
@@ -540,7 +547,8 @@
               "computer-use-permissions": "查看并请求辅助功能与屏幕录制权限",
               "browser-auto-connect": "控制 OpenBitFun 启动时是否自动连接浏览器",
               "browser-setup": "发现并选择浏览器、配置默认 CDP 或按需重启",
-              "json-repair": "控制是否在安全边界内修复模型生成的非法工具参数 JSON"
+              "json-repair": "控制是否在安全边界内修复模型生成的非法工具参数 JSON",
+              "genui-library": "选择生成式 UI 组件库并操作预览"
             }
           },
           "desktop-control": {

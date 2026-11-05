@@ -1,4 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { OpenUIError } from '@openuidev/lang-core';
+import { isFatalGenUIError } from './genUIRenderDiagnostics';
 import type { GenUIAppDefinition, GenUIAppEnvelope, GenUIAppState } from './genUITypes';
 import { designSpecForApp, libraryFor, preflightGenUIApp } from './genUIContract';
 import { GenUIStateStore, genUIContentKey, validateGenUIState } from './genUIState';
@@ -78,7 +80,12 @@ function Application({ product = genUIProduct, definition, initialState, readOnl
   const [state, setState] = useState(() => store.current.initialize(app, initialState));
   const [persistence, setPersistence] = useState<GenUIVerification['persistence']>('unverified');
   const [saveError, setSaveError] = useState('');
-  const [openUIError, setOpenUIError] = useState('');
+  const [openUIReport, setOpenUIReport] = useState<{ key: string; errors: OpenUIError[] }>();
+  const receiveOpenUIErrors = useCallback((errors: OpenUIError[]) => {
+    setOpenUIReport({ key: definitionKey, errors });
+  }, [definitionKey]);
+  const openUIErrors = !streaming && openUIReport?.key === definitionKey ? openUIReport.errors : [];
+  const fatalErrors = openUIErrors.filter(isFatalGenUIError);
   const [observed, setObserved] = useState(false);
   const baseline = useRef(initialState);
   const dirty = useRef(false);
@@ -98,10 +105,11 @@ function Application({ product = genUIProduct, definition, initialState, readOnl
     if (!dirty.current) setState(store.current.initialize(app, initialState));
   }, [definitionKey, app, initialState]);
   const stateIssues = preflight.accepted ? validateGenUIState(app, state) : [];
-  const renderErrors = !library ? [`GenUI library ${app.libraryId}@${app.libraryRevision} is unavailable`] : !source ? ['GenUI source is required; semantic graph documents were removed'] : sourceIssues.length ? sourceIssues : openUIError ? [openUIError] : [];
-  const render: GenUIVerification['render'] = renderErrors.length ? 'failed' : streaming ? 'unverified' : 'passed';
+  const renderErrors = !library ? [`GenUI library ${app.libraryId}@${app.libraryRevision} is unavailable`] : !source ? ['GenUI source is required; semantic graph documents were removed'] : sourceIssues.length ? sourceIssues : fatalErrors.map(error => error.message);
+  const render: GenUIVerification['render'] = renderErrors.length ? 'failed' : streaming || (source?.kind === 'openui-lang' && openUIReport?.key !== definitionKey) ? 'unverified' : 'passed';
   const checks: GenUIVerification['checks'] = renderErrors.length || stateIssues.length ? 'failed' : source?.kind === 'html-document' ? 'passed' : streaming ? 'unverified' : 'passed';
   const report: GenUIVerification = {
+    appId: app.id,
     definitionKey,
     state,
     checks,
@@ -110,7 +118,8 @@ function Application({ product = genUIProduct, definition, initialState, readOnl
     interaction: observed ? 'observed' : 'unverified',
     persistence,
     reopen: restoredFromStorage ? 'restored' : 'unverified',
-    issues: [...preflight.issues, ...stateIssues, ...renderErrors.map(message => ({ path: 'source', message, code: 'render', severity: 'error' as const })), ...(saveError ? [{ path: 'app_state', message: saveError, code: 'persistence', severity: 'error' as const }] : [])],
+    issues: [...preflight.issues, ...stateIssues, ...renderErrors.map(message => ({ path: 'source', message, code: 'render', severity: 'error' as const })), ...openUIErrors.filter(error => !isFatalGenUIError(error)).map(error => ({ path: error.path ?? error.statementId ?? 'source', message: error.message, code: error.code, severity: 'warning' as const })), ...(saveError ? [{ path: 'app_state', message: saveError, code: 'persistence', severity: 'error' as const }] : [])],
+    diagnostics: openUIErrors,
   };
   const reportKey = JSON.stringify(report);
   useEffect(() => { onVerificationRef.current?.(JSON.parse(reportKey)); }, [reportKey]);
@@ -137,9 +146,9 @@ function Application({ product = genUIProduct, definition, initialState, readOnl
         // parent rerenders forever while the document is mounting.
         if (nextKey === lastStateKey.current || nextKey === genUIContentKey(stateRef.current)) return;
         lastStateKey.current = nextKey;
-        setOpenUIError(''); setObserved(true); dirty.current = true;
+        setObserved(true); dirty.current = true;
         store.current.commit(next); setState(next); save(next);
-      }} onError={setOpenUIError} onAction={event => { setObserved(true); return onAction?.(event); }} toolProvider={toolProvider} asyncProvider={asyncProvider} asyncRuntime={asyncRuntime} asyncPermissions={asyncPermissions} asyncTarget={asyncTarget} asyncTargetId={asyncTargetId} onTargetEvent={onTargetEvent} htmlBridge={htmlBridge} htmlScriptEnabled={Boolean(!preview && !readOnly && !streaming)} />}
+      }} onError={receiveOpenUIErrors} onAction={event => { setObserved(true); return onAction?.(event); }} toolProvider={toolProvider} asyncProvider={asyncProvider} asyncRuntime={asyncRuntime} asyncPermissions={asyncPermissions} asyncTarget={asyncTarget} asyncTargetId={asyncTargetId} onTargetEvent={onTargetEvent} htmlBridge={htmlBridge} htmlScriptEnabled={Boolean(!preview && !readOnly && !streaming)} />}
     </div>
   </GenUIHostSurface>;
 }

@@ -41,7 +41,7 @@ describe('default OpenUI component catalog', () => {
       ].join('\n') }}
       library={genUIProduct.libraries['openbitfun.composable.v1']}
       initialState={{ range: 5, date: '2026-10-31' }}
-      onError={errors}
+      onError={next => errors(...next)}
     />));
     expect(errors.mock.calls.filter(([message]) => message).length).toBe(0);
     expect(container.querySelector('.gen-ui-oi-markdown')).not.toBeNull();

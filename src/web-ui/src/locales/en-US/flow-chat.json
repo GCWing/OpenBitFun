@@ -2161,6 +2161,7 @@
       "verification": "Runtime verification",
       "repair": "Repair with diagnostics",
       "repairFailed": "Could not submit repair request",
+      "hostEvidence": "Host rendering evidence sent to the agent",
       "unverified": "Unverified",
       "passed": "Passed",
       "failed": "$t(shared:statuses.failed)",

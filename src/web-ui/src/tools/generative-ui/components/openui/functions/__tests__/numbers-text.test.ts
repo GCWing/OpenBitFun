@@ -1,5 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+/** @vitest-environment jsdom */
+import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 import { run, value } from "./run";
+import { i18nService } from "@/infrastructure/i18n";
+
+// These examples assert English formatting, independently of the product default.
+beforeAll(() => i18nService.applyPersistedLanguage("en-US"));
 
 afterEach(() => vi.restoreAllMocks());
 

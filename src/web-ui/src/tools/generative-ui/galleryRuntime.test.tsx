@@ -56,7 +56,7 @@ describe('OpenUI Lang gallery fixtures', () => {
         source={app.source}
         library={genUIProduct.libraries[app.libraryId]}
         toolProvider={program.requiresTools ? galleryToolProvider : undefined}
-        onError={message => errors.push(message)}
+        onError={next => errors.push(...next.map(error => error.message))}
       />));
       await act(async () => { await Promise.resolve(); await Promise.resolve(); });
       expect(errors, program.id).toEqual([]);
