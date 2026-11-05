@@ -42,11 +42,12 @@ export async function encrypt(
   key: Uint8Array,
   plaintext: string,
   acceptsZstd = false,
-): Promise<{ data: string; nonce: string }> {
+): Promise<{ data: string; nonce: string; usesZstd: boolean }> {
   const nonce = randomBytes(NONCE_LEN);
   const cipher = gcm(key, nonce);
-  const ct = cipher.encrypt(await encodeRelayMessage(new TextEncoder().encode(plaintext), acceptsZstd));
-  return { data: toB64(ct), nonce: toB64(nonce) };
+  const encoded = await encodeRelayMessage(new TextEncoder().encode(plaintext), acceptsZstd);
+  const ct = cipher.encrypt(encoded);
+  return { data: toB64(ct), nonce: toB64(nonce), usesZstd: encoded[0] === 0xff };
 }
 
 export async function decrypt(

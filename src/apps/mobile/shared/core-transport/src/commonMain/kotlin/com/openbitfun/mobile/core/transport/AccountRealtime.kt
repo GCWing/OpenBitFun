@@ -24,7 +24,8 @@ internal interface AccountRpcConnection {
     suspend fun readyForEncoding(): MutableStateFlow<Set<String>>? = peerEncodings
     val notifications: Flow<JsonObject> get() = emptyFlow()
     val connections: Flow<Long> get() = emptyFlow()
-    suspend fun call(target: String, params: JsonElement, timeoutMs: Long): JsonElement
+    suspend fun call(target: String, params: JsonElement, timeoutMs: Long,
+        expectedEncodings: MutableStateFlow<Set<String>>? = null): JsonElement
     fun close()
 }
 
@@ -75,15 +76,18 @@ internal class AccountRealtime(
 
     override suspend fun readyForEncoding() = readyEpoch().encodings.value
 
-    override suspend fun call(target: String, params: JsonElement, timeoutMs: Long): JsonElement {
+    override suspend fun call(target: String, params: JsonElement, timeoutMs: Long,
+        expectedEncodings: MutableStateFlow<Set<String>>?): JsonElement {
         require(timeoutMs in 1..Int.MAX_VALUE.toLong()) { "Invalid RPC timeout" }
         try {
             val epoch = readyEpoch()
+            assertEncodingCurrent(expectedEncodings)
             val wireParams = payloads.uploadIfLarge(params)
             if (!owner.isActive || epoch.closed || state.value !== epoch) throw CloudAccountException(CloudAccountFailure.NETWORK)
             val reply = CompletableDeferred<JsonElement>()
             val id = epoch.mutex.withLock {
                 if (epoch.closed || state.value !== epoch) throw CloudAccountException(CloudAccountFailure.NETWORK)
+                assertEncodingCurrent(expectedEncodings)
                 val id = epoch.nextId++
                 epoch.pending[id] = reply
                 id
@@ -96,6 +100,7 @@ internal class AccountRealtime(
                 // If write or ack fails, execution may already have happened.
                 // Only durable writes with a stable localId may be retried.
                 val response = withTimeout(timeoutMs) {
+                    assertEncodingCurrent(expectedEncodings)
                     epoch.socket.send(EngineIO.encodeSocketIO(EngineIOPacket.Message(packet)))
                     val result = reply.await().jsonObject
                     if (result["ok"]?.jsonPrimitive?.booleanOrNull != true) {
@@ -111,6 +116,13 @@ internal class AccountRealtime(
             }
         } catch (timeout: TimeoutCancellationException) {
             throw CloudAccountException(CloudAccountFailure.TIMEOUT, null, connectionFailure.value ?: timeout)
+        }
+    }
+
+    private fun assertEncodingCurrent(expected: MutableStateFlow<Set<String>>?) {
+        if (expected != null && expected !== peerEncodings) {
+            throw CloudAccountException(CloudAccountFailure.NETWORK, null,
+                IllegalStateException("Relay capabilities changed; request was not submitted"))
         }
     }
 

@@ -403,7 +403,7 @@ export class RelayHttpClient {
       await connection.ready();
       const encodings = this.peerEncodings;
       const plaintext = JSON.stringify(command);
-      const { data: encData, nonce: encNonce } = await encrypt(
+      const { data: encData, nonce: encNonce, usesZstd } = await encrypt(
         messageKey,
         plaintext,
         acceptsRelayZstd() && encodings.has(targetDeviceId),
@@ -412,10 +412,17 @@ export class RelayHttpClient {
       if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
         throw new AccountIdentityChangedError();
       }
+      const assertEncodingCurrent = () => {
+        if (usesZstd && encodings !== this.peerEncodings) {
+          throw new Error('Relay capabilities changed; request was not submitted');
+        }
+      };
+      assertEncodingCurrent();
       const timeoutMs = options.timeoutMs ?? (options.retryable ? 20_000 : 130_000);
       const data = await connection.call<{ encrypted_data: string; nonce: string; accept_encoding?: string }>(targetDeviceId,
         { encrypted_data: encData, nonce: encNonce, accept_encoding: acceptsRelayZstd() ? relayZstd : undefined }, {
           timeoutMs,
+          beforeSubmit: assertEncodingCurrent,
           beforeSend: () => {
             if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
               throw new AccountIdentityChangedError();

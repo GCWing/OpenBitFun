@@ -1202,6 +1202,26 @@ impl RemoteConnectService {
         encrypted_data: &str,
         nonce: &str,
     ) -> Result<bool> {
+        self.send_device_message_if_connection_guarded(
+            expected_connection_id,
+            target_device_id,
+            correlation_id,
+            encrypted_data,
+            nonce,
+            || Ok(()),
+        )
+        .await
+    }
+
+    pub async fn send_device_message_if_connection_guarded(
+        &self,
+        expected_connection_id: u64,
+        target_device_id: &str,
+        correlation_id: &str,
+        encrypted_data: &str,
+        nonce: &str,
+        before_send: impl Fn() -> Result<()>,
+    ) -> Result<bool> {
         let _lifecycle = self.device_relay_lifecycle.lock().await;
         if *self.active_device_connection_id.read().await != Some(expected_connection_id) {
             return Ok(false);
@@ -1214,7 +1234,13 @@ impl RemoteConnectService {
             .ok_or_else(|| anyhow::anyhow!("device routing not connected"))?;
         drop(_lifecycle);
         client
-            .send_device_message(target_device_id, correlation_id, encrypted_data, nonce)
+            .send_device_message_guarded(
+                target_device_id,
+                correlation_id,
+                encrypted_data,
+                nonce,
+                before_send,
+            )
             .await?;
         Ok(true)
     }

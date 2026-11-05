@@ -634,7 +634,7 @@ impl RelayClient {
         timeout: Duration,
     ) -> Result<(String, String)> {
         let (data, nonce, _) = self
-            .request_device_message(target, encrypted_data, nonce, timeout, false)
+            .request_device_message(target, encrypted_data, nonce, timeout, false, || Ok(()))
             .await?;
         Ok((data, nonce))
     }
@@ -646,6 +646,7 @@ impl RelayClient {
         nonce: &str,
         timeout: Duration,
         offer_zstd: bool,
+        before_send: impl Fn() -> Result<()>,
     ) -> Result<(String, String, bool)> {
         let sender = self
             .owner
@@ -655,10 +656,11 @@ impl RelayClient {
             .clone()
             .ok_or_else(|| anyhow!("Relay is disconnected; request was not submitted"))?;
         let result = sender
-            .call_with_timeout(
+            .call_with_timeout_guarded(
                 target,
                 device_envelope(encrypted_data, nonce, offer_zstd),
                 timeout,
+                before_send,
             )
             .await?;
         let data = result["encrypted_data"]
@@ -680,6 +682,19 @@ impl RelayClient {
         encrypted_data: &str,
         nonce: &str,
     ) -> Result<()> {
+        self.send_device_message_guarded(target, correlation, encrypted_data, nonce, || Ok(()))
+            .await
+    }
+
+    pub async fn send_device_message_guarded(
+        &self,
+        target: &str,
+        correlation: &str,
+        encrypted_data: &str,
+        nonce: &str,
+        before_send: impl Fn() -> Result<()>,
+    ) -> Result<()> {
+        before_send()?;
         let (sender, reply) = {
             let mut state = self.owner.lock().unwrap();
             let sender = state

@@ -99,7 +99,11 @@ impl OnlinePeers {
             .to_string();
             for target in joined {
                 let result = async {
-                    let (data, nonce) = session.encrypt_for_peer(&relay, &target, &hello).await?;
+                    let before_send = session.peer_message_guard();
+                    let (data, nonce, uses_zstd) = session
+                        .encrypt_for_peer_with_encoding(&relay, &target, &hello)
+                        .await?;
+                    before_send(uses_zstd)?;
                     sender
                         .event(
                             &target,

@@ -46,6 +46,10 @@ slices that are outside pure product logic but still platform-neutral.
   hint leases. `remote_connect::host_stream_subscriber` is the Rust controller
   reader. Neither the relay nor any client persists stream content; do not add
   relay-stored history, `get_session_key`, or a durable stream cache here.
+- Compressed Relay ciphertext carries its peer capability generation through
+  key lookup and bulk upload. Check that generation immediately before wire
+  submission. A retired generation is an unsent failure. Preserve an already
+  acknowledged result and leave mutation replay to the durable request owner.
 - Session history reads use `HostStreamHub::read_history` with a Core-owned
   source loader. The optional `turn_history` v1 offer selects exactly one Turn;
   its response acknowledgement enables the mode, while older hosts retain the

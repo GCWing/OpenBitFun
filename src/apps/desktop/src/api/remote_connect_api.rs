@@ -494,8 +494,9 @@ async fn fanout_peer_device_event_current(item: PeerEventFanoutItem) {
         }
     };
     for target in targets {
-        let (encrypted_data, nonce) = match session
-            .encrypt_for_peer(&relay_url, &target, &envelope)
+        let before_send = session.peer_message_guard();
+        let (encrypted_data, nonce, uses_zstd) = match session
+            .encrypt_for_peer_with_encoding(&relay_url, &target, &envelope)
             .await
         {
             Ok(value) => value,
@@ -511,6 +512,7 @@ async fn fanout_peer_device_event_current(item: PeerEventFanoutItem) {
             &correlation_id,
             &encrypted_data,
             &nonce,
+            || before_send(uses_zstd),
         )
         .await
         {
@@ -596,6 +598,7 @@ async fn send_device_message_with_routing_lease(
     correlation_id: &str,
     encrypted_data: &str,
     nonce: &str,
+    before_send: impl Fn() -> anyhow::Result<()>,
 ) -> Result<(), String> {
     if !device_routing_owner_is_current(owner).await {
         return Err("device routing changed".to_string());
@@ -608,12 +611,13 @@ async fn send_device_message_with_routing_lease(
         .as_ref()
         .ok_or_else(|| "remote connect service not initialized".to_string())?;
     let sent = service
-        .send_device_message_if_connection(
+        .send_device_message_if_connection_guarded(
             owner.service_connection_id,
             target_device_id,
             correlation_id,
             encrypted_data,
             nonce,
+            before_send,
         )
         .await
         .map_err(|error| error.to_string())?;
@@ -660,6 +664,7 @@ async fn send_rpc_envelope(
                 correlation_id,
                 &enc_resp,
                 &resp_nonce,
+                || Ok(()),
             )
             .await
             {
@@ -3166,8 +3171,9 @@ pub async fn account_execute_on_device(
     if !device_routing_owner_is_current(&routing_owner).await {
         return Err("device routing changed".to_string());
     }
-    let (encrypted_data, nonce) = session
-        .encrypt_for_peer(&relay_url, &target_device_id, &envelope)
+    let before_send = session.peer_message_guard();
+    let (encrypted_data, nonce, uses_zstd) = session
+        .encrypt_for_peer_with_encoding(&relay_url, &target_device_id, &envelope)
         .await
         .map_err(|e| format!("{e}"))?;
 
@@ -3178,6 +3184,7 @@ pub async fn account_execute_on_device(
         &correlation_id,
         &encrypted_data,
         &nonce,
+        || before_send(uses_zstd),
     )
     .await
 }

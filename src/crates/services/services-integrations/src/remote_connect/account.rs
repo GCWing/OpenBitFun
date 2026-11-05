@@ -3,7 +3,7 @@
 use super::{device_crypto, relay_client::PeerEncodingOffer};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, OnceCell};
 
@@ -92,6 +92,7 @@ pub struct AccountSession {
     pub user_id: String,
     pub master_key: [u8; MASTER_KEY_LEN],
     peer_keys: Arc<Mutex<HashMap<String, Arc<OnceCell<Arc<PeerCipher>>>>>>,
+    peer_generation: Arc<AtomicU64>,
     transports: Arc<Mutex<HashMap<String, Arc<OnceCell<Arc<super::relay_client::RelayClient>>>>>>,
 }
 
@@ -111,6 +112,7 @@ impl AccountSession {
             user_id,
             master_key: device_secret,
             peer_keys: Arc::new(Mutex::new(HashMap::new())),
+            peer_generation: Arc::new(AtomicU64::new(0)),
             transports: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -162,7 +164,26 @@ impl AccountSession {
     }
 
     pub async fn clear_peer_keys(&self) {
-        self.peer_keys.lock().await.clear();
+        let mut keys = self.peer_keys.lock().await;
+        self.peer_generation.fetch_add(1, Ordering::SeqCst);
+        keys.clear();
+    }
+
+    /// Capture before preparing ciphertext and check immediately before wire
+    /// submission. Reconnect/presence changes retire previously learned offers.
+    pub fn peer_message_guard(&self) -> impl Fn(bool) -> Result<()> + Send + Sync + 'static {
+        let generation = self.peer_generation.clone();
+        let expected = generation.load(Ordering::SeqCst);
+        move |uses_zstd| {
+            // JSON needs no negotiated decoder. Presence may arrive during a
+            // first key lookup, so plain requests retain their working path.
+            if uses_zstd && generation.load(Ordering::SeqCst) != expected {
+                return Err(anyhow!(
+                    "Relay capabilities changed; request was not submitted"
+                ));
+            }
+            Ok(())
+        }
     }
 
     pub async fn peer_message_key(&self, relay_url: &str, device_id: &str) -> Result<[u8; 32]> {
@@ -218,8 +239,24 @@ impl AccountSession {
         device_id: &str,
         plaintext: &str,
     ) -> Result<(String, String)> {
+        let (data, nonce, _) = self
+            .encrypt_for_peer_with_encoding(relay_url, device_id, plaintext)
+            .await?;
+        Ok((data, nonce))
+    }
+
+    pub async fn encrypt_for_peer_with_encoding(
+        &self,
+        relay_url: &str,
+        device_id: &str,
+        plaintext: &str,
+    ) -> Result<(String, String, bool)> {
         let peer = self.peer_cipher(relay_url, device_id).await?;
-        super::encryption::encrypt_relay_message(&peer.key, plaintext, peer.accepts_events())
+        super::encryption::encrypt_relay_message_with_encoding(
+            &peer.key,
+            plaintext,
+            peer.accepts_events(),
+        )
     }
 
     /// A reply belongs to one RPC caller even when old and new controllers
@@ -284,6 +321,7 @@ impl AccountSession {
                     .and_then(|cell| cell.get())
                     .is_some_and(|cached| Arc::ptr_eq(cached, &peer))
                 {
+                    self.peer_generation.fetch_add(1, Ordering::SeqCst);
                     keys.remove(endpoint.as_str());
                 }
                 drop(keys);
@@ -911,14 +949,17 @@ impl AccountClient {
             .await?;
         // Re-resolve through the cache after authentication: a presence/key
         // invalidation during setup must win over the speculative key read.
+        let before_send = session.peer_message_guard();
         let peer = session.peer_cipher(relay_url, target_device_id).await?;
-        let (data, nonce) = super::encryption::encrypt_relay_message(
+        let (data, nonce, uses_zstd) = super::encryption::encrypt_relay_message_with_encoding(
             &peer.key,
             plaintext_command,
             peer.host_accepts.load(Ordering::Relaxed),
         )?;
         let (encrypted_data, nonce, accepts_zstd) = transport
-            .request_device_message(target_device_id, &data, &nonce, timeout, true)
+            .request_device_message(target_device_id, &data, &nonce, timeout, true, || {
+                before_send(uses_zstd)
+            })
             .await?;
         session
             .open_peer_message(
@@ -1282,6 +1323,20 @@ mod tests {
         );
         peer.observe(PeerEncodingOffer::Host(false));
         assert!(!peer.host_accepts.load(Ordering::Relaxed));
+    }
+
+    #[tokio::test]
+    async fn peer_message_guard_retires_prepared_events_across_session_clones() {
+        let session = AccountSession::new("token".into(), "user".into(), [7; 32]);
+        let before_send = session.peer_message_guard();
+        before_send(true).unwrap();
+        session.for_peer_messages().clear_peer_keys().await;
+        assert!(before_send(true)
+            .unwrap_err()
+            .to_string()
+            .contains("request was not submitted"));
+        before_send(false).unwrap();
+        session.peer_message_guard()(true).unwrap();
     }
 
     #[tokio::test]

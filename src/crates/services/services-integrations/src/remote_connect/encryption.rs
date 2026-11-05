@@ -84,9 +84,20 @@ pub fn encrypt_relay_message(
     plaintext: &str,
     accepts_zstd: bool,
 ) -> Result<(String, String)> {
+    let (data, nonce, _) =
+        encrypt_relay_message_with_encoding(shared_secret, plaintext, accepts_zstd)?;
+    Ok((data, nonce))
+}
+
+pub(super) fn encrypt_relay_message_with_encoding(
+    shared_secret: &[u8; 32],
+    plaintext: &str,
+    accepts_zstd: bool,
+) -> Result<(String, String, bool)> {
     let bytes = super::message_encoding::encode(plaintext.as_bytes(), accepts_zstd)?;
+    let uses_zstd = bytes.first() == Some(&0xff);
     let (ct, nonce) = encrypt(shared_secret, &bytes)?;
-    Ok((BASE64.encode(ct), BASE64.encode(nonce)))
+    Ok((BASE64.encode(ct), BASE64.encode(nonce), uses_zstd))
 }
 
 /// Convenience: decrypt from base64-encoded `(data, nonce)`.

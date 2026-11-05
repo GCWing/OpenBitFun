@@ -48,7 +48,8 @@ class RpcProcessingThreadTest {
                     val client = CloudAccountClient(http, realtimeFactory = { _, _, _ ->
                         object : AccountRpcConnection {
                             override val notifications = emptyFlow<JsonObject>()
-                            override suspend fun call(target: String, params: JsonElement, timeoutMs: Long) = reply
+                            override suspend fun call(target: String, params: JsonElement, timeoutMs: Long,
+                expectedEncodings: kotlinx.coroutines.flow.MutableStateFlow<Set<String>>?) = reply
                             override fun close() {}
                         }
                     })

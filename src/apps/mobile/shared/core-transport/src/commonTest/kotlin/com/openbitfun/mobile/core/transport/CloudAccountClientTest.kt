@@ -437,7 +437,11 @@ class CloudAccountClientTest {
         private val reply: suspend (String, JsonElement) -> JsonElement,
     ) : AccountRpcConnection {
         override val peerEncodings = MutableStateFlow(emptySet<String>())
-        override suspend fun call(target: String, params: JsonElement, timeoutMs: Long): JsonElement = reply(target, params)
+        override suspend fun call(target: String, params: JsonElement, timeoutMs: Long,
+                expectedEncodings: MutableStateFlow<Set<String>>?): JsonElement {
+            assertTrue(expectedEncodings == null || expectedEncodings === peerEncodings)
+            return reply(target, params)
+        }
         override fun close() {}
     }
 

@@ -57,15 +57,17 @@ export class AccountRealtime {
     return () => { this.reconnectListeners.delete(listener); };
   }
 
-  async call(target: string, params: EncryptedPayload, timeoutMs: number): Promise<EncryptedPayload> {
+  async call(target: string, params: EncryptedPayload, timeoutMs: number, expectedEncodings?: Set<string>): Promise<EncryptedPayload> {
     if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2147483647) throw new Error('Invalid RPC timeout');
     if (this.closed) throw new Error('Relay is closed; request was not submitted');
     await this.ready();
     const socket = this.socket;
     const epoch = this.epoch;
     if (!socket || !this.connected || this.closed) throw new Error('Relay disconnected; request was not submitted');
+    this.assertEncodingCurrent(expectedEncodings);
     const wireParams = await this.payloads.uploadIfLarge(params);
     if (this.closed || !this.connected || this.epoch !== epoch) throw new Error('Relay connection changed; request was not submitted');
+    this.assertEncodingCurrent(expectedEncodings);
     const id = this.nextAck++;
     const call: RpcCall = { method: `${target}:invoke`, params: wireParams, timeoutMs: timeoutMs };
     const data = `42${id}${JSON.stringify(['rpc-call', call])}`;
@@ -82,6 +84,12 @@ export class AccountRealtime {
     const result = await this.payloads.resolve(reply);
     if (this.closed || this.epoch !== epoch) throw new Error('Relay connection changed; delivery outcome is unknown');
     return result as EncryptedPayload;
+  }
+
+  private assertEncodingCurrent(expected?: Set<string>): void {
+    if (expected && expected !== this.peerEncodings) {
+      throw new Error('Relay capabilities changed; request was not submitted');
+    }
   }
 
   ready(): Promise<void> {

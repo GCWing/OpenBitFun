@@ -1,4 +1,4 @@
-import relayCodec from 'libopenbitfun_crypto.so';
+import { RelayMessageEncoding } from './RelayMessageEncoding';
 import { HostSessionStream, HostSessionCallbacks, HostSessionSource, HostStreamHint, HostStreamPage, HostStreamReadRequest, HostStreamHintPlaintext, parseHostStreamHint } from './HostSessionStream';
 import { AccountRealtime } from './AccountRealtime';
 import { CLIENT_PROTOCOL_VERSION, clientVersion } from './ClientBuild';
@@ -448,8 +448,10 @@ export class CloudAccountClient {
     await socket.ready();
     const encodings = socket.peerEncodings;
     const plainCommand = Encoding.utf8ToBytes(JSON.stringify(command));
+    const encodedCommand = encodings.has(target) && plainCommand.byteLength > 256
+      ? await RelayMessageEncoding.encode(plainCommand) : plainCommand;
     const encrypted = await this.cipher.encrypt(
-      encodings.has(target) && plainCommand.byteLength > 256 ? relayCodec.encodeRelayMessage(plainCommand) : plainCommand,
+      encodedCommand,
       messageKey,
       nonce
     );
@@ -459,7 +461,7 @@ export class CloudAccountClient {
       accept_encoding: 'zstd-1'
     };
     RemoteLogger.info(`device rpc cmd=${command.cmd || 'unknown'} bytes=${body.encrypted_data.length}`);
-    const response = await socket.call(target, body, timeoutMs);
+    const response = await socket.call(target, body, timeoutMs, encodedCommand[0] === 0xff ? encodings : undefined);
     let plain: Uint8Array;
     try {
       plain = await this.cipher.decrypt(
@@ -472,7 +474,7 @@ export class CloudAccountClient {
       this.forgetPeerKey(session, target);
       throw OhosError.wrap('device rpc decrypt', err);
     }
-    const parsed = Encoding.parseJsonObject<T>(Encoding.bytesToUtf8(relayCodec.decodeRelayMessage(plain)));
+    const parsed = Encoding.parseJsonObject<T>(Encoding.bytesToUtf8(await RelayMessageEncoding.decode(plain)));
     if (response.accept_encoding === 'zstd-1') encodings.add(target);
     else encodings.delete(target);
     if (parsed.resp === 'error') {
@@ -544,7 +546,7 @@ export class CloudAccountClient {
       const key = await this.peerMessageKey(relayUrl, session, target);
       const plain = await this.cipher.decrypt(Encoding.base64ToBytes(params.encrypted_data), key,
         Encoding.base64ToBytes(params.nonce));
-      const body = Encoding.parseJsonObject<HostStreamHintPlaintext>(Encoding.bytesToUtf8(relayCodec.decodeRelayMessage(plain)));
+      const body = Encoding.parseJsonObject<HostStreamHintPlaintext>(Encoding.bytesToUtf8(await RelayMessageEncoding.decode(plain)));
       if (params.accept_encoding === 'zstd-1') encodings.add(target);
       else encodings.delete(target);
       return parseHostStreamHint(target, body);

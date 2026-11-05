@@ -2,6 +2,8 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { AccountRealtime } from '../../../../../shared/relay-transport/AccountRealtime';
 import { AccountIdentityChangedError, RelayHttpClient, deviceDisplayName } from '../../../../../mobile-web/src/services/RelayHttpClient';
 import { deriveDeviceMessageKey, encrypt, toB64, generateKeyPair } from '../../../../../mobile-web/src/services/E2EEncryption';
+import * as encryption from '../../../../../mobile-web/src/services/E2EEncryption';
+import * as relayEncoding from '../../../../../mobile-web/src/services/relayMessageEncoding';
 
 const identity = (userId = 'user-a') => ({ token: `token-${userId}`, userId, deviceId: 'browser', masterKey: new Uint8Array(32).fill(userId === 'user-a' ? 7 : 8) });
 const peerPublicKey = (await generateKeyPair()).publicKey;
@@ -117,6 +119,33 @@ describe.each(['https://remote.openbitfun.com/v/1.0.2', 'http://192.168.1.9:9700
     client.resetConnectionIdentity();
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+  it.each([true, false])('fences changed peer capabilities only for compressed commands (%s)', async usesZstd => {
+    const client = new RelayHttpClient(relayUrl, identity());
+    client.setTargetDeviceId('desktop');
+    const state = client as unknown as { peerEncodings: Set<string> };
+    state.peerEncodings.add('desktop');
+    const key = deriveDeviceMessageKey(identity().masterKey, peerPublicKey);
+    const reply = await encrypt(key, JSON.stringify({ resp: 'ok' }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ device_id: 'desktop', public_key: toB64(peerPublicKey) })));
+    vi.spyOn(AccountRealtime.prototype, 'ready').mockResolvedValue();
+    vi.spyOn(relayEncoding, 'acceptsRelayZstd').mockReturnValue(true);
+    const sealed = deferred<{ data: string; nonce: string; usesZstd: boolean }>();
+    const encode = vi.spyOn(encryption, 'encrypt').mockReturnValue(sealed.promise);
+    const rpc = vi.spyOn(AccountRealtime.prototype, 'call').mockResolvedValue({ encrypted_data: reply.data, nonce: reply.nonce });
+    const result = client.sendDeviceRpc('desktop', { cmd: 'send_message', content: 'x'.repeat(500) });
+    await vi.waitFor(() => expect(encode).toHaveBeenCalledOnce());
+    expect(encode.mock.calls[0][2]).toBe(true);
+    state.peerEncodings = new Set();
+    sealed.resolve({ data: 'prepared-under-old-capability', nonce: reply.nonce, usesZstd });
+    if (usesZstd) {
+      await expect(result).rejects.toThrow(/capabilit|connection.*changed/i);
+      expect(rpc).not.toHaveBeenCalled();
+    } else {
+      await expect(result).resolves.toEqual({ resp: 'ok' });
+      expect(rpc).toHaveBeenCalledOnce();
+    }
+    client.resetConnectionIdentity();
+  });
   it('stops transient directory retries when the account changes during backoff', async () => {
     vi.useFakeTimers();
     const fetch = vi.fn(async () => Response.json({}, { status: 503 })); vi.stubGlobal('fetch', fetch);
@@ -128,5 +157,50 @@ describe.each(['https://remote.openbitfun.com/v/1.0.2', 'http://192.168.1.9:9700
     await vi.advanceTimersByTimeAsync(300);
     await checked;
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('prepared RPC submission', () => {
+  function connectionFixture() {
+    const emit = vi.fn().mockResolvedValue({ ok: true, result: { resp: 'ok' } });
+    const payloads = {
+      uploadIfLarge: vi.fn(async (value: unknown) => value),
+      resolve: vi.fn(async (value: unknown) => value),
+    };
+    const connection = Object.assign(Object.create(AccountRealtime.prototype), {
+      closed: false,
+      epoch: 1,
+      status: 'connected',
+      socket: { connected: true, timeout: () => ({ emitWithAck: emit }) },
+      payloads,
+    }) as AccountRealtime;
+    return { connection, payloads, emit };
+  }
+
+  it('checks the prepared generation after readiness and before upload', async () => {
+    const { connection, payloads, emit } = connectionFixture();
+    const beforeSubmit = () => { throw new Error('Capabilities changed'); };
+    await expect(connection.call('host', {}, { beforeSubmit })).rejects.toThrow('Capabilities changed');
+    expect(payloads.uploadIfLarge).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('checks the prepared generation again after bulk upload', async () => {
+    const { connection, payloads, emit } = connectionFixture();
+    let current = true;
+    payloads.uploadIfLarge.mockImplementation(async value => { current = false; return value; });
+    const beforeSubmit = () => { if (!current) throw new Error('Capabilities changed'); };
+    await expect(connection.call('host', {}, { beforeSubmit })).rejects.toThrow('Capabilities changed');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('keeps an acknowledged result when capabilities change after submission', async () => {
+    const { connection, payloads, emit } = connectionFixture();
+    let current = true;
+    payloads.resolve.mockImplementation(async value => { current = false; return value; });
+    const beforeSubmit = vi.fn(() => { if (!current) throw new Error('Capabilities changed'); });
+    await expect(connection.call('host', {}, { beforeSubmit })).resolves.toEqual({ resp: 'ok' });
+    expect(beforeSubmit).toHaveBeenCalledTimes(2);
+    expect(emit).toHaveBeenCalledOnce();
   });
 });

@@ -113,13 +113,17 @@ export class AccountRealtime {
       listener(this.status);
     });
   }
-  async call<T>(deviceId: string, encryptedParams: unknown, options: { timeoutMs?: number; beforeSend?: () => void } = {}): Promise<T> {
+  async call<T>(deviceId: string, encryptedParams: unknown, options: { timeoutMs?: number; beforeSend?: () => void; beforeSubmit?: () => void } = {}): Promise<T> {
     if (this.closed) throw new Error('Relay is closed; request was not submitted');
       await this.ready();
       options.beforeSend?.();
+      // Prepared bytes depend on the pre-encryption capability generation.
+      // This guard applies only before submission, never to a settled reply.
+      options.beforeSubmit?.();
       const epoch = this.epoch;
       const params = await this.payloads.uploadIfLarge(encryptedParams);
       options.beforeSend?.();
+      options.beforeSubmit?.();
       if (this.closed || this.epoch !== epoch || this.status !== 'connected') {
         throw new Error('Relay connection changed; request was not submitted');
       }

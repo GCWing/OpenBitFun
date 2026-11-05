@@ -419,16 +419,18 @@ public class CloudAccountClient internal constructor(
         val socket = connection(relayUrl, session.token)
         val messageKey = peerMessageKey(relayUrl, session, target)
         val encodings = socket.readyForEncoding()
-        val payload = withContext(processingDispatcher) {
+        val (payload, usesZstd) = withContext(processingDispatcher) {
             val nonce = DeviceIdentity.randomBytes(12)
             val plain = RelayJson.encodeToString(RemoteCommand.serializer(), command).encodeToByteArray()
             val encoded = RelayMessageEncoding.encode(plain, encodings?.value?.contains(target) == true)
             val encrypted = CloudAccountCipher.encrypt(encoded, messageKey, nonce)
-            EncryptedPayload(Base64.Default.encode(encrypted), Base64.Default.encode(nonce), RelayMessageEncoding.NAME)
+            EncryptedPayload(Base64.Default.encode(encrypted), Base64.Default.encode(nonce), RelayMessageEncoding.NAME) to
+                (encoded.firstOrNull() == 0xff.toByte())
         }
         val response = RelayJson.decodeFromJsonElement(EncryptedPayload.serializer(),
             socket.call(target,
-                RelayJson.encodeToJsonElement(EncryptedPayload.serializer(), payload), timeoutMs))
+                RelayJson.encodeToJsonElement(EncryptedPayload.serializer(), payload), timeoutMs,
+                if (usesZstd) encodings else null))
         val decoded = try {
             withContext(processingDispatcher) {
                 val plain = CloudAccountCipher.decrypt(decode(response.encryptedData), messageKey, decode(response.nonce))

@@ -861,9 +861,10 @@ impl openbitfun_core::service::remote_connect::host_stream::HostStreamNotifier
                     return;
                 }
             };
-            let (encrypted_data, nonce) = match lease
+            let before_send = lease.session.peer_message_guard();
+            let (encrypted_data, nonce, uses_zstd) = match lease
                 .session
-                .encrypt_for_peer(&lease.relay_url, &target, &envelope)
+                .encrypt_for_peer_with_encoding(&lease.relay_url, &target, &envelope)
                 .await
             {
                 Ok(encrypted) => encrypted,
@@ -875,7 +876,13 @@ impl openbitfun_core::service::remote_connect::host_stream::HostStreamNotifier
             let correlation_id = uuid::Uuid::new_v4().to_string();
             if let Err(error) = lease
                 .relay_client
-                .send_device_message(&target, &correlation_id, &encrypted_data, &nonce)
+                .send_device_message_guarded(
+                    &target,
+                    &correlation_id,
+                    &encrypted_data,
+                    &nonce,
+                    || before_send(uses_zstd),
+                )
                 .await
             {
                 tracing::debug!("Host stream hint to {target} failed: {error}");
