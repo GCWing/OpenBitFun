@@ -6819,6 +6819,7 @@ dependencies = [
  "x25519-dalek",
  "zbus-secret-service-keyring-store",
  "zip 4.6.1",
+ "zstd",
 ]
 
 [[package]]

@@ -29,6 +29,7 @@ kotlin {
         commonMain.dependencies {
             api(project(":core-protocol"))
             api(project(":core-crypto"))
+            implementation("com.squareup.zstd:zstd-kmp:0.4.0")
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             // Bodies are encoded with RelayJson by hand rather than through

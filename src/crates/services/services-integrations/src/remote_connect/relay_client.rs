@@ -15,6 +15,10 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 
+pub(super) fn device_envelope(data: &str, nonce: &str) -> serde_json::Value {
+    json!({"encrypted_data": data, "nonce": nonce, "accept_encoding": super::message_encoding::ZSTD_ENCODING})
+}
+
 pub const RELAY_INBOUND_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 /// How long a primary host waits for another primary host on this device to
 /// release routing before its first connection fails.
@@ -93,6 +97,7 @@ pub enum RelayEvent {
     DeviceMessageReceived {
         source_device_id: String,
         correlation_id: String,
+        accepts_zstd: bool,
         encrypted_data: String,
         nonce: String,
     },
@@ -144,6 +149,7 @@ impl Drop for EpochCleanup {
     }
 }
 pub struct RelayClient {
+    encoding_session: Option<super::account::AccountSession>,
     owner: Arc<Mutex<Owner>>,
     events: mpsc::Sender<RelayEvent>,
     machine: bool,
@@ -165,6 +171,11 @@ impl RelayClient {
     pub fn new_controller() -> (Self, mpsc::Receiver<RelayEvent>) {
         Self::with_role(false, None)
     }
+    pub fn with_encoding_announcements(mut self, session: &super::account::AccountSession) -> Self {
+        self.encoding_session = Some(session.clone());
+        self
+    }
+
     fn with_role(
         machine: bool,
         routing: Option<DeviceRoutingPriority>,
@@ -172,6 +183,7 @@ impl RelayClient {
         let (events, receiver) = mpsc::channel(128);
         (
             Self {
+                encoding_session: None,
                 owner: Arc::new(Mutex::new(Owner {
                     epoch: 0,
                     state: ConnectionState::Disconnected,
@@ -243,6 +255,7 @@ impl RelayClient {
                 url,
                 token.to_owned(),
                 self.machine,
+                self.encoding_session.clone(),
                 lease,
                 ready,
             )));
@@ -279,6 +292,7 @@ impl RelayClient {
         url: String,
         token: String,
         machine: bool,
+        encoding_session: Option<super::account::AccountSession>,
         // Moved into this task: dropping it releases routing to the next host.
         mut lease: Option<RoutingLease>,
         ready: oneshot::Sender<Result<()>>,
@@ -342,6 +356,7 @@ impl RelayClient {
                         let _ = ready.send(Ok(()));
                     }
                     delay = Duration::from_secs(1);
+                    let mut online = super::message_encoding::OnlinePeers::default();
                     loop {
                         let incoming = match connection.receive().await {
                             Ok(incoming) => incoming,
@@ -352,6 +367,13 @@ impl RelayClient {
                                 break;
                             }
                         };
+                        if let (Some(session), Incoming::Ephemeral(event)) =
+                            (&encoding_session, &incoming)
+                        {
+                            if event.payload.0["type"] == "device-presence" {
+                                online.announce(session, &url, &connection, &event.payload.0);
+                            }
+                        }
                         if !Self::route(&owner, &events, epoch, incoming).await {
                             log::info!("Relay event receiver closed; stopping reconnect loop");
                             connection.close().await;
@@ -495,6 +517,8 @@ impl RelayClient {
                     .send(RelayEvent::DeviceMessageReceived {
                         source_device_id: source.into(),
                         correlation_id: correlation,
+                        accepts_zstd: value["params"]["accept_encoding"]
+                            == super::message_encoding::ZSTD_ENCODING,
                         encrypted_data: data.into(),
                         nonce: nonce.into(),
                     })
@@ -523,6 +547,8 @@ impl RelayClient {
                         .send(RelayEvent::DeviceMessageReceived {
                             source_device_id: source.into(),
                             correlation_id: String::new(),
+                            accepts_zstd: value["params"]["accept_encoding"]
+                                == super::message_encoding::ZSTD_ENCODING,
                             encrypted_data: data.into(),
                             nonce: nonce.into(),
                         })
@@ -560,6 +586,19 @@ impl RelayClient {
         nonce: &str,
         timeout: Duration,
     ) -> Result<(String, String)> {
+        let (data, nonce, _) = self
+            .request_device_message(target, encrypted_data, nonce, timeout)
+            .await?;
+        Ok((data, nonce))
+    }
+
+    pub(super) async fn request_device_message(
+        &self,
+        target: &str,
+        encrypted_data: &str,
+        nonce: &str,
+        timeout: Duration,
+    ) -> Result<(String, String, bool)> {
         let sender = self
             .owner
             .lock()
@@ -568,11 +607,7 @@ impl RelayClient {
             .clone()
             .ok_or_else(|| anyhow!("Relay is disconnected; request was not submitted"))?;
         let result = sender
-            .call_with_timeout(
-                target,
-                json!({"encrypted_data":encrypted_data,"nonce":nonce}),
-                timeout,
-            )
+            .call_with_timeout(target, device_envelope(encrypted_data, nonce), timeout)
             .await?;
         let data = result["encrypted_data"]
             .as_str()
@@ -580,7 +615,11 @@ impl RelayClient {
         let nonce = result["nonce"]
             .as_str()
             .ok_or_else(|| anyhow!("RPC response missing nonce"))?;
-        Ok((data.into(), nonce.into()))
+        Ok((
+            data.into(),
+            nonce.into(),
+            result["accept_encoding"] == super::message_encoding::ZSTD_ENCODING,
+        ))
     }
     pub async fn send_device_message(
         &self,
@@ -602,20 +641,14 @@ impl RelayClient {
                 bail!("RPC response owner expired");
             }
             sender
-                .respond(
-                    reply.id,
-                    json!({"encrypted_data":encrypted_data,"nonce":nonce}),
-                )
+                .respond(reply.id, device_envelope(encrypted_data, nonce))
                 .await
         } else {
             if correlation.starts_with("rpc-") {
                 bail!("RPC acknowledgement is no longer pending");
             }
             sender
-                .event(
-                    target,
-                    json!({"encrypted_data":encrypted_data,"nonce":nonce}),
-                )
+                .event(target, device_envelope(encrypted_data, nonce))
                 .await
         }
     }

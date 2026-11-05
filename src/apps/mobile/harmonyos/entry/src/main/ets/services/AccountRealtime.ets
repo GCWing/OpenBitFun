@@ -4,6 +4,7 @@ import { EncryptedPayload } from '../model/RemoteModels';
 import { normalizeAccountRelayUrl } from './AccountDeviceLink';
 import { CLIENT_PROTOCOL_VERSION, clientVersion } from './ClientBuild';
 
+interface EphemeralKind { type?: string; }
 interface EngineOpen { sid: string; pingInterval: number; pingTimeout: number; }
 interface Auth { token: string; clientType: string; clientVersion: string; clientProtocol: number; }
 interface RpcCall { method: string; params: Object; timeoutMs: number; }
@@ -22,6 +23,7 @@ export class AccountRealtime {
   private socket?: webSocket.WebSocket;
   private epoch: number = 0;
   private connected: boolean = false;
+  peerEncodings: Set<string> = new Set();
   private closed: boolean = false;
   private nextAck: number = 0;
   private retryDelay: number = 1000;
@@ -174,6 +176,7 @@ export class AccountRealtime {
       // still emit them and no listener reads their body. Presence and
       // encrypted device events (stream hints) arrive as 'ephemeral'.
       if (name === 'ephemeral') {
+        if ((parts[1] as EphemeralKind).type === 'device-presence') this.peerEncodings = new Set();
         this.updateListeners.forEach((listener: (event: string, data: Object) => void) => { listener(name, parts[1]); });
       }
     } else {
@@ -190,6 +193,7 @@ export class AccountRealtime {
     if (epoch !== this.epoch) return;
     this.epoch++;
     this.connected = false;
+    this.peerEncodings = new Set();
     if (this.idleTimer >= 0) clearTimeout(this.idleTimer);
     const socket = this.socket;
     this.socket = undefined;

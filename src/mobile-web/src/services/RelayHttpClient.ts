@@ -1,3 +1,4 @@
+import { acceptsRelayZstd, prepareRelayEncoding, relayZstd } from './relayMessageEncoding';
 import {
   openHostStream, parseStreamHint, parseStreamPage,
   type HostStreamOptions, type SessionStreamHandle, type StreamHint, type StreamReadRequest,
@@ -95,6 +96,7 @@ export class RelayHttpClient {
   private targetDeviceIdValue: string | null = null;
   private controlTargetEpochValue = 0;
   private controlTargetListeners = new Set<(snapshot: ControlTargetSnapshot) => void>();
+  private peerEncodings = new Set<string>();
   private deviceMessageKeys = new Map<string, { expires: number; key: Promise<Uint8Array> }>();
   private streamHintListeners = new Set<(hint: StreamHint) => void>();
 
@@ -114,8 +116,12 @@ export class RelayHttpClient {
     this.realtime = null;
     this.identity?.masterKey.fill(0);
     this.identity = { ...identity, masterKey: identity.masterKey.slice(), generation: ++this.identityGeneration };
+    prepareRelayEncoding();
     this.realtime = new AccountRealtime({ url: this.relayUrl, token: identity.token });
-    const notifyDirectory = () => { for (const listener of this.directoryListeners) listener(); };
+    const notifyDirectory = () => {
+      this.peerEncodings = new Set();
+      for (const listener of this.directoryListeners) listener();
+    };
     this.realtime.onDeviceDirectoryChanged(notifyDirectory);
     this.realtime.onReconnect(notifyDirectory);
     this.realtime.onDeviceEvent(envelope => { void this.receiveDeviceEvent(envelope); });
@@ -125,6 +131,7 @@ export class RelayHttpClient {
     // A read that started under the previous identity must not seed the cache.
     this.appliedDirectoryRequest = this.directoryRequest;
     this.deviceMessageKeys.clear();
+    this.peerEncodings = new Set();
     this.setTargetDeviceId(null);
     for (const listener of this.ownerListeners) listener({ kind, epoch: this.accountEpochValue, userId: identity.userId });
   }
@@ -141,6 +148,7 @@ export class RelayHttpClient {
     // A read from the closed identity must not seed the cache either.
     this.appliedDirectoryRequest = this.directoryRequest;
     this.deviceMessageKeys.clear();
+    this.peerEncodings = new Set();
     this.setTargetDeviceId(null);
     for (const listener of this.ownerListeners) listener({ kind: 'unavailable', epoch: this.accountEpochValue, userId: null });
   }
@@ -380,10 +388,12 @@ export class RelayHttpClient {
     const targetEpoch = this.controlTargetEpochValue;
     return this.withAccount(async (identity) => {
       const messageKey = await this.deviceMessageKey(identity, targetDeviceId);
+      const encodings = this.peerEncodings;
       const plaintext = JSON.stringify(command);
       const { data: encData, nonce: encNonce } = await encrypt(
         messageKey,
         plaintext,
+        acceptsRelayZstd() && encodings.has(targetDeviceId),
       );
 
       if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
@@ -392,8 +402,8 @@ export class RelayHttpClient {
       const timeoutMs = options.timeoutMs ?? (options.retryable ? 20_000 : 130_000);
       const connection = this.realtime;
       if (!connection) throw new AccountIdentityChangedError();
-      const data = await connection.call<{ encrypted_data: string; nonce: string }>(targetDeviceId,
-        { encrypted_data: encData, nonce: encNonce }, {
+      const data = await connection.call<{ encrypted_data: string; nonce: string; accept_encoding?: string }>(targetDeviceId,
+        { encrypted_data: encData, nonce: encNonce, accept_encoding: acceptsRelayZstd() ? relayZstd : undefined }, {
           timeoutMs,
           beforeSend: () => {
             if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
@@ -406,6 +416,8 @@ export class RelayHttpClient {
         data.encrypted_data,
         data.nonce,
       );
+      if (data.accept_encoding === relayZstd) encodings.add(targetDeviceId);
+      else encodings.delete(targetDeviceId);
       const parsed = JSON.parse(decrypted);
       // Retiring the caller suppresses presentation, not the fact that the host
       // finished. Never expose the decoded response to a replacement owner.

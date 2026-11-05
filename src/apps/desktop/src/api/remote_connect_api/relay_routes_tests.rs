@@ -572,6 +572,7 @@ async fn peer_preview_fixture(benchmark: bool) {
                 correlation_id,
                 encrypted_data,
                 nonce,
+                ..
             } = event
             else {
                 continue;

@@ -1,3 +1,4 @@
+import relayCodec from 'libopenbitfun_crypto.so';
 import { HostSessionStream, HostSessionCallbacks, HostSessionSource, HostStreamHint, HostStreamPage, HostStreamReadRequest, HostStreamHintPlaintext, parseHostStreamHint } from './HostSessionStream';
 import { AccountRealtime } from './AccountRealtime';
 import { CLIENT_PROTOCOL_VERSION, clientVersion } from './ClientBuild';
@@ -444,14 +445,17 @@ export class CloudAccountClient {
     const socket = this.connection(relayUrl, session.token);
     const messageKey = await this.peerMessageKey(relayUrl, session, target);
     const nonce = Encoding.randomBytes(12);
+    const encodings = socket.peerEncodings;
+    const plainCommand = Encoding.utf8ToBytes(JSON.stringify(command));
     const encrypted = await this.cipher.encrypt(
-      Encoding.utf8ToBytes(JSON.stringify(command)),
+      encodings.has(target) && plainCommand.byteLength > 256 ? relayCodec.encodeRelayMessage(plainCommand) : plainCommand,
       messageKey,
       nonce
     );
     const body: EncryptedPayload = {
       encrypted_data: Encoding.bytesToBase64(encrypted),
-      nonce: Encoding.bytesToBase64(nonce)
+      nonce: Encoding.bytesToBase64(nonce),
+      accept_encoding: 'zstd-1'
     };
     RemoteLogger.info(`device rpc cmd=${command.cmd || 'unknown'} bytes=${body.encrypted_data.length}`);
     const response = await socket.call(target, body, timeoutMs);
@@ -467,7 +471,9 @@ export class CloudAccountClient {
       this.forgetPeerKey(session, target);
       throw OhosError.wrap('device rpc decrypt', err);
     }
-    const parsed = Encoding.parseJsonObject<T>(Encoding.bytesToUtf8(plain));
+    const parsed = Encoding.parseJsonObject<T>(Encoding.bytesToUtf8(relayCodec.decodeRelayMessage(plain)));
+    if (response.accept_encoding === 'zstd-1') encodings.add(target);
+    else encodings.delete(target);
     if (parsed.resp === 'error') {
       throw new Error(parsed.message || 'Remote device command failed.');
     }
@@ -537,7 +543,7 @@ export class CloudAccountClient {
       const key = await this.peerMessageKey(relayUrl, session, target);
       const plain = await this.cipher.decrypt(Encoding.base64ToBytes(params.encrypted_data), key,
         Encoding.base64ToBytes(params.nonce));
-      const body = Encoding.parseJsonObject<HostStreamHintPlaintext>(Encoding.bytesToUtf8(plain));
+      const body = Encoding.parseJsonObject<HostStreamHintPlaintext>(Encoding.bytesToUtf8(relayCodec.decodeRelayMessage(plain)));
       return parseHostStreamHint(target, body);
     } catch (err) {
       // A frame this key cannot open means the peer re-keyed or the frame was

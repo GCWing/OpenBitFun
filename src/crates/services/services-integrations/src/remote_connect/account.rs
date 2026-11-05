@@ -52,6 +52,23 @@ pub struct StreamHint {
     pub cursor: u64,
 }
 
+// Capabilities live with the peer key for this connection generation. Clearing
+// the cell on reconnect/presence change also discards any late negotiation.
+struct PeerCipher {
+    key: [u8; 32],
+    accepts_zstd: std::sync::atomic::AtomicBool,
+}
+
+impl PeerCipher {
+    fn encode(&self, text: &str) -> Result<(String, String)> {
+        super::encryption::encrypt_relay_message(
+            &self.key,
+            text,
+            self.accepts_zstd.load(std::sync::atomic::Ordering::Relaxed),
+        )
+    }
+}
+
 /// Device-scoped relay credentials and a locally owned X25519 private key.
 #[derive(Clone)]
 pub struct AccountSession {
@@ -59,7 +76,7 @@ pub struct AccountSession {
     hints: tokio::sync::broadcast::Sender<Option<StreamHint>>,
     pub user_id: String,
     pub master_key: [u8; MASTER_KEY_LEN],
-    peer_keys: Arc<Mutex<HashMap<String, Arc<OnceCell<[u8; 32]>>>>>,
+    peer_keys: Arc<Mutex<HashMap<String, Arc<OnceCell<Arc<PeerCipher>>>>>>,
     transports: Arc<Mutex<HashMap<String, Arc<OnceCell<Arc<super::relay_client::RelayClient>>>>>>,
 }
 
@@ -97,6 +114,10 @@ impl AccountSession {
         event: &str,
         payload: &serde_json::Value,
     ) -> bool {
+        if event == super::message_encoding::HELLO_EVENT {
+            // The receiver learned the peer's offer while opening the envelope.
+            return true;
+        }
         if event != super::host_stream::HOST_STREAM_CHANGED_EVENT {
             return false;
         }
@@ -121,6 +142,10 @@ impl AccountSession {
     }
 
     pub async fn peer_message_key(&self, relay_url: &str, device_id: &str) -> Result<[u8; 32]> {
+        Ok(self.peer_cipher(relay_url, device_id).await?.key)
+    }
+
+    async fn peer_cipher(&self, relay_url: &str, device_id: &str) -> Result<Arc<PeerCipher>> {
         let endpoint = AccountClient::endpoint(
             relay_url,
             &format!("/api/devices/{}/key", urlencoding::encode(device_id)),
@@ -153,10 +178,13 @@ impl AccountSession {
             }
             let public = super::encryption::parse_public_key(&peer.public_key)?;
             let key = device_crypto::derive_message_key(&self.master_key, &public)?;
-            Ok(key)
+            Ok(Arc::new(PeerCipher {
+                key,
+                accepts_zstd: false.into(),
+            }))
         })
         .await
-        .copied()
+        .cloned()
     }
 
     pub async fn encrypt_for_peer(
@@ -165,8 +193,22 @@ impl AccountSession {
         device_id: &str,
         plaintext: &str,
     ) -> Result<(String, String)> {
+        self.peer_cipher(relay_url, device_id)
+            .await?
+            .encode(plaintext)
+    }
+
+    /// A reply belongs to one RPC caller even when old and new controllers
+    /// share a device identity. Use that request's offer for its response.
+    pub async fn encrypt_reply(
+        &self,
+        relay_url: &str,
+        device_id: &str,
+        plaintext: &str,
+        accepts_zstd: bool,
+    ) -> Result<(String, String)> {
         let key = self.peer_message_key(relay_url, device_id).await?;
-        super::encryption::encrypt_to_base64(&key, plaintext)
+        super::encryption::encrypt_relay_message(&key, plaintext, accepts_zstd)
     }
 
     pub async fn decrypt_from_peer(
@@ -176,9 +218,22 @@ impl AccountSession {
         data: &str,
         nonce: &str,
     ) -> Result<String> {
-        let key = self.peer_message_key(relay_url, device_id).await?;
-        match super::encryption::decrypt_from_base64(&key, data, nonce) {
-            Ok(plaintext) => Ok(plaintext),
+        self.decrypt_peer_message(relay_url, device_id, data, nonce, false)
+            .await
+    }
+
+    pub async fn decrypt_peer_message(
+        &self,
+        relay_url: &str,
+        device_id: &str,
+        data: &str,
+        nonce: &str,
+        accepts_zstd: bool,
+    ) -> Result<String> {
+        let peer = self.peer_cipher(relay_url, device_id).await?;
+        let (peer, plaintext) = match super::encryption::decrypt_from_base64(&peer.key, data, nonce)
+        {
+            Ok(plaintext) => (peer, plaintext),
             Err(_) => {
                 // A device can rotate its private key while a controller is
                 // disconnected. Refresh its authenticated key once on failure.
@@ -187,10 +242,14 @@ impl AccountSession {
                     &format!("/api/devices/{}/key", urlencoding::encode(device_id)),
                 )?;
                 self.peer_keys.lock().await.remove(endpoint.as_str());
-                let key = self.peer_message_key(relay_url, device_id).await?;
-                super::encryption::decrypt_from_base64(&key, data, nonce)
+                let peer = self.peer_cipher(relay_url, device_id).await?;
+                let plaintext = super::encryption::decrypt_from_base64(&peer.key, data, nonce)?;
+                (peer, plaintext)
             }
-        }
+        };
+        peer.accepts_zstd
+            .store(accepts_zstd, std::sync::atomic::Ordering::Relaxed);
+        Ok(plaintext)
     }
 }
 
@@ -734,10 +793,6 @@ impl AccountClient {
         plaintext_command: &str,
         timeout: std::time::Duration,
     ) -> Result<String> {
-        // Encrypt for the authenticated target device
-        let (data, nonce) = session
-            .encrypt_for_peer(relay_url, target_device_id, plaintext_command)
-            .await?;
         let cell = {
             let mut transports = session.transports.lock().await;
             transports.entry(relay_url.to_string()).or_default().clone()
@@ -760,6 +815,7 @@ impl AccountClient {
                             RelayEvent::DeviceMessageReceived {
                                 source_device_id,
                                 correlation_id,
+                                accepts_zstd,
                                 encrypted_data,
                                 nonce,
                             } if correlation_id.is_empty() => {
@@ -767,11 +823,12 @@ impl AccountClient {
                                 // the controller transport; RPC requests to this
                                 // device are answered by its routing owner instead.
                                 let Ok(plaintext) = event_session
-                                    .decrypt_from_peer(
+                                    .decrypt_peer_message(
                                         &event_relay,
                                         &source_device_id,
                                         &encrypted_data,
                                         &nonce,
+                                        accepts_zstd,
                                     )
                                     .await
                                 else {
@@ -808,13 +865,30 @@ impl AccountClient {
                 Ok::<_, anyhow::Error>(Arc::new(transport))
             })
             .await?;
-        let (encrypted_data, nonce) = transport
-            .request_device_with_timeout(target_device_id, &data, &nonce, timeout)
+        let peer = session.peer_cipher(relay_url, target_device_id).await?;
+        let (data, nonce) = peer.encode(plaintext_command)?;
+        let (encrypted_data, nonce, accepts_zstd) = transport
+            .request_device_message(target_device_id, &data, &nonce, timeout)
             .await?;
-        // Decrypt using the authenticated target device key
-        session
-            .decrypt_from_peer(relay_url, target_device_id, &encrypted_data, &nonce)
-            .await
+        // Remember the reply only in the generation which issued the call.
+        match super::encryption::decrypt_from_base64(&peer.key, &encrypted_data, &nonce) {
+            Ok(plaintext) => {
+                peer.accepts_zstd
+                    .store(accepts_zstd, std::sync::atomic::Ordering::Relaxed);
+                Ok(plaintext)
+            }
+            Err(_) => {
+                session
+                    .decrypt_peer_message(
+                        relay_url,
+                        target_device_id,
+                        &encrypted_data,
+                        &nonce,
+                        accepts_zstd,
+                    )
+                    .await
+            }
+        }
     }
 }
 

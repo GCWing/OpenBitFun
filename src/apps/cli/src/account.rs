@@ -182,6 +182,7 @@ impl CliAccountRoutingHost {
         // A Desktop host on this machine serves the shared device first; this
         // client stands by and takes over once that host exits.
         let (client, mut event_rx) = RelayClient::new_device_host(DeviceRoutingPriority::Secondary);
+        let client = client.with_encoding_announcements(&request.session);
         client.connect(&request.relay_url).await?;
         client
             .connect_authenticated(&request.session.token, &request.device_name)
@@ -462,6 +463,7 @@ impl CliAccountRoutingHost {
             RelayEvent::DeviceMessageReceived {
                 source_device_id,
                 correlation_id,
+                accepts_zstd,
                 encrypted_data,
                 nonce,
             } => {
@@ -483,7 +485,13 @@ impl CliAccountRoutingHost {
                         return None;
                     }
                     let plaintext = match session
-                        .decrypt_from_peer(&relay_url, &source_device_id, &encrypted_data, &nonce)
+                        .decrypt_peer_message(
+                            &relay_url,
+                            &source_device_id,
+                            &encrypted_data,
+                            &nonce,
+                            accepts_zstd,
+                        )
                         .await
                     {
                         Ok(plaintext) => plaintext,
@@ -561,7 +569,7 @@ impl CliAccountRoutingHost {
                         })
                     });
                     let Ok((encrypted_response, response_nonce)) =
-                        encryption::encrypt_to_base64(&peer_key, &response_json)
+                        encryption::encrypt_relay_message(&peer_key, &response_json, accepts_zstd)
                     else {
                         tracing::warn!("Failed to encrypt RPC response");
                         return;

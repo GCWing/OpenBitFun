@@ -629,6 +629,7 @@ async fn send_rpc_envelope(
     session: &AccountSession,
     source_device_id: &str,
     correlation_id: &str,
+    accepts_zstd: bool,
     resp_value: serde_json::Value,
 ) -> bool {
     if !device_routing_owner_is_current(owner).await {
@@ -649,7 +650,7 @@ async fn send_rpc_envelope(
         return false;
     };
     match session
-        .encrypt_for_peer(&relay_url, source_device_id, &resp_json)
+        .encrypt_reply(&relay_url, source_device_id, &resp_json, accepts_zstd)
         .await
     {
         Ok((enc_resp, resp_nonce)) => {
@@ -681,6 +682,7 @@ async fn send_rpc_error(
     session: &AccountSession,
     source_device_id: &str,
     correlation_id: &str,
+    accepts_zstd: bool,
     message: impl Into<String>,
 ) {
     send_rpc_envelope(
@@ -688,6 +690,7 @@ async fn send_rpc_error(
         session,
         source_device_id,
         correlation_id,
+        accepts_zstd,
         serde_json::json!({
             "resp": "error",
             "message": message.into(),
@@ -2672,7 +2675,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
     let (mut event_rx, auth_device_id, service_connection_id) = match service
         .start_device_connection(
             &relay_url,
-            &session.token,
+            &session,
             &device_name,
             // Desktop serves the device ahead of a CLI/daemon on this machine.
             openbitfun_core::service::remote_connect::relay_client::DeviceRoutingPriority::Primary,
@@ -2799,15 +2802,17 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                 RelayEvent::DeviceMessageReceived {
                     source_device_id,
                     correlation_id,
+                    accepts_zstd,
                     encrypted_data,
                     nonce,
                 } => {
                     match event_session
-                        .decrypt_from_peer(
+                        .decrypt_peer_message(
                             &event_relay_url,
                             &source_device_id,
                             &encrypted_data,
                             &nonce,
+                            accepts_zstd,
                         )
                         .await
                     {
@@ -2979,6 +2984,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                                                         &rpc_session,
                                                         &source_device_id,
                                                         &correlation_id,
+                                                        accepts_zstd,
                                                         resp_value,
                                                     )
                                                     .await;
@@ -3005,6 +3011,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                                                         &rpc_session,
                                                         &source_device_id,
                                                         &correlation_id,
+                                                        accepts_zstd,
                                                         format!("RPC execute failed: {e}"),
                                                     )
                                                     .await;
@@ -3027,6 +3034,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                                             &event_session,
                                             &source_device_id,
                                             &correlation_id,
+                                            accepts_zstd,
                                             format!("invalid RPC command: {e}"),
                                         )
                                         .await;
@@ -3050,6 +3058,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                                     &event_session,
                                     &source_device_id,
                                     &correlation_id,
+                                    accepts_zstd,
                                     format!("failed to decrypt RPC request: {e}"),
                                 )
                                 .await;

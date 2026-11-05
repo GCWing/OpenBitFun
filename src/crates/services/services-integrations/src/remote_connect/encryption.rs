@@ -76,7 +76,16 @@ pub fn decrypt(
 
 /// Convenience: encrypt a string and return base64-encoded `(data, nonce)`.
 pub fn encrypt_to_base64(shared_secret: &[u8; 32], plaintext: &str) -> Result<(String, String)> {
-    let (ct, nonce) = encrypt(shared_secret, plaintext.as_bytes())?;
+    encrypt_relay_message(shared_secret, plaintext, false)
+}
+
+pub fn encrypt_relay_message(
+    shared_secret: &[u8; 32],
+    plaintext: &str,
+    accepts_zstd: bool,
+) -> Result<(String, String)> {
+    let bytes = super::message_encoding::encode(plaintext.as_bytes(), accepts_zstd)?;
+    let (ct, nonce) = encrypt(shared_secret, &bytes)?;
     Ok((BASE64.encode(ct), BASE64.encode(nonce)))
 }
 
@@ -103,7 +112,7 @@ pub fn decrypt_from_base64(
     nonce.copy_from_slice(&nonce_vec);
 
     let plaintext = decrypt(shared_secret, &ct, &nonce)?;
-    String::from_utf8(plaintext).map_err(|e| anyhow!("utf8 decode: {e}"))
+    super::message_encoding::decode(plaintext)
 }
 
 /// Parse a base64-encoded public key into 32-byte array.

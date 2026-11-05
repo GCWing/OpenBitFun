@@ -14,4 +14,5 @@ import kotlinx.serialization.Serializable
 public data class EncryptedPayload(
     @SerialName("encrypted_data") val encryptedData: String,
     @SerialName("nonce") val nonce: String,
+    @SerialName("accept_encoding") val acceptEncoding: String? = null,
 )

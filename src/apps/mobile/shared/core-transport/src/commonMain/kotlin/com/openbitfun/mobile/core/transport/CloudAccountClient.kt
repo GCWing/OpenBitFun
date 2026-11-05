@@ -372,7 +372,7 @@ public class CloudAccountClient internal constructor(
         val envelope = try { RelayJson.decodeFromJsonElement(EncryptedPayload.serializer(), params) } catch (_: Throwable) { return null }
         return try {
             val key = peerMessageKey(relayUrl, session, target)
-            val plain = CloudAccountCipher.decrypt(decode(envelope.encryptedData), key, decode(envelope.nonce)).decodeToString()
+            val plain = RelayMessageEncoding.decode(CloudAccountCipher.decrypt(decode(envelope.encryptedData), key, decode(envelope.nonce))).decodeToString(throwOnInvalidSequence = true)
             parseStreamHint(source, RelayJson.parseToJsonElement(plain).jsonObject)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -413,20 +413,21 @@ public class CloudAccountClient internal constructor(
         if (target.isEmpty()) throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE)
         val socket = connection(relayUrl, session.token)
         val messageKey = peerMessageKey(relayUrl, session, target)
+        val encodings = socket.peerEncodings
         val payload = withContext(processingDispatcher) {
             val nonce = DeviceIdentity.randomBytes(12)
             val plain = RelayJson.encodeToString(RemoteCommand.serializer(), command).encodeToByteArray()
-            val encrypted = CloudAccountCipher.encrypt(plain, messageKey, nonce)
-            EncryptedPayload(Base64.Default.encode(encrypted), Base64.Default.encode(nonce))
+            val encoded = RelayMessageEncoding.encode(plain, encodings?.value?.contains(target) == true)
+            val encrypted = CloudAccountCipher.encrypt(encoded, messageKey, nonce)
+            EncryptedPayload(Base64.Default.encode(encrypted), Base64.Default.encode(nonce), RelayMessageEncoding.NAME)
         }
         val response = RelayJson.decodeFromJsonElement(EncryptedPayload.serializer(),
             socket.call(target,
                 RelayJson.encodeToJsonElement(EncryptedPayload.serializer(), payload), timeoutMs))
         val decoded = try {
             withContext(processingDispatcher) {
-                CloudAccountCipher.decrypt(
-                    decode(response.encryptedData), messageKey, decode(response.nonce),
-                ).decodeToString()
+                val plain = CloudAccountCipher.decrypt(decode(response.encryptedData), messageKey, decode(response.nonce))
+                RelayMessageEncoding.decode(plain).decodeToString(throwOnInvalidSequence = true)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -437,6 +438,7 @@ public class CloudAccountClient internal constructor(
             log.error("device rpc undecryptable cmd=${command.cmd} reason=${cause::class.simpleName}")
             throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE, null, cause)
         }
+        encodings?.update { if (response.acceptEncoding == RelayMessageEncoding.NAME) it + target else it - target }
         return try {
             withContext(processingDispatcher) { RelayJson.decodeFromString(deserializer, decoded) }
         } catch (cancelled: CancellationException) {

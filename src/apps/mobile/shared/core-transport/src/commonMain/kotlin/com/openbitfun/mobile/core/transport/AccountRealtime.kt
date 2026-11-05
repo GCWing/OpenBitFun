@@ -20,6 +20,7 @@ import kotlin.random.Random
 internal const val MAX_ACCOUNT_FRAME_BYTES = 256 * 1024
 
 internal interface AccountRpcConnection {
+    val peerEncodings: MutableStateFlow<Set<String>>? get() = null
     val notifications: Flow<JsonObject> get() = emptyFlow()
     val connections: Flow<Long> get() = emptyFlow()
     suspend fun call(target: String, params: JsonElement, timeoutMs: Long): JsonElement
@@ -40,6 +41,7 @@ internal class AccountRealtime(
     private val updates = MutableSharedFlow<JsonObject>(extraBufferCapacity = 100)
     private val generation = MutableStateFlow(0L)
     private val connectionFailure = MutableStateFlow<Throwable?>(null)
+    override val peerEncodings get() = state.value?.encodings?.value
     override val notifications: SharedFlow<JsonObject> = updates.asSharedFlow()
     override val connections: StateFlow<Long> = generation.asStateFlow()
     private val owner = scope.launch { supervise() }.also { job ->
@@ -49,6 +51,7 @@ internal class AccountRealtime(
     }
 
     private class Epoch(val socket: DefaultClientWebSocketSession) {
+        val encodings = MutableStateFlow(MutableStateFlow(emptySet<String>()))
         val ready = CompletableDeferred<Unit>()
         val mutex = Mutex()
         val pending = mutableMapOf<Int, CompletableDeferred<JsonElement>>()
@@ -160,6 +163,9 @@ internal class AccountRealtime(
                                 if (name == "update" || name == "ephemeral") {
                                     val value = message.payload.getOrNull(1)?.jsonObject
                                         ?: throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE)
+                                    if (name == "ephemeral" && value["type"]?.jsonPrimitive?.contentOrNull == "device-presence") {
+                                        epoch.encodings.value = MutableStateFlow(emptySet())
+                                    }
                                     // Overflow closes this epoch; reconnect triggers durable catch-up.
                                     if (!updates.tryEmit(value)) throw CloudAccountException(CloudAccountFailure.NETWORK)
                                 }

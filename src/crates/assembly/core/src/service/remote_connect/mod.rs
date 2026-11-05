@@ -1021,7 +1021,7 @@ impl RemoteConnectService {
     pub async fn start_device_connection(
         &self,
         relay_url: &str,
-        token: &str,
+        session: &AccountSession,
         device_name: &str,
         priority: relay_client::DeviceRoutingPriority,
         notifier: Arc<dyn host_stream::HostStreamNotifier>,
@@ -1035,8 +1035,11 @@ impl RemoteConnectService {
         self.stop_device_connection_inner().await;
 
         let (client, mut event_rx) = RelayClient::new_device_host(priority);
+        let client = client.with_encoding_announcements(session);
         client.connect(relay_url).await?;
-        client.connect_authenticated(token, device_name).await?;
+        client
+            .connect_authenticated(&session.token, device_name)
+            .await?;
 
         // Wait for AuthOk (or AuthError) before proceeding so that the
         // device is registered as online on the relay before the caller

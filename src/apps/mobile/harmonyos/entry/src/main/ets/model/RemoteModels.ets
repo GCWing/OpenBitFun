@@ -4,6 +4,7 @@ export interface RuntimeFileLocation { path: string; remoteConnectionId?: string
 export class EncryptedPayload {
   encrypted_data: string = '';
   nonce: string = '';
+  accept_encoding?: string;
 }
 
 export interface WorkspaceInfo extends RemoteWorkspaceIdentity {
