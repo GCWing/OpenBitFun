@@ -386,6 +386,32 @@ describeWithJsdom('RichTextInput external sync', () => {
     expect(editor.textContent).toBe('private');
   });
 
+  it('starts a new undo step after moving the caret within a typing run', async () => {
+    const Controlled = () => {
+      const [value, setValue] = useState('');
+      return <RichTextInput value={value} onChange={setValue} contexts={emptyContexts} onRemoveContext={() => {}} />;
+    };
+    await act(async () => root.render(<Controlled />));
+    const editor = container.querySelector('.rich-text-input') as HTMLDivElement;
+    const insert = async (text: string, caret: number) => {
+      await act(async () => {
+        editor.dispatchEvent(new window.InputEvent('beforeinput', {
+          bubbles: true, cancelable: true, inputType: 'insertText', data: 'x',
+        }));
+        editor.textContent = text;
+        setCaret(editor, caret);
+        editor.dispatchEvent(new window.InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+      });
+    };
+    await insert('abc', 3);
+    setCaret(editor, 0);
+    await insert('xabc', 1);
+    await act(async () => { editor.dispatchEvent(new window.KeyboardEvent('keydown', {
+      key: 'z', metaKey: true, bubbles: true, cancelable: true,
+    })); });
+    expect(editor.textContent).toBe('abc');
+  });
+
   it('removes leaked key characters from composer output while preserving joined emoji and IME text', async () => {
     const onChange = vi.fn();
     await act(async () => root.render(<RichTextInput value="" onChange={onChange} contexts={emptyContexts} onRemoveContext={() => {}} />));

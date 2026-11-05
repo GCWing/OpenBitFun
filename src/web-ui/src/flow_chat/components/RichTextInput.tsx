@@ -1174,6 +1174,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
   const historyRef = useRef<RichTextUndoHistory<ComposerHistorySnapshot> | null>(null);
   const pendingHistoryEditRef = useRef<RichTextHistoryEdit | null>(null);
   const lastHistoryEditRef = useRef<RichTextHistoryEdit | null>(null);
+  const lastHistorySelectionRef = useRef<{ node: Node | null; offset: number } | null>(null);
   const applyingHistoryRef = useRef(false);
 
   const getHistory = useCallback(() => {
@@ -1205,6 +1206,10 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     if (getHistory().record(snapshot, startGroup)) {
       lastHistoryEditRef.current = edit;
     }
+    const selection = window.getSelection();
+    lastHistorySelectionRef.current = selection
+      ? { node: selection.focusNode, offset: selection.focusOffset }
+      : null;
   }, [captureHistorySnapshot, getHistory]);
 
   const handleInput = useCallback(() => {
@@ -1635,6 +1640,16 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
         return;
       }
       if (isComposingRef.current) return;
+      const selection = window.getSelection();
+      const previousSelection = lastHistorySelectionRef.current;
+      if (selection && (
+        !selection.isCollapsed
+        || selection.focusNode !== previousSelection?.node
+        || selection.focusOffset !== previousSelection?.offset
+      )) {
+        // Typing at a different location (or replacing a selection) is a new edit.
+        lastHistoryEditRef.current = null;
+      }
       const { kind, data } = classifyRichTextHistoryInput(event.inputType, event.data);
       pendingHistoryEditRef.current = { kind, data, at: Date.now() };
     };
