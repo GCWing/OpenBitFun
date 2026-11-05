@@ -116,6 +116,18 @@ impl CredentialMetadata {
         }
     }
 
+    /// Upstream account identity this slot already owns. API-key slots carry
+    /// none, so they never take part in identity de-duplication.
+    fn upstream_identity(&self) -> Option<&str> {
+        match self {
+            Self::Oauth { account_id, .. } => account_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|identity| !identity.is_empty()),
+            Self::Api { .. } => None,
+        }
+    }
+
     fn management(&self) -> Result<AccountManagement> {
         let Some(value) = self
             .metadata()
@@ -1742,10 +1754,33 @@ pub(super) async fn save_account_quota(
     Ok(true)
 }
 
+/// Provider that owns `slot`. The bare provider key is the default slot; every
+/// other slot is `{provider_key}-account-{uuid}`. Reading the owner from the
+/// slot keeps the check correct when the same identity string appears for two
+/// products (`zcode` / `zcode_cn`).
+fn provider_key_of_slot(slot: &str) -> &str {
+    slot.split_once("-account-")
+        .map_or(slot, |(provider, _)| provider)
+}
+
+/// Slot of the same provider that already owns `identity`, if any.
+fn account_holding_identity<'a>(
+    accounts: &'a HashMap<String, CredentialMetadata>,
+    slot: &str,
+    identity: &str,
+) -> Option<&'a str> {
+    let provider = provider_key_of_slot(slot);
+    accounts
+        .iter()
+        .filter(|(other, _)| provider_key_of_slot(other) == provider)
+        .find(|(_, metadata)| metadata.upstream_identity() == Some(identity))
+        .map(|(other, _)| other.as_str())
+}
+
 /// Inserts or replaces a provider credential. Secret material is committed to
 /// the credential vault before the non-secret metadata advertises the entry.
 pub async fn upsert(provider: &str, credential: StoredCredential) -> Result<()> {
-    match upsert_internal(provider, credential, None).await? {
+    match upsert_internal(provider, credential, None, false).await? {
         ConditionalCommitOutcome::Committed { .. } => Ok(()),
         ConditionalCommitOutcome::Conflict { .. } => {
             unreachable!("unconditional subscription credential commit cannot conflict")
@@ -1756,18 +1791,23 @@ pub async fn upsert(provider: &str, credential: StoredCredential) -> Result<()> 
 /// Commits only if no other process changed or logged out this provider since
 /// `expected_revision` was captured. The comparison, vault write, metadata
 /// revision advance, and metadata commit all run under the store OS lock.
+///
+/// Authorization and refresh commits are also the only writers allowed to
+/// enforce one upstream identity per provider slot; seeders such as test
+/// fixtures keep using `upsert` so legacy duplicate slots stay reproducible.
 pub(crate) async fn upsert_if_revision(
     provider: &str,
     expected_revision: u64,
     credential: StoredCredential,
 ) -> Result<ConditionalCommitOutcome> {
-    upsert_internal(provider, credential, Some(expected_revision)).await
+    upsert_internal(provider, credential, Some(expected_revision), true).await
 }
 
 async fn upsert_internal(
     provider: &str,
     credential: StoredCredential,
     expected_revision: Option<u64>,
+    enforce_unique_identity: bool,
 ) -> Result<ConditionalCommitOutcome> {
     let (path, _transaction) = acquire_store_transaction().await?;
     // Reconcile pending vault cleanup before modifying the metadata index.
@@ -1781,6 +1821,32 @@ async fn upsert_internal(
     let active_before = file.active_vault_entries();
     let previous = file.accounts.get(provider).cloned();
     let mut metadata = CredentialMetadata::from_credential(&credential);
+    // One upstream account owns at most one slot per provider. A slot that is
+    // adopting an identity may not copy the one another slot already holds, or
+    // the UI lists the same subscription twice (once signed in, once not).
+    // Slots that already carry the identity keep committing: reauthentication
+    // and refresh stay possible, and duplicates written by an earlier release
+    // remain usable instead of failing on upgrade.
+    if enforce_unique_identity {
+        if let Some(identity) = metadata.upstream_identity() {
+            if previous
+                .as_ref()
+                .and_then(CredentialMetadata::upstream_identity)
+                .is_none()
+            {
+                if let Some(existing) = account_holding_identity(&file.accounts, provider, identity)
+                {
+                    log::warn!(
+                        "Refused to commit a subscription identity that another slot already owns: provider={}, slot={provider}, existing_slot={existing}",
+                        provider_key_of_slot(provider)
+                    );
+                    return Err(anyhow!(
+                        "This account is already connected in slot {existing}. Sign in on that account instead of adding a second copy; the existing account was preserved."
+                    ));
+                }
+            }
+        }
+    }
     if let Some(previous) = &previous {
         let mut management = previous.management()?;
         if previous
@@ -1859,8 +1925,16 @@ pub(crate) async fn sign_out_account(provider: &str) -> Result<RemoveOutcome> {
 
 async fn remove_internal(provider: &str, retain_metadata: bool) -> Result<RemoveOutcome> {
     let (path, _transaction) = acquire_store_transaction().await?;
-    let _ = load_with_state_unlocked(&path).await?;
+    let state = load_with_state_unlocked(&path).await?;
     let mut file = read_secure_file(&path).await?;
+    // Signing out keeps a known identity so the slot stays visible, states why
+    // it cannot be used, and can be signed in again. A slot that already lost
+    // its usable credential has nothing left to keep: signing it out again
+    // forgets it, which is the only way to clear a leftover row. A locked vault
+    // is not a lost credential, so its retained identity stays.
+    let forget = retain_metadata
+        && !state.credentials.contains_key(provider)
+        && !state.vault_unavailable.contains(provider);
     // Advance even when the account is already absent. The persisted entry is
     // the logout tombstone that rejects authorizations captured beforehand in
     // another process.
@@ -1877,7 +1951,7 @@ async fn remove_internal(provider: &str, retain_metadata: bool) -> Result<Remove
     // Persist cleanup intent before metadata can stop referencing the vault
     // entries. Reconciliation protects them if the metadata commit fails.
     schedule_cleanup(&path, cleanup_entries).await?;
-    if retain_metadata {
+    if retain_metadata && !forget {
         if let Some(previous) = previous {
             file.accounts
                 .insert(provider.into(), previous.without_secrets()?);

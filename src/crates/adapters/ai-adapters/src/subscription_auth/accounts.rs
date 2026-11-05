@@ -302,6 +302,207 @@ mod tests {
         }
         assert!(validate_account_id(SubscriptionProvider::Hermes, &id).is_err());
     }
+
+    fn identity_credential(access: &str, identity: &str) -> store::StoredCredential {
+        store::StoredCredential::Oauth {
+            access: access.into(),
+            refresh: format!("synthetic-refresh-{access}"),
+            expires: chrono::Utc::now().timestamp_millis() + 3_600_000,
+            account_id: Some(identity.into()),
+            metadata: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_second_slot_never_copies_an_identity_another_slot_already_owns() {
+        let _guard = super::super::tests::test_lock().lock().await;
+        store::set_store_path_for_test(super::super::tests::temp_store_path());
+        let provider = SubscriptionProvider::Zcode;
+        let duplicate = format!("{}-account-{}", provider.key(), uuid::Uuid::new_v4());
+        persist_account_credential(
+            provider,
+            provider.key(),
+            0,
+            identity_credential("first-secret", "same-subject"),
+        )
+        .await
+        .unwrap();
+        let error = persist_account_credential(
+            provider,
+            &duplicate,
+            0,
+            identity_credential("second-secret", "same-subject"),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("already connected"), "{error:#}");
+        let rows = list_account_instances().await.unwrap();
+        assert!(rows.iter().all(|row| row.account_id != duplicate));
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.account.provider == provider && row.account.connected)
+                .count(),
+            1,
+            "one signed-in ZCode account must stay a single slot"
+        );
+        // Production does not need the unique identity to repeat in a log line.
+        assert!(!error.to_string().contains("same-subject"));
+    }
+
+    #[tokio::test]
+    async fn reauthenticating_and_refreshing_the_owning_slot_stays_allowed() {
+        let _guard = super::super::tests::test_lock().lock().await;
+        store::set_store_path_for_test(super::super::tests::temp_store_path());
+        let provider = SubscriptionProvider::Codex;
+        let slot = format!("{}-account-{}", provider.key(), uuid::Uuid::new_v4());
+        persist_account_credential(
+            provider,
+            &slot,
+            0,
+            identity_credential("first-secret", "seat-one"),
+        )
+        .await
+        .unwrap();
+        let revision = account_credential_revision(provider, &slot).await.unwrap();
+        assert!(matches!(
+            persist_account_credential(
+                provider,
+                &slot,
+                revision,
+                identity_credential("renewed-secret", "seat-one"),
+            )
+            .await
+            .unwrap(),
+            store::ConditionalCommitOutcome::Committed { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn duplicate_slots_written_by_an_earlier_release_keep_refreshing() {
+        let _guard = super::super::tests::test_lock().lock().await;
+        store::set_store_path_for_test(super::super::tests::temp_store_path());
+        let provider = SubscriptionProvider::Grok;
+        let legacy = format!("{}-account-{}", provider.key(), uuid::Uuid::new_v4());
+        // An older release could store one identity in two slots.
+        store::upsert(
+            provider.key(),
+            identity_credential("legacy-default", "legacy-subject"),
+        )
+        .await
+        .unwrap();
+        store::upsert(
+            &legacy,
+            identity_credential("legacy-named", "legacy-subject"),
+        )
+        .await
+        .unwrap();
+        for slot in [provider.key(), legacy.as_str()] {
+            let revision = account_credential_revision(provider, slot).await.unwrap();
+            assert!(
+                matches!(
+                    persist_account_credential(
+                        provider,
+                        slot,
+                        revision,
+                        identity_credential("refreshed", "legacy-subject"),
+                    )
+                    .await
+                    .unwrap(),
+                    store::ConditionalCommitOutcome::Committed { .. }
+                ),
+                "an upgrade must keep a legacy duplicate slot usable: {slot}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn signing_out_a_slot_that_lost_its_credential_forgets_it() {
+        let _guard = super::super::tests::test_lock().lock().await;
+        store::set_store_path_for_test(super::super::tests::temp_store_path());
+        let provider = SubscriptionProvider::Codex;
+        let slot = format!("{}-account-{}", provider.key(), uuid::Uuid::new_v4());
+        persist_account_credential(
+            provider,
+            &slot,
+            0,
+            identity_credential("secret", "seat-retained"),
+        )
+        .await
+        .unwrap();
+        // First sign-out keeps the identity so the slot stays visible.
+        logout_account(provider, &slot).await.unwrap();
+        let retained = list_account_instances()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|row| row.account_id == slot)
+            .expect("a signed-out slot keeps its identity for reauthentication");
+        assert!(!retained.account.connected);
+        assert_eq!(
+            retained.upstream_account_id.as_deref(),
+            Some("seat-retained")
+        );
+        // Signing out that retained slot again drops it: nothing is left to
+        // keep, and this is the only way to clear a leftover row.
+        logout_account(provider, &slot).await.unwrap();
+        assert!(list_account_instances()
+            .await
+            .unwrap()
+            .iter()
+            .all(|row| row.account_id != slot));
+        assert!(store::load_entry(&slot).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_locked_vault_keeps_the_retained_slot() {
+        let _guard = super::super::tests::test_lock().lock().await;
+        store::set_store_path_for_test(super::super::tests::temp_store_path());
+        let provider = SubscriptionProvider::Grok;
+        let slot = format!("{}-account-{}", provider.key(), uuid::Uuid::new_v4());
+        persist_account_credential(
+            provider,
+            &slot,
+            0,
+            identity_credential("secret", "seat-locked"),
+        )
+        .await
+        .unwrap();
+        store::set_test_vault_unavailable(true);
+        let outcome = logout_account(provider, &slot).await;
+        store::set_test_vault_unavailable(false);
+        outcome.unwrap();
+        // The credential may still be inside the locked vault, so the slot keeps
+        // its identity instead of looking like an account that was removed.
+        assert!(list_account_instances()
+            .await
+            .unwrap()
+            .iter()
+            .any(|row| row.account_id == slot));
+    }
+
+    #[tokio::test]
+    async fn an_identity_in_another_provider_is_not_a_duplicate() {
+        let _guard = super::super::tests::test_lock().lock().await;
+        store::set_store_path_for_test(super::super::tests::temp_store_path());
+        persist_account_credential(
+            SubscriptionProvider::Zcode,
+            SubscriptionProvider::Zcode.key(),
+            0,
+            identity_credential("global-secret", "shared-subject"),
+        )
+        .await
+        .unwrap();
+        // `zcode_cn` is a separate product with its own slots, and `zcode` is a
+        // string prefix of it, so the slot-ownership test must not overreach.
+        persist_account_credential(
+            SubscriptionProvider::ZcodeCn,
+            SubscriptionProvider::ZcodeCn.key(),
+            0,
+            identity_credential("regional-secret", "shared-subject"),
+        )
+        .await
+        .unwrap();
+    }
     #[tokio::test]
     async fn every_provider_keeps_slots_credentials_identity_and_revocation_independent() {
         let _guard = super::super::tests::test_lock().lock().await;
