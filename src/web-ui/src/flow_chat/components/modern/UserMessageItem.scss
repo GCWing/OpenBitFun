@@ -528,3 +528,8 @@
   &::before { content: none; }
   > [data-openbitfun-part='icon'] { display: contents; }
 }
+
+.user-message-item__large-paste-text {
+  min-height: 280px;
+  font-family: var(--openbitfun-type-code-md-font-family);
+}

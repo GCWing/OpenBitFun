@@ -5,10 +5,32 @@ import { getMcpPromptReferenceMatches } from '../../utils/mcpPromptReference';
 import { MessageReferenceCapsule } from './MessageReferenceCapsule';
 import { messageInlineTokenIcon } from './messageReferenceIcons';
 import { ConversationExcerptPreview } from '../../selection/ConversationExcerptAttachments';
-import { Icon } from '@openbitfun/ui';
+import { Icon, OverflowText } from '@openbitfun/ui';
+import { splitLargePasteText } from '../../utils/largePasteMetadata';
+import { UserMessageLargePasteContext } from './userMessageLargePasteContext';
 
-/** Render the persisted prompt format without requiring newer message metadata. */
-export const UserMessageTextContent: React.FC<{ text: string }> = ({ text }) => {
+const UserMessageLargePasteCapsule: React.FC<{
+  placeholder: string;
+  onOpen: (placeholder: string) => void;
+}> = ({ placeholder, onOpen }) => (
+  <button
+    type="button"
+    className="message-reference-capsule message-reference-capsule--large-paste user-message-item__reference user-message-item__reference--large-paste"
+    data-openbitfun-product-component="user-message-item"
+    data-openbitfun-product-part="content"
+    data-openbitfun-state="large-paste"
+    title={placeholder}
+    onClick={(event) => {
+      event.stopPropagation();
+      onOpen(placeholder);
+    }}
+  >
+    <Icon name="file-text" size="sm" aria-hidden />
+    <OverflowText className="message-reference-capsule__label user-message-item__reference-label">{placeholder}</OverflowText>
+  </button>
+);
+
+const UserMessageMcpTextContent: React.FC<{ text: string }> = ({ text }) => {
   const matches = getMcpPromptReferenceMatches(text);
   if (matches.length === 0) return <>{text}</>;
 
@@ -28,6 +50,30 @@ export const UserMessageTextContent: React.FC<{ text: string }> = ({ text }) => 
   }
   content.push(text.slice(cursor));
   return <>{content}</>;
+};
+
+/** Render the persisted prompt format without requiring newer message metadata. */
+export const UserMessageTextContent: React.FC<{ text: string }> = ({ text }) => {
+  const largePaste = React.useContext(UserMessageLargePasteContext);
+  if (largePaste?.largePastes) {
+    const parts = splitLargePasteText(text, largePaste.largePastes);
+    if (parts.some(part => part.kind === 'paste')) {
+      return (
+        <>
+          {parts.map((part, index) => (part.kind === 'paste'
+            ? (
+              <UserMessageLargePasteCapsule
+                key={`paste-${index}`}
+                placeholder={part.placeholder}
+                onOpen={largePaste.openLargePaste}
+              />
+            )
+            : <UserMessageMcpTextContent key={`text-${index}`} text={part.text} />))}
+        </>
+      );
+    }
+  }
+  return <UserMessageMcpTextContent text={text} />;
 };
 
 export const UserMessagePresentationContent: React.FC<{

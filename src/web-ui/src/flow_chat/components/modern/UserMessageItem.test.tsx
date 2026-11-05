@@ -310,6 +310,56 @@ describe('UserMessageItem steering tag', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(text);
   });
 
+  it('stays expanded when the pointer moves outside the bubble to its actions', () => {
+    const text = 'Line one\nLine two\nLine three\nLine four';
+    act(() => root.render(
+      <FlowChatContext.Provider value={{ allowUserMessageRollback: false }}>
+        <UserMessageItem message={{ id: 'expanded-message', content: text, timestamp: 1000 }} turnId="expanded-turn" />
+      </FlowChatContext.Provider>,
+    ));
+
+    const content = container.querySelector<HTMLElement>('[data-testid="chat-user-message-content"]')!;
+    act(() => content.click());
+    expect(content.title).toBe('message.clickToCollapse');
+
+    const copyButton = container.querySelector<HTMLButtonElement>('.user-message-item__copy-btn')!;
+    act(() => {
+      copyButton.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true }));
+      document.body.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true }));
+    });
+    expect(content.title).toBe('message.clickToCollapse');
+
+    act(() => content.click());
+    expect(content.title).toBe('message.clickToExpand');
+  });
+
+  it('shows, opens, and copies stored large paste content instead of only its placeholder', async () => {
+    const placeholder = '[Pasted content 12 chars]';
+    act(() => root.render(
+      <FlowChatContext.Provider value={{ allowUserMessageRollback: false }}>
+        <UserMessageItem
+          message={{
+            id: 'paste-message',
+            content: `Review ${placeholder} please`,
+            timestamp: 1000,
+            metadata: { largePastes: { [placeholder]: 'pasted body' } },
+          }}
+          turnId="paste-turn"
+        />
+      </FlowChatContext.Provider>,
+    ));
+
+    const capsule = container.querySelector<HTMLButtonElement>('.message-reference-capsule--large-paste')!;
+    expect(capsule.textContent).toBe(placeholder);
+    act(() => capsule.click());
+    const viewer = document.querySelector<HTMLTextAreaElement>('.user-message-item__large-paste-text textarea, textarea.user-message-item__large-paste-text');
+    expect(viewer?.value).toBe('pasted body');
+    expect(viewer?.readOnly).toBe(true);
+
+    await act(async () => container.querySelector<HTMLButtonElement>('.user-message-item__copy-btn')!.click());
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Review pasted body please');
+  });
+
   it('uses the shared image dialog without changing image or background click behavior', () => {
     act(() => root.render(
       <FlowChatContext.Provider value={{ sessionId: 'main-session' }}>
