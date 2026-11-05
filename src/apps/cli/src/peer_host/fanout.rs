@@ -833,8 +833,9 @@ async fn fanout_peer_device_event_current(queued: QueuedPeerDeviceEvent) {
         let Some(_delivery_lease) = controller_delivery_lease(target).await else {
             continue;
         };
-        let (encrypted_data, nonce) = match session
-            .encrypt_for_peer(&routing_lease.relay_url, target, &envelope)
+        let before_send = session.peer_message_guard();
+        let (encrypted_data, nonce, uses_zstd) = match session
+            .encrypt_for_peer_with_encoding(&routing_lease.relay_url, target, &envelope)
             .await
         {
             Ok(encrypted) => encrypted,
@@ -845,7 +846,9 @@ async fn fanout_peer_device_event_current(queued: QueuedPeerDeviceEvent) {
         };
         let correlation_id = uuid::Uuid::new_v4().to_string();
         if let Err(error) = relay_client
-            .send_device_message(target, &correlation_id, &encrypted_data, &nonce)
+            .send_device_message_guarded(target, &correlation_id, &encrypted_data, &nonce, || {
+                before_send(uses_zstd)
+            })
             .await
         {
             tracing::debug!("Peer event fanout to {target} failed: {error}");

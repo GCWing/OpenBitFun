@@ -4,6 +4,7 @@ import { EncryptedPayload } from '../model/RemoteModels';
 import { normalizeAccountRelayUrl } from './AccountDeviceLink';
 import { CLIENT_PROTOCOL_VERSION, clientVersion } from './ClientBuild';
 
+interface EphemeralKind { type?: string; }
 interface EngineOpen { sid: string; pingInterval: number; pingTimeout: number; }
 interface Auth { token: string; clientType: string; clientVersion: string; clientProtocol: number; }
 interface RpcCall { method: string; params: Object; timeoutMs: number; }
@@ -22,6 +23,7 @@ export class AccountRealtime {
   private socket?: webSocket.WebSocket;
   private epoch: number = 0;
   private connected: boolean = false;
+  peerEncodings: Set<string> = new Set();
   private closed: boolean = false;
   private nextAck: number = 0;
   private retryDelay: number = 1000;
@@ -55,15 +57,17 @@ export class AccountRealtime {
     return () => { this.reconnectListeners.delete(listener); };
   }
 
-  async call(target: string, params: EncryptedPayload, timeoutMs: number): Promise<EncryptedPayload> {
+  async call(target: string, params: EncryptedPayload, timeoutMs: number, expectedEncodings?: Set<string>): Promise<EncryptedPayload> {
     if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2147483647) throw new Error('Invalid RPC timeout');
     if (this.closed) throw new Error('Relay is closed; request was not submitted');
     await this.ready();
     const socket = this.socket;
     const epoch = this.epoch;
     if (!socket || !this.connected || this.closed) throw new Error('Relay disconnected; request was not submitted');
+    this.assertEncodingCurrent(expectedEncodings);
     const wireParams = await this.payloads.uploadIfLarge(params);
     if (this.closed || !this.connected || this.epoch !== epoch) throw new Error('Relay connection changed; request was not submitted');
+    this.assertEncodingCurrent(expectedEncodings);
     const id = this.nextAck++;
     const call: RpcCall = { method: `${target}:invoke`, params: wireParams, timeoutMs: timeoutMs };
     const data = `42${id}${JSON.stringify(['rpc-call', call])}`;
@@ -82,7 +86,13 @@ export class AccountRealtime {
     return result as EncryptedPayload;
   }
 
-  private ready(): Promise<void> {
+  private assertEncodingCurrent(expected?: Set<string>): void {
+    if (expected && expected !== this.peerEncodings) {
+      throw new Error('Relay capabilities changed; request was not submitted');
+    }
+  }
+
+  ready(): Promise<void> {
     if (this.closed) return Promise.reject(new Error('Relay is closed'));
     if (this.connected) return Promise.resolve();
     return new Promise<void>((resolve, reject) => {
@@ -174,6 +184,7 @@ export class AccountRealtime {
       // still emit them and no listener reads their body. Presence and
       // encrypted device events (stream hints) arrive as 'ephemeral'.
       if (name === 'ephemeral') {
+        if ((parts[1] as EphemeralKind).type === 'device-presence') this.peerEncodings = new Set();
         this.updateListeners.forEach((listener: (event: string, data: Object) => void) => { listener(name, parts[1]); });
       }
     } else {
@@ -190,6 +201,7 @@ export class AccountRealtime {
     if (epoch !== this.epoch) return;
     this.epoch++;
     this.connected = false;
+    this.peerEncodings = new Set();
     if (this.idleTimer >= 0) clearTimeout(this.idleTimer);
     const socket = this.socket;
     this.socket = undefined;

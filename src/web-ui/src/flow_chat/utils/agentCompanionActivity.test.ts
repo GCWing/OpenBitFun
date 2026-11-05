@@ -1,9 +1,19 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flowChatStore } from '../store/FlowChatStore';
 import { stateMachineManager } from '../state-machine/SessionStateMachineManager';
 import { ProcessingPhase, SessionExecutionEvent, SessionExecutionState } from '../state-machine/types';
 import type { DialogTurn, Session } from '../types/flow-chat';
 import { buildAgentCompanionActivity } from './agentCompanionActivity';
+
+const background = vi.hoisted(() => ({ rows: [] as unknown[] }));
+vi.mock('../services/crossDeviceSessions', () => ({
+  listBackgroundDeviceSessions: () => background.rows,
+  subscribeCrossDeviceSessions: () => () => undefined,
+}));
+vi.mock('@/infrastructure/account/deviceDirectory', () => ({
+  resolveDeviceName: (id: string) => (id === 'peer-a' ? 'Studio Mac' : id),
+  useDeviceDirectory: { getState: () => ({ localId: null }) },
+}));
 
 function hasLoneSurrogate(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
@@ -383,5 +393,34 @@ describe('buildAgentCompanionActivity', () => {
 
     expect(activity.tasks).toHaveLength(1);
     expect(activity.tasks[0].state).not.toBe('attention');
+  });
+
+  it('adds other devices sessions that need attention, run, or finished unread', () => {
+    const row = (sessionId: string, activity: Record<string, unknown> | undefined) => ({
+      surfaceId: 'peer-a',
+      workspaceId: 'ws-1',
+      session: { sessionId, sessionName: `Remote ${sessionId}`, turnCount: 1, createdAt: 1, lastActiveAt: 2 },
+      activity: activity && { sessionId, execution: 'idle', pendingApprovals: 0, pendingQuestions: 0, ...activity },
+    });
+    background.rows = [
+      row('r-approval', { execution: 'running', pendingApprovals: 1 }),
+      row('r-running', { execution: 'running' }),
+      row('r-done', { unreadCompletion: 'completed' }),
+      row('r-idle', {}),
+      row('r-unknown', undefined),
+    ];
+    try {
+      const activity = buildAgentCompanionActivity();
+      expect(activity.tasks.map(task => [task.sessionId, task.state])).toEqual([
+        ['r-approval', 'attention'],
+        ['r-running', 'running'],
+        ['r-done', 'completed'],
+      ]);
+      expect(activity.tasks.every(task => task.surfaceId === 'peer-a' && task.workspaceId === 'ws-1'
+        && task.deviceName === 'Studio Mac' && task.canReply === false)).toBe(true);
+      expect(activity.mood).toBe('waiting');
+    } finally {
+      background.rows = [];
+    }
   });
 });

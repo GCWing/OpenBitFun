@@ -14,6 +14,7 @@ const globalStateMocks = vi.hoisted(() => ({
   getCurrentWorkspace: vi.fn(),
   getPrimaryAssistantWorkspace: vi.fn(),
   updateWorkspaceInfo: vi.fn(),
+  scanWorkspaceInfo: vi.fn(),
 }));
 
 const listenMock = vi.hoisted(() => vi.fn());
@@ -70,6 +71,7 @@ function configureGlobalState(): void {
   globalStateMocks.getCurrentWorkspace.mockResolvedValue(null);
   globalStateMocks.getPrimaryAssistantWorkspace.mockResolvedValue(null);
   globalStateMocks.updateWorkspaceInfo.mockReset();
+  globalStateMocks.scanWorkspaceInfo.mockReset();
 }
 
 async function getFreshWorkspaceManager() {
@@ -404,6 +406,25 @@ describe('WorkspaceManager assistant closing and reopening', () => {
     expect(manager.getState().assistantWorkspaces).toHaveLength(1);
   });
 
+  it('shows a switched workspace after the host switch alone, refreshing lists afterwards', async () => {
+    const first = { id: 'first', name: 'First', rootPath: '/test/first', workspaceKind: 'normal' };
+    const second = { id: 'second', name: 'Second', rootPath: '/test/second', workspaceKind: 'normal' };
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
+      cleanupRemovedCount: 0, currentWorkspace: first, openedWorkspaces: [first, second],
+      recentWorkspaces: [], assistantWorkspaces: [], primaryAssistantWorkspaceId: null,
+    });
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    let releaseLists!: (value: unknown) => void;
+    globalStateMocks.getOpenedWorkspaces.mockReturnValue(new Promise(resolve => { releaseLists = resolve; }));
+    globalStateMocks.setActiveWorkspace.mockResolvedValue(second);
+    await manager.setActiveWorkspace(second.id);
+    // Resolved while the list refresh is still in flight.
+    expect(manager.getState().activeWorkspaceId).toBe(second.id);
+    expect([...manager.getState().openedWorkspaces.keys()]).toEqual(['first', 'second']);
+    releaseLists([first, second]);
+  });
+
   it('waits for running sessions to be cancelled before closing and preserves the catalog', async () => {
     globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
       cleanupRemovedCount: 0, currentWorkspace: assistant, openedWorkspaces: [assistant],
@@ -654,6 +675,33 @@ describe('WorkspaceManager device surface switching', () => {
     expect(manager.getState().currentWorkspace?.id).toBe('workspace-a');
     deviceSurface.activateSurface('peer-b');
     expect(manager.getState().currentWorkspace?.id).toBe('workspace-b');
+  });
+
+  it('shows a device in the order its background catalog settled on, live and cached alike', async () => {
+    const workspace = (id: string) => ({ ...workspaceA, id, name: id, rootPath: `/${id}` });
+    const [a, b, c] = [workspace('a'), workspace('b'), workspace('c')];
+    globalStateMocks.initializeWorkspaceStartupState
+      .mockResolvedValueOnce({ ...startupSnapshot(a), openedWorkspaces: [a, b, c] })
+      .mockResolvedValueOnce(startupSnapshot(workspaceB));
+    const { manager, deviceSurface } = await getFreshWorkspaceHarness();
+    const displayOrder = await import('./workspaceDisplayOrder');
+    await manager.initialize();
+    deviceSurface.activateSurface('peer-b');
+    await manager.reinitializeForPeerModeSwitch();
+
+    // While another device is rendered, this device's catalog reads a list
+    // arranged on another controller.
+    expect(displayOrder.stableWorkspaceOrder(deviceSurface.LOCAL_SURFACE_ID, [c, b, a]).map(item => item.id)).toEqual(['c', 'b', 'a']);
+    // The background section's fallback and the live list returned to both
+    // draw that order; the live list's next host read keeps it.
+    expect(manager.getSurfaceOpenedWorkspaces(deviceSurface.LOCAL_SURFACE_ID).map(item => item.id)).toEqual(['c', 'b', 'a']);
+    deviceSurface.activateSurface(deviceSurface.LOCAL_SURFACE_ID);
+    expect([...manager.getState().openedWorkspaces.keys()]).toEqual(['c', 'b', 'a']);
+    globalStateMocks.setActiveWorkspace.mockResolvedValue(b);
+    globalStateMocks.getOpenedWorkspaces.mockResolvedValue([b, c, a]);
+    await manager.setActiveWorkspace(b.id);
+    await flushAsyncWork();
+    expect([...manager.getState().openedWorkspaces.keys()]).toEqual(['c', 'b', 'a']);
   });
 
   it('keeps a cached surface visible when its refresh fails', async () => {
@@ -1015,5 +1063,64 @@ describe('WorkspaceManager host catalog hints', () => {
 
     expect(globalStateMocks.getOpenedWorkspaces).not.toHaveBeenCalled();
     expect(manager.getState().openedWorkspaces.size).toBe(1);
+  });
+});
+
+describe('WorkspaceManager state-quiet loading and error events', () => {
+  const workspace = {
+    id: 'workspace-quiet',
+    name: 'Quiet repo',
+    rootPath: '/repo/quiet',
+    workspaceKind: 'normal',
+    identity: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    configureGlobalState();
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
+      cleanupRemovedCount: 0,
+      recentWorkspaces: [workspace],
+      openedWorkspaces: [workspace],
+      currentWorkspace: workspace,
+      legacyRemoteWorkspace: null,
+    });
+    globalStateMocks.getCurrentWorkspace.mockResolvedValue(workspace);
+    globalStateMocks.getRecentWorkspaces.mockResolvedValue([workspace]);
+    globalStateMocks.getOpenedWorkspaces.mockResolvedValue([workspace]);
+  });
+
+  function collectEvents(manager: {
+    addEventListener: (listener: (event: { type: string }) => void) => () => void;
+  }): { types: string[]; unsubscribe: () => void } {
+    const types: string[] = [];
+    const unsubscribe = manager.addEventListener(event => {
+      types.push(event.type);
+    });
+    return { types, unsubscribe };
+  }
+
+  it('does not emit an instant-failure loading/error pair when a load starts cleanly', async () => {
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+
+    const { types } = collectEvents(manager);
+    globalStateMocks.scanWorkspaceInfo.mockResolvedValue(workspace);
+    await manager.scanWorkspaceInfo();
+
+    expect(types).not.toContain('workspace:error');
+    expect(types.filter(type => type === 'workspace:loading')).toEqual(['workspace:loading']);
+  });
+
+  it('still reports real failures through workspace:error', async () => {
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+
+    const { types } = collectEvents(manager);
+    globalStateMocks.scanWorkspaceInfo.mockRejectedValue(new Error('scan failed'));
+    await expect(manager.scanWorkspaceInfo()).rejects.toThrow('scan failed');
+
+    expect(types).toContain('workspace:error');
+    expect(manager.getState().error).toBe('scan failed');
   });
 });

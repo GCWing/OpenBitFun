@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  PEER_BROWSER_CONTROL_SETUP_TIMEOUT_MS,
   PEER_MUTATION_REQUEST_TIMEOUT_MS,
   PEER_READ_MAX_RETRIES,
   PEER_READ_REQUEST_TIMEOUT_MS,
@@ -20,7 +21,65 @@ import {
 import { TauriTransportAdapter } from './tauri-adapter';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
+describe('peer command refusal lifetime', () => {
+  it('remembers a registry refusal for this host and retries after a new handshake', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: false,
+      error: "command 'get_session_file_diff_stats' is not supported on CLI peer host: the CLI peer host has no handler for this command" }));
+    const adapter = new PeerDeviceTransportAdapter('peer-a', rpc);
+    for (const sessionId of ['first', 'second']) {
+      await expect(adapter.request('get_session_file_diff_stats', { request: { sessionId } })).rejects.toThrow('has no handler');
+    }
+    expect(rpc).toHaveBeenCalledTimes(1);
+    adapter.setHostCapabilities({});
+    rpc.mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { files: 2 } }));
+    await expect(adapter.request('get_session_file_diff_stats', { request: { sessionId: 'second' } })).resolves.toEqual({ files: 2 });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['Permission denied', 'Session not found', 'Storage unavailable'])('does not remember request-dependent failure %s', async error => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: false, error }));
+    const adapter = new PeerDeviceTransportAdapter('peer-a', rpc);
+    await expect(adapter.request('get_session_file_diff_stats', {})).rejects.toThrow(error);
+    await expect(adapter.request('get_session_file_diff_stats', {})).rejects.toThrow(error);
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not carry a late refusal into the next host generation', async () => {
+    const pending = createDeferred<string>();
+    const rpc = vi.fn().mockReturnValueOnce(pending.promise)
+      .mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: {} }));
+    const adapter = new PeerDeviceTransportAdapter('peer-a', rpc);
+    const request = adapter.request('get_session_file_diff_stats', {});
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
+    adapter.setHostCapabilities({});
+    pending.resolve(JSON.stringify({ resp: 'host_invoke_result', ok: false,
+      error: "command 'get_session_file_diff_stats' is unknown to this OpenBitFun CLI peer host version" }));
+    await expect(request).rejects.toThrow('unknown');
+    await expect(adapter.request('get_session_file_diff_stats', {})).resolves.toEqual({});
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('smart routing host capability', () => {
+  it('negotiates library setting reads and writes without falling back to local config', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: 'future.collection' }));
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc);
+    const requests = [
+      ['get_config', { request: { path: 'ai.generative_ui_library' } }],
+      ['get_configs', { request: { paths: ['ai.generative_ui_library'] } }],
+      ['set_config', { request: { path: 'ai.generative_ui_library', value: 'future.collection' } }],
+      ['reset_config', { request: { path: 'ai.generative_ui_library' } }],
+    ] as const;
+    for (const [command, args] of requests) await expect(adapter.request(command, args)).rejects.toThrow('gen_ui_libraries_v1');
+    expect(rpc).not.toHaveBeenCalled();
+    await expect(adapter.request('product_control_invoke', { request: { capabilityId: 'setting.tools.execution', optionId: 'genui-library', action: 'configure', value: 'future.collection' } })).rejects.toThrow('gen_ui_libraries_v1');
+    adapter.setHostCapabilities({ supportsGenUiLibrariesV1: true });
+    for (const [command, args] of requests) await adapter.request(command, args);
+    expect(rpc).toHaveBeenCalledTimes(requests.length);
+    adapter.setHostCapabilities({ supportsGenUiLibrariesV1: false });
+    await expect(adapter.request('get_config', requests[0][1])).rejects.toThrow('gen_ui_libraries_v1');
+    expect(rpc).toHaveBeenCalledTimes(requests.length);
+  });
   it('rejects unsupported routing reads and mutations before RPC', async () => {
     const rpc = vi.fn();
     const adapter = new PeerDeviceTransportAdapter('peer-1', rpc);
@@ -119,6 +178,32 @@ describe('whole-session copy capability', () => {
     adapter.setHostCapabilities({ supportsWholeSessionCopyV1: false });
     await expect(adapter.request('copy_session', params)).rejects.toThrow('whole_session_copy_v1_unsupported');
     expect(deviceRpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('browser control setup deadline', () => {
+  it.each([
+    'browser_control_launch',
+    'browser_control_enable_default_cdp',
+    'browser_control_restart_with_cdp',
+  ])('gives %s the browser consent budget without retrying', async command => {
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
+      resp: 'host_invoke_result', ok: true, value: { success: true },
+    }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+    await adapter.request(command, { request: { port: 9222 } });
+    expect(deviceRpc).toHaveBeenCalledTimes(1);
+    expect(deviceRpc.mock.calls[0][2]).toBe(PEER_BROWSER_CONTROL_SETUP_TIMEOUT_MS);
+    expect(PEER_BROWSER_CONTROL_SETUP_TIMEOUT_MS).toBeGreaterThan(150_000);
+  });
+
+  it('keeps the ordinary deadline for browser control status reads', async () => {
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
+      resp: 'host_invoke_result', ok: true, value: {},
+    }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+    await adapter.request('browser_control_get_status', { request: { port: 9222 } });
+    expect(deviceRpc.mock.calls[0][2]).toBe(PEER_READ_REQUEST_TIMEOUT_MS);
   });
 });
 
@@ -656,6 +741,27 @@ describe('PeerDeviceTransportAdapter queue', () => {
     },
   );
 
+  it.each(['ssh_connect', 'ssh_save_connection', 'ssh_test_connection'])(
+    'rejects %s with a port-scoped id before an older peer can treat it as unscoped', async (command) => {
+      const deviceRpc = vi.fn();
+      const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+      await expect(adapter.request(command, { config: { id: 'ssh-root@cluster#2201', host: 'cluster', port: 2201 } }))
+        .rejects.toThrow('ssh_port_scoped_identity_v1_unsupported');
+      expect(deviceRpc).not.toHaveBeenCalled();
+    },
+  );
+
+  it('forwards legacy ids to any peer and port-scoped ids to a negotiated peer', async () => {
+    const ok = JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { success: true } });
+    const legacyRpc = vi.fn().mockResolvedValue(ok);
+    await expect(new PeerDeviceTransportAdapter('peer-1', legacyRpc)
+      .request('ssh_connect', { config: { id: 'ssh-root@cluster', host: 'cluster', port: 2201 } })).resolves.toEqual({ success: true });
+    const scopedRpc = vi.fn().mockResolvedValue(ok);
+    await expect(new PeerDeviceTransportAdapter('peer-1', scopedRpc, { supportsSshPortScopedIdentityV1: true })
+      .request('ssh_connect', { config: { id: 'ssh-root@cluster#2201', host: 'cluster', port: 2201 } })).resolves.toEqual({ success: true });
+    expect(JSON.stringify(scopedRpc.mock.calls[0])).toContain('ssh-root@cluster#2201');
+  });
+
   it('forwards a WSL profile to the negotiated host with its target intact', async () => {
     const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { success: true } }));
     const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc, { supportsWslWorkspacesV1: true });
@@ -663,6 +769,27 @@ describe('PeerDeviceTransportAdapter queue', () => {
     await expect(adapter.request('ssh_connect', { config })).resolves.toEqual({ success: true });
     expect(deviceRpc).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(deviceRpc.mock.calls[0])).toContain('Ubuntu');
+  });
+
+  it.each(['ssh_connect', 'ssh_save_connection', 'ssh_test_connection'])(
+    'rejects %s with none authentication before an older peer can fail to parse it', async (command) => {
+      const deviceRpc = vi.fn();
+      const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+      await expect(adapter.request(command, { config: { auth: { type: 'None' } } }))
+        .rejects.toThrow('ssh_none_auth_v1_unsupported');
+      expect(deviceRpc).not.toHaveBeenCalled();
+    },
+  );
+
+  it('forwards none authentication to the negotiated host and leaves other methods alone', async () => {
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { success: true } }));
+    const negotiated = new PeerDeviceTransportAdapter('peer-1', deviceRpc, { supportsSshNoneAuthV1: true });
+    await expect(negotiated.request('ssh_connect', { config: { auth: { type: 'None' } } }))
+      .resolves.toEqual({ success: true });
+    const older = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+    await expect(older.request('ssh_connect', { config: { auth: { type: 'Agent' } } }))
+      .resolves.toEqual({ success: true });
+    expect(deviceRpc).toHaveBeenCalledTimes(2);
   });
 
   it('forwards MiniApp Agent context files after version negotiation', async () => {
@@ -1035,5 +1162,30 @@ describe('local context truncation capability', () => {
     adapter.setHostCapabilities({ supportsLocalContextTruncationV1: false });
     await expect(adapter.request('compact_session', { request: { sessionId: 'session', force: true } })).rejects.toThrow('local_context_truncation_v1');
     expect(rpc).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('background requests during a cross-device open', () => {
+  it('holds low-priority reads until the open settles while session reads proceed', async () => {
+    const { beginDeviceOpen, endDeviceOpen } = await import('@/infrastructure/peer-device/deviceOpenIntent');
+    const ok = JSON.stringify({ resp: 'host_invoke_result', ok: true, value: [] });
+    const rpc = vi.fn().mockResolvedValue(ok);
+    const adapter = new PeerDeviceTransportAdapter('peer-gate', rpc);
+    const intent = beginDeviceOpen({ surfaceId: 'peer-gate', key: 'session:s', sessionId: 's' });
+    try {
+      const background = adapter.request('git_get_status', { request: {} });
+      await adapter.request('set_active_workspace', { request: { workspaceId: 'w' } });
+      const commands = () => rpc.mock.calls.map(call => JSON.parse(call[1]).command);
+      expect(commands()).toEqual(['set_active_workspace']);
+      endDeviceOpen(intent);
+      await background;
+      expect(commands()).toEqual(['set_active_workspace', 'git_get_status']);
+    } finally {
+      endDeviceOpen(intent);
+    }
+  });
+
+  it('activates a session workspace at high priority', () => {
+    expect(peerInvokePriorityFor('set_active_workspace')).toBe('high');
   });
 });

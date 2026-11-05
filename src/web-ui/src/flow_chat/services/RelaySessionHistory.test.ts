@@ -6,6 +6,7 @@ const fixture = vi.hoisted(() => ({
   record: null as ((event: unknown) => void) | null,
   ready: null as ((event: any) => void) | null,
   error: null as ((event: any) => void) | null,
+  gap: null as ((event: any) => void) | null,
   subscribe: vi.fn(), unsubscribe: vi.fn(async () => {}), older: vi.fn(async () => {}),
 }));
 vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({
@@ -17,10 +18,11 @@ vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', () => ({ remoteConn
   onSessionRecord: (listener: (event: unknown) => void) => { fixture.record = listener; return () => { fixture.record = null; }; },
   onSessionReady: (listener: (event: any) => void) => { fixture.ready = listener; return () => { fixture.ready = null; }; },
   onSessionSyncError: (listener: (event: any) => void) => { fixture.error = listener; return () => { fixture.error = null; }; },
+  onSessionGap: (listener: (event: any) => void) => { fixture.gap = listener; return () => { fixture.gap = null; }; },
   subscribeSession: fixture.subscribe, unsubscribeSession: fixture.unsubscribe, loadOlderSession: fixture.older,
 } }));
 
-import { RelaySessionHistory } from './RelaySessionHistory';
+import { prewarmRelaySessionHistory, RelaySessionHistory } from './RelaySessionHistory';
 
 describe('RelaySessionHistory', () => {
   beforeEach(() => { vi.clearAllMocks(); fixture.current = true; });
@@ -52,6 +54,60 @@ describe('RelaySessionHistory', () => {
     expect(fixture.record).toBeNull();
   });
 
+  it('adopts a stream warmed before the device was rendered, with what it buffered', async () => {
+    let resolveSubscription!: (id: string) => void;
+    fixture.subscribe.mockImplementation(() => new Promise<string>(resolve => { resolveSubscription = resolve; }));
+    prewarmRelaySessionHistory('host', 'session');
+    // The host answers while the device switch is still running.
+    fixture.record?.({ sessionId: 'session', id: 'turn/turn' });
+    fixture.record?.({ sessionId: 'other', id: 'turn/other' });
+    fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 1 });
+    const apply = vi.fn();
+    const onReady = vi.fn();
+    const history = new RelaySessionHistory('session', apply, onReady, vi.fn());
+    const opened = history.open();
+    resolveSubscription('warm-subscription');
+    await opened;
+    expect(fixture.subscribe).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledWith({ sessionId: 'session', id: 'turn/turn' });
+    expect(onReady).toHaveBeenCalledOnce();
+    history.close();
+    expect(fixture.unsubscribe).toHaveBeenCalledWith('warm-subscription');
+  });
+
+  it('closes a warm stream nobody adopted', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockResolvedValue('unused');
+    prewarmRelaySessionHistory('host', 'abandoned');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fixture.unsubscribe).toHaveBeenCalledWith('unused');
+    expect(fixture.record).toBeNull();
+  });
+
+  it('renders pending records, then resyncs only for a gap the controller replays', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 1 });
+      return 'subscription';
+    });
+    const order: string[] = [];
+    const history = new RelaySessionHistory('session', () => { order.push('record'); }, vi.fn(), vi.fn(),
+      undefined, () => order.push('flush'), () => order.push('resync'));
+    await history.open();
+    order.length = 0;
+
+    fixture.gap?.({ sessionId: 'session', reason: 'source lagged' });
+    fixture.gap?.({ sessionId: 'other', reason: 'host stream restarted', resync: true });
+    expect(order).toEqual([]);
+
+    fixture.record?.({ sessionId: 'session', id: 'turn/turn' });
+    fixture.gap?.({ sessionId: 'session', reason: 'host stream restarted', resync: true });
+    expect(order).toEqual(['record', 'flush', 'resync']);
+    history.close();
+    expect(fixture.gap).toBeNull();
+  });
+
   it('surfaces replay failures instead of leaving the first page loading forever', async () => {
     fixture.subscribe.mockImplementation(async () => {
       fixture.error?.({ sessionId: 'session', targetDeviceId: 'host', message: 'Unreadable session' });
@@ -62,6 +118,86 @@ describe('RelaySessionHistory', () => {
     await expect(history.open()).rejects.toThrow('Unreadable session');
     expect(error).toHaveBeenCalledOnce();
     expect(fixture.unsubscribe).toHaveBeenCalledWith('subscription');
+  });
+
+  it('fails an overdue first page as retryable without claiming an empty complete history', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockResolvedValueOnce('subscription');
+    const apply = vi.fn();
+    const flushed = vi.fn();
+    const ready = vi.fn();
+    const error = vi.fn();
+    const resumed = vi.fn(async () => {});
+    const history = new RelaySessionHistory('session', apply, ready, error, resumed, flushed);
+
+    const opening = history.open();
+    const outcome = expect(opening).rejects.toMatchObject({
+      name: 'RelayHistoryFirstPageOverdueError', retryable: true, sessionId: 'session',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // A received fragment is not a complete Turn and must never be published.
+    fixture.record?.({ sessionId: 'session', id: 'item/known' });
+    await vi.advanceTimersByTimeAsync(15_000);
+    await outcome;
+
+    expect(apply).not.toHaveBeenCalled();
+    expect(flushed).toHaveBeenCalled();
+    // A blocking question is answerable from the mailbox without the page.
+    expect(resumed).toHaveBeenCalledOnce();
+    // Never a synthetic ready: no fake `hasMore: false` or zero cursor.
+    expect(ready).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledOnce();
+    expect(fixture.unsubscribe).toHaveBeenCalledWith('subscription');
+
+    // A late page belongs to a closed read; retrying opens a fresh one.
+    expect(fixture.ready).toBeNull();
+  });
+
+  it('keeps a first page that arrives before the deadline and clears the deadline', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockResolvedValueOnce('subscription');
+    const ready = vi.fn();
+    const error = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), ready, error, async () => {});
+
+    const opening = history.open();
+    await vi.advanceTimersByTimeAsync(14_000);
+    fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 5, cursor: 9 });
+    await opening;
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(ready).toHaveBeenCalledExactlyOnceWith({
+      sessionId: 'session', hasMore: true, oldestSeq: 5, cursor: 9,
+    });
+    expect(error).not.toHaveBeenCalled();
+    expect(fixture.unsubscribe).not.toHaveBeenCalled();
+    history.close();
+  });
+
+  it('does not report an overdue page for a read that was closed or switched away', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockResolvedValue('subscription');
+    const closedError = vi.fn();
+    const closedResume = vi.fn(async () => {});
+    const closed = new RelaySessionHistory('session', vi.fn(), vi.fn(), closedError, closedResume);
+    const closing = expect(closed.open()).rejects.toThrow('Session subscription closed');
+    await vi.advanceTimersByTimeAsync(0);
+    closed.close();
+    await closing;
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(closedError).not.toHaveBeenCalled();
+    expect(closedResume).toHaveBeenCalledOnce(); // Opening read only; no work after close.
+
+    const switchedError = vi.fn();
+    const switchedResume = vi.fn(async () => {});
+    const switched = new RelaySessionHistory('session', vi.fn(), vi.fn(), switchedError, switchedResume);
+    const switching = expect(switched.open()).rejects.toThrow('first page overdue');
+    await vi.advanceTimersByTimeAsync(0);
+    fixture.current = false;
+    await vi.advanceTimersByTimeAsync(15_000);
+    await switching;
+    expect(switchedError).not.toHaveBeenCalled();
+    expect(switchedResume).toHaveBeenCalledOnce(); // Opening read only; no work on the new surface.
   });
 
   it('drops stale replay and unsubscribes when the surface changes during grant', async () => {
@@ -91,15 +227,19 @@ describe('RelaySessionHistory', () => {
     history.close();
   });
 
-  it('keeps a page in one batch across frames but cannot be stalled by it', async () => {
+  it('does not expose historical fragments through timers, visibility, or close', async () => {
     vi.useFakeTimers();
+    const listeners: Array<() => void> = [];
+    vi.stubGlobal('document', { visibilityState: 'visible',
+      addEventListener: (_: string, listener: () => void) => listeners.push(listener), removeEventListener: vi.fn() });
     fixture.subscribe.mockImplementation(async () => {
       fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 150 });
       return 'subscription';
     });
     fixture.older.mockImplementation(() => new Promise<void>(() => {}));
     const flush = vi.fn();
-    const history = new RelaySessionHistory('session', vi.fn(), vi.fn(), vi.fn(), undefined, flush);
+    const apply = vi.fn();
+    const history = new RelaySessionHistory('session', apply, vi.fn(), vi.fn(), undefined, flush);
     await history.open();
     flush.mockClear();
 
@@ -109,14 +249,13 @@ describe('RelaySessionHistory', () => {
       fixture.record?.({ sessionId: 'session', id: `item/${index}` });
       await vi.advanceTimersByTimeAsync(5);
     }
+    await vi.advanceTimersByTimeAsync(1000);
+    listeners.forEach(listener => listener());
+    expect(apply).not.toHaveBeenCalled();
     expect(flush).not.toHaveBeenCalled();
     fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 150 });
+    expect(apply).toHaveBeenCalledTimes(20);
     expect(flush).toHaveBeenCalledOnce();
-
-    void history.loadOlder().catch(() => {});
-    fixture.record?.({ sessionId: 'session', id: 'item/stalled' });
-    await vi.advanceTimersByTimeAsync(250);
-    expect(flush).toHaveBeenCalledTimes(2);
     history.close();
   });
 
@@ -205,7 +344,7 @@ describe('RelaySessionHistory', () => {
     expect(ready).not.toHaveBeenCalled();
   });
 
-  it('renders received records before a sync error and on close', async () => {
+  it('flushes admitted live records on failure and rejects delivery from the failed read', async () => {
     vi.useFakeTimers();
     fixture.subscribe.mockImplementation(async () => {
       fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 0 });
@@ -222,9 +361,9 @@ describe('RelaySessionHistory', () => {
 
     fixture.record?.({ sessionId: 'session', id: 'item/2' });
     history.close();
-    expect(flush).toHaveBeenCalledTimes(2);
+    expect(flush).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(16);
-    expect(flush).toHaveBeenCalledTimes(2);
+    expect(flush).toHaveBeenCalledOnce();
   });
 
   it('leaves records pending when the surface changed before the flush', async () => {
@@ -256,6 +395,7 @@ describe('RelaySessionHistory', () => {
     await history.open();
     fixture.older.mockImplementation(async () => {
       fixture.record?.({ sessionId: 'session', id: 'invalid' });
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 150 });
     });
     await expect(history.loadOlder()).rejects.toThrow('Invalid historical record');
     history.close();
@@ -277,6 +417,9 @@ describe('RelaySessionHistory', () => {
     expect(fixture.older).not.toHaveBeenCalled();
     history.setVisible(true);
     expect(fixture.older).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.older).not.toHaveBeenCalled();
+    history.markPresented();
     await vi.advanceTimersByTimeAsync(250);
     expect(fixture.older).toHaveBeenCalledOnce();
     history.setVisible(false);
@@ -288,9 +431,41 @@ describe('RelaySessionHistory', () => {
     history.close();
   });
 
+  it('keeps live output flowing while a negotiated older replay is still being fetched', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.record?.({ sessionId: 'session', id: 'turn/latest', historyReplay: true });
+      fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 150, historyBatches: true });
+      return 'subscription';
+    });
+    let finish!: () => void;
+    fixture.older.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+    const apply = vi.fn();
+    const flush = vi.fn();
+    const history = new RelaySessionHistory('session', apply, vi.fn(), vi.fn(), undefined, flush);
+    await history.open();
+    apply.mockClear(); flush.mockClear();
+    const reading = history.loadOlder();
+    await Promise.resolve();
+    fixture.record?.({ sessionId: 'session', id: 'item/live' });
+    fixture.record?.({ sessionId: 'session', id: 'turn/older', historyReplay: true });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenLastCalledWith({ sessionId: 'session', id: 'item/live' });
+    expect(flush).toHaveBeenCalledOnce();
+    fixture.record?.({ sessionId: 'session', id: 'item/older', historyReplay: true });
+    expect(apply).toHaveBeenCalledTimes(1);
+    fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 151, historyBatches: true });
+    finish();
+    await reading;
+    expect(apply.mock.calls.map(([record]) => record.id)).toEqual(['item/live', 'turn/older', 'item/older']);
+    expect(flush).toHaveBeenCalledTimes(2);
+    history.close();
+  });
+
 });
 
-it('refreshes the small mailbox on initial ready and reconnect, but never on older-page ready', async () => {
+it('refreshes the small mailbox at open and reconnect, but never on older-page ready', async () => {
   fixture.current = true;
   const resumed = vi.fn(async () => {});
   fixture.subscribe.mockImplementation(async () => { fixture.ready?.({sessionId:'session',hasMore:true,oldestSeq:5,cursor:10}); return 'subscription'; });

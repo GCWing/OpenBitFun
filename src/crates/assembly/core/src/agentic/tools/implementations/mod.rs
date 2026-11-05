@@ -8,8 +8,6 @@ pub mod analyze_image_tool;
 #[cfg(feature = "tools-miniapp")]
 pub mod appearance_publish_tool;
 pub mod ask_user_question_tool;
-#[cfg(feature = "tools-canvas")]
-pub mod canvas_tools;
 pub mod code_review_tool;
 #[cfg(feature = "tools-computer-use")]
 pub mod computer_use_actions;
@@ -100,8 +98,6 @@ pub use analyze_image_tool::AnalyzeImageTool;
 #[cfg(feature = "tools-miniapp")]
 pub use appearance_publish_tool::PublishAppearanceTool;
 pub use ask_user_question_tool::AskUserQuestionTool;
-#[cfg(feature = "tools-canvas")]
-pub use canvas_tools::{CreateCanvasTool, PatchCanvasTool, ReadCanvasTool, UpdateCanvasTool};
 pub use code_review_tool::CodeReviewTool;
 #[cfg(feature = "tools-computer-use")]
 pub use computer_use_tool::ComputerUseTool;

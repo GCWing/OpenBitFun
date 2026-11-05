@@ -867,9 +867,7 @@
 }
 .runtime-status-slot__icon {
   display: inline-flex;
-  flex: 0 0 var(--openbitfun-control-flow-chat-row-icon-size);
-  width: var(--openbitfun-control-flow-chat-row-icon-size);
-  height: var(--openbitfun-control-flow-chat-row-icon-size);
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   color: var(--openbitfun-color-content-caption);

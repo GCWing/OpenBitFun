@@ -9,14 +9,18 @@
 #![cfg(unix)]
 #![cfg(feature = "native-hook-runtime")]
 
+use async_trait::async_trait;
 use openbitfun_agent_runtime::native_hooks::{
     AgentHookEngine, AgentHookEventPayload, AgentHookOutcome, AgentHookPayload,
     AgentHookPayloadCommon, AgentHookPermissionMode, AgentHookPermissionOutcome, AgentHookScope,
-    AgentHookSettings, AgentHookSettingsLayer, CommandHookOptions, RuntimeHookRegistry,
-    MAX_HOOK_MODEL_OUTPUT_BYTES,
+    AgentHookSettings, AgentHookSettingsLayer, CommandHookOptions, HookProcessProvider,
+    HookProcessResult, RuntimeHookRegistry, MAX_HOOK_MODEL_OUTPUT_BYTES,
 };
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
 fn engine(hooks_json: &str) -> AgentHookEngine {
     let (settings, issues) = AgentHookSettings::from_layers(&[AgentHookSettingsLayer {
@@ -64,6 +68,45 @@ fn session_start_payload() -> AgentHookPayload {
 
 async fn dispatch(engine: &AgentHookEngine, payload: &AgentHookPayload) -> AgentHookOutcome {
     engine.dispatch(payload, Path::new(".")).await
+}
+
+#[derive(Debug)]
+struct TargetProcessProvider;
+
+#[async_trait]
+impl HookProcessProvider for TargetProcessProvider {
+    async fn execute(
+        &self,
+        _command: &str,
+        payload_json: &str,
+        _cwd: &Path,
+        _timeout: Duration,
+        _environment: &BTreeMap<String, String>,
+    ) -> HookProcessResult {
+        let payload: serde_json::Value = serde_json::from_str(payload_json).unwrap();
+        assert_eq!(payload["hook_event_name"], "PreToolUse");
+        HookProcessResult::Completed {
+            exit_code: Some(0),
+            stdout: r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{"command":"target-side"}}}"#.to_string(),
+            stderr: String::new(),
+        }
+    }
+}
+
+#[tokio::test]
+async fn injected_process_provider_runs_hooks_outside_the_controller_process() {
+    let engine = engine(
+        r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"ignored-by-provider"}]}]}}"#,
+    )
+    .with_process_provider(Arc::new(TargetProcessProvider));
+    let outcome = dispatch(&engine, &pre_tool_use_payload("Bash")).await;
+
+    assert_eq!(
+        outcome.updated_input,
+        Some(json!({"command": "target-side"}))
+    );
+    assert_eq!(outcome.executed_handlers, 1);
+    assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
 }
 
 #[tokio::test]

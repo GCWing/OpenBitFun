@@ -31,7 +31,6 @@ export type PanelContentType =
   | 'review-platform-pr-detail'
   | 'terminal'
   | 'generative-widget'
-  | 'openbitfun-canvas'
   | 'browser'
   | 'html-preview';
 
@@ -40,4 +39,12 @@ export interface PanelContent {
   title: string;
   data?: any;
   metadata?: Record<string, any>;
+}
+
+/** Only explicit Harmony delivery widgets are eligible for workbench content. */
+export function isHarmonyGenerativeWidgetContent(content: PanelContent): boolean {
+  if (content.type !== 'generative-widget') return true;
+  const app = content.data?.app;
+  return (typeof app?.libraryId === 'string' && app.libraryId.includes('.harmony.'))
+    || (typeof app?.template === 'string' && app.template.includes('.harmony.'));
 }

@@ -11,6 +11,7 @@ name = "openbitfun_services_integrations"
 crate-type = ["rlib"]
 
 [dependencies]
+zstd = { workspace = true, optional = true }
 pulldown-cmark = { workspace = true, optional = true }
 tokio = { workspace = true }
 serde = { workspace = true }
@@ -48,7 +49,6 @@ local-ip-address = { workspace = true, optional = true }
 mac_address = { workspace = true, optional = true }
 md5 = { workspace = true, optional = true }
 notify = { workspace = true, optional = true }
-oxc = { workspace = true, optional = true }
 qrcode = { workspace = true, features = ["image", "svg"], optional = true }
 rand = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
@@ -110,15 +110,7 @@ models-dev = [
     "tokio/time",
     "windows",
 ]
-browser-control = ["anyhow", "openbitfun-services-core/process-runtime", "openbitfun-services-core/tls-provider", "dirs", "reqwest", "reqwest/json", "reqwest/rustls-no-provider", "thiserror", "tokio/time"]
-canvas-runtime = [
-    "dep:openbitfun-product-domains",
-    "oxc",
-    "sha2",
-    "tokio/fs",
-    "urlencoding",
-    "uuid",
-]
+browser-control = ["anyhow", "openbitfun-services-core/process-runtime", "openbitfun-services-core/tls-provider", "dirs", "reqwest", "reqwest/json", "reqwest/rustls-no-provider", "thiserror", "tokio/rt", "tokio/time"]
 deep-research = [
     "anyhow",
     "async-trait",
@@ -271,6 +263,7 @@ hook-import = [
     "uuid",
 ]
 remote-connect = [
+    "dep:zstd",
     "dep:sioc",
     "dep:pulldown-cmark",
     "fs2",
@@ -493,7 +486,6 @@ web-tools = [
 product-full = [
     "models-dev",
     "browser-control",
-    "canvas-runtime",
     "deep-research",
     "file-watch",
     "function-agents",

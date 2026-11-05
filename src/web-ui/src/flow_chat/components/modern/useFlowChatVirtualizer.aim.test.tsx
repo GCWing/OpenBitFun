@@ -96,6 +96,10 @@ describe('useFlowChatVirtualizer aim', () => {
   }
 
   beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const height = this.offsetHeight;
+      return { top: 0, bottom: height, height, width: this.offsetWidth } as DOMRect;
+    });
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
       unobserve() {}
@@ -149,6 +153,7 @@ describe('useFlowChatVirtualizer aim', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 

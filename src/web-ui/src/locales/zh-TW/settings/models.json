@@ -849,6 +849,14 @@
     "title": "智慧模式設定",
     "service": "Router 服務模型",
     "serviceHint": "先在模型設定中新增支援分類協定的 API 服務，再於此選擇；一般聊天模型和 Coding Plan 不一定支援",
+    "protocol": "Router 相容模式",
+    "protocolLogprobs": "標準 Router（token logprobs）",
+    "protocolClassifier": "分類頭 Router",
+    "protocolUnknown": "暫不支援：{{protocol}}",
+    "protocolUnsupported": "目前執行主機不支援所選 Router 模式，請升級或選擇標準 Router",
+    "classifierHint": "從 router 欄位讀取分類機率，以單一並行請求傳送",
+    "timeout": "逾時（秒）",
+    "timeoutInvalid": "請輸入大於 0 的逾時秒數",
     "summary": "輔助摘要",
     "summaryHint": "開啟後使用經濟模型整理路由歷史，會產生額外模型呼叫",
     "on": "開啟",
@@ -864,7 +872,7 @@
       "unconfigured": "尚未設定可用模型"
     },
     "connectionFailures": {
-      "protocol": "請選擇支援 OpenAI Chat Completions 且回傳 token IDs 和 logprobs 的分類服務",
+      "protocol": "請檢查 Router 相容模式是否與服務回傳格式一致",
       "authentication": "Router 驗證失敗，請檢查 API Key 和服務存取權限",
       "addressOrModel": "請檢查 Router 服務位址和模型名稱，介面或模型可能不存在",
       "rateLimited": "Router 請求受到速率限制，請稍後重試",

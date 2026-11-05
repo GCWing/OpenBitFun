@@ -180,7 +180,6 @@ export const productDomainsIntegrationTestTargets = [
     name: 'product_domain_contracts',
     path: 'tests/product_domain_contracts.rs',
     leaves: [
-      'tests/product_domain_contracts/canvas_contracts.rs',
       'tests/product_domain_contracts/tool_permission_contracts.rs',
     ],
     forbidRequiredFeatures: true,

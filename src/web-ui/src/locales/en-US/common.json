@@ -64,6 +64,25 @@
     "remoteConnectRequiresWorkspace": "Open a workspace before using remote control."
   },
   "nav": {
+    "devices": {
+      "thisDevice": "This device",
+      "current": "Shown in this window",
+      "expand": "Expand {{name}}",
+      "collapse": "Collapse {{name}}",
+      "hostDesktop": "Desktop",
+      "hostCli": "CLI",
+      "platform": {
+        "mac": "Mac",
+        "windows": "Win",
+        "linux": "Linux"
+      },
+      "loadFailed": "Couldn't load this device's workspaces",
+      "sessionsLoadFailed": "Couldn't load sessions",
+      "noSessions": "No sessions yet",
+      "sessionUnavailable": "This session is no longer on that device.",
+      "sessionActionFailed": "Couldn't do that on the other device. Try again.",
+      "connecting": "Connecting to {{name}}…"
+    },
     "aria": {
       "navControl": "Navigation controls",
       "mainNav": "Main navigation"
@@ -633,7 +652,9 @@
       "revealFailed": "Failed to reveal workspace folder",
       "copyPathFailed": "Failed to copy path",
       "createSessionFailed": "Failed to create session",
-      "startingAcpSession": "Session starting",
+      "startingAcpSession": "Starting agent; the first start may need to prepare its adapter…",
+      "initializingAcpSession": "Initializing session and loading models and commands…",
+      "retryAcpSession": "Retry",
       "acpSessionStarted": "Session started",
       "acpSessionStartFailed": "Session failed to start",
       "renameFailed": "Failed to rename project",
@@ -830,7 +851,6 @@
     "currentHostHint": "Files and commands stay on the current work host.",
     "otherHostHint": "Connect to a remote host or container over SSH. Native WSL is only available on the current Windows work host.",
     "wslHint": "Next, select a Linux distribution on the current Windows work host.",
-    "foldersLockedHint": "Remove folders to switch.",
     "connectionChoice": "Connection setup",
     "availableOptions": "Available connections and environments",
     "refreshOptions": "Refresh available options",
@@ -1748,7 +1768,6 @@
     "panelView": "Panel View"
   },
   "sceneBar": {
-    "recentSessions": "Recently opened sessions",
     "tabsLabel": "Scene tabs",
     "scrollPrevious": "Scroll tabs left",
     "scrollNext": "Scroll tabs right",
@@ -1991,6 +2010,9 @@
       "privateKey": "Private Key",
       "sshAgent": "SSH Agent",
       "keyboardInteractive": "Keyboard-interactive",
+      "noAuth": "No authentication",
+      "noAuthHint": "The server accepts the connection without credentials. Use this for tunnels that are already authenticated, such as a Coder workspace agent.",
+      "noAuthUnsupported": "This host must be updated before it can connect without authentication.",
       "privateKeyPath": "Private Key File Path",
       "certificatePath": "OpenSSH certificate",
       "certificatePathOptional": "Optional certificate file",
@@ -2034,6 +2056,7 @@
       "hostRequired": "Host is required",
       "usernameRequired": "Username is required",
       "portInvalid": "Port must be a number between 1 and 65535",
+      "portScopedIdentityUnsupported": "The connected device cannot keep separate profiles for SSH ports on the same host and user, so saving would replace \"{{connection}}\". Update OpenBitFun on that device, or edit the existing profile instead.",
       "passwordRequired": "Password is required",
       "keyPathRequired": "Private key path is required",
       "enterPassword": "Enter Password",
@@ -2322,8 +2345,19 @@
     "modifiedDragUnavailable": "Dragging with modifier keys is not supported in this preview."
   },
   "newWorkspace": {
+    "localProjectTitle": "Project on this device",
+    "localProjectDescription": "Link existing folders or start a new project.",
+    "deviceProjectTitle": "Project on another device",
+    "deviceProjectDescription": "Create on another of your online devices.",
+    "createDeviceProject": "Create a project on another device",
+    "chooseDevice": "Choose a device",
+    "noOtherDevices": "No other devices are online. Sign in to the same account in OpenBitFun on another device to choose it here.",
+    "signInForDevices": "Sign in to create projects on your other online devices.",
+    "createProjectOn": "Create a project on {{name}}",
+    "deviceCurrent": "Shown now",
+    "connecting": "Connecting…",
+    "deviceError": "Couldn't connect to this device. Try again later.",
     "title": "Create",
-    "description": "Choose what you want to create.",
     "assistantTitle": "Personal assistant",
     "assistantDescription": "An ongoing collaborator with its own memory.",
     "projectTitle": "Project",
@@ -2334,6 +2368,7 @@
     "back": "Back to selection"
   },
   "peerHost": {
+    "connectionInterrupted": "The connection to the device was interrupted. Try again.",
     "unavailable": "This feature is not available on that device.",
     "updateRequired": "The OpenBitFun version on that device does not support this feature. Try updating OpenBitFun on that device.",
     "withDetail": "{{message}} ({{detail}})"

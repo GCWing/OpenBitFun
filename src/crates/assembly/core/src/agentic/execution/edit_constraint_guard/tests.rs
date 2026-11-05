@@ -852,6 +852,7 @@ fn local_recursive_delete_fallback_finds_protected_descendant() {
         dialog_turn_id: Some("turn-1".to_string()),
         workspace: Some(WorkspaceBinding::new(None, root.clone())),
         loaded_deferred_tool_specs: Vec::new(),
+        model_client: None,
         primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
         custom_data: HashMap::new(),
         computer_use_host: None,

@@ -37,9 +37,6 @@ pub mod appearance_market;
 #[cfg(feature = "browser-control")]
 pub mod browser_control;
 
-#[cfg(feature = "canvas-runtime")]
-pub mod canvas;
-
 #[cfg(feature = "deep-research")]
 pub mod deep_research;
 

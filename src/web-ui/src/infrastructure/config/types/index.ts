@@ -81,7 +81,16 @@ export interface AppConfig {
   user_tool_groups?: UserToolGroupsConfig;
   /** Absent on hosts that predate assistant entry-session preferences. */
   assistant_default_sessions?: Record<string, string>;
+  /** Absent on hosts that predate project defaults. */
+  project_defaults?: Record<string, ProjectDefaultsConfig>;
   user_skill_groups?: UserSkillGroupsConfig;
+}
+
+export interface ProjectDefaultsConfig {
+  primary_model?: string | null;
+  fast_model?: string | null;
+  mode?: string | null;
+  [key: string]: unknown;
 }
 
 export interface UserToolGroupsConfig {
@@ -377,8 +386,8 @@ export interface DefaultModelsConfig {
 /**
  * Image request protocol.
  *
- * `chatgpt_codex` is the subscription route: it drives a chat model's
- * `image_generation` tool over the provider's own backend and never touches the
+ * `chatgpt_codex` sends standalone Images JSON requests using the subscription
+ * login over the provider's own backend and never touches the
  * API-key image endpoint.
  */
 export type ImageDialect = 'openai_images' | 'dashscope_native' | 'chatgpt_codex';
@@ -464,6 +473,8 @@ export interface ModelRoutingConfig {
   /** Retained legacy data; subagent selection uses its existing configuration. */
   subagent_model?: string;
   router_model_id?: string | null;
+  /** Unknown future protocols remain readable; the execution host validates support. */
+  protocol?: string;
   /** Legacy optional override; the GUI preserves it without exposing an input. */
   tokenizer_path?: string;
   simple_threshold: number;
@@ -472,6 +483,7 @@ export interface ModelRoutingConfig {
 }
 
 export interface AIConfig {
+  generative_ui_library?: string;
   models: AIModelConfig[];
   tool_presentation_mode?: 'native' | 'ptc' | 'ptc_python';
   default_models: DefaultModelsConfig;

@@ -19,7 +19,7 @@ import {
 import { openBtwSessionInAuxPane } from '../services/btwSessionPane';
 import { AgentControlToolCard as AgentControlToolCardView } from '@openbitfun/ui/flow-chat';
 import { AgentInteractionToolCard } from './AgentInteractionToolCard';
-import { resolveInteractionAgentSessionId } from './toolInteractionModel';
+import { readToolRecord, resolveInteractionAgentSessionId } from './toolInteractionModel';
 
 const PARAMETER_STREAMING_STATUSES = new Set<FlowToolItem['status']>([
   'preparing',
@@ -141,9 +141,19 @@ const AgentSpawnCard: React.FC<ToolCardProps> = ({
   const linkedSession = linkedSubagentSessionId
     ? flowChatStore.getState().sessions.get(linkedSubagentSessionId)
     : undefined;
-  const lifecycle = linkedSession
+  const linkedLifecycle = linkedSession
     ? sessionLineageLifecycleForSession(linkedSession)
-    : fallbackLifecycle(status);
+    : undefined;
+  // A successful spawn receipt completes the launch, not the background task.
+  // Keep the active display until the child's first turn supplies its lifecycle.
+  const launchStarted = (status === 'completed' || status === 'confirmed')
+    && toolItem.toolResult?.success !== false
+    && readToolRecord(toolItem.toolResult?.result).status === 'started';
+  const awaitingFirstTurn = !linkedSession?.dialogTurns.length
+    && (!linkedSession || linkedLifecycle === 'idle');
+  const lifecycle = awaitingFirstTurn && (status === 'running' || launchStarted)
+    ? 'running'
+    : linkedLifecycle ?? fallbackLifecycle(status);
   const agentDisplayName = linkedSubagentSessionId
     ? t(resolveSubagentNameKey(linkedSubagentSessionId)) : t('toolCards.interaction.unknownAgent');
   const stableAgentType = linkedSession?.mode?.trim()
@@ -154,7 +164,7 @@ const AgentSpawnCard: React.FC<ToolCardProps> = ({
     || linkedSession?.config?.modelName?.trim()
     || toolItem.subagentModelId?.trim()
     || readString(params, 'model_id', 'modelId')
-    || t('subagentIdentity.preview.unknownModel');
+    || '';
   const isParameterStreaming = Boolean(toolItem.isParamsStreaming)
     || PARAMETER_STREAMING_STATUSES.has(status);
   const displayStatus = isParameterStreaming
@@ -242,7 +252,7 @@ const AgentSpawnCard: React.FC<ToolCardProps> = ({
             description: t('subagentIdentity.preview.description'),
           },
         }}
-        statusLabel={lifecycle === 'completed' ? undefined
+        statusLabel={isParameterStreaming ? t('toolCards.default.preparing') : lifecycle === 'completed' ? undefined
           : t(`flowChatHeader.agentTreeStatus.${lifecycle === 'finishing' ? 'running' : lifecycle}`)}
         statusTone={statusTone}
         onOpenAgent={canOpenSession ? handleOpenSession : undefined}

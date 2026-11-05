@@ -24,6 +24,8 @@ export interface ModelPoolBinding {
 export interface SessionModelTarget {
   sessionId: string;
   selection: ModelSelection;
+  /** Absent on legacy hosts, null when the host uses its default reasoning. */
+  reasoningPreset?: string | null;
   binding?: ModelPoolBinding;
 }
 export interface ModelPoolMemberStatus {

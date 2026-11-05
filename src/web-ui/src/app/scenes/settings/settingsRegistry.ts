@@ -1,6 +1,29 @@
 import type { I18nNamespace } from '@/infrastructure/i18n/types';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { lazyWithRecovery, type RecoverableLazyComponent } from '@/shared/utils/lazyWithRecovery';
+import {
+  Archive,
+  Bot,
+  Brain,
+  ChartNoAxesCombined,
+  Code2,
+  Cpu,
+  FileInput,
+  FolderGit2,
+  Globe,
+  Keyboard,
+  MousePointerClick,
+  Palette,
+  PawPrint,
+  Play,
+  Plug,
+  Settings2,
+  ShieldCheck,
+  SquareTerminal,
+  Stethoscope,
+  Workflow,
+  type LucideIcon,
+} from 'lucide-react';
 import type { ComponentType } from 'react';
 import type {
   SettingsCategoryId,
@@ -34,6 +57,7 @@ type SettingsPageModule = { default: ComponentType<SettingsPageProps> };
 export interface SettingsPageManifest {
   id: SettingsPageId;
   categoryId: SettingsCategoryId;
+  icon: LucideIcon;
   labelKey: string;
   descriptionKey: string;
   keywords: readonly string[];
@@ -64,6 +88,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'application.general',
     categoryId: 'application',
+    icon: Settings2,
     labelKey: 'navigation.pages.general.label',
     descriptionKey: 'navigation.pages.general.description',
     keywords: ['startup', 'launch', 'update', 'sleep', 'window', 'notification', 'language', 'locale'],
@@ -82,6 +107,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'application.appearance',
     categoryId: 'application',
+    icon: Palette,
     labelKey: 'navigation.pages.appearance.label',
     descriptionKey: 'navigation.pages.appearance.description',
     keywords: [
@@ -118,6 +144,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'application.pet',
     categoryId: 'application',
+    icon: PawPrint,
     labelKey: 'navigation.pages.pet.label',
     descriptionKey: 'navigation.pages.pet.description',
     keywords: ['pet', 'companion', 'desktop', 'input', 'sprite', 'desktop cards', 'widget'],
@@ -137,6 +164,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'application.input',
     categoryId: 'application',
+    icon: Keyboard,
     labelKey: 'navigation.pages.input.label',
     descriptionKey: 'navigation.pages.input.description',
     keywords: ['input', 'voice', 'speech', 'keyboard', 'shortcut', 'keybinding', 'hotkey', 'selection', 'annotation', 'excerpt'],
@@ -173,6 +201,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'ai.models',
     categoryId: 'ai',
+    icon: Cpu,
     labelKey: 'navigation.pages.models.label',
     descriptionKey: 'navigation.pages.models.description',
     keywords: ['model', 'provider', 'api key', 'base url', 'proxy', 'network', 'subscription', 'pool', 'tag', 'smart', 'battery', 'image', 'generation', 'picture', 'illustration', 'dashscope', 'dall-e', 'media', 'art', 'compact', 'context', 'truncation'],
@@ -203,6 +232,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'ai.session-memory',
     categoryId: 'ai',
+    icon: Brain,
     labelKey: 'navigation.pages.sessionMemory.label',
     descriptionKey: 'navigation.pages.sessionMemory.description',
     keywords: ['session', 'memory', 'harness', 'title', 'remember', 'recall'],
@@ -241,22 +271,25 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'ai.execution',
     categoryId: 'ai',
+    icon: Play,
     labelKey: 'navigation.pages.execution.label',
     descriptionKey: 'navigation.pages.execution.description',
     keywords: ['tool', 'presentation', 'ptc', 'timeout', 'parallel', 'review', 'json repair'],
-    namespaces: ['settings', 'settings/runtime', 'settings/agentic-tools', 'settings/review-capacity', 'settings/models'],
+    namespaces: ['settings', 'settings/runtime', 'settings/agentic-tools', 'settings/review-capacity', 'settings/models', 'flow-chat'],
     searchPhrases: [
       phrase('settings/runtime', 'toolExecution.sectionTitle'),
       phrase('settings/runtime', 'deferredToolLoading.sectionTitle'),
       phrase('settings/runtime', 'toolPresentation.mode'),
       phrase('settings/review-capacity', 'capacity.title'),
       phrase('settings/models', 'toolArgumentJsonRepair.title'),
+      phrase('settings/runtime', 'genui.title'),
     ],
     load: () => import('./pages/ai/ExecutionSettingsPage'),
   }),
   definePage({
     id: 'ai.permissions',
     categoryId: 'ai',
+    icon: ShieldCheck,
     labelKey: 'navigation.pages.permissions.label',
     descriptionKey: 'navigation.pages.permissions.description',
     keywords: ['permission', 'approval', 'rules', 'allow', 'deny', 'full access'],
@@ -271,6 +304,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'development.editor',
     categoryId: 'development',
+    icon: Code2,
     labelKey: 'navigation.pages.editor.label',
     descriptionKey: 'navigation.pages.editor.description',
     keywords: ['editor', 'font', 'indent', 'minimap', 'word wrap', 'format'],
@@ -288,6 +322,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'development.terminal',
     categoryId: 'development',
+    icon: SquareTerminal,
     labelKey: 'navigation.pages.terminal.label',
     descriptionKey: 'navigation.pages.terminal.description',
     keywords: ['terminal', 'shell', 'pwsh', 'powershell', 'panel'],
@@ -301,6 +336,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'development.workspace',
     categoryId: 'development',
+    icon: FolderGit2,
     labelKey: 'navigation.pages.workspaceGit.label',
     descriptionKey: 'navigation.pages.workspaceGit.description',
     keywords: ['workspace', 'git', 'worktree', 'isolation', 'branch'],
@@ -331,6 +367,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'tools.external-import',
     categoryId: 'tools',
+    icon: FileInput,
     labelKey: 'navigation.pages.externalImport.label',
     descriptionKey: 'navigation.pages.externalImport.description',
     keywords: ['external import', 'integrations', 'ecosystem', 'opencode', 'claude code', 'codex', 'zcode'],
@@ -344,6 +381,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'tools.web-search',
     categoryId: 'tools',
+    icon: Globe,
     labelKey: 'navigation.pages.webSearch.label',
     descriptionKey: 'navigation.pages.webSearch.description',
     keywords: ['web search', 'exa', 'tavily', 'deepseek', 'http', 'provider', 'api key'],
@@ -359,6 +397,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'tools.desktop-control',
     categoryId: 'tools',
+    icon: MousePointerClick,
     labelKey: 'navigation.pages.browserDesktopControl.label',
     descriptionKey: 'navigation.pages.browserDesktopControl.description',
     keywords: [
@@ -379,6 +418,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'tools.mcp',
     categoryId: 'tools',
+    icon: Plug,
     labelKey: 'navigation.pages.mcp.label',
     descriptionKey: 'navigation.pages.mcp.description',
     keywords: ['mcp', 'model context protocol', 'server', 'stdio', 'sse', 'tools'],
@@ -392,6 +432,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'tools.external-agents',
     categoryId: 'tools',
+    icon: Bot,
     labelKey: 'navigation.pages.acp.label',
     descriptionKey: 'navigation.pages.acp.description',
     keywords: ['acp', 'agent client protocol', 'external agent', 'opencode', 'claude code', 'codex'],
@@ -425,6 +466,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'tools.automation',
     categoryId: 'tools',
+    icon: Workflow,
     labelKey: 'navigation.pages.automation.label',
     descriptionKey: 'navigation.pages.automation.description',
     keywords: ['automation', 'quick action', 'hook', 'lifecycle', 'command'],
@@ -452,6 +494,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'data.usage',
     categoryId: 'data',
+    icon: ChartNoAxesCombined,
     labelKey: 'navigation.pages.usage.label',
     descriptionKey: 'navigation.pages.usage.description',
     keywords: ['usage', 'token', 'cost', 'statistics', 'request', 'cache', 'history'],
@@ -462,6 +505,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'data.archived',
     categoryId: 'data',
+    icon: Archive,
     labelKey: 'navigation.pages.archivedSessions.label',
     descriptionKey: 'navigation.pages.archivedSessions.description',
     keywords: ['archive', 'archived', 'session', 'restore', 'unarchive', 'delete', 'history'],
@@ -476,6 +520,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
   definePage({
     id: 'data.diagnostics',
     categoryId: 'data',
+    icon: Stethoscope,
     labelKey: 'navigation.pages.diagnostics.label',
     descriptionKey: 'navigation.pages.diagnostics.description',
     keywords: ['log', 'logging', 'diagnostics', 'debug', 'maintenance'],

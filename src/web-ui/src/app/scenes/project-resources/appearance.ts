@@ -2,5 +2,5 @@ import type { AppearanceSurfaceDescriptor } from '@/infrastructure/appearance/ty
 
 export const projectResourcesAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'project-resources',
-  parts: [{ id: 'root' }, { id: 'identity' }, { id: 'iconEditIndicator' }, { id: 'metrics' }, { id: 'materials' }, { id: 'resourceCards' }, { id: 'resourceList' }, { id: 'summary' }, { id: 'permissions' }, { id: 'capabilities' }, { id: 'automation' }],
+  parts: [{ id: 'root' }, { id: 'identity' }, { id: 'iconEditIndicator' }, { id: 'metrics' }, { id: 'defaults' }, { id: 'materials' }, { id: 'resourceCards' }, { id: 'resourceList' }, { id: 'summary' }, { id: 'permissions' }, { id: 'capabilities' }, { id: 'automation' }],
 };

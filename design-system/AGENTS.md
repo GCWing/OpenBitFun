@@ -66,6 +66,12 @@ pnpm --dir src/web-ui exec vitest run src/shared/ui/Select.test.tsx
 
 These package and DOM checks do not establish native rendering or live remote behavior.
 
+For Spinner presentations, FlowChat integration and decorative playback:
+
+```bash
+pnpm --dir design-system run build:ui && node --test design-system/packages/ui/tests/spinner.test.mjs design-system/packages/ui/tests/brand.test.mjs design-system/packages/ui/tests/registry.test.mjs
+```
+
 For ColorPicker HEX drafts, flower selection, curved lightness dragging and keyboard input:
 
 ```bash

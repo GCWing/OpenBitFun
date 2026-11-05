@@ -172,6 +172,8 @@ export interface AcpContextUsage {
 }
 
 export interface AcpSessionOptions {
+  /** Included by newer hosts to share the initial metadata read. Missing means use the commands endpoint. */
+  availableCommands?: AcpAvailableCommand[];
   currentModelId?: string;
   availableModels: AcpSessionModelOption[];
   modelConfigId?: string;
@@ -234,11 +236,17 @@ export interface AcpPermissionRequestEvent {
 }
 
 const LOCAL_REQUIREMENT_CACHE_KEY = '__local__';
+export const ACP_REQUIREMENTS_INVALIDATED_EVENT = 'openbitfun:acp-requirements-invalidated';
 const CLIENT_LIST_CACHE_TTL_MS = 1000;
 const requirementProbeCache = new Map<string, AcpClientRequirementProbe[]>();
-const requirementProbeInFlight = new Map<string, Promise<AcpClientRequirementProbe[]>>();
+const requirementProbeInFlight = new Map<string, {
+  promise: Promise<AcpClientRequirementProbe[]>;
+  force: boolean;
+}>();
 
 export class ACPClientAPI {
+  private static sessionOptionsInFlight = new Map<string, Promise<AcpSessionOptions>>();
+  private static commandSnapshotListeners = new Set<(event: AcpAvailableCommandsUpdatedEvent) => void>();
   private static cacheScope = getActiveSurfaceScope();
 
   private static clientListCache: {
@@ -253,9 +261,16 @@ export class ACPClientAPI {
     ACPClientAPI.clientListInFlight = null;
   }
 
-  private static invalidateRequirementProbeCache(): void {
+  private static invalidateRequirementProbeCache(notify = false): void {
     requirementProbeCache.clear();
     requirementProbeInFlight.clear();
+    if (notify) window.dispatchEvent(new Event(ACP_REQUIREMENTS_INVALIDATED_EVENT));
+  }
+
+  /** A new transport must not inherit a probe still running on the old one. */
+  static invalidateRemoteRequirementProbeCache(connectionId: string): void {
+    requirementProbeCache.delete(connectionId);
+    requirementProbeInFlight.delete(connectionId);
   }
 
   private static prepareCacheScope() {
@@ -273,7 +288,7 @@ export class ACPClientAPI {
     await api.invoke('initialize_acp_clients');
     scope.assertCurrent('publish ACP client changes');
     ACPClientAPI.invalidateClientListCache();
-    ACPClientAPI.invalidateRequirementProbeCache();
+    ACPClientAPI.invalidateRequirementProbeCache(true);
     window.dispatchEvent(new Event('openbitfun:acp-clients-changed'));
   }
 
@@ -314,8 +329,9 @@ export class ACPClientAPI {
     if (!options.force && requirementProbeCache.has(cacheKey)) {
       return requirementProbeCache.get(cacheKey) ?? [];
     }
-    if (!options.force && requirementProbeInFlight.has(cacheKey)) {
-      return requirementProbeInFlight.get(cacheKey)!;
+    const pending = requirementProbeInFlight.get(cacheKey);
+    if (pending && (!options.force || pending.force)) {
+      return pending.promise;
     }
 
     const request = options.remoteConnectionId
@@ -325,17 +341,21 @@ export class ACPClientAPI {
     const inFlight = api.invoke<AcpClientRequirementProbe[]>('probe_acp_client_requirements', { request })
       .then((probes) => {
         scope.assertCurrent('cache ACP client requirements');
-        requirementProbeCache.set(cacheKey, probes);
-        window.dispatchEvent(new Event('openbitfun:acp-requirements-changed'));
+        // Config edits, reconnects and a newer forced probe retire the old
+        // request. Its result must not overwrite the current snapshot.
+        if (requirementProbeInFlight.get(cacheKey)?.promise === inFlight) {
+          requirementProbeCache.set(cacheKey, probes);
+          window.dispatchEvent(new Event('openbitfun:acp-requirements-changed'));
+        }
         return probes;
       })
       .finally(() => {
-        if (requirementProbeInFlight.get(cacheKey) === inFlight) {
+        if (requirementProbeInFlight.get(cacheKey)?.promise === inFlight) {
           requirementProbeInFlight.delete(cacheKey);
         }
       });
 
-    requirementProbeInFlight.set(cacheKey, inFlight);
+    requirementProbeInFlight.set(cacheKey, { promise: inFlight, force: options.force === true });
     return inFlight;
   }
 
@@ -344,7 +364,7 @@ export class ACPClientAPI {
     await api.invoke('predownload_acp_client_adapter', { request });
     scope.assertCurrent('publish ACP client requirements');
     ACPClientAPI.invalidateClientListCache();
-    ACPClientAPI.invalidateRequirementProbeCache();
+    ACPClientAPI.invalidateRequirementProbeCache(true);
     window.dispatchEvent(new Event('openbitfun:acp-requirements-changed'));
   }
 
@@ -353,7 +373,7 @@ export class ACPClientAPI {
     await api.invoke('install_acp_client_cli', { request });
     scope.assertCurrent('publish ACP client requirements');
     ACPClientAPI.invalidateClientListCache();
-    ACPClientAPI.invalidateRequirementProbeCache();
+    ACPClientAPI.invalidateRequirementProbeCache(true);
     window.dispatchEvent(new Event('openbitfun:acp-requirements-changed'));
   }
 
@@ -374,7 +394,7 @@ export class ACPClientAPI {
     await api.invoke('save_acp_json_config', { jsonConfig });
     scope.assertCurrent('publish ACP client changes');
     ACPClientAPI.invalidateClientListCache();
-    ACPClientAPI.invalidateRequirementProbeCache();
+    ACPClientAPI.invalidateRequirementProbeCache(true);
     window.dispatchEvent(new Event('openbitfun:acp-clients-changed'));
   }
 
@@ -438,16 +458,38 @@ export class ACPClientAPI {
     return api.invoke('cancel_acp_dialog_turn', { request });
   }
 
-  static async getSessionOptions(
+  static getSessionOptions(
     request: GetAcpSessionOptionsRequest
   ): Promise<AcpSessionOptions> {
-    return api.invoke('get_acp_session_options', { request });
+    const scope = getActiveSurfaceScope();
+    const key = scope.key(scope.epoch, request.sessionId, request.clientId, request.workspaceId,
+      request.workspacePath, request.remoteConnectionId, request.remoteSshHost);
+    const existing = this.sessionOptionsInFlight.get(key);
+    if (existing) return existing;
+    const pending = api.invoke<AcpSessionOptions>('get_acp_session_options', { request })
+      .then(options => {
+        scope.assertCurrent('load ACP session metadata');
+        if (Array.isArray(options.availableCommands)) {
+          const event = { sessionId: request.sessionId, clientId: request.clientId, commands: options.availableCommands };
+          this.commandSnapshotListeners.forEach(listener => listener(event));
+        }
+        return options;
+      }).finally(() => this.sessionOptionsInFlight.delete(key));
+    this.sessionOptionsInFlight.set(key, pending);
+    return pending;
   }
 
   static async getSessionCommands(
     request: GetAcpSessionOptionsRequest
   ): Promise<AcpAvailableCommand[]> {
-    return api.invoke('get_acp_session_commands', { request });
+    const scope = getActiveSurfaceScope();
+    const options = await this.getSessionOptions(request);
+    scope.assertCurrent('load ACP session commands');
+    if (Array.isArray(options.availableCommands)) return options.availableCommands;
+    // Older hosts do not advertise the combined snapshot. Keep their existing path.
+    const commands = await api.invoke<AcpAvailableCommand[]>('get_acp_session_commands', { request });
+    scope.assertCurrent('publish ACP session commands');
+    return commands;
   }
 
   static async setSessionModel(
@@ -465,10 +507,19 @@ export class ACPClientAPI {
   static onAvailableCommandsUpdated(
     callback: (event: AcpAvailableCommandsUpdatedEvent) => void
   ): () => void {
-    return api.listen<AcpAvailableCommandsUpdatedEvent>(
+    const scope = getActiveSurfaceScope();
+    const listener = (event: AcpAvailableCommandsUpdatedEvent) => {
+      if (scope.isCurrent()) callback(event);
+    };
+    this.commandSnapshotListeners.add(listener);
+    const unsubscribe = api.listen<AcpAvailableCommandsUpdatedEvent>(
       'agentic://acp-available-commands-updated',
-      callback
+      listener
     );
+    return () => {
+      this.commandSnapshotListeners.delete(listener);
+      unsubscribe();
+    };
   }
 
   static onPlanUpdated(callback: (event: AcpPlanUpdatedEvent) => void): () => void {

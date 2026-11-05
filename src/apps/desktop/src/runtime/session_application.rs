@@ -393,6 +393,7 @@ impl DesktopSessionApplication {
         limit: usize,
         session_ids: Option<&[String]>,
         query: Option<&openbitfun_services_core::session::page::SessionCatalogQuery>,
+        refresh_external_discovery: bool,
     ) -> DesktopSessionApplicationResult<SessionMetadataPage> {
         let scope = self.resolved_scope(request).await?;
         let storage_path = self.storage_path(&scope);
@@ -405,6 +406,7 @@ impl DesktopSessionApplication {
                 limit,
                 session_ids,
                 query.filter(|query| query.workspace_id == scope.workspace_id),
+                refresh_external_discovery,
             )
             .await
             .map_err(|error| DesktopSessionApplicationError::Core(error.to_string()))?;
@@ -777,6 +779,26 @@ impl DesktopSessionApplication {
             .await
             .map_err(desktop_core_session_error)?;
         Ok(true)
+    }
+
+    pub(crate) async fn read_session_header(
+        &self,
+        request: DesktopSessionScopeRequest,
+        session_id: &str,
+        include_internal: bool,
+    ) -> DesktopSessionApplicationResult<Session> {
+        let storage_path =
+            if request.workspace_id.is_some() || !request.workspace_path.trim().is_empty() {
+                let scope = self.resolved_scope(request).await?;
+                self.ensure_runtime_ownership(&scope)?;
+                Some(self.storage_path(&scope))
+            } else {
+                None
+            };
+        self.compatibility
+            .read_session_header(storage_path.as_deref(), session_id, include_internal)
+            .await
+            .map_err(desktop_core_session_error)
     }
 
     pub(crate) async fn ensure_session_loaded(

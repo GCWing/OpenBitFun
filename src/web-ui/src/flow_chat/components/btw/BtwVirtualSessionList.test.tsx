@@ -97,6 +97,10 @@ describe('BtwVirtualSessionList', () => {
       return nextFrame;
     });
     vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const height = this.offsetHeight;
+      return { top: 0, bottom: height, height, width: this.offsetWidth } as DOMRect;
+    });
     vi.stubGlobal('ResizeObserver', class {
       targets = new Set<Element>();
       constructor(callback: ResizeObserverCallback) {
@@ -199,7 +203,7 @@ describe('BtwVirtualSessionList', () => {
 
   it.each([false, true])('settles tail rows when trailing margins are measured: %s', contained => {
     // Supplied CSS geometry: a 100px body and an 8px trailing child margin.
-    // With flow-root both occupy the measured border box; with block the
+    // With the column flex context both occupy the measured border box; with block the
     // margin escapes, still occupies layout space, and vanishes on unmount.
     // jsdom does not perform margin collapsing; this tests its consequences
     // against the real virtualizer and the panel's real follow scheduler.

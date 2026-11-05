@@ -22,6 +22,7 @@ import { useApp } from '../hooks/useApp';
 import { selectActiveSceneId, useSceneStore } from '../stores/sceneStore';
 import { useI18n } from '@/infrastructure/i18n';
 import { useNavResize } from './useNavResize';
+import { useNativeSceneBackdrop } from './useNativeSceneBackdrop';
 import './WorkspaceBody.scss';
 
 const NAV_DEFAULT_WIDTH = 300;
@@ -52,6 +53,7 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
 }) => {
   const { t } = useI18n('components');
   const navId = useId();
+  const sceneSurfaceRef = useNativeSceneBackdrop();
   const { workspace: currentWorkspace } = useCurrentWorkspace();
   const { state, toggleLeftPanel } = useApp();
   const activeSceneId = useSceneStore(selectActiveSceneId);
@@ -139,6 +141,7 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
       {/* Right: visual scene surface + any shell-level overlay */}
       <div className="openbitfun-workspace-body__scene-area" data-openbitfun-scene="workbench" data-openbitfun-part="sceneArea">
         <div
+          ref={sceneSurfaceRef}
           className="openbitfun-workspace-body__scene-surface"
           data-openbitfun-scene="workbench"
           data-openbitfun-part="sceneSurface"

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Button, Card, CardBody, CardFooter, CardHeader, OverlayLayer, OverflowText } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
+import { classifyPeerHostRefusal } from '@/infrastructure/peer-device/peerHostRefusal';
 import {
   computerUseControlAPI, projectControlPointer,
   type ComputerUseControlSnapshot, type ComputerUseControlPreview,
@@ -44,14 +45,17 @@ export function ComputerUseControlCard() {
 
   useEffect(() => {
     let disposed = false;
+    let refused = false;
+    let observed: ComputerUseControlSnapshot | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setView(undefined);
     setStopping(false);
     const poll = async () => {
       const revision = mutation.current;
       try {
-        const next = await computerUseControlAPI.status();
+        const next = await computerUseControlAPI.status(observed);
         if (disposed || !scope.isCurrent() || revision !== mutation.current) return;
+        observed = next;
         setView(previous => ({ epoch: scope.epoch, snapshot: next,
           ...(next.state === 'active' && previous?.epoch === scope.epoch && previous.snapshot.generation === next.generation
             && previous.snapshot.target === next.target
@@ -82,14 +86,18 @@ export function ComputerUseControlCard() {
             });
           }
         }
-      } catch {
+      } catch (error) {
+        observed = undefined;
+        // A host that refuses the command has no device control: asking it
+        // again every second only competes with real work for the link.
+        refused = classifyPeerHostRefusal(error) !== null;
         // Older peers may not expose this capability. Retain a previously
         // active card with an explicit unavailable state, never a local fallback.
         if (!disposed && scope.isCurrent() && revision === mutation.current) setView(previous => previous && {
           ...previous, frame: undefined, framePointer: undefined, error: true,
         });
       } finally {
-        if (!disposed && scope.isCurrent()) timer = setTimeout(() => void poll(), 1000);
+        if (!disposed && !refused && scope.isCurrent()) timer = setTimeout(() => void poll(), 1000);
       }
     };
     void poll();

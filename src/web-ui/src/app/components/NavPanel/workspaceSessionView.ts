@@ -1,7 +1,9 @@
 import { create } from 'zustand';
+import { DEFAULT_SESSION_VIEW_KEY } from '@/flow_chat/services/workspaceSessionTotals';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import { isWorktreeIsolatedSession } from '@/flow_chat/utils/sessionOrdering';
+import { resetSessionNavExpansion } from './sections/sessions/useSessionNavExpansion';
 import { EXTERNAL_SESSION_NAMES, isExternalSessionEcosystem, type ExternalSessionEcosystem } from '@/shared/types/external-session';
 
 export type WorkspaceSessionGrouping = 'grouped' | 'all';
@@ -126,7 +128,10 @@ export const useWorkspaceSessionViewStore = create<WorkspaceSessionViewState>()(
         sourceAgent: 'all',
         explicitAllFilters: DEFAULT_WORKSPACE_SESSION_VIEW.explicitAllFilters,
       }),
-      requestCollapseAll: () => set(state => ({ collapseAllRequestId: state.collapseAllRequestId + 1 })),
+      requestCollapseAll: () => {
+        resetSessionNavExpansion();
+        set(state => ({ collapseAllRequestId: state.collapseAllRequestId + 1 }));
+      },
     }),
     {
       name: 'openbitfun.workspace-session-view.v2',
@@ -254,6 +259,20 @@ export function matchesWorkspaceSessionView(
   if (filters.hiddenSources.includes(deriveWorkspaceSessionSource(session))) return false;
   if (filters.hiddenWorktrees.includes(deriveWorkspaceSessionWorktree(session))) return false;
   return true;
+}
+
+/**
+ * Identity of a session view for remembered totals. The default view (all
+ * sources, all sessions, no filters) is the one a plain host total describes.
+ */
+export function workspaceSessionViewKey(
+  sourceAgent: WorkspaceSessionSourceAgent,
+  show: WorkspaceSessionShow,
+  filters: WorkspaceSessionFilters,
+): string {
+  return sourceAgent === 'all' && show === 'all' && !hasWorkspaceSessionFilters(filters)
+    ? DEFAULT_SESSION_VIEW_KEY
+    : JSON.stringify([sourceAgent, show, filters]);
 }
 
 export function hasWorkspaceSessionFilters(filters: WorkspaceSessionFilters): boolean {

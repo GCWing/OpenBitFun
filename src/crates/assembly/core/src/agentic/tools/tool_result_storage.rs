@@ -19,8 +19,10 @@ use openbitfun_agent_tools::{DEFAULT_MAX_TOOL_RESULT_CHARS, PERSISTED_OUTPUT_TAG
 use std::collections::HashSet;
 use std::path::Path;
 
-/// Keep in sync with `FileReadTool::DEFAULT_READ_MAX_TOTAL_CHARS` plus wrapper overhead.
-pub(crate) const READ_MAX_TOOL_RESULT_CHARS: usize = 72_000;
+/// Read's own per-call content cap plus room for its wrapper text, so a full
+/// default Read window is returned inline instead of being persisted.
+pub(crate) const READ_MAX_TOOL_RESULT_CHARS: usize =
+    crate::agentic::tools::implementations::file_read_tool::DEFAULT_READ_MAX_TOTAL_CHARS + 8_000;
 
 const READ_TOOL_NAME: &str = "Read";
 
@@ -363,6 +365,7 @@ mod tests {
             dialog_turn_id: Some("turn_1".to_string()),
             workspace: Some(WorkspaceBinding::new(None, root)),
             loaded_deferred_tool_specs: Vec::new(),
+            model_client: None,
             primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
             custom_data,
             computer_use_host: None,

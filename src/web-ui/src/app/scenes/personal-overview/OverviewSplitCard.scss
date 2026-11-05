@@ -66,4 +66,10 @@
     min-width: 0;
     width: 100%;
   }
+  &__content--summary {
+    gap: var(--openbitfun-layout-card-gap-md);
+  }
+  &__content--summary &__description {
+    min-height: 0;
+  }
 }

@@ -19,6 +19,22 @@ cargo test --locked -p openbitfun-core --no-default-features --features agent-ru
 Provider parsing changes also require the adapter's focused stream tests.
 
 
+For GenUI candidate requirement review and tool-client ownership:
+
+    cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,tools-miniapp,git --lib -- generative_ui tool_task_context_materialization_preserves_runtime_fields
+
+Harmony coverage review consumes only the originating user request and the
+candidate HTML/UI source plus JavaScript, with CSS omitted and source capped at
+14,000 characters. It asks for a simple JSON list of clearly missing requested
+parts; it does not review screenshots, owner state, host evidence, visual style,
+or inferred requirements. Preserve the producing model client in internal tool
+context, including account and reasoning policy; never resolve a fresh primary
+model for review. The client is not a serialized DTO or model tool input. A
+clear omission asks the generator to repair the candidate. Timeout, provider
+failure, or unreadable output is recorded as `skipped` and does not block host
+acceptance checks. Local tests prove request shaping and parsing, not live model
+quality or remote end-to-end delivery.
+
 For next-input suggestions (turn reasoning settings, one identical retry,
 plain-text output, unchanged message prefix, and silent failure), use:
 
@@ -75,6 +91,30 @@ cargo test --locked -p openbitfun-core --no-default-features --features agent-ru
 These loopback fixtures verify actual provider requests and slot-owned account,
 channel, replay and retry state. They do not establish live OAuth, SSH, Peer or
 detached-dispatch behavior.
+
+Router protocol profiles are explicit host-owned configuration. Old records use
+`openai_logprobs`; `openai_router_extension` consumes direct classifier facts in
+the AI adapter and uses a single inference slot per service within the host.
+Status advertises supported profiles for older-client/host negotiation. Do not
+infer a profile from the hostname or model name, or use a classifier as a primary
+or economy execution model. For profile/probe/threshold and cache-transition checks:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib classifier_extension
+```
+
+Model-card and model-editor checks for the selected Router use that host's
+Router protocol with the supplied draft model, not its saved endpoint. Other
+models retain the ordinary chat/image checks. For draft isolation, release gates,
+timeout handling and invalid classifier responses, run:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib router_model_probe
+```
+
+These loopback fixtures do not establish live Peer, relay, SSH, detached-dispatch,
+or cross-process admission behavior. The ordinary routing checks above also cover
+usage calibration, immutable execution slots and auxiliary history lifecycle.
 
 Router context state/budgets live in `openbitfun-agent-runtime::router_context`;
 Core only observes messages, invokes the configured auxiliary model and stores its

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Combobox, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle, Field, Select } from '@openbitfun/ui';
+import { Button, Combobox, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle, Field, Input, Select } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 import { agentAPI, type ModelRoutingStatus } from '@/infrastructure/api/service-api/AgentAPI';
 import { aiApi, type ConnectionTestResult } from '@/infrastructure/api/service-api/AIApi';
@@ -11,11 +11,13 @@ import { configManager } from '../services/ConfigManager';
 import type { AIModelConfig, DefaultModelsConfig, ModelRoutingConfig } from '../types';
 import { filterSelectableTextChatModels } from '../services/modelCategory';
 import { useModelSelectPresentation } from './ModelSelectPresentation';
-import { affectsModelRoutingConnectionChecks, modelRoutingCheckIdentity, modelRoutingProbeSelectionChanged } from './modelRoutingCheckIdentity';
+import { affectsModelRoutingConnectionChecks, modelRoutingCheckIdentity, modelRoutingProbeSelectionChanged, routerRequestSettings } from './modelRoutingCheckIdentity';
 import { stableJson } from './modelConnectionTestPlan';
 import './ModelRouterSettings.scss';
 
-const DEFAULTS: ModelRoutingConfig = { default_mode: null, router_model_id: null, simple_threshold: 0.75, timeout_ms: 10000, summary_enabled: true };
+const DEFAULTS: ModelRoutingConfig = { default_mode: null, router_model_id: null, protocol: 'openai_logprobs', simple_threshold: 0.75, timeout_ms: 10000, summary_enabled: true };
+const CLASSIFIER_PROTOCOL = 'openai_router_extension';
+type RouterRequestSettings = Pick<ModelRoutingConfig, 'protocol' | 'timeout_ms'>;
 const log = createLogger('ModelRouterSettings');
 const CHECK_ROLES = ['primary', 'economy', 'router'] as const;
 type CheckRole = typeof CHECK_ROLES[number];
@@ -27,7 +29,7 @@ type ConnectionChecks = Record<CheckRole, ConnectionCheck>;
 type ConnectionCheckRun = {
   id: number;
   selectionIdentity: string;
-  probe?: { roles: DefaultModelsConfig; routerModelId: string | null; identity: string };
+  probe?: { roles: DefaultModelsConfig; routerModelId: string | null; routing: RouterRequestSettings; identity: string };
 };
 
 /** Router configuration belongs to the selected execution host. */
@@ -40,7 +42,11 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
   const { buildModelOption } = useModelSelectPresentation();
   const [surface] = useState(getActiveSurfaceScope);
   const [available, setAvailable] = useState(initialStatus?.apiVersion === 1 && initialStatus.available === true);
+  const [routerProtocols, setRouterProtocols] = useState(initialStatus?.routerProtocols ?? []);
   const [draft, setDraft] = useState<ModelRoutingConfig | null>(null);
+  const initialRouting = useRef<RouterRequestSettings | null>(null);
+  const routingEdits = useRef<Partial<RouterRequestSettings>>({});
+  const [timeoutText, setTimeoutText] = useState('');
   const [roleDraft, setRoleDraft] = useState<DefaultModelsConfig | null>(null);
   const [initialRoles, setInitialRoles] = useState<DefaultModelsConfig | null>(null);
   const [busy, setBusy] = useState(false);
@@ -50,9 +56,13 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
     let active = true;
     if (initialStatus) {
       setAvailable(initialStatus.apiVersion === 1 && initialStatus.available === true);
+      setRouterProtocols(initialStatus.routerProtocols ?? []);
     } else {
       void agentAPI.getModelRoutingStatus().then(status => {
-        if (active && surface.isCurrent()) setAvailable(status.apiVersion === 1 && status.available === true);
+        if (active && surface.isCurrent()) {
+          setAvailable(status.apiVersion === 1 && status.available === true);
+          setRouterProtocols(status.routerProtocols ?? []);
+        }
       }).catch(() => { if (active && surface.isCurrent()) setAvailable(false); });
     }
     return () => { active = false; };
@@ -61,7 +71,7 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
   const activeCheckRun = useRef<ConnectionCheckRun | null>(null);
   const latestModels = useRef(models);
   latestModels.current = models;
-  const selectionIdentity = modelRoutingCheckIdentity(models, roleDraft, draft?.router_model_id);
+  const selectionIdentity = modelRoutingCheckIdentity(models, roleDraft, draft?.router_model_id, draft ?? undefined);
   const latestSelectionIdentity = useRef(selectionIdentity);
   latestSelectionIdentity.current = selectionIdentity;
   const clearChecks = useCallback(() => {
@@ -72,7 +82,7 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
   const isRunCurrent = (run: ConnectionCheckRun) => run.id === checkRun.current
     && activeCheckRun.current === run && surface.isCurrent()
     && run.selectionIdentity === latestSelectionIdentity.current
-    && (!run.probe || run.probe.identity === modelRoutingCheckIdentity(latestModels.current, run.probe.roles, run.probe.routerModelId));
+    && (!run.probe || run.probe.identity === modelRoutingCheckIdentity(latestModels.current, run.probe.roles, run.probe.routerModelId, run.probe.routing));
   const staleRun = activeCheckRun.current !== null && !isRunCurrent(activeCheckRun.current);
   // Hide old greens during the render that observes a changed configuration,
   // before the invalidation effect also releases the abandoned run's busy state.
@@ -82,7 +92,7 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
     const unsubscribe = configManager.onConfigChange((path, oldValue, newValue) => {
       if (!surface.isCurrent()) return;
       const probe = activeCheckRun.current?.probe;
-      const selectionChanged = probe && modelRoutingProbeSelectionChanged(path, newValue, probe.roles, probe.routerModelId);
+      const selectionChanged = probe && modelRoutingProbeSelectionChanged(path, newValue, probe.roles, probe.routerModelId, probe.routing);
       if (!affectsModelRoutingConnectionChecks(path) && !selectionChanged) return;
       if ((oldValue !== undefined || newValue !== undefined) && stableJson(oldValue) === stableJson(newValue)) return;
       clearChecks();
@@ -102,7 +112,10 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
     void configManager.getConfigs(['ai.model_routing', 'ai.default_models']).then(values => {
       if (active && surface.isCurrent()) {
         if (!values['ai.model_routing'] || !values['ai.default_models']) throw new Error('Incomplete smart-mode configuration');
-        setDraft({ ...DEFAULTS, ...values['ai.model_routing'] as ModelRoutingConfig });
+        const routing = { ...DEFAULTS, ...values['ai.model_routing'] as ModelRoutingConfig };
+        initialRouting.current = routerRequestSettings(routing);
+        routingEdits.current = {};
+        setDraft(routing); setTimeoutText(String(routing.timeout_ms / 1000));
         const roles = values['ai.default_models'] as DefaultModelsConfig;
         setRoleDraft({ ...roles }); setInitialRoles({ ...roles });
       }
@@ -148,7 +161,7 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
       // Host/provider diagnostics may contain credentials or paths. Only select
       // fixed translated advice; never render any part of the diagnostic itself.
       const reason = typeof issue === 'string' ? issue : '';
-      if (/Router requires OpenAI Chat Completions API format|Router protocol mismatch|Router response lacks classifier token logprobs|Failed to decode Router response|Router (?:output is invalid JSON|response did not contain)/i.test(reason)) {
+      if (/Router requires OpenAI Chat Completions API format|Router protocol mismatch|Router response lacks classifier|Failed to decode Router response|Router (?:output is invalid JSON|response did not contain|classification extension|content and classification prediction)|classifier (?:probabilit|prediction)/i.test(reason)) {
         return t('router.connectionFailures.protocol');
       }
       const httpStatus = /\bRouter returned HTTP ([1-5]\d{2})\b/i.exec(reason)?.[1];
@@ -183,6 +196,7 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
   };
   const save = async (probe: boolean) => {
     if (!available || !draft || !roleDraft || !initialRoles || busy || !surface.isCurrent()) return;
+    if (!Number.isSafeInteger(draft.timeout_ms) || draft.timeout_ms <= 0) { setMessage(t('router.timeoutInvalid')); return; }
     const run: ConnectionCheckRun = { id: ++checkRun.current, selectionIdentity };
     activeCheckRun.current = run;
     const isCurrent = () => isRunCurrent(run);
@@ -194,6 +208,24 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
       if (!isCurrent()) return;
       if (support.apiVersion !== 1) { setMessage(t('router.unsupported')); return; }
       if (support.available !== true) { setAvailable(false); setMessage(t('router.notOpen')); return; }
+      const requireProtocolSupport = (protocol: string | undefined) => {
+        const selected = protocol ?? DEFAULTS.protocol;
+        if (selected !== DEFAULTS.protocol && (selected !== CLASSIFIER_PROTOCOL || !support.routerProtocols?.includes(selected))) {
+          failureMessage = t('router.protocolUnsupported');
+          throw new Error('Execution host does not support the selected Router protocol');
+        }
+      };
+      requireProtocolSupport(draft.protocol);
+      // A protocol/timeout editor must not replace a concurrent host change.
+      // Unedited legacy settings continue to merge against the fresh write value.
+      if (draft.protocol !== DEFAULTS.protocol || Object.keys(routingEdits.current).length) {
+        const routing: unknown = await configAPI.getConfig('ai.model_routing');
+        if (!isCurrent()) return;
+        if (!routing || typeof routing !== 'object' || Array.isArray(routing)) throw new Error('Router configuration is unavailable on the execution host');
+        if (stableJson(routerRequestSettings(routing as ModelRoutingConfig)) !== stableJson(initialRouting.current)) {
+          setMessage(t('router.configurationChanged')); return;
+        }
+      }
       const requireTokenBudgetSupport = (current: ModelRoutingConfig) => {
         if (support.estimatedTokenBudgetSupported !== true
           && (typeof current.tokenizer_path !== 'string' || !current.tokenizer_path.trim())) {
@@ -237,22 +269,31 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
         setInitialRoles({ ...roleDraft });
         onSaved();
       }
-      await configManager.updateConfig<ModelRoutingConfig>('ai.model_routing', current => {
+      const savedRouting = await configManager.updateConfig<ModelRoutingConfig>('ai.model_routing', current => {
+        // Recheck the actual mutation value after intervening role reads/writes.
+        if ((draft.protocol !== DEFAULTS.protocol || Object.keys(routingEdits.current).length)
+          && stableJson(routerRequestSettings(current)) !== stableJson(initialRouting.current)) {
+          failureMessage = t('router.configurationChanged');
+          throw new Error('Router request settings changed before the configuration write');
+        }
         // Recheck the fresh mutation value in case a legacy path changed after validation.
         requireTokenBudgetSupport(current);
+        requireProtocolSupport(routingEdits.current.protocol ?? current.protocol);
         return {
           ...DEFAULTS, ...current, router_model_id: draft.router_model_id || null,
+          ...routingEdits.current,
           // Keep automatic history preparation enabled on older execution hosts too.
           summary_enabled: true,
         };
       });
       if (!isCurrent()) return;
+      initialRouting.current = routerRequestSettings(savedRouting);
       onSaved();
       if (probe) {
         failureMessage = t('router.checkFailed');
         run.probe = {
-          roles: { ...savedRoles }, routerModelId: draft.router_model_id || null,
-          identity: modelRoutingCheckIdentity(latestModels.current, savedRoles, draft.router_model_id),
+          roles: { ...savedRoles }, routerModelId: draft.router_model_id || null, routing: routerRequestSettings(savedRouting),
+          identity: modelRoutingCheckIdentity(latestModels.current, savedRoles, draft.router_model_id, savedRouting),
         };
         await checkConnections(savedRoles, isCurrent);
       } else onClose();
@@ -272,7 +313,9 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
           {(['primary', 'economy'] as const).map(role => <Field key={role} label={tModels(`core.${role}.label`)} controlWidth="fill">
             <Combobox size="sm" aria-label={tModels(`core.${role}.label`)} value={roleDraft?.[role] ?? ''}
               disabled={!available || busy || !roleDraft} placeholder={tModels(`core.${role}.placeholder`)}
-              options={filterSelectableTextChatModels(models).map(buildModelOption)}
+              options={filterSelectableTextChatModels(models)
+                .filter(model => draft?.protocol !== CLASSIFIER_PROTOCOL || model.id !== draft.router_model_id)
+                .map(buildModelOption)}
               onValueChange={value => { clearChecks(); setRoleDraft(current => current && { ...current, [role]: String(Array.isArray(value) ? value[0] ?? '' : value) || null }); }} />
           </Field>)}
         </div>
@@ -282,6 +325,34 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
             options={[{ value: '', label: t('router.unconfigured') }, ...models.filter((model): model is AIModelConfig & { id: string } => Boolean(model.id) && model.enabled && (!model.auth || model.auth.type === 'api_key'))
               .map(model => ({ value: model.id, label: `${model.model_name} · ${model.name}` }))]} />
         </Field>
+        <div className="model-router-settings__models">
+          <Field label={t('router.protocol')} description={draft?.protocol === CLASSIFIER_PROTOCOL ? t('router.classifierHint') : undefined} controlWidth="fill">
+            <Select size="sm" aria-label={t('router.protocol')} value={draft?.protocol ?? DEFAULTS.protocol} disabled={!available || busy || !draft}
+              options={[
+                { value: 'openai_logprobs', label: t('router.protocolLogprobs') },
+                { value: CLASSIFIER_PROTOCOL, label: t('router.protocolClassifier'), disabled: !routerProtocols.includes(CLASSIFIER_PROTOCOL) },
+                ...(draft?.protocol && !['openai_logprobs', CLASSIFIER_PROTOCOL].includes(draft.protocol)
+                  ? [{ value: draft.protocol, label: t('router.protocolUnknown', { protocol: draft.protocol }), disabled: true }] : []),
+              ]}
+              onValueChange={value => {
+                const protocol = String(value); clearChecks();
+                const timeout = protocol === CLASSIFIER_PROTOCOL && draft?.timeout_ms === DEFAULTS.timeout_ms && routingEdits.current.timeout_ms === undefined ? 120000 : undefined;
+                routingEdits.current = { ...routingEdits.current, protocol, ...(timeout ? { timeout_ms: timeout } : {}) };
+                if (timeout) setTimeoutText(String(timeout / 1000));
+                setDraft(current => current && { ...current, protocol, ...(timeout ? { timeout_ms: timeout } : {}) });
+              }} />
+          </Field>
+          <Field label={t('router.timeout')} controlWidth="fill">
+            <Input type="number" size="sm" min="0.001" step="1" aria-label={t('router.timeout')} value={timeoutText}
+              disabled={!available || busy || !draft} invalid={Boolean(draft && (!Number.isSafeInteger(draft.timeout_ms) || draft.timeout_ms <= 0))}
+              onValueChange={value => {
+                clearChecks(); setTimeoutText(value);
+                const timeout_ms = value.trim() ? Number(value) * 1000 : Number.NaN;
+                routingEdits.current.timeout_ms = timeout_ms;
+                setDraft(current => current && { ...current, timeout_ms });
+              }} />
+          </Field>
+        </div>
         {(!available || message || currentChecks) && <div className="model-router-settings__status" role="status" aria-label={t('router.status')}
           data-openbitfun-component="model-router-settings" data-openbitfun-part="status">
           <span className="model-router-settings__status-label" data-openbitfun-component="model-router-settings" data-openbitfun-part="statusLabel">{t('router.status')}</span>

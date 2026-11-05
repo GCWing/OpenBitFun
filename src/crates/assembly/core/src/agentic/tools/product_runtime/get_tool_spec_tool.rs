@@ -155,6 +155,7 @@ mod tests {
                 tool_name: "WebFetch".to_string(),
                 catalog_generation,
             }],
+            model_client: None,
             primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
             custom_data: HashMap::new(),
             computer_use_host: None,

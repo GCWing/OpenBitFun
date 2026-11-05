@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 
 import {
   ACPClientAPI,
@@ -23,7 +24,7 @@ export function filterSlashCommands(
 export function useAcpSlashCommands(
   acpSession: AcpSessionRef | null,
 ): { commands: AcpAvailableCommand[] } {
-  const [commands, setCommands] = useState<AcpAvailableCommand[]>([]);
+  const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
 
   const sessionId = acpSession?.sessionId ?? null;
   const clientId = acpSession?.clientId ?? null;
@@ -31,10 +32,12 @@ export function useAcpSlashCommands(
   const workspacePath = acpSession?.workspacePath;
   const remoteConnectionId = acpSession?.remoteConnectionId;
   const remoteSshHost = acpSession?.remoteSshHost;
+  const identity = scope.key(scope.epoch, sessionId, clientId, workspaceId, workspacePath, remoteConnectionId, remoteSshHost);
+  const [snapshot, setSnapshot] = useState<{ identity: string; commands: AcpAvailableCommand[] }>({ identity, commands: [] });
 
   useEffect(() => {
-    setCommands([]);
-  }, [sessionId]);
+    setSnapshot({ identity, commands: [] });
+  }, [identity]);
 
   useEffect(() => {
     if (!sessionId || !clientId) return;
@@ -49,26 +52,26 @@ export function useAcpSlashCommands(
       remoteSshHost,
     })
       .then((list) => {
-        if (!cancelled) setCommands(list);
+        if (!cancelled && scope.isCurrent()) setSnapshot({ identity, commands: list });
       })
       .catch(() => {
-        if (!cancelled) setCommands([]);
+        if (!cancelled && scope.isCurrent()) setSnapshot({ identity, commands: [] });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [sessionId, clientId, workspaceId, workspacePath, remoteConnectionId, remoteSshHost]);
+  }, [sessionId, clientId, workspaceId, workspacePath, remoteConnectionId, remoteSshHost, identity, scope]);
 
   useEffect(() => {
     if (!sessionId || !clientId) return;
 
     return ACPClientAPI.onAvailableCommandsUpdated((event) => {
-      if (event.sessionId === sessionId && event.clientId === clientId) {
-        setCommands(event.commands);
+      if (scope.isCurrent() && event.sessionId === sessionId && event.clientId === clientId) {
+        setSnapshot({ identity, commands: event.commands });
       }
     });
-  }, [sessionId, clientId]);
+  }, [sessionId, clientId, identity, scope]);
 
-  return { commands };
+  return { commands: snapshot.identity === identity ? snapshot.commands : [] };
 }

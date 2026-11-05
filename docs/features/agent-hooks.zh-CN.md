@@ -42,6 +42,20 @@ Codex 读 `~/.codex/hooks.json`，OpenBitFun 改为读自己的配置目录。�
 两个层级是叠加关系：所有匹配的处理器都会执行，用户层优先，层级之间不存在覆盖或
 屏蔽。修改后无需重启 OpenBitFun。
 
+### RTK 命令改写示例
+
+仓库提供了可复用的 RTK 示例：[`examples/rtk`](agent-hooks/examples/rtk/README.md)。
+其中包含一个 Windows 用户级 Hook 和一个 POSIX 项目级 Hook，用于改写
+`ExecCommand`。
+
+如果工作区运行在 Linux、WSL 或 SSH 主机上，把 POSIX 示例文件复制到目标仓库的
+`.openbitfun/` 目录。Python 脚本会先查找 `~/.local/bin/rtk`，再查找 `PATH`；这是因为
+远程非交互 shell 可能不会加载 `.bashrc`。Windows 示例复制到用户配置目录，适用于
+本地工作区。
+
+示例文件不会自动生效，只有复制到文档规定的 Hook 路径后才会加载。项目级 Hook 仍然
+需要开启 `app.hooks.project_hooks_enabled`，并且只应在信任的仓库中启用。
+
 ## 开启 Hooks
 
 **设置 → Agent Hooks**，或直接编辑 `<用户配置目录>/config/app.json` 的 `app` 段：
@@ -99,7 +113,7 @@ OpenBitFun 可以把 Claude Code 或 Codex 中兼容的 `type: "command"` Hook �
 导入、更新、启用、停用和移除会在下一个匹配的 Hook 事件生效；已经开始运行的 Hook
 仍使用启动时捕获的快照完成。OpenBitFun 不会在启动时重新导入，也不会轮询或监听 Claude
 Code/Codex 文件。请使用**刷新**或 `/hooks refresh` 检查来源变化，再显式审阅更新。
-管理与执行均只支持本地工作区；远程工作区会明确返回不支持，不会用本地命令处理远程
+管理仍在控制端；远程工作区跳过 user Hook 和导入快照，仅在开启项目 Hook 时通过远程工作区文件与目标端 shell 读取、执行项目 `hooks.json`，不会回退到控制端本地命令
 路径。
 
 OpenCode 插件 Hooks 明确不在本次范围内。其 JavaScript 回调依赖 OpenCode 插件执行域；
@@ -244,7 +258,7 @@ sys.exit(0)
 | `[features] hooks = false` | 使用 `app.hooks.enabled` |
 | 插件内置与托管 Hooks（`PLUGIN_ROOT`、`managed_dir`） | 不支持 |
 | `prompt` 与 `agent` 处理器类型 | 会被解析（以便共享配置文件保持有效）但跳过 —— 只有 `type: "command"` 会执行 |
-| 远程工作区 | 不派发 Hooks：本地 Hook 进程与远程工作区路径描述的不是同一个文件系统。跳过不是静默的：当宿主为该事件配置了规则时，每个会话第一次跳过会记录一条警告，Hook 概览也带有 `remote_workspace_unsupported`，供界面说明已配置的规则没有运行 |
+| 远程工作区 | 跳过 user Hook 和导入快照；开启 `app.hooks.project_hooks_enabled` 后，从远程工作区读取项目 `hooks.json`，并通过目标端 shell 执行命令，stdin/stdout/stderr、超时和取消沿用 Hook 契约。远程 provider 不可用时失败关闭，不回退到控制端 |
 
 ### 尚未填充的字段
 
@@ -293,7 +307,7 @@ Hook 是以你的用户权限运行的任意代码，且每次对应事件触发
 
 | 现象 | 原因 |
 | --- | --- |
-| 完全没有 Hook 运行 | `app.hooks.enabled` 为 `false`、文件不在文档所述路径，或工作区是远程工作区（此时日志会为每个会话第一次跳过的派发记录一条警告）。 |
+| 完全没有 Hook 运行 | `app.hooks.enabled` 为 `false`、文件不在文档所述路径，或远程项目 Hook 无法读取目标端配置/provider。远程 user Hook 本来就会跳过；项目 Hook 的配置与命令都在目标端。 |
 | 项目 Hooks 不运行 | `app.hooks.project_hooks_enabled` 为 `false`（默认值）。 |
 | 整个文件被忽略 | JSON 无效，或存在 `description`/`hooks` 之外的根级字段。 |
 | 某个事件被忽略 | 事件名拼写错误 —— 事件名区分大小写。 |

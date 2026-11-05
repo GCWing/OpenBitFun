@@ -14,7 +14,7 @@ const tool = (toolName: string, input: unknown = {}): FlowToolItem => ({
 });
 
 describe('capsule and exploration policy', () => {
-  it.each(['Write', 'Edit', 'Delete', 'GetFileDiff', 'ExecCommand', 'ExecControl', 'Bash', 'Task', 'AgentSpawn', 'AgentSendInput', 'TodoWrite', 'AskUserQuestion', 'CreatePlan', 'ReviewSessionSummary', 'ReadCanvas', 'SessionControl', 'Cron', 'unknown', 'mcp__files__delete'])('%s preserves its card outside low-attention exploration eligibility', name => {
+  it.each(['Write', 'Edit', 'Delete', 'GetFileDiff', 'ExecCommand', 'ExecControl', 'Bash', 'Task', 'AgentSpawn', 'AgentSendInput', 'TodoWrite', 'AskUserQuestion', 'CreatePlan', 'ReviewSessionSummary', 'SessionControl', 'Cron', 'unknown', 'mcp__files__delete'])('%s preserves its card outside low-attention exploration eligibility', name => {
     expect(isToolCapsule(name)).toBe(false);
     expect(isCollapsibleTool(name)).toBe(false);
   });

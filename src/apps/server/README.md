@@ -6,10 +6,12 @@ This directory contains the `openbitfun-server` application, which serves the we
 > during that refactor are intended to validate protocol and host boundaries; they do not promise feature completeness,
 > Desktop parity, backward compatibility, or production readiness.
 
-If you are looking for **Remote Connect self-hosted relay deployment**, use:
+For **Remote Connect**, the official Relay is ready to use without deploying this
+server. Start with the [Relay FAQ](../relay-server/FAQ.md). For private Relay
+deployment with a matching client build, use:
 
 - [Relay Server README](../relay-server/README.md)
-- [deploy.sh](../relay-server/deploy.sh)
+- [Versioned deployment guide](../../../deploy/relay-v1/README.md)
 
 `src/apps/server` and `src/apps/relay-server` are different components. `src/apps/server` is the main web app backend, while `src/apps/relay-server` is the relay service used by Remote Connect.
 

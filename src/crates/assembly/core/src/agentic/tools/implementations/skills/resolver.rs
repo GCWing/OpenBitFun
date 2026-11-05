@@ -123,26 +123,4 @@ mod tests {
             ModeSkillStateReason::EnabledByUserOverride
         );
     }
-
-    #[test]
-    fn canvas_skill_can_be_explicitly_enabled() {
-        let canvas = builtin_skill("openbitfun-canvas");
-        let mut overrides = UserModeSkillOverrides::default();
-        let disabled_project = HashSet::new();
-
-        let default_state =
-            resolve_skill_state_for_mode(&canvas, "Standard", &overrides, &disabled_project);
-        assert!(!default_state.default_enabled);
-        assert!(!default_state.effective_enabled);
-
-        overrides.enabled_skills.push(canvas.key.clone());
-        let enabled_state =
-            resolve_skill_state_for_mode(&canvas, "Standard", &overrides, &disabled_project);
-        assert!(!enabled_state.default_enabled);
-        assert!(enabled_state.effective_enabled);
-        assert_eq!(
-            enabled_state.reason,
-            ModeSkillStateReason::EnabledByUserOverride
-        );
-    }
 }

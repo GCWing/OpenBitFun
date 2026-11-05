@@ -1,12 +1,16 @@
 use crate::api::app_state::AppState;
-use openbitfun_core::infrastructure::{FileSearchResult, FileSearchResultGroup, SearchMatchType};
+use openbitfun_core::infrastructure::{
+    FileSearchOutcome, FileSearchResult, FileSearchResultGroup, SearchMatchType,
+};
 use openbitfun_core::service::search::{
-    remote_workspace_search_service_for_workspace, workspace_search_daemon_available,
-    workspace_search_feature_enabled, ContentSearchRequest, ContentSearchResult,
-    RemoteWorkspaceSearchService, WorkspaceSearchBackend, WorkspaceSearchRepoPhase,
+    remote_workspace_search_service_for_workspace, search_remote_workspace_contents,
+    workspace_search_daemon_available, workspace_search_feature_enabled, ContentSearchRequest,
+    ContentSearchResult, RemoteContentSearch, RemoteWorkspaceSearchService, WorkspaceSearchBackend,
+    WorkspaceSearchRepoPhase,
 };
 use openbitfun_core::service::workspace::{WorkspaceInfo, WorkspaceKind};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::State;
 
@@ -145,7 +149,7 @@ pub(crate) async fn should_use_workspace_search(
         .is_none()
 }
 
-/// Builds the refusal sentence used when a remote workspace cannot be searched over SSH.
+/// Builds the failure sentence used when a remote workspace cannot be searched over SSH.
 ///
 /// The legacy content walker only sees the controller filesystem, so running it for a remote
 /// root would answer a question about the wrong machine. Callers must surface this instead.
@@ -160,23 +164,60 @@ pub(crate) fn remote_content_search_refusal_message(
     )
 }
 
-/// Returns a refusal message when `root_path` belongs to a remote workspace whose remote search
-/// path is unavailable, and `None` when the path is local or remote search can serve the request.
-pub(crate) async fn remote_content_search_refusal(
-    state: &State<'_, AppState>,
-    command: &str,
-    workspace: &WorkspaceInfo,
-) -> Option<String> {
-    if workspace.workspace_kind != WorkspaceKind::Remote {
-        return None;
-    }
+/// Where a remote content search runs, resolved up front so a streaming command can move it
+/// into its background task without borrowing Tauri state.
+pub(crate) struct RemoteContentSearchTarget {
+    connection_id: String,
+    root_path: String,
+}
 
-    let reason = workspace_search_unavailable_message(state, workspace).await?;
-    Some(remote_content_search_refusal_message(
-        command,
-        &workspace.root_path.to_string_lossy(),
-        &reason,
-    ))
+/// The fields a content-search command already holds, minus the routing target.
+pub(crate) struct RemoteContentSearchQuery {
+    pub pattern: String,
+    pub case_sensitive: bool,
+    pub use_regex: bool,
+    pub whole_word: bool,
+    pub limit: usize,
+    pub cancel_flag: Option<Arc<AtomicBool>>,
+}
+
+/// Selects the connection from the workspace record, because a POSIX root alone does not
+/// identify a remote workspace when several connections expose the same path.
+pub(crate) async fn remote_content_search_target(
+    state: &State<'_, AppState>,
+    workspace: &WorkspaceInfo,
+) -> Result<RemoteContentSearchTarget, String> {
+    match crate::api::path_target::resolve_desktop_workspace_target(state, &workspace.id).await? {
+        crate::api::path_target::DesktopPathTarget::Remote {
+            requested_path,
+            entry,
+        } => Ok(RemoteContentSearchTarget {
+            connection_id: entry.connection_id,
+            root_path: requested_path,
+        }),
+        crate::api::path_target::DesktopPathTarget::Local { .. } => {
+            Err("the workspace is not bound to a remote connection".to_string())
+        }
+    }
+}
+
+/// Runs a content search on the remote host. Flashgrep is never selected for a remote root, and
+/// a failure stays a failure: nothing here can fall back to the controller filesystem.
+pub(crate) async fn search_remote_contents(
+    target: RemoteContentSearchTarget,
+    query: RemoteContentSearchQuery,
+) -> Result<FileSearchOutcome, String> {
+    search_remote_workspace_contents(RemoteContentSearch {
+        connection_id: target.connection_id,
+        root_path: target.root_path,
+        pattern: query.pattern,
+        case_sensitive: query.case_sensitive,
+        use_regex: query.use_regex,
+        whole_word: query.whole_word,
+        limit: query.limit,
+        cancel_flag: query.cancel_flag,
+    })
+    .await
 }
 
 pub(crate) async fn prepare_content_search_runner(

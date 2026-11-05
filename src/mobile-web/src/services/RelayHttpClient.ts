@@ -1,3 +1,4 @@
+import { acceptsRelayZstd, prepareRelayEncoding, relayZstd } from './relayMessageEncoding';
 import {
   openHostStream, parseStreamHint, parseStreamPage,
   type HostStreamOptions, type SessionStreamHandle, type StreamHint, type StreamReadRequest,
@@ -26,11 +27,15 @@ export class AccountIdentityChangedError extends Error {
 export function isAccountIdentityChangedError(value: unknown): value is AccountIdentityChangedError {
   return value instanceof AccountIdentityChangedError;
 }
+/** A decrypted terminal response, not an unknown transport delivery outcome. */
+export class RemoteHostCommandError extends Error {
+  constructor(message: string) { super(message); this.name = 'RemoteHostCommandError'; }
+}
 const RELAY_HTTP_MAX_ATTEMPTS = 5;
 const RELAY_HTTP_RETRY_BASE_DELAY_MS = 300;
 const RELAY_HTTP_RETRY_BUDGET_MS = 120_000;
 const TRANSIENT_RELAY_STATUSES = new Set([408, 425, 500, 502, 503, 504]);
-type RelayRequestOptions = { retryable?: boolean; timeoutMs?: number };
+type RelayRequestOptions = { retryable?: boolean; timeoutMs?: number; onHostSettled?: () => void };
 
 export interface RelayDeviceInfo {
   device_id: string;
@@ -91,6 +96,7 @@ export class RelayHttpClient {
   private targetDeviceIdValue: string | null = null;
   private controlTargetEpochValue = 0;
   private controlTargetListeners = new Set<(snapshot: ControlTargetSnapshot) => void>();
+  private peerEncodings = new Set<string>();
   private deviceMessageKeys = new Map<string, { expires: number; key: Promise<Uint8Array> }>();
   private streamHintListeners = new Set<(hint: StreamHint) => void>();
 
@@ -110,10 +116,17 @@ export class RelayHttpClient {
     this.realtime = null;
     this.identity?.masterKey.fill(0);
     this.identity = { ...identity, masterKey: identity.masterKey.slice(), generation: ++this.identityGeneration };
+    prepareRelayEncoding();
     this.realtime = new AccountRealtime({ url: this.relayUrl, token: identity.token });
-    const notifyDirectory = () => { for (const listener of this.directoryListeners) listener(); };
+    const notifyDirectory = () => {
+      this.peerEncodings = new Set();
+      for (const listener of this.directoryListeners) listener();
+    };
     this.realtime.onDeviceDirectoryChanged(notifyDirectory);
     this.realtime.onReconnect(notifyDirectory);
+    this.realtime.onStatus(status => {
+      if (status === 'disconnected') this.peerEncodings = new Set();
+    });
     this.realtime.onDeviceEvent(envelope => { void this.receiveDeviceEvent(envelope); });
     this.accountEpochValue += 1;
     this.directorySnapshot = [];
@@ -121,6 +134,7 @@ export class RelayHttpClient {
     // A read that started under the previous identity must not seed the cache.
     this.appliedDirectoryRequest = this.directoryRequest;
     this.deviceMessageKeys.clear();
+    this.peerEncodings = new Set();
     this.setTargetDeviceId(null);
     for (const listener of this.ownerListeners) listener({ kind, epoch: this.accountEpochValue, userId: identity.userId });
   }
@@ -137,6 +151,7 @@ export class RelayHttpClient {
     // A read from the closed identity must not seed the cache either.
     this.appliedDirectoryRequest = this.directoryRequest;
     this.deviceMessageKeys.clear();
+    this.peerEncodings = new Set();
     this.setTargetDeviceId(null);
     for (const listener of this.ownerListeners) listener({ kind: 'unavailable', epoch: this.accountEpochValue, userId: null });
   }
@@ -187,12 +202,16 @@ export class RelayHttpClient {
   private async receiveDeviceEvent(envelope: DeviceEventEnvelope): Promise<void> {
     const identity = this.identity;
     const target = this.getControlTargetSnapshot();
+    const encodings = this.peerEncodings;
     if (!identity || envelope.sourceDeviceId !== target.deviceId) return;
     try {
       const messageKey = await this.deviceMessageKey(identity, envelope.sourceDeviceId);
       if (this.identity !== identity || !this.isControlTargetCurrent(target)) return;
       const plaintext = JSON.parse(await decrypt(messageKey, envelope.encrypted_data, envelope.nonce)) as { cmd?: unknown; event?: unknown; payload?: unknown };
       if (plaintext?.cmd !== 'device_event' || typeof plaintext.event !== 'string') return;
+      if (encodings !== this.peerEncodings || this.identity !== identity || !this.isControlTargetCurrent(target)) return;
+      if (envelope.accept_encoding === relayZstd) encodings.add(envelope.sourceDeviceId);
+      else encodings.delete(envelope.sourceDeviceId);
       const hint = parseStreamHint(envelope.sourceDeviceId, plaintext.event, plaintext.payload);
       if (hint) for (const listener of this.streamHintListeners) listener(hint);
     } catch (error) {
@@ -376,38 +395,56 @@ export class RelayHttpClient {
     const targetEpoch = this.controlTargetEpochValue;
     return this.withAccount(async (identity) => {
       const messageKey = await this.deviceMessageKey(identity, targetDeviceId);
+      if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
+        throw new AccountIdentityChangedError();
+      }
+      const connection = this.realtime;
+      if (!connection) throw new AccountIdentityChangedError();
+      await connection.ready();
+      const encodings = this.peerEncodings;
       const plaintext = JSON.stringify(command);
-      const { data: encData, nonce: encNonce } = await encrypt(
+      const { data: encData, nonce: encNonce, usesZstd } = await encrypt(
         messageKey,
         plaintext,
+        acceptsRelayZstd() && encodings.has(targetDeviceId),
       );
 
       if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
         throw new AccountIdentityChangedError();
       }
+      const assertEncodingCurrent = () => {
+        if (usesZstd && encodings !== this.peerEncodings) {
+          throw new Error('Relay capabilities changed; request was not submitted');
+        }
+      };
+      assertEncodingCurrent();
       const timeoutMs = options.timeoutMs ?? (options.retryable ? 20_000 : 130_000);
-      const connection = this.realtime;
-      if (!connection) throw new AccountIdentityChangedError();
-      const data = await connection.call<{ encrypted_data: string; nonce: string }>(targetDeviceId,
-        { encrypted_data: encData, nonce: encNonce }, {
+      const data = await connection.call<{ encrypted_data: string; nonce: string; accept_encoding?: string }>(targetDeviceId,
+        { encrypted_data: encData, nonce: encNonce, accept_encoding: acceptsRelayZstd() ? relayZstd : undefined }, {
           timeoutMs,
+          beforeSubmit: assertEncodingCurrent,
           beforeSend: () => {
             if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
               throw new AccountIdentityChangedError();
             }
           },
         });
-      if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
-        throw new AccountIdentityChangedError();
-      }
       const decrypted = await decrypt(
         messageKey,
         data.encrypted_data,
         data.nonce,
       );
+      if (data.accept_encoding === relayZstd) encodings.add(targetDeviceId);
+      else encodings.delete(targetDeviceId);
       const parsed = JSON.parse(decrypted);
+      // Retiring the caller suppresses presentation, not the fact that the host
+      // finished. Never expose the decoded response to a replacement owner.
+      options.onHostSettled?.();
+      if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
+        throw new AccountIdentityChangedError();
+      }
       if (parsed?.resp === 'error') {
-        throw new Error(parsed.message || 'Remote error');
+        throw new RemoteHostCommandError(parsed.message || 'Remote error');
       }
       return parsed as T;
     }).catch((error) => {

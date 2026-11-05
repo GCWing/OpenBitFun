@@ -1,9 +1,11 @@
 //! Filesystem HostInvoke handlers.
 
+use openbitfun_core::service::filesystem::path_operations;
+use openbitfun_core::service::workspace::WorkspaceKind;
 use openbitfun_core::service::{filesystem::FileSystemService, workspace::WorkspaceService};
 use serde_json::{json, Value};
 
-use crate::peer_host::args::{get_string, optional_string, request_value};
+use crate::peer_host::args::{get_string, optional_bool, optional_string, request_value};
 use crate::peer_host::state::PeerHostState;
 
 pub(crate) async fn html_preview_read_resource(args: &Value) -> Result<Value, String> {
@@ -152,6 +154,95 @@ pub(crate) async fn get_file_tree(
         "size": null, "extension": null, "lastModified": null,
         "children": nodes.into_iter().map(node_value).collect::<Vec<_>>()
     }]))
+}
+
+pub(crate) async fn get_file_metadata(
+    state: &PeerHostState,
+    args: &Value,
+) -> Result<Value, String> {
+    let request = request_value(args);
+    let path = get_string(request, "path")?;
+    let hint = file_connection(state, request, &path).await?;
+    let metadata =
+        path_operations::metadata(&state.filesystem_service, &path, hint.as_deref()).await?;
+    serde_json::to_value(metadata).map_err(|e| format!("Failed to serialize file metadata: {e}"))
+}
+
+pub(crate) async fn get_file_editor_sync_hash(
+    state: &PeerHostState,
+    args: &Value,
+) -> Result<Value, String> {
+    let request = request_value(args);
+    let path = get_string(request, "path")?;
+    let hint = file_connection(state, request, &path).await?;
+    let (hash, is_remote) =
+        path_operations::editor_sync_hash(&state.filesystem_service, &path, hint.as_deref())
+            .await?;
+    Ok(if is_remote {
+        json!({ "path": path, "hash": hash, "is_remote": true })
+    } else {
+        json!({ "path": path, "hash": hash })
+    })
+}
+
+pub(crate) async fn create_file(state: &PeerHostState, args: &Value) -> Result<Value, String> {
+    let request = request_value(args);
+    let path = get_string(request, "path")?;
+    let hint = file_connection(state, request, &path).await?;
+    path_operations::create_empty_file(&state.filesystem_service, &path, hint.as_deref()).await?;
+    Ok(Value::Null)
+}
+
+/// Resolve a watch request to a host-local path, mirroring the Desktop Host:
+/// a workspace ID is the current ingress, and remote workspaces are refused
+/// because the watcher only observes this host's filesystem.
+async fn watch_target(
+    state: &PeerHostState,
+    request: &Value,
+) -> Result<(String, Option<bool>), String> {
+    if let Some(workspace_id) = optional_string(request, "workspaceId") {
+        let record = state
+            .workspace_service
+            .require_workspace(&workspace_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        if record.workspace_kind == WorkspaceKind::Remote {
+            return Err("Filesystem watching is not available for remote workspaces".into());
+        }
+        return Ok((
+            get_string(request, "path")?,
+            optional_bool(request, "recursive"),
+        ));
+    }
+    // Temporary 1.0.0 wire ingress; current callers must send the ID request.
+    let path = get_string(request, "path")?;
+    if state
+        .workspace_service
+        .upgrade_legacy_file_connection(&path, None, None)
+        .await
+        .map_err(|e| e.to_string())?
+        .is_some()
+    {
+        return Err("Filesystem watching is not available for remote workspaces".into());
+    }
+    Ok((path, optional_bool(request, "recursive")))
+}
+
+pub(crate) async fn start_file_watch(state: &PeerHostState, args: &Value) -> Result<Value, String> {
+    let (path, recursive) = watch_target(state, request_value(args)).await?;
+    openbitfun_core::service::start_file_watch(path, recursive).await?;
+    Ok(Value::Null)
+}
+
+pub(crate) async fn stop_file_watch(state: &PeerHostState, args: &Value) -> Result<Value, String> {
+    let (path, _) = watch_target(state, request_value(args)).await?;
+    openbitfun_core::service::stop_file_watch(path).await?;
+    Ok(Value::Null)
+}
+
+pub(crate) async fn get_watched_paths() -> Result<Value, String> {
+    let paths = openbitfun_core::service::get_watched_paths().await?;
+    Ok(json!(paths))
 }
 
 pub(crate) async fn check_path_exists(

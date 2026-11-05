@@ -25,7 +25,7 @@ function boundaryToolItem(
   }
 
   if (edge === 'first' && hasModelRoundLeadingControls(item.data)) return undefined;
-  if (edge === 'last' && (item.canvasArtifactItems?.length || (item.isLastRound && item.isTurnComplete))) {
+  if (edge === 'last' && item.isLastRound && item.isTurnComplete) {
     return undefined;
   }
 

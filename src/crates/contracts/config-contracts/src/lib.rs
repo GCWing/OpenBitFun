@@ -5,6 +5,7 @@ pub mod channel_routing;
 pub mod conversion;
 pub mod model_pool;
 pub mod normalization;
+pub mod project_defaults;
 pub mod protected_account_models;
 mod types;
 pub use types::*;

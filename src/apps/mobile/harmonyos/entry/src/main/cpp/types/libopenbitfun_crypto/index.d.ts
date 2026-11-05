@@ -1,4 +1,6 @@
 declare const openbitfunCrypto: {
+  encodeRelayMessage(plain: Uint8Array): Promise<Uint8Array>;
+  decodeRelayMessage(bytes: Uint8Array): Promise<Uint8Array>;
   argon2idRaw(
     password: Uint8Array,
     salt: Uint8Array,

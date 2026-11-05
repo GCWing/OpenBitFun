@@ -1,7 +1,7 @@
 {
   "name": "OpenBitFun",
   "private": true,
-  "version": "1.0.8",
+  "version": "1.0.9",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -19,8 +19,6 @@
     "generate-startup-appearance-bootstrap": "node scripts/generate-startup-appearance-bootstrap.mjs",
     "miniapp:appearance:generate": "node scripts/generate-miniapp-appearance-contract.mjs",
     "miniapp:appearance:check": "node scripts/generate-miniapp-appearance-contract.mjs --check",
-    "canvas:sdk:generate": "node scripts/generate-canvas-sdk-contract.mjs",
-    "canvas:sdk:check": "node scripts/generate-canvas-sdk-contract.mjs --check",
     "generate-all": "pnpm run generate-version && pnpm run generate-startup-appearance-bootstrap",
     "postinstall": "pnpm run copy-assets",
     "dev": "node scripts/dev.cjs web",
@@ -32,7 +30,7 @@
     "preview:mobile-web": "pnpm --dir src/mobile-web preview",
     "lint:web": "pnpm --dir src/web-ui run lint",
     "lint:web:fix": "pnpm --dir src/web-ui run lint:fix",
-    "check:web": "pnpm run canvas:sdk:check && pnpm run check:web:appearance && pnpm run type-check:web",
+    "check:web": "pnpm run check:web:appearance && pnpm run type-check:web",
     "check:web:appearance": "pnpm run typography:audit:test && pnpm run typography:audit && pnpm run appearance:contract-audit && pnpm run theme:color-audit:test && pnpm run theme:color-audit:all && pnpm run theme:visual-contract",
     "type-check:mobile-web": "pnpm --dir src/mobile-web run type-check",
     "i18n:generate": "node scripts/generate-i18n-contract.mjs",

@@ -644,7 +644,7 @@ pub fn permission_project_id_for_workspace_identity(
 
     Ok(
         openbitfun_services_core::workspace_identity::remote_workspace_stable_id(
-            &identity.hostname,
+            &identity.identity_host(),
             identity.logical_workspace_path(),
         ),
     )
@@ -735,6 +735,7 @@ fn native_hook_session_facts<'a>(
             .is_some_and(|workspace| workspace.is_remote()),
         model: &context.primary_model_facts.model_id,
         bypass_permissions: options.auto_approve_ask,
+        workspace_services: context.workspace_services.as_ref(),
     }
 }
 
@@ -4285,6 +4286,7 @@ mod tests {
             attempt_index: None,
             agent_type: "agent".to_string(),
             workspace: None,
+            model_client: None,
             primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
             context_vars: HashMap::new(),
             subagent_parent_info: None,

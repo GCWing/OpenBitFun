@@ -17,7 +17,7 @@ import { Encoding } from '../../services/Encoding';
 import { RemoteLogger } from '../../services/RemoteLogger';
 import { RemoteSessionManager } from '../../services/RemoteSessionManager';
 import { WatchProvisionOutcome } from '../../services/WatchProvisionController';
-import { RemotePermissionMode } from '../../model/RemoteModels';
+import { RemoteDefaultModels, RemoteModelCatalog, RemotePermissionMode } from '../../model/RemoteModels';
 import { RemotePageState } from '../state/RemotePageState';
 
 export interface CloudAccountSettingsHooks {
@@ -478,6 +478,35 @@ export class SettingsController {
       throw new Error(RemoteI18n.t('remote.permissions.connectionRequired'));
     }
     return cloud.sessionManager.setPermissionMode(mode);
+  }
+
+  /**
+   * The connected desktop's own model catalog: no session id, so the read is
+   * device scope and carries the reconciled default models.
+   */
+  async getDeviceModelCatalog(): Promise<RemoteModelCatalog> {
+    const cloud = this.requireCloud();
+    if (!cloud.hooks.remoteAvailable()) {
+      throw new Error(RemoteI18n.t('status.remoteUnavailable'));
+    }
+    return cloud.sessionManager.getModelCatalog();
+  }
+
+  /**
+   * Writes the three phone-managed model slots as one object and answers with
+   * the desktop's reconciled values. `null` is a value: the fast model then
+   * follows the primary one and the others are left unconfigured.
+   */
+  async setDeviceModelDefaults(
+    primary: string | null,
+    fast: string | null,
+    imageUnderstanding: string | null
+  ): Promise<RemoteDefaultModels> {
+    const cloud = this.requireCloud();
+    if (!cloud.hooks.remoteAvailable()) {
+      throw new Error(RemoteI18n.t('status.remoteUnavailable'));
+    }
+    return cloud.sessionManager.setModelDefaults(primary, fast, imageUnderstanding);
   }
 
   /**

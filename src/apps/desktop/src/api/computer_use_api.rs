@@ -122,10 +122,25 @@ pub async fn computer_use_open_system_settings(
 }
 
 /// Resource state is owned by the executing Desktop, not a newly constructed host.
+#[derive(Debug, Deserialize)]
+pub struct ComputerUseControlStatusRequest {
+    pub generation: u64,
+    pub state: String,
+}
+
 #[tauri::command]
 pub async fn computer_use_control_status(
+    request: Option<ComputerUseControlStatusRequest>,
 ) -> Result<openbitfun_agent_tools::computer_use_control::ControlSnapshot, String> {
-    Ok(crate::computer_use::control_session::snapshot())
+    let mut snapshot = match request {
+        Some(request) => {
+            crate::computer_use::control_session::snapshot_after(request.generation, &request.state)
+                .await
+        }
+        None => crate::computer_use::control_session::snapshot(),
+    };
+    snapshot.capabilities.push("control-status-wait-v1".into());
+    Ok(snapshot)
 }
 #[derive(Debug, Deserialize)]
 pub struct ComputerUseControlRequest {

@@ -75,14 +75,6 @@ const DISABLE_CREATION: SkillPolicyRule = SkillPolicyRule {
     effect: PolicyEffect::Disable,
 };
 
-// Canvas is an optional artifact workflow. Keep its built-in skills available
-// for explicit user selection without making every conversation eligible for
-// implicit Canvas generation.
-const DISABLE_CANVAS: SkillPolicyRule = SkillPolicyRule {
-    selector: SkillSelector::Group(BuiltinSkillGroup::Canvas),
-    effect: PolicyEffect::Disable,
-};
-
 const DISABLE_DEBUGGING: SkillPolicyRule = SkillPolicyRule {
     selector: SkillSelector::Group(BuiltinSkillGroup::Debugging),
     effect: PolicyEffect::Disable,
@@ -143,7 +135,6 @@ const AGENTIC_POLICY: ModeSkillPolicy = ModeSkillPolicy {
         DISABLE_COMPUTER_USE,
         DISABLE_MINIAPP,
         DISABLE_CREATION,
-        DISABLE_CANVAS,
         ENABLE_GENERATE_IMAGE,
     ],
 };
@@ -156,19 +147,13 @@ const CLAW_POLICY: ModeSkillPolicy = ModeSkillPolicy {
         DISABLE_MINIAPP,
         DISABLE_CREATION,
         DISABLE_DEBUGGING,
-        DISABLE_CANVAS,
         ENABLE_GENERATE_IMAGE,
     ],
 };
 
 const CREATIVE_POLICY: ModeSkillPolicy = ModeSkillPolicy {
     builtin_default: PolicyEffect::Enable,
-    rules: &[
-        DISABLE_OFFICE,
-        DISABLE_COMPUTER_USE,
-        DISABLE_DEBUGGING,
-        DISABLE_CANVAS,
-    ],
+    rules: &[DISABLE_OFFICE, DISABLE_COMPUTER_USE, DISABLE_DEBUGGING],
 };
 
 const COWORK_POLICY: ModeSkillPolicy = ModeSkillPolicy {
@@ -304,35 +289,6 @@ mod tests {
                 "SwarmWorker has unexpected default exposure for {}",
                 spec.dir_name
             );
-        }
-    }
-
-    #[test]
-    fn canvas_skills_default_off_in_every_mode() {
-        for skill in [
-            "agent-eval-canvas",
-            "docs-canvas",
-            "openbitfun-canvas",
-            "pr-review-canvas",
-        ] {
-            for mode_id in [
-                "Standard",
-                "Standard",
-                "Claw",
-                "Creative",
-                "Cowork",
-                "ComputerUse",
-                "DeepResearch",
-                "Ultimate",
-                "SwarmWorker",
-                "SomeUnknownMode",
-            ] {
-                assert_eq!(
-                    resolve_builtin_default_enabled(skill, mode_id),
-                    Some(false),
-                    "Canvas skill {skill} must stay opt-in for mode {mode_id}"
-                );
-            }
         }
     }
 

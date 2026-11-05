@@ -20,7 +20,6 @@ import { useDebugInspector } from '@/infrastructure/debug/useDebugInspector';
 import { useI18n } from '@/infrastructure/i18n';
 import { scheduleDeferredStartupSystems } from './startup/deferredStartupSystems';
 import { shouldScheduleDeferredStartupSystems } from './startup/deferredStartupGate';
-import { STARTUP_OVERLAY_HIDDEN_EVENT } from './startup/startupSignals';
 import {
   getStartupOverlayElapsedMs,
   hideStartupOverlay,
@@ -279,7 +278,6 @@ function App() {
           // The completed handoff still proves the layout and workspace mounted;
           // do not leave product control and customization waiting for a paint.
           releaseInteractiveShellReadyIfReady('startup-overlay-hidden', false);
-          window.dispatchEvent(new CustomEvent(STARTUP_OVERLAY_HIDDEN_EVENT));
         }
       });
     }, scheduledDelayMs);
@@ -778,7 +776,7 @@ function App() {
     let disposed = false;
     let unlisten: (() => void) | null = null;
     void import('@tauri-apps/api/event')
-      .then(({ listen }) => listen<{ sessionId?: string }>(
+      .then(({ listen }) => listen<{ sessionId?: string; surfaceId?: string; workspaceId?: string }>(
         'agent-companion://open-session',
         async event => {
           if (disposed) return;
@@ -786,7 +784,11 @@ function App() {
           if (!sessionId) return;
 
           const { openAgentCompanionSession } = await import('./services/openAgentCompanionSession');
-          await openAgentCompanionSession(sessionId);
+          try {
+            await openAgentCompanionSession(sessionId, event.payload?.surfaceId, event.payload?.workspaceId);
+          } catch (error) {
+            log.warn('Failed to open Agent companion session', { sessionId, error });
+          }
 
           try {
             await api.invoke('show_main_window');

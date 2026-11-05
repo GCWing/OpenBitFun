@@ -68,7 +68,7 @@ Agent Runtime API 的逻辑归属与物理部署分离：相同归属模块可�
 私有 SDK Host 或目标机器 Runtime 中。任何 Rust 部署都只管理自己进程树内的服务与 Node/Bun Plugin Host；不能因为多个
 GUI/TUI/Remote Client 连接就复制 Runtime 状态模块，或按 Client/Workspace 创建 Plugin Host。
 
-Rust Runtime SDK 以 `AGENT_RUNTIME_SDK_API_VERSION` 标记兼容边界。当前接口版本为 v10 preview：
+Rust Runtime SDK 以 `AGENT_RUNTIME_SDK_API_VERSION` 标记兼容边界。当前接口版本为 v11 preview：
 小版本更新允许增加可选 builder hook、有默认实现的端口方法或注册表查询能力，但不得向外部可用
 Rust 结构体字面量（struct literal）构造的 DTO 直接增加字段，也不得改变既有端口语义、错误分类、session / turn 标识含义或
 默认 feature 依赖。任何需要调用方改写现有嵌入代码的变更，必须提升接口版本并提供兼容迁移路径。
@@ -100,6 +100,12 @@ Product Assembly 选择并在 `agent-workflows` / 现有产品 owner 中执行�
 
 v10 让 Turn settlement 返回 Runtime 确认的终态、最终回答和结束原因。现有 Rust embedder 需要接收
 `AgentTurnSettlementResult`；CLI 和 App Server adapter 可在不扩展各自 wire contract 的情况下丢弃返回值。
+
+v11 移除按模型名称和 Agent 类型选择的上下文策略，以及父子任务关系对策略的覆盖。
+Rust 调用方删除 `ModelCapabilityProfile`、`ContextProfile`、`ContextProfilePolicy` 和
+`context_profile` 模块的引用。普通子代理并发直接使用 `ai.subagent_max_concurrency`；
+重复失败检测直接使用现有执行配置；压缩和报告统一使用每类 8 条的结构化证据容量上限。
+持久化数据和 wire payload 无需迁移。
 
 只要外部调用方仍必须导入 `openbitfun-core`、启用 `product-full`、持有具体服务管理器、读取产品命令
 注册表、理解 ACP/内部端口或依赖全局可变状态，公开 SDK 发布边界就不成立。公开 SDK 的完整
@@ -444,7 +450,7 @@ impl AgentRuntime {
 该 Rust 接口是内部产品入口复用的当前形态，不是公开 Python/TypeScript SDK 的目标 API。它必须只接收
 已组装的类型化部件，不负责创建
 文件系统、终端、MCP、AI 客户端、Remote 提供方或产品命令。
-当前 v10 preview 接口以 message / attachment / metadata、默认标准执行目标和活动 Turn 文本 steer 作为最小输入形态；若把
+当前 v11 preview 接口以 message / attachment / metadata、默认标准执行目标和活动 Turn 文本 steer 作为最小输入形态；若把
 model-round cancellation token、结构化 AgentInput 或更复杂的事件游标纳入公开 SDK，
 必须分别评审 Rust Runtime SDK、SDK Host protocol 和公开 SDK API 的版本，并保留旧路径兼容。
 
@@ -698,7 +704,7 @@ agent-workflows
 - 当前没有第二个可执行 provider，因此不建立通用 workflow trait、registry、descriptor 或 step engine。
 - 工作流策略保持无 I/O；需要编排 Runtime / Tool 时，只增加当前生产调用链所需的窄接口。
 - 产品命令只映射到工作流能力，不把命令展示逻辑下沉。
-- MiniApp、Canvas 是产品产物与呈现能力，不进入该 crate。
+- MiniApp、GenUI 是产品产物与呈现能力，不进入该 crate。
 - DeepReview 仍有兼容逻辑位于 `agent-runtime` 与 `assembly/core`；只有真实调用方切换、行为等价测试通过且旧写入方删除后，才算迁移完成。
 
 ## 4. 产品组装与扩展

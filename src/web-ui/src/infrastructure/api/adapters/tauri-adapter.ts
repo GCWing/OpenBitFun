@@ -125,7 +125,54 @@ function registerSharedTauriEventListener(
   return registration;
 }
 
+/** Structured external-source operation errors travel as the serialized
+ * `ExternalSourceOperationError` contract ({code, detail, retryable}). */
+interface ExternalSourceOperationErrorShape {
+  code?: unknown;
+  detail?: unknown;
+  retryable?: unknown;
+}
+
+function parseExternalSourceOperationError(error: unknown): ExternalSourceOperationErrorShape | null {
+  const candidates = [error, (error as { details?: unknown } | null)?.details];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const record = candidate as Record<string, unknown>;
+    if (typeof record.code === 'string' && typeof record.detail === 'string') {
+      return candidate as ExternalSourceOperationErrorShape;
+    }
+    // A serialized payload inside `message` (Tauri rejects as `Error`) or
+    // `error`/`details` wrappers from an older host also counts.
+    for (const key of ['message', 'error'] as const) {
+      const value = record[key];
+      if (typeof value !== 'string') continue;
+      try {
+        const nested: unknown = JSON.parse(value);
+        if (nested && typeof nested === 'object'
+          && typeof (nested as Record<string, unknown>).code === 'string'
+          && typeof (nested as Record<string, unknown>).detail === 'string') {
+          return nested as ExternalSourceOperationErrorShape;
+        }
+      } catch {
+        // Plain prose stays classified by the caller below.
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * A host that by design cannot serve a request is not a product failure.
+ * Remote workspaces without the external compatibility service answer
+ * `get_external_source_*` with structured `host_unavailable`; callers already
+ * degrade quietly, so the transport must not log the poll as an ERROR.
+ */
 export function isExpectedTauriRequestError(action: string, params: unknown, error: unknown): boolean {
+  if (action.startsWith('get_external_source_')) {
+    const parsed = parseExternalSourceOperationError(error);
+    if (parsed?.code === 'host_unavailable') return true;
+  }
+
   if (action !== 'get_config') {
     return false;
   }
@@ -201,7 +248,9 @@ export class TauriTransportAdapter implements ITransportAdapter {
     }
 
     const adapterInitStartedAt = nowMs();
-    await this.ensureInitialized();
+    // Once initialized, dispatch immediately so host work can overlap the
+    // remaining React commit instead of waiting for another microtask.
+    if (!this.invokeFn) await this.ensureInitialized();
     if (timing) {
       timing.adapterInitDurationMs = elapsedMs(adapterInitStartedAt);
     }

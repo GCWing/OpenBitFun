@@ -12,6 +12,7 @@ import { FileVisibilityPreview } from './FileVisibilityPreview';
 import { ComposerOverflowPreview } from './ComposerOverflowPreview';
 import { CommandPalettePreview } from './CommandPalettePreview';
 import { ImmersiveBottomPreview } from './ImmersiveBottomPreview';
+import { DeviceModelDefaultsPreview } from './DeviceModelDefaultsPreview';
 import { WelcomeHome } from '../components/WelcomeHome';
 import { InteractionMailboxPreview } from './InteractionMailboxPreview';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
@@ -59,7 +60,8 @@ struct MobileDesignGallery {
       CatalogRefreshPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('model-role-selector')) {
       ModelRoleSelectorPreview()
-    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('subagent-process')) {
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('subagent-process') ||
+      (AppStorage.get<string>('scenarioId') || '').startsWith('subagent-swarm')) {
       SubagentProcessPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('file-visibility')) {
       FileVisibilityPreview()
@@ -71,6 +73,8 @@ struct MobileDesignGallery {
       ImmersiveBottomPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('device-selector')) {
       DeviceSelectorPreview()
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('device-model')) {
+      DeviceModelDefaultsPreview()
     } else if (AppStorage.get<string>('scenarioId') === 'welcome-home') {
       WelcomeHome()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('copy-selection')) {

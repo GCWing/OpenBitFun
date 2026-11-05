@@ -2,6 +2,8 @@
 //! Socket.IO owns framing, heartbeat and RPC acks. This owner supplies account
 //! epochs, bounded delivery, method registration and reconnect policy.
 use super::realtime_client::{Incoming, JsonAck, RealtimeConnection, RealtimeSender};
+pub use super::routing_lease::DeviceRoutingPriority;
+use super::routing_lease::{RoutingLease, RoutingLeasePaths};
 use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -13,7 +15,18 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 
+pub(super) fn device_envelope(data: &str, nonce: &str, offer_zstd: bool) -> serde_json::Value {
+    let mut envelope = json!({"encrypted_data": data, "nonce": nonce});
+    if offer_zstd {
+        envelope["accept_encoding"] = super::message_encoding::ZSTD_ENCODING.into();
+    }
+    envelope
+}
+
 pub const RELAY_INBOUND_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long a primary host waits for another primary host on this device to
+/// release routing before its first connection fails.
+const PRIMARY_ROUTING_WAIT: Duration = Duration::from_secs(10);
 
 pub fn ensure_rustls_crypto_provider() {
     openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
@@ -70,6 +83,22 @@ impl DevicePresenceEntry {
         self.compatible.unwrap_or(true)
     }
 }
+/// An RPC caller and the machine serving RPC on the same device can run
+/// different builds. Only machine events and RPC replies identify the host.
+#[derive(Debug, Clone, Copy)]
+pub enum PeerEncodingOffer {
+    Host(bool),
+    Controller(bool),
+}
+
+impl PeerEncodingOffer {
+    pub fn accepts_zstd(self) -> bool {
+        match self {
+            Self::Host(accepted) | Self::Controller(accepted) => accepted,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum RelayEvent {
     Connected,
@@ -88,6 +117,7 @@ pub enum RelayEvent {
     DeviceMessageReceived {
         source_device_id: String,
         correlation_id: String,
+        encoding_offer: PeerEncodingOffer,
         encrypted_data: String,
         nonce: String,
     },
@@ -101,6 +131,14 @@ pub enum ConnectionState {
     Connecting,
     Connected,
     Reconnecting,
+    /// Another OpenBitFun host on this machine serves the same device on this
+    /// Relay. The client connects by itself once that host releases routing.
+    Standby,
+}
+enum RoutingTurn {
+    Proceed,
+    Unarbitrated,
+    Exit,
 }
 struct Reply {
     id: AckId<JsonAck>,
@@ -131,21 +169,41 @@ impl Drop for EpochCleanup {
     }
 }
 pub struct RelayClient {
+    account_session: Option<super::account::AccountSession>,
     owner: Arc<Mutex<Owner>>,
     events: mpsc::Sender<RelayEvent>,
     machine: bool,
+    routing: Option<DeviceRoutingPriority>,
+    #[cfg(test)]
+    routing_dir: Option<std::path::PathBuf>,
 }
 impl RelayClient {
+    /// Machine-scoped client without host-local arbitration.
     pub fn new() -> (Self, mpsc::Receiver<RelayEvent>) {
-        Self::with_role(true)
+        Self::with_role(true, None)
+    }
+    /// Machine-scoped client for a product host that serves this device. Hosts
+    /// sharing the device identity take turns by `priority` instead of
+    /// replacing each other's socket on the Relay.
+    pub fn new_device_host(priority: DeviceRoutingPriority) -> (Self, mpsc::Receiver<RelayEvent>) {
+        Self::with_role(true, Some(priority))
     }
     pub fn new_controller() -> (Self, mpsc::Receiver<RelayEvent>) {
-        Self::with_role(false)
+        Self::with_role(false, None)
     }
-    fn with_role(machine: bool) -> (Self, mpsc::Receiver<RelayEvent>) {
+    pub fn with_account_session(mut self, session: &super::account::AccountSession) -> Self {
+        self.account_session = Some(session.for_peer_messages());
+        self
+    }
+
+    fn with_role(
+        machine: bool,
+        routing: Option<DeviceRoutingPriority>,
+    ) -> (Self, mpsc::Receiver<RelayEvent>) {
         let (events, receiver) = mpsc::channel(128);
         (
             Self {
+                account_session: None,
                 owner: Arc::new(Mutex::new(Owner {
                     epoch: 0,
                     state: ConnectionState::Disconnected,
@@ -156,9 +214,28 @@ impl RelayClient {
                 })),
                 events,
                 machine,
+                routing,
+                #[cfg(test)]
+                routing_dir: None,
             },
             receiver,
         )
+    }
+    fn routing_lease(&self, url: &str) -> Option<RoutingLease> {
+        let priority = self.routing?;
+        #[cfg(test)]
+        if let Some(dir) = &self.routing_dir {
+            return Some(RoutingLease::new(RoutingLeasePaths::in_dir(
+                dir, url, priority,
+            )));
+        }
+        match RoutingLeasePaths::for_relay(url, priority) {
+            Ok(paths) => Some(RoutingLease::new(paths)),
+            Err(error) => {
+                log::warn!("Relay routing arbitration unavailable; connecting without it: {error}");
+                None
+            }
+        }
     }
     pub async fn connection_state(&self) -> ConnectionState {
         self.owner.lock().unwrap().state.clone()
@@ -177,7 +254,7 @@ impl RelayClient {
     }
     pub async fn connect_authenticated(&self, token: &str, _device_name: &str) -> Result<()> {
         let (ready, receive) = oneshot::channel();
-        let epoch = {
+        let (epoch, url, lease) = {
             let mut owner = self.owner.lock().unwrap();
             let url = owner
                 .url
@@ -190,6 +267,20 @@ impl RelayClient {
             let epoch = owner.epoch;
             owner.sender = None;
             owner.replies.clear();
+            let lease = self.routing_lease(&url);
+            (epoch, url, lease)
+        };
+        // Reset the previous connection before either independent cold-start
+        // dependency begins. The account can fetch a peer key while this
+        // socket authenticates, and that fresh key survives initial AuthOk.
+        if let Some(session) = &self.account_session {
+            session.clear_peer_keys().await;
+        }
+        {
+            let mut owner = self.owner.lock().unwrap();
+            if owner.epoch != epoch {
+                return Err(anyhow!("Relay authentication superseded"));
+            }
             owner.task = Some(tokio::spawn(Self::run(
                 self.owner.clone(),
                 self.events.clone(),
@@ -197,10 +288,11 @@ impl RelayClient {
                 url,
                 token.to_owned(),
                 self.machine,
+                self.account_session.clone(),
+                lease,
                 ready,
             )));
-            epoch
-        };
+        }
         match tokio::time::timeout(Duration::from_secs(20), receive).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(anyhow!("Relay authentication cancelled")),
@@ -232,6 +324,9 @@ impl RelayClient {
         url: String,
         token: String,
         machine: bool,
+        account_session: Option<super::account::AccountSession>,
+        // Moved into this task: dropping it releases routing to the next host.
+        mut lease: Option<RoutingLease>,
         ready: oneshot::Sender<Result<()>>,
     ) {
         // Every exit (including abort/panic) relinquishes this epoch's sender
@@ -242,11 +337,28 @@ impl RelayClient {
         };
         let mut ready = Some(ready);
         let mut delay = Duration::from_secs(1);
+        let mut connected_once = false;
         loop {
+            if let Some(active) = lease.as_mut() {
+                match Self::wait_for_routing_turn(&owner, epoch, active, &mut ready).await {
+                    RoutingTurn::Proceed => {}
+                    RoutingTurn::Unarbitrated => lease = None,
+                    RoutingTurn::Exit => return,
+                }
+            }
             let connection = RealtimeConnection::connect(&url, &token, machine).await;
             match connection {
                 Ok(mut connection) => {
-                    let first = ready.is_some();
+                    // Invalidate before publishing the socket. Clearing in an
+                    // asynchronous AuthOk listener can discard the first RPC's
+                    // negotiated response after a cold connection succeeds.
+                    if connected_once {
+                        if let Some(session) = &account_session {
+                            session.clear_peer_keys().await;
+                        }
+                    }
+                    let first = !connected_once;
+                    connected_once = true;
                     {
                         let mut state = owner.lock().unwrap();
                         if state.epoch != epoch {
@@ -284,6 +396,7 @@ impl RelayClient {
                         let _ = ready.send(Ok(()));
                     }
                     delay = Duration::from_secs(1);
+                    let mut online = super::message_encoding::OnlinePeers::default();
                     loop {
                         let incoming = match connection.receive().await {
                             Ok(incoming) => incoming,
@@ -294,6 +407,16 @@ impl RelayClient {
                                 break;
                             }
                         };
+                        if let (Some(session), Incoming::Ephemeral(event)) =
+                            (&account_session, &incoming)
+                        {
+                            if event.payload.0["type"] == "device-presence" {
+                                session.clear_peer_keys().await;
+                                if machine {
+                                    online.announce(session, &url, &connection, &event.payload.0);
+                                }
+                            }
+                        }
                         if !Self::route(&owner, &events, epoch, incoming).await {
                             log::info!("Relay event receiver closed; stopping reconnect loop");
                             connection.close().await;
@@ -326,6 +449,72 @@ impl RelayClient {
             let jitter = rand::random::<u32>() as u64 % (delay.as_millis() as u64 + 1);
             tokio::time::sleep(delay / 2 + Duration::from_millis(jitter)).await;
             delay = (delay * 2).min(Duration::from_secs(5));
+        }
+    }
+    /// Hold back (re)connection while a host of higher or equal priority on
+    /// this machine serves the device; connecting anyway would only replace its
+    /// socket on the Relay and be replaced in turn.
+    async fn wait_for_routing_turn(
+        owner: &Arc<Mutex<Owner>>,
+        epoch: u64,
+        lease: &mut RoutingLease,
+        ready: &mut Option<oneshot::Sender<Result<()>>>,
+    ) -> RoutingTurn {
+        let started = Instant::now();
+        let mut standing_by = false;
+        loop {
+            match lease.may_connect() {
+                Ok(true) => {
+                    if standing_by {
+                        log::info!("Relay routing released by another OpenBitFun host; connecting");
+                    }
+                    return RoutingTurn::Proceed;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    log::warn!("Relay routing arbitration failed; connecting without it: {error}");
+                    return RoutingTurn::Unarbitrated;
+                }
+            }
+            let primary = lease.priority() == DeviceRoutingPriority::Primary;
+            if primary && ready.is_some() {
+                // An interactive host reports contention instead of hanging;
+                // the brief wait covers a restarting process and the momentary
+                // probe of a standing-by secondary host.
+                if started.elapsed() >= PRIMARY_ROUTING_WAIT {
+                    if let Some(ready) = ready.take() {
+                        let _ = ready.send(Err(anyhow!(
+                            "Another OpenBitFun Desktop on this machine already serves this device on the Relay"
+                        )));
+                    }
+                    return RoutingTurn::Exit;
+                }
+            } else if !standing_by {
+                standing_by = true;
+                log::info!(
+                    "Another OpenBitFun host on this machine serves this device on the Relay; standing by until it exits"
+                );
+                {
+                    let mut state = owner.lock().unwrap();
+                    if state.epoch != epoch {
+                        return RoutingTurn::Exit;
+                    }
+                    state.state = ConnectionState::Standby;
+                }
+                // A background host is started successfully; it takes over later.
+                if let Some(ready) = ready.take() {
+                    let _ = ready.send(Ok(()));
+                }
+            }
+            if owner.lock().unwrap().epoch != epoch {
+                return RoutingTurn::Exit;
+            }
+            let poll = if primary {
+                Duration::from_millis(200)
+            } else {
+                Duration::from_secs(1)
+            };
+            tokio::time::sleep(poll).await;
         }
     }
     async fn route(
@@ -371,6 +560,10 @@ impl RelayClient {
                     .send(RelayEvent::DeviceMessageReceived {
                         source_device_id: source.into(),
                         correlation_id: correlation,
+                        encoding_offer: PeerEncodingOffer::Controller(
+                            value["params"]["accept_encoding"]
+                                == super::message_encoding::ZSTD_ENCODING,
+                        ),
                         encrypted_data: data.into(),
                         nonce: nonce.into(),
                     })
@@ -399,6 +592,10 @@ impl RelayClient {
                         .send(RelayEvent::DeviceMessageReceived {
                             source_device_id: source.into(),
                             correlation_id: String::new(),
+                            encoding_offer: PeerEncodingOffer::Host(
+                                value["params"]["accept_encoding"]
+                                    == super::message_encoding::ZSTD_ENCODING,
+                            ),
                             encrypted_data: data.into(),
                             nonce: nonce.into(),
                         })
@@ -419,6 +616,38 @@ impl RelayClient {
         encrypted_data: &str,
         nonce: &str,
     ) -> Result<(String, String)> {
+        self.request_device_with_timeout(
+            target,
+            encrypted_data,
+            nonce,
+            super::realtime_client::DEFAULT_RPC_TIMEOUT,
+        )
+        .await
+    }
+    /// Like [`Self::request_device`], with an explicit end-to-end deadline
+    /// carried to the target as the relay RPC `timeoutMs`.
+    pub async fn request_device_with_timeout(
+        &self,
+        target: &str,
+        encrypted_data: &str,
+        nonce: &str,
+        timeout: Duration,
+    ) -> Result<(String, String)> {
+        let (data, nonce, _) = self
+            .request_device_message(target, encrypted_data, nonce, timeout, false, || Ok(()))
+            .await?;
+        Ok((data, nonce))
+    }
+
+    pub(super) async fn request_device_message(
+        &self,
+        target: &str,
+        encrypted_data: &str,
+        nonce: &str,
+        timeout: Duration,
+        offer_zstd: bool,
+        before_send: impl Fn() -> Result<()>,
+    ) -> Result<(String, String, bool)> {
         let sender = self
             .owner
             .lock()
@@ -427,9 +656,11 @@ impl RelayClient {
             .clone()
             .ok_or_else(|| anyhow!("Relay is disconnected; request was not submitted"))?;
         let result = sender
-            .call(
+            .call_with_timeout_guarded(
                 target,
-                json!({"encrypted_data":encrypted_data,"nonce":nonce}),
+                device_envelope(encrypted_data, nonce, offer_zstd),
+                timeout,
+                before_send,
             )
             .await?;
         let data = result["encrypted_data"]
@@ -438,7 +669,11 @@ impl RelayClient {
         let nonce = result["nonce"]
             .as_str()
             .ok_or_else(|| anyhow!("RPC response missing nonce"))?;
-        Ok((data.into(), nonce.into()))
+        Ok((
+            data.into(),
+            nonce.into(),
+            result["accept_encoding"] == super::message_encoding::ZSTD_ENCODING,
+        ))
     }
     pub async fn send_device_message(
         &self,
@@ -447,6 +682,19 @@ impl RelayClient {
         encrypted_data: &str,
         nonce: &str,
     ) -> Result<()> {
+        self.send_device_message_guarded(target, correlation, encrypted_data, nonce, || Ok(()))
+            .await
+    }
+
+    pub async fn send_device_message_guarded(
+        &self,
+        target: &str,
+        correlation: &str,
+        encrypted_data: &str,
+        nonce: &str,
+        before_send: impl Fn() -> Result<()>,
+    ) -> Result<()> {
+        before_send()?;
         let (sender, reply) = {
             let mut state = self.owner.lock().unwrap();
             let sender = state
@@ -455,26 +703,19 @@ impl RelayClient {
                 .ok_or_else(|| anyhow!("Relay is disconnected"))?;
             (sender, state.replies.remove(correlation))
         };
+        // Opaque callers may provide their own decryption path. Only the
+        // account host that installed the codec advertises it to a peer.
+        let envelope = device_envelope(encrypted_data, nonce, self.account_session.is_some());
         if let Some(reply) = reply {
             if reply.source != target || reply.deadline <= Instant::now() {
                 bail!("RPC response owner expired");
             }
-            sender
-                .respond(
-                    reply.id,
-                    json!({"encrypted_data":encrypted_data,"nonce":nonce}),
-                )
-                .await
+            sender.respond(reply.id, envelope).await
         } else {
             if correlation.starts_with("rpc-") {
                 bail!("RPC acknowledgement is no longer pending");
             }
-            sender
-                .event(
-                    target,
-                    json!({"encrypted_data":encrypted_data,"nonce":nonce}),
-                )
-                .await
+            sender.event(target, envelope).await
         }
     }
     pub async fn disconnect(&self) {
@@ -576,6 +817,76 @@ mod tests {
         .unwrap();
         assert_eq!(aliased.device_client_version.as_deref(), Some("1.0.1"));
         assert_eq!(aliased.device_client_protocol, Some(2));
+    }
+
+    fn arbitrated_client(
+        priority: DeviceRoutingPriority,
+        dir: &std::path::Path,
+    ) -> (RelayClient, mpsc::Receiver<RelayEvent>) {
+        let (mut client, events) = RelayClient::new_device_host(priority);
+        client.routing_dir = Some(dir.to_path_buf());
+        (client, events)
+    }
+
+    #[tokio::test]
+    async fn secondary_host_stands_by_until_the_primary_host_exits() {
+        let dir = tempfile::tempdir().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let mut desktop = RoutingLease::new(RoutingLeasePaths::in_dir(
+            dir.path(),
+            &url,
+            DeviceRoutingPriority::Primary,
+        ));
+        assert!(desktop.may_connect().unwrap());
+
+        let (client, _events) = arbitrated_client(DeviceRoutingPriority::Secondary, dir.path());
+        client.connect(&url).await.unwrap();
+        // A background host starts successfully without touching the Relay,
+        // where it would only replace the primary host's socket.
+        client
+            .connect_authenticated("test-token", "Host")
+            .await
+            .unwrap();
+        assert_eq!(client.connection_state().await, ConnectionState::Standby);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(1500), listener.accept())
+                .await
+                .is_err()
+        );
+
+        drop(desktop);
+        tokio::time::timeout(Duration::from_secs(5), listener.accept())
+            .await
+            .expect("the secondary host must connect once the primary host exits")
+            .unwrap();
+        client.disconnect().await;
+    }
+
+    #[tokio::test]
+    async fn primary_host_connects_while_a_secondary_host_holds_routing() {
+        let dir = tempfile::tempdir().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let mut daemon = RoutingLease::new(RoutingLeasePaths::in_dir(
+            dir.path(),
+            &url,
+            DeviceRoutingPriority::Secondary,
+        ));
+        assert!(daemon.may_connect().unwrap());
+
+        let (client, _events) = arbitrated_client(DeviceRoutingPriority::Primary, dir.path());
+        client.connect(&url).await.unwrap();
+        let connecting = tokio::spawn(async move {
+            let _ = client.connect_authenticated("test-token", "Host").await;
+        });
+        tokio::time::timeout(Duration::from_secs(2), listener.accept())
+            .await
+            .expect("a primary host must not wait for a secondary host")
+            .unwrap();
+        // The secondary host yields once the Relay replaces its socket.
+        assert!(!daemon.may_connect().unwrap());
+        connecting.abort();
     }
 
     #[tokio::test]
@@ -730,6 +1041,10 @@ mod tests {
                             serde_json::from_str(&request[event_start..]).unwrap();
                         assert_eq!(event[0], "rpc-call");
                         assert_eq!(event[1]["method"], "peer:invoke");
+                        assert!(
+                            event[1]["params"].get("accept_encoding").is_none(),
+                            "an opaque RPC caller owns its decoder"
+                        );
                         assert_eq!(
                             event[1]["params"]["encrypted_data"],
                             if call == 0 { "request" } else { "pending" }

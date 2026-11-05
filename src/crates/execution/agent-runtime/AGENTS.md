@@ -162,6 +162,12 @@ so `autotests = false` cannot silently omit a new contract.
 
 ## Verification
 
+For evidence summary bounds and compression contract projection:
+
+```bash
+cargo test --locked -p openbitfun-agent-runtime --no-default-features --features agent-runtime --lib evidence_ledger
+```
+
 For next-input suggestion eligibility, surrounding whitespace trimming with
 message content preservation, and cancellation:
 

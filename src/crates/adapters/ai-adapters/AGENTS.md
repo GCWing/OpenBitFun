@@ -265,6 +265,23 @@ cargo test --locked -p openbitfun-ai-adapters --lib round_router
 facts. Core retains thresholds, model-slot selection, context lifecycle, traces,
 and fallback; the adapter must not depend on Core config or Agent sessions.
 
+The explicit `OpenAiRouterExtension` profile reads classifier probabilities from
+`router.probabilities.simple_type`, validates them against the content prediction,
+and sends only the supported non-streaming classification request. Legacy
+`OpenAiLogprobs` requests remain unchanged. Loopback extension services connect
+directly; other endpoints retain the configured proxy policy.
+
+For an opt-in live classifier check, set `ROUTER_EXTENSION_TEST_URL`,
+`ROUTER_EXTENSION_TEST_MODEL`, and `ROUTER_EXTENSION_TEST_SYSTEM_PROMPT` (the path
+to the complete classifier system prompt), then run:
+
+```bash
+cargo test --locked -p openbitfun-ai-adapters --lib live_router_extension_profile_returns_real_classifier_usage -- --ignored
+```
+
+The normal fixtures exercise loopback HTTP and proxy behavior, not a deployed
+provider, SSH, Peer Device Mode, relay, or detached dispatch.
+
 Local Router token counting (optional `local-tokenizer`, no model downloads):
 
 ```bash
@@ -359,3 +376,15 @@ and sends no inference request. This does not verify remote-host behavior.
 The image-generation filter uses synthetic HTTP credentials. The ignored Codex
 probe requires a real in-app subscription login and generates a billed image;
 run it explicitly only when live provider validation is needed.
+Set `PROBE_CODEX_IMAGE_OUTPUT_DIR` to save the generated image for visual review.
+Set `PROBE_CODEX_IMAGE_OUTPUT_FORMAT=gif` to request GIF output and
+`PROBE_CODEX_IMAGE_PROMPT` to describe the subject and looping motion. The probe
+checks the GIF signature; inspect frame count and timing in the saved file to
+confirm animation.
+The probe uses the production standalone subscription Images route and built-in
+image model. It does not discover or invoke a chat model. Saved legacy
+`/responses` endpoints are translated in memory to `/images/generations`.
+
+```bash
+cargo test --locked -p openbitfun-ai-adapters --features image-generation,subscription-auth --lib client::image_generation::tests::probe_codex_subscription_image_generation -- --ignored --exact --nocapture
+```

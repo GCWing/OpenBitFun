@@ -10,6 +10,7 @@ export interface DeviceEventEnvelope {
   sourceDeviceId: string;
   encrypted_data: string;
   nonce: string;
+  accept_encoding?: string;
 }
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'closed';
 export interface RealtimeOptions {
@@ -96,7 +97,7 @@ export class AccountRealtime {
     this.deviceEvents.add(listener);
     return () => { this.deviceEvents.delete(listener); };
   }
-  private async ready(): Promise<void> {
+  async ready(): Promise<void> {
     if (this.closed) throw new Error('Relay is closed');
     if (this.socket.connected && this.status === 'connected') return;
     await new Promise<void>((resolve, reject) => {
@@ -112,13 +113,17 @@ export class AccountRealtime {
       listener(this.status);
     });
   }
-  async call<T>(deviceId: string, encryptedParams: unknown, options: { timeoutMs?: number; beforeSend?: () => void } = {}): Promise<T> {
+  async call<T>(deviceId: string, encryptedParams: unknown, options: { timeoutMs?: number; beforeSend?: () => void; beforeSubmit?: () => void } = {}): Promise<T> {
     if (this.closed) throw new Error('Relay is closed; request was not submitted');
       await this.ready();
       options.beforeSend?.();
+      // Prepared bytes depend on the pre-encryption capability generation.
+      // This guard applies only before submission, never to a settled reply.
+      options.beforeSubmit?.();
       const epoch = this.epoch;
       const params = await this.payloads.uploadIfLarge(encryptedParams);
       options.beforeSend?.();
+      options.beforeSubmit?.();
       if (this.closed || this.epoch !== epoch || this.status !== 'connected') {
         throw new Error('Relay connection changed; request was not submitted');
       }
@@ -146,8 +151,9 @@ export class AccountRealtime {
 }
 
 function parseDeviceEvent(value: object): DeviceEventEnvelope | null {
-  const event = value as { sourceDeviceId?: unknown; params?: { encrypted_data?: unknown; nonce?: unknown } };
+  const event = value as { sourceDeviceId?: unknown; params?: { encrypted_data?: unknown; nonce?: unknown; accept_encoding?: unknown } };
   if (typeof event.sourceDeviceId !== 'string' || !event.params || typeof event.params !== 'object'
     || typeof event.params.encrypted_data !== 'string' || typeof event.params.nonce !== 'string') return null;
-  return { sourceDeviceId: event.sourceDeviceId, encrypted_data: event.params.encrypted_data, nonce: event.params.nonce };
+  return { sourceDeviceId: event.sourceDeviceId, encrypted_data: event.params.encrypted_data, nonce: event.params.nonce,
+    accept_encoding: typeof event.params.accept_encoding === 'string' ? event.params.accept_encoding : undefined };
 }

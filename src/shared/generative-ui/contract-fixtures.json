@@ -1,0 +1,101 @@
+[
+  {
+    "name": "valid-openui-source",
+    "valid": true,
+    "app": {
+      "schemaVersion": 2,
+      "id": "valid-openui",
+      "title": "Valid",
+      "template": "openbitfun.app",
+      "source": {
+        "kind": "openui-lang",
+        "content": "root = Col([])"
+      },
+      "state": {},
+      "libraryId": "openbitfun.composable.v1",
+      "libraryRevision": 2,
+      "designSpec": {
+        "id": "openbitfun.desktop.v1",
+        "revision": 1
+      }
+    }
+  },
+  {
+    "name": "valid-html-source",
+    "valid": true,
+    "app": {
+      "schemaVersion": 2,
+      "id": "valid-html",
+      "title": "Valid HTML",
+      "template": "openbitfun.app",
+      "source": {
+        "kind": "html-document",
+        "html": "<main>Valid</main>"
+      },
+      "state": {},
+      "libraryId": "openbitfun.composable.v1",
+      "libraryRevision": 2,
+      "designSpec": {
+        "id": "openbitfun.desktop.v1",
+        "revision": 1
+      }
+    }
+  },
+  {
+    "name": "missing-source",
+    "valid": false,
+    "app": {
+      "schemaVersion": 2,
+      "id": "missing-source",
+      "title": "Missing",
+      "template": "openbitfun.app",
+      "state": {},
+      "libraryId": "openbitfun.composable.v1",
+      "libraryRevision": 2,
+      "designSpec": {
+        "id": "openbitfun.desktop.v1",
+        "revision": 1
+      }
+    }
+  },
+  {
+    "name": "graph-fields-rejected",
+    "valid": false,
+    "app": {
+      "schemaVersion": 2,
+      "id": "graph",
+      "title": "Graph",
+      "template": "openbitfun.app",
+      "root": "root",
+      "nodes": [],
+      "state": {},
+      "libraryId": "openbitfun.composable.v1",
+      "libraryRevision": 2,
+      "designSpec": {
+        "id": "openbitfun.desktop.v1",
+        "revision": 1
+      }
+    }
+  },
+  {
+    "name": "empty-source-rejected",
+    "valid": false,
+    "app": {
+      "schemaVersion": 2,
+      "id": "empty",
+      "title": "Empty",
+      "template": "openbitfun.app",
+      "source": {
+        "kind": "openui-lang",
+        "content": "  "
+      },
+      "state": {},
+      "libraryId": "openbitfun.composable.v1",
+      "libraryRevision": 2,
+      "designSpec": {
+        "id": "openbitfun.desktop.v1",
+        "revision": 1
+      }
+    }
+  }
+]

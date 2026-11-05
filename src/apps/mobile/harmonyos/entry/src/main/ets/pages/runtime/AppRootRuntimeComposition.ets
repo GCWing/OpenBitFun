@@ -9,6 +9,7 @@ import { accountDeviceLink } from '../../services/AccountDeviceLink';
 import {
   ChatMessage,
   RemoteCommandCatalog,
+  RemoteDefaultModels,
   RemoteModelCatalog,
   RemotePermissionMode,
   RemoteQuestionAnswerPayload,
@@ -32,6 +33,7 @@ import { GitHubAccountProfileClient } from '../../services/GitHubAccountProfile'
 import { CloudAccountSessionStore } from '../../services/CloudAccountSessionStore';
 import { RemoteActivityLifecycleController } from '../../services/RemoteActivityLifecycleController';
 import { RemoteChatCache } from '../../services/RemoteChatCache';
+import { RemoteChatBranchCache } from '../../services/RemoteChatBranchCache';
 import { RemoteChatCommandController } from '../../services/RemoteChatCommandController';
 import { RemoteChatLocalRdbStore } from '../../services/RemoteChatLocalRdbStore';
 import { RemoteChatPollingLifecycleController, RemoteChatPollingSnapshot } from '../../services/RemoteChatPollingLifecycleController';
@@ -48,6 +50,7 @@ import { RemoteSessionController } from '../../services/RemoteSessionController'
 import { RemoteSessionListCache } from '../../services/RemoteSessionListCache';
 import { RemoteSessionListRdbStore } from '../../services/RemoteSessionListRdbStore';
 import { RemoteSessionManager } from '../../services/RemoteSessionManager';
+import { SubagentBranchCache } from '../../services/SubagentStreamCoordinator';
 import { RemoteWorkspaceRepository } from '../../services/RemoteWorkspaceRepository';
 import { RemoteWorkspaceCoordinator } from '../../services/RemoteWorkspaceCoordinator';
 import { RemoteConnectionCoordinator } from '../../services/RemoteConnectionCoordinator';
@@ -514,6 +517,7 @@ export abstract class AppRootRuntimeComposition {
         this.remoteChatPollingLifecycleController.nudge();
       }
     );
+  readonly remoteChatBranchCache: SubagentBranchCache = new RemoteChatBranchCache(this.remoteChatCache);
   readonly remoteChatPollingLifecycleController: RemoteChatPollingLifecycleController =
     new RemoteChatPollingLifecycleController(
       this.sessionManager,
@@ -565,7 +569,8 @@ export abstract class AppRootRuntimeComposition {
           // not prove disconnection, and the probe is generation-fenced.
           void this.remoteActivityViewModel.checkConnectionHealth();
         }
-      }
+      },
+      this.remoteChatBranchCache
     );
   readonly remoteModelController: RemoteModelController =
     new RemoteModelController(
@@ -858,6 +863,11 @@ export abstract class AppRootRuntimeComposition {
       buildPlan: async (path: string, name: string): Promise<void> => {
         await this.conversationController.buildRemotePlan(path, name);
       },
+      // Opening a delegation card is a request to watch that worker: the branch
+      // may have lost its stream to the follow cap, and the card has to fill in.
+      branchExpanded: (branchId: string): void => {
+        this.remoteChatPollingLifecycleController.ensureBranchSubscribed(branchId);
+      },
       commandPalette: async (request: CommandPaletteRequest): Promise<void> => {
         await this.conversationController.dispatchCommandPalette(request);
       },
@@ -994,6 +1004,14 @@ export abstract class AppRootRuntimeComposition {
       getPermissionMode: (): Promise<RemotePermissionMode> => this.settingsController.getRemotePermissionMode(),
       setPermissionMode: (mode: RemotePermissionMode): Promise<RemotePermissionMode> =>
         this.settingsController.setRemotePermissionMode(mode),
+      getDeviceModelCatalog: (): Promise<RemoteModelCatalog> =>
+        this.settingsController.getDeviceModelCatalog(),
+      setDeviceModelDefaults: (
+        primary: string | null,
+        fast: string | null,
+        imageUnderstanding: string | null
+      ): Promise<RemoteDefaultModels> =>
+        this.settingsController.setDeviceModelDefaults(primary, fast, imageUnderstanding),
       setLanguage: async (language: string): Promise<void> => {
         await this.localeController.setLanguage(language);
       }

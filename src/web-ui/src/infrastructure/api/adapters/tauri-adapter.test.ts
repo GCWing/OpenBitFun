@@ -52,6 +52,31 @@ describe('Tauri adapter expected errors', () => {
     )).toBe(false);
   });
 
+  it('classifies a structured host_unavailable external-source answer as expected', () => {
+    expect(isExpectedTauriRequestError(
+      'get_external_source_control_snapshot',
+      { request: { workspaceId: 'ws-1', forceRefresh: false } },
+      new Error(JSON.stringify({
+        code: 'host_unavailable',
+        detail: 'The remote workspace is not running the external compatibility service',
+        retryable: true,
+      })),
+    )).toBe(true);
+  });
+
+  it('keeps unexpected external-source failures visible', () => {
+    expect(isExpectedTauriRequestError(
+      'get_external_source_control_snapshot',
+      { request: { workspaceId: 'ws-1', forceRefresh: false } },
+      new Error('Internal runtime failure'),
+    )).toBe(false);
+    expect(isExpectedTauriRequestError(
+      'update_external_integration_policy_command',
+      { request: {} },
+      new Error(JSON.stringify({ code: 'host_unavailable', detail: 'unavailable host', retryable: true })),
+    )).toBe(false);
+  });
+
   it('records adapter init and invoke timings for each request', async () => {
     invokeMock.mockResolvedValueOnce({ ok: true });
     const adapter = new TauriTransportAdapter();
@@ -92,6 +117,17 @@ describe('Tauri adapter expected errors', () => {
     expect(timing.adapterInitDurationMs).toEqual(expect.any(Number));
     expect(timing.invokeDurationMs).toEqual(expect.any(Number));
     expect(timing.transportDurationMs).toEqual(expect.any(Number));
+  });
+
+  it('starts a warm native request before unrelated synchronous rendering can postpone dispatch', async () => {
+    invokeMock.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true });
+    const adapter = new TauriTransportAdapter();
+    await adapter.request('get_model_pools', {});
+    invokeMock.mockClear();
+
+    const pending = adapter.request('get_session_model_target', { request: { sessionId: 'session-1' } });
+    expect(invokeMock).toHaveBeenCalledWith('get_session_model_target', { request: { sessionId: 'session-1' } });
+    await expect(pending).resolves.toEqual({ ok: true });
   });
 
   it('routes a positioned Tauri event once across adapter instances', async () => {

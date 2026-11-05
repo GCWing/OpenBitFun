@@ -1,0 +1,10 @@
+.generative-widget-inline {
+  width: 100%;
+  min-width: 0;
+  margin: 8px 0;
+}
+
+.generative-widget-inline [data-gen-ui-viewport] {
+  min-width: 0;
+}
+

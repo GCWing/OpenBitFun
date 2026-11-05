@@ -10,6 +10,9 @@
     content: ''; position: absolute; inset-block: var(--openbitfun-space-6); inset-inline-start: 0;
     border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle); pointer-events: none;
   }
+  &__pane--centered {
+    justify-content: center;
+  }
   &__pane--action {
     cursor: pointer;
     &:hover { background: var(--openbitfun-color-action-quiet-hover); }

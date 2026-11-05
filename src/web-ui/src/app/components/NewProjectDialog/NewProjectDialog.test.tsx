@@ -80,13 +80,12 @@ describe('NewProjectDialog composition', () => {
     await act(async () => root.render(<NewProjectDialog isOpen defaultParentPath="/srv" onClose={close} onConfirm={confirm} {...extra} />));
   };
 
-  it('disables WSL before selection when the active host does not support it', async () => {
+  it('offers no WSL choice when the active host does not support it', async () => {
     wslSupport.supported = false;
     const onSelectRemoteHost = vi.fn();
     await render({ onPickRemoteFolder: vi.fn(), onSelectRemoteHost });
-    expect(sourceOption(1, 'wsl').disabled).toBe(true);
+    expect(sourceOption(1, 'wsl')).toBeNull();
     expect(document.body.textContent).not.toContain('ssh.remote.wslUnsupported');
-    act(() => sourceOption(1, 'wsl').click());
     expect(sourceOption(1, 'system').getAttribute('aria-checked')).toBe('true');
     expect(onSelectRemoteHost).not.toHaveBeenCalled();
   });
@@ -376,7 +375,7 @@ describe('NewProjectDialog composition', () => {
     expect(button('actions.add').disabled).toBe(true);
     act(() => document.querySelector<HTMLButtonElement>('[data-workspace-choice="fixture-ssh"] button[aria-pressed]')!.click());
     expect(sourceOption(1, 'container').getAttribute('aria-checked')).toBe('true');
-    expect(sourceOption(1, 'wsl').disabled).toBe(true);
+    expect(sourceOption(1, 'wsl')).toBeNull();
     expect(button('actions.add').disabled).toBe(true);
     act(() => document.querySelector<HTMLButtonElement>('[data-workspace-choice="fixture-remoteDocker"] button[aria-pressed]')!.click());
     expect(button('actions.add').disabled).toBe(false);
@@ -395,12 +394,10 @@ describe('NewProjectDialog composition', () => {
     await click('actions.add');
     expect(sourceOption(0, 'other').disabled).toBe(true);
     expect(sourceOption(1, 'container').disabled).toBe(true);
-    expect(document.body.textContent).toContain('workspaceSource.foldersLockedHint');
     act(() => document.querySelector<HTMLButtonElement>('button[aria-label="newProject.removeFolder"]')!.click());
     expect(sourceOption(0, 'other').disabled).toBe(false);
     expect(sourceOption(1, 'container').disabled).toBe(false);
     expect(sourceOption(1, 'container').getAttribute('aria-checked')).toBe('true');
-    expect(document.body.textContent).not.toContain('workspaceSource.foldersLockedHint');
   });
 
   it('names the executing peer host without changing folder routing to the controller', async () => {
@@ -517,5 +514,70 @@ describe('NewProjectDialog composition', () => {
     await choose('assistant');
     expect(createAssistant).not.toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
+  });
+
+  describe('creating on another device', () => {
+    const devices = [
+      { surfaceId: 'peer-mac', name: 'Studio Mac', hostKind: 'desktop' as const, rendered: false, controllable: true },
+      { surfaceId: 'peer-old', name: 'Old Laptop', hostKind: 'desktop' as const, rendered: false, controllable: false },
+    ];
+    const deviceOption = (surfaceId: string) => document.querySelector<HTMLButtonElement>(
+      `[data-testid="new-project-device-option"][data-device-surface="${surfaceId}"] button, button[data-testid="new-project-device-option"][data-device-surface="${surfaceId}"]`,
+    )!;
+    const open = async (extra: Record<string, unknown>) => {
+      await act(async () => root.render(<NewProjectDialog isOpen onClose={close} onConfirm={confirm}
+        onCreateAssistant={vi.fn()} onPickRemoteFolder={vi.fn()} {...extra} />));
+    };
+
+    it('renders the chosen device before showing the same project form there', async () => {
+      const selectDevice = vi.fn(async (target: string) => {
+        activateSurface(surfaceIdForDevice(target === 'local' ? null : target));
+        return true;
+      });
+      await open({ onSelectDevice: selectDevice, deviceOptions: devices });
+      expect(document.querySelectorAll('[data-openbitfun-component="action-card"] button')).toHaveLength(3);
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="nav-session-group-add-device-project"]')!.click(); });
+      expect(document.querySelector('[data-testid="new-project-device-list"]')).not.toBeNull();
+      expect(deviceOption('peer-old').disabled).toBe(true);
+      expect(selectDevice).not.toHaveBeenCalled();
+
+      await act(async () => { deviceOption('peer-mac').click(); });
+      expect(selectDevice).toHaveBeenCalledWith('peer-mac');
+      expect(nameInput()).toBe(document.activeElement);
+      expect(document.body.textContent).toContain('newWorkspace.createProjectOn');
+      enterName('Remote app');
+      await add('/Users/me/app');
+      await click('newWorkspace.createProject');
+      expect(confirm).toHaveBeenCalledWith({ name: 'Remote app', folders: [{ path: '/Users/me/app' }] });
+    });
+
+    it('keeps the device list when the switch is superseded or fails', async () => {
+      const selectDevice = vi.fn().mockResolvedValueOnce(false).mockRejectedValueOnce(new Error('Device offline'));
+      await open({ onSelectDevice: selectDevice, deviceOptions: devices });
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="nav-session-group-add-device-project"]')!.click(); });
+      await act(async () => { deviceOption('peer-mac').click(); });
+      expect(nameInput()).toBeNull();
+      await act(async () => { deviceOption('peer-mac').click(); });
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain('Device offline');
+      expect(document.querySelector('[data-testid="new-project-device-list"]')).not.toBeNull();
+    });
+
+    it('explains an empty or signed-out device list', async () => {
+      await open({ onSelectDevice: vi.fn(), deviceOptions: [] });
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="nav-session-group-add-device-project"]')!.click(); });
+      expect(document.body.textContent).toContain('newWorkspace.noOtherDevices');
+      await open({ onSelectDevice: vi.fn(), deviceOptions: undefined });
+      expect(document.body.textContent).toContain('newWorkspace.signInForDevices');
+    });
+
+    it('creates the personal assistant on this machine', async () => {
+      const order: string[] = [];
+      const selectDevice = vi.fn(async (target: string) => { order.push(`select:${target}`); return true; });
+      const createAssistant = vi.fn(async () => { order.push('create'); });
+      await open({ onSelectDevice: selectDevice, deviceOptions: devices, onCreateAssistant: createAssistant });
+      await choose('assistant');
+      expect(order).toEqual(['select:local', 'create']);
+      expect(close).toHaveBeenCalledOnce();
+    });
   });
 });

@@ -24,7 +24,7 @@ each missing what the other had.
 | `exportImageLayout.test.ts` | initiating reading-column width and font settings across wide/narrow panes, hidden sibling sessions, and unmounted source rows; measured DOM fixtures, not native visual or remote-host validation |
 | `../../utils/exportImageCapture.test.ts`, `../../utils/captureElementToDownloadsPng.test.tsx` | resolved-style selection without duplicated theme variables, opaque/transparent blank-raster rejection before logo compositing, bounded pixel reads, reduced-scale recovery, font readiness/embedding, timeout cleanup, and widget export save/error handling; rasterizer fixtures, not native WebView or remote-host validation |
 | `../../../shared/ui/Tooltip.test.tsx` | shared metric click opening, immediate scroll dismissal, delayed-open cancellation, viewport-exit observer cleanup and no automatic reopening; DOM/observer behavior only, not native scrolling or visual proof |
-| `../../utils/turnUsageMetrics.test.ts`, `TurnUsageMetrics.test.tsx`, `../../store/modernFlowChatStore.test.ts`, `../../../features/dispatch/DispatchJobObserver.test.ts` | separate request TTFT, effective-output rate excluding waiting and tools, complete multi-round timing, controller setup-row exclusion, legacy/missing/zero telemetry, speed boundaries and projection |
+| `../../utils/turnUsageMetrics.test.ts`, `TurnUsageMetrics.test.tsx`, `../../store/modernFlowChatStore.test.ts`, `../../../features/dispatch/DispatchJobObserver.test.ts` | separate request TTFT, request-to-completion output rate including provider wait and excluding tool execution, complete multi-round timing, controller setup-row exclusion, legacy/missing/zero telemetry, speed boundaries and projection |
 | `../../services/flow-chat-manager/EventHandlerModule.test.ts`, `../../services/flow-chat-manager/PersistenceModule.test.ts`, `../../store/FlowChatStore.test.ts` | live cache aggregation, optional-field persistence and legacy/current hydration; no remote-host claim |
 | `../../hooks/useSessionReadOnOpen.test.tsx` | opening and foreground results mark read; inactive scenes, background windows, unmounts, and device switches cannot acknowledge from stale views |
 | `../../selection/conversationExcerptInventory.test.ts` | source session/device isolation, consumed draft/queue marks, sent-number retention without source marks, stable unrelated snapshots |
@@ -41,22 +41,30 @@ each missing what the other had.
 | `modelRoundItemMemo.test.ts` | settled rows refresh continuation labels and tool grouping hints without invalidating equivalent hints |
 | `flowChatTailFollow.test.ts` | the three-quarter reservation and `hold-tail` geometry |
 | `flowChatCollapseMotion.test.ts` | collapse does not move earlier content |
-| `useFlowChatFollowOutput.test.tsx` | one-shot new-Turn reveal, frame loop, blank crossing, resize realign, opening readback publication and ownership/lifecycle gates |
+| `useFlowChatFollowOutput.test.tsx` | one-shot new-Turn reveal, frame loop, blank crossing, atomic reflow across native clamping, preserved output lag, opening readback publication and ownership/lifecycle gates |
 | `../../tool-cards/useToolCardHeightContract.test.tsx` | tool cards reflow rather than compensate |
 | `flowChatHistoryBoundary.test.ts` | the screenful lead and physical boundary geometry |
+| `flowChatViewportGeometry.test.ts` | actual gutter centring, symmetric/omitted leading gutter and origin handoff without accumulated horizontal offset |
+| `../../services/RelaySessionHistory.test.ts`, `../../store/FlowChatStore.test.ts`, `../../services/flow-chat-manager/SessionModule.test.ts` | local/SSH one-Turn restore, paint-gated adjacent prefetch without tail replacement, partial reopen without full-history drain, replay staging, live updates during older reads, failed-read retention and retry; transport fixtures, not live remote evidence |
 | `flowChatHistoryPager.test.ts` | request/layout ordering, coalesced demand, prefetch without physical arrival, stale tickets, exhaustion and retry eligibility |
-| `useFlowChatViewportOwner.test.tsx` | synchronous write/shift accounting preserves reader travel and actual clamping |
+| `useFlowChatViewportOwner.test.tsx` | top/native coordinate conversion, older-range growth creates no reader demand, synchronous write/shift accounting preserves reader travel and actual clamping |
 | `flowChatLiveTailWindow.test.ts` | "does the transcript still reach the newest Turn" |
 | `flowChatViewportAnchor.test.ts` | anchor geometry and the DOM contract |
 | `useFlowChatViewportAnchor.test.tsx` | capture, restore, carry, the settle window |
 | `useFlowChatLeadingExtent.test.tsx` | shared event geometry without repeated rectangle reads; fresh layout reads after resize and collection |
 | `VirtualMessageList.session-boundary.test.tsx` | prepend compensation, consecutive paging with/without queued input, passive scroll suppression, navigation-target current Turn with gesture/follow/session handoff, search placement only outside the readable viewport, and real viewport-register acknowledgement before trajectory details/highlights commit for user/search/model/folded-tool/history targets |
+| `VirtualMessageList.resize.test.tsx` | first-frame node and screen-position retention during repeated CSS-only width previews, release, fractional row geometry, native clamping, both row/container observer orders and delayed scroll delivery; completed follow and reader-owned positions on local/simulated peer surfaces, not native or live-transport evidence |
+| `VirtualMessageList.history-prepend.test.tsx` | full list with real virtualization/follow/ownership: stable row identity and screen offset through short/long completed answers, consecutive/dense prepends, delayed measurement/native scroll and reader-chosen positions on local/simulated peer surfaces; supplied row/DOM geometry, not native or live-transport evidence |
+| `VirtualMessageList.timeline-prepend.test.tsx`, `FlowChatPrependSnapshot.test.tsx` | production timeline whole/compound/single-Turn pages; native bottom-origin continuity before observer delivery and zero passive scroll writes, stable hydration lifetime, fractional measurements, bounded long histories, chronological navigation, existing bookmark coordinates, live handoff and reader-selected block retention; supplied DOM geometry on local/simulated Peer, not native paint or live transport evidence |
 | `flowChatScrollbarMask.test.ts`, `VirtualMessageList.session-boundary.test.tsx` | idle gutter masking with symmetric, one-sided and overlay scrollbars; overflow restoration and content/viewport resizing without scroll writes; supplied DOM geometry, not native rendering or live remote evidence |
+| `VirtualMessageList.edgeFade.test.ts`, `VirtualMessageList.session-boundary.test.tsx` | repeated scroll-away/back restores the opaque top edge even when an earlier native listener synchronously commits a virtual window; fractional/top-overscroll offsets, one follow notification per event, current gesture callbacks and old-session cleanup; DOM/CSS contracts, not native repaint or live remote evidence |
 | `FlowChatOpeningBoundary.test.tsx` | opening-only activation/scroll isolation, bidirectional focus skipping, programmatic focus return, and reveal cleanup; DOM contracts only |
+| `HistorySessionLoadingBoundary.test.tsx` | shared 200 ms indicator delay, immediate settled cold/warm opens, off-screen user-message independence, settled-viewport gating, atomic text/tools/code presentation, interaction blocking, session/device cancellation, failure/inactive/resume/reduced-motion handling and no streaming/remount replay; DOM/animation fixtures, not native paint or live remote evidence |
 | `ModernFlowChatContainer.history-state.test.tsx` | history presentation and the submission event |
 | `flowChatViewportOwnership.test.ts` | the priority order, preemption, expiry |
 | `useFlowChatVirtualizer.test.ts` | the offsets-and-positions boundary |
-| `useFlowChatVirtualizer.measurement.test.tsx` | `measureRenderedItems` against a real virtualizer |
+| `useFlowChatVirtualizer.measurement.test.tsx` | `measureRenderedItems` against a real virtualizer, fractional normal-flow sizes and offscreen size reservations across reflow |
+| `useFlowChatVirtualizer.follow.test.tsx` | post-reveal history measurement shifts both follow coordinates before paint, stable tail row identity with delayed scroll delivery, and visible output still eases; real hooks with supplied DOM geometry, not native or live-peer evidence |
 | `useFlowChatVirtualizer.cascade.test.tsx` | bounded synchronous measurement notifications, cross-frame convergence, ordinary synchronous opening, reader takeover and StrictMode/session cleanup; real hooks with supplied geometry, not native paint evidence |
 | `useFlowChatVirtualizer.initial-window.test.tsx` | tail-first window, empty hydration, head default, one-time seed, user-scroll takeover, newly attached rows measured during gestures before observer delivery, smooth-aim target stability and immediate measurement on reader takeover, opening readbacks before native events, suspended viewport, measured-window reconciliation with delayed scroll/scroll-end delivery; supplied DOM geometry, not performance validation |
 | `useFlowChatVirtualizer.aim.test.tsx` | the re-aim, and giving it up on takeover |
@@ -66,7 +74,8 @@ each missing what the other had.
 | `flowChatSearchDom.test.ts` | concrete text ranges and independent highlight ownership across rows and panes |
 | `../../selection/flowChatHighlights.test.ts` | exact text-parent scoping across Markdown nodes, shared markers, cleanup and document isolation |
 | `../../../infrastructure/appearance/adapters/ThemeTokenAppearanceAdapter.test.ts` | legacy accent projection, alpha preservation, theme changes and paint cleanup |
-| `../../selection/flowChatSelection.test.ts` | Markdown selection boundaries, source isolation, repeated text anchors, and changed sources |
+| `../../selection/flowChatSelection.test.ts` | Markdown selection boundaries, source isolation, repeated text anchors, changed sources and legacy table excerpt offsets across cell presentation wrappers |
+| `../../../infrastructure/markdown/MarkdownRenderer.test.tsx`, `../../../infrastructure/markdown/AsyncPrismSyntaxHighlighter.test.tsx` | compiled CSS and product DOM selection boundaries for mixed replies, hidden/runtime bodies, response/thinking tables and fences; table alignment/semantics, unchanged cross-message ranges, real Prism/fallback whitespace; not native selection paint evidence |
 | `../../selection/FlowChatSelectionBar.test.tsx` | annotation Dialog focus containment and return, frozen excerpts during scroll/resize, and comment submission |
 | `../../selection/useExcerptComposerActions.test.tsx` | main/side draft routing, focus after activation, ordinary child ownership, and stale surface rejection |
 | `../../../shared/utils/conversationExcerpt.test.ts` | quote deduplication, source-data framing, and legacy/additive presentation metadata |
@@ -74,6 +83,12 @@ each missing what the other had.
 | `FlowChatHeader.test.tsx` | shared SearchField composition, result controls, input identity while expanding, native-view occlusion declaration for session overview, overview positioning during pane resize/collapse, and the default active-only Agent tree toggle |
 | `SessionTreePopover.test.tsx` | Agent selection/cancellation/deletion menus, type-only metadata, active branch filtering with ancestor retention, restoring all agents, and the active empty state |
 | `../../services/deleteSessionTreeBranch.test.ts` | Unloaded descendant deletion in child-first order, remote location forwarding, failure retention, and device surface guards |
+
+The resize and production-timeline geometry fixtures cache recursive heights only
+within one synchronous read and deliver ResizeObserver entries only for changed
+boxes. Their caches never span a DOM/style/row-height change. This keeps repeated
+frame checks affordable on CI without relaxing position assertions or timeouts;
+test duration is not a product performance measurement.
 
 ## Native history-scroll fixture
 
@@ -116,7 +131,29 @@ For text selection, check the floating toolbar and right-click actions in the
 native WebView; keyboard selection, Tab, Escape, and Ctrl/Cmd+Alt+B; both main
 and ordinary side transcripts; multiline Markdown/code; dark/light and forced
 colors; narrow AuxPane layouts; long virtualized history; and switching targets
-with existing drafts. Remote workspace and desktop-peer sends, older-host quote
+with existing drafts. Drag across an assistant reply, a short right-aligned user
+bubble and the next reply in both directions: turn padding, paragraph gaps and
+the empty lane beside the bubble must stay unpainted, with full text still
+selectable/copyable. Include direct model rounds, timeline content/group members,
+parallel tool capsules, expanded user messages and the full-width edit composer;
+check that row height, action alignment and outlying controls remain intact.
+In a single reply, include several paragraphs, bold/link runs, wrapped lines,
+tight and loose nested lists. Select through the last paragraph in either
+direction: the right-hand blank and inter-paragraph/list gaps must stay clear.
+Repeat inside a collected group, retry history and a subagent projection, and
+confirm hidden reply bodies remain hidden while their source text stays mounted.
+For tables, include short/long cells, left/center/right alignment, inline links,
+code and emphasis, wrapped rows, and horizontal overflow in a narrow pane.
+Select across cells and rows in both directions: padding and unused row height
+must stay clear, while text remains selected and copied with native table
+semantics. Locate a table excerpt saved before the cell-wrapper change.
+For fences, select from the preceding paragraph through the following paragraph,
+then partially within code. Include labelled/unlabelled one-line fences,
+indented multiline code with blank lines, syntax tokens, long scrollable lines,
+streaming responses, completed responses and thinking. Check both outer fence
+insets and right-hand line blanks stay unpainted, source whitespace survives
+selection/copy, and line hover/copy controls remain usable.
+Remote workspace and desktop-peer sends, older-host quote
 fallbacks, disconnect recovery, and CLI-peer/dispatch unsupported states require
 separate real-host checks. Unit fixtures are not evidence of those scenarios.
 Annotation editing, draft management, and sent annotations use the public Dialog
@@ -153,6 +190,21 @@ unless a human confirms them. They are grouped so that adding a check to one
 group does not renumber the others.
 
 ### Opening a session
+
+Check the sparse history placeholder in light/dark themes and wide/narrow panes:
+the left lines retain a normal 24px height, the upper-right user bubble has equal
+rounded corners and no border, and the composition shares one soft light field.
+Open text-only, tool-only and long-code histories, including a restored bookmark.
+The abstract layer must disappear completely before real content reveals; no
+thin-line intermediate state or jump in the reading position is acceptable.
+Switch sessions/devices rapidly, fail and retry a load, and toggle reduced
+motion. Local, remote-workspace, Peer Device and detached-dispatch observer
+histories need separate real-host checks; mobile Remote Control uses its own UI.
+
+For the top edge fade, scroll down and all the way back to the first message
+several times. Its first line must be as readable as on initial open; leaving
+the top must restore the fade. Check native WebViews, light/dark themes and
+forced colors. Automated DOM/CSS checks do not establish this paint behavior.
 
 1. Session open lands at the end of the transcript, not inside the spacer.
 2. Open a long `isPartial` session and leave it alone. Nothing may page in
@@ -312,11 +364,14 @@ checks; mobile Remote Control uses its own message renderer.
 
 ### History paging
 
-1. Open a session long enough to be `isPartial` — the loaded tail is shorter
-   than the viewport, so it pages older Turns in on its own. No jump-to-latest
-   bar should appear, and streaming output should be followed. Then send a
-   message: it must appear immediately in the one-shot tail reveal, with the
-   history above neither moving nor reloading.
+1. On local and peer devices, open a long session whose last Turn is short.
+   Only that Turn starts at the top, with blank space below; background history
+   must not fill the blank. Repeat with a long last Turn: its end is visible.
+   After the first presentation, any adjacent prefetch adds content above without
+   remounting or moving the visible rows. Switch away and back: no full-history
+   drain or new placement. Test an older peer host separately for its compatible,
+   potentially slower record-page fallback. Then send a message: it appears in
+   the one-shot live-tail reveal without reloading the history above.
 2. Scroll up to a junction. **One** page loads, the Turn under the cursor stays
    where it is, and paging stops until the head is reached again. Then keep
    going: every junction must behave the same way all the way to the first

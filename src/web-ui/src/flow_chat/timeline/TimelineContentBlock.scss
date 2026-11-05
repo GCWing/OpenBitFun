@@ -1,3 +1,14 @@
+// Keep the positioned model-round/content stack a flex item, matching the
+// direct virtual-row path. Block wrappers here would restore WebKit selection
+// gap painting. The stack's internal block/inline and agent-card layouts stay
+// with their owners, including parallel capsules and Markdown paragraph rhythm.
+.flowchat-timeline-content,
+.flowchat-timeline-members {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
 // Desktop composition owns the row, while the public cards retain their anatomy.
 .virtual-item-wrapper > :is(.flowchat-timeline-content, .flowchat-timeline-members)
   > .flowchat-agent-card-grid[data-flow-item-stack][data-agent-card-grid] {

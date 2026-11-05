@@ -1,0 +1,17 @@
+.gen-ui-application { container-type: inline-size; padding: 20px; color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-surface-canvas); font-size: var(--openbitfun-type-body-md-font-size); line-height: var(--openbitfun-type-body-md-line-height); }
+.gen-ui-application > [role="alert"] { color: var(--openbitfun-color-status-danger-content); }
+
+.gen-ui-host-viewport { min-width: 0; }
+.gen-ui-phone-device { box-sizing: border-box; width: 390px; margin-inline: auto; padding: 13px; border: 1px solid var(--openbitfun-color-border-default); border-radius: 40px; background: var(--openbitfun-color-surface-panel); box-shadow: var(--openbitfun-shadow-lg); }
+.gen-ui-phone-viewport { box-sizing: border-box; width: 360px; height: 764px; overflow: hidden; border-radius: 27px; background: var(--openbitfun-color-surface-canvas); color: var(--openbitfun-color-content-primary); }
+.gen-ui-phone-status-bar { box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-surface-canvas); font-family: var(--openbitfun-type-body-sm-font-family); font-size: var(--openbitfun-type-body-sm-font-size); font-weight: var(--openbitfun-type-body-sm-font-weight); line-height: var(--openbitfun-type-body-sm-line-height); }
+.gen-ui-phone-status-bar__indicators { font-size: var(--openbitfun-type-body-sm-font-size); }
+.gen-ui-phone-content { box-sizing: border-box; width: 360px; height: calc(100% - 36px); overflow: auto; padding: 16px; }
+.gen-ui-phone-content > .gen-ui-application { box-sizing: border-box; width: 100%; min-height: 100%; padding: 0; background: transparent; }
+.gen-ui-phone-content .gen-ui-application__header h1 { font-size: var(--openbitfun-type-heading-section-font-size); line-height: var(--openbitfun-type-heading-section-line-height); }
+.gen-ui-phone-content [data-gen-ui-node] { max-width: 100%; }
+.gen-ui-application--document { min-width: 0; padding: 0; background: transparent; }
+.gen-ui-html-document { width: 100%; min-width: 0; overflow: hidden; }
+.gen-ui-html-document__frame { display: block; width: 100%; min-width: 0; min-height: 220px; height: 100%; border: 0; background: transparent; color-scheme: inherit; }
+.gen-ui-phone-content .gen-ui-html-document { width: 100%; min-height: 100%; }
+.gen-ui-phone-content .gen-ui-html-document__frame { height: calc(764px - 36px - 32px); min-height: 0; }

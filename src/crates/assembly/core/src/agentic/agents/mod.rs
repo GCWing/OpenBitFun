@@ -313,16 +313,6 @@ mod tests {
     }
 
     #[test]
-    fn standard_harness_tools_keep_canvas_provider_tools_opt_in() {
-        let tools = standard_harness_tools();
-
-        assert!(!tools.contains(&"CreateCanvas".to_string()));
-        assert!(!tools.contains(&"ReadCanvas".to_string()));
-        assert!(!tools.contains(&"UpdateCanvas".to_string()));
-        assert!(!tools.contains(&"PatchCanvas".to_string()));
-    }
-
-    #[test]
     fn standard_mode_uses_shared_coding_tools() {
         let shared_tools = standard_harness_tools();
 

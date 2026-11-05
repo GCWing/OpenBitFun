@@ -197,6 +197,11 @@
     &[data-history-paging-sentinel='error'] {
       visibility: visible;
     }
+
+    // A page that arrives quickly never flashes its spinner.
+    &[data-history-paging-sentinel='loading'] > * {
+      animation: history-paging-reveal 160ms ease-out 200ms both;
+    }
   }
 
   &__history-paging-spinner {
@@ -210,12 +215,59 @@
   }
 
   &__extent {
+    position: relative;
     display: flex;
     flex-direction: column;
+    width: 100%;
+    min-width: 0;
     min-height: 100%;
   }
 
+  &__turn {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+
+    > * { flex-shrink: 0; }
+  }
+
+  &__turn[data-history-tail='true'] {
+    flex: 1 0 auto;
+  }
+
+  &__footer-block {
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 auto;
+  }
+
+  // History's coordinate origin is the bottom. Adding or resizing anything
+  // earlier extends the native scroll range upward without moving scrollTop.
+  // DOM order remains chronological for selection, keyboard and screen readers.
+  &__scroller[data-flowchat-scroll-origin='end'] {
+    display: flex;
+    flex-direction: column-reverse;
+
+    .virtual-message-list__extent {
+      flex: 0 0 auto;
+    }
+
+    // Reserve a viewport for the final complete Turn, not for the entire
+    // transcript. Short Turns start at the top and CSS puts unused space below
+    // them. Older Turns insert before this shell without consuming that space.
+    .virtual-message-list__turn[data-history-tail='true'] {
+      min-height: var(--_flow-chat-history-turn-min-height);
+
+      // Prepending older Turns changes public indexes, not this Turn's inset.
+      > .virtual-item-wrapper[data-item-type='user-message'] { padding-top: 0; }
+    }
+  }
+
   &__items {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
     flex-shrink: 0;
   }
 
@@ -248,4 +300,11 @@
     -webkit-mask-image: none;
     mask-image: none;
   }
+}
+
+// A wait that ends quickly shows nothing: the indicator fades in only once
+// the wait has lasted long enough to be noticed.
+@keyframes history-paging-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

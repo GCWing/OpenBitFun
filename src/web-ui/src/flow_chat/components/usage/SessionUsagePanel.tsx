@@ -23,6 +23,8 @@ interface SessionUsagePanelProps {
   sessionTitle?: string;
   isLoading?: boolean;
   error?: string;
+  /** Calm copy when the executing host does not offer the report. */
+  unsupported?: string;
   workspacePath?: string;
   workspaceId?: string;
   onTitleChange?: (title: string) => void;
@@ -37,6 +39,7 @@ export const SessionUsagePanel: React.FC<SessionUsagePanelProps> = ({
   sessionTitle,
   isLoading = false,
   error,
+  unsupported,
   workspacePath,
   workspaceId,
   onTitleChange,
@@ -71,11 +74,13 @@ export const SessionUsagePanel: React.FC<SessionUsagePanelProps> = ({
     }
   }, [markdown, redactExportPaths, report, t]);
 
-  if (isLoading || error) {
+  if (isLoading || error || unsupported) {
     return (
       <div className="session-usage-panel session-usage-panel--status" data-openbitfun-product-component="session-usage-panel" data-openbitfun-product-part="root">
         {isLoading ? (
           <LoadingState role="status" aria-live="polite">{t('usage.loading.title')}</LoadingState>
+        ) : unsupported ? (
+          <Empty title={unsupported} />
         ) : (
           <Empty title={t('usage.panel.failed')} description={error} />
         )}

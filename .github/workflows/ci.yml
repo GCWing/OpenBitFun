@@ -122,17 +122,23 @@ jobs:
     needs: build-impact
     if: ${{ !cancelled() && needs.build-impact.outputs.rust_required != 'false' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             cache_key: ubuntu
-          - os: macos-15
-            cache_key: macos
+            timeout_minutes: 30
+          # Pin the Intel pool for macOS OS-contract validation; release jobs
+          # select their Apple Silicon / Intel targets independently.
+          - os: macos-15-intel
+            cache_key: macos-intel
+            # A cold Intel build can still be compiling the CLI at 30 minutes.
+            timeout_minutes: 75
           - os: windows-latest
             cache_key: windows
+            timeout_minutes: 30
     steps:
       - uses: actions/checkout@v5
 
@@ -211,7 +217,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-15
+          - macos-15-intel
           - windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -717,6 +723,7 @@ jobs:
         run: |
           pnpm --dir src/mobile-web run test:prompt-suggestion-browser
           pnpm --dir src/mobile-web run test:rollback-browser
+          pnpm --dir src/mobile-web run test:session-model-browser
           pnpm --dir src/mobile-web run test:chat-transcript-browser
 
       - name: Upload mobile input layout screenshots

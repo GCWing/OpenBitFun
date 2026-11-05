@@ -46,7 +46,12 @@
       "subtitle": "在主視窗之外顯示提醒、PR 狀態、進度、天氣等值得隨時看一眼的小卡片",
       "enable": "啟用小卡片",
       "description": "關閉後卡片會隱藏，智慧體也無法再建立或更新卡片，現有卡片會保留。",
-      "unsupported": "請更新目前主機後再管理小卡片。"
+      "unsupported": "請更新目前主機後再管理小卡片。",
+      "pinnedOn": "已釘選到桌面，位於圖示之上並在其他應用程式之下",
+      "pinnedOff": "未釘選到桌面",
+      "pinRecoveryFailed": "Windows 桌面無法使用，已取消釘選。開啟即可重新釘選。",
+      "pinCard": "將「{{title}}」釘選到桌面",
+      "pinFailed": "無法切換釘選狀態，請重試。"
     },
     "workspaceSearch": {
       "title": "加速工作區搜尋",
@@ -91,7 +96,11 @@
     "removeGlobalRule": "刪除規則",
     "discardGlobalRules": "放棄變更",
     "saveGlobalRules": "儲存規則",
-    "globalRulesEffects": { "allow": "允許", "ask": "詢問", "deny": "拒絕" },
+    "globalRulesEffects": {
+      "allow": "允許",
+      "ask": "詢問",
+      "deny": "拒絕"
+    },
     "modeDescription": "作為新工作階段的預設設定，可在輸入框中暫時切換。"
   },
   "toolPresentation": {
@@ -151,7 +160,11 @@
     "rulesSaveFailed": "儲存靜態專案規則失敗",
     "rulesConflict": "規則檔案已在外部變更，請取消本機修改並重新整理後再試。",
     "cancel": "取消",
-    "effects": { "allow": "允許", "ask": "詢問", "deny": "拒絕" }
+    "effects": {
+      "allow": "允許",
+      "ask": "詢問",
+      "deny": "拒絕"
+    }
   },
   "deferredToolLoading": {
     "sectionTitle": "按需載入工具",
@@ -244,5 +257,25 @@
     "saveSuccess": "設置已儲存",
     "saveFailed": "儲存失敗",
     "updateFailed": "設置失敗"
+  },
+  "genui": {
+    "title": "生成式 UI",
+    "description": "選擇新建生成式 UI 應用使用的元件庫。既有應用會繼續使用已儲存的元件庫與版本。",
+    "collection": "生成式 UI 設定",
+    "loading": "正在讀取元件設定",
+    "retry": "重試",
+    "unknown": "目前版本不支援此元件集合，已保留原設定。請選擇已安裝的集合。",
+    "collections": {
+      "openui": "Open Intelligent UI：在 FlowChat 中串流顯示 OpenUI Lang，保留本地狀態與動作。",
+      "openbitfun": "OpenBitFun：使用目前 OpenBitFun 元件庫與桌面樣式。"
+    },
+    "specification": "UI 規範",
+    "viewport": "目標視口",
+    "responsiveViewport": "響應目前宿主寬度",
+    "componentLibraries": "可用元件庫",
+    "styleResources": "樣式資源",
+    "hostShell": "宿主外殼",
+    "designRules": "設計規則",
+    "acceptance": "驗收檢查"
   }
 }

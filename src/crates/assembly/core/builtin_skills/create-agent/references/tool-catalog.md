@@ -61,16 +61,12 @@ Use these tables to select tools for the user's tasks, then put their exact name
 | `analyze_image` | Analyze an image file with the configured vision model. |
 | `view_image` | Attach an image file for the current model to inspect visually. |
 
-## Interaction and canvas
+## Interaction and generated UI
 
 | Tool name | Purpose |
 | --- | --- |
 | `AskUserQuestion` | Ask the user focused follow-up questions during execution. |
 | `GenerativeUI` | Render HTML or SVG visualizations and lightweight interactive widgets in chat. |
-| `CreateCanvas` | Create a Canvas artifact scoped to the session. |
-| `ReadCanvas` | Read Canvas metadata, diagnostics, and source. |
-| `PatchCanvas` | Apply targeted patches to an existing Canvas artifact. |
-| `UpdateCanvas` | Update an existing Canvas artifact. |
 
 ## Computer use and automation
 

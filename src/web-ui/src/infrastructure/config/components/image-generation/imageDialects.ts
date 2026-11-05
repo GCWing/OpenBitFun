@@ -72,10 +72,10 @@ export const IMAGE_DIALECT_PRESETS: readonly ImageDialectPreset[] = [
     id: 'chatgpt_codex',
     labelKey: 'dialect.chatgptCodex.name',
     descriptionKey: 'dialect.chatgptCodex.description',
-    endpointPath: '/responses',
+    endpointPath: '/images/generations',
     // The login supplies this address; the value here only seeds a new draft.
     defaultBaseUrl: 'https://chatgpt.com/backend-api/codex',
-    // Empty means "discover from the account catalog when sending".
+    // The subscription adapter owns the image model; legacy chat model IDs stay readable.
     defaultModel: '',
     sizes: ['1024x1024', '1536x1024', '1024x1536'],
     maxImagesPerRequest: 1,
@@ -121,9 +121,12 @@ export function resolveImageEndpoint(
   dialect: ImageDialect,
 ): string {
   const override = requestUrl?.trim();
-  if (override) return override;
+  const subscriptionUrl = (url: string) => dialect === 'chatgpt_codex'
+    ? url.replace(/\/responses\/?$/, '/images/generations')
+    : url;
+  if (override) return subscriptionUrl(override);
 
-  const root = baseUrl.trim().replace(/\/+$/, '');
+  const root = subscriptionUrl(baseUrl.trim().replace(/\/+$/, ''));
   if (!root) return '';
   const path = findImageDialectPreset(dialect).endpointPath;
   return root.endsWith(path) ? root : `${root}${path}`;

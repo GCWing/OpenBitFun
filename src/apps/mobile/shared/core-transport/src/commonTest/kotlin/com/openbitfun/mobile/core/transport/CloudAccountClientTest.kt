@@ -18,6 +18,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collect
@@ -197,6 +198,40 @@ class CloudAccountClientTest {
         val response = transport.send<CommandStatusResponse>(RemoteCommand(cmd = "ping"))
 
         assertEquals("ok", response.resp)
+    }
+
+    @Test
+    fun aLargeRequestUsesTheCurrentHostsOfferAndAcceptsMixedReplies() = runTest {
+        val master = ByteArray(32) { 7 }
+        val peer = ByteArray(32) { 11 }
+        val key = DeviceIdentity.messageKey(peer, DeviceIdentity.publicKey(master))
+        val session = CloudAccountSession("token-1", "user-1", master)
+        val command = RemoteCommand(cmd = "execute_on_device", content = "z".repeat(2048))
+        val compressedRequests = mutableListOf<Boolean>()
+        var keyReads = 0
+        val client = rpcClient(DeviceIdentity.publicKey(peer), onKeyRead = { keyReads++ }) { _, params ->
+            val envelope = RelayJson.decodeFromJsonElement(EncryptedPayload.serializer(), params)
+            assertEquals(RelayMessageEncoding.NAME, envelope.acceptEncoding)
+            val plain = CloudAccountCipher.decrypt(Base64.Default.decode(envelope.encryptedData), key, Base64.Default.decode(envelope.nonce))
+            compressedRequests += plain.first() == 0xff.toByte()
+            assertEquals(command, RelayJson.decodeFromString(RemoteCommand.serializer(), RelayMessageEncoding.decode(plain).decodeToString()))
+
+            // The first reply is already entitled to use the offer in this
+            // request. The second emulates a replacement host without a codec.
+            val accepted = compressedRequests.size == 1
+            val text = RelayJson.encodeToString(CommandStatusResponse.serializer(), CommandStatusResponse("ok", command.content))
+            val nonce = DeviceIdentity.randomBytes(12)
+            val sealed = CloudAccountCipher.encrypt(RelayMessageEncoding.encode(text.encodeToByteArray(), accepted), key, nonce)
+            RelayJson.encodeToJsonElement(EncryptedPayload.serializer(), EncryptedPayload(
+                Base64.Default.encode(sealed), Base64.Default.encode(nonce), if (accepted) RelayMessageEncoding.NAME else null,
+            ))
+        }
+        repeat(3) {
+            val result = client.deviceRpc("http://192.168.1.2:9700", session, "desktop", command, CommandStatusResponse.serializer(), 5_000)
+            assertEquals(command.content, result.message)
+        }
+        assertEquals(listOf(false, true, false), compressedRequests)
+        assertEquals(1, keyReads)
     }
 
     /**
@@ -401,7 +436,12 @@ class CloudAccountClientTest {
         override val notifications: Flow<JsonObject>,
         private val reply: suspend (String, JsonElement) -> JsonElement,
     ) : AccountRpcConnection {
-        override suspend fun call(target: String, params: JsonElement, timeoutMs: Long): JsonElement = reply(target, params)
+        override val peerEncodings = MutableStateFlow(emptySet<String>())
+        override suspend fun call(target: String, params: JsonElement, timeoutMs: Long,
+                expectedEncodings: MutableStateFlow<Set<String>>?): JsonElement {
+            assertTrue(expectedEncodings == null || expectedEncodings === peerEncodings)
+            return reply(target, params)
+        }
         override fun close() {}
     }
 

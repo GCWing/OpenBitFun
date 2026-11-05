@@ -121,6 +121,19 @@ describe('SessionAPI paged metadata reads', () => {
     });
   });
 
+  it.each(['local', 'peer'])('requests one completed discovery refresh on the %s surface', async surface => {
+    activateSurface(surface);
+    const response = { sessions: [], totalTopLevelCount: 0, loadedTopLevelCount: 0,
+      hasMore: false, discoveryRefreshed: true };
+    invokeMock.mockResolvedValueOnce(response);
+    await expect(sessionAPI.listSessionsPage({
+      workspaceId: 'project', limit: 1, refreshExternalDiscovery: true,
+    })).resolves.toBe(response);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith('list_persisted_sessions_page', {
+      request: { workspace_id: 'project', limit: 1, refresh_external_discovery: true },
+    });
+  });
+
   it('loads the scoped hidden Session lineage without listing all internal Sessions', async () => {
     const snapshot = { rootSessionId: 'root', sessions: [] };
     invokeMock.mockResolvedValueOnce(snapshot);

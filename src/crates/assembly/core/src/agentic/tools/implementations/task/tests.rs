@@ -115,6 +115,7 @@ fn test_tool_context(agent_type: &str) -> ToolUseContext {
         dialog_turn_id: Some("turn-1".to_string()),
         workspace: None,
         loaded_deferred_tool_specs: Vec::new(),
+        model_client: None,
         primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
         custom_data: HashMap::new(),
         computer_use_host: None,
@@ -957,6 +958,7 @@ async fn call_impl_rejects_nested_subagent_delegation() {
         dialog_turn_id: Some("turn-1".to_string()),
         workspace: None,
         loaded_deferred_tool_specs: Vec::new(),
+        model_client: None,
         primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
         custom_data: HashMap::from([
             (
@@ -1105,6 +1107,7 @@ async fn description_with_context_filters_restricted_subagents_by_parent_agent()
         dialog_turn_id: None,
         workspace: None,
         loaded_deferred_tool_specs: Vec::new(),
+        model_client: None,
         primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
         custom_data: HashMap::new(),
         computer_use_host: None,
@@ -1142,6 +1145,7 @@ async fn prompt_stability_description_with_context_renders_available_agents_in_s
         dialog_turn_id: None,
         workspace: None,
         loaded_deferred_tool_specs: Vec::new(),
+        model_client: None,
         primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
         custom_data: HashMap::new(),
         computer_use_host: None,

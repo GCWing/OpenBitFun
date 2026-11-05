@@ -2,7 +2,6 @@ use super::builtin::default_model_id_for_builtin_agent;
 use super::types::AgentCategory;
 use super::AgentRegistry;
 use crate::service::config::global::GlobalConfigManager;
-use crate::service::config::GlobalConfig;
 use crate::service::config::SubagentModelSelection;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use log::{debug, error, warn};
@@ -72,8 +71,8 @@ impl AgentRegistry {
 
         if entry.category == AgentCategory::Mode {
             if let Ok(config_service) = GlobalConfigManager::get_service().await {
-                let global_config: GlobalConfig = config_service.get_config(None).await?;
-                match global_config.ai.effective_model_selections().map_err(OpenBitFunError::validation)?.mode {
+                let ai_config = config_service.get_project_ai_config(workspace_id).await?;
+                match ai_config.effective_model_selections().map_err(OpenBitFunError::validation)?.mode {
                     openbitfun_core_types::model_pool::ModelSelection::Model { model_ref } if !model_ref.trim().is_empty() => return Ok(model_ref),
                     openbitfun_core_types::model_pool::ModelSelection::Pool { .. } => return Err(OpenBitFunError::validation("A pool default requires a session model target; it cannot be resolved as a fixed model")),
                     _ => {}

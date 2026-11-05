@@ -1,5 +1,6 @@
 #[cfg(feature = "ssh-remote")]
 mod remote;
+mod remote_content;
 #[cfg(not(feature = "ssh-remote"))]
 mod remote_disabled;
 pub mod service;
@@ -16,6 +17,7 @@ pub use openbitfun_services_integrations::workspace_search::{
 };
 #[cfg(feature = "ssh-remote")]
 pub use remote::{remote_workspace_search_service_for_workspace, RemoteWorkspaceSearchService};
+pub use remote_content::{search_remote_workspace_contents, RemoteContentSearch};
 #[cfg(not(feature = "ssh-remote"))]
 pub use remote_disabled::{
     remote_workspace_search_service_for_workspace, RemoteWorkspaceSearchService,

@@ -6,7 +6,7 @@ These rules apply to all changes under `src/apps/mobile/harmonyos`.
 
 Phone, tablet, and foldable entrypoints are remote controllers. They must not
 instantiate a local Agent Runtime, model provider, local chat command owner, or
-model configuration store. GitHub identity and the authenticated device directory
+model configuration store. OpenBitFun account identity and the authenticated device directory
 are the authority for selection and reconnect; QR data supplies only a device id.
 Keep old persisted records readable and retained without activating legacy room
 credentials or local execution. Compact and wide hosts enforce the same boundary.
@@ -75,6 +75,12 @@ source scripts/ohos-env.sh
 "$HVIGORW" --mode module -p product=default -p module=entry@default assembleHap --no-daemon
 "$HVIGORW" --mode module -p module=entry@default -p ohos.test.type=LocalTest test --no-daemon
 ```
+
+Relay Zstd encode/decode uses N-API async work through
+`services/RelayMessageEncoding.ets`. The wrapper bounds the worker wait, and
+compressed messages retain their capability generation until submission. Verify
+presence changes during upload, settled replies, and codec waits with
+`node --test tools/tests/relay-message-generation.test.cjs`.
 
 For window inset subscription lifecycle and late completion regressions, run
 `node --test tools/tests/window-insets-lifecycle.test.cjs tools/tests/immersive-bottom.test.cjs`.

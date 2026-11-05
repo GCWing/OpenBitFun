@@ -32,6 +32,7 @@ vi.mock('../AgenticEventListener', () => ({
 
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import { activateSurface, LOCAL_SURFACE_ID } from '@/infrastructure/peer-device/deviceSurface';
+import { beginDeviceOpen, endDeviceOpen } from '@/infrastructure/peer-device/deviceOpenIntent';
 import { sessionStream } from '../../session-stream/SessionStream';
 import { FlowChatStore } from '../../store/FlowChatStore';
 import {
@@ -780,6 +781,36 @@ describe('PeerSessionRefreshModule draft subscription', () => {
     expect(loadRelaySessionHistory).toHaveBeenCalledTimes(1);
     expect(loadRelaySessionHistory).toHaveBeenCalledWith('draft-1');
     cleanup();
+  });
+
+  it.each(['new:workspace-1', 'session:another-session'])('defers the previous tab while opening %s and resumes after a failed open', async key => {
+    const { context, loadRelaySessionHistory } = contextWithDraft('ready');
+    const intent = beginDeviceOpen({ surfaceId: 'peer-device', key,
+      sessionId: key.startsWith('session:') ? 'another-session' : undefined });
+    const cleanup = installPeerSessionRefresh(context);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(loadRelaySessionHistory).not.toHaveBeenCalled();
+      endDeviceOpen(intent);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(loadRelaySessionHistory).toHaveBeenCalledWith('draft-1');
+    } finally {
+      cleanup();
+      endDeviceOpen(intent);
+    }
+  });
+
+  it('starts the requested session while its open intent is still active', async () => {
+    const { context, loadRelaySessionHistory } = contextWithDraft('ready');
+    const intent = beginDeviceOpen({ surfaceId: 'peer-device', key: 'session:draft-1', sessionId: 'draft-1' });
+    const cleanup = installPeerSessionRefresh(context);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(loadRelaySessionHistory).toHaveBeenCalledWith('draft-1');
+    } finally {
+      cleanup();
+      endDeviceOpen(intent);
+    }
   });
 });
 

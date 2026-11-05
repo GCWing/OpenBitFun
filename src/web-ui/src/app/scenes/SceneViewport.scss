@@ -37,6 +37,7 @@
     justify-content: center;
     pointer-events: none;
     z-index: 1;
+    animation: openbitfun-scene-viewport-wait-reveal 180ms var(--openbitfun-motion-easing-standard) 220ms both;
   }
 
   // ── Scene slot ────────────────────────────────────────
@@ -77,9 +78,12 @@
       transition: opacity 480ms cubic-bezier(0.23, 1, 0.32, 1);
     }
 
+    // The scene being left covers the incoming one and fades away above it,
+    // so the switch is one crossfade with no dip to the background.
     &--outgoing {
       z-index: 2;
       pointer-events: none;
+      background: var(--openbitfun-color-surface-scene);
     }
 
     &:not(.openbitfun-scene-viewport__scene--visible) {
@@ -91,22 +95,32 @@
   }
 
   &:not(.openbitfun-scene-viewport--paned) &__clip[data-scene-motion-phase='preparing'] {
-    .openbitfun-scene-viewport__scene--incoming.openbitfun-scene-viewport__scene--visible {
-      opacity: 0.5;
+    .openbitfun-scene-viewport__scene--outgoing.openbitfun-scene-viewport__scene--visible {
+      opacity: 1;
       transition: none;
+    }
+  }
+
+  &:not(.openbitfun-scene-viewport--paned) &__clip[data-scene-motion-phase='running'] {
+    .openbitfun-scene-viewport__scene--outgoing.openbitfun-scene-viewport__scene--visible {
+      opacity: 0;
+      transition: opacity 220ms cubic-bezier(0.4, 0, 0.2, 1);
     }
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .openbitfun-scene-viewport__lazy-fallback {
+    animation-duration: 1ms;
+  }
+
   .openbitfun-scene-viewport__scene--incoming {
     transition: none;
   }
 
-  .openbitfun-scene-viewport:not(.openbitfun-scene-viewport--paned) .openbitfun-scene-viewport__clip[data-scene-motion-phase='preparing'] {
-    .openbitfun-scene-viewport__scene--incoming.openbitfun-scene-viewport__scene--visible {
-      opacity: 1;
-    }
+  .openbitfun-scene-viewport__scene--outgoing.openbitfun-scene-viewport__scene--visible {
+    opacity: 0 !important;
+    transition: none !important;
   }
 }
 
@@ -133,4 +147,11 @@
 .openbitfun-scene-viewport:not(.openbitfun-scene-viewport--paned) .openbitfun-scene-viewport__scene {
   position: absolute;
   inset: 0;
+}
+
+// A wait that ends quickly shows nothing: the indicator fades in only once
+// the wait has lasted long enough to be noticed.
+@keyframes openbitfun-scene-viewport-wait-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

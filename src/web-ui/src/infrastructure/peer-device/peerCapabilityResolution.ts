@@ -26,6 +26,14 @@ export function canCopySessionsOnSurface(
   return !peerActive || capabilities?.wholeSessionCopyV1 === true;
 }
 
+/** A host without the key cannot parse `None`; only the local surface is implicit. */
+export function canUseSshNoneAuthOnSurface(
+  peerActive: boolean,
+  capabilities: PeerHostCapabilities | null,
+): boolean {
+  return !peerActive || capabilities?.sshNoneAuthV1 === true;
+}
+
 /**
  * Resolve whether the currently rendered surface can be queried for the
  * read-only tool catalog (`get_all_tools_info`), so the UI skips the invoke

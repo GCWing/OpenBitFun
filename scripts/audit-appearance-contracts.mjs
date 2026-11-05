@@ -21,8 +21,6 @@ const crossBoundaryRoots = [
   path.join(repoRoot, 'tests', 'e2e', 'specs'),
   path.join(repoRoot, 'tests', 'e2e', 'helpers'),
   path.join(repoRoot, 'src', 'crates', 'contracts', 'product-domains', 'src', 'miniapp'),
-  path.join(repoRoot, 'src', 'crates', 'services', 'services-integrations', 'src', 'canvas'),
-  path.join(repoRoot, 'src', 'crates', 'assembly', 'core', 'builtin_skills', 'openbitfun-canvas'),
   path.join(repoRoot, 'src', 'crates', 'assembly', 'core', 'builtin_skills', 'miniapp-dev'),
 ];
 const failures = [];
@@ -114,6 +112,17 @@ function walkContractSources(directory) {
 
 function relative(file) {
   return path.relative(repoRoot, file);
+}
+
+// OpenUI and Harmony component sources are vendored renderer resources. They
+// carry their upstream theme DOM and CSS vocabulary inside the GenUI renderer
+// boundary, where the host scopes delivery separately from product Appearance
+// surfaces. Do not treat those upstream contracts as product-owned surfaces.
+function isVendoredGenUISource(file) {
+  const normalized = relative(file).replaceAll('\\', '/');
+  return normalized.startsWith('src/web-ui/src/tools/generative-ui/components/openui/')
+    || normalized.startsWith('src/web-ui/src/tools/generative-ui/components/vendor/')
+    || normalized === 'src/web-ui/src/tools/generative-ui/components/openuiLibrary.tsx';
 }
 
 function extractObject(source, start) {
@@ -385,7 +394,9 @@ function analyzeStyledOwnerContract(file, source, visualClassIds) {
 
 const sourceFiles = walk(sourceRoot);
 const sources = new Map(sourceFiles.map(file => [file, fs.readFileSync(file, 'utf8')]));
-const productionSources = [...sources.entries()].filter(([file]) => !/\.(?:test|spec)\.[jt]sx?$/.test(file));
+const productionSources = [...sources.entries()].filter(([file]) => (
+  !/\.(?:test|spec)\.[jt]sx?$/.test(file) && !isVendoredGenUISource(file)
+));
 const productionCodeSources = productionSources.filter(([file]) => /\.(?:ts|tsx)$/.test(file));
 const externalAppearanceContractSources = externalAppearanceContractFiles
   .filter(file => fs.existsSync(file))
@@ -686,10 +697,7 @@ for (const sceneFile of walk(sceneRoot).filter(file => file.endsWith('Scene.tsx'
   }
 }
 
-const visualEntryPoints = new Set([
-  'main.tsx',
-  'tools/openbitfun-canvas/runtime/entry.tsx',
-]);
+const visualEntryPoints = new Set(['main.tsx']);
 const styledProductionTsx = productionCodeSources.filter(([file, source]) => {
   if (!file.endsWith('.tsx')) return false;
   const sourceRelative = path.relative(sourceRoot, file).replaceAll(path.sep, '/');
@@ -853,8 +861,6 @@ for (const [file, source] of productionSources) {
 
 const crossBoundaryForbiddenContracts = [
   ['hostTheme', /\bhostTheme\b/],
-  ['CanvasHostTheme', /\bCanvasHostTheme\b/],
-  ['openbitfun-canvas-theme', /openbitfun-canvas-theme/],
   ['onThemeChange', /\bonThemeChange\b/],
   ['data-theme-type', /data-theme-type/],
   ['openbitfun/request-theme', /openbitfun\/request-theme/],

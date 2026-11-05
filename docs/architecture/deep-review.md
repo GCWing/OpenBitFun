@@ -128,7 +128,7 @@ The default strict-review contract is mirrored in Rust and TypeScript. New stric
 - automatic file splitting, same-role fan-out, and reviewer retry are disabled;
 - workers and the Judge share one three-call allowance and at most two run concurrently.
 
-The runtime enforces the shared allowance even if a weak model ignores the prompt. This is a resource ceiling, not a keyword or risk-score workflow rule. The model decides whether another check is useful from the actual evidence and task; the manifest and backend limit which read-only capability, target scope, and question it may use. The Review capacity setting may lower focused checks and managed large-target batches to one-at-a-time execution, but it cannot raise the two-way ceiling or create additional work.
+The runtime enforces the shared allowance even if a model ignores the prompt. This is a resource ceiling, not a keyword or risk-score workflow rule. The model decides whether another check is useful from the actual evidence and task; the manifest and backend limit which read-only capability, target scope, and question it may use. The Review capacity setting may lower focused checks and managed large-target batches to one-at-a-time execution, but it cannot raise the two-way ceiling or create additional work.
 
 Historical configuration fields for reviewer timeouts, file-split thresholds, same-role instances, retries, concurrency, and queue behavior remain readable so stored sessions can recover honestly. New adaptive manifests override split, same-role, retry, concurrency, and call values to the bounded policy above. Configured review agents must be file-backed and read-only. `DeepReview` and `ReviewFixer` remain disallowed.
 

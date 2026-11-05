@@ -113,6 +113,30 @@ canonical text or thinking, remove a round or tool result, or turn a settled
 record back into an executing one. Externally projected sessions such as ACP
 remain owned by their external projection.
 
+Native Turn completion also reconciles cumulative token usage from the executing
+host's durable request ledger before publishing the settled record. The query
+uses native request-attempt identities scoped to the Session and Turn, including
+retries and recovered generations. Auxiliary tool calls and unattributed legacy
+ledger rows do not enter the rate. Completion does not depend on a controller or
+its last debounced save.
+Ledger reads happen before the Session mutation lock. Missing or unreadable usage
+retains the checkpoint, and unreadable data is logged without resetting it.
+Later projected saves cannot reduce an already observed aggregate. Clients talking
+to older hosts likewise retain a more complete live aggregate when adopting the
+settled record. Unknown cache telemetry stays unknown. This does not change the
+output-rate denominator or backfill historical Turns on read.
+
+A client can miss the terminal event entirely, for example while the window
+renders another device surface. Its stream then still believes the Turn is
+executing. A host read that reports the Host's own state resolves this: the
+Runtime commits the terminal record before leaving the processing state, so a
+terminal record for a Turn the Host is not executing is the settled Turn. The
+client hands that Turn to the persisted record (`adoptHostSettledTurn`) instead
+of letting its stale ownership veto the read. The remaining content guard is
+shape-neutral: it refuses a read that misses a painted round, tool, tool result
+or text, but not one that differs only in attempt metadata, newline coalescing
+or segment boundaries.
+
 After the terminal record is committed, `SessionHistoryChanged` is the durable
 fence. Local and Peer Device surfaces re-read the affected tail Turn. Remote
 Connect polling sends an optional authoritative `message_snapshot`, because an

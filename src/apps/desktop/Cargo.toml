@@ -27,7 +27,7 @@ openbitfun-relay-service = { path = "../../crates/services/relay-service" }
 openbitfun-agent-runtime = { path = "../../crates/execution/agent-runtime", features = ["agent-runtime"] }
 openbitfun-runtime-ports = { path = "../../crates/contracts/runtime-ports", features = ["agent-api", "permission", "workspace-ports"] }
 openbitfun-product-domains = { path = "../../crates/contracts/product-domains", features = ["appearance-market"] }
-openbitfun-services-integrations = { path = "../../crates/services/services-integrations", features = ["canvas-runtime", "miniapp-market", "skillhub", "remote-ssh-concrete", "speech-realtime"] }
+openbitfun-services-integrations = { path = "../../crates/services/services-integrations", features = ["miniapp-market", "skillhub", "remote-ssh-concrete", "speech-realtime"] }
 openbitfun-core-types = { path = "../../crates/contracts/core-types" }
 openbitfun-agent-tools = { path = "../../crates/execution/tool-contracts", features = ["element-token", "computer-use-contract"] }
 openbitfun-transport = { path = "../../crates/adapters/transport", features = ["tauri-adapter"] }
@@ -105,7 +105,7 @@ libc = { workspace = true }
 objc2 = { workspace = true, features = ["exception"] }
 block2 = { workspace = true }
 objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSNotification", "NSOperation", "NSString", "block2"] }
-objc2-app-kit = { workspace = true, features = ["std", "libc", "NSAnimationContext", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow", "NSWorkspace", "NSRunningApplication"] }
+objc2-app-kit = { workspace = true, features = ["std", "libc", "objc2-core-foundation", "NSAnimationContext", "NSBezierPath", "NSColor", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow", "NSWorkspace", "NSRunningApplication"] }
 
 [target.'cfg(windows)'.dependencies]
 notify-rust = { workspace = true }
@@ -122,12 +122,14 @@ windows = { workspace = true, features = [
   "Win32_System_Com_StructuredStorage",
   "Win32_System_Ole",
   "Win32_System_Variant",
+  "Win32_UI_HiDpi",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_UI_Shell_PropertiesSystem",
   "Win32_UI_WindowsAndMessaging",
 ] }
 windows-core = { workspace = true }
+windows-version = { workspace = true }
 webview2-com = { workspace = true }
 
 [target.'cfg(windows)'.dev-dependencies]

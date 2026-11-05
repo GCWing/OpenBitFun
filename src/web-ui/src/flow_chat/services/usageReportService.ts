@@ -6,6 +6,7 @@ import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurfac
 import type { Session } from '../types/flow-chat';
 import { requireSessionOwningWorkspaceId } from '../utils/sessionOrdering';
 import { i18nService } from '@/infrastructure/i18n';
+import { classifyPeerHostRefusal } from '@/infrastructure/peer-device/peerHostRefusal';
 import {
   formatCacheHitRate,
   formatTokenCount,
@@ -90,6 +91,14 @@ export async function runUsageReportCommand(
     return { shown, report };
   } catch (error) {
     if (!surface.isCurrent()) return { shown: false };
+    // A peer host that does not offer the report (an older CLI host, or a host
+    // kind without it) is an expected state, not a failure: say so in place
+    // and skip the error toast. Callers still see the rejection.
+    const unsupported = usageReportUnsupportedMessage(error);
+    if (unsupported) {
+      panel?.unsupported(unsupported);
+      throw error;
+    }
     panel?.fail(error instanceof Error ? error.message : params.unknownErrorMessage);
     notificationService.error(
       error instanceof Error ? error.message : params.unknownErrorMessage,
@@ -100,6 +109,18 @@ export async function runUsageReportCommand(
     );
     throw error;
   }
+}
+
+/**
+ * Localized calm copy when the executing peer host does not offer the usage
+ * report, or `null` for any other error.
+ */
+export function usageReportUnsupportedMessage(error: unknown): string | null {
+  const refusal = classifyPeerHostRefusal(error);
+  if (!refusal) return null;
+  return i18nService.t(refusal.kind === 'updateRequired'
+    ? 'flow-chat:usage.context.updateRequired'
+    : 'flow-chat:usage.context.unsupported');
 }
 
 export function enrichUsageReportModelIdentity(

@@ -732,33 +732,6 @@ export const requiredContentRules = [
     ],
   },
   {
-    path: 'src/crates/execution/agent-runtime/src/context_profile.rs',
-    reason:
-      'agent-runtime must own provider-neutral context profile and model capability policy facts',
-    patterns: [
-      {
-        regex: /\bpub enum ContextProfile\b/,
-        message: 'missing context profile fact',
-      },
-      {
-        regex: /\bpub enum ModelCapabilityProfile\b/,
-        message: 'missing model capability profile fact',
-      },
-      {
-        regex: /\bpub struct ContextProfilePolicy\b/,
-        message: 'missing context profile policy fact',
-      },
-      {
-        regex: /\bfor_subagent_context_and_models\b/,
-        message: 'missing subagent context/model policy helper',
-      },
-      {
-        regex: /\bmodel_capability_weak_for_mini\b/,
-        message: 'missing weak-model regression',
-      },
-    ],
-  },
-  {
     path: 'src/crates/execution/agent-runtime/src/session_state.rs',
     reason:
       'agent-runtime must own provider-neutral session state facts and event-label projection',
@@ -3741,17 +3714,6 @@ export const requiredContentRules = [
       {
         regex: /tools-miniapp = \[[^\]]*"openbitfun-product-domains\/miniapp"[^\]]*\]/,
         message: 'core MiniApp tool owner must select its product-domain slice explicitly',
-      },
-      {
-        regex: /canvas-runtime = \[[^\]]*"openbitfun-services-integrations\/canvas-runtime"[^\]]*\]/,
-        message:
-          'core canvas-runtime facade must enable the Canvas service owner feature it imports',
-      },
-      {
-        regex:
-          /canvas-runtime = \[[\s\S]*"dep:openbitfun-product-domains"[\s\S]*"openbitfun-services-integrations\/canvas-runtime"[\s\S]*\]/,
-        message:
-          'core canvas-runtime feature must explicitly aggregate the domain contract and canvas service owner',
       },
       {
         regex:

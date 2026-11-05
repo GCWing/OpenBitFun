@@ -186,15 +186,29 @@ describe('WorkspaceListSection layout styles', () => {
     );
   });
 
-  it('uses distinct disclosure icons for collapsed and expanded session groups', () => {
+  it('keeps the project icon visible on hover and exposes the disclosure state', () => {
     const source = readWorkspaceItemSource();
     const stylesheet = readWorkspaceListStylesheet();
 
-    expect(source).toContain(
-      "const sessionDisclosureIcon = sessionsCollapsed ? 'chevron-right' : 'chevron-down';",
-    );
-    expect(source.match(/<Icon name=\{sessionDisclosureIcon\} size="sm" \/>/g)).toHaveLength(1);
+    expect(source).toContain('aria-expanded={!sessionsCollapsed}');
+    expect(source).not.toContain('workspace-item-icon-toggle');
+    expect(stylesheet).not.toContain('workspace-item-icon-default');
+    expect(stylesheet).not.toContain('workspace-item-icon-toggle');
     expect(stylesheet).not.toContain('&.is-collapsed svg');
+  });
+
+  it('animates the project session region while keeping collapsed sessions inert', () => {
+    const source = readWorkspaceItemSource();
+    const stylesheet = readWorkspaceListStylesheet();
+    const projectSessions = extractBlock(stylesheet, '&__workspace-item-sessions--project');
+    const inner = extractBlock(stylesheet, '&__workspace-item-sessions-inner');
+
+    expect(source).toContain('inert: sessionsCollapsed ?');
+    expect(source).toContain('isVisible={!sessionsCollapsed}');
+    expect(projectSessions).toContain('grid-template-rows: 1fr;');
+    expect(projectSessions).toContain('grid-template-rows: 0fr;');
+    expect(projectSessions).toContain('grid-template-rows var(--openbitfun-motion-duration-normal)');
+    expect(inner).toContain('min-block-size: 0;');
   });
 
   it('keeps remote workspace directory and host metadata on one row with the status dot first', () => {
@@ -214,18 +228,18 @@ describe('WorkspaceListSection layout styles', () => {
     expect(remoteNameButton).toContain('flex: 1 1 0;');
     expect(remoteNameButton).toContain('max-width: none;');
     expect(remoteChip).toContain('gap: var(--openbitfun-space-2);');
-    expect(remoteChip).toContain('flex: 0 0 auto;');
+    // The folder name owns the row; the chip shrinks and stays bounded (#3517).
+    expect(remoteChip).toContain('flex: 0 1 auto;');
+    expect(remoteChip).toContain('min-width: 0;');
+    expect(remoteChip).toContain('max-width: 45%;');
     expect(remoteChip).toContain('margin-left: auto;');
     expect(remoteChip).toContain('padding: 0 var(--openbitfun-space-2);');
     expect(remoteChip).toContain('border-radius: var(--openbitfun-radius-base);');
-    expect(stylesheet).toContain(
-      '&.is-connected {\n' +
-      '      background: var(--openbitfun-color-status-success-surface);\n' +
-      '      color: var(--openbitfun-color-status-success-content);',
-    );
-    expect(remoteHost).toContain('flex: 0 0 auto;');
+    // A connected chip stays neutral; the green status dot already reports it.
+    expect(remoteChip).not.toContain('status-success-surface');
+    expect(remoteHost).toContain('flex: 0 1 auto;');
     expect(remoteHost).toContain('white-space: nowrap;');
-    expect(remoteHost).not.toContain('text-overflow: ellipsis;');
+    expect(remoteHost).toContain('text-overflow: ellipsis;');
 
     const source = readWorkspaceItemSource();
     const remoteNameStart = source.indexOf('behavior="marquee"');
@@ -236,12 +250,12 @@ describe('WorkspaceListSection layout styles', () => {
 
     expect(remoteMetaStart).toBeGreaterThanOrEqual(0);
     expect(remoteMetaEnd).toBeGreaterThan(remoteMetaStart);
-    expect(source).toContain('const hostLabel = workspace.sshHost?.trim() || connectionLabel;');
+    expect(source).toContain('const badge = remoteBadge ?? remoteWorkspaceBadge(workspace);');
     expect(source).toContain('<OverflowText');
     expect(source).toContain('behavior="marquee"');
     expect(searchIndicatorStart).toBeGreaterThan(remoteNameStart);
     expect(remoteMetaStart).toBeGreaterThan(searchIndicatorStart);
-    expect(remoteMetaMarkup).toContain('remoteMeta.connectionLabel');
+    expect(remoteMetaMarkup).toContain('remoteMeta.badgeLabel');
     expect(remoteMetaMarkup.indexOf('workspace-item-status-dot'))
       .toBeLessThan(remoteMetaMarkup.indexOf('workspace-item-remote-host'));
     expect(source).not.toContain('workspace-item-subtitle');
@@ -266,8 +280,8 @@ describe('WorkspaceListSection layout styles', () => {
     const iconSource = readFileSync(fileURLToPath(new URL('../../../WorkspaceIcon/WorkspaceIcon.tsx', import.meta.url)), 'utf8');
 
     expect(itemSource).toContain('<AssistantAvatar size={22} name={workspaceDisplayName} />');
-    expect(itemSource).toContain('<WorkspaceIcon workspace={workspace} />');
-    expect(iconSource).toContain('projectGlyphs[glyph] : remote ? Server : Folder');
+    expect(itemSource).toContain('<WorkspaceIcon workspace={workspace} expanded={!sessionsCollapsed} />');
+    expect(iconSource).toContain('customGlyph ?? (remote ? Server : Folder)');
     expect(iconSource).toContain('<Icon glyph={artwork} size="sm"');
     expect(itemSource).not.toContain('SessionGroup');
     expect(listSource).not.toContain('nav.sessions.viewMenu.grouping.all');

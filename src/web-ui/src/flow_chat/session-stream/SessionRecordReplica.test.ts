@@ -94,4 +94,19 @@ describe('SessionRecordReplica', () => {
     expect(replica.apply(record(2))).toBeNull();
     expect(replica.apply(record(11))?.turn?.modelRounds[0].textItems).toHaveLength(1);
   });
+
+  it.each(['before', 'after'] as const)('hands a rollback receipt fence over to a tombstone arriving %s the receipt', order => {
+    const replica = new SessionRecordReplica('session');
+    replica.apply(record(1));
+    const tombstone = { sessionId: 'session', id: 'turn/turn', revision: 10, deleted: true } as const;
+    if (order === 'before') replica.apply(tombstone);
+    replica.retireTurns(['turn']);
+    expect(replica.snapshot('turn').turn).toBeNull();
+    expect(replica.apply(record(5))?.turn ?? null).toBeNull();
+    if (order === 'after') {
+      expect(replica.apply(tombstone)).toEqual({ turnId: 'turn', turn: null });
+    }
+    expect(replica.apply(record(9))?.turn).toBeNull();
+    expect(replica.apply(record(11))?.turn?.modelRounds[0].textItems).toHaveLength(1);
+  });
 });

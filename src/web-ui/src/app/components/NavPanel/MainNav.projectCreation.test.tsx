@@ -56,6 +56,16 @@ vi.mock('./components/StickySectionHeader', () => ({ default: ({ children }: Rea
 vi.mock('./components/WorkspaceSessionGroupingToggle', () => ({ default: () => null }));
 vi.mock('./components/WorkspaceSessionFilterMenu', () => ({ default: () => null }));
 vi.mock('./sections/workspaces/WorkspaceListSection', () => ({ default: () => null }));
+vi.mock('./sections/devices/DeviceWorkspaceSections', () => ({ default: () => null }));
+vi.mock('./sections/devices/useSidebarDevices', () => ({ useSidebarDevices: () => [] }));
+vi.mock('./sections/devices/openOnDevice', () => ({ activateDeviceSlot: vi.fn() }));
+vi.mock('@/infrastructure/account/deviceDirectory', async importOriginal => ({
+  ...await importOriginal<typeof import('@/infrastructure/account/deviceDirectory')>(),
+  useDeviceDirectory: (select?: (state: { devices: never[]; localId: string | null; status: 'idle' }) => unknown) => {
+    const directory = { devices: [], localId: null, status: 'idle' as const };
+    return select ? select(directory) : directory;
+  },
+}));
 vi.mock('./components/MiniAppShortcuts', () => ({ default: () => <button data-testid="miniapp-shortcut">Notes</button> }));
 vi.mock('@/features/ssh-remote', () => ({
   useSSHRemoteContext: () => state.remote,

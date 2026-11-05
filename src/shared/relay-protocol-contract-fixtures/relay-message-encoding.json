@@ -1,0 +1,14 @@
+{
+  "description": "AES-GCM plaintext after decryption, before decoding. One Zstandard level-1 frame with a 300-byte original.",
+  "cases": [
+    {
+      "name": "zstd-1",
+      "wire": {
+        "hex": "ff4f5a012c01000028b52ffd602c004d00001078780100272ac002"
+      },
+      "expected": {
+        "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    }
+  ]
+}

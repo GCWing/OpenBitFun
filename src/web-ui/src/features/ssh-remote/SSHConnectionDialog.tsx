@@ -32,10 +32,11 @@ import { OverflowText,
 import React, { useState, useEffect, useCallback, useRef, useId, useSyncExternalStore } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
+import { canUseSshNoneAuthOnSurface } from '@/infrastructure/peer-device/peerCapabilityResolution';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { useSSHRemoteContext } from './SSHRemoteContext';
 import { SSHAuthPromptDialog, type SSHAuthPromptSubmitPayload } from './SSHAuthPromptDialog';
-import { EyeOff, FolderOpen, Key, Loader2, Lock, Server } from 'lucide-react';
+import { EyeOff, FolderOpen, Key, Loader2, Lock, Server, Unlock } from 'lucide-react';
 import type {
   ConnectionTestReport,
   ConnectionTestStage,
@@ -50,10 +51,11 @@ import type {
 import { sshApi } from './sshApi';
 import { WorkspaceSourceSelector } from './WorkspaceSourceSelector';
 import { WorkspaceChoiceCapsules } from './WorkspaceChoiceCapsules';
-import { workspaceSourceErrorKey, isSshAuthenticationError } from './workspaceSourceError';
+import { canRepairSshCredentials, sshConnectionErrorKey, workspaceSourceErrorKey } from './workspaceSourceError';
 import { savedConnectionConfig } from './savedConnectionConfig';
 import type { WorkspaceConnectionPreset } from './useWorkspaceSourceOptions';
 import { sameWorkspaceSource, savedConnectionTarget } from './workspaceSource';
+import { resolveNewSshConnectionId } from './resolveSshConnectionId';
 import {
   pickSshCertificatePath,
   pickSshPrivateKeyPath,
@@ -75,7 +77,7 @@ interface SSHConnectionDialogProps {
 
 const emptySshEndpoint = () => ({
   host: '', port: '22', username: '',
-  authType: 'password' as 'password' | 'privateKey' | 'agent' | 'keyboardInteractive',
+  authType: 'password' as 'password' | 'privateKey' | 'agent' | 'keyboardInteractive' | 'none',
   password: '', keyPath: '~/.ssh/id_rsa', passphrase: '', certificatePath: '',
   keyFingerprint: '', fallbackKeyPath: '~/.ssh/id_rsa', verificationCode: '', proxyJump: '',
 });
@@ -94,6 +96,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
 }) => {
   const { t } = useI18n('common');
   const peer = usePeerDeviceModeOptional();
+  const noAuthSupported = canUseSshNoneAuthOnSurface(Boolean(peer?.peerMode.active), peer?.currentPeerCapabilities ?? null);
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const { connect, status, connectionError, clearError } = useSSHRemoteContext();
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
@@ -362,12 +365,6 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     if (path) setFormData((prev) => ({ ...prev, certificatePath: path }));
   }, [isConnecting, status, t]);
 
-  // Port is intentionally excluded so that the ID stays stable when the user
-  // changes the SSH port.
-  const generateConnectionId = (host: string, _port: number, username: string) => {
-    return `ssh-${username}@${host}`;
-  };
-
   const buildAuthMethod = (): SSHAuthMethod => {
     switch (formData.authType) {
       case 'password':
@@ -390,11 +387,14 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
           type: 'KeyboardInteractive',
           responses: [formData.password, formData.verificationCode].filter(Boolean),
         };
+      case 'none':
+        return { type: 'None' };
     }
   };
 
   const buildConnectionConfig = async (
     requireContainer: boolean,
+    persistsProfile = true,
   ): Promise<SSHConnectionConfig | null> => {
     if (formData.targetType === 'wsl') {
       if (!editOnly && !wslDistributions?.supported) {
@@ -451,6 +451,10 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     }
     if (!isLocalDocker && formData.authType === 'password' && !formData.password && !editingProfile) {
       setLocalError(t('ssh.remote.passwordRequired'));
+      return null;
+    }
+    if (!isLocalDocker && formData.authType === 'none' && !noAuthSupported) {
+      setLocalError(t('ssh.remote.noAuthUnsupported'));
       return null;
     }
     if (!isLocalDocker && formData.authType === 'privateKey' && !formData.keyPath.trim()) {
@@ -516,11 +520,29 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     // Direct SSH already identifies the container. Keep legacy metadata when editing;
     // new profiles derive it from the endpoint instead of asking for a Docker ID.
     const containerName = formData.containerName.trim() || (formData.targetType === 'containerSshd' ? connectHost : 'discovery');
-    const id = isLocalDocker
-      ? `docker-local-${containerName}`
-      : `${generateConnectionId(connectHost, port, username)}${usesContainer ? `-container-${containerName}` : ''}`;
+    // Editing keeps the saved id (so a port change never moves sessions);
+    // new profiles get a port-aware id that cannot overwrite another endpoint.
+    let id = editingProfile?.id ?? `docker-local-${containerName}`;
+    if (!editingProfile && !isLocalDocker) {
+      const resolved = await resolveNewSshConnectionId(
+        { host: connectHost, port, username, suffix: usesContainer ? `-container-${containerName}` : '' },
+        connection => !connection.wsl && (usesContainer
+          ? !connection.container?.local && connection.container?.name === containerName
+          : !connection.container),
+      );
+      if (!('error' in resolved)) {
+        id = resolved.id;
+      } else if (!persistsProfile) {
+        id = resolved.transientId;
+      } else {
+        setLocalError(resolved.error === 'portScopedIdentityUnsupported'
+          ? t('ssh.remote.portScopedIdentityUnsupported', { connection: resolved.conflict.name || resolved.conflict.id })
+          : t('workspaceSource.hostDiscoveryFailed'));
+        return null;
+      }
+    }
     return {
-      id: editingProfile?.id ?? id,
+      id,
       name: formData.name || (isLocalDocker ? containerName : `${username}@${hostInput}`),
       host: connectHost,
       port,
@@ -530,6 +552,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
         : buildAuthMethod(),
       defaultWorkspace: editingProfile?.defaultWorkspace,
       proxyJump: !isLocalDocker ? resolvedProxyJump || undefined : undefined,
+      proxyCommand: editingProfile?.proxyCommand,
       container: usesContainer ? {
         name: containerName,
         access: formData.targetType === 'containerSshd'
@@ -560,14 +583,14 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
       const config = await buildConnectionConfig(true);
       if (!config) return;
       try { await connectAndFinish(config); } catch (cause) {
-        if (inheritedHost && isSshAuthenticationError(cause)) {
+        if (inheritedHost && canRepairSshCredentials(config.auth, cause)) {
           const { auth, ...profile } = config;
           setCredentialsPrompt({ ...profile, authType: auth.type === 'Password' ? { type: 'Password' }
             : auth.type === 'KeyboardInteractive' ? { type: 'KeyboardInteractive' } : auth });
         } else throw cause;
       }
     } catch (e) {
-      setLocalError(t(isLocalProcessTarget || inheritedHost ? workspaceSourceErrorKey(formData.targetType, e) : 'workspaceSource.connectionFailed'));
+      setLocalError(t(isLocalProcessTarget || inheritedHost ? workspaceSourceErrorKey(formData.targetType, e) : sshConnectionErrorKey(e)));
     } finally {
       setIsConnecting(false);
     }
@@ -593,7 +616,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     setConnectionTest(null);
     setLocalError(null);
     try {
-      const config = await buildConnectionConfig(true);
+      const config = await buildConnectionConfig(true, false);
       if (!config) return;
       setConnectionTest(await sshApi.testConnection(config));
     } catch (_error) {
@@ -608,7 +631,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     setIsListingContainers(true);
     setLocalError(null);
     try {
-      const config = await buildConnectionConfig(false);
+      const config = await buildConnectionConfig(false, false);
       if (!config || requestId !== containerRequestId.current || !scope.isCurrent()) return;
       const containers = await sshApi.listDockerContainers(config);
       if (requestId !== containerRequestId.current || !scope.isCurrent()) return;
@@ -642,8 +665,8 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     // environment-specific status instead of asking for SSH credentials.
     if (conn.wsl || conn.container?.local) {
       setLocalError(t(workspaceSourceErrorKey(savedConnectionTarget(conn), error)));
-    } else if (isSshAuthenticationError(error)) setCredentialsPrompt(conn);
-    else setLocalError(t('workspaceSource.connectionFailed'));
+    } else if (canRepairSshCredentials(conn.authType, error)) setCredentialsPrompt(conn);
+    else setLocalError(t(sshConnectionErrorKey(error)));
   }, [t]);
 
   const handleQuickConnect = useCallback(async (conn: SavedConnection) => {
@@ -741,7 +764,9 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
         ? 'privateKey'
         : conn.authType.type === 'Agent'
           ? 'agent'
-          : 'keyboardInteractive';
+          : conn.authType.type === 'KeyboardInteractive'
+            ? 'keyboardInteractive'
+            : 'none';
     const targetType = savedConnectionTarget(conn);
     setFormData({
       targetType,
@@ -814,6 +839,10 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
       value: 'keyboardInteractive',
       icon: <Lock size={14} />,
     },
+    // A saved `none` profile stays visible so its method is not silently rewritten.
+    ...(noAuthSupported || formData.authType === 'none'
+      ? [{ label: t('ssh.remote.noAuth'), value: 'none', icon: <Unlock size={14} /> }]
+      : []),
   ];
   const containerAccessOptions = [
     { label: t('ssh.remote.containerAccessAuto'), value: 'auto' },
@@ -1163,6 +1192,9 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
                   size="md"
                 />
               </Field>
+              {formData.authType === 'none' && (
+                <div className="ssh-connection-dialog__hint">{t('ssh.remote.noAuthHint')}</div>
+              )}
             </FieldRow>
 
             {/* Password */}

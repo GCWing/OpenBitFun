@@ -17,8 +17,8 @@ use openbitfun_events::{project_agentic_frontend_event, AgenticEvent};
 use openbitfun_product_domains::product_search::SessionContentSearchRequest;
 use openbitfun_runtime_ports::{
     AgentSessionArchiveRequest, AgentSessionCreateRequest, AgentSessionDeleteRequest,
-    AgentSessionModeUpdateRequest, AgentSessionRenameRequest, AgentThreadGoalGetRequest,
-    SessionStoragePathRequest, SessionTurnWindowRequest,
+    AgentSessionModeUpdateRequest, AgentSessionRenameRequest, AgentSessionUsageRequest,
+    AgentThreadGoalGetRequest, SessionStoragePathRequest, SessionTurnWindowRequest,
 };
 
 use crate::diagnostics::{OUTCOME_UNKNOWN_ERROR_CODE, SESSION_IN_USE_ERROR_CODE};
@@ -207,12 +207,9 @@ pub(super) async fn resolved_session_storage_scope(
 /// Whether the controller named the session's workspace, by ID or by the
 /// legacy path projection. Only such requests can (re)load the session.
 fn has_session_workspace_scope(request: &Value) -> bool {
-    ["workspaceId", "workspacePath"].iter().any(|key| {
-        request
-            .get(key)
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.trim().is_empty())
-    })
+    ["workspaceId", "workspacePath"]
+        .iter()
+        .any(|key| optional_string(request, key).is_some())
 }
 
 fn validated_session_id(request: &Value) -> Result<String, String> {
@@ -318,6 +315,16 @@ pub(crate) async fn list_persisted_sessions_page(
         .transpose()
         .map_err(|error| format!("Invalid session activity ids: {error}"))?;
     let query = session_catalog_query(request)?;
+    let refresh_external_discovery = request
+        .get("refresh_external_discovery")
+        .or_else(|| request.get("refreshExternalDiscovery"))
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or("Invalid external discovery refresh flag")
+        })
+        .transpose()?
+        .unwrap_or(false);
     let page = state
         .compatibility
         .list_persisted_sessions_page_with_activity_and_query(
@@ -327,6 +334,7 @@ pub(crate) async fn list_persisted_sessions_page(
             limit,
             session_ids.as_deref(),
             query.as_ref(),
+            refresh_external_discovery,
         )
         .await
         .map_err(|e| format!("Failed to list persisted session page: {e}"))?;
@@ -823,20 +831,36 @@ pub(crate) async fn get_session_thread_goal(
     Ok(json!({ "goal": goal }))
 }
 
+pub(super) async fn read_session_header_for_selector(
+    state: &PeerHostState,
+    request: &Value,
+    session_id: &str,
+) -> Result<openbitfun_core::agentic::core::Session, String> {
+    openbitfun_core_types::validate_session_id(session_id)?;
+    let storage_path = if has_session_workspace_scope(request) {
+        ensure_session_workspace_runtime_ownership(state, request).await?;
+        Some(resolved_session_storage_path(state, request).await?)
+    } else {
+        None
+    };
+    state
+        .compatibility
+        .read_session_header(
+            storage_path.as_deref(),
+            session_id,
+            optional_bool(request, "includeInternal").unwrap_or(false),
+        )
+        .await
+        .map_err(|error| error.to_string())
+}
+
 pub(crate) async fn get_model_routing_status(
     state: &PeerHostState,
     args: &Value,
 ) -> Result<Value, String> {
     let request = request_value(args);
-    let session = if let Some(id) = optional_string(request, "sessionId") {
-        ensure_coordinator_session(state, args).await?;
-        Some(
-            state
-                .compatibility
-                .loaded_session_snapshot(&id)
-                .map_err(|error| error.to_string())?
-                .ok_or("Session not found")?,
-        )
+    let session = if let Some(session_id) = optional_string(request, "sessionId") {
+        Some(read_session_header_for_selector(state, request, &session_id).await?)
     } else {
         None
     };
@@ -1045,6 +1069,71 @@ pub(crate) async fn get_session_stats(
     }))
 }
 
+/// Builds the session usage / context-breakdown report with the same shared
+/// runtime port the Desktop command uses, so a controller reading this host's
+/// session gets an identical `SessionUsageReport` DTO. Read-only: the report
+/// owner opens its own consistent persisted-session view.
+pub(crate) async fn get_session_usage_report(
+    state: &PeerHostState,
+    args: &Value,
+) -> Result<Value, String> {
+    let request = request_value(args);
+    let session_id = validated_session_id(request)?;
+    let scope = session_storage_request(state, request).await?;
+    let options = usage_report_options(request)?;
+    let path_label = scope.workspace_path.to_string_lossy().into_owned();
+    let mut report = state
+        .agent_runtime
+        .generate_session_usage(AgentSessionUsageRequest {
+            workspace_id: optional_string(request, "workspaceId"),
+            session_id,
+            workspace_path: Some(path_label.clone()),
+            remote_connection_id: scope.remote_connection_id.clone(),
+            remote_ssh_host: scope.remote_ssh_host.clone(),
+            include_hidden_subagents: options.include_hidden_subagents,
+            include_system_prompt_preview: options.include_system_prompt_preview,
+            context_preview_category: options.context_preview_category,
+        })
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to generate session usage report: {}",
+                error.into_message()
+            )
+        })?;
+    report.workspace.path_label = Some(path_label);
+    report.workspace.remote_connection_id = scope.remote_connection_id;
+    report.workspace.remote_ssh_host = scope.remote_ssh_host;
+    serde_json::to_value(report).map_err(|error| format!("serialize usage report: {error}"))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct UsageReportOptions {
+    include_hidden_subagents: bool,
+    include_system_prompt_preview: bool,
+    context_preview_category: Option<openbitfun_core_types::UsageContextCategory>,
+}
+
+/// Reads the Desktop `GetSessionUsageReportRequest` option fields with the
+/// same defaults (hidden subagents included, no prompt preview). Accepts both
+/// the snake_case Tauri shape and camelCase, and ignores absent/null fields so
+/// older controllers keep working.
+fn usage_report_options(request: &Value) -> Result<UsageReportOptions, String> {
+    let context_preview_category = ["contextPreviewCategory", "context_preview_category"]
+        .iter()
+        .find_map(|key| request.get(*key))
+        .filter(|value| !value.is_null())
+        .map(|value| serde_json::from_value(value.clone()))
+        .transpose()
+        .map_err(|error| format!("Invalid context preview category: {error}"))?;
+    Ok(UsageReportOptions {
+        include_hidden_subagents: optional_bool(request, "includeHiddenSubagents").unwrap_or(true),
+        include_system_prompt_preview: optional_bool(request, "includeSystemPromptPreview")
+            .unwrap_or(false),
+        context_preview_category,
+    })
+}
+
 fn session_stats_validation_error(error: impl std::fmt::Display) -> String {
     format!("Failed to get session stats: Validation error: {error}")
 }
@@ -1092,6 +1181,42 @@ pub(crate) async fn save_session_turn(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn usage_report_options_match_desktop_defaults_and_legacy_payloads() {
+        use openbitfun_core_types::UsageContextCategory;
+        use serde_json::json;
+        assert_eq!(
+            super::usage_report_options(&json!({ "session_id": "s" })).unwrap(),
+            super::UsageReportOptions {
+                include_hidden_subagents: true,
+                include_system_prompt_preview: false,
+                context_preview_category: None,
+            }
+        );
+        let snake = json!({
+            "include_hidden_subagents": false,
+            "include_system_prompt_preview": true,
+            "context_preview_category": "toolDefinitions",
+        });
+        assert_eq!(
+            super::usage_report_options(&snake).unwrap(),
+            super::UsageReportOptions {
+                include_hidden_subagents: false,
+                include_system_prompt_preview: true,
+                context_preview_category: Some(UsageContextCategory::ToolDefinitions),
+            }
+        );
+        // A category a newer controller knows maps to Unknown instead of failing.
+        let future = json!({ "contextPreviewCategory": "somethingNew" });
+        assert_eq!(
+            super::usage_report_options(&future)
+                .unwrap()
+                .context_preview_category,
+            Some(UsageContextCategory::Unknown)
+        );
+        assert!(super::usage_report_options(&json!({ "context_preview_category": 3 })).is_err());
+    }
+
     use super::{
         overlay_live_session_state, peer_core_session_error, peer_runtime_session_error,
         restored_session_to_json, runtime_event_snapshot_to_json, session_stats_validation_error,
@@ -1108,6 +1233,18 @@ mod tests {
 
     #[test]
     fn session_catalog_query_keeps_legacy_peers_and_workspace_identity_compatible() {
+        for field in [
+            "workspace_id",
+            "workspaceId",
+            "workspace_path",
+            "workspacePath",
+        ] {
+            let mut request = serde_json::json!({"sessionId": "session-1"});
+            request[field] = serde_json::json!("workspace");
+            assert!(super::has_session_workspace_scope(&request));
+            request[field] = serde_json::json!(" ");
+            assert!(!super::has_session_workspace_scope(&request));
+        }
         let query =
             serde_json::json!({"workspaceId": "main", "ordering": "updated", "source": "codex"});
         for field in ["workspace_id", "workspaceId"] {

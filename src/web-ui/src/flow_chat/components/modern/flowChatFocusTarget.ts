@@ -71,7 +71,7 @@ export function resolveFlowChatFocusTarget(
       if (item.type === 'model-round') {
         const group = getProjectedModelRoundGroups(item).find(candidate => candidate.type === 'critical'
           && candidate.item.id === itemId);
-        const hit = group || item.canvasArtifactItems?.some(member => member.id === itemId);
+        const hit = group;
         if (hit) {
           resolvedVirtualIndex = i;
           resolvedTurnId = resolvedTurnId ?? item.turnId;

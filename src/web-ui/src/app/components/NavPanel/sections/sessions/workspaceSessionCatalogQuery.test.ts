@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import { DEFAULT_WORKSPACE_SESSION_FILTERS, DEFAULT_WORKSPACE_SESSION_VIEW } from '../../workspaceSessionView';
-import { captureWorkspaceSessionCatalogQuery, countPersistedWorkspaceCatalogSessions, workspaceSessionCatalogQuery, workspaceSessionCatalogTotal, sessionCatalogQueryKey } from './workspaceSessionCatalogQuery';
+import { captureWorkspaceSessionCatalogQuery, countPersistedWorkspaceCatalogSessions, resolveWorkspaceSessionCatalogSource, sessionCatalogQueryKey, workspaceSessionCatalogQuery, workspaceSessionCatalogSources, workspaceSessionCatalogTotal } from './workspaceSessionCatalogQuery';
 
 const session = (id: string, overrides: Partial<Session> = {}): Session => ({
   sessionId: id, workspaceId: 'main', createdAt: 10, lastFinishedAt: 20, config: {}, ...overrides,
@@ -46,6 +46,38 @@ describe('workspace catalog query selection', () => {
       expect(workspaceSessionCatalogQuery('main', DEFAULT_WORKSPACE_SESSION_VIEW.ordering, 'all',
         DEFAULT_WORKSPACE_SESSION_FILTERS, source)).toEqual({ workspaceId: 'main', ordering: 'updated', source });
     }
+  });
+
+  it('uses the native source query when all external discovery is disabled', () => {
+    expect(resolveWorkspaceSessionCatalogSource('all', new Set())).toBe('openbitfun');
+    expect(resolveWorkspaceSessionCatalogSource('codex', new Set())).toBe('openbitfun');
+    expect(resolveWorkspaceSessionCatalogSource('all', new Set(['codex']))).toBe('all');
+    expect(resolveWorkspaceSessionCatalogSource('all', undefined)).toBe('all');
+  });
+
+  it('builds a stable mixed native and external source allowlist', () => {
+    expect(workspaceSessionCatalogSources('all', undefined)).toBeUndefined();
+    expect(workspaceSessionCatalogSources('codex', new Set(['codex']))).toBeUndefined();
+    expect(workspaceSessionCatalogSources('all', new Set())).toBeUndefined();
+    expect(workspaceSessionCatalogSources('all', new Set([
+      'codex', 'cursor', 'zcode', 'claude-code', 'opencode', 'pi', 'deepseek-harness',
+    ]))).toBeUndefined();
+    expect(workspaceSessionCatalogSources('all', new Set(['cursor', 'codex'])))
+      .toEqual(['codex', 'openbitfun', 'cursor'].sort());
+  });
+
+  it('serializes mixed sources and distinguishes them in the query key', () => {
+    const mixed = workspaceSessionCatalogQuery('main', 'updated', 'all',
+      DEFAULT_WORKSPACE_SESSION_FILTERS, 'all', ['openbitfun', 'codex']);
+    expect(mixed).toEqual({
+      workspaceId: 'main', ordering: 'updated', source: 'all', sources: ['openbitfun', 'codex'],
+    });
+    expect(sessionCatalogQueryKey(mixed)).toBe(sessionCatalogQueryKey({
+      ...mixed!, sources: ['codex', 'openbitfun', 'codex'],
+    }));
+    expect(sessionCatalogQueryKey(mixed)).not.toBe(sessionCatalogQueryKey({
+      workspaceId: 'main', ordering: 'updated', source: 'all',
+    }));
   });
 
   it('retains the complete legacy projection for name, status, unread, attention and every richer filter', () => {

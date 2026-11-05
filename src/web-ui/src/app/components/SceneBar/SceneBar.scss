@@ -19,8 +19,11 @@
     flex: 0 0 auto;
     min-width: 0;
 
-    // Keep the tab's layout and hit target while its portalled surface expands.
-    &[data-session-history-open='true'] [role='tab'] { opacity: 0; }
+    // The tab is chosen while its scene is still being prepared: it breathes
+    // until the scene shows, starting only once the wait is noticeable.
+    &[data-pending] [role='tab'] {
+      animation: openbitfun-scene-tab-pending 1.1s ease-in-out 160ms infinite;
+    }
 
     &[data-canvas-drop-position]::after {
       content: '';
@@ -34,6 +37,57 @@
 
     &[data-canvas-drop-position='before']::after { inset-inline-start: 0; }
     &[data-canvas-drop-position='after']::after { inset-inline-end: 0; }
+  }
+
+  // When the tabs span several devices, each device's tabs sit together and
+  // the device is named once, ahead of them: quiet metadata in the bar's own
+  // line, never a tab or a chip. Groups after the first are set off by a short
+  // hairline, so the row reads as a few runs of tabs, not one long strip.
+  &__device-group {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    max-inline-size: 9em;
+    block-size: var(--openbitfun-control-tab-group-item-height-sm);
+    padding-inline: var(--openbitfun-space-1);
+    color: var(--openbitfun-color-content-muted);
+    font-family: var(--openbitfun-type-label-selected-font-family);
+    font-size: var(--openbitfun-type-micro-font-size);
+    font-weight: var(--openbitfun-type-label-selected-font-weight);
+    line-height: var(--openbitfun-type-micro-line-height);
+    letter-spacing: var(--openbitfun-type-micro-letter-spacing);
+    white-space: nowrap;
+    pointer-events: none;
+    animation: openbitfun-scene-device-group-in var(--openbitfun-motion-duration-normal)
+      var(--openbitfun-motion-easing-standard) both;
+
+    // The rendered device's group reads a step brighter than the others.
+    &[data-current] {
+      color: var(--openbitfun-color-content-secondary);
+    }
+
+    &:not([data-first]) {
+      margin-inline-start: var(--openbitfun-space-2);
+      padding-inline-start: calc(var(--openbitfun-space-2) + var(--openbitfun-border-width-default));
+
+      &::before {
+        content: '';
+        position: absolute;
+        inset-inline-start: 0;
+        inset-block: 50% auto;
+        block-size: 14px;
+        inline-size: var(--openbitfun-border-width-default);
+        border-radius: var(--openbitfun-radius-pill);
+        background: color-mix(in srgb, var(--openbitfun-color-content-muted) 35%, transparent);
+        transform: translateY(-50%);
+      }
+    }
+  }
+
+  &__device-group-name {
+    display: block;
+    min-inline-size: 0;
   }
 
   &__tab-region {
@@ -188,6 +242,33 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+  // A hovered tab grows by its close action. Reserve that growth once at the
+  // strip's end and let the last tab grow into it, so hovering the last tab
+  // never widens the strip: the scroll arrow stays hidden at the end instead
+  // of reappearing over the close button.
+  .openbitfun-scene-bar__tabs {
+    --_scene-bar-close-growth: calc(
+      max(
+        var(--openbitfun-control-tab-group-item-padding-inline-sm),
+        (var(--openbitfun-control-tab-group-item-height-sm) + var(--openbitfun-control-tab-group-item-action-size)) / 2
+          + var(--openbitfun-control-tab-group-item-gap-sm)
+      )
+      - var(--openbitfun-control-tab-group-item-padding-inline-sm)
+    );
+
+    padding-inline-end: calc(var(--openbitfun-border-width-default) + var(--_scene-bar-close-growth));
+  }
+
+  .openbitfun-scene-bar__item:last-child > [data-openbitfun-part='item'][data-has-end-action='true'] {
+    transition:
+      padding-inline-end var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      margin-inline-end var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+    &:is(:hover, :focus-visible, :has(:focus-visible)) {
+      margin-inline-end: calc(0px - var(--_scene-bar-close-growth));
+    }
+  }
+
   .openbitfun-scene-bar [data-scene-bar-part='closeTab']:hover:not(:disabled) {
     color: var(--openbitfun-color-status-danger-emphasis);
   }
@@ -203,4 +284,19 @@
     transition: none;
     transform: none;
   }
+}
+
+@keyframes openbitfun-scene-tab-pending {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@keyframes openbitfun-scene-device-group-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-scene-bar__item[data-pending] [role='tab'],
+  .openbitfun-scene-bar__device-group { animation: none; }
 }

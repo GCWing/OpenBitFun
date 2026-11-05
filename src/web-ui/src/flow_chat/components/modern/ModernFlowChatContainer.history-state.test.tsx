@@ -30,4 +30,12 @@ describe('ModernFlowChatContainer natural navigation contract', () => {
     expect(componentSource).toContain('subscribeHistorySessionOpenTransition');
     expect(componentSource).toContain("transition?.sessionId !== current.sessionId ? null : current");
   });
+
+  it('uses settled presentation to release background history after paint', () => {
+    expect(componentSource).not.toContain('isTurnTextRenderedInViewport');
+    expect(componentSource).not.toContain('HISTORY_INITIAL_CONTENT_PAINT_MAX_ATTEMPTS');
+    expect(componentSource).toContain('if (!isHistoryContentPresented) return;');
+    expect(componentSource).toContain('scheduleAfterStartupPaint(releaseAfterPaint, { frameCount: 2 })');
+    expect(componentSource).toContain('releaseSessionHistoryCompletionAfterInitialPaint(sessionId)');
+  });
 });

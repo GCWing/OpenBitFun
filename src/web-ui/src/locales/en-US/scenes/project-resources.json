@@ -82,5 +82,18 @@
     "listTitle": "Task list",
     "summary": "{{enabled}} enabled · {{paused}} paused"
   },
-  "failureDetails": "Show reason"
+  "failureDetails": "Show reason",
+  "defaults": {
+    "title": "Default settings",
+    "labelPrefix": "{{label}}:",
+    "primary_model": "Primary model",
+    "fast_model": "Fast model",
+    "mode": "Default mode",
+    "inherit": "Use global",
+    "unsupported": "This host does not support project defaults. Update the host and try again.",
+    "loadFailed": "Could not load project defaults. Try again.",
+    "saveFailed": "Could not save. Select the setting again to retry.",
+    "saved": "Saved",
+    "unavailableValue": "Unavailable: {{value}}"
+  }
 }

@@ -3,7 +3,7 @@
 //! This module manages SSH connections using the pure-Russ SSH implementation
 
 use super::proxy_command::{expand_tokens, ProxyCommandChild};
-use super::sftp_file::ManagedSftpSession;
+use super::sftp_file::{ManagedSftpFile, ManagedSftpSession};
 #[cfg(feature = "ssh_config")]
 use super::ssh_config_loader::{
     is_host_pattern, load_merged_config_async, resolve_host_settings, split_directive,
@@ -26,6 +26,8 @@ use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::{RawSftpSession, SftpSession};
 use russh_sftp::protocol::{File as SftpFile, StatusCode as SftpStatusCode};
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -375,7 +377,7 @@ mtime=$(stat -c %Y \"$item\" 2>/dev/null || stat -f %m \"$item\" 2>/dev/null || 
 mode=$(stat -c %a \"$item\" 2>/dev/null || stat -f %Lp \"$item\" 2>/dev/null || true); \
 printf '%s\\0%s\\0%s\\0%s\\0%s\\0%s\\0' \"$name\" \"$item\" \"$kind\" \"$size\" \"$mtime\" \"$mode\";";
 
-fn sftp_error_may_be_stale_transport(error: &SftpError) -> bool {
+pub(super) fn sftp_error_may_be_stale_transport(error: &SftpError) -> bool {
     match error {
         SftpError::Status(status) => matches!(
             status.status_code,
@@ -670,6 +672,9 @@ struct SftpCache {
     session: tokio::sync::RwLock<Option<Arc<ManagedSftpSession>>>,
     init_lock: tokio::sync::Mutex<()>,
 }
+
+/// One replayable request issued against a cached SFTP subsystem.
+type SftpRequest<T> = Pin<Box<dyn Future<Output = Result<T, SftpError>> + Send>>;
 
 impl SftpCache {
     fn new() -> Self {
@@ -1459,6 +1464,13 @@ async fn authenticate_handle(
             SSHAuthMethod::KeyboardInteractive { responses } => {
                 authenticate_keyboard_interactive(handle, config, stage, responses).await?
             }
+            // Endpoints whose transport is already authenticated (Coder workspace
+            // agents) advertise only `none` and disconnect clients that send
+            // credentials, so this must be an explicit choice rather than a fallback.
+            SSHAuthMethod::None => handle
+                .authenticate_none(&config.username)
+                .await
+                .map_err(|error| anyhow!("{} none authentication failed: {:?}", stage, error))?,
         })
     };
     let authenticated = tokio::time::timeout(
@@ -2240,6 +2252,7 @@ pub struct SSHConnectionManager {
     reconnect_locks: Arc<tokio::sync::RwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     saved_connections: Arc<tokio::sync::RwLock<Vec<SavedConnection>>>,
     config_path: std::path::PathBuf,
+    extended_config_path: std::path::PathBuf,
     /// Known hosts storage
     known_hosts: Arc<tokio::sync::RwLock<HashMap<String, KnownHostEntry>>>,
     known_hosts_path: std::path::PathBuf,
@@ -2249,10 +2262,18 @@ pub struct SSHConnectionManager {
     password_vault: std::sync::Arc<SSHPasswordVault>,
 }
 
+/// Saved profiles that released builds cannot read; see `save_connections`.
+const EXTENDED_SAVED_CONNECTIONS_FILE: &str = "ssh_connections_extended.json";
+
+fn requires_extended_store(auth_type: &crate::remote_ssh::types::SavedAuthType) -> bool {
+    matches!(auth_type, crate::remote_ssh::types::SavedAuthType::None)
+}
+
 impl SSHConnectionManager {
     /// Create a new SSH connection manager
     pub fn new(data_dir: std::path::PathBuf) -> Self {
         let config_path = data_dir.join("ssh_connections.json");
+        let extended_config_path = data_dir.join(EXTENDED_SAVED_CONNECTIONS_FILE);
         let known_hosts_path = data_dir.join("known_hosts");
         let remote_workspace_path = data_dir.join("remote_workspace.json");
         let password_vault = std::sync::Arc::new(SSHPasswordVault::new(data_dir));
@@ -2261,6 +2282,7 @@ impl SSHConnectionManager {
             reconnect_locks: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             saved_connections: Arc::new(tokio::sync::RwLock::new(Vec::new())),
             config_path,
+            extended_config_path,
             known_hosts: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             known_hosts_path,
             remote_workspaces: Arc::new(tokio::sync::RwLock::new(Vec::new())),
@@ -2822,17 +2844,43 @@ impl SSHConnectionManager {
             self.config_path.exists()
         );
 
-        if !self.config_path.exists() {
-            return Ok(());
+        // Read the extended store first: a damaged primary file must not leave
+        // an empty list behind that the next save writes over these profiles.
+        let extended = self.read_extended_saved_connections().await;
+        let saved = match self.read_primary_saved_connections().await {
+            Ok(saved) => saved,
+            Err(error) => {
+                *self.saved_connections.write().await = extended;
+                return Err(error);
+            }
+        };
+
+        // An older build may have recreated an id while it could not see the
+        // extended store; that later explicit save wins.
+        let mut merged = saved;
+        for connection in extended {
+            // Same rule as `save_connection`: an equal id, or a legacy
+            // `:port` alias of the same endpoint.
+            if merged.iter().any(|existing| {
+                existing.id == connection.id
+                    || (existing.host == connection.host
+                        && existing.username == connection.username
+                        && existing.port == connection.port
+                        && existing.container == connection.container
+                        && existing.wsl == connection.wsl
+                        && Self::connection_ids_are_aliases(&existing.id, &connection.id))
+            }) {
+                log::warn!(
+                    "Ignoring extended SSH profile shadowed by the primary store: id={}",
+                    connection.id
+                );
+            } else {
+                merged.push(connection);
+            }
         }
 
-        let content = tokio::fs::read_to_string(&self.config_path).await?;
-        log::info!("load_saved_connections: content={}", content);
-        let saved: Vec<SavedConnection> =
-            serde_json::from_str(&content).context("Failed to parse saved SSH connections")?;
-
         let mut guard = self.saved_connections.write().await;
-        *guard = saved;
+        *guard = merged;
         drop(guard);
 
         let unavailable = self.saved_connections_without_credentials().await;
@@ -2848,11 +2896,57 @@ impl SSHConnectionManager {
         Ok(())
     }
 
+    async fn read_primary_saved_connections(&self) -> anyhow::Result<Vec<SavedConnection>> {
+        if !self.config_path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = tokio::fs::read_to_string(&self.config_path).await?;
+        log::info!("load_saved_connections: content={}", content);
+        serde_json::from_str(&content).context("Failed to parse saved SSH connections")
+    }
+
+    /// Read the extended store, setting an unreadable file aside so it stays
+    /// recoverable and a later save cannot overwrite it.
+    async fn read_extended_saved_connections(&self) -> Vec<SavedConnection> {
+        let path = &self.extended_config_path;
+        if !path.exists() {
+            return Vec::new();
+        }
+        let parsed = tokio::fs::read_to_string(path)
+            .await
+            .map_err(anyhow::Error::from)
+            .and_then(|content| serde_json::from_str(&content).map_err(anyhow::Error::from));
+        let error = match parsed {
+            Ok(saved) => return saved,
+            Err(error) => error,
+        };
+        let backup = path.with_extension("json.unreadable");
+        log::warn!(
+            "Failed to read extended SSH connections; keeping the file at {:?}: error={}",
+            backup,
+            error
+        );
+        if let Err(error) = tokio::fs::rename(path, &backup).await {
+            log::warn!(
+                "Failed to set aside extended SSH connections: error={}",
+                error
+            );
+        }
+        Vec::new()
+    }
+
     /// Save connections to disk
+    ///
+    /// Released builds parse the primary file as one list and rewrite it from
+    /// memory, so a profile they cannot deserialize would cost them every
+    /// profile. Such profiles go to the extended store, which they never touch.
     async fn save_connections(&self) -> anyhow::Result<()> {
         log::info!("save_connections: saving to {:?}", self.config_path);
         let guard = self.saved_connections.read().await;
-        let content = serde_json::to_string_pretty(&*guard)?;
+        let (extended, primary): (Vec<&SavedConnection>, Vec<&SavedConnection>) = guard
+            .iter()
+            .partition(|connection| requires_extended_store(&connection.auth_type));
+        let content = serde_json::to_string_pretty(&primary)?;
         log::info!("save_connections: content={}", content);
 
         // Ensure parent directory exists
@@ -2860,6 +2954,10 @@ impl SSHConnectionManager {
             tokio::fs::create_dir_all(parent).await?;
         }
 
+        if !extended.is_empty() || self.extended_config_path.exists() {
+            let extended_content = serde_json::to_string_pretty(&extended)?;
+            tokio::fs::write(&self.extended_config_path, extended_content).await?;
+        }
         tokio::fs::write(&self.config_path, content).await?;
         log::info!(
             "save_connections: saved {} connections to {:?}",
@@ -2947,22 +3045,34 @@ impl SSHConnectionManager {
             (SSHAuthMethod::PrivateKey { .. }, false) => {
                 self.password_vault.remove(&config.id).await?;
             }
-            (SSHAuthMethod::Agent { .. } | SSHAuthMethod::KeyboardInteractive { .. }, false) => {
+            (
+                SSHAuthMethod::Agent { .. }
+                | SSHAuthMethod::KeyboardInteractive { .. }
+                | SSHAuthMethod::None,
+                false,
+            ) => {
                 self.password_vault.remove(&config.id).await?;
             }
         }
 
         let mut guard = self.saved_connections.write().await;
 
-        // Remove existing entry with same id OR same host+username (dedup).
-        // Using host+username (without port) so that changing the port replaces
-        // the old entry instead of creating a duplicate.
+        // Remove the existing entry with the same id (an edit keeps its id, so
+        // changing the port of a saved profile still replaces it in place) OR a
+        // legacy alias of it (`ssh-user@host:port`, which workspace records
+        // already treat as the same connection) for the exact same endpoint.
+        // The port is part of the endpoint: servers behind one address that
+        // differ only by port are distinct profiles and never overwrite each
+        // other. A different, non-alias id for the same endpoint is kept, since
+        // workspace and session records may still reference it.
         guard.retain(|c| {
             c.id != config.id
                 && !(c.host == config.host
+                    && c.port == config.port
                     && c.username == config.username
                     && c.container == config.container
-                    && c.wsl == config.wsl)
+                    && c.wsl == config.wsl
+                    && Self::connection_ids_are_aliases(&c.id, &config.id))
         });
 
         // Add new entry
@@ -2992,6 +3102,7 @@ impl SSHConnectionManager {
                 SSHAuthMethod::KeyboardInteractive { .. } => {
                     crate::remote_ssh::types::SavedAuthType::KeyboardInteractive
                 }
+                SSHAuthMethod::None => crate::remote_ssh::types::SavedAuthType::None,
             },
             default_workspace: config.default_workspace.clone(),
             last_connected: Some(chrono::Utc::now().timestamp() as u64),
@@ -3005,6 +3116,15 @@ impl SSHConnectionManager {
         drop(guard);
 
         self.save_connections().await
+    }
+
+    /// Whether two saved-profile ids name the same connection through the
+    /// legacy `ssh-user@host:port` spelling.
+    fn connection_ids_are_aliases(left: &str, right: &str) -> bool {
+        use openbitfun_services_core::workspace_identity::canonical_ssh_connection_id;
+        left == right
+            || canonical_ssh_connection_id(left) == right
+            || canonical_ssh_connection_id(right) == left
     }
 
     /// Decrypt stored password for password-based saved connections (auto-reconnect).
@@ -4623,6 +4743,7 @@ impl SSHConnectionManager {
                     responses: Vec::new(),
                 }
             }
+            crate::remote_ssh::types::SavedAuthType::None => SSHAuthMethod::None,
         };
 
         Ok(Some(SSHConnectionConfig {
@@ -5486,11 +5607,9 @@ impl SSHConnectionManager {
             let transport = self.open_workspace_stdio(connection_id, &command).await?;
             return Ok(Box::new(ContainerFileReader::from_transport(transport)));
         }
-        let sftp = self.get_sftp(connection_id).await?;
-        let file = sftp
-            .open(&path)
+        let file = self
+            .sftp_open_with_recovery(connection_id, &path)
             .await
-            .map_err(anyhow::Error::new)
             .with_context(|| format!("Failed to open remote file '{path}'"))?;
         if !file.metadata().await?.file_type().is_file() {
             anyhow::bail!("Workspace path is not a regular file: {path}");
@@ -5997,6 +6116,42 @@ impl SSHConnectionManager {
         .await
     }
 
+    /// Recursive deletion is a single operation on the effective SSH, Docker,
+    /// or WSL target. Never enumerate children across the transport boundary.
+    pub async fn remove_workspace_directory_all(
+        &self,
+        connection_id: &str,
+        path: &str,
+    ) -> anyhow::Result<()> {
+        // Expand only the home prefix. The general SFTP path resolver trims
+        // whitespace, which could select a different directory for deletion.
+        let path = if path == "~" || path.starts_with("~/") {
+            let home = self.resolve_sftp_path(connection_id, "~").await?;
+            format!("{}{}", home.trim_end_matches('/'), &path[1..])
+        } else {
+            path.to_owned()
+        };
+        let command = super::shell::remove_directory_command(&path)?;
+        let (_, stderr, status) = self
+            .execute_workspace_bytes(connection_id, &command)
+            .await
+            .map_err(|error| anyhow!("Failed to execute remote directory deletion: {error}"))?;
+        if status == -1 {
+            anyhow::bail!(
+                "Remote directory deletion returned no exit status; the host may have rejected command execution or disconnected"
+            );
+        }
+        if status != 0 {
+            anyhow::bail!(
+                "Failed to remove remote directory '{}': exit_status={} {}",
+                path,
+                status,
+                container_stderr_detail(&stderr)
+            );
+        }
+        Ok(())
+    }
+
     pub async fn container_remove(
         &self,
         connection_id: &str,
@@ -6277,6 +6432,58 @@ impl SSHConnectionManager {
         Ok(sftp)
     }
 
+    /// Replay one read-only request on a fresh subsystem channel.
+    ///
+    /// russh-sftp rejects every request on a closed subsystem channel with
+    /// `UnexpectedBehavior("session closed")` and never reopens it, while
+    /// `get_sftp` keeps handing out that same cached session. Returning that
+    /// error left the file browser stuck on `Failed to stat` until the app was
+    /// restarted. [`ManagedSftpSession`] now retires a session whose channel is
+    /// gone, so replaying the request once opens a new channel instead of
+    /// failing forever. Only idempotent queries may use this helper.
+    async fn sftp_query_with_recovery<T, F>(
+        &self,
+        connection_id: &str,
+        path: &str,
+        query: F,
+    ) -> anyhow::Result<T>
+    where
+        F: Fn(Arc<ManagedSftpSession>, String) -> SftpRequest<T>,
+    {
+        let mut replay = true;
+        loop {
+            let session = self.get_sftp(connection_id).await?;
+            match query(session, path.to_owned()).await {
+                Ok(value) => return Ok(value),
+                Err(error) if replay && sftp_error_may_be_stale_transport(&error) => {
+                    replay = false;
+                    log::warn!(
+                        "Cached SFTP subsystem for {} failed on '{}' (will retry once on a new channel): {}",
+                        connection_id,
+                        path,
+                        error
+                    );
+                }
+                Err(error) => return Err(anyhow::Error::new(error)),
+            }
+        }
+    }
+
+    /// Open a file read-only, replaying the OPEN once on a fresh subsystem.
+    ///
+    /// A read-only OPEN changes nothing on the server and no data has reached
+    /// the caller yet, so it is as safe to replay as a metadata query.
+    async fn sftp_open_with_recovery(
+        &self,
+        connection_id: &str,
+        path: &str,
+    ) -> anyhow::Result<ManagedSftpFile> {
+        self.sftp_query_with_recovery(connection_id, path, |sftp, open_path| {
+            Box::pin(async move { sftp.open(&open_path).await })
+        })
+        .await
+    }
+
     /// Reuse a dedicated SFTP channel for serialized directory enumeration.
     /// The high-level API leaks directory handles on errors/cancellation. The
     /// raw path closes on all exits and can also stop at an entry budget.
@@ -6360,9 +6567,8 @@ impl SSHConnectionManager {
     /// Read a file via SFTP
     pub async fn sftp_read(&self, connection_id: &str, path: &str) -> anyhow::Result<Vec<u8>> {
         let path = self.resolve_sftp_path(connection_id, path).await?;
-        let sftp = self.get_sftp(connection_id).await?;
-        let mut file = sftp
-            .open(&path)
+        let mut file = self
+            .sftp_open_with_recovery(connection_id, &path)
             .await
             .map_err(|e| anyhow!("Failed to open remote file '{}': {}", path, e))?;
 
@@ -6391,18 +6597,18 @@ impl SSHConnectionManager {
         on_progress: &mut impl FnMut(u64, u64) -> bool,
     ) -> anyhow::Result<Vec<u8>> {
         let resolved = self.resolve_sftp_path(connection_id, path).await?;
-        let sftp = self.get_sftp(connection_id).await?;
 
         // Determine file size from metadata for progress calculation.
-        let metadata = sftp
-            .as_ref()
-            .metadata(&resolved)
+        let metadata = self
+            .sftp_query_with_recovery(connection_id, &resolved, |sftp, query_path| {
+                Box::pin(async move { sftp.as_ref().metadata(&query_path).await })
+            })
             .await
             .map_err(|e| anyhow!("Failed to stat '{}': {}", resolved, e))?;
         let total = metadata.size.unwrap_or(0);
 
-        let mut file = sftp
-            .open(&resolved)
+        let mut file = self
+            .sftp_open_with_recovery(connection_id, &resolved)
             .await
             .map_err(|e| anyhow!("Failed to open remote file '{}': {}", resolved, e))?;
 
@@ -6788,16 +6994,37 @@ impl SSHConnectionManager {
     /// Create directory and all parents via SFTP
     pub async fn sftp_mkdir_all(&self, connection_id: &str, path: &str) -> anyhow::Result<()> {
         let path = self.resolve_sftp_path(connection_id, path).await?;
+        // Every step accepts directories that already exist, so a whole attempt
+        // can be replayed once after a dead cached subsystem was retired.
+        match self.sftp_mkdir_all_once(connection_id, &path).await {
+            Err(error)
+                if error
+                    .downcast_ref::<SftpError>()
+                    .is_some_and(sftp_error_may_be_stale_transport) =>
+            {
+                log::warn!(
+                    "Cached SFTP subsystem for {} failed creating '{}' (will retry once on a new channel): {:#}",
+                    connection_id,
+                    path,
+                    error
+                );
+                self.sftp_mkdir_all_once(connection_id, &path).await
+            }
+            result => result,
+        }
+    }
+
+    async fn sftp_mkdir_all_once(&self, connection_id: &str, path: &str) -> anyhow::Result<()> {
         let sftp = self.get_sftp(connection_id).await?;
 
         // Check if path exists
-        match sftp.as_ref().try_exists(&path).await {
+        match sftp.as_ref().try_exists(path).await {
             Ok(true) => return Ok(()), // Already exists
             Ok(false) => {}
             Err(_) => {}
         }
 
-        for dir in sftp_mkdir_all_prefixes(&path) {
+        for dir in sftp_mkdir_all_prefixes(path) {
             if let Ok(true) = sftp.as_ref().try_exists(&dir).await {
                 continue;
             }
@@ -6806,7 +7033,8 @@ impl SSHConnectionManager {
                 match sftp.as_ref().try_exists(&dir).await {
                     Ok(true) => continue,
                     Ok(false) | Err(_) => {
-                        return Err(anyhow!("Failed to create directory '{}': {}", dir, error));
+                        let message = format!("Failed to create directory '{}': {}", dir, error);
+                        return Err(anyhow::Error::new(error).context(message));
                     }
                 }
             }
@@ -6854,11 +7082,11 @@ impl SSHConnectionManager {
     /// Check if path exists via SFTP
     pub async fn sftp_exists(&self, connection_id: &str, path: &str) -> anyhow::Result<bool> {
         let path = self.resolve_sftp_path(connection_id, path).await?;
-        let sftp = self.get_sftp(connection_id).await?;
-        sftp.as_ref()
-            .try_exists(&path)
-            .await
-            .map_err(|e| anyhow!("Failed to check if '{}' exists: {}", path, e))
+        self.sftp_query_with_recovery(connection_id, &path, |sftp, query_path| {
+            Box::pin(async move { sftp.as_ref().try_exists(&query_path).await })
+        })
+        .await
+        .map_err(|e| anyhow!("Failed to check if '{}' exists: {}", path, e))
     }
 
     /// Get file metadata via SFTP
@@ -6868,10 +7096,13 @@ impl SSHConnectionManager {
         path: &str,
     ) -> anyhow::Result<russh_sftp::client::fs::Metadata> {
         let path = self.resolve_sftp_path(connection_id, path).await?;
-        let sftp = self.get_sftp(connection_id).await?;
-        sftp.as_ref().metadata(&path).await.map_err(|error| {
+        self.sftp_query_with_recovery(connection_id, &path, |sftp, query_path| {
+            Box::pin(async move { sftp.as_ref().metadata(&query_path).await })
+        })
+        .await
+        .map_err(|error| {
             let message = format!("Failed to stat '{}': {}", path, error);
-            anyhow::Error::new(error).context(message)
+            error.context(message)
         })
     }
 
@@ -6882,12 +7113,11 @@ impl SSHConnectionManager {
         path: &str,
     ) -> anyhow::Result<russh_sftp::client::fs::Metadata> {
         let path = self.resolve_sftp_path(connection_id, path).await?;
-        let sftp = self.get_sftp(connection_id).await?;
-        sftp.as_ref()
-            .symlink_metadata(&path)
-            .await
-            .map_err(anyhow::Error::new)
-            .with_context(|| format!("Failed to inspect '{}'", path))
+        self.sftp_query_with_recovery(connection_id, &path, |sftp, query_path| {
+            Box::pin(async move { sftp.as_ref().symlink_metadata(&query_path).await })
+        })
+        .await
+        .with_context(|| format!("Failed to inspect '{}'", path))
     }
 
     // ============================================================================
@@ -8046,6 +8276,40 @@ mod tests {
             file_service,
         );
         (manager, provider)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn workspace_recursive_directory_delete_shell() {
+        use openbitfun_runtime_ports::WorkspaceFileSystem;
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let (_manager, provider) = shell_workspace_provider_fixture(temp.path()).await;
+        let target = temp.path().join("delete 'quoted' $(printf injected) ");
+        let keep = temp.path().join("keep");
+        std::fs::write(&keep, b"keep").unwrap();
+        std::fs::create_dir_all(target.join("nested")).unwrap();
+        for file in 0..100 {
+            std::fs::write(target.join("nested").join(file.to_string()), b"delete").unwrap();
+        }
+        symlink(&keep, target.join("outside-link")).unwrap();
+        assert!(provider
+            .remove_dir(target.to_str().unwrap(), false)
+            .await
+            .is_err());
+        assert!(target.join("nested/0").exists());
+        provider
+            .remove_dir(&format!("{}/", target.display()), true)
+            .await
+            .unwrap();
+        assert!(!target.exists());
+        assert_eq!(std::fs::read(&keep).unwrap(), b"keep");
+        let error = provider
+            .remove_dir(keep.to_str().unwrap(), true)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("not a directory"));
+        assert_eq!(std::fs::read(&keep).unwrap(), b"keep");
     }
 
     #[cfg(unix)]
@@ -9808,6 +10072,682 @@ Host *
             } if key_fingerprint.as_deref() == Some("SHA256:test-fingerprint")
                 && fallback_key_path.as_deref() == Some("~/.ssh/custom-fallback")
         ));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    fn key_profile(id: &str, host: &str, port: u16, username: &str) -> SSHConnectionConfig {
+        SSHConnectionConfig {
+            id: id.to_string(),
+            name: format!("{username}@{host}:{port}"),
+            host: host.to_string(),
+            port,
+            username: username.to_string(),
+            auth: SSHAuthMethod::PrivateKey {
+                key_path: "~/.ssh/id_ed25519".to_string(),
+                passphrase: None,
+                certificate_path: None,
+            },
+            default_workspace: None,
+            proxy_jump: None,
+            proxy_command: None,
+            container: None,
+            wsl: None,
+            options: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn saving_a_second_port_on_the_same_host_keeps_both_profiles() {
+        let dir = test_data_dir("port-scoped-profiles");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+
+        manager
+            .save_connection(&key_profile("ssh-root@cluster", "cluster", 22, "root"))
+            .await
+            .unwrap();
+        manager
+            .save_connection(&key_profile(
+                "ssh-root@cluster#2201",
+                "cluster",
+                2201,
+                "root",
+            ))
+            .await
+            .unwrap();
+        manager
+            .save_connection(&key_profile(
+                "ssh-root@cluster#2202",
+                "cluster",
+                2202,
+                "root",
+            ))
+            .await
+            .unwrap();
+
+        let mut saved: Vec<(String, u16)> = manager
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| (c.id, c.port))
+            .collect();
+        saved.sort();
+        assert_eq!(
+            saved,
+            vec![
+                ("ssh-root@cluster".to_string(), 22),
+                ("ssh-root@cluster#2201".to_string(), 2201),
+                ("ssh-root@cluster#2202".to_string(), 2202),
+            ]
+        );
+
+        // A legacy `:port` alias of the same endpoint is replaced; a distinct
+        // id for the same endpoint is kept because records may reference it.
+        manager
+            .save_connection(&key_profile("ssh-root@cluster:22", "cluster", 22, "root"))
+            .await
+            .unwrap();
+        manager
+            .save_connection(&key_profile("ssh-root@cluster", "cluster", 22, "root"))
+            .await
+            .unwrap();
+        manager
+            .save_connection(&key_profile(
+                "ssh-root@cluster#2202~2",
+                "cluster",
+                2202,
+                "root",
+            ))
+            .await
+            .unwrap();
+        let mut ids: Vec<String> = manager
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        ids.sort();
+        assert_eq!(
+            ids,
+            vec![
+                "ssh-root@cluster".to_string(),
+                "ssh-root@cluster#2201".to_string(),
+                "ssh-root@cluster#2202".to_string(),
+                "ssh-root@cluster#2202~2".to_string(),
+            ]
+        );
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn editing_the_port_of_a_saved_profile_keeps_its_id() {
+        let dir = test_data_dir("port-edit-keeps-id");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+
+        manager
+            .save_connection(&key_profile(
+                "ssh-root@cluster#2201",
+                "cluster",
+                2201,
+                "root",
+            ))
+            .await
+            .unwrap();
+        manager
+            .save_connection(&key_profile(
+                "ssh-root@cluster#2201",
+                "cluster",
+                2299,
+                "root",
+            ))
+            .await
+            .unwrap();
+
+        let saved = manager.get_saved_connections().await;
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].id, "ssh-root@cluster#2201");
+        assert_eq!(saved[0].port, 2299);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn legacy_port_profiles_round_trip_unchanged_next_to_port_scoped_ones() {
+        let dir = test_data_dir("legacy-port-profiles");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        // Shapes written by released builds: a post-#710 port-less id that
+        // points at a non-default port, and a pre-#710 `:port` id.
+        tokio::fs::write(
+            dir.join("ssh_connections.json"),
+            serde_json::to_string_pretty(&serde_json::json!([
+                {
+                    "id": "ssh-root@cluster",
+                    "name": "cluster node",
+                    "host": "cluster",
+                    "port": 2201,
+                    "username": "root",
+                    "authType": { "type": "PrivateKey", "keyPath": "~/.ssh/id_ed25519" },
+                    "lastConnected": 1
+                },
+                {
+                    "id": "ssh-alice@legacy.example:2222",
+                    "name": "legacy",
+                    "host": "legacy.example",
+                    "port": 2222,
+                    "username": "alice",
+                    "authType": { "type": "PrivateKey", "keyPath": "~/.ssh/id_ed25519" },
+                    "lastConnected": 1
+                }
+            ]))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager.load_saved_connections().await.unwrap();
+        // A new default-port profile on the same host must not overwrite the
+        // legacy profile; the dialog gives it a port-scoped id because the
+        // port-less id is already taken by another port.
+        manager
+            .save_connection(&key_profile("ssh-root@cluster#22", "cluster", 22, "root"))
+            .await
+            .unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let mut saved: Vec<(String, u16)> = reloaded
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| (c.id, c.port))
+            .collect();
+        saved.sort();
+        assert_eq!(
+            saved,
+            vec![
+                ("ssh-alice@legacy.example:2222".to_string(), 2222),
+                ("ssh-root@cluster".to_string(), 2201),
+                ("ssh-root@cluster#22".to_string(), 22),
+            ]
+        );
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn saved_none_auth_profile_round_trips_without_credentials() {
+        let dir = test_data_dir("none-auth-profile");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+
+        manager
+            .save_connection(&SSHConnectionConfig {
+                id: "ssh-coder@127.0.0.1".to_string(),
+                name: "coder agent".to_string(),
+                host: "127.0.0.1".to_string(),
+                port: 2222,
+                username: "coder".to_string(),
+                auth: SSHAuthMethod::None,
+                default_workspace: Some("/root".to_string()),
+                proxy_jump: None,
+                proxy_command: None,
+                container: None,
+                wsl: None,
+                options: Default::default(),
+            })
+            .await
+            .unwrap();
+
+        let persisted = tokio::fs::read_to_string(dir.join(EXTENDED_SAVED_CONNECTIONS_FILE))
+            .await
+            .unwrap();
+        assert!(
+            persisted.contains("\"None\""),
+            "saved profile must record the none method: {persisted}"
+        );
+        assert!(
+            !manager.has_stored_password("ssh-coder@127.0.0.1").await,
+            "none authentication must not create a password vault entry"
+        );
+
+        let restored = manager
+            .load_connection_config_from_saved("ssh-coder@127.0.0.1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(restored.auth, SSHAuthMethod::None));
+
+        // Empty bodies are the shape the web UI sends for a new profile.
+        let from_wire: SSHConnectionConfig = serde_json::from_value(serde_json::json!({
+            "id": "ssh-coder@127.0.0.1",
+            "name": "coder agent",
+            "host": "127.0.0.1",
+            "port": 2222,
+            "username": "coder",
+            "auth": { "type": "None" },
+            "defaultWorkspace": null,
+        }))
+        .unwrap();
+        assert!(matches!(from_wire.auth, SSHAuthMethod::None));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    struct NoneOnlyTestServer {
+        none_attempts: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl russh::server::Handler for NoneOnlyTestServer {
+        type Error = russh::Error;
+
+        async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+            self.none_attempts.fetch_add(1, Ordering::SeqCst);
+            Ok(russh::server::Auth::Accept)
+        }
+    }
+
+    fn nc_on_path() -> bool {
+        std::env::var_os("PATH").is_some_and(|paths| {
+            std::env::split_paths(&paths).any(|path| path.join("nc").is_file())
+        })
+    }
+
+    /// The Coder shape: the transport is a local process and the endpoint
+    /// advertises only `none`, so any other method would fail the connection.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn none_auth_over_proxy_command_connects_after_restoring_the_saved_profile() {
+        if !nc_on_path() {
+            return;
+        }
+        let dir = test_data_dir("none-auth-proxy-command");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let none_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let server_attempts = none_attempts.clone();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let config = Arc::new(russh::server::Config {
+                keys: vec![KeyPair::generate_ed25519().unwrap()],
+                methods: russh::MethodSet::NONE,
+                ..Default::default()
+            });
+            let handler = NoneOnlyTestServer {
+                none_attempts: server_attempts,
+            };
+            let session = russh::server::run_stream(config, socket, handler)
+                .await
+                .unwrap();
+            let _ = session.await;
+        });
+
+        // The alias does not resolve, so only the proxy can reach the server.
+        let proxy_command = format!("nc 127.0.0.1 {port}");
+        let mut profile = none_auth_config("coder", "coder-workspace.invalid");
+        profile.proxy_command = Some(proxy_command.clone());
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager.save_connection(&profile).await.unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let restored = reloaded
+            .load_connection_config_from_saved("coder")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(restored.auth, SSHAuthMethod::None));
+        assert_eq!(restored.proxy_command, Some(proxy_command));
+
+        let result = reloaded.connect(restored).await.unwrap();
+        assert!(result.success, "unexpected result: {:?}", result.error);
+        assert!(none_attempts.load(Ordering::SeqCst) >= 1);
+
+        let _ = reloaded.disconnect("coder").await;
+        server.abort();
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    /// `authType` exactly as released builds parse it: no `None` variant.
+    #[derive(Debug, serde::Deserialize, serde::Serialize)]
+    #[serde(tag = "type")]
+    enum ReleasedSavedAuthType {
+        Password,
+        PrivateKey {
+            #[serde(rename = "keyPath")]
+            key_path: String,
+        },
+        Agent,
+        KeyboardInteractive,
+    }
+
+    #[derive(Debug, serde::Deserialize, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ReleasedSavedConnection {
+        id: String,
+        name: String,
+        host: String,
+        port: u16,
+        username: String,
+        auth_type: ReleasedSavedAuthType,
+    }
+
+    fn released_profile(id: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "name": id,
+            "host": format!("{id}.test"),
+            "port": 22,
+            "username": "dev",
+            "authType": { "type": "PrivateKey", "keyPath": "~/.ssh/id_rsa" },
+        })
+    }
+
+    fn none_auth_config(id: &str, host: &str) -> SSHConnectionConfig {
+        SSHConnectionConfig {
+            id: id.to_string(),
+            name: "coder agent".to_string(),
+            host: host.to_string(),
+            port: 2222,
+            username: "coder".to_string(),
+            auth: SSHAuthMethod::None,
+            default_workspace: Some("/root".to_string()),
+            proxy_jump: None,
+            proxy_command: None,
+            container: None,
+            wsl: None,
+            options: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn none_auth_profile_survives_a_released_reader_save_and_upgrade() {
+        let dir = test_data_dir("none-auth-downgrade");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let primary_path = dir.join("ssh_connections.json");
+        tokio::fs::write(
+            &primary_path,
+            serde_json::to_vec(&vec![released_profile("old-a")]).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let upgraded = SSHConnectionManager::new(dir.clone());
+        upgraded.load_saved_connections().await.unwrap();
+        upgraded
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+
+        // Downgrade: a released build parses the whole list, then rewrites it
+        // from memory after the user adds a profile.
+        let content = tokio::fs::read_to_string(&primary_path).await.unwrap();
+        let mut released: Vec<ReleasedSavedConnection> = serde_json::from_str(&content)
+            .expect("released builds must keep parsing the primary file");
+        assert_eq!(released.len(), 1);
+        released.push(serde_json::from_value(released_profile("old-b")).unwrap());
+        tokio::fs::write(&primary_path, serde_json::to_vec(&released).unwrap())
+            .await
+            .unwrap();
+
+        // Upgrade again: nothing either side wrote is lost.
+        let reupgraded = SSHConnectionManager::new(dir.clone());
+        reupgraded.load_saved_connections().await.unwrap();
+        let mut ids: Vec<String> = reupgraded
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|connection| connection.id)
+            .collect();
+        ids.sort();
+        assert_eq!(ids, ["coder", "old-a", "old-b"]);
+        let restored = reupgraded
+            .load_connection_config_from_saved("coder")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(restored.auth, SSHAuthMethod::None));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn none_profiles_keep_port_scoped_ids_and_legacy_alias_dedup_across_stores() {
+        let dir = test_data_dir("none-auth-port-ids");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+        let mut key_profile = none_auth_config("ssh-coder@ws", "ws");
+        key_profile.port = 22;
+        key_profile.auth = SSHAuthMethod::Agent {
+            key_fingerprint: None,
+            fallback_key_path: None,
+        };
+        manager.save_connection(&key_profile).await.unwrap();
+        let mut scoped = none_auth_config("ssh-coder@ws#2222", "ws");
+        scoped.port = 2222;
+        manager.save_connection(&scoped).await.unwrap();
+
+        // Two ports on one host stay distinct even though they live in
+        // different stores.
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let mut saved: Vec<(String, u16)> = reloaded
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| (c.id, c.port))
+            .collect();
+        saved.sort();
+        assert_eq!(
+            saved,
+            vec![
+                ("ssh-coder@ws".to_string(), 22),
+                ("ssh-coder@ws#2222".to_string(), 2222),
+            ]
+        );
+        let restored = reloaded
+            .load_connection_config_from_saved("ssh-coder@ws#2222")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(restored.auth, SSHAuthMethod::None));
+
+        // A legacy `:port` alias of the key profile switched to `None`
+        // replaces it and moves it to the extended store.
+        let mut alias = none_auth_config("ssh-coder@ws:22", "ws");
+        alias.port = 22;
+        reloaded.save_connection(&alias).await.unwrap();
+        let primary = tokio::fs::read_to_string(dir.join("ssh_connections.json"))
+            .await
+            .unwrap();
+        assert!(
+            serde_json::from_str::<Vec<ReleasedSavedConnection>>(&primary)
+                .unwrap()
+                .is_empty()
+        );
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let mut ids: Vec<String> = reloaded
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        ids.sort();
+        assert_eq!(ids, ["ssh-coder@ws#2222", "ssh-coder@ws:22"]);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn primary_alias_from_an_older_build_shadows_the_same_extended_endpoint() {
+        let dir = test_data_dir("none-auth-alias-shadow");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+        let mut none_profile = none_auth_config("ssh-coder@ws", "ws");
+        none_profile.port = 22;
+        manager.save_connection(&none_profile).await.unwrap();
+        let mut alias = released_profile("ssh-coder@ws:22");
+        alias["host"] = serde_json::json!("ws");
+        alias["username"] = serde_json::json!("coder");
+        let mut other_port = released_profile("ssh-coder@ws:2201");
+        other_port["host"] = serde_json::json!("ws");
+        other_port["username"] = serde_json::json!("coder");
+        other_port["port"] = serde_json::json!(2201);
+        tokio::fs::write(
+            dir.join("ssh_connections.json"),
+            serde_json::to_vec(&vec![alias, other_port]).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let mut ids: Vec<String> = reloaded
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        ids.sort();
+        assert_eq!(ids, ["ssh-coder@ws:22", "ssh-coder@ws:2201"]);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn none_profile_in_the_primary_file_moves_to_the_extended_store() {
+        let dir = test_data_dir("none-auth-relocate");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let primary_path = dir.join("ssh_connections.json");
+        let mut none_profile = released_profile("coder");
+        none_profile["authType"] = serde_json::json!({ "type": "None" });
+        tokio::fs::write(
+            &primary_path,
+            serde_json::to_vec(&vec![released_profile("old-a"), none_profile]).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager.load_saved_connections().await.unwrap();
+        assert_eq!(manager.get_saved_connections().await.len(), 2);
+        manager.delete_saved_connection("old-a").await.unwrap();
+
+        let content = tokio::fs::read_to_string(&primary_path).await.unwrap();
+        serde_json::from_str::<Vec<ReleasedSavedConnection>>(&content)
+            .expect("a saved primary file must stay readable by released builds");
+        let extended = tokio::fs::read_to_string(dir.join(EXTENDED_SAVED_CONNECTIONS_FILE))
+            .await
+            .unwrap();
+        assert!(extended.contains("\"coder\""));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn changing_auth_moves_a_profile_between_stores_and_delete_clears_it() {
+        let dir = test_data_dir("none-auth-switch");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+        let mut with_key = none_auth_config("coder", "coder.test");
+        with_key.auth = SSHAuthMethod::Agent {
+            key_fingerprint: None,
+            fallback_key_path: None,
+        };
+        manager.save_connection(&with_key).await.unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let saved = reloaded.get_saved_connections().await;
+        assert_eq!(saved.len(), 1);
+        assert!(!matches!(
+            saved[0].auth_type,
+            crate::remote_ssh::types::SavedAuthType::None
+        ));
+
+        reloaded
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+        reloaded.delete_saved_connection("coder").await.unwrap();
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        assert!(reloaded.get_saved_connections().await.is_empty());
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn primary_profile_recreated_by_an_older_build_shadows_the_extended_one() {
+        let dir = test_data_dir("none-auth-shadow");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+        tokio::fs::write(
+            dir.join("ssh_connections.json"),
+            serde_json::to_vec(&vec![released_profile("coder")]).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let saved = reloaded.get_saved_connections().await;
+        assert_eq!(saved.len(), 1);
+        assert!(matches!(
+            saved[0].auth_type,
+            crate::remote_ssh::types::SavedAuthType::PrivateKey { .. }
+        ));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn unreadable_extended_store_is_kept_aside_and_never_blocks_primary_profiles() {
+        let dir = test_data_dir("none-auth-unreadable");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        tokio::fs::write(
+            dir.join("ssh_connections.json"),
+            serde_json::to_vec(&vec![released_profile("old-a")]).unwrap(),
+        )
+        .await
+        .unwrap();
+        let extended_path = dir.join(EXTENDED_SAVED_CONNECTIONS_FILE);
+        tokio::fs::write(&extended_path, "not json").await.unwrap();
+
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager.load_saved_connections().await.unwrap();
+        assert_eq!(manager.get_saved_connections().await.len(), 1);
+        manager
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+
+        let backup = tokio::fs::read_to_string(extended_path.with_extension("json.unreadable"))
+            .await
+            .unwrap();
+        assert_eq!(backup, "not json");
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn unreadable_primary_file_keeps_extended_profiles_for_the_next_save() {
+        let dir = test_data_dir("none-auth-primary-corrupt");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+        tokio::fs::write(dir.join("ssh_connections.json"), "not json")
+            .await
+            .unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        assert!(reloaded.load_saved_connections().await.is_err());
+        assert_eq!(reloaded.get_saved_connections().await.len(), 1);
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 

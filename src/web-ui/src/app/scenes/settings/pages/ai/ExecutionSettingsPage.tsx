@@ -5,6 +5,7 @@ import { readableModelPools, supportsModelPools, type ModelPoolDefinition, type 
 import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 import ReviewCapacitySection from '@/app/scenes/settings/pages/ai/ReviewCapacitySection';
 import ToolJsonRepairSection from '@/app/scenes/settings/pages/ai/ToolJsonRepairSection';
+import GenUILibrarySection from './GenUILibrarySection';
 import '@/app/scenes/settings/pages/shared/RuntimeSettings.scss';
 import { useSceneStore } from '@/app/stores/sceneStore';
 import {
@@ -570,6 +571,7 @@ const ExecutionSettingsPage: React.FC = () => {
           </ConfigPageSection>
 
           <ToolJsonRepairSection />
+          <GenUILibrarySection />
           <ReviewCapacitySection />
 
         </>

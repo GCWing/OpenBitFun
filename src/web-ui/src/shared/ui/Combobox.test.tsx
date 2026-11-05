@@ -30,8 +30,8 @@ describe('public Combobox product integration', () => {
   beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); change.mockClear(); });
   afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); });
 
-  it('navigates grouped options in DOM order and skips disabled entries', () => {
-    render(); key(trigger(), 'ArrowDown'); key(input(), 'ArrowDown'); key(input(), 'Enter');
+  it.each(['field', 'pill'] as const)('navigates grouped options in DOM order and skips disabled entries with the %s variant', (variant) => {
+    render({ variant, bordered: variant !== 'pill' }); key(trigger(), 'ArrowDown'); key(input(), 'ArrowDown'); key(input(), 'Enter');
     expect(change).toHaveBeenLastCalledWith('c');
     expect(document.activeElement).toBe(trigger());
     expect(document.querySelector('[role="listbox"]')).toBeNull();
@@ -218,7 +218,9 @@ describe('public Combobox product integration', () => {
       if (this.dataset.openbitfunComponent === 'combobox-popup') return new DOMRect(0, 0, 240, 180);
       return new DOMRect(40, top, 240, 40);
     });
-    render(); act(() => trigger().click());
+    render({ valuePrefix: <span>Model:</span>, variant: 'pill', bordered: 'hover', hitArea: 'expanded', showIndicator: false, defaultValue: 'a' });
+    expect(host.querySelector('[data-openbitfun-part="indicator"]')).toBeNull();
+    act(() => host.querySelector<HTMLElement>('[data-openbitfun-part="value-prefix"]')!.click());
     const popup = document.querySelector<HTMLElement>('[data-openbitfun-component="combobox-popup"]')!;
     expect(popup.dataset.placement).toBe('top');
     top = 20;
@@ -226,6 +228,27 @@ describe('public Combobox product integration', () => {
     expect(popup.dataset.placement).toBe('bottom');
     expect(popup.style.top).toBe('20px');
     expect(popup.style.width).toBe('240px');
+  });
+  it('fits model options beyond the trigger width and stays within the viewport', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.openbitfunComponent === 'combobox-popup') {
+        const naturalWidth = this.querySelectorAll('[role="option"]').length > 1 ? 320 : 200;
+        return new DOMRect(0, 0, Math.max(naturalWidth, Number.parseFloat(this.style.minWidth) || 0), 180);
+      }
+      return new DOMRect(window.innerWidth - 132, 20, 120, 32);
+    });
+    render({ popupWidth: 'content', options: [
+      { value: 'model', label: 'A long model name', description: 'Provider service · 300k' },
+      { value: 'longer', label: 'A substantially longer model option' },
+    ] });
+    act(() => trigger().click());
+    const popup = document.querySelector<HTMLElement>('[data-openbitfun-component="combobox-popup"]')!;
+    expect(popup.style.width).toBe('');
+    expect(popup.style.minWidth).toBe('120px');
+    expect(popup.style.left).toBe(`${window.innerWidth - 328}px`);
+    type('Provider');
+    expect(popup.style.minWidth).toBe('320px');
+    expect(document.querySelector('[role="option"]')?.getAttribute('aria-label')).toBe('A long model name: Provider service · 300k');
   });
   it('reports controlled open requests without mutating controlled state', () => {
     const onOpenChange = vi.fn();

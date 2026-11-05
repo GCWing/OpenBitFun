@@ -849,6 +849,14 @@
     "title": "智能模式配置",
     "service": "Router 服务模型",
     "serviceHint": "先在模型设置中添加支持分类协议的 API 服务，再在这里选择；普通聊天模型和 Coding Plan 不一定支持",
+    "protocol": "Router 兼容模式",
+    "protocolLogprobs": "标准 Router（token logprobs）",
+    "protocolClassifier": "分类头 Router",
+    "protocolUnknown": "暂不支持：{{protocol}}",
+    "protocolUnsupported": "当前执行主机不支持所选 Router 模式，请升级或选择标准 Router",
+    "classifierHint": "从 router 字段读取分类概率，按单并发发送请求",
+    "timeout": "超时（秒）",
+    "timeoutInvalid": "请输入大于 0 的超时秒数",
     "summary": "辅助摘要",
     "summaryHint": "开启后使用经济模型整理路由历史，会产生额外模型调用",
     "on": "开启",
@@ -864,7 +872,7 @@
       "unconfigured": "未配置可用模型"
     },
     "connectionFailures": {
-      "protocol": "请选择支持 OpenAI Chat Completions 且返回 token IDs 和 logprobs 的分类服务",
+      "protocol": "请检查 Router 兼容模式是否与服务返回格式一致",
       "authentication": "Router 认证失败，请检查 API Key 和服务访问权限",
       "addressOrModel": "请检查 Router 服务地址和模型名称，接口或模型可能不存在",
       "rateLimited": "Router 请求受到限流，请稍后重试",

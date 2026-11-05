@@ -9,10 +9,13 @@ use openbitfun_runtime_ports::{
     WorkspaceCommandOptions, WorkspaceCommandResult, WorkspaceDirEntry, WorkspaceFileSystem,
     WorkspacePathKind, WorkspaceServices, WorkspaceShell,
 };
+use std::collections::BTreeMap;
 use std::sync::Arc;
 #[cfg(feature = "remote-ssh-concrete")]
 use std::time::SystemTime;
 use std::time::{Duration, UNIX_EPOCH};
+#[cfg(feature = "remote-ssh-concrete")]
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::{
     RemoteFileEntry, RemoteFileService, SSHCommandOptions, SSHCommandResult, SSHConnectionManager,
@@ -415,6 +418,93 @@ impl WorkspaceShell for RemoteWorkspaceShell {
 
         Ok(workspace_result_from_ssh(result))
     }
+
+    async fn exec_with_stdin(
+        &self,
+        command: &str,
+        stdin_payload: &[u8],
+        environment: &BTreeMap<String, String>,
+        options: WorkspaceCommandOptions,
+    ) -> anyhow::Result<WorkspaceCommandResult> {
+        #[cfg(not(feature = "remote-ssh-concrete"))]
+        {
+            let _ = (command, stdin_payload, environment, options);
+            anyhow::bail!("remote workspace stdin execution is unavailable without SSH support")
+        }
+        #[cfg(feature = "remote-ssh-concrete")]
+        {
+            let command = remote_workspace_command(
+                &self.workspace_root,
+                &remote_hook_command(command, environment),
+            );
+            let stdio = if let Some(timeout_ms) = options.timeout_ms {
+                match tokio::time::timeout(
+                    Duration::from_millis(timeout_ms),
+                    self.ssh_manager
+                        .open_workspace_stdio(&self.connection_id, &command),
+                )
+                .await
+                {
+                    Ok(result) => result?,
+                    Err(_) => {
+                        return Ok(WorkspaceCommandResult {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            exit_code: 124,
+                            interrupted: false,
+                            timed_out: true,
+                        });
+                    }
+                }
+            } else {
+                self.ssh_manager
+                    .open_workspace_stdio(&self.connection_id, &command)
+                    .await?
+            };
+            let (mut stdin, mut stdout, mut stderr, control, completion) = stdio.into_parts();
+            let payload = stdin_payload.to_vec();
+            let interaction = async move {
+                stdin.write_all(&payload).await?;
+                stdin.shutdown().await?;
+                let (stdout, stderr, completion) = tokio::join!(
+                    async {
+                        let mut bytes = Vec::new();
+                        stdout.read_to_end(&mut bytes).await.map(|_| bytes)
+                    },
+                    async {
+                        let mut bytes = Vec::new();
+                        stderr.read_to_end(&mut bytes).await.map(|_| bytes)
+                    },
+                    completion.wait(),
+                );
+                Ok::<_, anyhow::Error>((stdout?, stderr?, completion.exit_code))
+            };
+            let result = if let Some(timeout_ms) = options.timeout_ms {
+                match tokio::time::timeout(Duration::from_millis(timeout_ms), interaction).await {
+                    Ok(result) => result?,
+                    Err(_) => {
+                        let _ = control.kill().await;
+                        return Ok(WorkspaceCommandResult {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            exit_code: 124,
+                            interrupted: false,
+                            timed_out: true,
+                        });
+                    }
+                }
+            } else {
+                interaction.await?
+            };
+            Ok(WorkspaceCommandResult {
+                stdout: bounded_hook_output(result.0),
+                stderr: bounded_hook_output(result.1),
+                exit_code: result.2.unwrap_or(-1),
+                interrupted: false,
+                timed_out: false,
+            })
+        }
+    }
 }
 
 /// Build [`WorkspaceServices`] backed by SSH for a remote workspace.
@@ -436,6 +526,40 @@ pub fn remote_workspace_services(
 
 fn remote_workspace_command(workspace_root: &str, command: &str) -> String {
     shell::cd_and(workspace_root, command)
+}
+
+#[cfg(feature = "remote-ssh-concrete")]
+fn remote_hook_command(command: &str, environment: &BTreeMap<String, String>) -> String {
+    if environment.is_empty() {
+        return command.to_string();
+    }
+    let mut prefix = String::new();
+    for (key, value) in environment {
+        if key.is_empty()
+            || !key.chars().enumerate().all(|(index, ch)| {
+                ch == '_' || ch.is_ascii_alphanumeric() && (index > 0 || ch.is_ascii_alphabetic())
+            })
+        {
+            continue;
+        }
+        prefix.push_str("export ");
+        prefix.push_str(key);
+        prefix.push('=');
+        prefix.push_str(&shell::quote_arg(value));
+        prefix.push_str("; ");
+    }
+    format!("{prefix}{command}")
+}
+
+#[cfg(feature = "remote-ssh-concrete")]
+fn bounded_hook_output(bytes: Vec<u8>) -> String {
+    const MAX_CAPTURED_OUTPUT_BYTES: usize = 1024 * 1024;
+    let bytes = if bytes.len() > MAX_CAPTURED_OUTPUT_BYTES {
+        &bytes[..MAX_CAPTURED_OUTPUT_BYTES]
+    } else {
+        &bytes
+    };
+    String::from_utf8_lossy(bytes).into_owned()
 }
 
 fn workspace_result_from_ssh(result: SSHCommandResult) -> WorkspaceCommandResult {

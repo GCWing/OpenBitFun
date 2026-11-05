@@ -39,6 +39,7 @@ export type PeerConnectionHealth = 'connecting' | 'ready' | 'degraded';
 export type PeerHostKind = 'desktop' | 'cli';
 
 export interface PeerHostCapabilities {
+  readonly genUiLibrariesV1?: boolean;
   readonly backgroundResultDeliveryV1?: boolean;
   readonly idempotentDialogSubmit: boolean;
   /** Only true after explicit negotiation; older hosts need the upload API. */
@@ -55,6 +56,9 @@ export interface PeerHostCapabilities {
   readonly miniAppAgentContextFilesV1: boolean;
   readonly miniAppAgentImagesV1: boolean;
   readonly wslWorkspacesV1?: boolean;
+  readonly sshNoneAuthV1?: boolean;
+  /** Host keeps `ssh-user@host#port` profiles distinct; older hosts get legacy ids only. */
+  readonly sshPortScopedIdentityV1?: boolean;
   /** Host stores ordered subscription account pools on model configs. */
   readonly subscriptionAccountPoolsV1?: boolean;
   /** Host-owned read-only subscription allowance query. */
@@ -101,6 +105,7 @@ export interface PeerHostCapabilities {
   readonly reviewPlatformV1?: boolean | null;
   /** Scoped MCP choices must be explicitly advertised by the host. */
   readonly chatMcpCatalogV1?: boolean;
+  readonly sessionReferenceBrowseV1?: boolean;
   readonly workspaceIconV1?: boolean;
   readonly workspaceIdReferencesV1?: boolean;
   /**
@@ -201,6 +206,8 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   miniAppAgentContextFilesV1: false,
   miniAppAgentImagesV1: false,
   wslWorkspacesV1: false,
+  sshNoneAuthV1: false,
+  sshPortScopedIdentityV1: false,
   subscriptionAccountPoolsV1: false,
   subscriptionQuotaV1: false,
   grokQuotaV1: false,
@@ -222,6 +229,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   toolCatalog: null,
   reviewPlatformV1: null,
   chatMcpCatalogV1: false,
+  sessionReferenceBrowseV1: false,
   workspaceIconV1: false,
   workspaceIdReferencesV1: false,
   userQuestionResponse: null,
@@ -469,8 +477,11 @@ export class PeerConnectionManager {
       supportsMiniAppAgentContextFilesV1: entry.capabilities.miniAppAgentContextFilesV1,
       supportsMiniAppAgentImagesV1: entry.capabilities.miniAppAgentImagesV1,
       supportsWslWorkspacesV1: entry.capabilities.wslWorkspacesV1,
+      supportsSshNoneAuthV1: entry.capabilities.sshNoneAuthV1,
+      supportsSshPortScopedIdentityV1: entry.capabilities.sshPortScopedIdentityV1,
       supportsWholeSessionCopyV1: entry.capabilities.wholeSessionCopyV1,
       supportsLocalContextTruncationV1: entry.capabilities.localContextTruncationV1,
+      supportsGenUiLibrariesV1: entry.capabilities.genUiLibrariesV1,
       supportsModelRoutingV1: entry.capabilities.modelRoutingV1,
       supportsModelPoolSelectionV1: entry.capabilities.modelPoolSelectionV1,
       supportsBtwModelPoolSelectionV1: entry.capabilities.btwModelPoolSelectionV1,
@@ -565,6 +576,8 @@ export class PeerConnectionManager {
       miniAppAgentContextFilesV1: caps?.miniapp_agent_context_files_v1 === true,
       miniAppAgentImagesV1: caps?.miniapp_agent_images_v1 === true,
       wslWorkspacesV1: caps?.wsl_workspaces_v1 === true,
+      sshNoneAuthV1: caps?.ssh_none_auth_v1 === true,
+      sshPortScopedIdentityV1: caps?.ssh_port_scoped_identity_v1 === true,
       subscriptionAccountPoolsV1: caps?.subscription_account_pools_v1 === true,
       subscriptionQuotaV1: caps?.subscription_quota_v1 === true,
       grokQuotaV1: caps?.grok_quota_v1 === true,
@@ -573,6 +586,7 @@ export class PeerConnectionManager {
       wholeSessionCopyV1: caps?.whole_session_copy_v1 === true,
       localContextTruncationV1: caps?.local_context_truncation_v1 === true,
       sessionTrajectoryV1: caps?.session_trajectory_v1 === true,
+      genUiLibrariesV1: caps?.gen_ui_libraries_v1 === true,
       modelRoutingV1: caps?.model_routing_v1 === true,
       modelPoolSelectionV1: caps?.model_pool_selection_v1 === true,
       computerUseSharingV1: caps?.computer_use_sharing_v1 === true,
@@ -585,6 +599,7 @@ export class PeerConnectionManager {
       toolCatalog,
       reviewPlatformV1: caps?.review_platform_v1 === undefined ? null : caps.review_platform_v1 === true,
       chatMcpCatalogV1: caps?.chat_mcp_catalog_v1 === true,
+      sessionReferenceBrowseV1: caps?.session_reference_browse_v1 === true,
       workspaceIconV1: caps?.workspace_icon_v1 === true,
       workspaceIdReferencesV1: caps?.workspace_id_references_v1 === true,
       userQuestionResponse,
@@ -675,8 +690,11 @@ export class PeerConnectionManager {
         supportsMiniAppAgentContextFilesV1: capabilities.miniAppAgentContextFilesV1,
         supportsMiniAppAgentImagesV1: capabilities.miniAppAgentImagesV1,
         supportsWslWorkspacesV1: capabilities.wslWorkspacesV1,
+        supportsSshNoneAuthV1: capabilities.sshNoneAuthV1,
+        supportsSshPortScopedIdentityV1: capabilities.sshPortScopedIdentityV1,
         supportsWholeSessionCopyV1: capabilities.wholeSessionCopyV1,
         supportsLocalContextTruncationV1: capabilities.localContextTruncationV1,
+        supportsGenUiLibrariesV1: capabilities.genUiLibrariesV1,
         supportsModelRoutingV1: capabilities.modelRoutingV1,
         supportsModelPoolSelectionV1: capabilities.modelPoolSelectionV1,
         supportsBtwModelPoolSelectionV1: capabilities.btwModelPoolSelectionV1,
@@ -828,6 +846,8 @@ function capabilitiesEqual(
     a.miniAppAgentContextFilesV1 === b.miniAppAgentContextFilesV1 &&
     a.miniAppAgentImagesV1 === b.miniAppAgentImagesV1 &&
     a.wslWorkspacesV1 === b.wslWorkspacesV1 &&
+    a.sshNoneAuthV1 === b.sshNoneAuthV1 &&
+    a.sshPortScopedIdentityV1 === b.sshPortScopedIdentityV1 &&
     a.subscriptionAccountPoolsV1 === b.subscriptionAccountPoolsV1 &&
     a.subscriptionQuotaV1 === b.subscriptionQuotaV1 &&
     a.grokQuotaV1 === b.grokQuotaV1 &&
@@ -836,6 +856,7 @@ function capabilitiesEqual(
     a.wholeSessionCopyV1 === b.wholeSessionCopyV1 &&
     a.localContextTruncationV1 === b.localContextTruncationV1 &&
     a.sessionTrajectoryV1 === b.sessionTrajectoryV1 &&
+    a.genUiLibrariesV1 === b.genUiLibrariesV1 &&
     a.modelRoutingV1 === b.modelRoutingV1 &&
     a.modelPoolSelectionV1 === b.modelPoolSelectionV1 &&
     a.computerUseSharingV1 === b.computerUseSharingV1 &&
@@ -843,6 +864,7 @@ function capabilitiesEqual(
     a.toolCatalog === b.toolCatalog &&
     a.reviewPlatformV1 === b.reviewPlatformV1 &&
     a.chatMcpCatalogV1 === b.chatMcpCatalogV1 &&
+    a.sessionReferenceBrowseV1 === b.sessionReferenceBrowseV1 &&
     a.workspaceIconV1 === b.workspaceIconV1 &&
     a.workspaceIdReferencesV1 === b.workspaceIdReferencesV1 &&
     a.userQuestionResponse === b.userQuestionResponse &&

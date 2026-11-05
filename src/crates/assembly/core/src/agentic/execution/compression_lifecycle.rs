@@ -79,7 +79,6 @@ impl ExecutionEngine {
         system_prompt_message: Message,
         prepended_prompt_reminders: &PrependedPromptReminders,
         primary_supports_image_understanding: bool,
-        compression_contract_limit: usize,
         workspace: Option<&WorkspaceBinding>,
         workspace_services: Option<&crate::agentic::workspace::WorkspaceServices>,
         prefetch: Option<PrefetchedCompression>,
@@ -140,7 +139,13 @@ impl ExecutionEngine {
         let expected_last_turn = session.dialog_turn_ids.last().cloned();
         let planned_result = prepare_compression_cancellable(&cancellation_token, async {
             native_hooks::dispatch_pre_compact(
-                Self::native_hook_facts(session_id, dialog_turn_id, workspace, &ai_client_model),
+                Self::native_hook_facts(
+                    session_id,
+                    dialog_turn_id,
+                    workspace,
+                    workspace_services,
+                    &ai_client_model,
+                ),
                 trigger,
             )
             .await;
@@ -162,7 +167,7 @@ impl ExecutionEngine {
             // Execute compression
             let compression_contract = self
                 .session_manager
-                .compression_contract_for_session(session_id, compression_contract_limit);
+                .compression_contract_for_session(session_id, DEFAULT_COMPRESSION_CONTRACT_LIMIT);
             let (candidate, is_prefetched, trace_config) = if use_local_truncation {
                 (None, false, None)
             } else {
@@ -518,6 +523,7 @@ impl ExecutionEngine {
                             session_id,
                             dialog_turn_id,
                             workspace,
+                            workspace_services,
                             &ai_client_model,
                         ),
                         trigger,

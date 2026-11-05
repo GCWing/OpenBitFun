@@ -124,8 +124,8 @@
       "modelName": {
         "label": "圖像模型 ID",
         "hint": "填服務商用於圖像生成的正確模型 ID，不是對話模型。",
-        "subscriptionPlaceholder": "留空則使用帳號可用的模型",
-        "subscriptionHint": "這裡填的是驅動圖像工具的對話模型，不是圖像模型名稱；留空會依帳號可用模型自動選擇。"
+        "subscriptionPlaceholder": "使用內建圖像模型",
+        "subscriptionHint": "訂閱生圖使用內建圖像模型，無需設定對話模型。"
       },
       "name": {
         "label": "顯示名稱",

@@ -6,6 +6,8 @@ import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
 import { getActiveSurfaceId, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { notificationService } from '@/shared/notification-system';
 import WorkspaceItem from './WorkspaceItem';
+import { setWorkspaceSessionsCollapsed, useWorkspaceSessionsCollapsed } from './workspaceDisclosure';
+import { remoteWorkspaceBadges } from './remoteWorkspaceBadge';
 import SessionViewTransition from './SessionViewTransition';
 import SessionsSection, { type WorkspaceSessionScope } from '../sessions/SessionsSection';
 import { useWorkspaceSessionViewStore } from '../../workspaceSessionView';
@@ -21,6 +23,8 @@ import './WorkspaceListSection.scss';
 interface WorkspaceListSectionProps {
   variant: SessionNavigationScope;
   scrollRootRef?: React.RefObject<HTMLElement | null>;
+  /** Several devices share the sidebar: the flat list shows three rows per device. */
+  limitFlatRows?: boolean;
 }
 
 type WorkspaceDragPosition = 'before' | 'after';
@@ -42,7 +46,24 @@ const WORKSPACE_DROP_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
  * never joins the workspace order (see `pinnedGroups`).
  */
 
-const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, scrollRootRef }) => {
+/** A workspace row whose project disclosure lives in the window-wide store. */
+const ProjectWorkspaceItem: React.FC<React.ComponentProps<typeof WorkspaceItem> & {
+  surfaceId: string;
+  isProject: boolean;
+}> = ({ surfaceId, isProject, ...props }) => {
+  const collapsed = useWorkspaceSessionsCollapsed(surfaceId, props.workspace.id);
+  return (
+    <WorkspaceItem
+      {...props}
+      sessionsCollapsed={isProject ? collapsed : undefined}
+      onSessionsCollapsedChange={isProject
+        ? value => setWorkspaceSessionsCollapsed(surfaceId, props.workspace.id, value)
+        : undefined}
+    />
+  );
+};
+
+const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, scrollRootRef, limitFlatRows = false }) => {
   const { t } = useI18n('common');
   const {
     openedWorkspacesList,
@@ -51,6 +72,8 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
     activeWorkspaceId,
     reorderOpenedWorkspacesInSection,
   } = useWorkspaceContext();
+  // Remote badges are compared across every opened workspace so equal compact labels expand.
+  const remoteBadges = useMemo(() => remoteWorkspaceBadges(openedWorkspacesList), [openedWorkspacesList]);
   const [draggedWorkspaceId, setDraggedWorkspaceId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{
     workspaceId: string;
@@ -62,15 +85,11 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
     activeTab?.contentId ? state.resources[activeTab.contentId]?.scope : undefined
   ));
   const surfaceId = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceId, getActiveSurfaceId);
-  const collapseAllRequestId = useWorkspaceSessionViewStore(state => state.collapseAllRequestId);
-  const [projectDisclosure, setProjectDisclosure] = useState<{
-    requestId: number;
-    values: Record<string, boolean>;
-  }>({ requestId: collapseAllRequestId, values: {} });
 
   // Refs for values that must be read inside event handlers without stale closures
   const draggedWorkspaceIdRef = useRef<string | null>(null);
   const dropTargetRef = useRef<{ workspaceId: string; position: WorkspaceDragPosition } | null>(null);
+  const pendingDragEndRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const workspaceRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const pendingDropRectsRef = useRef<Map<string, DOMRect> | null>(null);
   const dropAnimationsRef = useRef<Map<string, Animation>>(new Map());
@@ -122,6 +141,8 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
     ? []
     : reorderableGroups;
   const canReorderGroups = visibleReorderableGroups.length > 1;
+  const canContinueDrag = draggedWorkspaceId !== null && canReorderGroups
+    && visibleReorderableGroups.some(group => group.workspace.id === draggedWorkspaceId);
   /**
    * Pinned assistants sit outside the drag order, so a project drag rewrites
    * project positions only and leaves the assistant's stored slot untouched.
@@ -129,6 +150,71 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
   const reorderSection = variant === 'all' ? 'projects' : variant;
 
   const workspaceSignature = sessionGroups.map(group => group.groupId).join(':');
+
+  const resetDragState = useCallback(() => {
+    clearTimeout(pendingDragEndRef.current);
+    pendingDragEndRef.current = undefined;
+    draggedWorkspaceIdRef.current = null;
+    dropTargetRef.current = null;
+    setDraggedWorkspaceId(null);
+    setDropTarget(null);
+  }, []);
+
+  // A retained list can lose its native source without receiving dragend.
+  // Device identity matters even when the new surface has identical workspace IDs.
+  useLayoutEffect(() => {
+    resetDragState();
+    pendingDropRectsRef.current = null;
+  }, [grouping, surfaceId, variant, resetDragState]);
+
+  useLayoutEffect(() => {
+    if (draggedWorkspaceId && !canContinueDrag) {
+      resetDragState();
+    }
+  }, [canContinueDrag, draggedWorkspaceId, resetDragState]);
+
+  useEffect(() => {
+    if (!draggedWorkspaceId) return;
+
+    const handleWindowDrop = () => {
+      // Capture sees drops that other targets stop from bubbling. Let React's
+      // target handler read the source and before/after slot before clearing them.
+      clearTimeout(pendingDragEndRef.current);
+      pendingDragEndRef.current = setTimeout(resetDragState, 0);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') resetDragState();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') resetDragState();
+    };
+    const handleMove = (event: MouseEvent) => {
+      if (event.buttons === 0) resetDragState();
+    };
+    // HTML dragging itself emits pointercancel at startup; it is not an end
+    // signal. Releases and resumed input recover a missed native dragend instead.
+    const endEvents = ['dragend', 'mouseup', 'pointerup', 'mousedown', 'pointerdown'] as const;
+    endEvents.forEach(type => window.addEventListener(type, resetDragState, true));
+    window.addEventListener('drop', handleWindowDrop, true);
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('mousemove', handleMove, true);
+    window.addEventListener('pointermove', handleMove, true);
+    window.addEventListener('blur', resetDragState);
+    window.addEventListener('pagehide', resetDragState);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearTimeout(pendingDragEndRef.current);
+      pendingDragEndRef.current = undefined;
+      endEvents.forEach(type => window.removeEventListener(type, resetDragState, true));
+      window.removeEventListener('drop', handleWindowDrop, true);
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('mousemove', handleMove, true);
+      window.removeEventListener('pointermove', handleMove, true);
+      window.removeEventListener('blur', resetDragState);
+      window.removeEventListener('pagehide', resetDragState);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [draggedWorkspaceId, resetDragState]);
 
   useEffect(() => () => {
     dropAnimationsRef.current.forEach(animation => animation.cancel());
@@ -171,16 +257,10 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData(WORKSPACE_DRAG_MIME_TYPE, serializedPayload);
     event.dataTransfer.setData('text/plain', serializedPayload);
+    resetDragState();
     draggedWorkspaceIdRef.current = workspaceId;
     setDraggedWorkspaceId(workspaceId);
-  }, [variant]);
-
-  const handleDragEnd = useCallback(() => {
-    draggedWorkspaceIdRef.current = null;
-    dropTargetRef.current = null;
-    setDraggedWorkspaceId(null);
-    setDropTarget(null);
-  }, []);
+  }, [variant, resetDragState]);
 
   const handleDragOver = useCallback((workspaceId: string) => (event: React.DragEvent<HTMLDivElement>) => {
     // Browsers block reading dataTransfer data during dragover for security.
@@ -229,6 +309,15 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
   }, []);
 
   const handleDrop = useCallback((workspaceId: string) => async (event: React.DragEvent<HTMLDivElement>) => {
+    const sourceWorkspaceId = draggedWorkspaceIdRef.current;
+    const position = dropTargetRef.current?.workspaceId === workspaceId
+      ? dropTargetRef.current.position
+      : 'after';
+    // A drop ends the gesture, including malformed or rejected payloads. Saving
+    // the order must not keep feedback alive or later clear a newer gesture.
+    resetDragState();
+    if (!sourceWorkspaceId) return;
+
     // On drop, reading dataTransfer data IS allowed.
     const payloadText =
       event.dataTransfer.getData(WORKSPACE_DRAG_MIME_TYPE) ||
@@ -236,28 +325,20 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
 
     if (!payloadText) return;
 
-    let payload: WorkspaceDragPayload;
+    let payload: WorkspaceDragPayload | null;
     try {
-      payload = JSON.parse(payloadText) as WorkspaceDragPayload;
+      payload = JSON.parse(payloadText) as WorkspaceDragPayload | null;
     } catch {
       return;
     }
 
-    if (!payload.workspaceId || payload.variant !== variant) return;
+    if (!payload || payload.workspaceId !== sourceWorkspaceId || payload.variant !== variant
+      || sourceWorkspaceId === workspaceId) return;
 
     event.preventDefault();
     event.stopPropagation();
 
-    // Reuse the position already determined by dragover — avoid recalculating
-    // on the wrapper whose height may have changed due to the drop-line element.
-    const position =
-      dropTargetRef.current?.workspaceId === workspaceId
-        ? dropTargetRef.current.position
-        : 'after';
-
-    draggedWorkspaceIdRef.current = null;
-    dropTargetRef.current = null;
-    setDropTarget(null);
+    // Keep the slot measured by dragover, before the drop line changed layout.
     pendingDropRectsRef.current = new Map(
       Array.from(workspaceRowRefs.current, ([id, element]) => (
         [id, element.getBoundingClientRect()] as const
@@ -272,10 +353,8 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
         error instanceof Error ? error.message : t('nav.workspaces.reorderFailed'),
         { duration: 4000 }
       );
-    } finally {
-      setDraggedWorkspaceId(null);
     }
-  }, [reorderOpenedWorkspacesInSection, reorderSection, t, variant]);
+  }, [reorderOpenedWorkspacesInSection, reorderSection, resetDragState, t, variant]);
 
   /**
    * One session-group row. Pinned assistants and project workspaces share the
@@ -284,9 +363,6 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
    */
   const renderGroupRow = (group: WorkspaceBackedSessionGroup, pinned: boolean) => {
     const workspace = group.workspace;
-    const disclosureKey = JSON.stringify([surfaceId, workspace.id]);
-    const sessionsCollapsed = (projectDisclosure.requestId === collapseAllRequestId
-      ? projectDisclosure.values[disclosureKey] : undefined) ?? (collapseAllRequestId > 0);
     const isActive = isWorkspaceBackedSessionGroupActive(workspace, activeWorkspace);
     const isSelected = isWorkspaceBackedSessionGroupSelected(workspace, {
       activeTab, contentScope, surfaceId, activeWorkspaceId,
@@ -318,25 +394,18 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
         onDragLeave={draggable ? handleDragLeave(workspace.id) : undefined}
         onDrop={draggable ? (event) => { void handleDrop(workspace.id)(event); } : undefined}
       >
-        <WorkspaceItem
+        <ProjectWorkspaceItem
+          surfaceId={surfaceId}
+          isProject={group.kind === 'project'}
           workspace={workspace}
+          remoteBadge={remoteBadges.get(workspace.id)}
           isActive={isActive}
           isSelected={isSelected}
           isSingle={!draggable}
           draggable={draggable}
           isDragging={draggedWorkspaceId === workspace.id}
           onDragStart={draggable ? handleDragStart(workspace.id) : undefined}
-          onDragEnd={draggable ? handleDragEnd : undefined}
-          sessionsCollapsed={group.kind === 'project' ? sessionsCollapsed : undefined}
-          onSessionsCollapsedChange={group.kind === 'project' ? collapsed => {
-            setProjectDisclosure(current => ({
-              requestId: collapseAllRequestId,
-              values: {
-                ...(current.requestId === collapseAllRequestId ? current.values : {}),
-                [disclosureKey]: collapsed,
-              },
-            }));
-          } : undefined}
+          onDragEnd={draggable ? resetDragState : undefined}
         />
         {dropTarget?.workspaceId === workspace.id ? (
           <div data-openbitfun-component="workspace-list-section" data-openbitfun-part="dropLine" className="openbitfun-nav-panel__workspace-drop-line" aria-hidden="true" />
@@ -373,6 +442,7 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
                     workspaceScopes={workspaceScopes}
                     isVisible
                     layout="flat"
+                    limitFlatRows={limitFlatRows}
                     useWorkspaceViewPreferences
                   />
                 </div>

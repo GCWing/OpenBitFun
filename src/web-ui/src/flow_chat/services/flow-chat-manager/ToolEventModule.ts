@@ -16,6 +16,7 @@ import type {
   CancelledToolEvent,
   CompletedToolEvent,
   ConfirmationNeededToolEvent,
+  GenUIStreamToolEvent,
   EarlyDetectedToolEvent,
   FailedToolEvent,
   FlowToolEvent,
@@ -144,6 +145,22 @@ export function processToolEvent(
     
     case 'ParamsPartial': {
       handleParamsPartial(store, sessionId, turnId, toolEvent);
+      break;
+    }
+
+    case 'GenUIStream': {
+      handleGenUIStream(
+        context,
+        store,
+        sessionId,
+        turnId,
+        roundId,
+        dialogTurn,
+        toolEvent,
+        attemptId,
+        attemptIndex,
+        options,
+      );
       break;
     }
 
@@ -409,6 +426,128 @@ function applyProgress(
       _progressPercentage: toolEvent.percentage
     }, silent);
   }
+}
+
+function handleGenUIStream(
+  context: FlowChatContext,
+  store: FlowChatStore,
+  sessionId: string,
+  turnId: string,
+  roundId: string,
+  dialogTurn: DialogTurn,
+  toolEvent: GenUIStreamToolEvent,
+  attemptId?: string,
+  attemptIndex?: number,
+  options?: ToolEventOptions,
+): void {
+  let existing = store.findToolItem(sessionId, turnId, toolEvent.tool_id);
+  if (!existing) {
+    handleEarlyDetected(
+      context,
+      store,
+      sessionId,
+      turnId,
+      roundId,
+      dialogTurn,
+      {
+        event_type: 'EarlyDetected',
+        tool_id: toolEvent.tool_id,
+        tool_name: toolEvent.tool_name,
+      },
+      attemptId,
+      attemptIndex,
+      options,
+    );
+    existing = store.findToolItem(sessionId, turnId, toolEvent.tool_id);
+  }
+  if (!existing || existing.type !== 'tool') return;
+  const current = existing as FlowToolItem;
+  if (current.status === 'completed' || current.status === 'error' || current.status === 'cancelled' || current.status === 'rejected') {
+    return;
+  }
+  const stream = current._genUIStream;
+  if (!toolEvent.reset && !stream && toolEvent.seq > 0) {
+    updateToolItem(store, sessionId, turnId, toolEvent.tool_id, {
+      _genUIStream: {
+        messageId: toolEvent.message_id,
+        format: toolEvent.format,
+        content: '',
+        nextSeq: 0,
+        pending: { [String(toolEvent.seq)]: {
+          text: toolEvent.text,
+          appId: toolEvent.app_id,
+          title: toolEvent.title,
+          template: toolEvent.template,
+          libraryId: toolEvent.library_id,
+          libraryRevision: toolEvent.library_revision,
+        } },
+        appId: toolEvent.app_id,
+        title: toolEvent.title,
+        template: toolEvent.template,
+        libraryId: toolEvent.library_id,
+        libraryRevision: toolEvent.library_revision,
+      },
+      status: 'streaming',
+      isParamsStreaming: true,
+    });
+    return;
+  }
+  if (!toolEvent.reset && stream && stream.messageId !== toolEvent.message_id) {
+    // A new source must explicitly reset the stream. This prevents a delayed
+    // event from a cancelled/retried provider call from overwriting the live
+    // preview belonging to the current message id.
+    return;
+  }
+  if (!toolEvent.reset && stream && stream.messageId === toolEvent.message_id && toolEvent.seq < stream.nextSeq) {
+    return;
+  }
+  if (!toolEvent.reset && stream && stream.messageId === toolEvent.message_id && toolEvent.seq > stream.nextSeq) {
+    const pending = { ...(stream.pending ?? {}) };
+    const key = String(toolEvent.seq);
+    if (!pending[key]) pending[key] = {
+      text: toolEvent.text,
+      appId: toolEvent.app_id,
+      title: toolEvent.title,
+      template: toolEvent.template,
+      libraryId: toolEvent.library_id,
+      libraryRevision: toolEvent.library_revision,
+    };
+    updateToolItem(store, sessionId, turnId, toolEvent.tool_id, {
+      _genUIStream: { ...stream, pending },
+      status: 'streaming',
+      isParamsStreaming: true,
+    });
+    return;
+  }
+
+  const base = toolEvent.reset || !stream || stream.messageId !== toolEvent.message_id
+    ? { content: toolEvent.text, nextSeq: toolEvent.seq + 1, pending: {} as Record<string, { text: string; appId?: string; title?: string; template?: string; libraryId?: string; libraryRevision?: number }> }
+    : { content: stream.content + toolEvent.text, nextSeq: toolEvent.seq + 1, pending: { ...(stream.pending ?? {}) } };
+  while (Object.prototype.hasOwnProperty.call(base.pending, String(base.nextSeq))) {
+    const next = base.pending[String(base.nextSeq)];
+    delete base.pending[String(base.nextSeq)];
+    base.content += next.text;
+    base.nextSeq += 1;
+  }
+  const pendingKeys = Object.keys(base.pending);
+  const content = base.content;
+  updateToolItem(store, sessionId, turnId, toolEvent.tool_id, {
+    toolName: toolEvent.tool_name,
+    _genUIStream: {
+      messageId: toolEvent.message_id,
+      format: toolEvent.format,
+      content,
+      nextSeq: base.nextSeq,
+      ...(pendingKeys.length ? { pending: base.pending } : {}),
+      appId: toolEvent.reset ? toolEvent.app_id : toolEvent.app_id ?? stream?.appId,
+      title: toolEvent.reset ? toolEvent.title : toolEvent.title ?? stream?.title,
+      template: toolEvent.reset ? toolEvent.template : toolEvent.template ?? stream?.template,
+      libraryId: toolEvent.reset ? toolEvent.library_id : toolEvent.library_id ?? stream?.libraryId,
+      libraryRevision: toolEvent.reset ? toolEvent.library_revision : toolEvent.library_revision ?? stream?.libraryRevision,
+    },
+    status: 'streaming',
+    isParamsStreaming: true,
+  });
 }
 
 export function processToolParamsPartialInternal(

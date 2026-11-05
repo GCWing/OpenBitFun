@@ -190,8 +190,8 @@ export function projectAdjacentFlowGroups(items: readonly VirtualItem[], options
         changed = true;
       }, remove);
     });
-    // Attachments are visible cards; ordinary model-round endings are not boundaries.
-    if (item.canvasArtifactItems?.length || disabled) boundary();
+    // Ordinary model-round endings are not boundaries.
+    if (disabled) boundary();
   }
   // Live reasoning stays inside the active window immediately. Trailing prose
   // stays outside until a following card proves it is not the final answer.

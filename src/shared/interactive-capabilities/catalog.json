@@ -234,6 +234,9 @@
     }
   ],
   "implementationOnlyCommands": {
+    "generativeUiOwner": [
+      "gen_ui_provider_call"
+    ],
     "publicMarketImageCache": [
       "market_image_load"
     ],
@@ -3463,205 +3466,6 @@
       ]
     },
     {
-      "id": "feature.canvas",
-      "kind": "feature",
-      "categoryId": "automation",
-      "titleZh": "Canvas 与交互产物",
-      "titleEn": "Canvas & interactive artifacts",
-      "summaryZh": "在会话旁展示和保存智能体生成的可视化、交互页面与结构化产物。",
-      "summaryEn": "Display and save visualizations, interactive pages, and structured artifacts generated beside a session.",
-      "keywordsZh": [
-        "Canvas",
-        "画布",
-        "可视化",
-        "交互产物",
-        "Artifact"
-      ],
-      "keywordsEn": [
-        "canvas",
-        "visualization",
-        "interactive artifact",
-        "artifact",
-        "preview"
-      ],
-      "highlightsZh": [
-        "在会话中打开交互内容",
-        "保留画布状态",
-        "在面板中查看运行错误"
-      ],
-      "highlightsEn": [
-        "Open interactive content from a session",
-        "Persist canvas state",
-        "Inspect runtime errors in the panel"
-      ],
-      "items": [
-        {
-          "id": "artifact-open",
-          "titleZh": "从会话工具结果加载并打开持久化 Canvas 产物",
-          "titleEn": "Load and open persistent Canvas artifacts from session tool results",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“从会话工具结果加载并打开持久化 Canvas 产物”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Load and open persistent Canvas artifacts from session tool results” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:load_canvas_artifact"
-          ]
-        },
-        {
-          "id": "html-react",
-          "titleZh": "渲染并持续编辑 HTML 或 React 交互界面、图表和可视化",
-          "titleEn": "Render and iteratively edit HTML or React interfaces, charts, and interactive visualizations",
-          "control": {
-            "kind": "delegate",
-            "tools": [
-              "CreateCanvas",
-              "ReadCanvas",
-              "PatchCanvas",
-              "UpdateCanvas"
-            ],
-            "workflowZh": [
-              "用 CreateCanvas 提交单文件 TSX，并仅从 openbitfun/canvas 导入允许的运行时组件",
-              "保留返回的 openbitfun-canvas 引用，先 ReadCanvas 获取当前版本，再用 PatchCanvas 做局部改动或 UpdateCanvas 完整更新"
-            ],
-            "workflowEn": [
-              "Use CreateCanvas with a single TSX file and import runtime components only from openbitfun/canvas",
-              "Keep the returned openbitfun-canvas reference, inspect it with ReadCanvas, then use PatchCanvas for focused changes or UpdateCanvas for a full update"
-            ]
-          },
-          "evidence": [
-            "command:report_canvas_runtime_ready",
-            "source:src/web-ui/src/tools/openbitfun-canvas/reactRuntime.ts#runtime: 'react'",
-            "source:src/web-ui/src/tools/openbitfun-canvas/OpenBitFunCanvasPanel.tsx#renderedHtml"
-          ]
-        },
-        {
-          "id": "inline-generative-ui",
-          "titleZh": "在会话中生成紧凑的 HTML/SVG 图表、说明器或交互组件",
-          "titleEn": "Generate compact HTML/SVG charts, explainers, or interactive widgets inline in a session",
-          "control": {
-            "kind": "delegate",
-            "tools": [
-              "GenerativeUI"
-            ],
-            "workflowZh": [
-              "仅在可视化或交互能明显帮助理解时使用 GenerativeUI，并输出紧凑、自包含且适配明暗外观的组件",
-              "需要持久编辑或独立产物时改用 Canvas；纯文本足够时不创建组件"
-            ],
-            "workflowEn": [
-              "Use GenerativeUI only when visualization or interaction materially improves understanding, producing a compact self-contained widget that supports light and dark appearances",
-              "Use Canvas for persistent editable artifacts, and skip widget generation when text is sufficient"
-            ]
-          },
-          "evidence": [
-            "source:src/crates/assembly/core/src/agentic/tools/implementations/generative_ui_tool.rs#GenerativeUI"
-          ]
-        },
-        {
-          "id": "state",
-          "titleZh": "在重新打开或刷新 Canvas 时加载和保存交互状态",
-          "titleEn": "Load and save interactive state when a Canvas is reopened or refreshed",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“在重新打开或刷新 Canvas 时加载和保存交互状态”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Load and save interactive state when a Canvas is reopened or refreshed” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:load_canvas_state",
-            "command:save_canvas_state"
-          ]
-        },
-        {
-          "id": "source-inspection",
-          "titleZh": "查看 Canvas 源码、编译版本和最后可用版本",
-          "titleEn": "Inspect Canvas source, compiled revisions, and the last known good revision",
-          "control": {
-            "kind": "delegate",
-            "tools": [
-              "ReadCanvas"
-            ],
-            "workflowZh": [
-              "用 ReadCanvas 按 artifact_reference 或 canvas_id 读取源码、状态、诊断与编译信息"
-            ],
-            "workflowEn": [
-              "Use ReadCanvas with artifact_reference or canvas_id to inspect source, status, diagnostics, and compiled information"
-            ]
-          },
-          "evidence": [
-            "source:src/web-ui/src/tools/openbitfun-canvas/OpenBitFunCanvasPanel.tsx#lastKnownGoodRevision"
-          ]
-        },
-        {
-          "id": "element-context",
-          "titleZh": "选择 Canvas 内的元素并把元素引用加入会话上下文",
-          "titleEn": "Select an element inside Canvas and add its reference to session context",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“选择 Canvas 内的元素并把元素引用加入会话上下文”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Select an element inside Canvas and add its reference to session context” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "source:src/web-ui/src/tools/openbitfun-canvas/OpenBitFunCanvasPanel.tsx#createCanvasElementContext"
-          ]
-        },
-        {
-          "id": "runtime-errors",
-          "titleZh": "捕获运行错误、上报诊断并请求智能体自动修复",
-          "titleEn": "Capture runtime errors, report diagnostics, and ask the agent to repair them",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“捕获运行错误、上报诊断并请求智能体自动修复”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Capture runtime errors, report diagnostics, and ask the agent to repair them” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:report_canvas_runtime_error",
-            "source:src/web-ui/src/tools/openbitfun-canvas/OpenBitFunCanvasPanel.tsx#canvas-runtime-auto-repair"
-          ]
-        },
-        {
-          "id": "export-html",
-          "titleZh": "把当前 Canvas 导出为可独立打开的 HTML 文件",
-          "titleEn": "Export the current Canvas as a standalone HTML file",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“把当前 Canvas 导出为可独立打开的 HTML 文件”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Export the current Canvas as a standalone HTML file” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "source:src/web-ui/src/tools/openbitfun-canvas/canvasHtmlExportService.ts#export async function exportCanvasHtml"
-          ]
-        }
-      ],
-      "stepsZh": [
-        "打开一个 AI 会话",
-        "让智能体创建可视化或交互工具",
-        "从工具结果打开 Canvas"
-      ],
-      "stepsEn": [
-        "Open an AI session",
-        "Ask the agent for a visualization or interactive tool",
-        "Open the Canvas from the tool result"
-      ],
-      "agentExamplesZh": [
-        "打开 AI 助手，我想做一个交互可视化",
-        "创建一个可交互的 Canvas"
-      ],
-      "agentExamplesEn": [
-        "Open the AI assistant; I want an interactive visualization",
-        "Create an interactive Canvas"
-      ],
-      "destination": {
-        "kind": "scene",
-        "sceneId": "session"
-      },
-      "operations": []
-    },
-    {
       "id": "feature.tasks-automation",
       "kind": "feature",
       "categoryId": "automation",
@@ -4509,8 +4313,8 @@
       "categoryId": "connect",
       "titleZh": "Remote Connect 与多设备",
       "titleEn": "Remote Connect & devices",
-      "summaryZh": "从手机、Bot 或另一台 OpenBitFun 设备连接当前主机，远程查看会话、回答权限并继续工作。",
-      "summaryEn": "Connect to this host from mobile, a bot, or another OpenBitFun device to inspect sessions, answer permissions, and continue work remotely.",
+      "summaryZh": "从手机、Bot 或另一台 OpenBitFun 设备远程查看会话、回答权限并继续工作。手机与同账号设备互控默认使用官方 Relay，无需部署服务器；官方与局域网模式登录时均需联网。",
+      "summaryEn": "Inspect sessions, answer permissions, and continue work from mobile, a bot, or another OpenBitFun device. Mobile and same-account device control use the official Relay by default, with no server deployment; both official and LAN modes need internet access for sign-in.",
       "keywordsZh": [
         "Remote Connect",
         "远程控制",
@@ -4520,7 +4324,8 @@
         "微信",
         "多设备",
         "Peer Device",
-        "GitHub"
+        "GitHub",
+        "邮箱登录"
       ],
       "keywordsEn": [
         "remote connect",
@@ -4531,31 +4336,34 @@
         "WeChat",
         "multi-device",
         "peer device",
-        "GitHub"
+        "GitHub",
+        "email sign-in"
       ],
       "highlightsZh": [
-        "通过局域网或官方 Relay 连接",
+        "官方 Relay 无需部署；桌面端可同时运行局域网 Relay",
         "接入飞书、Telegram 或微信 Bot",
-        "使用 GitHub 身份管理设备并进入 Peer Device Mode"
+        "使用同一种登录方式与同一账号管理设备并进入 Peer Device Mode"
       ],
       "highlightsEn": [
-        "Connect through LAN or the official Relay",
+        "Use the official Relay without deployment; Desktop can also run a LAN Relay concurrently",
         "Use Feishu, Telegram, or WeChat bots",
-        "Use GitHub identity to manage devices and enter Peer Device Mode"
+        "Use the same login method and account to manage devices and enter Peer Device Mode"
       ],
       "items": [
         {
           "id": "connection-methods",
-          "titleZh": "选择局域网或官方 Relay",
-          "titleEn": "Choose LAN or the official Relay",
+          "titleZh": "使用官方 Relay 或桌面内置局域网 Relay；两者可同时运行，登录均需联网",
+          "titleEn": "Use the official or Desktop-hosted LAN Relay; both can run together and need internet for sign-in",
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“选择局域网或官方 Relay”需要结合当前网络与设备状态，确认目标主机后才能连接；智能体打开连接入口，由用户完成选择。",
-            "reasonEn": "“Choose LAN or the official Relay” depends on the current network and device state and requires the user to confirm the target host; the Agent opens the connection entry for that choice."
+            "reasonZh": "“使用官方 Relay 或桌面内置局域网 Relay；两者可同时运行，登录均需联网”需要结合当前网络与设备状态，由用户确认目标主机。官方 Relay 无需部署；私有 Relay 需配套客户端构建，界面没有自定义服务器地址或部署向导。",
+            "reasonEn": "“Use the official or Desktop-hosted LAN Relay; both can run together and need internet for sign-in” depends on network and device state and requires target confirmation. The official Relay needs no deployment; a private Relay requires matching client builds, with no custom-server field or deployment wizard in the UI."
           },
           "evidence": [
-            "command:remote_connect_get_methods"
+            "command:remote_connect_get_methods",
+            "source:src/apps/desktop/src/api/remote_connect_api/relay_routes_tests.rs#dual_relay_rpc_persistence_and_teardown_are_independent",
+            "source:src/crates/services/relay-service/src/identity.rs#IDENTITY_ME_URL"
           ]
         },
         {
@@ -4623,20 +4431,21 @@
         },
         {
           "id": "account",
-          "titleZh": "使用 GitHub 登录、退出并查看身份状态",
-          "titleEn": "Sign in with GitHub, sign out, and inspect identity status",
+          "titleZh": "通过共享登录页使用 GitHub 或邮箱验证码登录、退出并查看身份状态",
+          "titleEn": "Sign in through the shared page with GitHub or an email code, sign out, and inspect identity status",
           "control": {
             "kind": "open",
             "reasonCode": "externalAuth",
-            "reasonZh": "GitHub 账户登录必须由用户在外部认证页面确认；智能体可以打开入口并读取非秘密状态，但不能冒充账户持有人。",
-            "reasonEn": "GitHub account sign-in requires confirmation on an external authentication page; the Agent may open the entry and read non-secret status but cannot impersonate the account holder."
+            "reasonZh": "登录必须由用户在外部认证页面完成。GitHub 与邮箱是独立账号，各设备需使用同一种方式和同一账号；旧客户端或服务可能仅支持 GitHub。智能体可打开入口并读取非秘密状态，不能代替用户认证。",
+            "reasonEn": "The user must complete sign-in on the external authentication page. GitHub and email are independent accounts; devices need the same method and account. Older clients or services may support GitHub only. The Agent may open the entry and read non-secret status, but cannot authenticate for the user."
           },
           "evidence": [
             "command:account_github_start",
             "command:account_github_poll",
             "command:account_github_info",
             "command:account_logout",
-            "command:account_status"
+            "command:account_status",
+            "source:src/crates/services/services-integrations/src/account_identity/mod.rs#/auth/desktop/start?methods=all"
           ]
         },
         {
@@ -4679,14 +4488,16 @@
         }
       ],
       "stepsZh": [
-        "打开 Remote Connect",
-        "选择网络、Bot 或账户",
-        "按向导连接并确认安全提示"
+        "打开 Remote Connect，选择网络、Bot 或账户入口",
+        "手机或设备互控：宿主与控制端以相同方式登录同一账号，官方 Relay 无需部署",
+        "手机可扫描官方或桌面局域网邀请，确认目标设备；二维码不授予访问权，目标宿主须保持在线",
+        "Bot 远控：在对应平台完成机器人配置与配对，检查监听状态"
       ],
       "stepsEn": [
-        "Open Remote Connect",
-        "Choose Network, Bot, or Account",
-        "Follow the connection flow and review its security notice"
+        "Open Remote Connect and choose Network, Bot, or Account",
+        "For mobile or device control, sign in on the host and controller with the same method and account; the official Relay needs no deployment",
+        "On mobile, scan an official or Desktop LAN invitation and confirm the target; the QR code grants no access and the host must stay online",
+        "For bot control, configure and pair the bot on its platform, then check listener status"
       ],
       "agentExamplesZh": [
         "打开 Remote Connect",
@@ -5176,12 +4987,12 @@
         }
       ],
       "stepsZh": [
-        "使用 GitHub 登录",
+        "登录 OpenBitFun 账号（GitHub 或服务支持的邮箱验证码）",
         "打开 Pages",
         "选择页面并确认发布与可见性"
       ],
       "stepsEn": [
-        "Sign in to a GitHub account",
+        "Sign in to OpenBitFun with GitHub or an email code supported by the service",
         "Open Pages",
         "Choose a page and confirm publishing and visibility"
       ],
@@ -5565,11 +5376,13 @@
       "highlightsZh": [
         "智能体按需创建并更新卡片",
         "在首页查看、显示、隐藏或删除卡片",
+        "把卡片固定到 Windows 桌面图标之上",
         "拖动卡片，位置在重启后恢复"
       ],
       "highlightsEn": [
         "Agents create and update cards when useful",
         "View, show, hide, or delete cards from Home",
+        "Pin cards to the Windows desktop above the icons",
         "Drag cards; positions are restored after restart"
       ],
       "items": [
@@ -5614,6 +5427,23 @@
           ]
         },
         {
+          "id": "desktop-pinning",
+          "titleZh": "在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态",
+          "titleEn": "Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态”会让卡片进入 Explorer 桌面层，位于桌面图标之上、其他应用之下，并且需要 Explorer 可用且 DPI 上下文一致才能成立；DesktopCard 工具的配置里没有这项显示偏好，因此由用户在卡片菜单或管理列表里切换，智能体只打开精确入口。",
+            "reasonEn": "“Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards” moves the card into the Explorer desktop layer, above the icons and behind other apps, and only holds while Explorer is available with a matching DPI context; the DesktopCard tool configuration deliberately does not carry this display preference, so the user toggles it from the card menu or a management list and the Agent only opens the exact entry."
+          },
+          "evidence": [
+            "command:desktop_card_set_always_on_top",
+            "source:src/apps/desktop/src/desktop_cards/desktop_layer.rs#SHELLDLL_DefView",
+            "source:src/web-ui/src/app/scenes/personal-overview/OverviewDesktopCardsSection.tsx#desktopCards.pin",
+            "source:src/web-ui/src/app/scenes/settings/pages/application/DesktopCardsSettingsSection.tsx#desktop-card-pin-row"
+          ]
+        },
+        {
           "id": "drag-restore",
           "titleZh": "拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复",
           "titleEn": "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens",
@@ -5632,11 +5462,13 @@
       "stepsZh": [
         "让智能体创建一张卡片，或在任务中由智能体主动创建",
         "拖动卡片到合适位置",
+        "在卡片菜单、首页列表或设置里把卡片固定到桌面（Windows）",
         "在首页“小卡片”区或卡片菜单中隐藏或删除"
       ],
       "stepsEn": [
         "Ask an agent for a card, or let it create one during a task",
         "Drag the card where you want it",
+        "Pin it to the desktop from the card menu, the Home card list, or Settings (Windows)",
         "Hide or delete it from the Home Desktop cards section or the card menu"
       ],
       "agentControl": {
@@ -8347,6 +8179,28 @@
           "evidence": [
             "source:src/web-ui/src/locales/zh-CN/settings/models.json#toolArgumentJsonRepair.title"
           ]
+        },
+        {
+          "id": "genui-library",
+          "titleZh": "选择生成式 UI 组件库及关联 UI 规范并操作预览",
+          "titleEn": "Select a GenUI component library, its UI specification and preview",
+          "destination": {
+            "kind": "settings",
+            "pageId": "tools.execution",
+            "viewId": "advanced"
+          },
+          "control": {
+            "kind": "direct",
+            "operations": [],
+            "options": [
+              {
+                "id": "genui-library"
+              }
+            ]
+          },
+          "evidence": [
+            "source:src/web-ui/src/locales/zh-CN/settings/runtime.json#genui.title"
+          ]
         }
       ],
       "stepsZh": [
@@ -8444,6 +8298,13 @@
           "titleEn": "Tool-argument JSON repair",
           "descriptionZh": "允许在安全边界内修复模型生成的轻微 JSON 格式错误。",
           "descriptionEn": "Allow minor model-generated JSON formatting errors to be repaired within the safety boundary."
+        },
+        {
+          "id": "genui-library",
+          "titleZh": "生成式 UI 组件库及 UI 规范",
+          "titleEn": "GenUI component library and UI specification",
+          "descriptionZh": "选择后续生成使用的组件库及其关联的设计规则、资源、视口、宿主外壳和验收检查；已有应用保留自己的目标身份。",
+          "descriptionEn": "Choose the component library and its bound design rules, resources, viewport, host shell and acceptance checks. Existing apps retain their target identity."
         }
       ]
     },
@@ -10059,6 +9920,93 @@
           "descriptionEn": "Enable only when explicitly needed and after reviewing the privacy risk."
         }
       ]
+    },
+    {
+      "id": "feature.generative-ui",
+      "kind": "feature",
+      "categoryId": "automation",
+      "titleZh": "Generative UI 生成式界面",
+      "titleEn": "Generative UI",
+      "summaryZh": "由智能体按组件库及关联 UI 规范生成 OpenUI 组件应用或 HTML/CSS/SVG 自由文档，经目标视口实际渲染、宿主验收与需求复核后接受并保存。",
+      "summaryEn": "Generate OpenUI component apps or free HTML/CSS/SVG documents under a bound UI specification; accept and persist only after target-viewport rendering, host checks and requirement review.",
+      "keywordsZh": [
+        "Generative UI",
+        "生成式界面",
+        "交互应用",
+        "宿主组件",
+        "应用状态"
+      ],
+      "keywordsEn": [
+        "generative UI",
+        "interactive app",
+        "component contracts",
+        "application state",
+        "structured widget"
+      ],
+      "highlightsZh": [
+        "按组件库及其 UI 规范的设计规则、资源、视口和宿主外壳约束生成结果",
+        "组件路径使用 OpenUI 描述和可信 renderer；自由路径保留 HTML/CSS/SVG",
+        "支持生成、交互、保存和重开",
+        "可注册自定义宿主组件"
+      ],
+      "highlightsEn": [
+        "Constrain generated results with the selected library's UI rules, resources, viewport and host shell",
+        "Use OpenUI descriptions and trusted renderers for components; retain HTML/CSS/SVG for free documents",
+        "Support generation, interaction, save and reopen",
+        "Register custom host components"
+      ],
+      "items": [
+        {
+          "id": "app-generation",
+          "titleZh": "生成可交互的 GenUI 应用并由宿主渲染",
+          "titleEn": "Generate interactive GenUI applications rendered by the host",
+          "control": {
+            "kind": "delegate",
+            "tools": [
+              "GenerativeUI"
+            ],
+            "workflowZh": [
+              "按所选 UI 规范选择 OpenUI 组件描述或 HTML/CSS/SVG 自由文档；规范身份随候选固定。",
+              "宿主按所选 UI 规范渲染 OpenUI 描述或 HTML/CSS/SVG 自由文档，并支持本地交互。"
+            ],
+            "workflowEn": [
+              "Use OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification; pin that identity to the candidate.",
+              "Render OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification and support local interaction."
+            ]
+          },
+          "evidence": [
+            "source:src/crates/assembly/core/src/agentic/tools/implementations/generative_ui_tool.rs#GenerativeUI",
+            "source:src/web-ui/src/tools/generative-ui/GenUIApplication.tsx#GenUIApplication"
+          ]
+        }
+      ],
+      "stepsZh": [
+        "打开 AI 会话",
+        "让智能体生成一个 GenUI 应用",
+        "在宿主中完成交互并保存，随后重开应用"
+      ],
+      "stepsEn": [
+        "Open an AI session",
+        "Ask the agent to generate a GenUI application",
+        "Interact and save it in the host, then reopen the application"
+      ],
+      "agentExamplesZh": [
+        "生成一个可保存的记账应用",
+        "生成一个带预算设置和支出汇总的 dashboard 应用",
+        "生成一个阅读目录并支持收藏",
+        "生成一个带完成状态的日计划"
+      ],
+      "agentExamplesEn": [
+        "Generate a saveable accounting app",
+        "Generate a dashboard with budget settings and an expense summary",
+        "Generate a reading catalog with favorites",
+        "Generate a daily plan with completion state"
+      ],
+      "destination": {
+        "kind": "scene",
+        "sceneId": "session"
+      },
+      "operations": []
     }
   ],
   "productActionOwners": {
@@ -10097,6 +10045,9 @@
     "shell": "feature.terminal"
   },
   "implementationOwners": {
+    "generative_ui": {
+      "capabilityId": "feature.generative-ui"
+    },
     "commands": {
       "capabilityId": "feature.projects"
     },
@@ -10222,9 +10173,6 @@
     },
     "appearance": {
       "capabilityId": "feature.desktop-pet"
-    },
-    "canvas": {
-      "capabilityId": "feature.canvas"
     },
     "diff": {
       "capabilityId": "feature.files-editor"

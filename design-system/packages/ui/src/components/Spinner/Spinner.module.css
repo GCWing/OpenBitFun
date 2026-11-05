@@ -9,53 +9,50 @@
   .root {
     --_spinner-cell: var(--openbitfun-layout-spinner-matrix-cell-md);
     --_spinner-gap: var(--openbitfun-layout-spinner-matrix-gap-md);
+    --_spinner-size: calc(3 * var(--_spinner-cell) + 2 * var(--_spinner-gap));
 
-    display: inline-grid;
+    display: inline-flex;
     flex: 0 0 auto;
     color: currentColor;
     vertical-align: middle;
   }
 
-  .root[data-variant="matrix"] {
-    grid-template-columns: repeat(3, var(--_spinner-cell));
-    grid-template-rows: repeat(3, var(--_spinner-cell));
-    gap: var(--_spinner-gap);
-    inline-size: calc(3 * var(--_spinner-cell) + 2 * var(--_spinner-gap));
-    block-size: calc(3 * var(--_spinner-cell) + 2 * var(--_spinner-gap));
+  .root[data-variant="logo"] {
+    inline-size: var(--_spinner-size);
+    block-size: var(--_spinner-size);
   }
 
-  .root[data-variant="matrix"][data-size="xs"] {
+  .root[data-variant="logo"][data-size="xs"] {
     --_spinner-cell: var(--openbitfun-layout-spinner-matrix-cell-xs);
     --_spinner-gap: var(--openbitfun-layout-spinner-matrix-gap-sm);
   }
 
-  .root[data-variant="matrix"][data-size="sm"] {
+  .root[data-variant="logo"][data-size="sm"] {
     --_spinner-cell: var(--openbitfun-layout-spinner-matrix-cell-sm);
     --_spinner-gap: var(--openbitfun-layout-spinner-matrix-gap-sm);
   }
 
-  .root[data-variant="matrix"][data-size="lg"] {
+  .root[data-variant="logo"][data-size="lg"] {
     --_spinner-cell: var(--openbitfun-layout-spinner-matrix-cell-lg);
     --_spinner-gap: var(--openbitfun-layout-spinner-matrix-gap-md);
   }
 
-  .root[data-variant="matrix"] .cell {
-    inline-size: var(--_spinner-cell);
-    block-size: var(--_spinner-cell);
-    border-radius: var(--openbitfun-layout-spinner-matrix-radius);
-    background: currentColor;
-    animation: openbitfun-spinner-matrix-pulse var(--openbitfun-motion-duration-loop) ease-in-out infinite;
-    will-change: opacity, transform;
+  .glyph,
+  .artwork {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
   }
 
-  .root[data-variant="matrix"] .cell:nth-child(2),
-  .root[data-variant="matrix"] .cell:nth-child(4) { animation-delay: 100ms; }
-  .root[data-variant="matrix"] .cell:nth-child(3),
-  .root[data-variant="matrix"] .cell:nth-child(5),
-  .root[data-variant="matrix"] .cell:nth-child(7) { animation-delay: 200ms; }
-  .root[data-variant="matrix"] .cell:nth-child(6),
-  .root[data-variant="matrix"] .cell:nth-child(8) { animation-delay: 300ms; }
-  .root[data-variant="matrix"] .cell:nth-child(9) { animation-delay: 400ms; }
+  .glyph {
+    font-size: var(--_spinner-size);
+    transform-origin: center;
+  }
+
+  .artwork {
+    background: currentColor;
+    mask: url("../../brand/assets/openbitfun-loading-mark.svg") center / contain no-repeat;
+  }
 
   .root[data-variant="bars"] {
     display: inline-flex;
@@ -104,9 +101,10 @@
     text-align: center;
   }
 
-  @keyframes openbitfun-spinner-matrix-pulse {
-    0%, 100% { opacity: 0.2; transform: scale(0.82); }
-    45%, 60% { opacity: 1; transform: scale(1); }
+  .root[data-active="false"] .cell {
+    animation: none;
+    opacity: 0.75;
+    transform: none;
   }
 
   @keyframes openbitfun-spinner-bars-pulse {
@@ -114,11 +112,21 @@
     50% { opacity: 1; transform: scaleY(1); }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @media (prefers-reduced-motion: reduce), (forced-colors: active), print {
+    .glyph {
+      transform: none !important;
+      filter: none !important;
+      opacity: 1 !important;
+    }
+
     .cell {
       animation: none !important;
       opacity: 0.75;
       transform: none;
     }
+  }
+
+  @media (forced-colors: active) {
+    .artwork { forced-color-adjust: none; }
   }
 }

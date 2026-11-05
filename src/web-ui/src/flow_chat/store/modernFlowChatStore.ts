@@ -11,7 +11,6 @@ import type { Session, DialogTurn, ModelRound, ModelRoundAttempt, FlowThinkingIt
 import { flowChatStore } from './FlowChatStore';
 import { getTurnCompletionNotice } from '../utils/turnCompletionNotice';
 import { createAbsoluteSessionTurnIndexResolver } from '../utils/flowChatTurnOrdinal';
-import { collectCanvasArtifactToolItems } from '../utils/canvasArtifactPresentation';
 import { getTurnOutputDurationMs, getTurnTtftMs } from '../utils/turnUsageMetrics';
 import { projectAdjacentFlowGroups } from '../grouping/groupProjection';
 import { hasModelRoundNarrative } from '../grouping/roundGroups';
@@ -263,14 +262,6 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
     const isTurnComplete = turn.status === 'completed' || turn.status === 'cancelled' || turn.status === 'error';
     const turnOutputDurationMs = getTurnOutputDurationMs(turn.modelRounds);
     const turnTtftMs = getTurnTtftMs(turn.modelRounds);
-    const canvasArtifactItems = collectCanvasArtifactToolItems(turn.modelRounds);
-    const canvasAttachmentHostRoundId = [...renderEntries]
-      .reverse()
-      .find((entry): entry is Extract<(typeof renderEntries)[number], { type: 'round' }> => (
-        entry.type === 'round'
-      ))
-      ?.round.id;
-
     const flushRoundEntries = (rounds: ModelRound[]) => {
       rounds.forEach((round, roundIndex) => {
         // Keep the same owner row when a tool or model round completes.
@@ -298,9 +289,6 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
           turnOutputDurationMs,
           turnTtftMs,
           turnTokenUsage: turn.tokenUsage,
-          canvasArtifactItems: isTurnComplete && round.id === canvasAttachmentHostRoundId
-            ? canvasArtifactItems
-            : undefined,
         });
       });
     };

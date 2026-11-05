@@ -4,6 +4,7 @@ import { workspaceScopedRequest } from './legacyWorkspaceCompatibility';
 
 import { api } from './ApiClient';
 import { createTauriCommandError } from '../errors/TauriCommandError';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type {
   AgentProfileConfigItem,
   DiagnosticsBundleInfo,
@@ -99,6 +100,11 @@ export interface DownloadSkillMarketParams {
 
 const SKILL_CONFIG_REQUEST_TIMEOUT_MS = 60_000;
 
+function isMissingConfigPath(error: unknown, path: string): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return message.includes('not found:') && message.includes('config path')
+    && message.includes(`'${path.toLowerCase()}'`);
+}
 
 export class ConfigAPI {
    
@@ -116,13 +122,7 @@ export class ConfigAPI {
         shouldSkipRetry ? { retries: 0 } : undefined
       );
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const normalized = errorMessage.toLowerCase();
-      if (
-        normalized.includes('not found:') &&
-        normalized.includes('config path') &&
-        normalized.includes(`'${path}'`)
-      ) {
+      if (path && isMissingConfigPath(error, path)) {
         return undefined;
       }
       throw createTauriCommandError('get_config', error, { path });
@@ -133,6 +133,7 @@ export class ConfigAPI {
     paths: string[],
     options?: { skipRetryOnNotFound?: boolean }
   ): Promise<Record<string, any>> {
+    const scope = getActiveSurfaceScope();
     const uniquePaths = Array.from(new Set(paths));
     if (uniquePaths.length === 0) {
       return {};
@@ -141,19 +142,32 @@ export class ConfigAPI {
     const shouldSkipRetry = options?.skipRetryOnNotFound ?? false;
 
     try {
-      return await api.invoke('get_configs', {
+      const configs = await api.invoke<Record<string, any>>('get_configs', {
         request: {
           paths: uniquePaths,
           skipRetryOnNotFound: shouldSkipRetry,
         },
       });
-    } catch {
+      scope.assertCurrent('read configuration batch');
+      return configs;
+    } catch (error) {
+      scope.assertCurrent('retry configuration batch');
+      // Older hosts fail the whole batch for an absent optional key. Reuse
+      // that result, then keep the remaining keys in a single batch request.
+      const missingPath = uniquePaths.find(path => isMissingConfigPath(error, path));
+      if (missingPath) {
+        return {
+          ...await this.getConfigs(uniquePaths.filter(path => path !== missingPath), options),
+          [missingPath]: undefined,
+        };
+      }
       const entries = await Promise.all(
         uniquePaths.map(async (path) => [
           path,
           await this.getConfig(path, options),
         ] as const)
       );
+      scope.assertCurrent('read legacy configuration batch');
       return Object.fromEntries(entries);
     }
   }

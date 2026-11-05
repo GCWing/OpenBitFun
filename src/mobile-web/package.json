@@ -1,6 +1,6 @@
 {
   "name": "openbitfun-mobile-web",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,6 +14,7 @@
     "test:device-compatibility": "node --test tests/device-compatibility.test.mjs",
     "test:account-browser": "node --test --test-force-exit tests/browser-account.test.mjs",
     "test:images": "node --test tests/image-compressor.test.mjs",
+    "test:session-deletion": "node --test tests/session-deletion-navigation.test.mjs",
     "test:workspace-identity": "node --test tests/workspace-identity.test.mjs tests/workspace-routing.test.mjs",
     "test:remote-cache-browser": "node --test tests/remote-cache-browser.test.mjs",
     "type-check": "tsc --noEmit",
@@ -24,12 +25,14 @@
     "test:prompt-suggestion-browser": "node --test tests/prompt-suggestion-browser.test.mjs",
     "test:chat-transcript-browser": "node --test tests/mobile-chat-regressions-browser.test.mjs tests/background-delivery-browser.test.mjs",
     "test:rollback-browser": "node --test tests/rollback-browser.test.mjs",
+    "test:session-model-browser": "node --test tests/session-model-browser.test.mjs",
     "test:session-stream-browser": "node --test tests/session-stream-browser.test.mjs",
     "test:runtime-files": "node --test tests/runtime-file-upload.test.mjs tests/runtime-file-download.test.mjs",
     "test:interaction-mailbox": "node --test tests/interaction-mailbox-browser.test.mjs",
     "test:terminal-browser": "node --test tests/terminal-browser.test.mjs tests/native-terminal-renderer-browser.test.mjs"
   },
   "dependencies": {
+    "@bokuweb/zstd-wasm": "0.0.27",
     "@noble/ciphers": "^2.1.1",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",

@@ -134,8 +134,8 @@ describe('Remote Connect safety contracts', () => {
 
     expect(dialogSource).not.toContain('role="link"');
     expect(dialogSource).toContain('className="openbitfun-remote-connect__inline-link" onClick={handleOpenFeishuPlatform}');
-    expect(dialogSource).toContain('<Button variant="outline" tone="danger" size="sm" onClick={handleDisconnectBot}>');
-    expect(networkSource).toContain('<Button variant="outline" tone="danger" size="sm" onClick={onDisconnect}>');
+    expect(dialogSource).toContain('<Button variant="quiet" tone="danger" size="sm" onClick={handleDisconnectBot}>');
+    expect(networkSource).toContain('<Button variant="quiet" tone="danger" size="sm" onClick={onDisconnect}>');
     expect(accountPanelSource).toContain('leadingIcon={<LogOut size={14} />} onClick={handleLogout}');
   });
 

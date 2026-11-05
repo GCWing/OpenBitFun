@@ -1,3 +1,4 @@
+import { decodeRelayMessage, encodeRelayMessage } from './relayMessageEncoding';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 /**
@@ -40,11 +41,13 @@ export async function deriveSharedKey(
 export async function encrypt(
   key: Uint8Array,
   plaintext: string,
-): Promise<{ data: string; nonce: string }> {
+  acceptsZstd = false,
+): Promise<{ data: string; nonce: string; usesZstd: boolean }> {
   const nonce = randomBytes(NONCE_LEN);
   const cipher = gcm(key, nonce);
-  const ct = cipher.encrypt(new TextEncoder().encode(plaintext));
-  return { data: toB64(ct), nonce: toB64(nonce) };
+  const encoded = await encodeRelayMessage(new TextEncoder().encode(plaintext), acceptsZstd);
+  const ct = cipher.encrypt(encoded);
+  return { data: toB64(ct), nonce: toB64(nonce), usesZstd: encoded[0] === 0xff };
 }
 
 export async function decrypt(
@@ -53,7 +56,7 @@ export async function decrypt(
   nonceB64: string,
 ): Promise<string> {
   const pt = decryptBytes(key, fromB64(dataB64), fromB64(nonceB64));
-  return new TextDecoder().decode(pt);
+  return new TextDecoder('utf-8', { fatal: true }).decode(await decodeRelayMessage(pt));
 }
 
 /** Decrypt a raw AES-256-GCM payload, including its appended authentication tag. */

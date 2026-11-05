@@ -3,6 +3,7 @@ import { agentAPI, type AgenticEvent, type PermissionRequest } from '@/infrastru
 import { sessionAPI } from '@/infrastructure/api/service-api/SessionAPI';
 import { getActiveSurfaceId, getActiveSurfaceScope, onSurfaceActivated, surfaceIdForDevice, type DeviceSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import { observeSurfaceEvents } from '@/infrastructure/peer-device/deviceSurfaceRouting';
+import { getDeviceOpenIntent, useDeviceOpenIntent } from '@/infrastructure/peer-device/deviceOpenIntent';
 import { createLogger } from '@/shared/utils/logger';
 import { flowChatStore } from '../store/FlowChatStore';
 import { sessionActivityStore } from '../store/sessionActivityStore';
@@ -246,8 +247,15 @@ export function installSessionNavStatusService(): () => void {
       }
     }));
   }
+  let refreshAfterOpen: boolean | null = null;
   const refreshAll = (force = true) => {
     if (!rows.size) return;
+    // A cross-device open owns the link until it settles: the statuses of the
+    // other rows are refreshed once, right after, instead of competing with it.
+    if (getDeviceOpenIntent()) {
+      refreshAfterOpen = (refreshAfterOpen ?? false) || force;
+      return;
+    }
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     for (const sessionId of rows.keys()) refresh(sessionId, force);
     void ensureActivePermissionMailbox(true);
@@ -261,6 +269,12 @@ export function installSessionNavStatusService(): () => void {
     for (const sessionId of new Set([...rows.keys(), ...flowChatStore.getState().sessions.keys()])) publish(sessionId);
     publishOrdering();
     refreshAll();
+  }));
+  disposers.push(useDeviceOpenIntent.subscribe(state => {
+    if (state.intent || refreshAfterOpen === null) return;
+    const force = refreshAfterOpen;
+    refreshAfterOpen = null;
+    refreshAll(force);
   }));
   const interval = setInterval(() => refreshAll(false), RECONCILE_INTERVAL_MS);
   const wake = () => {
@@ -312,6 +326,10 @@ export const sessionNavStatusService = {
   },
   getSortTimestamp: (session: Session): number => ordering.get(getActiveSurfaceId(), session.sessionId)?.sortTimestamp
     ?? session.lastFinishedAt ?? session.createdAt,
+  /** The same order key for a device the window is not rendering. */
+  getSurfaceSortTimestamp: (surfaceId: DeviceSurfaceId, session: Session): number => ordering.get(surfaceId, session.sessionId)?.sortTimestamp
+    ?? session.lastFinishedAt ?? session.createdAt,
+  isSurfaceRunning: (surfaceId: DeviceSurfaceId, sessionId: string): boolean => ordering.get(surfaceId, sessionId)?.status.kind === 'running',
   isRunning: (sessionId: string): boolean => ordering.get(getActiveSurfaceId(), sessionId)?.status.kind === 'running',
   getSnapshot: (sessionId: string): SessionNavStatus => rows.get(sessionId)?.status ?? IDLE,
   subscribe(sessionId: string, notify: () => void): () => void {

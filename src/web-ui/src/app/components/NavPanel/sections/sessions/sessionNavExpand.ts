@@ -1,60 +1,43 @@
-export const SESSIONS_LEVEL_0 = 5;
-export const SESSIONS_LEVEL_1 = 10;
+/** Rows a workspace shows before the user asks for more. */
+export const SESSIONS_INITIAL_COUNT = 3;
+/** Rows each "show more" adds. */
+export const SESSIONS_SHOW_MORE_STEP = 5;
+/** Rows read ahead of what is shown, so the next "show more" is instant. */
+export const SESSIONS_PREFETCH_COUNT = SESSIONS_SHOW_MORE_STEP;
+/** Page size for complete traversals (flat view, archived projections). */
+export const SESSIONS_LEVEL_2_PAGE = 200;
 
-export type SessionExpandLevel = 0 | 1 | 2;
-export type SessionExpandToggleAction = 'show-more' | 'show-all' | 'show-less';
+export type SessionExpandToggleAction = 'show-more' | 'show-less';
 
 export interface SessionExpandToggleState {
   action: SessionExpandToggleAction;
-  collapsedRemainingCount: number;
-  expandedRemainingCount: number;
+  /** Rows not shown yet. */
+  remainingCount: number;
   shouldRender: boolean;
 }
 
 export function getSessionDisplayLimit(params: {
   loadedTopLevelCount: number;
-  expandLevel: SessionExpandLevel;
-  level2DisplayCount: number;
+  displayCount: number;
   showAllWithoutLimit: boolean;
 }): number {
-  const {
-    loadedTopLevelCount,
-    expandLevel,
-    level2DisplayCount,
-    showAllWithoutLimit,
-  } = params;
-
-  if (showAllWithoutLimit) {
-    return loadedTopLevelCount;
-  }
-  if (expandLevel === 2) {
-    return Math.min(loadedTopLevelCount, level2DisplayCount);
-  }
-  if (loadedTopLevelCount <= SESSIONS_LEVEL_0) {
-    return loadedTopLevelCount;
-  }
-  if (expandLevel === 1) {
-    return Math.min(loadedTopLevelCount, SESSIONS_LEVEL_1);
-  }
-  return SESSIONS_LEVEL_0;
+  const { loadedTopLevelCount, displayCount, showAllWithoutLimit } = params;
+  return showAllWithoutLimit ? loadedTopLevelCount : Math.min(loadedTopLevelCount, displayCount);
 }
 
 export function getSessionExpandToggleState(
   totalTopLevelSessionCount: number,
-  expandLevel: SessionExpandLevel
+  displayCount: number,
 ): SessionExpandToggleState {
-  const collapsedRemainingCount = Math.max(totalTopLevelSessionCount - SESSIONS_LEVEL_0, 0);
-  const expandedRemainingCount = Math.max(totalTopLevelSessionCount - SESSIONS_LEVEL_1, 0);
-
+  const remainingCount = Math.max(totalTopLevelSessionCount - displayCount, 0);
   return {
-    action:
-      expandLevel === 0
-        ? 'show-more'
-        : expandLevel === 1 && expandedRemainingCount > 0
-          ? 'show-all'
-          : 'show-less',
-    collapsedRemainingCount,
-    expandedRemainingCount,
-    shouldRender: collapsedRemainingCount > 0,
+    action: remainingCount > 0 ? 'show-more' : 'show-less',
+    remainingCount,
+    shouldRender: totalTopLevelSessionCount > SESSIONS_INITIAL_COUNT,
   };
+}
+
+/** "Show more" adds a step; once everything is shown the toggle collapses. */
+export function nextSessionDisplayCount(displayCount: number, totalTopLevelSessionCount: number): number {
+  return totalTopLevelSessionCount > displayCount ? displayCount + SESSIONS_SHOW_MORE_STEP : SESSIONS_INITIAL_COUNT;
 }

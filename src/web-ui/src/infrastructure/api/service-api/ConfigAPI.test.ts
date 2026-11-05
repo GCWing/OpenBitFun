@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigAPI } from './ConfigAPI';
+import { activateSurface, getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 
 const invokeMock = vi.hoisted(() => vi.fn());
 
@@ -81,6 +82,43 @@ describe('ConfigAPI batch config reads', () => {
         skipRetryOnNotFound: false,
       },
     }, undefined);
+  });
+
+  it('reuses a missing-key result and reads the remaining legacy config keys together', async () => {
+    invokeMock.mockRejectedValueOnce(new Error("Failed to get config: Not found: Config path 'ai.task_models' not found"))
+      .mockResolvedValueOnce({ 'ai.models': [], 'ai.default_models': { chat: 'model' } });
+
+    await expect(configAPI.getConfigs(['ai.models', 'ai.task_models', 'ai.default_models'])).resolves.toEqual({
+      'ai.models': [], 'ai.task_models': undefined, 'ai.default_models': { chat: 'model' },
+    });
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    expect(invokeMock).toHaveBeenLastCalledWith('get_configs', {
+      request: { paths: ['ai.models', 'ai.default_models'], skipRetryOnNotFound: false },
+    });
+  });
+
+  it('finishes a batch containing only missing legacy keys without repeating a missing read', async () => {
+    invokeMock.mockImplementation((_command, args) => Promise.reject(
+      new Error(`Not found: Config path '${args.request.paths[0]}' not found`),
+    ));
+    await expect(configAPI.getConfigs(['ai.task_models', 'ai.agent_model_selections'])).resolves.toEqual({
+      'ai.task_models': undefined, 'ai.agent_model_selections': undefined,
+    });
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('abandons a failed batch when the device changes before compatibility fallback', async () => {
+    const original = getActiveSurfaceId();
+    invokeMock.mockImplementationOnce(() => {
+      activateSurface('next-config-device');
+      return Promise.reject(new Error("Not found: Config path 'ai.task_models' not found"));
+    });
+    try {
+      await expect(configAPI.getConfigs(['ai.models', 'ai.task_models'])).rejects.toThrow('Device surface changed');
+      expect(invokeMock).toHaveBeenCalledTimes(1);
+    } finally {
+      activateSurface(original);
+    }
   });
 
   it('saves cloud speech configuration through one domain command', async () => {

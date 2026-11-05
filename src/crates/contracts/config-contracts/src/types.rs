@@ -193,6 +193,9 @@ pub struct AppConfig {
     /// An empty map also advertises support to older/newer controller surfaces.
     #[serde(default)]
     pub assistant_default_sessions: HashMap<String, String>,
+    /// Project defaults keyed by the owning host's project workspace ID.
+    #[serde(default)]
+    pub project_defaults: HashMap<String, crate::project_defaults::ProjectDefaultsConfig>,
     /// Global, user-defined groups used to organize Agent tool pickers.
     #[serde(default, skip_serializing_if = "UserToolGroupsConfig::is_empty")]
     pub user_tool_groups: UserToolGroupsConfig,
@@ -1235,6 +1238,9 @@ pub struct ModelRoutingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_mode: Option<String>,
     pub router_model_id: Option<String>,
+    /// Explicit classifier response contract. Unknown future values stay readable
+    /// and are rejected by an execution host that cannot implement them.
+    pub protocol: String,
     /// Optional exact-tokenizer override on the execution host. Empty or unavailable
     /// paths use automatic estimates; retain this legacy field for older installs.
     pub tokenizer_path: String,
@@ -1253,6 +1259,7 @@ impl Default for ModelRoutingConfig {
         Self {
             default_mode: None,
             router_model_id: None,
+            protocol: "openai_logprobs".into(),
             tokenizer_path: String::new(),
             simple_threshold: 0.75,
             timeout_ms: 10_000,
@@ -1375,6 +1382,11 @@ pub struct AIConfig {
     /// provider confirms a normal tool-use completion.
     #[serde(default = "default_true")]
     pub allow_tool_json_repair: bool,
+
+    /// Component collection advertised for subsequent GenUI generation.
+    /// String preserves unknown future selections without resetting user data.
+    #[serde(default = "default_generative_ui_library")]
+    pub generative_ui_library: String,
 
     /// Allow Computer Use when the executing host has a native provider.
     /// System consent and tool approval remain independent; persisted opt-outs win.
@@ -1733,6 +1745,10 @@ pub struct AgentProfileView {
     pub disabled_user_skills: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub enabled_user_skills: Vec<String>,
+}
+
+fn default_generative_ui_library() -> String {
+    "openui".to_string()
 }
 
 fn default_true() -> bool {
@@ -2190,6 +2206,7 @@ impl Default for AppConfig {
             voice_call: VoiceCallConfig::default(),
             keybindings: None,
             assistant_default_sessions: HashMap::new(),
+            project_defaults: HashMap::new(),
             user_tool_groups: UserToolGroupsConfig::default(),
             user_skill_groups: UserSkillGroupsConfig::default(),
             skill_market: SkillMarketConfig::default(),
@@ -2339,6 +2356,7 @@ impl Default for AIConfig {
             local_context_truncation: LocalContextTruncation::default(),
             enable_edit_constraint_guard: false,
             allow_tool_json_repair: true,
+            generative_ui_library: default_generative_ui_library(),
             computer_use_enabled: true,
             browser_control_preferred_browser: String::new(),
             web_search: WebSearchConfig::default(),
@@ -2523,6 +2541,20 @@ impl AIModelConfig {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn generative_ui_library_legacy_and_future_roundtrip() {
+        let legacy: super::AIConfig = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(legacy.generative_ui_library, "openui");
+        for value in ["openbitfun", "openui", "harmony", "future.collection"] {
+            let config: super::AIConfig =
+                serde_json::from_value(serde_json::json!({"generative_ui_library":value})).unwrap();
+            assert_eq!(
+                serde_json::to_value(config).unwrap()["generative_ui_library"],
+                value
+            );
+        }
+    }
+
+    #[test]
     fn model_routing_summary_defaults_to_automatic_and_preserves_old_switch_values() {
         let legacy: super::ModelRoutingConfig =
             serde_json::from_value(serde_json::json!({})).unwrap();
@@ -2583,6 +2615,41 @@ mod tests {
             }
             let round_trip: super::AIConfig = serde_json::from_value(saved).unwrap();
             assert_eq!(round_trip.model_routing.tokenizer_path, path);
+        }
+    }
+
+    #[test]
+    fn model_routing_protocol_reads_legacy_and_round_trips_extension_and_future_profiles() {
+        for payload in [
+            serde_json::json!({}),
+            serde_json::json!({"timeout_ms": 10000}),
+        ] {
+            let config: super::ModelRoutingConfig = serde_json::from_value(payload).unwrap();
+            assert_eq!(config.protocol, "openai_logprobs");
+        }
+        for protocol in [
+            "openai_logprobs",
+            "openai_router_extension",
+            "future_classifier",
+        ] {
+            let payload = serde_json::json!({
+                "protocol": protocol, "router_model_id": "router", "timeout_ms": 120000,
+                "tokenizer_path": "/execution-host/tokenizer.json", "summary_enabled": false
+            });
+            let config: super::ModelRoutingConfig =
+                serde_json::from_value(payload.clone()).unwrap();
+            let saved = serde_json::to_value(&config).unwrap();
+            for key in [
+                "protocol",
+                "router_model_id",
+                "timeout_ms",
+                "tokenizer_path",
+                "summary_enabled",
+            ] {
+                assert_eq!(saved[key], payload[key]);
+            }
+            let restored: super::ModelRoutingConfig = serde_json::from_value(saved).unwrap();
+            assert_eq!(restored.protocol, protocol);
         }
     }
 

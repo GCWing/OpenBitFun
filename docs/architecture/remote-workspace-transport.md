@@ -285,7 +285,11 @@ to searching the controller filesystem.
 ## Authentication and secrets
 
 Supported target methods are password, private key, private key plus OpenSSH
-certificate, OpenSSH agent, and keyboard-interactive responses.
+certificate, OpenSSH agent, keyboard-interactive responses, and the SSH `none`
+method for endpoints whose transport is already authenticated (a Coder
+workspace agent, for example). `none` is an explicit profile choice: it is
+never tried as a fallback, and a rejected `none` profile never turns into a
+credential prompt.
 
 - Passwords use the existing encrypted password vault.
 - Private-key paths, certificate paths, and auth method metadata may be saved.
@@ -504,6 +508,15 @@ Local Docker profiles may legitimately retain an empty legacy password
 placeholder. Connection, testing, and local container discovery do not require
 a password-vault entry for those profiles.
 
+`SavedAuthType::None` is unknown to earlier builds, which parse
+`ssh_connections.json` as one list and rewrite it from memory. Those profiles
+therefore live in `ssh_connections_extended.json`, which earlier builds neither
+read nor write; the primary file keeps the shape they understand. Loading merges
+both files, and the primary entry wins when an earlier build recreated the same
+ID. An earlier build does not list these profiles until the user upgrades again.
+Peer controllers reject `None` before RPC unless the host advertises
+`ssh_none_auth_v1`.
+
 Startup recovery never deletes a profile or workspace merely because a
 credential is unavailable, a connection times out, or a remote host is
 temporarily offline. Destructive removal remains an explicit user action.
@@ -694,8 +707,9 @@ between identical OS credentials.
 Discover capabilities at the provider/assembly boundary, not with scattered
 `is_remote` gates in individual tools. Missing target programs, an unavailable
 interactive desktop, network loss and platform-specific process behavior can
-require explicit differences. A local hook executable or MCP command is not
-silently relocated to the target. Keep its execution domain and source trust
+require explicit differences. User and imported Hook commands remain host
+owned; manually configured project Hook commands are explicitly target-owned
+when the project gate is enabled. Keep execution domain and source trust
 explicit; reuse the existing engine and approval mechanism.
 
 Remote workspaces do not acquire Detached Dispatch semantics through this

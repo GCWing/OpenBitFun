@@ -2,7 +2,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
-import { WorkspaceIcon } from './WorkspaceIcon';
+import { WorkspaceIcon, WorkspaceIconArt } from './WorkspaceIcon';
 
 const mocks = vi.hoisted(() => ({ mode: 'light', snapshot: {
   icon: { color: 'blue', glyph: 'travel' }, imageUnavailable: false,
@@ -13,6 +13,33 @@ vi.mock('@/infrastructure/appearance', () => ({ useAppearance: () => ({ current:
 vi.mock('@/infrastructure/workspace-icons/useWorkspaceIcon', () => ({ useWorkspaceIcon: () => ({ snapshot: mocks.snapshot }) }));
 vi.mock('@/infrastructure/workspace-icons/workspaceIcons', () => ({ iconColorStyle: () => undefined }));
 afterEach(() => vi.unstubAllGlobals());
+
+it('retains both folder layers across disclosure changes and preserves custom and remote artwork', () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  const host = document.createElement('div');
+  const root = createRoot(host);
+  try {
+    act(() => root.render(<WorkspaceIconArt />));
+    expect(host.querySelector('svg.lucide-folder')).toBeTruthy();
+    expect(host.querySelector('svg.lucide-folder-open')).toBeNull();
+    act(() => root.render(<WorkspaceIconArt expanded={false} />));
+    const closedFolder = host.querySelector('[data-active="true"] svg.lucide-folder');
+    const openFolder = host.querySelector('[data-active="false"] svg.lucide-folder-open');
+    expect(closedFolder).toBeTruthy();
+    expect(openFolder).toBeTruthy();
+    act(() => root.render(<WorkspaceIconArt expanded />));
+    expect(host.querySelector('[data-active="false"] svg.lucide-folder')).toBe(closedFolder);
+    expect(host.querySelector('[data-active="true"] svg.lucide-folder-open')).toBe(openFolder);
+    act(() => root.render(<WorkspaceIconArt expanded={false} />));
+    expect(host.querySelector('[data-active="true"] svg.lucide-folder')).toBe(closedFolder);
+    act(() => root.render(<WorkspaceIconArt expanded remote />));
+    expect(host.querySelector('svg.lucide-server')).toBeTruthy();
+    act(() => root.render(<WorkspaceIconArt expanded glyph="travel" />));
+    expect(host.querySelector('svg.lucide-plane')).toBeTruthy();
+    act(() => root.render(<WorkspaceIconArt expanded image="data:image/png;base64,custom" />));
+    expect(host.querySelector('img')?.src).toBe('data:image/png;base64,custom');
+  } finally { act(() => root.unmount()); }
+});
 
 it('changes theme images without reloading the host and keeps a usable fallback for legacy or missing variants', () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);

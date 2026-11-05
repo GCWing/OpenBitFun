@@ -18,23 +18,29 @@ type Anchor = {
   measurement: Measurement;
   group?: { key: string; measurement: Measurement };
 };
-type State = { scope: string; anchor: Anchor | null; turnFloor: number; measured: Map<string, Measurement> };
+type State = { scope: string; anchor: Anchor | null; readerPosition: number | null; turnFloor: number; measured: Map<string, Measurement> };
 const boundsOf = (measurement: Measurement) => measurement.mounted ?? measurement.cached;
-const newState = (scope: string): State => ({ scope, anchor: null, turnFloor: 0, measured: new Map() });
+const newState = (scope: string): State => ({ scope, anchor: null, readerPosition: null, turnFloor: 0, measured: new Map() });
 
 /** Layout only. The follow/reader owners remain the only viewport writers. */
 export function useFlowChatLeadingExtent(options: {
+  enabled?: boolean;
   scope: string;
   items: readonly VirtualItem[];
   virtualizer: Virtualizer;
   scrollerRef: RefObject<HTMLElement | null>;
   extentRef: RefObject<HTMLElement | null>;
   onAnchorRebased: () => void;
+  readReaderScrollPosition?: () => number;
 }) {
   const { items, virtualizer, scrollerRef, extentRef, scope } = options;
+  const enabled = useRef(options.enabled !== false);
+  enabled.current = options.enabled !== false;
   const state = useRef<State | null>(null);
   const onAnchorRebased = useRef(options.onAnchorRebased);
   onAnchorRebased.current = options.onAnchorRebased;
+  const readReaderScrollPosition = useRef(options.readReaderScrollPosition);
+  readReaderScrollPosition.current = options.readReaderScrollPosition;
   const indexes = useMemo(() => new Map(items.map((item, index) => [getVirtualItemStableKey(item), index])), [items]);
   const groupHeaders = useMemo(() => {
     const headers = new Map<string, number>();
@@ -51,6 +57,7 @@ export function useFlowChatLeadingExtent(options: {
     const extent = extentRef.current;
     const scroller = scrollerRef.current;
     if (!extent || !scroller?.clientHeight) return;
+    if (!enabled.current) { extent.style.minHeight = ''; return; }
     const value = floor === null ? '' : `${floor + scroller.clientHeight}px`;
     if (extent.style.minHeight !== value) extent.style.minHeight = value;
   }, [extentRef, scrollerRef]);
@@ -88,6 +95,7 @@ export function useFlowChatLeadingExtent(options: {
   }, [groupHeaders, items, measurementAt]);
 
   const capture = useCallback((offset: number, exact = false, sample?: FlowChatViewportGeometry) => {
+    if (!enabled.current) return;
     const scroller = scrollerRef.current;
     if (!scroller?.clientHeight || !items.length) return;
     const s = current();
@@ -116,12 +124,14 @@ export function useFlowChatLeadingExtent(options: {
     const bounds = boundsOf(measurement);
     if (bounds.startPx >= offset + scroller.clientHeight) return;
     s.anchor = { key, scrollTopPx: offset, heightPx: bounds.endPx - bounds.startPx, measurement, group: groupAt(index) };
+    s.readerPosition = readReaderScrollPosition.current?.() ?? null;
     // Install before any later shrink, so native clamping cannot paint a frame
     // at the shortened tail before a ResizeObserver could repair it.
     install(Math.max(s.turnFloor, offset));
   }, [current, groupAt, indexes, install, items, measureLayout, measurementAt, scrollerRef, virtualizer]);
 
   const refresh = useCallback((turnFloor: number | null) => {
+    if (!enabled.current) { install(null); return; }
     const s = current();
     measureLayout();
     s.turnFloor = turnFloor ?? 0;
@@ -168,11 +178,37 @@ export function useFlowChatLeadingExtent(options: {
     install(floor);
   }, [current, groupAt, indexes, install, items, measureLayout, measurementAt]);
 
+  // An insertion inside a short Turn can leave its user message stationary
+  // while moving the visible output. Carry that output's painted position into
+  // this same semantic extent before a viewport write can clamp to the old floor.
+  const restore = useCallback((anchor: { key: string; offsetPx: number }) => {
+    if (!enabled.current) return;
+    const index = indexes.get(anchor.key);
+    if (index === undefined) return;
+    measureLayout();
+    const measurement = measurementAt(index);
+    if (!measurement) return;
+    const s = current();
+    const bounds = boundsOf(measurement);
+    const offset = Math.max(0, bounds.startPx - anchor.offsetPx);
+    s.anchor = { key: anchor.key, scrollTopPx: offset, measurement,
+      heightPx: bounds.endPx - bounds.startPx, group: groupAt(index) };
+    s.readerPosition = readReaderScrollPosition.current?.() ?? null;
+    install(Math.max(s.turnFloor, offset));
+  }, [current, groupAt, indexes, install, measureLayout, measurementAt]);
+
   // Structural transactions use the same leading edge. Choosing a surviving
   // successor instead would cancel the upward movement of content after a fold.
   const snapshot = useCallback(() => {
-    const anchor = current().anchor;
+    if (!enabled.current) return null;
+    const s = current();
+    const anchor = s.anchor;
     if (!anchor) return null;
+    // A native scroll can synchronously render a new window before the list's
+    // scroll listener captures its new reading edge. Never reuse the old row
+    // in that interval. Registered layout/follow shifts are already subtracted.
+    if (s.readerPosition !== null && readReaderScrollPosition.current
+      && Math.abs(readReaderScrollPosition.current() - s.readerPosition) > 0.5) return null;
     if (indexes.has(anchor.key)) return { key: anchor.key, offset: boundsOf(anchor.measurement).startPx - anchor.scrollTopPx };
     if (anchor.group && indexes.has(anchor.group.key)) return {
       key: anchor.group.key,
@@ -180,5 +216,8 @@ export function useFlowChatLeadingExtent(options: {
     };
     return null;
   }, [current, indexes]);
-  return { capture, refresh, snapshot };
+  // Reflow while following owns a new reading-line placement. The old floor
+  // protects a deliberate reading position/collapse, not the old line wrapping.
+  const releaseForReflow = useCallback(() => { current().anchor = null; }, [current]);
+  return { capture, refresh, restore, snapshot, releaseForReflow };
 }

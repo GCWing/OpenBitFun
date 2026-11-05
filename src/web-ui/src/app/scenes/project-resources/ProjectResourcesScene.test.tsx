@@ -21,6 +21,7 @@ vi.mock('@/infrastructure/api/service-api/PermissionAPI', () => ({ permissionAPI
   listProjectGrants: mocks.grants, getProjectRules: mocks.rules,
 } }));
 vi.mock('./useProjectResources', () => ({ useProjectResources: mocks.load }));
+vi.mock('./ProjectDefaultsSection', () => ({ ProjectDefaultsSection: () => <section data-openbitfun-part="defaults" aria-label="defaults.title" /> }));
 vi.mock('@/shared/services/FileTabManager', () => ({ fileTabManager: { openFile: mocks.openFile } }));
 vi.mock('@/app/stores/navSceneStore', () => ({ useNavSceneStore: { getState: () => ({ openWorkspaceResources: mocks.browse, closeNavScene: vi.fn() }) } }));
 vi.mock('../agents/components/CreateAgentDialog', () => ({ default: (props: unknown) => { mocks.agentDialog(props); return <div data-testid="agent-dialog" />; } }));
@@ -79,7 +80,7 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); resetDeviceSurfaceForTest(); });
 
-it('renders four sections with inline project permissions without activating the project', async () => {
+it('renders project defaults above metrics and inline project permissions without activating the project', async () => {
   await render();
   expect(container.querySelector('h1')?.textContent).toBe('Project A');
   expect(container.querySelector('header')?.textContent).not.toContain('/a');
@@ -88,6 +89,8 @@ it('renders four sections with inline project permissions without activating the
   expect([...container.querySelectorAll('h2')].map(item => item.textContent)).toEqual([
     'directories.title', 'automation.title', 'projectPermissions.title', 'capabilities.title',
   ]);
+  expect(container.querySelector('[data-openbitfun-part="defaults"]')!.compareDocumentPosition(
+    container.querySelector('[data-openbitfun-part="metrics"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   const permissions = container.querySelector('[data-openbitfun-part="permissions"]')!;
   expect(permissions.textContent).toContain('projectPermissions.addAuthorization');
   expect(container.textContent).not.toContain('projectPermissions.description');
@@ -149,15 +152,17 @@ it('opens project-owned task creation from the empty action and the full list fr
   await render();
   const section = container.querySelector('[data-openbitfun-part="automation"]')!;
   const pane = section.querySelector('.project-resource-summary__pane:not(button)')!;
+  const countPane = section.querySelector<HTMLButtonElement>('.project-resource-summary__pane--action')!;
   expect(pane.textContent).toBe('automation.add');
   expect(pane.querySelector('.project-resource-summary__title')).toBeNull();
+  expect(countPane.classList.contains('project-resource-summary__pane--centered')).toBe(true);
   expect(section.querySelector('.project-resources__section-header button')?.textContent).toBe('automation.manage');
   expect(section.querySelector('.project-resources__action-divider')).toBeNull();
   await act(async () => pane.querySelector<HTMLButtonElement>('button')!.click());
   await act(async () => { await vi.dynamicImportSettled(); });
   expect(mocks.jobsDialog).toHaveBeenLastCalledWith(expect.objectContaining({ workspaceId: 'a', targetKind: 'workspace', initialCreate: true, listPresentation: 'table' }));
   await click('close-jobs');
-  await act(async () => section.querySelector<HTMLButtonElement>('.project-resource-summary__pane--action')!.click());
+  await act(async () => countPane.click());
   expect(mocks.jobsDialog).toHaveBeenLastCalledWith(expect.objectContaining({ workspaceId: 'a', initialCreate: false }));
   expect(mocks.activate).not.toHaveBeenCalled();
   await click('close-jobs');
@@ -166,6 +171,8 @@ it('opens project-owned task creation from the empty action and the full list fr
   });
   await render();
   expect(section.querySelector('.project-resource-summary__empty')).toBeNull();
+  expect(pane.querySelector('.project-resource-summary__title')?.textContent).toBe('automation.listTitle');
+  expect(countPane.classList.contains('project-resource-summary__pane--centered')).toBe(false);
   expect([...section.querySelectorAll('.project-resources__section-header button')].map(button => button.textContent)).toEqual(['automation.add', 'automation.manage']);
   expect(section.querySelector('.project-resources__action-divider')).not.toBeNull();
   await click('automation.manage');

@@ -1,4 +1,5 @@
-import { Icon, IconButton, StatusPill } from '@openbitfun/ui';
+import { Icon, IconButton } from '@openbitfun/ui';
+import { ConnectionStateMark } from './ConnectionStateMark';
 import { QRCodeSVG } from 'qrcode.react';
 import { useI18n } from '@/infrastructure/i18n';
 
@@ -45,7 +46,8 @@ export function RemotePairingCard({ qrUrl, pairingCode, owner, connected = false
       )}
       <div className="openbitfun-remote-connect__pairing-details">
         <div className="openbitfun-remote-connect__pairing-status" role="status">
-          <StatusPill tone={statusState !== 'ready' ? 'neutral' : hasCopiedUrl || connected ? 'success' : 'warning'}>
+          <ConnectionStateMark tone={statusState !== 'ready' ? 'neutral' : hasCopiedUrl || connected ? 'success' : 'warning'}
+            live={statusState === 'ready' && connected}>
             {statusState === 'unavailable'
               ? t('remoteConnect.statusUnavailable')
               : statusState === 'loading'
@@ -57,7 +59,7 @@ export function RemotePairingCard({ qrUrl, pairingCode, owner, connected = false
                     : owner === 'bot'
                       ? t('remoteConnect.stateWaitingBot')
                       : t('remoteConnect.stateWaiting')}
-          </StatusPill>
+          </ConnectionStateMark>
         </div>
         {qrUrl ? (
           <>

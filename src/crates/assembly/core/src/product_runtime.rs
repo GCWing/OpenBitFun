@@ -163,6 +163,34 @@ fn merge_runtime_owned_turn_facts(
 ) -> DialogTurnData {
     let mut merged = projected.clone();
     merged.agent_type = persisted.agent_type.clone();
+    crate::agentic::session::turn_usage::reconcile_turn_token_usage(
+        &mut merged,
+        persisted.token_usage.clone(),
+    );
+    // Round timing comes from the Runtime's accepted attempt. A projection
+    // saved by a window that missed (or had not yet applied) that round's
+    // `ModelRoundCompleted` must not erase it from the durable record.
+    for round in &mut merged.model_rounds {
+        let Some(persisted_round) = persisted
+            .model_rounds
+            .iter()
+            .find(|candidate| candidate.id == round.id)
+        else {
+            continue;
+        };
+        if round.duration_ms.is_none_or(|duration_ms| duration_ms == 0) {
+            round.duration_ms = persisted_round.duration_ms.or(round.duration_ms);
+        }
+        round.first_chunk_ms = round.first_chunk_ms.or(persisted_round.first_chunk_ms);
+        round.first_visible_output_ms = round
+            .first_visible_output_ms
+            .or(persisted_round.first_visible_output_ms);
+        round.stream_duration_ms = round
+            .stream_duration_ms
+            .or(persisted_round.stream_duration_ms);
+        round.ttft_ms = round.ttft_ms.or(persisted_round.ttft_ms);
+        round.attempt_count = round.attempt_count.or(persisted_round.attempt_count);
+    }
 
     let Some(persisted_metadata) = persisted
         .user_message
@@ -1294,7 +1322,7 @@ impl CoreAgentRuntimeCompatibility {
         cursor: Option<&str>,
         limit: usize,
     ) -> OpenBitFunResult<SessionMetadataPage> {
-        self.list_persisted_session_catalog_page(workspace_path, cursor, limit, None)
+        self.list_persisted_session_catalog_page(workspace_path, cursor, limit, None, false)
             .await
     }
 
@@ -1304,12 +1332,24 @@ impl CoreAgentRuntimeCompatibility {
         cursor: Option<&str>,
         limit: usize,
         query: Option<&openbitfun_services_core::session::page::SessionCatalogQuery>,
+        refresh_external_discovery: bool,
     ) -> OpenBitFunResult<SessionMetadataPage> {
+        #[cfg(not(feature = "external-sources"))]
+        if refresh_external_discovery {
+            return Err(OpenBitFunError::Validation(
+                "External session discovery is not supported by this host".into(),
+            ));
+        }
         #[cfg(feature = "external-sources")]
-        let warnings = crate::external_session_import::auto_discovery::discover_for_storage_path(
-            workspace_path,
-        )
-        .await;
+        let warnings = if refresh_external_discovery {
+            crate::external_session_import::auto_discovery::refresh_for_storage_path(workspace_path)
+                .await
+        } else {
+            crate::external_session_import::auto_discovery::discover_for_storage_path(
+                workspace_path,
+            )
+            .await
+        };
         #[allow(unused_mut)]
         let mut page = self
             .persistence
@@ -1320,6 +1360,7 @@ impl CoreAgentRuntimeCompatibility {
             page.discovery_warnings.extend(warnings.warnings);
             page.discovery_diagnostics.extend(warnings.diagnostics);
             page.discovery_pending = warnings.pending;
+            page.discovery_refreshed = refresh_external_discovery;
         }
         Ok(page)
     }
@@ -1342,6 +1383,7 @@ impl CoreAgentRuntimeCompatibility {
             limit,
             session_ids,
             None,
+            false,
         )
         .await
     }
@@ -1354,6 +1396,7 @@ impl CoreAgentRuntimeCompatibility {
         limit: usize,
         session_ids: Option<&[String]>,
         query: Option<&openbitfun_services_core::session::page::SessionCatalogQuery>,
+        refresh_external_discovery: bool,
     ) -> OpenBitFunResult<SessionMetadataPage> {
         use futures::StreamExt;
         use openbitfun_agent_runtime::session_state::SessionState;
@@ -1374,8 +1417,14 @@ impl CoreAgentRuntimeCompatibility {
         let mut page = if session_ids.is_some() {
             empty_session_metadata_page()
         } else {
-            self.list_persisted_session_catalog_page(workspace_path, cursor, limit, query)
-                .await?
+            self.list_persisted_session_catalog_page(
+                workspace_path,
+                cursor,
+                limit,
+                query,
+                refresh_external_discovery,
+            )
+            .await?
         };
         let selected = match session_ids {
             Some(ids) => {
@@ -1679,6 +1728,19 @@ impl CoreAgentRuntimeCompatibility {
             .coordinator
             .get_session_manager()
             .get_session(session_id))
+    }
+
+    /// Read host-owned model/config facts without loading a cold runtime.
+    pub async fn read_session_header(
+        &self,
+        storage_path: Option<&Path>,
+        session_id: &str,
+        include_internal: bool,
+    ) -> OpenBitFunResult<Session> {
+        self.coordinator
+            .get_session_manager()
+            .read_session_header(storage_path, session_id, include_internal)
+            .await
     }
 
     pub async fn update_loaded_session_title(
@@ -3276,6 +3338,46 @@ mod tests {
     }
 
     #[test]
+    fn projected_turn_saves_preserve_complete_turn_usage() {
+        let mut persisted = DialogTurnData::new(
+            "turn-1".into(),
+            0,
+            "session-1".into(),
+            UserMessageData {
+                id: "input".into(),
+                content: "hi".into(),
+                timestamp: 1,
+                metadata: None,
+            },
+        );
+        persisted.status = TurnStatus::Completed;
+        persisted.token_usage = Some(
+            serde_json::from_value(serde_json::json!({
+                "inputTokens": 71722, "outputTokens": 334, "totalTokens": 72056, "timestamp": 3
+            }))
+            .unwrap(),
+        );
+        let older = serde_json::from_value(serde_json::json!({
+            "input_tokens": 28928, "output_tokens": 97, "total_tokens": 29025, "timestamp": 4
+        }))
+        .unwrap();
+        for usage in [None, Some(older)] {
+            let mut projected = persisted.clone();
+            projected.token_usage = usage;
+            assert!(!projected_turn_save_would_overwrite_runtime_state(
+                &persisted, &projected
+            ));
+            let merged = merge_runtime_owned_turn_facts(&persisted, &projected);
+            assert_eq!(merged.token_usage, persisted.token_usage);
+            // A newer client may repair an older host's incomplete record too.
+            assert_eq!(
+                merge_runtime_owned_turn_facts(&projected, &persisted).token_usage,
+                persisted.token_usage
+            );
+        }
+    }
+
+    #[test]
     fn projected_turn_saves_preserve_runtime_execution_contract() {
         let mut persisted = DialogTurnData::new(
             "turn-1".to_string(),
@@ -3325,6 +3427,53 @@ mod tests {
             metadata.get("canvas_context"),
             Some(&serde_json::json!({ "node": "selected" }))
         );
+    }
+
+    #[test]
+    fn projected_turn_saves_keep_runtime_round_timing() {
+        let mut persisted = DialogTurnData::new(
+            "turn-1".to_string(),
+            0,
+            "session-1".to_string(),
+            UserMessageData {
+                id: "user-1".to_string(),
+                content: "hi".to_string(),
+                timestamp: 1,
+                metadata: None,
+            },
+        );
+        let round = |id: &str| {
+            SessionManager::build_model_rounds_from_messages(
+                &[crate::agentic::core::Message::assistant("answer".into())
+                    .with_round_id(id.into())],
+                "turn-1",
+                1,
+            )
+            .remove(0)
+        };
+        let mut timed = round("round-1");
+        timed.duration_ms = Some(2172);
+        timed.stream_duration_ms = Some(1500);
+        timed.ttft_ms = Some(690);
+        timed.attempt_count = Some(1);
+        let mut projected_timed = round("round-0");
+        projected_timed.duration_ms = Some(900);
+        let mut persisted_timed = projected_timed.clone();
+        persisted_timed.duration_ms = Some(800);
+        persisted.model_rounds = vec![persisted_timed, timed];
+        let mut projected = persisted.clone();
+        // The window checkpointed the last round before its completion event.
+        let mut untimed = round("round-1");
+        untimed.duration_ms = Some(0);
+        projected.model_rounds = vec![projected_timed, untimed];
+
+        let merged = merge_runtime_owned_turn_facts(&persisted, &projected);
+        assert_eq!(merged.model_rounds[0].duration_ms, Some(900));
+        let last = &merged.model_rounds[1];
+        assert_eq!(last.duration_ms, Some(2172));
+        assert_eq!(last.stream_duration_ms, Some(1500));
+        assert_eq!(last.ttft_ms, Some(690));
+        assert_eq!(last.attempt_count, Some(1));
     }
 
     #[tokio::test]

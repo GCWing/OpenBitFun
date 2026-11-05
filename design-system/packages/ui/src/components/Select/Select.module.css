@@ -97,9 +97,33 @@
     letter-spacing: var(--openbitfun-type-meta-letter-spacing);
   }
 
+  .root[data-bordered="false"] > .trigger {
+    border: 0;
+  }
+
+  .root[data-bordered="hover"] > .trigger {
+    border-color: transparent;
+  }
+
+  .root[data-hit-area="expanded"] > .trigger {
+    position: relative;
+  }
+
+  .root[data-hit-area="expanded"]:not([data-open="true"]) > .trigger::after {
+    content: "";
+    position: absolute;
+    inset-block: calc(-1 * var(--openbitfun-space-1));
+    inset-inline: calc(-1 * var(--openbitfun-space-2));
+    border-radius: inherit;
+  }
+
   .trigger:is(:hover, [data-openbitfun-preview-state="hover"]):not(:disabled) {
     border-color: var(--openbitfun-color-field-border-hover);
     background: var(--openbitfun-color-field-background-hover);
+  }
+
+  .root[data-variant="pill"] > .trigger:is(:hover, [data-openbitfun-preview-state="hover"]):not(:disabled) {
+    background: var(--openbitfun-color-action-neutral-surface-hover);
   }
 
   .root[data-field-surface="ambient"] .trigger,
@@ -161,6 +185,11 @@
     overflow: hidden;
     flex: 1 1 auto;
     min-inline-size: 0;
+    white-space: nowrap;
+  }
+
+  .valuePrefix {
+    flex: 0 0 auto;
     white-space: nowrap;
   }
 

@@ -39,6 +39,77 @@ async fn fixture() -> (
     (scheduler, sessions, root, snapshot.queue_epoch)
 }
 
+/// A session switched away from (local <-> remote) is no longer loaded on the
+/// execution host. Passive queue reads must keep answering from the
+/// scheduler's own receipts instead of failing every poll.
+#[tokio::test]
+async fn host_queue_reads_degrade_for_a_session_not_loaded_on_the_host() {
+    let (scheduler, sessions, _root, epoch) = fixture().await;
+    scheduler
+        .manage_host_queue(request(
+            Some(&epoch),
+            Action::Submit {
+                message: message("queued-a"),
+            },
+        ))
+        .await
+        .unwrap();
+    sessions.evict_loaded_session_for_test("host-queue-session");
+
+    let list = scheduler
+        .manage_host_queue(request(None, Action::List))
+        .await
+        .unwrap();
+    assert_eq!(list.queue_epoch, epoch, "receipts stay readable");
+    assert_eq!(list.items.len(), 1);
+    assert_eq!(list.items[0].turn_id, "queued-a");
+    assert_eq!(list.used, 1);
+
+    let receipt = scheduler
+        .manage_host_queue(request(
+            Some(&epoch),
+            Action::Get {
+                turn_id: "queued-a".into(),
+            },
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        receipt.receipt.as_ref().map(|item| item.turn_id.as_str()),
+        Some("queued-a")
+    );
+
+    // A mutation still refuses to accept user work for an unloaded session.
+    let submit = scheduler
+        .manage_host_queue(request(
+            Some(&epoch),
+            Action::Submit {
+                message: message("queued-b"),
+            },
+        ))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        submit.message,
+        "Session is not loaded on the execution host"
+    );
+    let promote = scheduler
+        .manage_host_queue(request(
+            Some(&epoch),
+            Action::Promote {
+                turn_id: "queued-a".into(),
+                operation_id: "promote-a".into(),
+                expected_active_turn_id: None,
+            },
+        ))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        promote.message,
+        "Session is not loaded on the execution host"
+    );
+}
+
 #[tokio::test]
 async fn host_queue_subagent_conversation_admission_precedes_receipts_and_queue_mutation() {
     use openbitfun_core_types::{SessionContinuationPolicy, SessionKind};

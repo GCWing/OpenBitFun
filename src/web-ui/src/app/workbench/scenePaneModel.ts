@@ -1,3 +1,4 @@
+import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import { getSceneViewId, type SceneTab, type SceneTabId } from '../components/SceneBar/types';
 
 export type WorkbenchPane = 'primary' | 'secondary';
@@ -16,8 +17,14 @@ export interface ScenePaneState {
   canvasPane: WorkbenchPane;
 }
 
+/**
+ * The tab a pane falls back to. Another device's session tab is never one:
+ * showing it means rendering that device, which only its own activation does.
+ */
 export function paneFallback(tabs: SceneTab[], pane: WorkbenchPane, excludedView?: SceneTabId): SceneTabId | null {
-  return tabs.filter(tab => tabPane(tab) === pane && getSceneViewId(tab.id) !== excludedView)
+  const surfaceId = getActiveSurfaceId();
+  return tabs.filter(tab => tabPane(tab) === pane && getSceneViewId(tab.id) !== excludedView
+    && (!tab.session || tab.session.surfaceId === surfaceId))
     .sort((a, b) => b.lastUsed - a.lastUsed)[0]?.id ?? null;
 }
 

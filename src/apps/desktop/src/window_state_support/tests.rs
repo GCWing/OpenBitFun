@@ -276,6 +276,19 @@ fn quitting_from_tray_preserves_pre_hide_maximize_and_fullscreen_preferences() {
 }
 
 #[test]
+fn macos_development_launch_ignores_saved_fullscreen() {
+    let mut document = json!({});
+    update_document(&mut document, good_geometry(), Some((true, true)));
+    let plan = restore_plan(&document, &desktop());
+
+    assert!(!plan.fullscreen_on_launch(true, "com.openbitfun.desktop.dev"));
+    assert!(plan.fullscreen_on_launch(true, "com.openbitfun.desktop"));
+    assert!(plan.fullscreen_on_launch(false, "com.openbitfun.desktop.dev"));
+    assert!(plan.maximized);
+    assert_eq!(plan.geometry, good_geometry());
+}
+
+#[test]
 fn maximized_fullscreen_and_hidden_samples_keep_last_normal_geometry() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(STATE_FILE);

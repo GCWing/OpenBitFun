@@ -4,7 +4,6 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { versionInjectionPlugin } from "./vite.config.version-plugin";
-import { openbitfunCanvasRuntimeBundlePlugin } from "./vite.config.canvas-runtime-plugin";
 import { watchSourcePlugin } from "../../design-system/tooling/vite/watch-source.mjs";
 import {
   APPLE_SYSTEM_FONT_PROFILE,
@@ -169,7 +168,6 @@ export default defineConfig(({ mode, command }) => {
       createWebFontProfilePlugin(fontProfile, command),
       react(),
       watchSourcePlugin(designSystemUiSourceDirectory),
-      openbitfunCanvasRuntimeBundlePlugin(),
       versionInjectionPlugin()
     ],
 

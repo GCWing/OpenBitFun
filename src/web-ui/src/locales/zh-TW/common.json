@@ -64,6 +64,25 @@
     "remoteConnectRequiresWorkspace": "請先開啟工作區再使用遠端控制。"
   },
   "nav": {
+    "devices": {
+      "thisDevice": "本機",
+      "current": "目前視窗正在顯示",
+      "expand": "展開 {{name}}",
+      "collapse": "收合 {{name}}",
+      "hostDesktop": "桌面版",
+      "hostCli": "CLI",
+      "platform": {
+        "mac": "Mac",
+        "windows": "Win",
+        "linux": "Linux"
+      },
+      "loadFailed": "無法讀取該裝置的工作區",
+      "sessionsLoadFailed": "無法讀取會話",
+      "noSessions": "尚無會話",
+      "sessionUnavailable": "該裝置上已找不到這個會話。",
+      "sessionActionFailed": "無法在另一台裝置上完成此操作，請重試。",
+      "connecting": "正在連線 {{name}}…"
+    },
     "aria": {
       "navControl": "導航控制",
       "mainNav": "主導航"
@@ -633,7 +652,9 @@
       "revealFailed": "開啟工作區目錄失敗",
       "copyPathFailed": "複製路徑失敗",
       "createSessionFailed": "新增會話失敗",
-      "startingAcpSession": "會話啟動中",
+      "startingAcpSession": "正在啟動 Agent，首次啟動可能需要準備配接器…",
+      "initializingAcpSession": "正在初始化會話並載入模型和命令…",
+      "retryAcpSession": "重試",
       "acpSessionStarted": "會話啟動完成",
       "acpSessionStartFailed": "會話啟動失敗",
       "renameFailed": "重新命名專案失敗",
@@ -830,7 +851,6 @@
     "currentHostHint": "檔案和命令均位於目前工作主機。",
     "otherHostHint": "透過 SSH 連線遠端主機或容器。原生 WSL 僅支援目前 Windows 工作主機。",
     "wslHint": "下一步選擇目前 Windows 工作主機上的 Linux 發行版。",
-    "foldersLockedHint": "移除資料夾後可切換。",
     "connectionChoice": "連線設定",
     "availableOptions": "可用連線與環境",
     "refreshOptions": "重新整理可用選項",
@@ -1748,7 +1768,6 @@
     "panelView": "面板視圖"
   },
   "sceneBar": {
-    "recentSessions": "最近開啟的工作階段",
     "tabsLabel": "場景標籤頁",
     "scrollPrevious": "向左捲動標籤頁",
     "scrollNext": "向右捲動標籤頁",
@@ -1991,6 +2010,9 @@
       "privateKey": "私鑰",
       "sshAgent": "SSH 金鑰代理",
       "keyboardInteractive": "鍵盤互動驗證",
+      "noAuth": "不驗證",
+      "noAuthHint": "伺服器不驗證憑證，適用於已完成驗證的通道，例如 Coder 工作區 agent。",
+      "noAuthUnsupported": "此主機需要更新後才能使用不驗證連線。",
       "privateKeyPath": "私鑰檔案路徑",
       "certificatePath": "OpenSSH 憑證",
       "certificatePathOptional": "可選憑證檔案",
@@ -2034,6 +2056,7 @@
       "hostRequired": "主機地址不能為空",
       "usernameRequired": "用戶名不能為空",
       "portInvalid": "端口必須是 1-65535 之間的數字",
+      "portScopedIdentityUnsupported": "所連接的裝置無法為同一主機和使用者的不同 SSH 連接埠保存獨立設定，繼續保存會取代「{{connection}}」。請在該裝置上更新 OpenBitFun，或改為編輯現有設定。",
       "passwordRequired": "密碼不能為空",
       "keyPathRequired": "私鑰路徑不能為空",
       "enterPassword": "請輸入密碼",
@@ -2322,8 +2345,19 @@
     "modifiedDragUnavailable": "共享預覽暫不支援同時按住修飾鍵拖曳。"
   },
   "newWorkspace": {
+    "localProjectTitle": "本機專案",
+    "localProjectDescription": "關聯既有資料夾，或新建工程。",
+    "deviceProjectTitle": "其他裝置上的專案",
+    "deviceProjectDescription": "在你的其他線上裝置上建立。",
+    "createDeviceProject": "在其他裝置上建立專案",
+    "chooseDevice": "選擇裝置",
+    "noOtherDevices": "暫無其他線上裝置。在其他裝置上登入同一帳號並開啟 OpenBitFun 後，即可在這裡選擇。",
+    "signInForDevices": "登入帳號後，可在同帳號的其他線上裝置上建立專案。",
+    "createProjectOn": "在 {{name}} 上建立專案",
+    "deviceCurrent": "目前顯示",
+    "connecting": "正在連線…",
+    "deviceError": "無法連線到該裝置，請稍後重試。",
     "title": "建立",
-    "description": "選擇要建立的內容。",
     "assistantTitle": "個人助理",
     "assistantDescription": "與你長期協作，擁有獨立記憶。",
     "projectTitle": "專案",
@@ -2334,6 +2368,7 @@
     "back": "返回選擇"
   },
   "peerHost": {
+    "connectionInterrupted": "與裝置的連線中斷了，請重試。",
     "unavailable": "此功能在該裝置上無法使用。",
     "updateRequired": "該裝置上的 OpenBitFun 版本不支援此功能。請嘗試在該裝置上更新 OpenBitFun。",
     "withDetail": "{{message}}（{{detail}}）"

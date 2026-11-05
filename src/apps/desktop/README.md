@@ -3,6 +3,20 @@
 For development commands, see [AGENTS.md](AGENTS.md) and the repository
 [contribution guide](../../../CONTRIBUTING.md).
 
+## Window resizing
+
+The main window keeps its content visible while resizing or maximizing. Continuous
+resizing briefly batches expensive transcript and terminal measurements, with
+regular updates during the drag. Single adjustments use normal live layout;
+macOS releases the batch as soon as the native drag ends. Conversations, draft
+text and editor views remain mounted, with no resize cover, logo or reveal animation.
+On macOS the main WebView follows its native container immediately, including
+when embedded browsers are open. Browser children retain their own bounds.
+The opaque scene background is also painted underneath the WebView by AppKit,
+so newly exposed edges retain the page color while WebKit catches up. The sidebar
+keeps its native material. Theme changes and sidebar geometry update this paint;
+translucent or image-backed scene surfaces retain their original composition.
+
 ## Model selection and smart routing
 
 **Release availability:** smart mode is not available in this release. The GUI
@@ -95,12 +109,13 @@ completion quality, total latency, model/cache usage and auxiliary request cost.
 
 ## Remote Connect
 
-Sign in once with the shared GitHub account. The official Relay and **Same
-network** (the embedded LAN Relay) can run at the same time. Each tab shows its
-own connection and connected browsers; **Disconnect** affects that tab only.
+Sign in with the same OpenBitFun account on each device, using the same GitHub
+or email-code login method. The official Relay needs no user deployment. The
+official Relay and **Same network** (the embedded LAN Relay) can run at the same
+time. Each tab shows its own connection and connected browsers; **Disconnect** affects that tab only.
 Closing a connection code keeps an established connection running.
 
-**My devices**, Peer Device Mode, account synchronization and detached dispatch
+**My devices**, Peer Device Mode, account synchronization and account-device detached dispatch
 use the official Relay. Starting or stopping the LAN Relay does not switch their
 account or endpoint. LAN invitations advertise the selected network interface;
 select it again and create a new invitation after changing networks.
@@ -110,6 +125,10 @@ is temporary and starts when requested. Builds that previously saved a temporary
 LAN session in the account slot attempt to restore the official Relay from the
 shared identity; failed sign-in leaves the previous credential on disk. Signing
 out closes both connections.
+
+Both modes require the online identity service for sign-in. Same-network mode
+does not provide offline login. See the [Relay FAQ](../relay-server/FAQ.md) for
+privacy, service availability, and private-deployment requirements.
 
 ## Global agent instructions
 
@@ -861,6 +880,45 @@ read omitted files again in smaller batches; the original conversation is retain
 Plain text continuation also applies the limit, including to old tool-image history.
 Each selected model or fallback channel uses its own limit at the executing host;
 older hosts must be upgraded to enforce this optional setting.
+
+## Classifier Router services
+
+On a development build with Smart mode enabled, a classifier service can use
+the existing OpenAI Chat Completions configuration. Add its API service and
+model in Settings > Models, then select it in the Smart mode configuration.
+For the local classifier service, use:
+
+| Setting | Value |
+|---|---|
+| Request format | OpenAI Chat Completions |
+| Base URL | `http://127.0.0.1:8767/v1` |
+| Model | `router-qwen35-0.8b` |
+| API key | `local-router` placeholder when the model editor requires a value |
+| Context window | `32768` |
+| Router compatibility | Classifier Router |
+| Request timeout | Start with the service's documented allowance, such as 120 seconds for cold or long inputs |
+
+Use **Save and check connections** in the Smart mode configuration. Once the
+model is selected as the Router service, its model-card and editor checks also
+use the same classifier protocol with the configuration being tested. An
+unselected ordinary model still receives chat/tool checks. The existing primary and
+economy models remain independently configured. Router classification and
+automatic history preparation do not change subagent model selection.
+
+The Classifier Router profile sends exactly two full system/user messages,
+uses `router.probabilities.simple_type` for the existing economy threshold,
+and consumes complete `usage.prompt_tokens` for input-budget calibration.
+It serializes classifier calls across sessions within one execution host and
+connects directly to loopback endpoints. Other processes using the same
+single-concurrency service can still receive a busy response. Every request
+keeps the full prepared input; prefix caching stays on the service.
+
+The default compatibility profile preserves the existing token-logprob Router
+wire format. An older execution host that does not advertise Classifier Router
+support cannot configure this profile through the GUI. Unsupported future
+profiles remain readable and fail explicitly rather than using another protocol.
+Loopback addresses refer to the machine running the Agent, including a Peer
+host; an SSH workspace alone does not move the Router off the execution host.
 
 ## Model pools
 

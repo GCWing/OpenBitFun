@@ -4006,14 +4006,6 @@ export const rustWebUiSourceBoundaryRule = {
           path: 'src/crates/execution/agent-runtime/src/deep_review/manifest.rs',
           text: '"src/web-ui/src/locales/en-US/flow-chat.json"',
         },
-        {
-          path: 'src/crates/services/services-integrations/src/canvas/compiler/tests.rs',
-          text: "nodes: [{ id: 'web-ui' }, { id: 'core' }],",
-        },
-        {
-          path: 'src/crates/services/services-integrations/src/canvas/compiler/tests.rs',
-          text: "edges: [{ from: 'web-ui', to: 'core' }],",
-        },
       ],
       message:
         'non-comment Rust source must not spell the web-ui path token outside reviewed fixture lines',

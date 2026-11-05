@@ -118,15 +118,6 @@
     gap: calc(var(--openbitfun-space-1) / 2);
   }
 
-  &__item {
-    // Match MainNav child rows: parent icon-button slot + row gap.
-    padding-inline-start: calc(
-      var(--openbitfun-layout-navigation-panel-item-padding-inline)
-      + var(--openbitfun-control-icon-button-xs-size)
-      + var(--openbitfun-space-2)
-    );
-  }
-
   &__item-label {
     flex: 1;
     min-width: 0;

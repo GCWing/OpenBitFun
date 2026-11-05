@@ -10,7 +10,7 @@ export const markdownAppearanceDescriptor: AppearanceSurfaceDescriptor = {
     { id: 'codeBody', visualRole: 'content' },
     { id: 'codePre', propertyProfile: 'paint', visualRole: 'content' },
     { id: 'codeContent', propertyProfile: 'paint', visualRole: 'content' },
-    { id: 'fileLink' }, { id: 'visualizationLink' }, { id: 'tabLink' }, { id: 'canvasLink' },
+    { id: 'fileLink' }, { id: 'visualizationLink' }, { id: 'tabLink' },
     { id: 'table' }, { id: 'blockquote' }, { id: 'math' },
   ],
   states: [

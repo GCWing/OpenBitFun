@@ -15,7 +15,6 @@ use super::{
 use crate::agentic::agents::{
     get_agent_registry, is_swarm_delegate_agent_type, ExternalSubagentModelBinding,
 };
-use crate::agentic::context_profile::ContextProfilePolicy;
 use crate::agentic::core::{
     InternalReminderKind, Message, MessageContent, MessageSemanticKind, ProcessingPhase, Session,
     SessionAgentRouteOwner, SessionConfig, SessionContinuationPolicy, SessionKind,
@@ -134,7 +133,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::sync::{mpsc, oneshot, watch, OwnedSemaphorePermit, RwLock, Semaphore};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{sleep, timeout, Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 const MANUAL_COMPACTION_COMMAND: &str = "/compact";
@@ -144,6 +143,10 @@ const DEFAULT_SUBAGENT_MAX_CONCURRENCY: usize = 5;
 const DEFAULT_SWARM_MAX_CONCURRENCY: usize = 16;
 const MAX_SUBAGENT_MAX_CONCURRENCY: usize = 64;
 const SUBAGENT_TIMEOUT_GRACE_PERIOD: Duration = Duration::from_secs(10);
+/// How long an observer read waits for the Session's mutation lease before it
+/// projects persisted records without one. Kept small: the lease owner may be a
+/// Turn that is itself waiting for the reader's answer.
+const RELAY_HISTORY_OBSERVER_LEASE_WAIT: Duration = Duration::from_millis(1500);
 const SESSION_REFERENCES_METADATA_KEY: &str = "sessionReferences";
 const MAX_SESSION_REFERENCES_PER_TURN: usize = 5;
 const SESSION_REFERENCE_ARTIFACT_STEM_LENGTH: usize = 8;
@@ -1439,7 +1442,6 @@ pub struct ConversationCoordinator {
     event_router: Arc<EventRouter>,
     subagent_concurrency_limiter: Arc<RwLock<Option<SubagentConcurrencyLimiter>>>,
     swarm_concurrency_limiter: Arc<RwLock<Option<SubagentConcurrencyLimiter>>>,
-    subagent_profile_concurrency_limiters: Arc<RwLock<HashMap<usize, SubagentConcurrencyLimiter>>>,
     /// Registry for dynamically adjusting subagent timeouts.
     subagent_timeout_registry: Arc<RwLock<HashMap<String, Arc<SubagentTimeoutHandle>>>>,
     /// Active subagent executions keyed by subagent session id.
@@ -2379,7 +2381,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             event_router,
             subagent_concurrency_limiter: Arc::new(RwLock::new(None)),
             swarm_concurrency_limiter: Arc::new(RwLock::new(None)),
-            subagent_profile_concurrency_limiters: Arc::new(RwLock::new(HashMap::new())),
             subagent_timeout_registry: Arc::new(RwLock::new(HashMap::new())),
             active_subagent_executions: Arc::new(DashMap::new()),
             background_subagent_tasks: Arc::new(DashMap::new()),
@@ -3100,6 +3101,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         session: &'a Session,
         workspace_root: Option<&'a Path>,
         is_remote_workspace: bool,
+        workspace_services: Option<&'a WorkspaceServices>,
     ) -> NativeHookSessionFacts<'a> {
         NativeHookSessionFacts {
             workspace_id: session.config.workspace_id.as_deref(),
@@ -3109,6 +3111,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             is_remote_workspace,
             model: session.config.model_id.as_deref().unwrap_or_default(),
             bypass_permissions: false,
+            workspace_services,
         }
     }
 
@@ -3127,10 +3130,26 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
     /// Run SessionStart hooks. `source` follows the Codex vocabulary:
     /// `startup` | `resume` | `clear` | `compact`.
     async fn dispatch_session_start_hooks(session: &Session, source: &str) {
-        let workspace_root = session.config.workspace_path.as_ref().map(Path::new);
+        let binding = Self::build_workspace_binding(&session.config).await;
+        let workspace_root = binding.as_ref().map(|binding| binding.root_path());
         let is_remote = Self::session_hooks_are_remote(session).await;
+        let workspace_services = match Self::build_workspace_services(&binding).await {
+            Ok(services) => services,
+            Err(error) => {
+                warn!(
+                    "SessionStart project Hooks are unavailable for the workspace: {}",
+                    error
+                );
+                None
+            }
+        };
         native_hooks::dispatch_session_start(
-            Self::session_hook_facts(session, workspace_root, is_remote),
+            Self::session_hook_facts(
+                session,
+                workspace_root,
+                is_remote,
+                workspace_services.as_ref(),
+            ),
             source,
         )
         .await;
@@ -6345,11 +6364,21 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 prepare_compression_cancellable(&cancellation_token, async {
                     let local =
                         policy == crate::service::config::types::LocalContextTruncation::Always;
-                    let manual_workspace_services = if local {
-                        None
-                    } else {
-                        Self::build_workspace_services(&manual_workspace).await?
-                    };
+                    let manual_workspace_services =
+                        match Self::build_workspace_services(&manual_workspace).await {
+                            Ok(services) => services,
+                            Err(error) if local => {
+                                // Local context recovery must remain available when
+                                // the remote provider for project Hooks is offline.
+                                // Never substitute the controller's filesystem.
+                                warn!(
+                                    "Manual compaction project Hooks are unavailable; continuing local context recovery without workspace services: {}",
+                                    error
+                                );
+                                None
+                            }
+                            Err(error) => return Err(error),
+                        };
                     let manual_execution_context = ExecutionContext {
                         session_id: session_id.clone(),
                         dialog_turn_id: turn_id.clone(),
@@ -6549,7 +6578,8 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         // Queueing and live steering must reject an oversized user attachment
         // batch while the sender still owns it. Do not guess unresolved defaults;
         // a selected pool has a common limit independent of its current member.
-        if let Some(ai_config) = SessionManager::load_ai_config_for_model_resolution().await {
+        if let Some(ai_config) = SessionManager::load_ai_config_for_session(&session.config).await?
+        {
             Self::validate_input_image_count(
                 &ai_config,
                 session.config.model_id.as_deref(),
@@ -6900,6 +6930,10 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             }
         }
 
+        // Resolve the workspace provider before UserPromptSubmit so a remote
+        // project Hook can run on the target before the turn is admitted.
+        let workspace_services = Self::build_workspace_services(&session_workspace).await?;
+
         // UserPromptSubmit hooks run before any turn state is created, so a
         // blocking hook rejects the prompt without leaving a partial turn.
         // Their context (plus buffered SessionStart context) is prepended to
@@ -6911,6 +6945,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     &session,
                     session.config.workspace_path.as_deref().map(Path::new),
                     Self::session_hooks_are_remote(&session).await,
+                    workspace_services.as_ref(),
                 )
             },
             &user_input,
@@ -7051,9 +7086,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             }
             user_message_metadata = Some(metadata);
         }
-
-        // Build WorkspaceServices based on the workspace type
-        let workspace_services = Self::build_workspace_services(&session_workspace).await?;
 
         info!(
             "Dialog turn workspace context: session_id={}, workspace_path={:?}, is_remote={}, workspace_services={}",
@@ -9093,10 +9125,23 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 Self::session_hooks_are_remote(&session).await,
                 session.config.model_id.clone().unwrap_or_default(),
                 session.config.workspace_id.clone(),
+                match Self::build_workspace_services(
+                    &Self::build_workspace_binding(&session.config).await,
+                )
+                .await
+                {
+                    Ok(services) => services,
+                    Err(error) => {
+                        warn!("SessionEnd project Hooks are unavailable: {}", error);
+                        None
+                    }
+                },
             )),
             None => None,
         };
-        if let Some((is_remote_workspace, model, workspace_id)) = session_hook_facts {
+        if let Some((is_remote_workspace, model, workspace_id, workspace_services)) =
+            session_hook_facts
+        {
             native_hooks::dispatch_session_end(
                 NativeHookSessionFacts {
                     workspace_id: workspace_id.as_deref(),
@@ -9106,6 +9151,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     is_remote_workspace,
                     model: &model,
                     bypass_permissions: false,
+                    workspace_services: workspace_services.as_ref(),
                 },
                 "other",
             )
@@ -9685,6 +9731,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .await
     }
 
+    fn relay_history_writer_busy(session_id: &str) -> OpenBitFunError {
+        OpenBitFunError::OutcomeUnknown(format!(
+            "Session history is unavailable while its writer changes the undo state: session_id={session_id}"
+        ))
+    }
+
     async fn load_relay_session_selection(
         &self,
         storage: &Path,
@@ -9697,12 +9749,48 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .persistence_manager()
             .assert_relay_history_supported(storage, session_id)
             .await?;
-        let _mutation = self
-            .session_manager
-            .acquire_session_mutation(session_id)
-            .await?;
-        self.prepare_persisted_session_read_locked(storage, session_id)
-            .await?;
+        // A reader here observes persisted history; it is not the Session's
+        // writer. Its owning Turn holds the mutation lease for the Turn's whole
+        // life, so an unbounded acquire would make a controller's first read
+        // depend on that Turn finishing. A Turn blocked on an unanswered
+        // question would then block the very read that lets a controller answer
+        // it. Wait briefly for the consistent window, then fall back to the
+        // persisted records so a reader is never parked behind live execution.
+        let mutation = match timeout(
+            RELAY_HISTORY_OBSERVER_LEASE_WAIT,
+            self.session_manager.acquire_session_mutation(session_id),
+        )
+        .await
+        {
+            Ok(lease) => Some(lease?),
+            Err(_) => None,
+        };
+        let revert_fence = if mutation.is_some() {
+            self.prepare_persisted_session_read_locked(storage, session_id)
+                .await?;
+            None
+        } else {
+            openbitfun_core_types::validate_session_id(session_id)
+                .map_err(OpenBitFunError::Validation)?;
+            self.session_manager
+                .validate_session_storage_path_binding(session_id, storage)?;
+            let state = self
+                .session_manager
+                .persistence_manager()
+                .load_session_revert_state(storage, session_id)
+                .await?;
+            // Without the lease an unfinished undo transition cannot be
+            // reconciled. Report that instead of projecting records that the
+            // transition is about to replace.
+            if state
+                .as_ref()
+                .is_some_and(|state| state.phase != SessionRevertPhase::Staged)
+            {
+                return Err(Self::relay_history_writer_busy(session_id));
+            }
+            Some(state)
+        };
+        let _mutation = mutation;
 
         // Persisted InProgress is not proof of a live executor after restart.
         // A loaded owner supplies runtime state; for an unloaded session an
@@ -9763,6 +9851,18 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 "full",
             )
         };
+        // A lease-less read is only consistent if no undo transition started
+        // or finished while it ran; otherwise it may mix both versions.
+        if let Some(before) = revert_fence {
+            let after = self
+                .session_manager
+                .persistence_manager()
+                .load_session_revert_state(storage, session_id)
+                .await?;
+            if after != before {
+                return Err(Self::relay_history_writer_busy(session_id));
+            }
+        }
         debug!(
             "Loaded relay session turns: session_id={} requested_turn_id={} read_mode={} turn_count={}",
             session_id,
@@ -10572,32 +10672,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         limiter
     }
 
-    async fn get_subagent_profile_concurrency_limiter(
-        &self,
-        max_concurrency: usize,
-    ) -> SubagentConcurrencyLimiter {
-        let max_concurrency = normalize_subagent_max_concurrency(max_concurrency);
-
-        {
-            let limiter_guard = self.subagent_profile_concurrency_limiters.read().await;
-            if let Some(limiter) = limiter_guard.get(&max_concurrency) {
-                return limiter.clone();
-            }
-        }
-
-        let mut limiter_guard = self.subagent_profile_concurrency_limiters.write().await;
-        if let Some(limiter) = limiter_guard.get(&max_concurrency) {
-            return limiter.clone();
-        }
-
-        let limiter = SubagentConcurrencyLimiter {
-            semaphore: Arc::new(Semaphore::new(max_concurrency)),
-            max_concurrency,
-        };
-        limiter_guard.insert(max_concurrency, limiter.clone());
-        limiter
-    }
-
     async fn get_swarm_concurrency_limiter(&self) -> SubagentConcurrencyLimiter {
         let configured = match GlobalConfigManager::get_service().await {
             Ok(config_service) => match config_service
@@ -10714,7 +10788,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
     async fn acquire_subagent_concurrency_permit(
         &self,
         agent_type: &str,
-        profile_concurrency_cap: usize,
         cancel_token: Option<&CancellationToken>,
         deadline: Option<Instant>,
     ) -> OpenBitFunResult<(
@@ -10737,19 +10810,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             ));
         }
 
-        let profile_limiter = self
-            .get_subagent_profile_concurrency_limiter(profile_concurrency_cap)
-            .await;
-        let profile_permit = self
-            .acquire_permit_from_limiter(
-                &profile_limiter,
-                agent_type,
-                cancel_token,
-                deadline,
-                "profile",
-            )
-            .await?;
-
         let global_limiter = self.get_subagent_concurrency_limiter().await;
         let global_permit = self
             .acquire_permit_from_limiter(
@@ -10763,55 +10823,11 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
 
         let wait_ms = started_waiting.elapsed().as_millis();
         debug!(
-            "Acquired subagent concurrency permits: agent_type={}, wait_ms={}, profile_max_concurrency={}, global_max_concurrency={}",
-            agent_type, wait_ms, profile_limiter.max_concurrency, global_limiter.max_concurrency
+            "Acquired subagent concurrency permit: agent_type={}, wait_ms={}, max_concurrency={}",
+            agent_type, wait_ms, global_limiter.max_concurrency
         );
 
-        Ok((
-            vec![
-                (profile_permit, profile_limiter),
-                (global_permit, global_limiter),
-            ],
-            wait_ms,
-        ))
-    }
-
-    fn context_profile_policy_for_subagent(
-        &self,
-        agent_type: &str,
-        session_config: &SessionConfig,
-        subagent_parent_info: Option<&SubagentParentInfo>,
-    ) -> ContextProfilePolicy {
-        if let Some(parent_info) = subagent_parent_info {
-            if let Some(parent_session) = self.session_manager.get_session(&parent_info.session_id)
-            {
-                let parent_is_review_subagent = get_agent_registry()
-                    .get_subagent_is_review(&parent_session.agent_type)
-                    .unwrap_or(false);
-                let is_review_subagent = get_agent_registry()
-                    .get_subagent_is_review(agent_type)
-                    .unwrap_or(false);
-                return ContextProfilePolicy::for_subagent_context_and_models(
-                    agent_type,
-                    is_review_subagent,
-                    session_config.model_id.as_deref(),
-                    Some(&parent_session.agent_type),
-                    parent_is_review_subagent,
-                    parent_session.config.model_id.as_deref(),
-                );
-            }
-        }
-
-        let is_review_subagent = get_agent_registry()
-            .get_subagent_is_review(agent_type)
-            .unwrap_or(false);
-        let model_id = session_config.model_id.as_deref().unwrap_or_default();
-        ContextProfilePolicy::for_agent_context_and_model(
-            agent_type,
-            is_review_subagent,
-            model_id,
-            model_id,
-        )
+        Ok((vec![(global_permit, global_limiter)], wait_ms))
     }
 
     async fn execute_hidden_subagent_internal(
@@ -10911,18 +10927,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .map(|info| info.tool_call_id.as_str())
             .unwrap_or("-");
 
-        let context_profile_policy = self.context_profile_policy_for_subagent(
-            &agent_type,
-            &session_config,
-            subagent_parent_info.as_ref(),
-        );
-        debug!(
-            "Subagent context profile policy selected: agent_type={}, profile={:?}, profile_concurrency_cap={}",
-            agent_type,
-            context_profile_policy.profile,
-            context_profile_policy.subagent_concurrency_cap
-        );
-
         // Check cancel token (before creating session)
         if let Some(token) = cancel_token {
             if token.is_cancelled() {
@@ -10942,12 +10946,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         // target hidden session may have been created by the scheduler before
         // this point so per-session queueing can use its real session_id.
         let (permits, wait_ms) = match self
-            .acquire_subagent_concurrency_permit(
-                &agent_type,
-                context_profile_policy.subagent_concurrency_cap,
-                cancel_token,
-                initial_deadline,
-            )
+            .acquire_subagent_concurrency_permit(&agent_type, cancel_token, initial_deadline)
             .await
         {
             Ok(value) => value,
@@ -11251,6 +11250,8 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         }
 
         let subagent_workspace = Self::build_workspace_binding(&session.config).await;
+        let subagent_services = Self::build_workspace_services(&subagent_workspace).await?;
+        let subagent_hook_services = subagent_services.clone();
         let subagent_workspace_path = subagent_workspace
             .as_ref()
             .map(|workspace| workspace.root_path_string());
@@ -11300,6 +11301,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             is_remote_workspace: subagent_hook_is_remote,
             model: &subagent_hook_model,
             bypass_permissions: false,
+            workspace_services: subagent_hook_services.as_ref(),
         };
         for section in
             native_hooks::dispatch_subagent_start(subagent_hook_facts, &session_id, &agent_type)
@@ -11323,7 +11325,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 session.config.model_pool_selection_revision.to_string(),
             );
         }
-        let subagent_services = Self::build_workspace_services(&subagent_workspace).await?;
         let execution_context = ExecutionContext {
             session_id: session_id.clone(),
             dialog_turn_id: dialog_turn_id.clone(),
@@ -13465,6 +13466,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         let workspace_path = session.config.workspace_path.clone().map(PathBuf::from);
         let is_remote_workspace = Self::session_hooks_are_remote(&session).await;
         let model = session.config.model_id.clone().unwrap_or_default();
+        let workspace_services = match Self::build_workspace_services(
+            &Self::build_workspace_binding(&session.config).await,
+        )
+        .await
+        {
+            Ok(services) => services,
+            Err(error) => {
+                warn!("SessionEnd project Hooks are unavailable: {}", error);
+                None
+            }
+        };
         if let Some(workspace_path) = workspace_path.as_deref() {
             native_hooks::dispatch_session_end(
                 NativeHookSessionFacts {
@@ -13475,6 +13487,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     is_remote_workspace,
                     model: &model,
                     bypass_permissions: false,
+                    workspace_services: workspace_services.as_ref(),
                 },
                 "other",
             )
@@ -13917,6 +13930,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 subagent_session_id.clone(),
                 BackgroundSubagentCancelTarget::Scheduler(cancel_handle.clone()),
             );
+            self.stamp_subagent_link_on_parent_tool_item(
+                &subagent_parent_info,
+                &subagent_session_id,
+                &subagent_dialog_turn_id,
+            )
+            .await;
             let background_subagent_tasks = self.background_subagent_tasks.clone();
             let background_subagent_outcomes = self.background_subagent_outcomes.clone();
 
@@ -14025,6 +14044,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             subagent_session_id.clone(),
             BackgroundSubagentCancelTarget::Direct(background_cancel_token),
         );
+        self.stamp_subagent_link_on_parent_tool_item(
+            &subagent_parent_info,
+            &subagent_session_id,
+            &subagent_dialog_turn_id,
+        )
+        .await;
         let background_subagent_tasks = self.background_subagent_tasks.clone();
         let background_subagent_outcomes = self.background_subagent_outcomes.clone();
 
@@ -14056,6 +14081,51 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             bg_task_id,
             agent_id,
         })
+    }
+
+    /// Persist the child-Session link of a spawned subagent on the parent Turn's
+    /// tool item.
+    ///
+    /// A synchronous delegated command is stamped in memory before its synthetic
+    /// Turn is written. An asynchronous spawn instead returns a `started` result
+    /// while the child Session runs on, so the parent Turn needs the link on its
+    /// persisted tool item. It is written before this start returns, which is
+    /// before the spawning tool completion republishes the parent Turn, so
+    /// record-stream consumers see the link in the same resync they already get.
+    ///
+    /// The link is an annotation: a host that cannot resolve the parent Turn
+    /// keeps the spawn result rather than failing the tool call.
+    async fn stamp_subagent_link_on_parent_tool_item(
+        &self,
+        parent_info: &SubagentParentInfo,
+        subagent_session_id: &str,
+        subagent_dialog_turn_id: &str,
+    ) {
+        let subagent_model_id = self
+            .session_manager
+            .get_session(subagent_session_id)
+            .and_then(|session| session.config.model_id);
+        if let Err(error) = self
+            .session_manager
+            .link_subagent_session_on_parent_tool_item(
+                &parent_info.session_id,
+                &parent_info.dialog_turn_id,
+                &parent_info.tool_call_id,
+                subagent_session_id,
+                subagent_dialog_turn_id,
+                subagent_model_id,
+            )
+            .await
+        {
+            warn!(
+                "Failed to link spawned subagent Session on the parent tool item: parent_session_id={}, parent_dialog_turn_id={}, parent_tool_call_id={}, subagent_session_id={}, error={}",
+                parent_info.session_id,
+                parent_info.dialog_turn_id,
+                parent_info.tool_call_id,
+                subagent_session_id,
+                error
+            );
+        }
     }
 
     /// Clean up runtime-only subagent resources.
@@ -15357,6 +15427,7 @@ impl openbitfun_runtime_ports::AgentSessionModelPort for ConversationCoordinator
         Ok(openbitfun_core_types::model_pool::SessionModelTarget {
             session_id: session.session_id,
             selection,
+            reasoning_preset: session.config.reasoning_preset,
             binding: session.config.model_pool_binding,
         })
     }
@@ -15366,7 +15437,6 @@ impl openbitfun_runtime_ports::AgentSessionModelPort for ConversationCoordinator
         session_id: &str,
     ) -> openbitfun_runtime_ports::PortResult<openbitfun_core_types::model_pool::SessionModelTarget>
     {
-        use openbitfun_core_types::model_pool::{ModelSelection, SessionModelTarget};
         let session = self
             .session_manager
             .get_session(session_id)
@@ -15375,18 +15445,7 @@ impl openbitfun_runtime_ports::AgentSessionModelPort for ConversationCoordinator
                     "Session not found: {session_id}"
                 )))
             })?;
-        let selection = if let Some(pool_id) = session.config.model_pool_id {
-            ModelSelection::Pool { pool_id }
-        } else {
-            ModelSelection::Model {
-                model_ref: session.config.model_id.unwrap_or_else(|| "primary".into()),
-            }
-        };
-        Ok(SessionModelTarget {
-            session_id: session.session_id,
-            selection,
-            binding: session.config.model_pool_binding,
-        })
+        Ok(crate::agentic::session::session_model_target(session))
     }
 
     async fn update_session_model(
@@ -15696,6 +15755,7 @@ impl ConversationCoordinator {
             attempt_index: None,
             agent_type: session.agent_type,
             workspace,
+            model_client: None,
             primary_model_facts: PrimaryModelFacts::default(),
             context_vars: HashMap::new(),
             subagent_parent_info: None,
@@ -17474,6 +17534,7 @@ pub(crate) mod tests {
                     attempt_index: None,
                     agent_type: "Standard".to_string(),
                     workspace: None,
+                    model_client: None,
                     primary_model_facts: Default::default(),
                     context_vars: HashMap::new(),
                     subagent_parent_info: None,
@@ -18168,113 +18229,135 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn manual_compaction_force_recovers_context_overflow_without_a_model() {
-        let (coordinator, manager) = test_coordinator();
-        let workspace = tempfile::tempdir().unwrap();
-        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
-        let session = manager
-            .create_session(
-                "Overflow recovery".into(),
-                "Standard".into(),
-                SessionConfig {
-                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
-                    model_id: Some("unconfigured-force-recovery-model".into()),
-                    ..SessionConfig::default()
-                },
-            )
-            .await
-            .unwrap();
-        let id = &session.session_id;
-        let failed_turn = manager
-            .start_dialog_turn(
-                id,
-                "Standard".into(),
-                "Continue this task".into(),
-                None,
-                None,
-                None,
-            )
-            .await
-            .unwrap();
-        let original = vec![
-            Message::user("Continue this task".into()),
-            Message::assistant("Earlier tool evidence ".repeat(2_000)),
-        ];
-        manager.replace_context_messages(id, original.clone()).await;
-        ConversationCoordinator::persist_failed_dialog_turn(
-            coordinator.event_queue.as_ref(),
-            manager.as_ref(),
-            None,
-            id,
-            &failed_turn,
-            &OpenBitFunError::RecoverableContextOverflow(
-                openbitfun_core_types::errors::AiProviderError::classified(
-                    "Provider context limit exceeded".into(),
-                    openbitfun_core_types::errors::ErrorCategory::ContextOverflow,
-                ),
-            ),
-            true,
-        )
-        .await;
-        assert!(matches!(
-            manager.get_session(id).unwrap().state,
-            SessionState::Error {
-                recoverable: true,
-                ..
+        for remote in [false, true] {
+            let (coordinator, manager) = test_coordinator();
+            let workspace = tempfile::tempdir().unwrap();
+            let mut config = SessionConfig {
+                workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                model_id: Some("unconfigured-force-recovery-model".into()),
+                ..SessionConfig::default()
+            };
+            if remote {
+                let connection_id = "unavailable-force-recovery@example.test:22";
+                let registered = crate::service::workspace::legacy_compat::register_remote_fixture(
+                    &workspace.path().to_string_lossy(),
+                    connection_id,
+                    "example.test",
+                )
+                .await;
+                config.workspace_id = Some(registered.id);
+                config.remote_connection_id = Some(connection_id.into());
+                config.remote_ssh_host = Some("example.test".into());
+                let binding = ConversationCoordinator::build_workspace_binding(&config).await;
+                assert!(binding.as_ref().is_some_and(|binding| binding.is_remote()));
+                assert!(
+                    ConversationCoordinator::build_workspace_services(&binding)
+                        .await
+                        .is_err(),
+                    "fixture must exercise unavailable remote project Hook services"
+                );
+            } else {
+                crate::service::workspace::legacy_compat::register_local_fixture_blocking(
+                    workspace.path(),
+                );
             }
-        ));
-
-        // Local recovery must not become permission to ignore fatal failures.
-        manager
-            .update_session_state(
+            let session = manager
+                .create_session("Overflow recovery".into(), "Standard".into(), config)
+                .await
+                .unwrap();
+            let id = &session.session_id;
+            let failed_turn = manager
+                .start_dialog_turn(
+                    id,
+                    "Standard".into(),
+                    "Continue this task".into(),
+                    None,
+                    None,
+                    None,
+                )
+                .await
+                .unwrap();
+            let original = vec![
+                Message::user("Continue this task".into()),
+                Message::assistant("Earlier tool evidence ".repeat(2_000)),
+            ];
+            manager.replace_context_messages(id, original.clone()).await;
+            ConversationCoordinator::persist_failed_dialog_turn(
+                coordinator.event_queue.as_ref(),
+                manager.as_ref(),
+                None,
                 id,
-                SessionState::Error {
-                    error: "Unrecoverable session failure".into(),
-                    recoverable: false,
-                },
+                &failed_turn,
+                &OpenBitFunError::RecoverableContextOverflow(
+                    openbitfun_core_types::errors::AiProviderError::classified(
+                        "Provider context limit exceeded".into(),
+                        openbitfun_core_types::errors::ErrorCategory::ContextOverflow,
+                    ),
+                ),
+                true,
             )
-            .await
-            .unwrap();
-        assert!(coordinator
-            .start_manual_compaction_task(id.clone(), None, true)
-            .await
-            .is_err());
-        assert_eq!(
-            manager.get_session(id).unwrap().dialog_turn_ids,
-            vec![failed_turn.clone()]
-        );
-        assert_eq!(
-            serde_json::to_value(manager.get_context_messages(id).await.unwrap()).unwrap(),
-            serde_json::to_value(&original).unwrap()
-        );
-
-        manager
-            .update_session_state(
-                id,
+            .await;
+            assert!(matches!(
+                manager.get_session(id).unwrap().state,
                 SessionState::Error {
-                    error: "Provider context limit exceeded".into(),
                     recoverable: true,
-                },
-            )
-            .await
-            .unwrap();
-        let task = coordinator
-            .start_manual_compaction_task(id.clone(), None, true)
-            .await
-            .unwrap();
-        task.completion.await.unwrap().unwrap();
-        let recovered = manager.get_session(id).unwrap();
-        assert!(matches!(recovered.state, SessionState::Idle));
-        assert_eq!(recovered.compression_state.compression_count, 1);
-        assert_eq!(recovered.dialog_turn_ids.len(), 2);
-        assert_eq!(recovered.dialog_turn_ids[0], failed_turn);
-        let context = manager.get_context_messages(id).await.unwrap();
-        assert!(context.iter().any(|message| message.id == original[0].id));
-        assert!(!context.iter().any(|message| message.id == original[1].id));
-        assert!(coordinator.event_queue.dequeue_batch(100).await.iter().any(|event| matches!(
+                    ..
+                }
+            ));
+
+            // Local recovery must not become permission to ignore fatal failures.
+            manager
+                .update_session_state(
+                    id,
+                    SessionState::Error {
+                        error: "Unrecoverable session failure".into(),
+                        recoverable: false,
+                    },
+                )
+                .await
+                .unwrap();
+            assert!(coordinator
+                .start_manual_compaction_task(id.clone(), None, true)
+                .await
+                .is_err());
+            assert_eq!(
+                manager.get_session(id).unwrap().dialog_turn_ids,
+                vec![failed_turn.clone()]
+            );
+            assert_eq!(
+                serde_json::to_value(manager.get_context_messages(id).await.unwrap()).unwrap(),
+                serde_json::to_value(&original).unwrap()
+            );
+
+            manager
+                .update_session_state(
+                    id,
+                    SessionState::Error {
+                        error: "Provider context limit exceeded".into(),
+                        recoverable: true,
+                    },
+                )
+                .await
+                .unwrap();
+            let task = coordinator
+                .start_manual_compaction_task(id.clone(), None, true)
+                .await
+                .unwrap();
+            task.completion.await.unwrap().unwrap();
+            let recovered = manager.get_session(id).unwrap();
+            assert!(matches!(recovered.state, SessionState::Idle));
+            assert_eq!(recovered.compression_state.compression_count, 1);
+            assert_eq!(recovered.dialog_turn_ids.len(), 2);
+            assert_eq!(recovered.dialog_turn_ids[0], failed_turn);
+            let context = manager.get_context_messages(id).await.unwrap();
+            assert!(context.iter().any(|message| message.id == original[0].id));
+            assert!(!context.iter().any(|message| message.id == original[1].id));
+            assert!(coordinator.event_queue.dequeue_batch(100).await.iter().any(|event| matches!(
             &event.event,
             AgenticEvent::ContextCompressionCompleted { has_summary: false, summary_source, applied: true, .. }
                 if summary_source == "local_truncation"
         )));
+        }
     }
 
     #[tokio::test]
@@ -18577,6 +18660,76 @@ pub(crate) mod tests {
             btw_session_memory_mode(true, true),
             SessionMemoryMode::Enabled
         );
+    }
+
+    #[tokio::test]
+    async fn subagent_concurrency_uses_global_capacity_for_all_ordinary_agent_types() {
+        use super::SubagentConcurrencyPermitGuard;
+        use tokio::time::Instant;
+
+        let (coordinator, _) = test_coordinator();
+        let limiter = coordinator.get_subagent_concurrency_limiter().await;
+        let capacity = limiter.max_concurrency;
+        let agent_types = [
+            "Explore",
+            "Cowork",
+            "ResearchSpecialist",
+            "ReviewSecurity",
+            "Standard",
+        ];
+        let mut guards = Vec::new();
+        for index in 0..capacity {
+            let agent_type = agent_types[index % agent_types.len()];
+            let (permits, _) = coordinator
+                .acquire_subagent_concurrency_permit(
+                    agent_type,
+                    None,
+                    Some(Instant::now() + Duration::from_secs(5)),
+                )
+                .await
+                .expect("ordinary agents should share all configured global slots");
+            assert_eq!(permits.len(), 1);
+            assert!(Arc::ptr_eq(&permits[0].1.semaphore, &limiter.semaphore));
+            guards.push(SubagentConcurrencyPermitGuard::new(
+                permits,
+                agent_type.to_string(),
+            ));
+        }
+        assert_eq!(limiter.semaphore.available_permits(), 0);
+
+        let timed_out = coordinator
+            .acquire_subagent_concurrency_permit("Explore", None, Some(Instant::now()))
+            .await;
+        assert!(matches!(
+            timed_out,
+            Err(crate::util::errors::OpenBitFunError::Timeout(_))
+        ));
+
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let cancelled_wait = coordinator
+            .acquire_subagent_concurrency_permit("ResearchSpecialist", Some(&cancelled), None)
+            .await;
+        assert!(matches!(
+            cancelled_wait,
+            Err(crate::util::errors::OpenBitFunError::Cancelled(_))
+        ));
+
+        guards.pop();
+        let (permits, _) = coordinator
+            .acquire_subagent_concurrency_permit(
+                "ResearchSpecialist",
+                None,
+                Some(Instant::now() + Duration::from_secs(5)),
+            )
+            .await
+            .expect("releasing a slot should admit a different ordinary agent type");
+        drop(SubagentConcurrencyPermitGuard::new(
+            permits,
+            "ResearchSpecialist".to_string(),
+        ));
+        drop(guards);
+        assert_eq!(limiter.semaphore.available_permits(), capacity);
     }
 
     #[tokio::test]
@@ -19608,6 +19761,389 @@ pub(crate) mod tests {
             .delete_session_by_id(&session.session_id)
             .await
             .expect("clean up persisted test session");
+    }
+
+    async fn relay_observer_fixture(
+        label: &str,
+    ) -> (
+        tempfile::TempDir,
+        ConversationCoordinator,
+        Arc<SessionManager>,
+        String,
+        PathBuf,
+        String,
+    ) {
+        let workspace = tempfile::tempdir().expect("workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, session_manager) = test_persistent_coordinator();
+        let session = session_manager
+            .create_session(
+                label.to_string(),
+                "Standard".to_string(),
+                SessionConfig {
+                    tool_presentation_mode: Default::default(),
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create session");
+        let storage = session_manager
+            .effective_session_storage_path(&session.session_id)
+            .await
+            .expect("session storage path");
+        let turn_id = session_manager
+            .start_dialog_turn(
+                &session.session_id,
+                "Standard".to_string(),
+                "observe".to_string(),
+                Some(format!("turn-{label}")),
+                None,
+                None,
+            )
+            .await
+            .expect("start turn");
+        let message = Message::assistant("observer history".to_string())
+            .with_turn_id(turn_id.clone())
+            .with_round_id("round-observer".to_string());
+        ConversationCoordinator::persist_completed_dialog_turn(
+            coordinator.event_queue.as_ref(),
+            session_manager.as_ref(),
+            None,
+            &session.session_id,
+            &turn_id,
+            &ExecutionResult {
+                final_message: message.clone(),
+                total_rounds: 1,
+                success: true,
+                new_messages: vec![message],
+                finish_reason: FinishReason::Complete,
+                total_tools: 0,
+                duration_ms: 1,
+                partial_recovery_reason: None,
+                effective_finish_reason: "complete".to_string(),
+                has_final_response: true,
+            },
+            None,
+        )
+        .await;
+        (
+            workspace,
+            coordinator,
+            session_manager,
+            session.session_id,
+            storage,
+            turn_id,
+        )
+    }
+
+    #[tokio::test]
+    async fn load_relay_session_turns_projects_history_while_a_turn_holds_the_mutation_lease() {
+        let (_workspace, coordinator, session_manager, session_id, storage, turn_id) =
+            relay_observer_fixture("lease-held-observer").await;
+        // A Turn waiting on an unanswered question keeps this lease for its
+        // whole life; the observer read must not wait for it to finish.
+        let _turn_lease = session_manager
+            .acquire_session_mutation(&session_id)
+            .await
+            .expect("turn lease");
+        let turns = tokio::time::timeout(
+            super::RELAY_HISTORY_OBSERVER_LEASE_WAIT + Duration::from_secs(10),
+            coordinator.load_relay_session_turns(&storage, &session_id, None),
+        )
+        .await
+        .expect("observer read must not wait for the lease owner")
+        .expect("observer read projects persisted history");
+        assert_eq!(
+            turns
+                .iter()
+                .map(|turn| turn.turn_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![turn_id.as_str()]
+        );
+
+        // A staged undo is a stable visible projection and stays readable.
+        session_manager
+            .persistence_manager()
+            .save_session_revert_state(
+                &storage,
+                &session_id,
+                &crate::agentic::session::revert::SessionRevertState {
+                    schema_version: crate::agentic::session::revert::SESSION_REVERT_SCHEMA_VERSION,
+                    boundary_turn: 0,
+                    original_turn_end: 1,
+                    phase: crate::agentic::session::revert::SessionRevertPhase::Staged,
+                    workspace_checkpoint: Vec::new(),
+                },
+            )
+            .await
+            .expect("stage revert");
+        let staged = coordinator
+            .load_relay_session_turns(&storage, &session_id, None)
+            .await
+            .expect("staged undo remains readable without the lease");
+        assert!(staged.is_empty(), "staged undo hides the reverted suffix");
+    }
+
+    #[tokio::test]
+    async fn load_relay_session_turns_keep_owner_restart_reclamation_without_the_mutation_lease() {
+        let (_workspace, coordinator, session_manager, session_id, storage, _turn_id) =
+            relay_observer_fixture("restart-reclamation").await;
+        session_manager
+            .unload_session_from_memory(&session_id)
+            .await
+            .expect("unload the previous owner");
+        let mut live = crate::service::session::DialogTurnData::new(
+            "turn-left-running".to_string(),
+            1,
+            session_id.clone(),
+            crate::service::session::UserMessageData {
+                id: "user-left-running".to_string(),
+                content: "left running".to_string(),
+                timestamp: 0,
+                metadata: None,
+            },
+        );
+        live.status = TurnStatus::InProgress;
+        session_manager
+            .persistence_manager()
+            .save_dialog_turn(&storage, &live)
+            .await
+            .expect("persist a turn left running by a stopped owner");
+
+        async fn read(
+            coordinator: &ConversationCoordinator,
+            storage: &Path,
+            session_id: &str,
+        ) -> crate::service::session::DialogTurnData {
+            coordinator
+                .load_relay_session_turns(storage, session_id, None)
+                .await
+                .expect("observer read")
+                .into_iter()
+                .find(|turn| turn.turn_id == "turn-left-running")
+                .expect("running turn is visible")
+        }
+
+        // No owner holds the writer: both read paths project the interruption.
+        let leased = read(&coordinator, &storage, &session_id).await;
+        let mutation = session_manager
+            .acquire_session_mutation(&session_id)
+            .await
+            .expect("in-process mutation lease");
+        let lease_free = read(&coordinator, &storage, &session_id).await;
+        for turn in [&leased, &lease_free] {
+            assert_eq!(turn.status, TurnStatus::Cancelled);
+            assert_eq!(turn.finish_reason.as_deref(), Some("interrupted"));
+        }
+
+        // Another owner holds the writer: absence from memory is not proof of
+        // interruption on either path.
+        let writer = session_manager
+            .persistence_manager()
+            .lock_session_writes(&storage, &session_id)
+            .expect("simulated live owner");
+        let lease_free = read(&coordinator, &storage, &session_id).await;
+        drop(mutation);
+        let leased = read(&coordinator, &storage, &session_id).await;
+        for turn in [&leased, &lease_free] {
+            assert_eq!(turn.status, TurnStatus::InProgress);
+            assert_eq!(turn.finish_reason, None);
+        }
+        drop(writer);
+
+        // Observer projection never rewrites the persisted record.
+        let persisted = session_manager
+            .persistence_manager()
+            .load_visible_session_turns(&storage, &session_id)
+            .await
+            .expect("persisted turns");
+        assert!(persisted.iter().any(
+            |turn| turn.turn_id == "turn-left-running" && turn.status == TurnStatus::InProgress
+        ));
+    }
+
+    #[tokio::test]
+    async fn load_relay_session_turns_refuses_unfinished_undo_without_the_mutation_lease() {
+        let (_workspace, coordinator, session_manager, session_id, storage, _turn_id) =
+            relay_observer_fixture("lease-held-undo").await;
+        for phase in [
+            crate::agentic::session::revert::SessionRevertPhase::Applying,
+            crate::agentic::session::revert::SessionRevertPhase::Clearing,
+            crate::agentic::session::revert::SessionRevertPhase::Committing,
+        ] {
+            session_manager
+                .persistence_manager()
+                .save_session_revert_state(
+                    &storage,
+                    &session_id,
+                    &crate::agentic::session::revert::SessionRevertState {
+                        schema_version:
+                            crate::agentic::session::revert::SESSION_REVERT_SCHEMA_VERSION,
+                        boundary_turn: 0,
+                        original_turn_end: 1,
+                        phase,
+                        workspace_checkpoint: Vec::new(),
+                    },
+                )
+                .await
+                .expect("persist unfinished undo");
+            let _writer = session_manager
+                .acquire_session_mutation(&session_id)
+                .await
+                .expect("undo writer lease");
+            let error = coordinator
+                .load_relay_session_turns(&storage, &session_id, None)
+                .await
+                .expect_err("an unfinished undo must not be projected without the lease");
+            assert!(
+                matches!(error, OpenBitFunError::OutcomeUnknown(_)),
+                "unexpected error for {phase:?}: {error:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn async_agent_spawn_links_the_child_session_on_the_parent_tool_item() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, session_manager) = test_persistent_coordinator();
+        let parent = session_manager
+            .create_session(
+                "Async delegation parent".to_string(),
+                "Ultimate".to_string(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create parent session");
+        let child = session_manager
+            .create_session(
+                "Async delegation child".to_string(),
+                "GeneralPurpose".to_string(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    model_id: Some("child-subagent-model".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create spawned child session");
+        let parent_turn_id = session_manager
+            .start_dialog_turn(
+                &parent.session_id,
+                "Ultimate".to_string(),
+                "delegate the audit".to_string(),
+                Some("turn-async-agent-spawn".to_string()),
+                None,
+                None,
+            )
+            .await
+            .expect("start parent turn");
+        let tool_call_id = "tool-call-agent-spawn".to_string();
+        let spawning_round = Message::assistant_with_tools(
+            String::new(),
+            vec![ToolCall {
+                tool_id: tool_call_id.clone(),
+                tool_name: "AgentSpawn".to_string(),
+                arguments: serde_json::json!({
+                    "prompt": "audit the widget",
+                    "agent_type": "GeneralPurpose",
+                    "run_in_background": true,
+                }),
+                raw_arguments: None,
+                is_error: false,
+                parse_error: None,
+                recovered_from_truncation: false,
+                repair_kind: Default::default(),
+            }],
+        )
+        .with_turn_id(parent_turn_id.clone())
+        .with_round_id("round-async-agent-spawn".to_string());
+        let started_result = Message::tool_result(crate::agentic::core::ToolResult {
+            tool_id: tool_call_id.clone(),
+            tool_name: "AgentSpawn".to_string(),
+            effective_tool_name: None,
+            result: serde_json::json!({
+                "context_mode": "isolated",
+                "status": "started",
+                "run_in_background": true,
+                "bg_task_id": "bg-task-1",
+                "agent_id": "agent-1",
+            }),
+            result_for_assistant: Some("Background agent started".to_string()),
+            is_error: false,
+            duration_ms: Some(4),
+            image_attachments: None,
+        })
+        .with_turn_id(parent_turn_id.clone())
+        .with_round_id("round-async-agent-spawn".to_string());
+        session_manager
+            .add_messages(&parent.session_id, vec![spawning_round, started_result])
+            .await
+            .expect("record the spawning round and its started result");
+
+        // An asynchronous spawn returns while the parent Turn is still running,
+        // so the link has to reach the parent Turn's persisted tool item.
+        coordinator
+            .stamp_subagent_link_on_parent_tool_item(
+                &SubagentParentInfo {
+                    tool_call_id: tool_call_id.clone(),
+                    session_id: parent.session_id.clone(),
+                    dialog_turn_id: parent_turn_id.clone(),
+                },
+                &child.session_id,
+                "turn-child-subagent",
+            )
+            .await;
+
+        let storage = session_manager
+            .effective_session_storage_path(&parent.session_id)
+            .await
+            .expect("parent session storage path");
+        let turns = coordinator
+            .load_relay_session_turns(&storage, &parent.session_id, Some(&parent_turn_id))
+            .await
+            .expect("relay read of the running parent turn");
+        let item = turns
+            .iter()
+            .flat_map(|turn| turn.model_rounds.iter())
+            .flat_map(|round| round.tool_items.iter())
+            .find(|item| item.id == tool_call_id)
+            .expect("the spawning tool item survives the relay read");
+        assert_eq!(
+            item.tool_name, "AgentSpawn",
+            "the link belongs to the spawning tool item"
+        );
+        assert_eq!(
+            item.subagent_session_id.as_deref(),
+            Some(child.session_id.as_str())
+        );
+        assert_eq!(
+            item.subagent_dialog_turn_id.as_deref(),
+            Some("turn-child-subagent")
+        );
+        assert_eq!(
+            item.subagent_model_id.as_deref(),
+            Some("child-subagent-model")
+        );
+        // The record stream serializes the persisted item as it is, so a remote
+        // consumer reads the link under its camelCase wire name.
+        assert_eq!(
+            serde_json::to_value(item).expect("item serializes")["subagentSessionId"],
+            serde_json::json!(child.session_id)
+        );
+
+        session_manager
+            .delete_session_by_id(&parent.session_id)
+            .await
+            .expect("clean up persisted parent session");
+        session_manager
+            .delete_session_by_id(&child.session_id)
+            .await
+            .expect("clean up persisted child session");
     }
 
     #[tokio::test]

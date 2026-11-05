@@ -1,3 +1,4 @@
+import { RelayMessageEncoding } from './RelayMessageEncoding';
 import { HostSessionStream, HostSessionCallbacks, HostSessionSource, HostStreamHint, HostStreamPage, HostStreamReadRequest, HostStreamHintPlaintext, parseHostStreamHint } from './HostSessionStream';
 import { AccountRealtime } from './AccountRealtime';
 import { CLIENT_PROTOCOL_VERSION, clientVersion } from './ClientBuild';
@@ -444,17 +445,23 @@ export class CloudAccountClient {
     const socket = this.connection(relayUrl, session.token);
     const messageKey = await this.peerMessageKey(relayUrl, session, target);
     const nonce = Encoding.randomBytes(12);
+    await socket.ready();
+    const encodings = socket.peerEncodings;
+    const plainCommand = Encoding.utf8ToBytes(JSON.stringify(command));
+    const encodedCommand = encodings.has(target) && plainCommand.byteLength > 256
+      ? await RelayMessageEncoding.encode(plainCommand) : plainCommand;
     const encrypted = await this.cipher.encrypt(
-      Encoding.utf8ToBytes(JSON.stringify(command)),
+      encodedCommand,
       messageKey,
       nonce
     );
     const body: EncryptedPayload = {
       encrypted_data: Encoding.bytesToBase64(encrypted),
-      nonce: Encoding.bytesToBase64(nonce)
+      nonce: Encoding.bytesToBase64(nonce),
+      accept_encoding: 'zstd-1'
     };
     RemoteLogger.info(`device rpc cmd=${command.cmd || 'unknown'} bytes=${body.encrypted_data.length}`);
-    const response = await socket.call(target, body, timeoutMs);
+    const response = await socket.call(target, body, timeoutMs, encodedCommand[0] === 0xff ? encodings : undefined);
     let plain: Uint8Array;
     try {
       plain = await this.cipher.decrypt(
@@ -467,7 +474,9 @@ export class CloudAccountClient {
       this.forgetPeerKey(session, target);
       throw OhosError.wrap('device rpc decrypt', err);
     }
-    const parsed = Encoding.parseJsonObject<T>(Encoding.bytesToUtf8(plain));
+    const parsed = Encoding.parseJsonObject<T>(Encoding.bytesToUtf8(await RelayMessageEncoding.decode(plain)));
+    if (response.accept_encoding === 'zstd-1') encodings.add(target);
+    else encodings.delete(target);
     if (parsed.resp === 'error') {
       throw new Error(parsed.message || 'Remote device command failed.');
     }
@@ -525,19 +534,21 @@ export class CloudAccountClient {
       const frame = data as DeviceEventFrame;
       if (event !== 'ephemeral' || frame.type !== 'device-event') return;
       if (frame.sourceDeviceId !== target || !frame.params) return;
-      void this.decodeStreamHint(relayUrl, session, target, frame.params).then((hint?: HostStreamHint) => {
+      void this.decodeStreamHint(relayUrl, session, target, frame.params, socket.peerEncodings).then((hint?: HostStreamHint) => {
         if (hint) listener(hint);
       });
     });
   }
 
   private async decodeStreamHint(relayUrl: string, session: CloudAccountSession, target: string,
-    params: EncryptedPayload): Promise<HostStreamHint | undefined> {
+    params: EncryptedPayload, encodings: Set<string>): Promise<HostStreamHint | undefined> {
     try {
       const key = await this.peerMessageKey(relayUrl, session, target);
       const plain = await this.cipher.decrypt(Encoding.base64ToBytes(params.encrypted_data), key,
         Encoding.base64ToBytes(params.nonce));
-      const body = Encoding.parseJsonObject<HostStreamHintPlaintext>(Encoding.bytesToUtf8(plain));
+      const body = Encoding.parseJsonObject<HostStreamHintPlaintext>(Encoding.bytesToUtf8(await RelayMessageEncoding.decode(plain)));
+      if (params.accept_encoding === 'zstd-1') encodings.add(target);
+      else encodings.delete(target);
       return parseHostStreamHint(target, body);
     } catch (err) {
       // A frame this key cannot open means the peer re-keyed or the frame was

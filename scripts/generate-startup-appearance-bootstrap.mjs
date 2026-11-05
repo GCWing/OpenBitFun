@@ -13,10 +13,6 @@ const outputPath = path.join(
   repoRoot,
   'src/apps/desktop/src/generated/startup_appearance_bootstrap.json',
 );
-const appearancePromptSnapshotOutputPath = path.join(
-  repoRoot,
-  'src/crates/assembly/core/src/agentic/tools/implementations/generated/appearance_prompt_snapshots.json',
-);
 const desktopBootstrapThemeOutputPath = path.join(
   repoRoot,
   'src/apps/desktop/src/generated/bootstrap_theme.css',
@@ -59,12 +55,10 @@ try {
   const [
     { builtinAppearancePalettes },
     { createStartupAppearanceBootstrapManifest },
-    { createAppearancePromptSnapshotManifest },
     { themes, themeCssVariables },
   ] = await Promise.all([
     server.ssrLoadModule('/src/infrastructure/appearance/builtins/palettes.ts'),
     server.ssrLoadModule('/src/infrastructure/appearance/builtins/startupAppearanceBootstrap.ts'),
-    server.ssrLoadModule('/src/infrastructure/appearance/builtins/appearancePromptSnapshots.ts'),
     import(pathToFileURL(themePackageEntryPath).href),
   ]);
 
@@ -73,11 +67,6 @@ try {
       label: 'Startup appearance bootstrap manifest',
       outputPath,
       content: `${JSON.stringify(createStartupAppearanceBootstrapManifest(builtinAppearancePalettes), null, 2)}\n`,
-    },
-    {
-      label: 'Appearance prompt snapshot manifest',
-      outputPath: appearancePromptSnapshotOutputPath,
-      content: `${JSON.stringify(createAppearancePromptSnapshotManifest(builtinAppearancePalettes), null, 2)}\n`,
     },
     {
       label: 'Desktop bootstrap theme projection',

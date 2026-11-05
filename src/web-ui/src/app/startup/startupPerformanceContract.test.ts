@@ -24,13 +24,15 @@ function staticImportSpecifiers(source: string): string[] {
 }
 
 describe('startup performance contract', () => {
-  it('creates native glass with a transparent background instead of repainting it after load', () => {
+  it('configures native material before window creation instead of repainting it after load', () => {
     const source = readSource('../../../../apps/desktop/src/appearance.rs');
+    const material = readSource('../../../../apps/desktop/src/window_material.rs');
     const mainWindow = source.slice(source.indexOf('pub fn create_main_window('), source.indexOf('fn show_main_window_for_startup('));
 
-    expect(mainWindow).toContain('.transparent(true)');
-    expect(mainWindow).toContain('.background_color(tauri::window::Color(0, 0, 0, 0))');
-    expect(mainWindow).toContain('tauri::window::Effect::Acrylic');
+    expect(mainWindow).toContain('crate::window_material::configure_main_window(');
+    expect(material).toContain('.transparent(true)');
+    expect(material).toContain('.background_color(tauri::window::Color(0, 0, 0, 0))');
+    expect(material).toContain('tauri::window::Effect::Acrylic');
     // The Windows host fill ignores alpha during repaint. Changing its color
     // after page load can cover the native material even with transparent CSS.
     expect(mainWindow).not.toContain('.set_background_color(');
@@ -98,7 +100,8 @@ describe('startup performance contract', () => {
     const appSource = readSource('../App.tsx');
 
     expect(appSource).toContain('const MIN_SPLASH_MS = 650;');
-    expect(source).toContain('animation: openbitfun-startup-overlay-exit 0.24s ease-in-out both;');
+    expect(source).toContain('animation: openbitfun-startup-overlay-exit 0.2s ease-in-out both;');
+    expect(source).toContain('animation-duration: 0.12s;');
   });
 
   it('keeps editor and tool infrastructure out of the first startup module', () => {
@@ -298,7 +301,8 @@ describe('startup performance contract', () => {
       startupOverlayVisible: false,
     })).toBe(true);
     expect(source).toContain('shouldScheduleDeferredStartupSystems({ interactiveShellReady, startupOverlayVisible })');
-    expect(source).toContain('window.dispatchEvent(new CustomEvent(STARTUP_OVERLAY_HIDDEN_EVENT))');
+    // The overlay owner also signals error-recovery exits and deduplicates callers.
+    expect(readSource('./startupOverlay.ts')).toContain('window.dispatchEvent(new CustomEvent(STARTUP_OVERLAY_HIDDEN_EVENT))');
     expect(source).toContain('}, [interactiveShellReady, startupOverlayVisible]);');
   });
 
@@ -318,7 +322,7 @@ describe('startup performance contract', () => {
     expect(source).not.toMatch(/useCurrentModelConfig/);
     expect(source).not.toMatch(/from\s+['"]@\/infrastructure\/config\/services\/AIExperienceConfigService['"]/);
     expect(source).toContain('openbitfun:interactive-shell-ready');
-    expect(source).toContain('STARTUP_OVERLAY_HIDDEN_EVENT');
+    expect(source).toContain('hideStartupOverlay()');
   });
 
   it('keeps the heavy app layout out of the root startup module', () => {
@@ -685,9 +689,8 @@ describe('startup performance contract', () => {
     const sources = [
       '../../app/scenes/shell/ShellNav.tsx',
       '../../infrastructure/markdown/MarkdownRenderer.tsx',
-      '../../flow_chat/tool-cards/GenerativeWidgetToolCard.tsx',
+      '../../flow_chat/components/GenerativeWidgetInline.tsx',
       '../../tools/file-system/components/FileSearchResults.tsx',
-      '../../tools/generative-widget/useGenerativeWidgetPromptMenu.ts',
       '../../shared/notification-system/providers/NotificationContextMenuProvider.ts',
     ].map(readSource);
 

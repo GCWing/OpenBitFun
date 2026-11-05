@@ -14,6 +14,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod turn_history;
+use turn_history::TurnSnapshot;
+pub use turn_history::{TurnHistoryPage, TurnHistoryRequest, MAX_TURN_HISTORY_PAGE_BYTES};
+
 /// Contains a separator rejected by runtime Session IDs, so control metadata
 /// cannot alias a user's session.
 pub const HOST_CATALOG_ID: &str = "@host/catalog";
@@ -21,6 +25,7 @@ pub const HOST_CATALOG_ID: &str = "@host/catalog";
 pub const HOST_STREAM_CHANGED_EVENT: &str = "host-stream-changed";
 /// Advertised in `get_workspace_info.capabilities` by hosts serving `read_stream`.
 pub const REMOTE_CAPABILITY_HOST_STREAM_V1: &str = "host_stream_v1";
+pub const REMOTE_CAPABILITY_TURN_HISTORY_V1: &str = "host_stream_turn_history_v1";
 /// Returned to controllers that still ask for a relay-stored session key.
 pub const RELAY_SESSION_HISTORY_RETIRED_MESSAGE: &str = "Relay-stored session history has been retired; session content is now read directly from the online host. Update the controlling app to continue.";
 
@@ -44,6 +49,8 @@ pub struct StreamEvent {
 
 /// One `read_stream` answer. `cursor` is the newest sequence the host holds;
 /// forward reads continue after it, history reads continue before `events[0]`.
+/// A history page starts on a turn boundary whenever its bounds allow, so it can
+/// hold more than the requested `limit` events; see `StreamLog::backward_page`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StreamPage {
     pub stream_id: String,
@@ -57,6 +64,9 @@ pub struct StreamPage {
     /// Older history was evicted from host memory; `has_more=false` then means
     /// "unavailable", not "complete".
     pub truncated: bool,
+    /// Present only when the host accepted the optional single-Turn read offer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_history: Option<TurnHistoryPage>,
 }
 
 /// A stream read request as carried by `RemoteCommand::ReadStream`.
@@ -77,6 +87,9 @@ pub struct StreamReadRequest {
     /// Keep (or start) receiving change hints for this stream.
     #[serde(default)]
     pub subscribe: bool,
+    /// Optional read negotiation. Older hosts ignore it and return ordinary pages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_history: Option<TurnHistoryRequest>,
 }
 
 /// Delivers an encrypted `DeviceEvent` hint to one subscribed device. Hosts own
@@ -108,6 +121,28 @@ struct HistoryReader {
     newer_evicted: bool,
 }
 
+/// The extent of one history page, see `StreamLog::backward_page`.
+struct BackwardPage {
+    /// Oldest sequence of the page; `None` when nothing lies before the request.
+    start: Option<u64>,
+    /// Older events could not change this page, so none need materializing.
+    settled: bool,
+}
+
+/// The turn a session record belongs to, and whether it is that turn's header.
+/// Control events and tombstones name no turn.
+fn record_turn(event: &StreamEvent) -> Option<(&str, bool)> {
+    if event.event != "session-record" {
+        return None;
+    }
+    let turn = event.payload["turn"]["turnId"].as_str()?;
+    let is_header = event.payload["id"]
+        .as_str()
+        .and_then(|id| id.strip_prefix("turn/"))
+        == Some(turn);
+    Some((turn, is_header))
+}
+
 struct StreamLog {
     history: Option<HistoryReader>,
     epoch: u64,
@@ -119,6 +154,10 @@ struct StreamLog {
     truncated: bool,
     subscribers: HashMap<String, Instant>,
     last_activity: Instant,
+    turn_snapshots: HashMap<String, TurnSnapshot>,
+    /// Snapshot identities participate in tombstones, but must not suppress a
+    /// later live publication that other subscribers have not received yet.
+    snapshot_record_turns: HashMap<String, String>,
 }
 
 impl StreamLog {
@@ -134,6 +173,8 @@ impl StreamLog {
             truncated: false,
             subscribers: HashMap::new(),
             last_activity: Instant::now(),
+            turn_snapshots: HashMap::new(),
+            snapshot_record_turns: HashMap::new(),
         }
     }
 
@@ -221,6 +262,71 @@ impl StreamLog {
         self.events.keys().next().copied().unwrap_or(self.next_seq)
     }
 
+    /// Measure a history page ending just before `before`. `limit` is a budget:
+    /// once spent, the page keeps growing to the first record of the turn it
+    /// stopped in, because a turn split across pages is rebuilt in place when the
+    /// older page arrives, which moves the transcript under its reader.
+    ///
+    /// `MAX_PAGE_EVENTS` and `PAGE_BYTES` stay hard bounds. A turn that cannot fit
+    /// gives way to the newer whole turns of the page; only a page holding no turn
+    /// header at all (one enormous turn) stays partial, and always makes progress.
+    ///
+    /// Headers lead their turn in backfill. A live status change republishes only
+    /// the header, above its unchanged items; when the budget runs out on such a
+    /// header the page ends there and those items arrive with the older page.
+    /// Sizes are inspected by reference: `read_history` calls this once per
+    /// materialized record, and cloning here would make a read quadratic in bytes.
+    fn backward_page(&self, before: u64, limit: usize) -> BackwardPage {
+        let mut start = None;
+        let mut count = 0;
+        let mut bytes = 0;
+        let mut oldest_turn = None;
+        let mut oldest_is_header = false;
+        let mut oldest_header = None;
+        let mut bounded = false;
+        let mut other_turn = false;
+        for (&seq, (event, size)) in self.events.range(..before).rev() {
+            if count > 0 && (count >= MAX_PAGE_EVENTS || bytes + size > PAGE_BYTES) {
+                bounded = true;
+                break;
+            }
+            let record = record_turn(event);
+            if count >= limit {
+                other_turn = match record {
+                    Some((turn, _)) => oldest_turn != Some(turn),
+                    None => oldest_turn.is_none(),
+                };
+                if other_turn {
+                    break;
+                }
+            }
+            count += 1;
+            bytes += size;
+            if let Some((turn, is_header)) = record {
+                oldest_turn = Some(turn);
+                oldest_is_header = is_header;
+                if is_header {
+                    oldest_header = Some(seq);
+                }
+            }
+            // Past the budget, control events join only between records of the
+            // turn; trailing ones wait for the next page.
+            if count <= limit || record.is_some() {
+                start = Some(seq);
+            }
+        }
+        bounded = bounded || bytes >= PAGE_BYTES || count >= MAX_PAGE_EVENTS;
+        if bounded && !oldest_is_header && oldest_header.is_some() {
+            start = oldest_header;
+        }
+        BackwardPage {
+            start,
+            settled: bounded
+                || other_turn
+                || (count >= limit && (oldest_is_header || oldest_turn.is_none())),
+        }
+    }
+
     fn read(&self, stream_id: &str, request: &StreamReadRequest) -> Result<StreamPage> {
         if request.after.is_some() && request.before.is_some() {
             bail!("read_stream accepts either after or before, not both");
@@ -244,17 +350,17 @@ impl StreamLog {
             iter.peek().is_some()
         } else {
             let before = request.before.unwrap_or(u64::MAX);
-            let mut iter = self.events.range(..before).rev().peekable();
-            while let Some((_, (event, size))) = iter.peek() {
-                if !events.is_empty() && (events.len() >= limit || bytes + size > PAGE_BYTES) {
-                    break;
+            match self.backward_page(before, limit).start {
+                Some(start) => {
+                    events.extend(
+                        self.events
+                            .range(start..before)
+                            .map(|(_, (event, _))| event.clone()),
+                    );
+                    self.events.range(..start).next().is_some()
                 }
-                events.push((*event).clone());
-                bytes += size;
-                iter.next();
+                None => false,
             }
-            events.reverse();
-            iter.peek().is_some()
         };
         Ok(StreamPage {
             stream_id: stream_id.to_owned(),
@@ -269,6 +375,7 @@ impl StreamLog {
             cursor: self.latest(),
             oldest_seq: self.oldest(),
             truncated: self.truncated,
+            turn_history: None,
         })
     }
 }
@@ -382,6 +489,10 @@ impl HostStreamHub {
                 let now = Instant::now();
                 state.streams.retain(|_, log| {
                     log.subscribers.retain(|_, expires| *expires > now);
+                    log.turn_snapshots.retain(|_, snapshot| {
+                        now.duration_since(snapshot.last_activity) < STREAM_GRACE
+                            && log.subscribers.contains_key(&snapshot.device)
+                    });
                     !log.subscribers.is_empty()
                         || now.duration_since(log.last_activity) < STREAM_GRACE
                 });
@@ -464,7 +575,10 @@ impl HostStreamHub {
         let Some(log) = state.streams.get_mut(session_id) else {
             return false;
         };
-        if log.history.is_none() {
+        if log.history.is_none()
+            && log.turn_snapshots.is_empty()
+            && log.snapshot_record_turns.is_empty()
+        {
             return false;
         }
         let subscribers = std::mem::take(&mut log.subscribers);
@@ -506,6 +620,9 @@ impl HostStreamHub {
         F: FnMut(Option<usize>) -> Fut,
         Fut: std::future::Future<Output = Result<HistoryBatch>>,
     {
+        if let Some(history) = &request.turn_history {
+            return self.read_turn_history(device, request, history, load).await;
+        }
         if request.after.is_some() && request.before.is_some() {
             bail!("read_stream accepts either after or before, not both");
         }
@@ -566,23 +683,11 @@ impl HostStreamHub {
                     .get_mut(&request.stream_id)
                     .context("History stream expired")?;
                 let before = request.before.unwrap_or(u64::MAX);
-                let mut count = 0;
-                let mut bytes = 0;
-                let mut page_full = false;
-                // Inspect sizes by reference. Cloning the growing page once per
-                // inserted record turns a bounded read into quadratic copying.
-                for (_, (_, size)) in log.events.range(..before).rev() {
-                    if count > 0 && (count >= limit || bytes + size > PAGE_BYTES) {
-                        page_full = true;
-                        break;
-                    }
-                    count += 1;
-                    bytes += size;
-                }
-                if count >= limit || bytes >= PAGE_BYTES || page_full {
+                let page = log.backward_page(before, limit);
+                if page.settled {
                     break;
                 }
-                if log.truncated && count == 0 {
+                if log.truncated && page.start.is_none() {
                     bail!("Older history exceeded the host stream memory budget; reopen the session to reload its latest page");
                 }
                 let Some(history) = log.history.as_mut() else {
@@ -681,6 +786,8 @@ impl HostStreamHub {
         let mut state = self.lock();
         if let Some(log) = state.streams.get_mut(stream_id) {
             log.subscribers.remove(source_device_id);
+            log.turn_snapshots
+                .retain(|_, snapshot| snapshot.device != source_device_id);
             log.last_activity = Instant::now();
         }
     }
@@ -692,6 +799,8 @@ impl HostStreamHub {
         for log in state.streams.values_mut() {
             log.subscribers
                 .retain(|device, _| online_device_ids.iter().any(|id| id == device));
+            log.turn_snapshots
+                .retain(|_, snapshot| online_device_ids.contains(&snapshot.device));
         }
     }
 
@@ -853,11 +962,16 @@ fn diff_records(
     let removed: Vec<String> = log
         .record_index
         .iter()
-        .filter(|(id, entry)| !present.contains(*id) && (full || scope.contains(&entry.turn)))
+        .map(|(id, entry)| (id, &entry.turn))
+        .chain(log.snapshot_record_turns.iter())
+        .filter(|(id, turn)| !present.contains(*id) && (full || scope.contains(*turn)))
         .map(|(id, _)| id.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
         .collect();
     for id in removed {
         log.record_index.remove(&id);
+        log.snapshot_record_turns.remove(&id);
         changed.push(serde_json::json!({"sessionId":session_id,"id":id,"deleted":true}));
     }
     if changed.is_empty() {
@@ -898,10 +1012,17 @@ mod tests {
             "item":{"type":"text","data":{"id":format!("{turn}-{item}"),"content":"original"}}})
     }
 
+    fn history_header(turn: usize) -> Value {
+        serde_json::json!({"sessionId":"s", "id":format!("turn/t{turn}"),
+            "turn":{"turnId":format!("t{turn}"), "turnIndex":turn}})
+    }
+
     async fn history_fixture(before: Option<usize>) -> Result<HistoryBatch> {
         let turn = before.unwrap_or(100).saturating_sub(1);
+        let mut records = vec![history_header(turn)];
+        records.extend((0..3).map(|item| history_record(turn, item)));
         Ok(HistoryBatch {
-            records: (0..3).map(|item| history_record(turn, item)).collect(),
+            records,
             before: (turn > 0).then_some(turn),
         })
     }
@@ -920,9 +1041,9 @@ mod tests {
         };
         let first = hub.read_history("phone", &request, load).await.unwrap();
         assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert_eq!(first.events.len(), 2);
+        assert_eq!(first.events.len(), 4, "the budget grows to the turn header");
         assert!(first.has_more);
-        assert_eq!(first.events[0].payload["id"], "item/99-1");
+        assert_eq!(first.events[0].payload["id"], "turn/t99");
         assert!(first.cursor < JS_MAX_SAFE_INTEGER);
         let wire = serde_json::to_string(&first).unwrap();
         assert_eq!(serde_json::from_str::<StreamPage>(&wire).unwrap(), first);
@@ -965,16 +1086,158 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn history_pages_hold_whole_turns_and_continue_exactly_before_them() {
+        let hub = HostStreamHub::start(Arc::new(Recorder(Default::default())));
+        let reads = std::sync::atomic::AtomicUsize::new(0);
+        let load = |before| {
+            reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            history_fixture(before)
+        };
+        // The budget runs out in the second turn; the third is never read.
+        let request = StreamReadRequest {
+            limit: Some(5),
+            ..request("s")
+        };
+        let first = hub.read_history("phone", &request, load).await.unwrap();
+        assert_eq!(first.events.len(), 8);
+        assert_eq!(first.events[0].payload["id"], "turn/t98");
+        assert!(first.has_more);
+        assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 2);
+        let older = hub
+            .read_history(
+                "phone",
+                &StreamReadRequest {
+                    before: Some(first.events[0].seq),
+                    epoch: Some(first.epoch),
+                    ..request
+                },
+                load,
+            )
+            .await
+            .unwrap();
+        assert_eq!(older.cursor, first.cursor);
+        assert_eq!(older.events[0].payload["id"], "turn/t96");
+        assert_eq!(
+            older.events.last().unwrap().seq + 1,
+            first.events[0].seq,
+            "the older page continues exactly before the first"
+        );
+        assert!(older
+            .events
+            .iter()
+            .all(|event| !["t98", "t99"]
+                .contains(&event.payload["turn"]["turnId"].as_str().unwrap())));
+    }
+
+    #[tokio::test]
+    async fn history_pages_give_way_to_a_turn_that_cannot_fit() {
+        let hub = HostStreamHub::start(Arc::new(Recorder(Default::default())));
+        let load = |before: Option<usize>| async move {
+            let (turn, items, older) = match before {
+                None => (1, 2, Some(1)),
+                Some(_) => (0, 1000, None),
+            };
+            let mut records = vec![history_header(turn)];
+            records.extend((0..items).map(|item| history_record(turn, item)));
+            Ok(HistoryBatch {
+                records,
+                before: older,
+            })
+        };
+        let mut request = StreamReadRequest {
+            limit: Some(5),
+            ..request("s")
+        };
+        let first = hub.read_history("phone", &request, load).await.unwrap();
+        assert_eq!(first.events.len(), 3, "only the whole newer turn travels");
+        assert_eq!(first.events[0].payload["id"], "turn/t1");
+        assert!(first.has_more);
+        // The enormous turn pages through its hard bound with nothing skipped.
+        let mut seen = HashSet::new();
+        request.before = Some(first.events[0].seq);
+        request.epoch = Some(first.epoch);
+        loop {
+            let page = hub.read_history("phone", &request, load).await.unwrap();
+            assert!(!page.events.is_empty() && page.events.len() <= MAX_PAGE_EVENTS);
+            for event in &page.events {
+                assert!(seen.insert(event.payload["id"].as_str().unwrap().to_owned()));
+            }
+            request.before = Some(page.events[0].seq);
+            if !page.has_more {
+                assert_eq!(page.events[0].payload["id"], "turn/t0");
+                break;
+            }
+        }
+        assert_eq!(seen.len(), 1001);
+    }
+
+    #[tokio::test]
+    async fn latest_pages_find_turn_boundaries_among_live_records() {
+        let hub = HostStreamHub::start(Arc::new(Recorder(Default::default())));
+        hub.activate("s");
+        let turn = |id: &str, status: &str| serde_json::json!({"sessionId":"s","id":format!("turn/{id}"),"turn":{"turnId":id,"status":status}});
+        let item = |turn: &str, id: &str| serde_json::json!({"sessionId":"s","id":format!("item/{id}"),"turn":{"turnId":turn},"item":{"type":"text","data":{"id":id}}});
+        let (a, b, c) = (item("one", "a"), item("one", "b"), item("two", "c"));
+        let records = vec![
+            turn("one", "inprogress"),
+            a.clone(),
+            b.clone(),
+            turn("two", "inprogress"),
+            c.clone(),
+        ];
+        hub.synchronize_records("s".into(), true, || async { Ok(records) })
+            .await
+            .unwrap();
+        hub.append("s".into(), "note".into(), serde_json::json!({}))
+            .await
+            .unwrap();
+        let ids = |page: &StreamPage| -> Vec<String> {
+            page.events
+                .iter()
+                .map(|event| event.payload["id"].as_str().unwrap_or("note").to_owned())
+                .collect()
+        };
+        let small = |limit| StreamReadRequest {
+            limit: Some(limit),
+            ..request("s")
+        };
+        // Control events are looked through while the turn is still open...
+        let latest = hub.read("d", &small(2)).unwrap();
+        assert_eq!(ids(&latest), vec!["turn/two", "item/c", "note"]);
+        assert!(latest.has_more);
+        // ...and a status change moves only the header above the items it heads:
+        // a budget spent on it ends the page there, the items follow older.
+        let (a2, b2) = (a.clone(), b.clone());
+        hub.synchronize_records("s".into(), false, || async {
+            Ok(vec![turn("one", "completed"), a2, b2])
+        })
+        .await
+        .unwrap();
+        let latest = hub.read("d", &small(1)).unwrap();
+        assert_eq!(ids(&latest), vec!["turn/one"]);
+        assert!(latest.has_more);
+        let latest = hub.read("d", &small(3)).unwrap();
+        assert_eq!(ids(&latest), vec!["turn/two", "item/c", "note", "turn/one"]);
+    }
+
+    #[tokio::test]
     async fn paged_history_live_updates_remove_stale_pending_records() {
         let hub = HostStreamHub::start(Arc::new(Recorder(Default::default())));
         let request = StreamReadRequest {
             limit: Some(1),
             ..request("s")
         };
-        let first = hub
-            .read_history("phone", &request, history_fixture)
-            .await
-            .unwrap();
+        // An item filling the byte bound travels alone, whatever its turn holds.
+        let load = |before| async move {
+            let mut batch = history_fixture(before).await?;
+            if before.is_none() {
+                batch.records.last_mut().unwrap()["item"]["data"]["content"] =
+                    Value::from("x".repeat(PAGE_BYTES));
+            }
+            Ok(batch)
+        };
+        let first = hub.read_history("phone", &request, load).await.unwrap();
+        assert_eq!(first.events.len(), 1);
         // Two old items still wait in the pending batch. The live turn deletes
         // them, and changes the item already delivered in the first page.
         let mut updated = history_record(99, 2);
@@ -989,7 +1252,7 @@ mod tests {
                     after: Some(first.cursor),
                     ..request.clone()
                 },
-                history_fixture,
+                load,
             )
             .await
             .unwrap();
@@ -1006,7 +1269,7 @@ mod tests {
                     before: Some(first.events[0].seq),
                     ..request
                 },
-                history_fixture,
+                load,
             )
             .await
             .unwrap();

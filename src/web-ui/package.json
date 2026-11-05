@@ -1,6 +1,6 @@
 {
   "name": "@openbitfun/web-ui",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
   "description": "OpenBitFun Web UI - 支持 Desktop 和 Server 两种部署方式",
   "type": "module",
@@ -36,6 +36,8 @@
     "@openbitfun/flow-chat-presentation": "workspace:*",
     "@openbitfun/theme-openbitfun": "workspace:^",
     "@openbitfun/ui": "workspace:^",
+    "@openuidev/lang-core": "1.0.2",
+    "@openuidev/react-lang": "1.0.2",
     "@tanstack/react-virtual": "^3.13.23",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-autostart": "^2.0.0",
@@ -67,6 +69,7 @@
     "jszip": "^3.10.1",
     "katex": "^0.16.25",
     "lucide-react": "^0.560.0",
+    "maplibre-gl": "^6.16.0",
     "markstream-react": "2.0.13",
     "mermaid": "^11.10.1",
     "modern-screenshot": "^4.7.0",
@@ -98,6 +101,7 @@
     "unified": "^11.0.5",
     "unist-util-visit": "^5.0.0",
     "yaml": "^2.8.2",
+    "zod": "^4.6.7",
     "zustand": "^5.0.10"
   },
   "devDependencies": {

@@ -484,7 +484,7 @@ describe('sessionToVirtualItems explore grouping', () => {
     },
   );
 
-  it.each(['Write', 'Edit', 'Delete', 'GetFileDiff', 'ExecCommand', 'ExecControl', 'TodoWrite', 'ContextCompression', 'Skill', 'GetToolSpec', 'AgentWait', 'SessionMessage', 'SessionControl', 'ReviewSessionSummary', 'ReadCanvas', 'ControlHub', 'mcp__server__unknown'])(
+  it.each(['Write', 'Edit', 'Delete', 'GetFileDiff', 'ExecCommand', 'ExecControl', 'TodoWrite', 'ContextCompression', 'Skill', 'GetToolSpec', 'AgentWait', 'SessionMessage', 'SessionControl', 'ReviewSessionSummary', 'ControlHub', 'mcp__server__unknown'])(
     'keeps conditionally important %s rounds visible',
     (toolName) => {
       const session = makeSession({
@@ -647,6 +647,7 @@ describe('sessionToVirtualItems explore grouping', () => {
         modelRounds: [makeRound({
           id: 'round-with-answer',
           items: [makeTextItem('text-final', 'Here is the answer.')],
+          durationMs: 1500,
           streamDurationMs: 1200,
           firstChunkMs: 20,
           firstVisibleOutputMs: 200,
@@ -671,7 +672,7 @@ describe('sessionToVirtualItems explore grouping', () => {
       turnStartedAt: 900,
       turnEndedAt: 2400,
       turnDurationMs: 1500,
-      turnOutputDurationMs: 1000,
+      turnOutputDurationMs: 1500,
       turnTtftMs: 350,
       turnTokenUsage: {
         inputTokens: 1200,
@@ -1212,40 +1213,6 @@ describe('sessionToVirtualItems explore grouping', () => {
     expect(modelItems[0].data.items).toHaveLength(25);
     expect(modelItems[0].isLastRound).toBe(false);
     expect(modelItems[1].isLastRound).toBe(true);
-  });
-
-  it('attaches the latest Canvas artifact card to the completed response tail', () => {
-    const artifactReference = 'openbitfun-canvas://session/canvas-session/canvas/canvas_1';
-    const createCanvas = makeTool('create-canvas', 'CreateCanvas');
-    createCanvas.toolResult = {
-      success: true,
-      result: { artifactReference, canvas: { artifact: { title: 'Usage report' } } },
-    };
-    const patchCanvas = makeTool('patch-canvas', 'PatchCanvas');
-    patchCanvas.toolResult = {
-      success: true,
-      result: { artifactReference, canvas: { artifact: { title: 'Usage report' } } },
-    };
-    const session = makeSession({
-      sessionId: 'canvas-session',
-      dialogTurns: [{
-        id: 'turn-1',
-        sessionId: 'canvas-session',
-        userMessage: { id: 'user-1', content: 'Build a report', timestamp: 900 },
-        modelRounds: [
-          makeRound({ id: 'canvas-round', items: [createCanvas] }),
-          makeRound({ id: 'answer-round', items: [patchCanvas, makeTextItem('answer', 'Done.')] }),
-        ],
-        status: 'completed',
-        startTime: 900,
-      }],
-    });
-
-    const modelItems = sessionToVirtualItems(session)
-      .filter((item): item is ModelRoundVirtualItem => item.type === 'model-round');
-
-    expect(modelItems[0].canvasArtifactItems).toBeUndefined();
-    expect(modelItems[1].canvasArtifactItems).toEqual([patchCanvas]);
   });
 
   it('does not split the turn-tail large round (avoids completion remount flash)', () => {

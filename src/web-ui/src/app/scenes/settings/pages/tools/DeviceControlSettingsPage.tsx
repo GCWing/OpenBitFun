@@ -81,6 +81,16 @@ function browserSetupUrlFallback(browser: string): string {
 
 const DEFAULT_BROWSER_CONTROL_BROWSER = 'default';
 
+/**
+ * Browser Control setup commands wait on browser-owned consent: up to one
+ * minute for the Remote debugging toggle plus up to 90 seconds for the
+ * connection approval prompt. The default 30 s request deadline reported
+ * "Request timeout" while the backend was still waiting, so these requests
+ * outlast the backend budget (and the Peer RPC budget, which is 185 s).
+ */
+const BROWSER_CONTROL_SETUP_REQUEST_TIMEOUT_MS = 190_000;
+const BROWSER_CONTROL_SETUP_REQUEST_CONFIG = { timeout: BROWSER_CONTROL_SETUP_REQUEST_TIMEOUT_MS };
+
 const DeviceControlSettingsPage: React.FC = () => {
   const { t } = useTranslation('settings/runtime');
 
@@ -349,7 +359,11 @@ const DeviceControlSettingsPage: React.FC = () => {
   const handleBrowserControlLaunch = async () => {
     setBrowserControlBusy(true);
     try {
-      const result = await api.invoke<BrowserControlLaunchResponse>('browser_control_launch', { request: { port: 9222 } });
+      const result = await api.invoke<BrowserControlLaunchResponse>(
+        'browser_control_launch',
+        { request: { port: 9222 } },
+        BROWSER_CONTROL_SETUP_REQUEST_CONFIG,
+      );
       presentBrowserControlLaunchResult(result);
       await refreshBrowserControlStatus();
     } catch (error) {
@@ -376,6 +390,7 @@ const DeviceControlSettingsPage: React.FC = () => {
       const result = await api.invoke<BrowserControlLaunchResponse>(
         'browser_control_enable_default_cdp',
         { request: { port: 9222 } },
+        BROWSER_CONTROL_SETUP_REQUEST_CONFIG,
       );
       notificationService.dismiss(promptNotificationId);
       presentBrowserControlLaunchResult(result);
@@ -413,9 +428,11 @@ const DeviceControlSettingsPage: React.FC = () => {
     if (!browserRestartPrompt) return;
     setBrowserControlBusy(true);
     try {
-      const result = await api.invoke<BrowserControlLaunchResponse>('browser_control_restart_with_cdp', {
-        request: { port: 9222 },
-      });
+      const result = await api.invoke<BrowserControlLaunchResponse>(
+        'browser_control_restart_with_cdp',
+        { request: { port: 9222 } },
+        BROWSER_CONTROL_SETUP_REQUEST_CONFIG,
+      );
       if (result.success) {
         notificationService.success(
           t('browserControl.restartSuccess', { browser: result.browserKind }),

@@ -20,8 +20,10 @@ import { useApp } from '../hooks/useApp';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { FlowChatManager } from '../../flow_chat/services/FlowChatManager';
-import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceId, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
+import { getDeviceOpenIntent, selectsDeviceSession } from '@/infrastructure/peer-device/deviceOpenIntent';
 import WorkspaceBody from './WorkspaceBody';
+import { WindowResizeLayout } from './WindowResizeLayout';
 import { useToolbarModeContext } from '../../flow_chat/components/toolbar-mode/ToolbarModeContext';
 import { MCPInteractionDialog } from '../components/MCPInteractionDialog/MCPInteractionDialog';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
@@ -37,8 +39,9 @@ import { shortcutManager, parseStoredKeybindings } from '@/infrastructure/servic
 import { isMacOSDesktopRuntime } from '@/infrastructure/runtime';
 import { flowChatSessionConfigForWorkspace } from '../utils/projectSessionWorkspace';
 import { startSessionSceneLifecycle } from '../services/sessionSceneLifecycle';
+import { clearTransientGenerativeWidgetResources } from '@/shared/services/workbenchContentService';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
-import { notificationService } from '@/shared/notification-system';
+import { AcpSessionNotifications } from './AcpSessionNotifications';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 import { AppearanceBackgroundMediaLayer, appearanceRuntime, useAppearance } from '@/infrastructure/appearance';
 import { PeerConnectionStatus } from '@/infrastructure/peer-device/PeerConnectionStatus';
@@ -64,14 +67,6 @@ interface AppLayoutProps {
   className?: string;
 }
 
-interface AcpSessionCreationEventDetail {
-  phase?: 'start' | 'finish';
-  clientId?: string;
-  action?: 'create' | 'restore';
-  requestId?: string;
-  succeeded?: boolean;
-}
-
 interface WindowModeHint {
   id: number;
   title: string;
@@ -80,6 +75,9 @@ interface WindowModeHint {
 
 const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
   useLayoutEffect(startSessionSceneLifecycle, []);
+  useLayoutEffect(() => {
+    clearTransientGenerativeWidgetResources();
+  }, []);
   const { t } = useI18n('components');
   const { t: tCommon } = useI18n('common');
   const currentAppearance = useAppearance().current;
@@ -276,6 +274,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     let cancelled = false;
     const initializeFlowChat = async () => {
       if (!currentWorkspace?.rootPath) return;
+      const explicitOpen = getDeviceOpenIntent();
 
       // Remote session index and turns live under ~/.openbitfun/remote_ssh/... (local disk).
       // Always initialize FlowChat so historical sessions list even when SSH is not connected yet.
@@ -297,6 +296,10 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
         if (cancelled) {
           return;
         }
+        // The explicit device action opens or creates its own session, even
+        // when this workspace's metadata page is empty.
+        if (selectsDeviceSession(explicitOpen, getActiveSurfaceId())
+          || selectsDeviceSession(getDeviceOpenIntent(), getActiveSurfaceId())) return;
 
         let sessionId: string | undefined;
         const { flowChatStore } = await import('@/flow_chat/store/FlowChatStore');
@@ -595,35 +598,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     return () => window.removeEventListener('openbitfun:create-acp-session', handler);
   }, [currentWorkspace]);
 
-  React.useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<AcpSessionCreationEventDetail>).detail;
-      const clientId = detail?.clientId?.trim() || 'ACP';
-      const action = detail?.action === 'restore' ? 'restore' : 'create';
-      const id = detail?.requestId?.trim() || `${action}:${clientId}`;
-      if (detail?.phase === 'start') {
-        notificationService.silent({
-          title: clientId,
-          message: tCommon('nav.workspaces.startingAcpSession'),
-          type: 'info',
-          metadata: { source: 'acp-session', clientId, action, requestId: id, phase: 'start' },
-        });
-      } else if (detail?.phase === 'finish') {
-        const succeeded = detail.succeeded !== false;
-        notificationService.silent({
-          title: clientId,
-          message: succeeded
-            ? tCommon('nav.workspaces.acpSessionStarted')
-            : tCommon('nav.workspaces.acpSessionStartFailed'),
-          type: succeeded ? 'success' : 'error',
-          metadata: { source: 'acp-session', clientId, action, requestId: id, phase: 'finish', succeeded },
-        });
-      }
-    };
-    window.addEventListener('openbitfun:acp-session-creation', handler);
-    return () => window.removeEventListener('openbitfun:acp-session-creation', handler);
-  }, [tCommon]);
-
   // Global drag-and-drop
   React.useEffect(() => {
     const handleDragStart = (e: DragEvent) => {
@@ -673,6 +647,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     return (
       <>
         <DailyAppUpdateGate />
+        <AcpSessionNotifications />
         {aboutDialog}
         <div
           className={`${containerClassName} openbitfun-app-layout--toolbar-mode`}
@@ -699,6 +674,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
   return (
     <>
       <DailyAppUpdateGate />
+      <AcpSessionNotifications />
+      <WindowResizeLayout />
       <div
         className={containerClassName}
         data-testid="app-layout"

@@ -125,6 +125,30 @@ records and responses from a device that is no longer rendered. Desktop
 `RelaySessionHistory` owns the subscription across initial loading, realtime
 delivery and older-page prefetch.
 
+Desktop/Web FlowChat history publishes complete Turns. The Rust subscriber offers
+`turn_history: {version: 1}` on `read_stream`; a response acknowledgement enables
+single-Turn snapshots. Hosts also advertise `host_stream_turn_history_v1`. The
+first read selects only the last Turn, independently of the ordering of live
+events. Large Turns travel in byte/event-bounded packets of one immutable snapshot;
+packet offsets and the older-Turn boundary are separate. The live cursor captured
+before source IO fences snapshot revisions, and normal live publication resumes
+after it. Snapshots are ephemeral, controller scoped, epoch fenced and byte bounded
+(one oversized Turn may exceed the budget); they add no persisted format or relay
+storage. Identity-only tombstone tracking preserves deletions without suppressing
+live publication to another controller.
+
+Hosts that omit the acknowledgement keep the record-page path: optional root
+`turnRecordIds` membership proves completeness across pages, including unchanged
+items older than a republished root. Older hosts without membership remain
+readable by finishing their available history before publication, so their first
+open can be slower. Missing records, non-advancing packets and epoch changes fail
+without exposing fragments. A terminal header alone never proves completeness.
+`RelaySessionHistory` stages controller-annotated `historyReplay` records outside
+the replica until ready. Live records remain incremental even while an older Turn
+is loading. After the last Turn is visibly presented, a visible view may prefetch
+one adjacent Turn; further reads follow reader demand. Switching back to a partial
+session does not automatically drain its history.
+
 Native mobile history keeps these record-page boundaries; a page is not a
 complete conversation turn. The initial replay and each older-history request
 reduce all received records before publishing one transcript projection. A turn
@@ -203,6 +227,119 @@ This is the contract for any new blocking interaction: its execution owner must
 retain replayable request state and expose it through an attach/snapshot path.
 A one-shot frontend event plus an unresolved channel is not a complete
 multi-device implementation.
+
+### Sidebar device catalog
+
+The session list shows every online host of the account in place, grouped by
+device in a fixed order (this machine first, then peers by name). The rendered
+device's section is its live workspace container. Every other section, this
+machine included while a peer is rendered, is drawn from a read-only catalog
+(`infrastructure/peer-device/deviceWorkspaceCatalog.ts`):
+
+- Every online, compatible host's catalog is kept current while the sidebar
+  lists it, including the first session page of each of its workspaces
+  (bounded to two concurrent reads per device). That is what lets device
+  headers, session rows and the Agent companion show running, waiting and
+  unread sessions of every device at once. Desktop hosts do not fan
+  `agentic://` events out to controllers, so the host's catalog summary is the
+  freshest status for a background device; observed events only fill sessions
+  the catalog has no summary for.
+- A peer is read through a raw `host_invoke` device RPC limited to
+  `peer_mode_ping`, `get_opened_workspaces` and `list_persisted_sessions_page`
+  (`deviceCatalogTransport.ts`). It needs no control attachment and does not
+  fan out events. This machine is read through its own Tauri transport. Session
+  reads use `workspace_id` only when the host advertises
+  `workspace_id_references_v1`; older hosts get their own root path.
+- Freshness comes from invalidations, not polling. While a peer section is open
+  the controller subscribes the peer's `@host/catalog` stream. Its
+  `host-catalog-changed` hint is surface-scoped, so only the catalog observer
+  sees it. The catalog also observes local and attached-peer lifecycle events.
+  Hints are debounced (300 ms) and coalesced into one in-flight read per device.
+  A hint whose `workspacesRevision` did not move refreshes session pages only;
+  refreshes are held while the window is hidden or a cross-device open runs and
+  run once afterwards; the device that just became rendered is not re-read;
+  catalog notifications are coalesced per task.
+  A host without the stream is re-read when the window becomes visible and
+  every 60 s while it is visible. The stream is released 30 s after the section
+  closes. A newer session read of a workspace replaces an older one in flight,
+  and a host that refuses a read is asked again how it addresses sessions.
+- A failed read keeps the last rendered catalog and offers a retry. An
+  incompatible build is listed but not read.
+
+Navigation draws a background device from its own FlowChat container, seeded
+from the catalog through the same metadata-to-Session projection a metadata
+page uses (`flowChatStore.seedSurfaceSessions`; never the rendered surface).
+Rows use the live list's hierarchy, comparator, view filters, first-level
+limit and project disclosure (window-wide, keyed by surface), so a device looks
+the same before, during and after a switch. Seeds carry no history or state
+machine; they are promoted through the normal metadata path before any open,
+and a seed that has been opened is never replaced by a later seed.
+
+The displayed row count belongs to the surface/workspace/source view and is
+published when the user expands or collapses it. Live and background lists
+read the same snapshot during replacement; an unmount-time handoff is too late
+for React's incoming render. Collapsing a workspace resets its source views;
+Collapse All resets every view. Counts are window-local presentation state.
+Disconnecting a control attachment disposes transcripts but leaves the
+independent catalog read lease intact. Disposal invalidates the projection's
+array deduplication and immediately reseeds metadata from that catalog, so
+the still-visible sidebar does not empty while waiting for another read.
+
+A cross-device open publishes a `DeviceOpenIntent` for its whole duration. While
+it is set, every device keeps its background rows (the rendered device hands
+over to its live list once, after the open, so the live list's reads never
+compete with the open), catalog refreshes are held and run once afterwards, the
+session's tab is held in front (`sceneStore.holdSessionScene`) from the click through both switch resets and session-tab reconciliation,
+and the main area shows the session's open overlay from the click on. Low-priority peer
+requests (git, search, file tree, watchers, mini apps) queued during the open
+wait in the adapter and run once it settles; session-status reconciliation
+waits likewise (held for at most 8 s, so a slow host cannot starve them), and
+`set_active_workspace` is high priority.
+
+The open is ordered by what the user waits for. On click, the session's host
+stream is subscribed directly (`prewarmRelaySessionHistory`; the
+`account_subscribe_session` relay command does not depend on the rendered
+surface), so the host reads the session while the switch runs. The session's
+history owner adopts that stream and its buffered events once the device is
+rendered; an unadopted stream closes after 30 s. The switch does not wait for
+the device's config while an open runs: it reloads in the background (the
+config cache is already scoped to the surface epoch). A host that refuses
+device-control status is not polled again on that surface.
+
+The one write the catalog sends without rendering a device is "mark all
+read": `save_session_metadata` limited to `unreadCompletion` and
+`needsUserAttention`, applied optimistically and followed by a session-page
+refresh. It touches no workspace, tool or permission.
+
+Acting on a catalog entry (open a session or assistant, new session) first
+renders its device through `switchToDevice` / `switchToLocal`. It then runs the
+local handler on the now-rendered surface. Every mutation therefore keeps
+Peer Device Mode's ownership, capability gates, permission mailboxes and surface
+fences. The catalog never mutates a host. The create dialog does the same: it
+renders the chosen device before opening the project form, so folder picking,
+recent workspaces and sources belong to that device. The personal assistant is
+always created on this machine.
+
+The Agent companion lists background-device sessions next to the rendered
+device's, labelled with their device. Opening one renders its device first;
+replying from the companion is offered only for the rendered device. A switch
+reloads the target's config and workspace catalog concurrently, unless a
+cross-device open defers the config.
+
+### Session tabs across devices
+
+The top bar keeps one tab per session (`getSessionSceneTabId` keys surface,
+workspace and session), so several sessions of one workspace and sessions of
+other devices each have their own tab; past 12 session tabs the least recently
+used idle one closes. Session tabs of every device survive a switch.
+Reconciliation retires only tabs of the rendered device whose session is gone.
+When the bar holds tabs of more than one device, it shows each device's tabs
+side by side and names the device once, ahead of its group (tabs without a
+session belong to the rendered device); a bar of one device names none. A tab
+of another device is never selected without its device: activating it runs the same cross-device open as a sidebar row, a
+pane never falls back onto it, and an open that fails or is superseded leaves
+it in the bar, unselected. Returning to a device reselects the kept tab of its
+active session.
 
 ## Cloud account sync vs Peer Remote
 
@@ -337,6 +474,16 @@ FS) and must not be mixed with Peer Device Mode.
   epochs and lifecycle cancellation around `realtime_client`; TypeScript uses
   `AccountRealtime`. Replacing an account retires its socket and pending replies.
   Transient disconnection does not destroy the Runtime's tasks or journals.
+- The Relay keeps one machine-scoped socket per `device_id`, and every host on a
+  machine shares `device_identity.json`. Hosts therefore arbitrate locally
+  (`remote_connect::routing_lease`) instead of replacing each other's socket:
+  Desktop is the primary host, CLI/TUI/daemon the secondary one. Each holds an
+  OS file lock per Relay endpoint next to the identity file. A secondary host
+  connects only while no primary holds its lock, and stands by (`Standby`
+  connection state) otherwise. The OS releases the lock when a host exits or is
+  killed, so the standing-by host reconnects within about a second. Hosts of the
+  same priority take turns. A host built before this change does not
+  arbitrate.
 - Relay `rpc-call` routes to the authenticated target's registered method and
   carries the caller's deadline (120s when omitted). The server checks account
   membership before routing. Missing acknowledgement after dispatch is an unknown

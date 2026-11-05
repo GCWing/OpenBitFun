@@ -3,14 +3,24 @@
 //! RPC, and closing the subscriber only stops observing that host.
 use super::{
     account::{AccountClient, AccountSession, StreamHint},
-    host_stream::{StreamPage, StreamReadRequest},
+    host_stream::{StreamPage, StreamReadRequest, TurnHistoryRequest, MAX_TURN_HISTORY_PAGE_BYTES},
 };
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 const KEEPALIVE: Duration = Duration::from_secs(4 * 60);
+/// Event budget of the first page of an open: enough to fill a transcript view,
+/// so the session shows after one small read instead of a full 200-event /
+/// 768 KiB page over the relay. Older pages follow in the background. Every
+/// host honours `limit`. Transport pages are joined until their Turn membership
+/// is complete; no transport budget is a presentation boundary.
+const FIRST_PAGE_EVENTS: usize = 48;
 const UNSUPPORTED_HOST_MESSAGE: &str = "The controlled device runs an older OpenBitFun version that does not support on-demand session streaming. Update OpenBitFun on that device to continue.";
 
 #[derive(Deserialize)]
@@ -58,6 +68,7 @@ impl StreamTransport for DeviceRpcTransport {
             "epoch": request.epoch,
             "limit": request.limit,
             "subscribe": request.subscribe,
+            "turn_history": request.turn_history,
         });
         let response = AccountClient::new()
             .device_rpc(
@@ -104,6 +115,7 @@ pub struct HostStreamSubscriber {
     unsubscribe: Option<Box<dyn FnOnce() + Send>>,
 }
 
+#[derive(Clone)]
 struct Reader {
     transport: Arc<dyn StreamTransport>,
     session_id: String,
@@ -112,6 +124,9 @@ struct Reader {
     cursor: u64,
     oldest: u64,
     has_more: bool,
+    /// Set only after a host acknowledges the optional Turn-history offer.
+    turn_history: bool,
+    before_turn: Option<usize>,
 }
 
 impl Reader {
@@ -123,12 +138,216 @@ impl Reader {
         Ok(page)
     }
 
-    fn emit_page(&self, page: &StreamPage) -> Result<()> {
+    /// A root's optional membership list proves which records form a whole
+    /// Turn, even when live updates moved that root ahead of unchanged items.
+    /// Old hosts have no such proof: finish their bounded pages before exposing
+    /// history, rather than guessing from a header, count, or elapsed time.
+    async fn read_history(&self, request: StreamReadRequest) -> Result<StreamPage> {
+        let expected_epoch = request.epoch;
+        let mut page = self.read(request).await?;
+        if expected_epoch.is_some_and(|epoch| epoch != page.epoch) {
+            return Ok(page);
+        }
+        if page.turn_history.is_some() {
+            return self.join_turn_snapshot(page).await;
+        }
+        if self.turn_history && expected_epoch.is_some() {
+            bail!("The host stopped supporting Turn history; reopen the session to retry");
+        }
+        let mut record_ids = HashSet::<String>::new();
+        let mut turns = HashMap::<String, Option<(u64, Vec<String>)>>::new();
+        let mut batches = Vec::new();
+        loop {
+            for event in &page.events {
+                if event.event != "session-record" {
+                    continue;
+                }
+                let payload = &event.payload;
+                let Some(id) = payload["id"].as_str() else {
+                    continue;
+                };
+                record_ids.insert(id.to_owned());
+                let Some(turn_id) = payload.pointer("/turn/turnId").and_then(|id| id.as_str())
+                else {
+                    continue;
+                };
+                let membership = turns.entry(turn_id.to_owned()).or_default();
+                if id == format!("turn/{turn_id}") {
+                    if let Some(ids) = payload.get("turnRecordIds") {
+                        let ids: Vec<String> = serde_json::from_value(ids.clone())
+                            .context("Invalid history Turn membership")?;
+                        if !ids.iter().any(|key| key == id) {
+                            bail!("History Turn membership omitted its root");
+                        }
+                        let revision = payload["revision"].as_u64().unwrap_or(event.seq);
+                        if membership.as_ref().is_none_or(|(old, _)| revision > *old) {
+                            *membership = Some((revision, ids));
+                        }
+                    }
+                }
+            }
+            let complete = !turns.is_empty()
+                && turns.values().all(|membership| {
+                    membership
+                        .as_ref()
+                        .is_some_and(|(_, ids)| ids.iter().all(|id| record_ids.contains(id)))
+                });
+            let missing_record = turns
+                .values()
+                .flatten()
+                .any(|(_, ids)| ids.iter().any(|id| !record_ids.contains(id)));
+            if complete || !page.has_more {
+                if !complete && (page.truncated || missing_record) {
+                    bail!("The host could not provide a complete history Turn; reopen the session to retry");
+                }
+                // Reads travel backwards; delivery stays chronological. This
+                // also preserves ordering of runtime controls between records.
+                for batch in batches.into_iter().rev() {
+                    page.events.extend(batch);
+                }
+                return Ok(page);
+            }
+            let before = page
+                .events
+                .first()
+                .map(|event| event.seq)
+                .context("History page did not advance")?;
+            let older = self
+                .read(StreamReadRequest {
+                    stream_id: self.session_id.clone(),
+                    before: Some(before),
+                    epoch: Some(page.epoch),
+                    subscribe: true,
+                    ..Default::default()
+                })
+                .await?;
+            if older.epoch != page.epoch {
+                bail!(
+                    "Session history restarted while reading a Turn; reopen the session to retry"
+                );
+            }
+            if older
+                .events
+                .first()
+                .is_some_and(|event| event.seq >= before)
+                || (older.events.is_empty() && older.has_more)
+            {
+                bail!("History page did not advance");
+            }
+            batches.push(page.events);
+            // Forward catch-up starts at the snapshot with which this read
+            // began. Later appends must still be delivered by catch_up.
+            let cursor = page.cursor;
+            page = older;
+            page.cursor = cursor;
+        }
+    }
+
+    async fn join_turn_snapshot(&self, mut page: StreamPage) -> Result<StreamPage> {
+        let snapshot = page
+            .turn_history
+            .clone()
+            .context("Turn history acknowledgement missing")?;
+        if snapshot.version != 1 || snapshot.offset != 0 {
+            bail!("Invalid Turn history acknowledgement");
+        }
+        let mut events = Vec::new();
+        loop {
+            let part = page
+                .turn_history
+                .as_ref()
+                .context("Turn history continuation is unsupported")?;
+            if part.version != snapshot.version
+                || part.snapshot_id != snapshot.snapshot_id
+                || part.turn_id != snapshot.turn_id
+                || part.record_count != snapshot.record_count
+                || part.before_turn != snapshot.before_turn
+                || part.offset != events.len()
+                || page.has_more != snapshot.before_turn.is_some()
+            {
+                bail!("Turn history snapshot changed during the read");
+            }
+            let next = part.next_offset;
+            events.append(&mut page.events);
+            if events.len() > snapshot.record_count {
+                bail!("Turn history exceeded its record count");
+            }
+            let Some(offset) = next else {
+                break;
+            };
+            if offset != events.len() || offset <= part.offset || offset >= snapshot.record_count {
+                bail!("Turn history continuation did not advance");
+            }
+            let older = self
+                .read(StreamReadRequest {
+                    stream_id: self.session_id.clone(),
+                    epoch: Some(page.epoch),
+                    subscribe: true,
+                    turn_history: Some(TurnHistoryRequest {
+                        version: 1,
+                        snapshot_id: Some(snapshot.snapshot_id.clone()),
+                        offset,
+                        before_turn: None,
+                        max_bytes: Some(MAX_TURN_HISTORY_PAGE_BYTES),
+                    }),
+                    ..Default::default()
+                })
+                .await?;
+            if older.epoch != page.epoch || older.cursor != page.cursor {
+                bail!(
+                    "Session history restarted while reading a Turn; reopen the session to retry"
+                );
+            }
+            page = older;
+        }
+        if events.len() != snapshot.record_count {
+            bail!("Incomplete Turn history snapshot");
+        }
+        let mut ids = HashSet::new();
+        for event in &events {
+            if event.event != "session-record"
+                || event.payload["sessionId"].as_str() != Some(self.session_id.as_str())
+                || event
+                    .payload
+                    .pointer("/turn/turnId")
+                    .and_then(|id| id.as_str())
+                    != snapshot.turn_id.as_deref()
+                || event.payload["revision"].as_u64() != Some(page.cursor)
+                || !event.payload["id"]
+                    .as_str()
+                    .is_some_and(|id| ids.insert(id))
+            {
+                bail!("Invalid Turn history snapshot record");
+            }
+        }
+        if let Some(turn) = &snapshot.turn_id {
+            if !ids.contains(format!("turn/{turn}").as_str()) {
+                bail!("Turn history snapshot root missing");
+            }
+        } else if !events.is_empty() {
+            bail!("Turn history snapshot identity missing");
+        }
+        page.events = events;
+        page.turn_history = Some(super::host_stream::TurnHistoryPage {
+            offset: 0,
+            next_offset: None,
+            ..snapshot
+        });
+        Ok(page)
+    }
+
+    fn emit_page(&self, page: &StreamPage, history: bool) -> Result<()> {
         for event in &page.events {
+            let mut payload = event.payload.clone();
+            if history && event.event == "session-record" {
+                // Controller-local annotation: the frontend stages only replay
+                // records, so an older read cannot hold up live output.
+                payload["historyReplay"] = true.into();
+            }
             (self.emit)(SessionEvent {
                 session_id: self.session_id.clone(),
                 event: event.event.clone(),
-                payload: event.payload.clone(),
+                payload,
             })?;
         }
         Ok(())
@@ -138,16 +357,22 @@ impl Reader {
         (self.emit)(SessionEvent {
             session_id: self.session_id.clone(),
             event: "relay://session-ready".into(),
-            payload: serde_json::json!({"sessionId":self.session_id,"hasMore":self.has_more,"oldestSeq":self.oldest,"cursor":self.cursor}),
+            payload: serde_json::json!({"sessionId":self.session_id,"hasMore":self.has_more,"oldestSeq":self.oldest,"cursor":self.cursor,"historyBatches":true}),
         })
     }
 
     /// Latest page first, like opening a chat at its bottom.
     async fn resync(&mut self) -> Result<()> {
+        let started = std::time::Instant::now();
         let page = self
-            .read(StreamReadRequest {
+            .read_history(StreamReadRequest {
                 stream_id: self.session_id.clone(),
                 subscribe: true,
+                limit: Some(FIRST_PAGE_EVENTS),
+                turn_history: Some(TurnHistoryRequest {
+                    max_bytes: Some(MAX_TURN_HISTORY_PAGE_BYTES),
+                    ..TurnHistoryRequest::latest()
+                }),
                 ..Default::default()
             })
             .await?;
@@ -159,7 +384,14 @@ impl Reader {
             .map(|event| event.seq)
             .unwrap_or(page.cursor + 1);
         self.has_more = page.has_more;
-        self.emit_page(&page)?;
+        self.turn_history = page.turn_history.is_some();
+        self.before_turn = page
+            .turn_history
+            .as_ref()
+            .and_then(|history| history.before_turn);
+        log::debug!("Session first history ready: session_id={} turn_snapshot={} records={} has_more={} elapsed_ms={}",
+            self.session_id, self.turn_history, page.events.len(), page.has_more, started.elapsed().as_millis());
+        self.emit_page(&page, true)?;
         self.emit_ready()
     }
 
@@ -178,7 +410,7 @@ impl Reader {
             if page.epoch != self.epoch {
                 return Ok(false);
             }
-            self.emit_page(&page)?;
+            self.emit_page(&page, false)?;
             if let Some(last) = page.events.last() {
                 self.cursor = self.cursor.max(last.seq);
             }
@@ -201,36 +433,59 @@ impl Reader {
         self.resync().await
     }
 
-    async fn load_older(&mut self) -> Result<bool> {
-        if !self.has_more {
-            return Ok(true);
-        }
-        let page = self
-            .read(StreamReadRequest {
-                stream_id: self.session_id.clone(),
-                before: Some(self.oldest),
-                epoch: Some(self.epoch),
-                subscribe: true,
-                ..Default::default()
-            })
-            .await?;
+    async fn read_older_page(&self) -> Result<StreamPage> {
+        self.read_history(StreamReadRequest {
+            stream_id: self.session_id.clone(),
+            before: (!self.turn_history).then_some(self.oldest),
+            turn_history: self.turn_history.then(|| TurnHistoryRequest {
+                max_bytes: Some(MAX_TURN_HISTORY_PAGE_BYTES),
+                before_turn: self.before_turn,
+                ..TurnHistoryRequest::latest()
+            }),
+            epoch: Some(self.epoch),
+            subscribe: true,
+            ..Default::default()
+        })
+        .await
+    }
+
+    fn apply_older_page(&mut self, page: StreamPage) -> Result<bool> {
         if page.epoch != self.epoch {
             return Ok(false);
         }
-        self.emit_page(&page)?;
+        if self.turn_history && page.turn_history.is_none() {
+            bail!("The host stopped supporting Turn history; reopen the session to retry");
+        }
+        self.emit_page(&page, true)?;
         if let Some(first) = page.events.first() {
             self.oldest = first.seq;
         }
         self.has_more = page.has_more;
+        self.before_turn = page
+            .turn_history
+            .as_ref()
+            .and_then(|history| history.before_turn);
         self.emit_ready()?;
         Ok(true)
     }
 
+    async fn load_older(&mut self) -> Result<bool> {
+        if !self.has_more {
+            return Ok(true);
+        }
+        let page = self.read_older_page().await?;
+        self.apply_older_page(page)
+    }
+
+    /// Announce a restarted stream. A full replay from the latest page always
+    /// follows, so `resync` tells the controller to rebuild its records from
+    /// that replay: the new epoch carries no tombstones for what it dropped.
+    /// Gaps appended by the host itself stay inside one epoch and omit it.
     fn gap(&self, reason: &str) -> Result<()> {
         (self.emit)(SessionEvent {
             session_id: self.session_id.clone(),
             event: "relay://session-gap".into(),
-            payload: serde_json::json!({"sessionId":self.session_id,"reason":reason}),
+            payload: serde_json::json!({"sessionId":self.session_id,"reason":reason,"resync":true}),
         })
     }
 
@@ -277,6 +532,8 @@ impl HostStreamSubscriber {
             cursor: 0,
             oldest: 1,
             has_more: false,
+            turn_history: false,
+            before_turn: None,
         };
         // The first page is awaited so an unsupported or offline host fails the
         // open call instead of retrying silently in the background.
@@ -311,7 +568,38 @@ impl HostStreamSubscriber {
                 let result = match wake {
                     Wake::Refresh => reader.refresh().await,
                     Wake::Older(reply) => {
-                        let result = match reader.load_older().await {
+                        // A large historical Turn may span several RPCs. Its
+                        // immutable snapshot lets live catch-up keep running;
+                        // no user message or approval waits behind those bytes.
+                        let read = if reader.turn_history && reader.has_more {
+                            let history_reader = reader.clone();
+                            let page = history_reader.read_older_page();
+                            tokio::pin!(page);
+                            let result = loop {
+                                tokio::select! {
+                                    result = &mut page => break result,
+                                    hint = hints.recv() => {
+                                        let refresh = match hint {
+                                            Ok(Some(hint)) => reader.hint_is_new(&hint, &target),
+                                            Ok(None) | Err(broadcast::error::RecvError::Lagged(_)) => true,
+                                            Err(broadcast::error::RecvError::Closed) => return,
+                                        };
+                                        if refresh {
+                                            if let Err(failure) = reader.refresh().await {
+                                                error(describe_stream_error(&failure));
+                                            }
+                                            if reader.epoch != history_reader.epoch {
+                                                break Err(anyhow!("Session history restarted during the older read"));
+                                            }
+                                        }
+                                    }
+                                }
+                            };
+                            result.and_then(|page| reader.apply_older_page(page))
+                        } else {
+                            reader.load_older().await
+                        };
+                        let result = match read {
                             Ok(true) => Ok(()),
                             Ok(false) => {
                                 let _ = reader.gap("host stream restarted");
@@ -490,7 +778,331 @@ mod tests {
     }
 
     fn record(session: &str, turn: &str, status: &str) -> serde_json::Value {
-        serde_json::json!({"sessionId":session,"id":format!("turn/{turn}"),"turn":{"turnId":turn,"sessionId":session,"status":status}})
+        serde_json::json!({"sessionId":session,"id":format!("turn/{turn}"),"turnRecordIds":[format!("turn/{turn}")],"turn":{"turnId":turn,"sessionId":session,"status":status}})
+    }
+
+    struct ScriptedHistory {
+        pages: Mutex<std::collections::VecDeque<StreamPage>>,
+        reads: Mutex<Vec<StreamReadRequest>>,
+    }
+    #[async_trait::async_trait]
+    impl StreamTransport for ScriptedHistory {
+        async fn read_stream(&self, request: StreamReadRequest) -> Result<StreamPage> {
+            self.reads.lock().unwrap().push(request);
+            self.pages
+                .lock()
+                .unwrap()
+                .pop_front()
+                .context("Unexpected history read")
+        }
+        async fn unsubscribe_stream(&self, _: &str) -> Result<()> {
+            Ok(())
+        }
+    }
+    fn history_page(seq: u64, records: Vec<serde_json::Value>, has_more: bool) -> StreamPage {
+        use super::super::host_stream::StreamEvent;
+        StreamPage {
+            stream_id: "s".into(),
+            epoch: 1,
+            events: records
+                .into_iter()
+                .enumerate()
+                .map(|(index, mut payload)| {
+                    payload["revision"] = (seq + index as u64).into();
+                    StreamEvent {
+                        seq: seq + index as u64,
+                        event: "session-record".into(),
+                        payload,
+                    }
+                })
+                .collect(),
+            has_more,
+            cursor: 100,
+            oldest_seq: 1,
+            truncated: false,
+            turn_history: None,
+        }
+    }
+    fn scripted_reader(
+        pages: Vec<StreamPage>,
+    ) -> (Reader, Arc<ScriptedHistory>, Arc<Mutex<Vec<SessionEvent>>>) {
+        let transport = Arc::new(ScriptedHistory {
+            pages: Mutex::new(pages.into()),
+            reads: Mutex::new(Vec::new()),
+        });
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let output = events.clone();
+        (
+            Reader {
+                transport: transport.clone(),
+                session_id: "s".into(),
+                emit: Arc::new(move |event| {
+                    output.lock().unwrap().push(event);
+                    Ok(())
+                }),
+                epoch: 0,
+                cursor: 0,
+                oldest: 1,
+                has_more: false,
+                turn_history: false,
+                before_turn: None,
+            },
+            transport,
+            events,
+        )
+    }
+    fn item(id: &str) -> serde_json::Value {
+        serde_json::json!({"sessionId":"s","id":format!("item/{id}"),"turn":{"turnId":"one","sessionId":"s","status":"completed"},"round":{"id":"r","turnId":"one"},"item":{"type":"text","data":{"id":id}}})
+    }
+
+    #[tokio::test]
+    async fn history_waits_for_all_members_even_when_the_terminal_root_arrived_first() {
+        let mut root = record("s", "one", "completed");
+        root["turnRecordIds"] = serde_json::json!(["turn/one", "item/a", "item/b", "item/c"]);
+        let (mut reader, transport, events) = scripted_reader(vec![
+            history_page(8, vec![root, item("c")], true),
+            history_page(5, vec![item("b")], true),
+            history_page(2, vec![item("a")], true),
+        ]);
+        reader.resync().await.unwrap();
+        let reads = transport.reads.lock().unwrap();
+        assert_eq!(
+            reads.iter().map(|read| read.before).collect::<Vec<_>>(),
+            vec![None, Some(8), Some(5)]
+        );
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 5);
+        assert_eq!(events[0].payload["id"], "item/a");
+        assert_eq!(events[3].payload["id"], "item/c");
+        assert_eq!(events[4].event, "relay://session-ready");
+        assert_eq!(events[4].payload["hasMore"], true);
+        assert_eq!(events[4].payload["oldestSeq"], 2);
+        assert_eq!(events[4].payload["cursor"], 100);
+    }
+
+    #[tokio::test]
+    async fn legacy_pages_without_membership_remain_readable_and_publish_once_complete() {
+        let mut root = record("s", "one", "completed");
+        root.as_object_mut().unwrap().remove("turnRecordIds");
+        // Round trip the old wire shape, without inventing a new capability.
+        let first: StreamPage = serde_json::from_value(
+            serde_json::to_value(history_page(8, vec![root], true)).unwrap(),
+        )
+        .unwrap();
+        let (mut reader, transport, events) = scripted_reader(vec![
+            first,
+            history_page(5, vec![item("b")], true),
+            history_page(1, vec![item("a")], false),
+        ]);
+        reader.resync().await.unwrap();
+        assert_eq!(transport.reads.lock().unwrap().len(), 3);
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 4);
+        assert_eq!(events.last().unwrap().payload["hasMore"], false);
+        assert_eq!(events[0].payload["item"]["data"]["id"], "a");
+    }
+
+    #[tokio::test]
+    async fn missing_members_and_failed_continuations_never_emit_partial_turns() {
+        for has_more in [false, true] {
+            let mut root = record("s", "one", "completed");
+            root["turnRecordIds"] = serde_json::json!(["turn/one", "item/missing"]);
+            let (mut reader, _, events) =
+                scripted_reader(vec![history_page(8, vec![root], has_more)]);
+            assert!(reader.resync().await.is_err());
+            assert!(events.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn continuation_epoch_changes_and_stalled_cursors_never_publish_fragments() {
+        for kind in ["epoch", "empty", "same-cursor"] {
+            let mut root = record("s", "one", "completed");
+            root["turnRecordIds"] = serde_json::json!(["turn/one", "item/a"]);
+            let mut older = history_page(
+                if kind == "same-cursor" { 8 } else { 2 },
+                vec![item("a")],
+                true,
+            );
+            if kind == "epoch" {
+                older.epoch = 2;
+            }
+            if kind == "empty" {
+                older.events.clear();
+            }
+            let (mut reader, _, events) =
+                scripted_reader(vec![history_page(8, vec![root], true), older]);
+            assert!(reader.resync().await.is_err(), "{kind}");
+            assert!(events.lock().unwrap().is_empty(), "{kind}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_control_only_page_does_not_complete_an_empty_transcript() {
+        let mut controls = history_page(8, vec![serde_json::json!({"sessionId":"s"})], true);
+        controls.events[0].event = "session-interaction-changed".into();
+        let (mut reader, transport, events) = scripted_reader(vec![
+            controls,
+            history_page(2, vec![record("s", "one", "completed")], true),
+        ]);
+        reader.resync().await.unwrap();
+        assert_eq!(transport.reads.lock().unwrap().len(), 2);
+        let events = events.lock().unwrap();
+        assert_eq!(events[0].payload["id"], "turn/one");
+        assert_eq!(events[2].event, "relay://session-ready");
+    }
+
+    #[tokio::test]
+    async fn turn_snapshot_chunks_publish_once_and_reject_a_changed_snapshot_without_fragments() {
+        for invalid in [false, true] {
+            let mut first = history_page(8, vec![record("s", "one", "completed"), item("a")], true);
+            let mut next = history_page(5, vec![item("b")], true);
+            for (page, offset, next_offset) in [(&mut first, 0, Some(2)), (&mut next, 2, None)] {
+                for event in &mut page.events {
+                    event.seq = 100;
+                    event.payload["revision"] = 100.into();
+                }
+                page.turn_history = Some(super::super::host_stream::TurnHistoryPage {
+                    version: 1,
+                    snapshot_id: "snapshot".into(),
+                    turn_id: Some("one".into()),
+                    record_count: 3,
+                    offset,
+                    next_offset,
+                    before_turn: Some(1),
+                });
+            }
+            if invalid {
+                next.cursor += 1;
+            }
+            let (mut reader, transport, events) = scripted_reader(vec![first, next]);
+            let result = reader.resync().await;
+            if invalid {
+                assert!(result.is_err());
+                assert!(events.lock().unwrap().is_empty());
+            } else {
+                result.unwrap();
+                assert_eq!(transport.reads.lock().unwrap().len(), 2);
+                assert!(reader.turn_history);
+                assert_eq!(reader.before_turn, Some(1));
+                let emitted = events.lock().unwrap();
+                assert_eq!(emitted.len(), 4);
+                assert!(emitted[..3]
+                    .iter()
+                    .all(|event| event.payload["historyReplay"] == true));
+                assert_eq!(emitted[3].event, "relay://session-ready");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn older_snapshot_io_does_not_block_live_catch_up_and_never_publishes_half_a_turn() {
+        use super::super::host_stream::HistoryBatch;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct Transport {
+            hub: Arc<HostStreamHub>,
+            blocked: tokio::sync::Notify,
+            release: tokio::sync::Notify,
+            reads: AtomicUsize,
+        }
+        #[async_trait::async_trait]
+        impl StreamTransport for Transport {
+            async fn read_stream(&self, request: StreamReadRequest) -> Result<StreamPage> {
+                if request
+                    .turn_history
+                    .as_ref()
+                    .is_some_and(|history| history.offset > 0)
+                {
+                    self.blocked.notify_one();
+                    self.release.notified().await;
+                }
+                self.hub
+                    .read_history("controller", &request, |before| {
+                        self.reads.fetch_add(1, Ordering::SeqCst);
+                        async move {
+                            if before.is_none() {
+                                return Ok(HistoryBatch {
+                                    records: vec![record("s", "latest", "inprogress")],
+                                    before: Some(1),
+                                });
+                            }
+                            assert_eq!(before, Some(1));
+                            let mut records = vec![record("s", "one", "completed")];
+                            records.extend((0..201).map(|index| item(&index.to_string())));
+                            Ok(HistoryBatch {
+                                records,
+                                before: None,
+                            })
+                        }
+                    })
+                    .await
+            }
+            async fn unsubscribe_stream(&self, session: &str) -> Result<()> {
+                self.hub.unsubscribe("controller", session);
+                Ok(())
+            }
+        }
+        let (hints, _) = broadcast::channel(16);
+        let hub = HostStreamHub::start(Arc::new(HintFanout(hints.clone(), "desktop".into())));
+        let transport = Arc::new(Transport {
+            hub: hub.clone(),
+            blocked: Default::default(),
+            release: Default::default(),
+            reads: AtomicUsize::new(0),
+        });
+        let events = Arc::new(Mutex::new(Vec::<SessionEvent>::new()));
+        let live = Arc::new(tokio::sync::Notify::new());
+        let output = events.clone();
+        let live_signal = live.clone();
+        let errors = Arc::new(Mutex::new(Vec::new()));
+        let failures = errors.clone();
+        let subscriber = HostStreamSubscriber::start_with_transport(
+            transport.clone(),
+            hints.subscribe(),
+            "desktop".into(),
+            "s".into(),
+            Arc::new(move |event| {
+                if event.payload["id"] == "turn/latest" && event.payload["historyReplay"].is_null()
+                {
+                    live_signal.notify_one();
+                }
+                output.lock().unwrap().push(event);
+                Ok(())
+            }),
+            Arc::new(move |error| failures.lock().unwrap().push(error)),
+        )
+        .await
+        .unwrap();
+        assert_eq!(transport.reads.load(Ordering::SeqCst), 1);
+        assert_eq!(events.lock().unwrap().len(), 2); // Only latest + ready.
+        let older = tokio::spawn(subscriber.load_older());
+        tokio::time::timeout(Duration::from_secs(2), transport.blocked.notified())
+            .await
+            .unwrap();
+        assert_eq!(events.lock().unwrap().len(), 2); // No older fragment escaped.
+        hub.synchronize_records("s".into(), false, || async {
+            Ok(vec![record("s", "latest", "completed")])
+        })
+        .await
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), live.notified())
+            .await
+            .unwrap();
+        assert!(!older.is_finished());
+        assert_eq!(events.lock().unwrap().len(), 3); // Live output arrived during blocked history IO.
+        transport.release.notify_one();
+        older.await.unwrap().unwrap();
+        let events = events.lock().unwrap();
+        assert_eq!(events.last().unwrap().event, "relay://session-ready");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.payload["turn"]["turnId"] == "one")
+                .count(),
+            202
+        );
+        assert_eq!(transport.reads.load(Ordering::SeqCst), 2); // One source read per Turn, not per packet.
+        assert!(errors.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -579,6 +1191,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn opening_reads_a_small_latest_page_first() {
+        let lab = lab();
+        let _subscriber = lab.subscribe("s").await.unwrap();
+        let reads = lab.transport.reads.lock().unwrap().clone();
+        assert_eq!(reads[0].limit, Some(super::FIRST_PAGE_EVENTS));
+    }
+
+    #[tokio::test]
+    async fn opening_a_long_session_shows_whole_turns_and_pages_older_ones_after_them() {
+        let lab = lab();
+        lab.hub.activate("s");
+        let mut records = Vec::new();
+        for turn in 0..5 {
+            records.push(record("s", &format!("t{turn}"), "completed"));
+            for item in 0..19 {
+                let mut body = record("s", &format!("t{turn}"), "completed");
+                let id = format!("{turn}-{item}");
+                body["id"] = serde_json::json!(format!("item/{id}"));
+                body["round"] =
+                    serde_json::json!({"id":format!("r{turn}"),"turnId":format!("t{turn}")});
+                body["item"] = serde_json::json!({"type":"text","data":{"id":id}});
+                records.push(body);
+            }
+        }
+        lab.hub
+            .synchronize_records("s".into(), true, || async { Ok(records) })
+            .await
+            .unwrap();
+        let subscriber = lab.subscribe("s").await.unwrap();
+        let ids = |lab: &Lab| -> Vec<String> {
+            lab.events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(event, _)| event == "session-record")
+                .map(|(_, payload)| payload["id"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        // 48 events run out inside t2; the page grows back to its header.
+        let first = ids(&lab);
+        assert_eq!(first.len(), 60);
+        assert_eq!(first[0], "turn/t2");
+        let ready = lab.events.lock().unwrap().last().unwrap().1.clone();
+        assert_eq!(ready["hasMore"], true);
+        // The older page brings only turns the first page does not touch.
+        subscriber.load_older().await.unwrap();
+        let all = ids(&lab);
+        assert_eq!(all.len(), 100);
+        assert_eq!(all[60], "turn/t0");
+        let unique: std::collections::HashSet<_> = all.iter().collect();
+        assert_eq!(unique.len(), 100);
+        let ready = lab.events.lock().unwrap().last().unwrap().1.clone();
+        assert_eq!(ready["hasMore"], false);
+    }
+
+    #[tokio::test]
     async fn host_restart_is_announced_as_a_gap_and_replayed_from_the_latest_page() {
         let lab = lab();
         let _subscriber = lab.subscribe("s").await.unwrap();
@@ -638,6 +1306,8 @@ mod tests {
                 "relay://session-ready",
             ]
         );
+        let gap = lab.events.lock().unwrap()[2].1.clone();
+        assert_eq!(gap["resync"], true);
         let ready = lab.events.lock().unwrap().last().unwrap().1.clone();
         assert_eq!(ready["cursor"], page.cursor);
         assert!(lab.errors.lock().unwrap().is_empty());

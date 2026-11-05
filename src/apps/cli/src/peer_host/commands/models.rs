@@ -120,6 +120,11 @@ pub(crate) async fn test_ai_config_connection(args: &Value) -> Result<Value, Str
     let config: AIModelConfig =
         serde_json::from_value(request.get("config").cloned().ok_or("Missing config")?)
             .map_err(|error| format!("Invalid model configuration: {error}"))?;
+    if let Some(result) = openbitfun_core::agentic::execution::round_model_routing::configuration::test_configured_router_connection(&config)
+        .await.map_err(|error| error.to_string())?
+    {
+        return serde_json::to_value(result).map_err(|error| error.to_string());
+    }
     let image_input = config
         .capabilities
         .iter()

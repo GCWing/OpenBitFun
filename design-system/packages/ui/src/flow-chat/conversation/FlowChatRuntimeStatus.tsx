@@ -19,7 +19,7 @@ export function FlowChatRuntimeStatus({ label, visible, placement = 'inline', re
     <div className="runtime-status-slot__content" data-openbitfun-component="runtime-status-slot" data-openbitfun-part="content"
       style={revealDelayMs > 0 ? { transitionDelay: `${revealDelayMs}ms` } : undefined}>
       <span className="runtime-status-slot__icon" data-openbitfun-component="runtime-status-slot" data-openbitfun-part="leadingIcon" aria-hidden="true">
-        <Spinner size="sm" />
+        <Spinner size="md" />
       </span>
       <OverflowText className="runtime-status-slot__hint" data-openbitfun-component="runtime-status-slot" data-openbitfun-part="hint">{label}</OverflowText>
     </div>

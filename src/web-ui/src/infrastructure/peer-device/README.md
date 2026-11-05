@@ -18,16 +18,21 @@ starts when the host accepts the draft.
 `SessionRecordReplica` applies both replayed pages and live canonical records
 using stable IDs, revisions and tombstones; every page comes from the online
 host, and a stream-epoch change (host restart) drops the replica before replay.
-The latest page paints first; older pages share one in-flight reader. A visible
-open or explicit reader request can warm one adjacent page while the document is
-visible and the shared resource budget permits it. This never recursively drains
+With negotiated Turn snapshots, only the last complete Turn paints first; older
+hosts retain the complete-record-page fallback. Older reads share one in-flight
+reader. The viewport must acknowledge visible presentation before a visible open
+can warm one adjacent Turn, while the document is visible and the shared resource
+budget permits it. Reader requests can renew that prefetch credit. Switching back
+to a partial session preserves its loaded content. This never recursively drains
 the transcript. Hiding a view pauses optional prefetch only; live records,
 reconnect and interaction-mailbox delivery keep their subscriptions.
 
-The host sends each record of a page as its own event. Records reduce into the
-replica as they arrive; rendering the changed turns is coalesced to one store
-update per frame, and a page in flight renders as one batch before its ready
-event. Rendering per record is quadratic in the items of a long turn and freezes the UI thread. Live
+The Rust subscriber emits each record as its own event. Controller-local
+`historyReplay` records stage outside the replica until ready; `historyBatches`
+on ready identifies that annotation contract. Older controller bridges retain
+the sequential replay fallback. Live records reduce as they arrive, including
+during an older snapshot read; rendering is coalesced to one store update per
+frame. Rendering per record is quadratic in the items of a long turn and freezes the UI thread. Live
 pages have no ready event, so the frame timer publishes them; it is a timer
 rather than an animation frame so hidden windows keep applying records. A running
 turn reaching a terminal status, a visibility change, and any direct turn, round
@@ -46,6 +51,21 @@ The independent Runtime interaction mailbox restores unanswered questions and
 permissions without fetching the transcript. Keep its revisions and surface fence
 separate from history pagination. Neither a WebSocket connection nor an event
 listener alone recovers an interaction emitted before attachment.
+
+Explicit `session:`, `assistant:` and `new:` device actions own the session
+selection during activation. Workspace initialization defers automatic selection
+to that action, and activation promotes the selected catalog row on demand.
+Device-only switches retain automatic workspace/session restoration. Background
+catalogs catch up for the departed device and from their own host hints.
+
+Submission prepares the host queue snapshot alongside model synchronization.
+The durable outbox and host admission still enforce the observed queue epoch,
+Turn identity and deduplication. A fresh model target that includes
+`reasoningPreset` lets the client omit an identical model write. Legacy targets
+take the existing model update path. Registry-level command refusals are cached
+within the connection's capability generation and cleared by renegotiation.
+Peer turn checkpoints use explicit field updates for UI-owned title and
+notification metadata.
 
 ## Invariants (do not regress)
 
@@ -226,6 +246,16 @@ listener alone recovers an interaction emitted before attachment.
     Rollback remains an explicit runtime operation; it never falls back to a
     controller-local mutation. Never log catalog preview text.
 
+    A successful targeted rollback confirms the pre-request suffix even when
+    an older host omits `retiredTurnIds` or supplies only active/queued IDs.
+    Capture that suffix's stable identities from materialized Turns and the
+    catalog before invoking; after completion remove them and their send
+    previews before reporting success or submitting the edited prompt. Do not
+    delete by storage index after the response: a new Turn may reuse that slot.
+    Fence delayed records in the surface's replica until the host supplies its
+    real tombstone revision or starts a new authoritative replay. This must not
+    blacklist another device's equal IDs or prevent host-authoritative redo.
+
 15. **Git ownership trust is read on the peer, granted at the machine.**
     `git_get_repository_trust` is a read-only probe and routes to the peer
     host. `git_trust_repository` writes the peer user's global Git
@@ -276,6 +306,9 @@ listener alone recovers an interaction emitted before attachment.
     before RPC. Missing capability means unsupported, including older Desktop
     and CLI peers. Discovery reports the host's OS availability; it must never
     inspect or execute the controller's WSL installation as a fallback.
+    `ssh_none_auth_v1` gates SSH profile requests with `auth.type === 'None'`
+    the same way; an older host cannot parse that method, so controllers reject
+    the request before RPC and keep the record unchanged.
 
 19. **Session copying needs an explicitly negotiated request contract.**
     `whole_session_copy_v1` enables the dedicated `copy_session` command.

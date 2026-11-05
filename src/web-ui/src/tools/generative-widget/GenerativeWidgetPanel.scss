@@ -9,7 +9,6 @@
 }
 
 .openbitfun-generative-widget-panel--empty {
-  display: flex;
   align-items: center;
   justify-content: center;
 }
@@ -19,6 +18,30 @@
   font-size: var(--openbitfun-type-label-md-font-size);
 }
 
+.openbitfun-generative-widget-panel__skeleton {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.openbitfun-generative-widget-panel__skeleton span {
+  display: block;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--openbitfun-color-action-neutral-surface-hover), var(--openbitfun-color-surface-panel), var(--openbitfun-color-action-neutral-surface-hover));
+  background-size: 240% 100%;
+  animation: openbitfun-genui-skeleton 1.2s ease-in-out infinite;
+}
+
+.openbitfun-generative-widget-panel__skeleton span:nth-child(2) { width: 82%; }
+.openbitfun-generative-widget-panel__skeleton span:nth-child(3) { width: 58%; }
+
+@keyframes openbitfun-genui-skeleton {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
 .openbitfun-generative-widget-panel__toolbar {
   display: flex;
   align-items: center;
@@ -26,82 +49,90 @@
   gap: 12px;
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--openbitfun-color-content-on-dark) 12%, transparent);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--openbitfun-color-surface-panel);
 }
 
-.openbitfun-generative-widget-panel__toolbar-meta,
-.openbitfun-generative-widget-panel__toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.openbitfun-generative-widget-panel__save-state {
-  font-size: var(--openbitfun-type-label-sm-font-size);
+.openbitfun-generative-widget-panel__status,
+.openbitfun-generative-widget-panel__readonly,
+.openbitfun-generative-widget-panel__title {
   color: var(--openbitfun-color-content-secondary);
-}
-
-.openbitfun-generative-widget-panel__save-state--saved {
-  color: var(--openbitfun-color-status-success-content);
-}
-
-.openbitfun-generative-widget-panel__save-state--saving,
-.openbitfun-generative-widget-panel__save-state--unsaved {
-  color: var(--openbitfun-color-status-warning-content);
-}
-
-.openbitfun-generative-widget-panel__save-state--error {
-  color: var(--openbitfun-color-status-danger-content);
-}
-
-.openbitfun-generative-widget-panel__workspace {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-
-.openbitfun-generative-widget-panel__pane {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid color-mix(in srgb, var(--openbitfun-color-content-on-dark) 12%, transparent);
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--openbitfun-color-surface-panel);
-}
-
-.openbitfun-generative-widget-panel__pane-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--openbitfun-color-content-on-dark) 8%, transparent);
-}
-
-.openbitfun-generative-widget-panel__pane-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   font-size: var(--openbitfun-type-label-sm-font-size);
+}
+
+.openbitfun-generative-widget-panel__title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--openbitfun-color-content-primary);
   font-weight: var(--openbitfun-type-label-selected-font-weight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.openbitfun-generative-widget-panel__status {
   color: var(--openbitfun-color-content-primary);
 }
 
-.openbitfun-generative-widget-panel__editor-field {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
+.openbitfun-generative-widget-panel--app {
+  padding: 0;
+  gap: 0;
 }
 
-.openbitfun-generative-widget-panel__error {
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--openbitfun-color-status-danger-content) 50%, transparent);
-  background: color-mix(in srgb, var(--openbitfun-color-status-danger-content) 10%, transparent);
-  color: var(--openbitfun-color-status-danger-content);
-  font-size: var(--openbitfun-type-label-sm-font-size);
+.openbitfun-generative-widget-panel--app .openbitfun-generative-widget-panel__toolbar {
+  flex: none;
+  margin: 12px 12px 0;
+}
+
+.openbitfun-generative-widget-panel--inline {
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  gap: 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.openbitfun-generative-widget-panel--inline .openbitfun-generative-widget-panel__toolbar {
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.openbitfun-generative-widget-panel__expand {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--openbitfun-color-border-default);
+  border-radius: var(--openbitfun-radius-sm);
+  color: var(--openbitfun-color-content-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.openbitfun-generative-widget-panel__expand:hover {
+  color: var(--openbitfun-color-content-primary);
+  background: var(--openbitfun-color-action-neutral-surface-hover);
+}
+
+.openbitfun-generative-widget-panel--inline .openbitfun-generative-widget-panel__app {
+  overflow: visible;
+}
+
+/* The FlowChat answer owns the surface. The application renderer must not
+ * add a second card-like canvas around the OpenUI document. */
+.openbitfun-generative-widget-panel--inline .gen-ui-application {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.openbitfun-generative-widget-panel__app {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }

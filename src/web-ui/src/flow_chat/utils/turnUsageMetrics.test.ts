@@ -48,61 +48,60 @@ describe('getTurnUsageMetrics', () => {
       .toEqual({ totalTokens: null, cacheHitRate: null, outputRate: null, speedLevel: null });
   });
 
-  it('divides by streaming time so tool execution cannot deflate the rate', () => {
-    const rounds = [round({ streamDurationMs: 12_000, firstVisibleOutputMs: 2_000 })];
-    // The turn took 90s wall time; the model only streamed for 10s.
+  it('includes TTFT in request duration so buffered output cannot inflate the rate', () => {
+    const rounds = [round({ durationMs: 12_000, streamDurationMs: 12_000, firstVisibleOutputMs: 2_000 })];
+    // The turn took 90s wall time; the model request took 12s including TTFT.
     expect(getTurnUsageMetrics({ ...usage, outputTokens: 2_000 }, getTurnOutputDurationMs(rounds)))
-      .toMatchObject({ outputRate: 200, speedLevel: 4 });
+      .toMatchObject({ outputRate: 2_000 / 12, speedLevel: 4 });
   });
 });
 
 describe('getTurnOutputDurationMs', () => {
-  it('subtracts TTFT within the stream window, ignoring earlier metadata chunks', () => {
-    expect(getTurnOutputDurationMs([round({ streamDurationMs: 12_000, firstChunkMs: 50, firstVisibleOutputMs: 2_000, ttftMs: 3_000 })])).toBe(10_000);
+  it('uses request-to-completion duration, including TTFT and ignoring stream marks', () => {
+    expect(getTurnOutputDurationMs([round({ durationMs: 12_000, streamDurationMs: 12_000, firstChunkMs: 50, firstVisibleOutputMs: 2_000, ttftMs: 3_000 })])).toBe(12_000);
   });
 
-  it('uses effective output even when the first upstream chunk is unrecorded', () => {
-    expect(getTurnOutputDurationMs([round({ streamDurationMs: 9_000, firstVisibleOutputMs: 1_500 })])).toBe(7_500);
+  it('accepts a pseudo-stream duration when one large output chunk arrives late', () => {
+    expect(getTurnOutputDurationMs([round({ durationMs: 30_000, streamDurationMs: 30_010, firstVisibleOutputMs: 30_000 })])).toBe(30_000);
   });
 
-  it('does not invent a generation window when only the first upstream chunk is known', () => {
-    expect(getTurnOutputDurationMs([round({ streamDurationMs: 9_000, firstChunkMs: 50 })])).toBeUndefined();
+  it('does not invent request time when only stream marks are known', () => {
+    expect(getTurnOutputDurationMs([round({ streamDurationMs: 9_000, firstVisibleOutputMs: 1_500 })])).toBeUndefined();
   });
 
   it('sums every round of a multi-round turn', () => {
     expect(getTurnOutputDurationMs([
-      round({ streamDurationMs: 5_000, firstVisibleOutputMs: 1_000 }),
-      round({ streamDurationMs: 7_000, firstVisibleOutputMs: 2_000 }),
-    ])).toBe(9_000);
+      round({ durationMs: 5_000, streamDurationMs: 5_000, firstVisibleOutputMs: 1_000 }),
+      round({ durationMs: 7_000, streamDurationMs: 7_000, firstVisibleOutputMs: 2_000 }),
+    ])).toBe(12_000);
   });
 
   it('excludes controller setup rows while requiring every actual model call to be timed', () => {
     const setup = round({ index: -1 });
-    const timed = round({ streamDurationMs: 5_000, firstVisibleOutputMs: 1_000 });
-    expect(getTurnOutputDurationMs([setup, timed])).toBe(4_000);
+    const timed = round({ durationMs: 5_000, streamDurationMs: 5_000, firstVisibleOutputMs: 1_000 });
+    expect(getTurnOutputDurationMs([setup, timed])).toBe(5_000);
     expect(getTurnOutputDurationMs([setup])).toBeUndefined();
     expect(getTurnOutputDurationMs([setup, round({}), timed])).toBeUndefined();
   });
 
-  it('accepts zero first-output latency without substituting a later mark', () => {
-    expect(getTurnOutputDurationMs([round({ streamDurationMs: 2_000, firstChunkMs: 0, firstVisibleOutputMs: 0 })])).toBe(2_000);
+  it('accepts request duration without requiring a first-output mark', () => {
+    expect(getTurnOutputDurationMs([round({ durationMs: 2_000, firstChunkMs: 0 })])).toBe(2_000);
   });
 
   it('does not use accepted-attempt timing for usage that also includes retries', () => {
-    expect(getTurnOutputDurationMs([round({ streamDurationMs: 2_000, firstVisibleOutputMs: 500, attemptCount: 2 })])).toBeUndefined();
+    expect(getTurnOutputDurationMs([round({ durationMs: 2_000, streamDurationMs: 2_000, firstVisibleOutputMs: 500, attemptCount: 2 })])).toBeUndefined();
   });
 
-  it.each([-1, NaN, Infinity])('rejects invalid effective-output time %s', firstVisibleOutputMs => {
-    expect(getTurnOutputDurationMs([round({ streamDurationMs: 2_000, firstVisibleOutputMs })])).toBeUndefined();
+  it.each([0, -1, NaN, Infinity])('rejects invalid request duration %s', durationMs => {
+    expect(getTurnOutputDurationMs([round({ durationMs })])).toBeUndefined();
   });
 
-  it('never reports a negative or invented window', () => {
-    expect(getTurnOutputDurationMs([round({ streamDurationMs: 1_000, firstVisibleOutputMs: 4_000 })])).toBeUndefined();
-    expect(getTurnOutputDurationMs([round({ streamDurationMs: 2_000, firstVisibleOutputMs: 2_000 })])).toBeUndefined();
+  it('does not use a non-positive request duration', () => {
+    expect(getTurnOutputDurationMs([round({ durationMs: 0 })])).toBeUndefined();
   });
 
   it('rejects incomplete turn timing instead of dividing all tokens by partial time', () => {
-    expect(getTurnOutputDurationMs([round({}), round({ streamDurationMs: 6_000, firstVisibleOutputMs: 1_000 })]))
+    expect(getTurnOutputDurationMs([round({}), round({ durationMs: 6_000 })]))
       .toBeUndefined();
     expect(getTurnOutputDurationMs([round({}), round({})])).toBeUndefined();
     expect(getTurnOutputDurationMs([])).toBeUndefined();

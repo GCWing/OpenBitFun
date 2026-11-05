@@ -4,6 +4,7 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: { exclude: ['@bokuweb/zstd-wasm'] },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

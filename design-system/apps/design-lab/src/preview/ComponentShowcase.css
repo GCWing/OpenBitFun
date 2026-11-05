@@ -27,7 +27,6 @@
 .design-selected-stage[data-mobile] .design-selected-component { display: block; width: 100%; max-width: 390px; margin-inline: auto; }
 .design-preview-width-label { display: block; margin-bottom: var(--openbitfun-space-4); color: var(--openbitfun-color-content-muted); font-size: var(--openbitfun-type-body-xs-font-size); text-align: center; }
 .design-hidden-preview { margin: var(--openbitfun-space-4) 0 0; font-size: var(--openbitfun-type-body-sm-font-size); color: var(--openbitfun-color-content-secondary); }
-.design-preview-reduced-motion > span { animation: none !important; transform: none; }
 .design-navigation-example { display: grid; gap: var(--openbitfun-space-5); width: 100%; }
 .design-navigation-content { padding: var(--openbitfun-space-5); border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle); border-radius: var(--openbitfun-radius-md); background: var(--openbitfun-color-surface-canvas); }
 .design-navigation-content p { margin-bottom: 0; color: var(--openbitfun-color-content-secondary); }

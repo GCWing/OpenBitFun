@@ -14,6 +14,7 @@ pub mod session_store_port;
 pub mod token_anchor;
 pub(crate) mod transcript_render;
 pub mod turn_skill_agent_snapshot_store;
+pub(crate) mod turn_usage;
 
 pub use compression::*;
 pub use context_store::*;

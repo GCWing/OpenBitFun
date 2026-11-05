@@ -176,6 +176,7 @@ target deactivation; it does not require the original window to remain open.
 
 ```bash
 cargo test --locked -p openbitfun-computer-use --lib
+cargo test --locked -p openbitfun-computer-use --lib control_session::tests::
 cargo test --locked -p openbitfun-computer-use --lib native_generated_stream_captures_and_stops -- --ignored
 node scripts/test-windows-computer-use-native.mjs --check --target x86_64-pc-windows-msvc
 ```

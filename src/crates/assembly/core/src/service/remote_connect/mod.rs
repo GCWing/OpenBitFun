@@ -52,6 +52,10 @@ pub mod host_stream_subscriber {
     pub use openbitfun_services_integrations::remote_connect::host_stream_subscriber::*;
 }
 
+pub mod rpc_execution {
+    pub use openbitfun_services_integrations::remote_connect::rpc_execution::*;
+}
+
 pub mod session_records {
     pub use openbitfun_services_integrations::remote_connect::session_records::*;
 }
@@ -1012,11 +1016,14 @@ impl RemoteConnectService {
     ///
     /// `notifier` delivers host stream hints to subscribed controllers; the host
     /// adapter owns pairwise encryption and the routing lease, so it supplies it.
+    /// `priority` decides which host serves this device when several OpenBitFun
+    /// hosts on the machine share its identity.
     pub async fn start_device_connection(
         &self,
         relay_url: &str,
-        token: &str,
+        session: &AccountSession,
         device_name: &str,
+        priority: relay_client::DeviceRoutingPriority,
         notifier: Arc<dyn host_stream::HostStreamNotifier>,
     ) -> Result<(
         tokio::sync::mpsc::Receiver<relay_client::RelayEvent>,
@@ -1027,9 +1034,12 @@ impl RemoteConnectService {
         // Disconnect previous device connection if any.
         self.stop_device_connection_inner().await;
 
-        let (client, mut event_rx) = RelayClient::new();
+        let (client, mut event_rx) = RelayClient::new_device_host(priority);
+        let client = client.with_account_session(session);
         client.connect(relay_url).await?;
-        client.connect_authenticated(token, device_name).await?;
+        client
+            .connect_authenticated(&session.token, device_name)
+            .await?;
 
         // Wait for AuthOk (or AuthError) before proceeding so that the
         // device is registered as online on the relay before the caller
@@ -1192,6 +1202,26 @@ impl RemoteConnectService {
         encrypted_data: &str,
         nonce: &str,
     ) -> Result<bool> {
+        self.send_device_message_if_connection_guarded(
+            expected_connection_id,
+            target_device_id,
+            correlation_id,
+            encrypted_data,
+            nonce,
+            || Ok(()),
+        )
+        .await
+    }
+
+    pub async fn send_device_message_if_connection_guarded(
+        &self,
+        expected_connection_id: u64,
+        target_device_id: &str,
+        correlation_id: &str,
+        encrypted_data: &str,
+        nonce: &str,
+        before_send: impl Fn() -> Result<()>,
+    ) -> Result<bool> {
         let _lifecycle = self.device_relay_lifecycle.lock().await;
         if *self.active_device_connection_id.read().await != Some(expected_connection_id) {
             return Ok(false);
@@ -1204,7 +1234,13 @@ impl RemoteConnectService {
             .ok_or_else(|| anyhow::anyhow!("device routing not connected"))?;
         drop(_lifecycle);
         client
-            .send_device_message(target_device_id, correlation_id, encrypted_data, nonce)
+            .send_device_message_guarded(
+                target_device_id,
+                correlation_id,
+                encrypted_data,
+                nonce,
+                before_send,
+            )
             .await?;
         Ok(true)
     }

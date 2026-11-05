@@ -18,8 +18,9 @@ use openbitfun_core::service::remote_connect::account_runtime::{
     BackgroundRoutingOwnerRetirementError,
 };
 use openbitfun_core::service::remote_connect::{
-    self, encryption, relay_client::RelayClient, relay_client::RelayEvent, session_store,
-    DeviceIdentity, RemoteServer,
+    self, encryption,
+    relay_client::{ConnectionState, DeviceRoutingPriority, RelayClient, RelayEvent},
+    session_store, DeviceIdentity, RemoteServer,
 };
 
 pub(crate) struct CliAccountRuntimeParts {
@@ -72,7 +73,12 @@ pub(crate) fn account_snapshot_projection(
 pub(crate) fn account_login_status_message(
     result: &openbitfun_core::service::remote_connect::account_runtime::AccountLoginResult,
 ) -> String {
-    if result.routing_connected {
+    if result.routing_standby {
+        format!(
+            "Logged in as user {} on {}. Another OpenBitFun host on this machine serves device routing; this one takes over when it exits.",
+            result.user_id, result.relay_url
+        )
+    } else if result.routing_connected {
         format!(
             "Logged in as user {} on {}. Device routing connected.",
             result.user_id, result.relay_url
@@ -173,11 +179,19 @@ impl CliAccountRoutingHost {
         }
         self.stop_routing().await;
 
-        let (client, mut event_rx) = RelayClient::new();
+        // A Desktop host on this machine serves the shared device first; this
+        // client stands by and takes over once that host exits.
+        let (client, mut event_rx) = RelayClient::new_device_host(DeviceRoutingPriority::Secondary);
+        let client = client.with_account_session(&request.session);
         client.connect(&request.relay_url).await?;
         client
             .connect_authenticated(&request.session.token, &request.device_name)
             .await?;
+        if client.connection_state().await == ConnectionState::Standby {
+            tracing::info!(
+                "Another OpenBitFun host on this machine serves this device; device routing is standing by"
+            );
+        }
         let client = Arc::new(client);
         {
             let _routing_guard = self.lifecycle.write().await;
@@ -342,22 +356,25 @@ impl CliAccountRoutingHost {
             relay_url,
             cancellation: Some(cancelled.clone()),
         };
-        tokio::select! {
-            biased;
-            _ = cancelled.changed() => { tracing::debug!("Retired pending RPC after account routing transition"); }
-            _ = async {
-        ACTIVE_PEER_FANOUT_OWNER
-            .scope(fanout_owner, async {
-                self.handle_current_relay_event(
-                    event,
-                    relay_client,
-                    account_generation,
-                    expected_token,
-                )
-                .await;
-            })
-            .await;
-            } => {}
+        let device_rpc = matches!(&event, RelayEvent::DeviceMessageReceived { .. });
+        let mut event_cancellation = cancelled.clone();
+        let handling = ACTIVE_PEER_FANOUT_OWNER.scope(
+            fanout_owner,
+            self.handle_current_relay_event(
+                event,
+                relay_client,
+                account_generation,
+                expected_token,
+                &mut event_cancellation,
+            ),
+        );
+        if device_rpc {
+            // RPC execution has its own cancellation boundary. Do not drop an
+            // accepted model write or lose its task-local owner and routing lease.
+            handling.await;
+        } else {
+            let _ =
+                remote_connect::rpc_execution::run_rpc_stage(&mut cancelled, false, handling).await;
         }
     }
 
@@ -367,6 +384,7 @@ impl CliAccountRoutingHost {
         relay_client: &Arc<RelayClient>,
         account_generation: u64,
         expected_token: &str,
+        cancellation: &mut tokio::sync::watch::Receiver<u64>,
     ) {
         let runtime = match self.runtime() {
             Ok(runtime) => runtime,
@@ -420,12 +438,6 @@ impl CliAccountRoutingHost {
                 }
             }
             RelayEvent::DevicePresence { devices } => {
-                if let Ok((session, _)) = runtime
-                    .read_account_context_for_generation(account_generation)
-                    .await
-                {
-                    session.clear_peer_keys().await;
-                }
                 tracing::info!("Device presence updated: {} online", devices.len());
                 if !self
                     .routing_loop_is_current(account_generation, relay_client)
@@ -445,57 +457,73 @@ impl CliAccountRoutingHost {
             RelayEvent::DeviceMessageReceived {
                 source_device_id,
                 correlation_id,
+                encoding_offer,
                 encrypted_data,
                 nonce,
             } => {
-                let Ok((session, relay_url)) = runtime
-                    .read_account_context_for_generation(account_generation)
-                    .await
+                use remote_connect::remote_server::{RemoteCommand, RemoteResponse};
+                use remote_connect::rpc_execution::run_rpc_stage;
+
+                let prepare = async {
+                    let Ok((session, relay_url)) = runtime
+                        .read_account_context_for_generation(account_generation)
+                        .await
+                    else {
+                        return None;
+                    };
+                    if session.token != expected_token
+                        || !self
+                            .routing_loop_is_current(account_generation, relay_client)
+                            .await
+                    {
+                        return None;
+                    }
+                    let plaintext = match session
+                        .decrypt_peer_message(
+                            &relay_url,
+                            &source_device_id,
+                            &encrypted_data,
+                            &nonce,
+                            encoding_offer,
+                        )
+                        .await
+                    {
+                        Ok(plaintext) => plaintext,
+                        Err(error) => {
+                            tracing::warn!("Failed to decrypt device message: {error}");
+                            return None;
+                        }
+                    };
+                    let command: RemoteCommand = match serde_json::from_str(&plaintext) {
+                        Ok(command) => command,
+                        Err(error) => {
+                            tracing::warn!("Could not parse device command: {error}");
+                            return None;
+                        }
+                    };
+                    tracing::info!(
+                        "Device command received: source={source_device_id} corr={correlation_id}"
+                    );
+                    let peer_key = match session
+                        .peer_message_key(&relay_url, &source_device_id)
+                        .await
+                    {
+                        Ok(key) => key,
+                        Err(error) => {
+                            tracing::warn!("Failed to resolve peer message key: {error}");
+                            return None;
+                        }
+                    };
+                    Some((session, command, peer_key))
+                };
+                let Some((session, command, peer_key)) =
+                    run_rpc_stage(cancellation, false, prepare).await.flatten()
                 else {
                     return;
                 };
-                if session.token != expected_token
-                    || !self
-                        .routing_loop_is_current(account_generation, relay_client)
-                        .await
-                {
-                    return;
-                }
-                let plaintext = match session
-                    .decrypt_from_peer(&relay_url, &source_device_id, &encrypted_data, &nonce)
-                    .await
-                {
-                    Ok(plaintext) => plaintext,
-                    Err(error) => {
-                        tracing::warn!("Failed to decrypt device message: {error}");
-                        return;
-                    }
-                };
-                use remote_connect::remote_server::{RemoteCommand, RemoteResponse};
-                let command: RemoteCommand = match serde_json::from_str(&plaintext) {
-                    Ok(command) => command,
-                    Err(error) => {
-                        tracing::warn!("Could not parse device command: {error}");
-                        return;
-                    }
-                };
-                tracing::info!(
-                    "Device command received: source={source_device_id} corr={correlation_id}"
-                );
-                let peer_key = match session
-                    .peer_message_key(&relay_url, &source_device_id)
-                    .await
-                {
-                    Ok(key) => key,
-                    Err(error) => {
-                        tracing::warn!("Failed to resolve peer message key: {error}");
-                        return;
-                    }
-                };
-                // Host streams are answered from this host's memory for the
-                // requesting device; every other command goes to the dispatcher.
-                let hub = self.host_stream_hub().await;
-                let response =
+                let model_write = matches!(&command, RemoteCommand::SetSessionModel { .. });
+                let execute = async {
+                    let hub = self.host_stream_hub().await;
                     match openbitfun_core::service::remote_connect::handle_host_stream_command(
                         hub.as_ref(),
                         &source_device_id,
@@ -509,50 +537,62 @@ impl CliAccountRoutingHost {
                                 crate::peer_host::handle_host_invoke(command, args.clone()).await
                             }
                             RemoteCommand::DeviceEvent { event, payload } => {
-                                // A host is also a controller of its peers: stream
-                                // hints addressed to this device feed local subscribers.
                                 session.deliver_device_event(&source_device_id, event, payload);
                                 crate::peer_host::handle_device_event_command()
                             }
                             other => RemoteServer::new(peer_key).dispatch(other).await,
                         },
+                    }
+                };
+                let Some(response) = run_rpc_stage(cancellation, model_write, execute).await else {
+                    return;
+                };
+                if correlation_id.is_empty() {
+                    return;
+                }
+                let reply = async {
+                    if !self
+                        .routing_loop_is_current(account_generation, relay_client)
+                        .await
+                    {
+                        return;
+                    }
+                    let response_json = serde_json::to_string(&response).unwrap_or_else(|error| {
+                        serde_json::to_string(&RemoteResponse::Error {
+                            message: format!("failed to serialize RPC response: {error}"),
+                        })
+                        .unwrap_or_else(|_| {
+                            r#"{"resp":"error","message":"serialize failed"}"#.to_string()
+                        })
+                    });
+                    let Ok((encrypted_response, response_nonce)) =
+                        encryption::encrypt_relay_message(
+                            &peer_key,
+                            &response_json,
+                            encoding_offer.accepts_zstd(),
+                        )
+                    else {
+                        tracing::warn!("Failed to encrypt RPC response");
+                        return;
                     };
-                if !self
-                    .routing_loop_is_current(account_generation, relay_client)
-                    .await
-                {
-                    return;
-                }
-                let response_json = serde_json::to_string(&response).unwrap_or_else(|error| {
-                    serde_json::to_string(&RemoteResponse::Error {
-                        message: format!("failed to serialize RPC response: {error}"),
-                    })
-                    .unwrap_or_else(|_| {
-                        r#"{"resp":"error","message":"serialize failed"}"#.to_string()
-                    })
-                });
-                let Ok((encrypted_response, response_nonce)) =
-                    encryption::encrypt_to_base64(&peer_key, &response_json)
-                else {
-                    tracing::warn!("Failed to encrypt RPC response");
-                    return;
+                    let reply_target = if source_device_id == "rpc" {
+                        "rpc"
+                    } else {
+                        source_device_id.as_str()
+                    };
+                    if let Err(error) = relay_client
+                        .send_device_message(
+                            reply_target,
+                            &correlation_id,
+                            &encrypted_response,
+                            &response_nonce,
+                        )
+                        .await
+                    {
+                        tracing::warn!("Failed to send RPC response: {error}");
+                    }
                 };
-                let reply_target = if source_device_id == "rpc" {
-                    "rpc"
-                } else {
-                    source_device_id.as_str()
-                };
-                if let Err(error) = relay_client
-                    .send_device_message(
-                        reply_target,
-                        &correlation_id,
-                        &encrypted_response,
-                        &response_nonce,
-                    )
-                    .await
-                {
-                    tracing::warn!("Failed to send RPC response: {error}");
-                }
+                let _ = run_rpc_stage(cancellation, false, reply).await;
             }
             RelayEvent::Disconnected => {
                 tracing::info!("Device routing disconnected");
@@ -688,6 +728,10 @@ impl AccountRuntimeHost for CliAccountRoutingHost {
         crate::remote_control::retire_daemon_account().await;
         self.stop_routing().await;
     }
+
+    async fn device_routing_is_standby(&self) -> bool {
+        self.connection_state().await == ConnectionState::Standby
+    }
 }
 
 fn same_routing_client<T>(current: Option<&Arc<T>>, expected: &Arc<T>) -> bool {
@@ -817,9 +861,10 @@ impl openbitfun_core::service::remote_connect::host_stream::HostStreamNotifier
                     return;
                 }
             };
-            let (encrypted_data, nonce) = match lease
+            let before_send = lease.session.peer_message_guard();
+            let (encrypted_data, nonce, uses_zstd) = match lease
                 .session
-                .encrypt_for_peer(&lease.relay_url, &target, &envelope)
+                .encrypt_for_peer_with_encoding(&lease.relay_url, &target, &envelope)
                 .await
             {
                 Ok(encrypted) => encrypted,
@@ -831,7 +876,13 @@ impl openbitfun_core::service::remote_connect::host_stream::HostStreamNotifier
             let correlation_id = uuid::Uuid::new_v4().to_string();
             if let Err(error) = lease
                 .relay_client
-                .send_device_message(&target, &correlation_id, &encrypted_data, &nonce)
+                .send_device_message_guarded(
+                    &target,
+                    &correlation_id,
+                    &encrypted_data,
+                    &nonce,
+                    || before_send(uses_zstd),
+                )
                 .await
             {
                 tracing::debug!("Host stream hint to {target} failed: {error}");
@@ -864,6 +915,22 @@ pub(crate) fn acquire_peer_fanout_lease(owner: &PeerFanoutOwner) -> Result<PeerF
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn standby_login_does_not_claim_connected_routing() {
+        let result =
+            openbitfun_core::service::remote_connect::account_runtime::AccountLoginResult {
+                user_id: "user".into(),
+                relay_url: "https://relay.example.test".into(),
+                routing_owner_replaced: false,
+                routing_connected: false,
+                routing_standby: true,
+                routing_error: None,
+            };
+        let message = account_login_status_message(&result);
+        assert!(message.contains("takes over when it exits"), "{message}");
+        assert!(!message.contains("Device routing connected"), "{message}");
+    }
 
     #[test]
     fn stale_routing_loop_cannot_clear_replacement_client() {

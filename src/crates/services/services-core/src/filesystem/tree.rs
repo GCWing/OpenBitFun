@@ -208,6 +208,36 @@ impl Default for FileContentSearchOptions {
     }
 }
 
+/// Content search exclusions shared by every interactive backend, so the same
+/// query does not see different files depending on where the workspace lives.
+pub const CONTENT_SEARCH_SKIPPED_DIRECTORIES: &[&str] = &[
+    "node_modules",
+    ".git",
+    ".svn",
+    ".hg",
+    "target",
+    "build",
+    "dist",
+    "out",
+    ".next",
+    ".nuxt",
+    ".cache",
+    "__pycache__",
+    "coverage",
+    ".idea",
+    ".vscode",
+];
+pub const CONTENT_SEARCH_SKIPPED_FILE_NAMES: &[&str] = &[".DS_Store", "Thumbs.db"];
+/// Lowercase file-name suffixes treated as binary without reading the file.
+pub const CONTENT_SEARCH_BINARY_SUFFIXES: &[&str] = &[
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg", ".webp", ".mp4", ".avi", ".mov",
+    ".wmv", ".flv", ".mkv", ".mp3", ".wav", ".flac", ".aac", ".ogg", ".zip", ".tar", ".gz", ".7z",
+    ".rar", ".bz2", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".woff", ".woff2",
+    ".ttf", ".otf", ".eot", ".exe", ".dll", ".so", ".dylib", ".bin", ".pyc", ".class", ".o", ".a",
+    ".lib",
+];
+pub const CONTENT_SEARCH_MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileSearchOutcome {
     pub results: Vec<FileSearchResult>,
@@ -1477,41 +1507,16 @@ impl FileTreeService {
     }
 
     fn should_skip_directory_static(file_name: &str) -> bool {
-        matches!(
-            file_name,
-            "node_modules"
-                | ".git"
-                | ".svn"
-                | ".hg"
-                | "target"
-                | "build"
-                | "dist"
-                | "out"
-                | ".next"
-                | ".nuxt"
-                | ".cache"
-                | "__pycache__"
-                | "coverage"
-                | ".idea"
-                | ".vscode"
-        )
+        CONTENT_SEARCH_SKIPPED_DIRECTORIES.contains(&file_name)
     }
 
     fn should_skip_file_static(file_name: &str) -> bool {
-        matches!(file_name, ".DS_Store" | "Thumbs.db")
+        CONTENT_SEARCH_SKIPPED_FILE_NAMES.contains(&file_name)
     }
 
     fn is_binary_file_static(file_name: &str) -> bool {
-        let binary_extensions = [
-            ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg", ".webp", ".mp4", ".avi",
-            ".mov", ".wmv", ".flv", ".mkv", ".mp3", ".wav", ".flac", ".aac", ".ogg", ".zip",
-            ".tar", ".gz", ".7z", ".rar", ".bz2", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt",
-            ".pptx", ".woff", ".woff2", ".ttf", ".otf", ".eot", ".exe", ".dll", ".so", ".dylib",
-            ".bin", ".pyc", ".class", ".o", ".a", ".lib",
-        ];
-
         let lower_name = file_name.to_lowercase();
-        binary_extensions
+        CONTENT_SEARCH_BINARY_SUFFIXES
             .iter()
             .any(|ext| lower_name.ends_with(ext))
     }

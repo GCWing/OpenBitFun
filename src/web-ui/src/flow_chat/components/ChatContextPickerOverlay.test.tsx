@@ -4,6 +4,7 @@ import React, { act, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sessionAPI, workspaceAPI } from '@/infrastructure/api';
+import { activateSurface, LOCAL_SURFACE_ID } from '@/infrastructure/peer-device/deviceSurface';
 import {
   ChatContextPicker,
   type ChatContextPickerEntryView,
@@ -15,6 +16,10 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, options?: { field?: string }) => options?.field ? `${key}:${options.field}` : key }),
+}));
+
+vi.mock('@/infrastructure/runtime/environment', () => ({
+  isTauriRuntime: () => true,
 }));
 
 vi.mock('@/infrastructure/api', () => ({
@@ -50,6 +55,7 @@ interface HarnessProps {
   searchQuery?: string;
   remoteConnectionId?: string;
   entryView?: ChatContextPickerEntryView;
+  excludeSessionId?: string;
   skills?: readonly ContextPickerSkill[];
   skillsLoading?: boolean;
   skillsLoadFailed?: boolean;
@@ -67,6 +73,7 @@ const Harness: React.FC<HarnessProps> = ({
   searchQuery = '',
   remoteConnectionId = 'remote-connection-1',
   entryView = 'files',
+  excludeSessionId,
   skills,
   skillsLoading,
   skillsLoadFailed,
@@ -95,6 +102,7 @@ const Harness: React.FC<HarnessProps> = ({
         remoteConnectionId={remoteConnectionId}
         anchorRef={anchorRef}
         entryView={entryView}
+        excludeSessionId={excludeSessionId}
         skills={skills}
         skillsLoading={skillsLoading}
         skillsLoadFailed={skillsLoadFailed}
@@ -264,6 +272,45 @@ describe('ChatContextPicker overlay', () => {
     );
   });
 
+  it('keeps horizontal arrows in the open menu even when they cannot navigate', async () => {
+    vi.mocked(workspaceAPI.explorerGetChildren).mockResolvedValueOnce([
+      { path: '/workspace/README.md', name: 'README.md', isDirectory: false },
+    ]);
+    const render = (props: HarnessProps = {}) => act(async () => root.render(
+      <>
+        <textarea aria-label="Composer" />
+        <Harness entryView="sources" {...props} />
+      </>,
+    ));
+    await render();
+
+    const editor = container.querySelector('textarea')!;
+    editor.focus();
+    const press = async (key: 'ArrowLeft' | 'ArrowRight', isComposing = false) => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, isComposing });
+      await act(async () => editor.dispatchEvent(event));
+      return event.defaultPrevented;
+    };
+
+    expect(await press('ArrowLeft')).toBe(true);
+    expect(option('files')).toBeTruthy();
+    expect(await press('ArrowRight')).toBe(true);
+    expect(option('file')?.textContent).toContain('README.md');
+    expect(await press('ArrowRight')).toBe(true);
+    expect(option('file')?.textContent).toContain('README.md');
+    expect(await press('ArrowLeft')).toBe(true);
+    expect(option('files')).toBeTruthy();
+
+    await render({ searchQuery: 'readme' });
+    expect(await press('ArrowLeft')).toBe(true);
+    expect(await press('ArrowRight')).toBe(true);
+    expect(await press('ArrowLeft', true)).toBe(false);
+
+    await render({ isOpen: false });
+    expect(await press('ArrowLeft')).toBe(false);
+    expect(await press('ArrowRight')).toBe(false);
+  });
+
   it('starts at context sources and loads files only after that source is entered', async () => {
     const onSelectSkill = vi.fn();
     const onAddImage = vi.fn();
@@ -295,6 +342,86 @@ describe('ChatContextPicker overlay', () => {
       'workspace-id',
       '/workspace',
     );
+  });
+
+  it('browses recent sessions from the default sources and inserts a reference with its workspace identity', async () => {
+    const candidate = {
+      sessionId: 'session-docs',
+      sessionName: 'Docs migration',
+      workspaceId: 'remote-workspace',
+      workspacePath: '/workspace',
+      remoteConnectionId: 'remote-connection-1',
+      remoteSshHost: 'remote-host',
+      workspaceLabel: 'Remote workspace',
+      lastActivityAt: 1,
+    };
+    vi.mocked(sessionAPI.searchReferenceableSessions).mockResolvedValue([
+      { ...candidate, sessionId: 'current-session', sessionName: 'Current session' },
+      candidate,
+    ]);
+    const onSelectContext = vi.fn();
+    const onClose = vi.fn();
+    await act(async () => root.render(
+      <Harness entryView="sources" excludeSessionId="current-session" onSelectContext={onSelectContext} onClose={onClose} />,
+    ));
+
+    expect(option('sessions')?.textContent).toBe('contextPicker.sessions.label');
+    expect(sessionAPI.searchReferenceableSessions).not.toHaveBeenCalled();
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+
+    expect(sessionAPI.searchReferenceableSessions).toHaveBeenCalledWith(undefined, 30);
+    expect(option('session')?.textContent).toContain('Docs migration');
+    expect(option('session')?.textContent).toContain('Remote workspace');
+    expect(document.body.textContent).not.toContain('Current session');
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(onSelectContext).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'session-reference',
+      sessionId: candidate.sessionId,
+      workspaceId: candidate.workspaceId,
+      workspacePath: candidate.workspacePath,
+      remoteConnectionId: candidate.remoteConnectionId,
+      remoteSshHost: candidate.remoteSshHost,
+    }));
+    expect(onClose).toHaveBeenCalledOnce();
+
+    await act(async () => root.render(<Harness entryView="sources" isOpen={false} />));
+    await act(async () => root.render(<Harness entryView="sources" />));
+    expect(option('sessions')).toBeTruthy();
+    expect(sessionAPI.searchReferenceableSessions).toHaveBeenCalledOnce();
+  });
+
+  it('discards a browse response after a device switch and keeps typed search available', async () => {
+    vi.useFakeTimers();
+    const search = vi.mocked(sessionAPI.searchReferenceableSessions);
+    let finishBrowse!: (items: Awaited<ReturnType<typeof sessionAPI.searchReferenceableSessions>>) => void;
+    search.mockReturnValueOnce(new Promise(resolve => { finishBrowse = resolve; }));
+    await act(async () => root.render(<Harness entryView="sources" />));
+    await act(async () => option('sessions')?.click());
+    expect(document.body.textContent).toContain('contextPicker.loading');
+
+    try {
+      await act(async () => {
+        activateSurface('legacy-peer');
+        finishBrowse([{
+          sessionId: 'local-session',
+          sessionName: 'Local session',
+          workspaceId: 'local-workspace',
+          workspacePath: '/workspace',
+          workspaceLabel: 'Local workspace',
+          lastActivityAt: 1,
+        }]);
+      });
+      expect(option('session')).toBeNull();
+      expect(document.body.textContent).toContain('contextPicker.sessions.unsupportedHost');
+      expect(search).toHaveBeenCalledTimes(1);
+
+      await act(async () => root.render(<Harness entryView="sources" searchQuery="Docs" />));
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      expect(search).toHaveBeenLastCalledWith('Docs', 30);
+    } finally {
+      await act(async () => { activateSurface(LOCAL_SURFACE_ID); });
+    }
   });
 
   it('returns to context sources without eagerly reloading the previous file view', async () => {

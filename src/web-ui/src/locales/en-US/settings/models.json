@@ -849,6 +849,14 @@
     "title": "Smart mode settings",
     "service": "Router service model",
     "serviceHint": "Add an API service supporting the classifier protocol in model settings, then select it here; ordinary chat models and Coding Plans may not support it",
+    "protocol": "Router compatibility",
+    "protocolLogprobs": "Standard Router (token logprobs)",
+    "protocolClassifier": "Classifier Router",
+    "protocolUnknown": "Unsupported profile: {{protocol}}",
+    "protocolUnsupported": "This execution host does not support the selected Router profile; upgrade it or choose Standard Router",
+    "classifierHint": "Reads classifier probabilities from the router field and sends requests one at a time",
+    "timeout": "Timeout (seconds)",
+    "timeoutInvalid": "Enter a positive timeout in seconds",
     "summary": "Auxiliary summaries",
     "summaryHint": "Uses the economy model to summarize routing history and incurs additional model calls",
     "on": "On",
@@ -864,7 +872,7 @@
       "unconfigured": "No available model configured"
     },
     "connectionFailures": {
-      "protocol": "Choose an OpenAI Chat Completions classifier service that returns token IDs and logprobs",
+      "protocol": "Check that the Router compatibility profile matches the service response",
       "authentication": "Router authentication failed; check the API key and service permissions",
       "addressOrModel": "Check the Router service address and model name; the endpoint or model may not exist",
       "rateLimited": "Router requests are rate limited; wait and retry",

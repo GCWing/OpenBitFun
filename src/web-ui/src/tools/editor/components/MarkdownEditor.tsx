@@ -17,10 +17,7 @@ import { sendDebugProbe } from '@/shared/utils/debugProbe';
 import { elapsedMs, nowMs } from '@/shared/utils/timing';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { isSamePath } from '@/shared/utils/pathUtils';
-import {
-  isPeerDeviceModeActive,
-  PEER_MODE_FILE_SYNC_POLL_MS,
-} from '@/infrastructure/peer-device/peerModeFlag';
+import { startEditorFileSyncPolling } from '../utils/fileSyncPolling';
 import { LoadingState } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 import {
@@ -39,9 +36,6 @@ import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github-dark.css';
 
 const log = createLogger('MarkdownEditor');
-
-
-const FILE_SYNC_POLL_INTERVAL_MS = 1000;
 
 function getPollOffsetMs(filePath: string): number {
   let hash = 0;
@@ -418,35 +412,10 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     if (!filePath || !isActiveTab) {
       return;
     }
-    const tick = () => {
-      void checkMarkdownDisk();
-    };
-    const pollOffsetMs = getPollOffsetMs(filePath);
-    const pollIntervalMs = isPeerDeviceModeActive()
-      ? PEER_MODE_FILE_SYNC_POLL_MS
-      : FILE_SYNC_POLL_INTERVAL_MS;
-    let intervalId: number | null = null;
-    const timeoutId = window.setTimeout(() => {
-      tick();
-      intervalId = window.setInterval(tick, pollIntervalMs + pollOffsetMs);
-    }, 250 + pollOffsetMs);
-    const onPeerModeChanged = () => {
-      if (intervalId !== null) {
-        window.clearInterval(intervalId);
-      }
-      const nextIntervalMs = isPeerDeviceModeActive()
-        ? PEER_MODE_FILE_SYNC_POLL_MS
-        : FILE_SYNC_POLL_INTERVAL_MS;
-      intervalId = window.setInterval(tick, nextIntervalMs + pollOffsetMs);
-    };
-    window.addEventListener('peer-mode:changed', onPeerModeChanged);
-    return () => {
-      window.clearTimeout(timeoutId);
-      if (intervalId !== null) {
-        window.clearInterval(intervalId);
-      }
-      window.removeEventListener('peer-mode:changed', onPeerModeChanged);
-    };
+    return startEditorFileSyncPolling(
+      () => { void checkMarkdownDisk(); },
+      getPollOffsetMs(filePath),
+    );
   }, [checkMarkdownDisk, filePath, isActiveTab]);
 
   useEffect(() => {

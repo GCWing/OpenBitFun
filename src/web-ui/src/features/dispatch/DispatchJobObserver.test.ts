@@ -897,10 +897,10 @@ describe('DispatchJobObserver', () => {
     const rounds = [...turn!.modelRounds, {
       id: 'model-round-0', index: 0, items: [], isStreaming: false, isComplete: true,
       status: 'completed' as const, startTime: 0,
-      ttftMs: 1_500, firstVisibleOutputMs: 1_000, streamDurationMs: 5_000,
+      durationMs: 5_000, ttftMs: 1_500, firstVisibleOutputMs: 1_000, streamDurationMs: 5_000,
     }];
     expect(getTurnTtftMs(rounds)).toBe(1_500);
-    expect(getTurnOutputDurationMs(rounds)).toBe(4_000);
+    expect(getTurnOutputDurationMs(rounds)).toBe(5_000);
     expect(mocks.dispatchExternal).not.toHaveBeenCalled();
     cleanup();
   });

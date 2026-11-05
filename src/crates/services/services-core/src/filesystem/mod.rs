@@ -34,5 +34,7 @@ pub use tree::{
     BatchedFileSearchProgressSink, FileContentSearchOptions, FileNameSearchOptions,
     FileSearchOutcome, FileSearchProgressSink, FileSearchResult, FileSearchResultGroup,
     FileTreeNode, FileTreeOptions, FileTreeService, FileTreeStatistics, SearchMatchType,
+    CONTENT_SEARCH_BINARY_SUFFIXES, CONTENT_SEARCH_MAX_FILE_BYTES,
+    CONTENT_SEARCH_SKIPPED_DIRECTORIES, CONTENT_SEARCH_SKIPPED_FILE_NAMES,
 };
 pub use types::{DirectoryScanResult, DirectoryStats, FileSearchOptions, FileSystemConfig};

@@ -1607,6 +1607,7 @@ mod tests {
             workspace_id: workspace.id.clone(),
             ordering: SessionCatalogOrdering::Updated,
             source: "codex".into(),
+            sources: Vec::new(),
             sort_timestamps: HashMap::new(),
         };
         let first = manager
@@ -2056,6 +2057,7 @@ mod tests {
             workspace_id: workspace.id.clone(),
             ordering: openbitfun_services_core::session::page::SessionCatalogOrdering::Updated,
             source: "all".into(),
+            sources: Vec::new(),
             sort_timestamps: HashMap::new(),
         };
         let fallback = manager

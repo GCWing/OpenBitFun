@@ -56,6 +56,12 @@ export interface SelectProps
     SelectHTMLAttributes<HTMLSelectElement>,
     "children" | "defaultValue" | "onChange" | "size" | "value"
   > {
+  bordered?: boolean | "hover";
+  /** Visible text inside the closed trigger, before the selected value. */
+  valuePrefix?: ReactNode;
+  /** Expand the pointer target without changing the visible trigger or popup width. */
+  hitArea?: "default" | "expanded";
+  showIndicator?: boolean;
   defaultOpen?: boolean;
   defaultValue?: SelectValue;
   invalid?: boolean;
@@ -143,6 +149,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   autoFocus = false,
   className,
   defaultOpen = false,
+  bordered = true,
+  valuePrefix,
+  hitArea = "default",
+  showIndicator = true,
   defaultValue,
   disabled = false,
   id: providedId,
@@ -373,6 +383,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
 
   const renderTriggerContent = (expanded = false) => (
     <>
+      {!expanded && valuePrefix != null && <span className={styles.valuePrefix} data-openbitfun-part="value-prefix">{valuePrefix}</span>}
       {leading !== undefined && leading !== null && (
         <span aria-hidden="true" className={styles.leading} data-openbitfun-icon-slot="true" data-openbitfun-part="leading">
           {leading}
@@ -385,9 +396,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       >
         {selectedOption ? (expanded ? selectedOption.label : selectedOption.selectedLabel ?? selectedOption.label) : placeholder}
       </OverflowText>
-      <span aria-hidden="true" className={styles.indicator} data-openbitfun-icon-slot="true" data-openbitfun-part="indicator">
+      {(expanded || showIndicator) && <span aria-hidden="true" className={styles.indicator} data-openbitfun-icon-slot="true" data-openbitfun-part="indicator">
         <Icon name="chevron-down" size="sm" />
-      </span>
+      </span>}
     </>
   );
 
@@ -463,6 +474,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       data-openbitfun-component="select"
       data-disabled={disabled ? "true" : "false"}
       data-field-surface={fieldSurface}
+      data-bordered={String(bordered)}
+      data-hit-area={hitArea}
       data-has-leading={leading !== undefined && leading !== null ? "true" : "false"}
       data-invalid={resolvedInvalid ? "true" : "false"}
       data-open={resolvedOpen ? "true" : "false"}

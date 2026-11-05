@@ -70,17 +70,22 @@ describe('useFlowChatVirtualizer measurement', () => {
   /**
    * A row in the DOM, at a height jsdom would otherwise report as zero.
    *
-   * `offsetHeight` and not a rect, because that is what the library's own
-   * `measureElement` reads — the border box as an integer.
+   * Supply the fractional box and the separately rounded offsetHeight, as a
+   * browser does. The adapter must use the occupied box for virtual padding.
    */
   function renderRow(index: number, heightPx: number) {
     const element = document.createElement('div');
     element.setAttribute('data-virtual-index', String(index));
-    Object.defineProperty(element, 'offsetHeight', { configurable: true, value: heightPx });
+    Object.defineProperty(element, 'offsetHeight', { configurable: true, value: Math.round(heightPx) });
+    element.getBoundingClientRect = () => ({ top: 0, bottom: heightPx, height: heightPx, width: 500 }) as DOMRect;
     scroller.appendChild(element);
   }
 
   beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const height = this.offsetHeight;
+      return { top: 0, bottom: height, height, width: this.offsetWidth } as DOMRect;
+    });
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
       unobserve() {}
@@ -107,6 +112,7 @@ describe('useFlowChatVirtualizer measurement', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -142,6 +148,28 @@ describe('useFlowChatVirtualizer measurement', () => {
       { startPx: REAL_PX, endPx: REAL_PX * 2 },
       { startPx: REAL_PX * 2, endPx: REAL_PX * 3 },
     ]);
+  });
+
+  it('replaces normal-flow rows with their full fractional occupied height', () => {
+    [0, 1, 2].forEach(index => renderRow(index, 40.25));
+    expect(measureAndRead([1, 2])).toEqual([
+      { startPx: 40.25, endPx: 80.5 }, { startPx: 80.5, endPx: 120.75 },
+    ]);
+  });
+
+  it('keeps offscreen measured history as its reservation when the column width changes', () => {
+    renderRow(0, 340.25);
+    measureAndRead([1]);
+    scroller.querySelector('[data-virtual-index="0"]')!.remove();
+    for (const widthPx of [600, 800, 500]) {
+      act(() => root.render(<Harness scroller={scroller} header={header}
+        items={[{ key: 'a' }, { key: 'b' }, { key: 'c' }]} widthPx={widthPx}
+        onApi={next => { api = next; }} />));
+      expect(api.getItemBounds(1)?.startPx).toBe(340.25);
+    }
+    // A returning row is measured at its new width before it is displayed.
+    renderRow(0, 420.5);
+    expect(measureAndRead([1])[0]?.startPx).toBe(420.5);
   });
 
   it('leaves an item that is not rendered on its estimate', () => {

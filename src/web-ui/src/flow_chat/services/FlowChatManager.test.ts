@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FlowChatManager } from './FlowChatManager';
+import { beginDeviceOpen, endDeviceOpen } from '@/infrastructure/peer-device/deviceOpenIntent';
 import {
   activateSurface,
   isSurfaceChangedError,
@@ -87,6 +88,7 @@ vi.mock('./flow-chat-manager/PeerSessionRefreshModule', () => ({
 vi.mock('./flow-chat-manager', () => ({
   saveAllInProgressTurns: vi.fn(),
   immediateSaveDialogTurn: vi.fn(),
+  saveDialogTurnConfirmed: vi.fn(),
   createChatSession: vi.fn(),
   switchChatSession: (...args: unknown[]) => storeMocks.switchChatSession(...args),
   deleteChatSession: vi.fn(),
@@ -159,6 +161,46 @@ function createHistoricalSession(overrides: Record<string, unknown> = {}) {
 }
 
 describe('FlowChatManager initialization', () => {
+  it.each(['switch:local', 'history:workspace', 'session-action:history-1'])('restores the session for a %s action', async key => {
+    const sessions = new Map([['history-1', createHistoricalSession()]]);
+    storeMocks.store = {
+      registerPersistUnreadCompletionCallback: vi.fn(),
+      getSurfaceGeneration: vi.fn(() => 0),
+      loadSessionMetadataPage: vi.fn(async () => ({ sessions: [], totalTopLevelCount: 1, hasMore: false })),
+      getState: vi.fn(() => ({ sessions, activeSessionId: 'history-1' })),
+      loadSessionHistory: vi.fn(),
+      switchSession: vi.fn(),
+    };
+    const intent = beginDeviceOpen({ surfaceId: 'local', key });
+    try {
+      const manager = FlowChatManager.getInstance();
+      await manager.initialize(workspaceFixture('D:/workspace/OpenBitFun', undefined, undefined));
+      expect(storeMocks.store.loadSessionHistory).toHaveBeenCalledWith('history-1');
+    } finally {
+      endDeviceOpen(intent);
+    }
+  });
+
+  it.each([null, 'history-1'])('leaves session selection to a device open with previous active session %s', async activeSessionId => {
+    const sessions = new Map([['history-1', createHistoricalSession()]]);
+    storeMocks.store = {
+      registerPersistUnreadCompletionCallback: vi.fn(),
+      getSurfaceGeneration: vi.fn(() => 0),
+      loadSessionMetadataPage: vi.fn(async () => ({ sessions: [], totalTopLevelCount: 1, hasMore: false })),
+      getState: vi.fn(() => ({ sessions, activeSessionId })),
+      loadSessionHistory: vi.fn(),
+      switchSession: vi.fn(),
+    };
+    const intent = beginDeviceOpen({ surfaceId: 'local', key: 'new:workspace' });
+    try {
+      const manager = FlowChatManager.getInstance();
+      await expect(manager.initialize(workspaceFixture('D:/workspace/OpenBitFun', undefined, undefined))).resolves.toBe(true);
+      expect(storeMocks.store.loadSessionHistory).not.toHaveBeenCalled();
+      expect(storeMocks.store.switchSession).not.toHaveBeenCalled();
+    } finally {
+      endDeviceOpen(intent);
+    }
+  });
   beforeEach(() => {
     resetDeviceSurfaceForTest();
     (FlowChatManager as any).instance = undefined;
@@ -222,6 +264,79 @@ describe('FlowChatManager initialization', () => {
       await expect(manager.createAcpChatSession('test-client', { workspacePath: '/repo' }))
         .rejects.toThrow('Session workspace ID is unavailable');
       expect(storeMocks.createAcpSession).not.toHaveBeenCalled();
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it('deduplicates pending ACP creation and emits a visible lifecycle before the backend settles', async () => {
+    storeMocks.store = { registerPersistUnreadCompletionCallback: vi.fn(), createSession: vi.fn() };
+    const deferred = createDeferred<any>();
+    storeMocks.createAcpSession.mockReturnValue(deferred.promise);
+    storeMocks.loadSessionMetadata.mockResolvedValue({ sessionId: 'created', customMetadata: {} });
+    const events: any[] = [];
+    const handler = (event: Event) => events.push((event as CustomEvent).detail);
+    window.addEventListener('openbitfun:acp-session-creation', handler);
+    const manager = FlowChatManager.getInstance();
+    try {
+      const config = { workspaceId: 'repo', workspacePath: '/repo', remoteConnectionId: 'ssh-a' };
+      const first = manager.createAcpChatSession('codex', config);
+      const second = manager.createAcpChatSession('codex', { ...config });
+      await flushAsyncWork();
+      expect(storeMocks.createAcpSession).toHaveBeenCalledTimes(1);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ phase: 'start', clientId: 'codex', workspaceId: 'repo', action: 'create' });
+      expect(events[0].scope.isCurrent()).toBe(true);
+      expect(storeMocks.store.createSession).not.toHaveBeenCalled();
+      deferred.resolve({ sessionId: 'created', sessionName: 'Session', agentType: 'acp:codex' });
+      await expect(Promise.all([first, second])).resolves.toEqual(['created', 'created']);
+      expect(events[1]).toMatchObject({ requestId: events[0].requestId, phase: 'finish', succeeded: true });
+    } finally {
+      window.removeEventListener('openbitfun:acp-session-creation', handler);
+      manager.destroy();
+    }
+  });
+
+  it('reports ACP startup errors and releases the pending entry for retry', async () => {
+    storeMocks.store = { registerPersistUnreadCompletionCallback: vi.fn(), createSession: vi.fn() };
+    storeMocks.createAcpSession.mockRejectedValue(new Error('Adapter could not start'));
+    const events: any[] = [];
+    const handler = (event: Event) => events.push((event as CustomEvent).detail);
+    window.addEventListener('openbitfun:acp-session-creation', handler);
+    const manager = FlowChatManager.getInstance();
+    try {
+      await expect(manager.createAcpChatSession('codex', { workspaceId: 'repo', workspacePath: '/repo' }))
+        .rejects.toThrow('Adapter could not start');
+      expect(events[1]).toMatchObject({ phase: 'finish', succeeded: false, error: 'Adapter could not start' });
+      await expect(events[1].retry()).rejects.toThrow('Adapter could not start');
+      expect(storeMocks.createAcpSession).toHaveBeenCalledTimes(2);
+      expect(events[2].requestId).not.toBe(events[0].requestId);
+    } finally {
+      window.removeEventListener('openbitfun:acp-session-creation', handler);
+      manager.destroy();
+    }
+  });
+
+  it('does not reuse or publish ACP creation across device activations', async () => {
+    storeMocks.store = { registerPersistUnreadCompletionCallback: vi.fn(), createSession: vi.fn() };
+    const deferred = createDeferred<any>();
+    storeMocks.createAcpSession.mockReturnValue(deferred.promise);
+    storeMocks.loadSessionMetadata.mockResolvedValue({ sessionId: 'created', customMetadata: {} });
+    const manager = FlowChatManager.getInstance();
+    try {
+      const config = { workspaceId: 'repo', workspacePath: '/repo' };
+      const old = manager.createAcpChatSession('codex', config);
+      const oldRejection = expect(old).rejects.toSatisfy(isSurfaceChangedError);
+      await flushAsyncWork();
+      activateSurface('peer-b');
+      activateSurface('local');
+      const current = manager.createAcpChatSession('codex', config);
+      await flushAsyncWork();
+      expect(storeMocks.createAcpSession).toHaveBeenCalledTimes(2);
+      deferred.resolve({ sessionId: 'created', sessionName: 'Session', agentType: 'acp:codex' });
+      await oldRejection;
+      await current;
+      expect(storeMocks.store.createSession).toHaveBeenCalledTimes(1);
     } finally {
       manager.destroy();
     }

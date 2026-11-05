@@ -383,8 +383,7 @@ export type AppearanceRendererId =
   | 'monaco'
   | 'xterm'
   | 'mermaid'
-  | 'generative-widget'
-  | 'openbitfun-canvas';
+  | 'generative-widget';
 
 export type AppearanceThemeTokenName =
   | `--openbitfun-color-${string}`
@@ -488,28 +487,12 @@ export interface WidgetAppearanceSettings {
   vars: Record<string, string>;
 }
 
-export interface CanvasAppearanceSettings {
-  id: string;
-  mode: AppearanceMode;
-  bg: string;
-  panel: string;
-  fg: string;
-  muted: string;
-  border: string;
-  accent: string;
-  success: string;
-  warning: string;
-  danger: string;
-  info: string;
-}
-
 export interface AppearanceRendererSettingsMap {
   'theme-tokens': ThemeTokenAppearanceSettings;
   monaco: MonacoAppearanceSettings;
   xterm: XtermAppearanceSettings;
   mermaid: MermaidAppearanceSettings;
   'generative-widget': WidgetAppearanceSettings;
-  'openbitfun-canvas': CanvasAppearanceSettings;
 }
 
 export type AppearanceRendererSettings = AppearanceRendererSettingsMap[AppearanceRendererId];

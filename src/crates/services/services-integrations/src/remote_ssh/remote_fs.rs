@@ -587,49 +587,12 @@ impl RemoteFileService {
         manager.sftp_remove(connection_id, path).await
     }
 
-    /// Remove a directory and its contents recursively via SFTP
+    /// Remove the whole directory on the workspace host with one command.
     pub async fn remove_dir_all(&self, connection_id: &str, path: &str) -> anyhow::Result<()> {
-        // Match local remove_dir_all: unlink a final symlink without traversing
-        // its target. Recheck at every recursive step, including the root.
-        match self
-            .workspace_metadata(connection_id, path, false)
+        self.get_manager(connection_id)
             .await?
-            .map(|metadata| metadata.kind)
-        {
-            Some(openbitfun_runtime_ports::WorkspacePathKind::Symlink) => {
-                return self.remove_file(connection_id, path).await
-            }
-            Some(openbitfun_runtime_ports::WorkspacePathKind::Directory) => {}
-            Some(_) => anyhow::bail!("Remote path is not a directory: {path}"),
-            None => anyhow::bail!("Remote directory does not exist: {path}"),
-        }
-        // First, delete all contents
-        {
-            let entries = self.read_dir(connection_id, path).await?;
-            for entry in entries {
-                let entry_path = entry.path.clone();
-                if entry.is_dir && !entry.is_symlink {
-                    Box::pin(self.remove_dir_all(connection_id, &entry_path)).await?;
-                } else {
-                    let manager = self.get_manager(connection_id).await?;
-                    if manager.is_shell_workspace(connection_id).await {
-                        manager
-                            .container_remove(connection_id, &entry_path, false)
-                            .await?;
-                    } else {
-                        manager.sftp_remove(connection_id, &entry_path).await?;
-                    }
-                }
-            }
-        }
-
-        // Then remove the directory itself
-        let manager = self.get_manager(connection_id).await?;
-        if manager.is_shell_workspace(connection_id).await {
-            manager.container_remove(connection_id, path, true).await
-        } else {
-            manager.sftp_rmdir(connection_id, path).await
-        }
+            .remove_workspace_directory_all(connection_id, path)
+            .await
     }
 
     /// Remove an empty directory via SFTP (non-recursive; fails if not empty)

@@ -7,6 +7,8 @@
 #include "argon2.h"
 #include "napi/native_api.h"
 
+void defineRelayMessageEncoding(napi_env env, napi_value exports);
+
 namespace {
 
 constexpr size_t ARGON2_OUTPUT_LENGTH = 32;
@@ -180,6 +182,7 @@ napi_value init(napi_env env, napi_value exports) {
     napi_property_descriptor descriptor = {
         "argon2idRaw", nullptr, argon2idRaw, nullptr, nullptr, nullptr, napi_default, nullptr};
     napi_define_properties(env, exports, 1, &descriptor);
+    defineRelayMessageEncoding(env, exports);
     return exports;
 }
 

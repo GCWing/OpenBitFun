@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClient, createRetryMiddleware } from './ApiClient';
+import { workspaceAPI } from './WorkspaceAPI';
 import {
   LOCAL_SURFACE_ID,
   SurfaceChangedError,
@@ -26,10 +27,16 @@ const loggerMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock('../adapters', () => ({
-  getTransportAdapter: () => adapterMocks,
-  isPeerLocalOnlyCommand: (command: string) => command === 'account_status',
-}));
+vi.mock('../adapters', async () => {
+  const actual = await vi.importActual<typeof import('../adapters')>('../adapters');
+  return {
+    getTransportAdapter: () => adapterMocks,
+    isPeerLocalOnlyCommand: (command: string) => command === 'account_status',
+    // The command-level log path consumes the transport classifier, so keep
+    // the real one instead of a stub that would break every rejection.
+    isExpectedTauriRequestError: actual.isExpectedTauriRequestError,
+  };
+});
 
 vi.mock('@/shared/utils/logger', () => ({
   createLogger: () => loggerMocks,
@@ -272,6 +279,29 @@ describe('ApiClient startup trace classification', () => {
         failedRequests: 0,
         activeRequests: 0,
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['workspace', 'legacy'] as const)('waits for a long %s directory deletion to finish', async (entry) => {
+    vi.useFakeTimers();
+    try {
+      let finish!: () => void;
+      adapterMocks.request.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+      let settled = false;
+      const pending = (entry === 'workspace'
+        ? workspaceAPI.deleteWorkspaceDirectory('remote-workspace', '/large-directory')
+        : workspaceAPI.deleteDirectory('/large-directory', true, 'ssh-connection'))
+        .then(
+          () => { settled = true; },
+          error => { settled = true; return error; },
+        );
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(settled).toBe(false);
+      expect(adapterMocks.request).toHaveBeenCalledTimes(1);
+      finish();
+      await expect(pending).resolves.toBeUndefined();
     } finally {
       vi.useRealTimers();
     }

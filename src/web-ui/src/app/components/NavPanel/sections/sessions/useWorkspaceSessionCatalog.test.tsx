@@ -231,6 +231,18 @@ describe('workspace metadata catalog', () => {
       'sessions_nav_catalog', { fresh: false });
   });
 
+  it('falls back to legacy traversal when an older host omits mixed source acknowledgement', async () => {
+    const mixedQuery: SessionCatalogQuery = { ...query, sources: ['codex', 'openbitfun'] };
+    mocks.loadPage.mockResolvedValueOnce({ ...page('5'), loadedTopLevelCount: 5, catalogQuery: query })
+      .mockResolvedValueOnce(page('200')).mockResolvedValueOnce(page('400'))
+      .mockResolvedValueOnce(page('600')).mockResolvedValueOnce(page());
+    await render({ query: mixedQuery });
+    expect(current).toMatchObject({ complete: true, paged: false, total: undefined });
+    expect(mocks.loadPage).toHaveBeenCalledTimes(5);
+    expect(mocks.loadPage).toHaveBeenNthCalledWith(2, 'main', 200, undefined,
+      'sessions_nav_catalog', { fresh: false });
+  });
+
   it('does not trust an acknowledgement for a different workspace or source', async () => {
     mocks.loadPage.mockResolvedValueOnce(queriedPage(5, '5', { ...query, source: 'codex' }))
       .mockResolvedValueOnce(page());

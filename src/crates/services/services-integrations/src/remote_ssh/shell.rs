@@ -8,6 +8,33 @@ pub(crate) fn quote_arg(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+/// Keep traversal on the target host, without following a final directory link.
+#[cfg(feature = "remote-ssh-concrete")]
+pub(crate) fn remove_directory_command(path: &str) -> anyhow::Result<String> {
+    // A trailing slash makes some tools follow a directory symlink. Preserve
+    // every other byte, including whitespace and POSIX filename backslashes.
+    let path = path.trim_end_matches('/');
+    if !path.starts_with('/')
+        || path.contains('\0')
+        || matches!(path.rsplit('/').next(), Some("" | "." | ".."))
+    {
+        anyhow::bail!("Recursive deletion requires an absolute non-root directory path");
+    }
+    let script = format!(
+        "target={}; \
+         if [ -L \"$target\" ] || [ -d \"$target\" ]; then \
+             exec rm -rf -- \"$target\"; \
+         elif [ -e \"$target\" ]; then \
+             printf 'Remote path is not a directory: %s\\n' \"$target\" >&2; \
+         else \
+             printf 'Remote directory does not exist or cannot be accessed: %s\\n' \"$target\" >&2; \
+         fi; exit 1",
+        quote_arg(path),
+    );
+    // The SSH login shell need not itself implement POSIX conditional syntax.
+    Ok(format!("sh -c {}", quote_arg(&script)))
+}
+
 #[cfg(feature = "remote-ssh-concrete")]
 pub(crate) fn escape_terminal_cwd(value: &str) -> String {
     if value

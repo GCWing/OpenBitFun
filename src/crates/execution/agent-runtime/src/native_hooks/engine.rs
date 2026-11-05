@@ -14,6 +14,7 @@ use super::handler::{
     CommandHookOptions, HookHandler, HookHandlerResult, HookToolMapping, PluginHookCall,
 };
 use super::kind::RuntimeHookKind;
+use super::kind::RuntimeHookSource;
 use super::output::{non_empty, AgentHookOutcome, RawHookOutput};
 use super::payload::AgentHookPayload;
 use super::registry::{RuntimeHookErrorPolicy, RuntimeHookRegistry};
@@ -28,6 +29,35 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
+/// Result of one command hook process, independent of where that process ran.
+#[derive(Debug, Clone)]
+pub enum HookProcessResult {
+    Completed {
+        exit_code: Option<i32>,
+        stdout: String,
+        stderr: String,
+    },
+    TimedOut,
+    SpawnFailed(String),
+}
+
+/// Executes a command hook in the workspace's process domain.
+///
+/// The default engine path remains the local child-process implementation.
+/// Remote workspaces inject a provider backed by their workspace shell so a
+/// hook command, cwd, environment and stdin all stay on the target host.
+#[async_trait::async_trait]
+pub trait HookProcessProvider: Send + Sync {
+    async fn execute(
+        &self,
+        command: &str,
+        payload_json: &str,
+        cwd: &Path,
+        timeout: Duration,
+        environment: &BTreeMap<String, String>,
+    ) -> HookProcessResult;
+}
+
 /// Cap for a single model-visible hook text (reason or context). Larger
 /// output is truncated with a marker, mirroring the Codex output budget.
 pub const MAX_HOOK_MODEL_OUTPUT_BYTES: usize = 10_000;
@@ -36,15 +66,33 @@ pub const MAX_HOOK_MODEL_OUTPUT_BYTES: usize = 10_000;
 const MAX_CAPTURED_OUTPUT_BYTES: usize = 1024 * 1024;
 
 /// Executes configured hooks for agent lifecycle events.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct AgentHookEngine {
     registry: RuntimeHookRegistry,
     settings: Option<Arc<AgentHookSettings>>,
     project_hooks_disabled: bool,
+    remote_project_only: bool,
     /// Environment every command handler inherits. The host supplies what its
     /// own launch environment lost (a GUI launch starts without the login
     /// shell PATH); a handler's own options always win.
     environment_defaults: Arc<BTreeMap<String, String>>,
+    process_provider: Option<Arc<dyn HookProcessProvider>>,
+}
+
+impl std::fmt::Debug for AgentHookEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentHookEngine")
+            .field("registry", &self.registry)
+            .field("settings", &self.settings)
+            .field("project_hooks_disabled", &self.project_hooks_disabled)
+            .field("remote_project_only", &self.remote_project_only)
+            .field("environment_defaults", &self.environment_defaults)
+            .field(
+                "process_provider",
+                &self.process_provider.as_ref().map(|_| "<provider>"),
+            )
+            .finish()
+    }
 }
 
 impl AgentHookEngine {
@@ -57,7 +105,9 @@ impl AgentHookEngine {
             registry,
             settings: Some(Arc::new(settings)),
             project_hooks_disabled: false,
+            remote_project_only: false,
             environment_defaults: Arc::default(),
+            process_provider: None,
         }
     }
 
@@ -66,7 +116,9 @@ impl AgentHookEngine {
             registry,
             settings: None,
             project_hooks_disabled: false,
+            remote_project_only: false,
             environment_defaults: Arc::default(),
+            process_provider: None,
         }
     }
 
@@ -95,6 +147,20 @@ impl AgentHookEngine {
 
     pub fn with_project_hooks_enabled(mut self, enabled: bool) -> Self {
         self.project_hooks_disabled = !enabled;
+        self
+    }
+
+    /// Use a workspace-specific process provider for command handlers.
+    pub fn with_process_provider(mut self, provider: Arc<dyn HookProcessProvider>) -> Self {
+        self.process_provider = Some(provider);
+        self
+    }
+
+    /// Restrict command dispatch to the manually configured project layer.
+    /// Remote workspaces use this to keep controller user/imported handlers out
+    /// of the target execution domain.
+    pub fn with_remote_project_only(mut self, enabled: bool) -> Self {
+        self.remote_project_only = enabled;
         self
     }
 
@@ -173,6 +239,14 @@ impl AgentHookEngine {
             if self.project_hooks_disabled && registration.requires_project_trust {
                 continue;
             }
+            if self.remote_project_only
+                && !matches!(
+                    registration.plan.source(),
+                    RuntimeHookSource::ProjectCommand
+                )
+            {
+                continue;
+            }
             let options = &registration.command_options;
             let mapping = options
                 .tool_mappings
@@ -218,6 +292,7 @@ impl AgentHookEngine {
                             cwd,
                             options,
                             mapping,
+                            self.process_provider.as_deref(),
                             &mut outcome,
                         ) => result,
                     };
@@ -430,9 +505,17 @@ impl AgentHookEngine {
         cwd: &Path,
         options: &CommandHookOptions,
         mapping: Option<&HookToolMapping>,
+        process_provider: Option<&dyn HookProcessProvider>,
         outcome: &mut AgentHookOutcome,
     ) -> (bool, bool) {
-        let command = handler.effective_command();
+        // A remote workspace has a target shell independent of the
+        // controller's OS. Its project command is the portable `command`
+        // field; `commandWindows` is only selected for local Windows hooks.
+        let command = if process_provider.is_some() {
+            &handler.command
+        } else {
+            handler.effective_command()
+        };
         let timeout = handler.effective_timeout(event);
         debug!(
             "Running agent hook: event={}, command={}, timeout_ms={}",
@@ -440,14 +523,15 @@ impl AgentHookEngine {
             command,
             timeout.as_millis()
         );
-        let run = run_hook_command(
-            command,
-            payload_json,
-            cwd,
-            timeout,
-            &self.handler_environment(options),
-        )
-        .await;
+        let environment = self.handler_environment(options);
+        let run = match process_provider {
+            Some(provider) => {
+                provider
+                    .execute(command, payload_json, cwd, timeout, &environment)
+                    .await
+            }
+            None => run_hook_command(command, payload_json, cwd, timeout, &environment).await,
+        };
         let mut succeeded = false;
         let finalized = match run {
             HookCommandRun::SpawnFailed(error) => {
@@ -614,15 +698,7 @@ fn merge_handler_result(result: HookHandlerResult, outcome: &mut HookHandlerResu
     }
 }
 
-enum HookCommandRun {
-    Completed {
-        exit_code: Option<i32>,
-        stdout: String,
-        stderr: String,
-    },
-    TimedOut,
-    SpawnFailed(String),
-}
+type HookCommandRun = HookProcessResult;
 
 /// Grace a timed-out handler receives after `SIGTERM` before its whole process
 /// group is force-killed.
@@ -659,11 +735,20 @@ impl Drop for HookProcessGroup {
 }
 
 fn hook_command(command: &str) -> Command {
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
+        // `Command::arg` applies Windows quoting to the complete command
+        // string. That is incorrect for `cmd /C`: embedded quotes (for
+        // example, the quotes around a PowerShell `-File` path) then reach
+        // the child as literal characters. Append the command line raw and
+        // use cmd's documented outer quote so ordinary shell quoting keeps
+        // working.
         let mut process = Command::new("cmd");
-        process.arg("/C").arg(command);
+        process.arg("/C").raw_arg(format!("\"{command}\""));
         process
-    } else {
+    }
+    #[cfg(not(windows))]
+    {
         let mut process = Command::new("sh");
         process.arg("-c").arg(command);
         process
@@ -1004,5 +1089,21 @@ mod plugin_dispatch_tests {
             Some("Plugin hook 'stale' generation is no longer active")
         );
         assert_eq!(result.output, json!({"args": {}}));
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_command_tests {
+    use super::hook_command;
+
+    #[tokio::test]
+    async fn hook_command_preserves_embedded_quotes_for_cmd() {
+        let mut process = hook_command(r#"echo "hello world""#);
+        let output = process.output().await.expect("cmd starts");
+        assert_eq!(output.status.code(), Some(0));
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("\"hello world\""), "stdout={stdout:?}");
+        assert!(!stdout.contains("\\\"hello world\\\""), "stdout={stdout:?}");
     }
 }

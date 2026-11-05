@@ -601,7 +601,7 @@ pub async fn complete_im_bot_pairing(state: &mut BotChatState) -> HandleResult {
 
     // If the desktop is logged into an account, inject the delegated
     // identity + relay_url so the bot can use /devices and remote RPC.
-    if state.relay_url.is_none() || state.delegated_token.is_none() {
+    if state.relay_url.is_none() || !state.has_delegated_identity() {
         if let Some((relay_url, token, master_key)) = try_get_delegated_identity().await {
             state.relay_url = Some(relay_url);
             state.set_delegated_identity(token, master_key);
@@ -876,31 +876,6 @@ fn devices_unavailable_view(s: &'static BotStrings) -> MenuView {
         .with_items(vec![MenuItem::default(s.item_back, "/menu")])
 }
 
-/// Build a temporary `AccountSession` from the delegated identity so the
-/// existing `AccountClient` methods (list_devices / device_rpc) can be reused
-/// without duplicating the relay/encryption envelope.
-fn delegated_session(
-    state: &BotChatState,
-) -> Option<crate::service::remote_connect::AccountSession> {
-    use crate::service::remote_connect::account::MASTER_KEY_LEN;
-    let token = state.delegated_token.clone()?;
-    let key_vec = state.delegated_master_key.clone()?;
-    if key_vec.len() != MASTER_KEY_LEN {
-        log::warn!(
-            "delegated master key has wrong length {} (expected {MASTER_KEY_LEN})",
-            key_vec.len()
-        );
-        return None;
-    }
-    let mut master_key = [0u8; 32];
-    master_key.copy_from_slice(&key_vec);
-    Some(crate::service::remote_connect::AccountSession::new(
-        token,
-        String::new(),
-        master_key,
-    ))
-}
-
 async fn list_devices(state: &mut BotChatState, s: &'static BotStrings) -> HandleResult {
     // Lazy-inject delegated identity if not yet set (e.g. after restart restore).
     if state.relay_url.is_none() {
@@ -912,12 +887,12 @@ async fn list_devices(state: &mut BotChatState, s: &'static BotStrings) -> Handl
     let Some(relay_url) = state.relay_url.clone() else {
         return result_from_menu(state, devices_unavailable_view(s));
     };
-    let Some(session) = delegated_session(state) else {
+    let Some(session) = state.delegated_account.as_ref() else {
         return result_from_menu(state, devices_unavailable_view(s));
     };
 
     let client = crate::service::remote_connect::AccountClient::new();
-    let devices = match client.list_devices(&relay_url, &session).await {
+    let devices = match client.list_devices(&relay_url, session).await {
         Ok(d) => d,
         Err(e) => {
             error!("Bot list_devices failed: {e}");
@@ -1022,10 +997,13 @@ async fn exec_remote_rpc(state: &BotChatState, command_json: &str) -> Result<Str
         .as_ref()
         .ok_or("no active remote device")?;
     let relay_url = state.relay_url.as_ref().ok_or("no relay_url")?;
-    let session = delegated_session(state).ok_or("no delegated identity")?;
+    let session = state
+        .delegated_account
+        .as_ref()
+        .ok_or("no delegated identity")?;
     let client = crate::service::remote_connect::AccountClient::new();
     client
-        .device_rpc(relay_url, &session, &device.device_id, command_json)
+        .device_rpc(relay_url, session, &device.device_id, command_json)
         .await
         .map_err(|e| format!("{e}"))
 }
@@ -3442,7 +3420,7 @@ async fn handle_chat(
             Some(id) => id,
             None => return result_from_menu(state, need_session_view(state, s)),
         };
-        let Some(account) = delegated_session(state) else {
+        let Some(account) = state.delegated_account.clone() else {
             return result_from_menu(state, devices_unavailable_view(s));
         };
         let Some(relay_url) = state.relay_url.clone() else {
@@ -5376,7 +5354,7 @@ mod remote_device_flow_tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
-    type Responder = Arc<dyn Fn(&Value) -> Value + Send + Sync>;
+    type Responder = Arc<dyn Fn(&Value, usize) -> Value + Send + Sync>;
 
     /// Loopback relay that answers encrypted device RPCs for `device-a` with
     /// `respond`, recording every decrypted command.
@@ -5476,10 +5454,15 @@ mod remote_device_flow_tests {
                         .unwrap();
                         let command: Value = serde_json::from_str(&plaintext).unwrap();
                         observed.lock().unwrap().push(command.clone());
-                        let response = respond(&command);
-                        let (encrypted_data, nonce) =
-                            encryption::encrypt_to_base64(&key, &response.to_string()).unwrap();
-                        let response = serde_json::json!([{"ok":true,"result":{"encrypted_data":encrypted_data,"nonce":nonce}}]);
+                        let response =
+                            respond(&command, envelope["encrypted_data"].as_str().unwrap().len());
+                        let (encrypted_data, nonce) = encryption::encrypt_relay_message(
+                            &key,
+                            &response.to_string(),
+                            envelope["accept_encoding"] == "zstd-1",
+                        )
+                        .unwrap();
+                        let response = serde_json::json!([{"ok":true,"result":{"encrypted_data":encrypted_data,"nonce":nonce,"accept_encoding":"zstd-1"}}]);
                         ws.send(Message::Text(format!("43{ack_id}{response}").into()))
                             .await
                             .unwrap();
@@ -5510,8 +5493,8 @@ mod remote_device_flow_tests {
         ]})
     }
 
-    fn device_responder() -> Responder {
-        Arc::new(|command: &Value| match command["cmd"].as_str().unwrap() {
+    fn device_response(command: &Value, _: usize) -> Value {
+        match command["cmd"].as_str().unwrap() {
             "get_model_catalog" => {
                 assert_eq!(command["session_id"], "remote-session");
                 serde_json::json!({"resp":"model_catalog","catalog":{
@@ -5536,15 +5519,44 @@ mod remote_device_flow_tests {
                     {"id":"a1","role":"assistant","content":"hi there","timestamp":"0","metadata":null}
                 ]})
             }
-            "create_session" => serde_json::json!({"resp":"session_created","session_id":"s-new",
-                "workspace_id":"ws-claw","workspace_path":"/home/a/claw"}),
+            "create_session" => {
+                serde_json::json!({"resp":"session_created","session_id":"s-new",
+                "workspace_id":"ws-claw","workspace_path":"/home/a/claw"})
+            }
             other => panic!("Unexpected command: {other}"),
-        })
+        }
+    }
+
+    #[tokio::test]
+    async fn consecutive_bot_commands_reuse_the_negotiated_relay_encoding() {
+        let (url, key, _) =
+            spawn_device_fixture(Arc::new(|_, wire_bytes| serde_json::json!(wire_bytes))).await;
+        let state = remote_state(url, key, BotDisplayMode::Assistant);
+        let command =
+            serde_json::json!({"cmd":"send_message","content":"x".repeat(4096)}).to_string();
+        let first: usize = exec_remote_rpc(&state, &command)
+            .await
+            .unwrap()
+            .parse()
+            .unwrap();
+        let next: usize = exec_remote_rpc(&state, &command)
+            .await
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            first > command.len(),
+            "unknown host gets legacy JSON plus base64"
+        );
+        assert!(
+            next < command.len(),
+            "the bot should keep the host's encoding offer"
+        );
     }
 
     #[tokio::test]
     async fn remote_model_switch_reads_and_updates_the_device_session() {
-        let (relay_url, secret, calls) = spawn_device_fixture(device_responder()).await;
+        let (relay_url, secret, calls) = spawn_device_fixture(Arc::new(device_response)).await;
         let s = strings_for(BotLanguage::EnUS);
         let mut state = remote_state(relay_url, secret, BotDisplayMode::Assistant);
         state.current_session_id = Some("remote-session".into());
@@ -5577,7 +5589,7 @@ mod remote_device_flow_tests {
 
     #[tokio::test]
     async fn remote_assistant_mode_selects_resumes_and_creates_in_device_assistants() {
-        let (relay_url, secret, calls) = spawn_device_fixture(device_responder()).await;
+        let (relay_url, secret, calls) = spawn_device_fixture(Arc::new(device_response)).await;
         let s = strings_for(BotLanguage::EnUS);
         let mut state = remote_state(relay_url, secret, BotDisplayMode::Assistant);
 

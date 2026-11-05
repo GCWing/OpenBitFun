@@ -10,9 +10,10 @@ use crate::api::path_target::{
 };
 use crate::api::search_api::{
     build_content_search_request, group_search_results, prepare_content_search_runner,
-    remote_content_search_refusal, remote_content_search_refusal_message,
+    remote_content_search_refusal_message, remote_content_search_target,
     search_file_contents_via_workspace_search, search_metadata_from_content_result,
-    should_use_workspace_search, SearchMetadataResponse,
+    search_remote_contents, should_use_workspace_search, RemoteContentSearchQuery,
+    SearchMetadataResponse,
 };
 use crate::api::workspace_activation::spawn_workspace_background_warmup;
 use crate::startup_trace::DesktopStartupTrace;
@@ -1164,6 +1165,13 @@ pub async fn test_ai_config_connection(
     request: TestAIConfigConnectionRequest,
 ) -> Result<openbitfun_core::util::types::ConnectionTestResult, String> {
     let model_name = request.config.name.clone();
+    if let Some(result) = openbitfun_core::agentic::execution::round_model_routing::configuration::test_configured_router_connection(&request.config)
+        .await.map_err(|error| error.to_string())?
+    {
+        info!("Router model connection test completed: model={}, success={}, response_time={}ms",
+            model_name, result.success, result.response_time_ms);
+        return Ok(result);
+    }
     let supports_image_input = request.config.capabilities.iter().any(|cap| {
         matches!(
             cap,
@@ -1396,7 +1404,7 @@ pub async fn open_remote_workspace(
     request: OpenRemoteWorkspaceRequest,
 ) -> Result<WorkspaceInfoDto, String> {
     use openbitfun_core::service::remote_ssh::normalize_remote_workspace_path;
-    use openbitfun_core::service::remote_ssh::workspace_state::remote_workspace_stable_id;
+    use openbitfun_core::service::remote_ssh::workspace_state::remote_workspace_stable_id_for_connection;
     use openbitfun_core::service::workspace::{
         remote_workspace_connection_conflict_message, RemoteConnectionRebind,
         WorkspaceCreateOptions,
@@ -1465,7 +1473,11 @@ pub async fn open_remote_workspace(
         request.connection_name.clone()
     });
 
-    let stable_workspace_id = remote_workspace_stable_id(&ssh_host, &remote_path);
+    let stable_workspace_id = remote_workspace_stable_id_for_connection(
+        &ssh_host,
+        Some(&request.connection_id),
+        &remote_path,
+    );
 
     let display_name = remote_path
         .split('/')
@@ -1632,6 +1644,38 @@ pub async fn set_primary_assistant_workspace(
     Ok(WorkspaceInfoDto::from_workspace_info(&workspace))
 }
 
+/// How deleting an assistant workspace record may touch its directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AssistantWorkspaceDirectoryPlan {
+    /// Managed layout (current or legacy): delete the directory when present.
+    DeleteDirectoryWhenPresent,
+    /// The directory does not exist: remove the registry entry only.
+    RegistryEntryOnly,
+}
+
+/// Guards `delete_assistant_workspace` against deleting arbitrary directories.
+///
+/// Existing directories outside the managed assistant roots (the current
+/// layout and the pre-rename layout left behind by the brand migration) are
+/// refused; a record whose directory is already gone resolves to a
+/// registry-only cleanup.
+fn assistant_workspace_directory_plan(
+    path: &Path,
+    is_managed_path: bool,
+) -> Result<AssistantWorkspaceDirectoryPlan, String> {
+    if is_managed_path {
+        return Ok(AssistantWorkspaceDirectoryPlan::DeleteDirectoryWhenPresent);
+    }
+    if path.exists() {
+        Err(format!(
+            "Workspace path is not a managed assistant workspace: {}",
+            path.display()
+        ))
+    } else {
+        Ok(AssistantWorkspaceDirectoryPlan::RegistryEntryOnly)
+    }
+}
+
 #[tauri::command]
 pub async fn delete_assistant_workspace(
     state: State<'_, AppState>,
@@ -1659,15 +1703,11 @@ pub async fn delete_assistant_workspace(
         return Err("Primary assistant workspace cannot be deleted".to_string());
     }
 
-    if !state
+    let is_managed_path = state
         .workspace_service
-        .is_assistant_workspace_path(&workspace_info.root_path)
-    {
-        return Err(format!(
-            "Workspace path is not a managed assistant workspace: {}",
-            workspace_info.root_path.display()
-        ));
-    }
+        .is_manageable_assistant_workspace_path(&workspace_info.root_path);
+    let directory_plan =
+        assistant_workspace_directory_plan(&workspace_info.root_path, is_managed_path)?;
 
     let is_active_workspace = state
         .workspace_service
@@ -1686,11 +1726,26 @@ pub async fn delete_assistant_workspace(
 
     let workspace_path = workspace_info.root_path.to_string_lossy().to_string();
 
-    state
-        .filesystem_service
-        .delete_directory(&workspace_path, true)
-        .await
-        .map_err(|e| format!("Failed to delete assistant workspace files: {}", e))?;
+    // Re-check presence so a directory that disappears between the guard and
+    // the deletion still resolves as a registry-only cleanup.
+    let delete_files = matches!(
+        directory_plan,
+        AssistantWorkspaceDirectoryPlan::DeleteDirectoryWhenPresent
+    ) && workspace_info.root_path.exists();
+
+    if delete_files {
+        state
+            .filesystem_service
+            .delete_directory(&workspace_path, true)
+            .await
+            .map_err(|e| format!("Failed to delete assistant workspace files: {}", e))?;
+    } else {
+        info!(
+            "Assistant workspace directory is missing; removing registry entry only: workspace_id={}, path={}",
+            request.workspace_id,
+            workspace_info.root_path.display()
+        );
+    }
 
     state
         .workspace_service
@@ -1780,6 +1835,47 @@ async fn clear_directory_contents(directory: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(test)]
+mod assistant_workspace_delete_tests {
+    use super::{assistant_workspace_directory_plan, AssistantWorkspaceDirectoryPlan};
+
+    #[test]
+    fn managed_paths_may_delete_even_when_the_directory_is_missing() {
+        let temp = tempfile::tempdir().expect("temp root");
+        let missing = temp.path().join("workspace-44e0e781");
+
+        assert_eq!(
+            assistant_workspace_directory_plan(&missing, true),
+            Ok(AssistantWorkspaceDirectoryPlan::DeleteDirectoryWhenPresent)
+        );
+    }
+
+    #[test]
+    fn unmanaged_existing_directories_are_refused() {
+        let temp = tempfile::tempdir().expect("temp root");
+        let unmanaged = temp.path().join("Documents").join("foo");
+        std::fs::create_dir_all(&unmanaged).expect("create unmanaged directory");
+
+        let error = assistant_workspace_directory_plan(&unmanaged, false)
+            .expect_err("an existing unmanaged directory must be refused");
+
+        assert!(error.starts_with("Workspace path is not a managed assistant workspace"));
+        assert!(error.contains(&unmanaged.to_string_lossy().to_string()));
+        assert!(unmanaged.exists(), "the guard must not delete anything");
+    }
+
+    #[test]
+    fn unmanaged_missing_records_resolve_to_registry_only_cleanup() {
+        let temp = tempfile::tempdir().expect("temp root");
+        let orphan = temp.path().join("missing-root").join("workspace-44e0e781");
+
+        assert_eq!(
+            assistant_workspace_directory_plan(&orphan, false),
+            Ok(AssistantWorkspaceDirectoryPlan::RegistryEntryOnly)
+        );
+    }
+}
+
 #[tauri::command]
 pub async fn reset_assistant_workspace(
     state: State<'_, AppState>,
@@ -1801,7 +1897,7 @@ pub async fn reset_assistant_workspace(
 
     if !state
         .workspace_service
-        .is_assistant_workspace_path(&workspace_info.root_path)
+        .is_manageable_assistant_workspace_path(&workspace_info.root_path)
     {
         return Err(format!(
             "Workspace path is not a managed assistant workspace: {}",
@@ -3167,7 +3263,7 @@ pub async fn reset_workspace_persona_files(
     };
 
     if workspace.workspace_kind != WorkspaceKind::Assistant
-        || !service.is_assistant_workspace_path(&workspace.root_path)
+        || !service.is_manageable_assistant_workspace_path(&workspace.root_path)
     {
         return Err(format!(
             "Workspace {} is not a managed assistant workspace",
@@ -4881,31 +4977,26 @@ pub async fn search_files(
         request.search_content && should_use_workspace_search(&state, &workspace).await;
     let result = if request.search_content {
         if workspace.workspace_kind == WorkspaceKind::Remote {
-            if !use_workspace_search {
-                Err(
-                    remote_content_search_refusal(&state, "search_files", &workspace)
-                        .await
-                        .unwrap_or_else(|| {
-                            remote_content_search_refusal_message(
-                                "search_files",
-                                &request.root_path,
-                                "remote workspace search is unavailable",
-                            )
-                        }),
-                )
-            } else {
-                search_file_contents_via_workspace_search(
-                    &state,
-                    &workspace,
-                    &request.pattern,
-                    request.case_sensitive,
-                    request.use_regex,
-                    request.whole_word,
-                    max_results,
-                )
-                .await
-                .map(|result| result.outcome.results)
-            }
+            let outcome = match remote_content_search_target(&state, &workspace).await {
+                Ok(target) => {
+                    search_remote_contents(
+                        target,
+                        RemoteContentSearchQuery {
+                            pattern: request.pattern.clone(),
+                            case_sensitive: request.case_sensitive,
+                            use_regex: request.use_regex,
+                            whole_word: request.whole_word,
+                            limit: max_results,
+                            cancel_flag: cancel_flag.clone(),
+                        },
+                    )
+                    .await
+                }
+                Err(error) => Err(error),
+            };
+            outcome.map(|outcome| outcome.results).map_err(|error| {
+                remote_content_search_refusal_message("search_files", &request.root_path, &error)
+            })
         } else {
             let filename_outcome = state
                 .filesystem_service
@@ -5139,12 +5230,21 @@ pub async fn search_file_contents(
     .await?;
     request.root_path = workspace.root_path.to_string_lossy().into_owned();
 
-    if let Some(message) =
-        remote_content_search_refusal(&state, "search_file_contents", &workspace).await
-    {
-        error!("Content search refused: {}", message);
-        return Err(message);
-    }
+    let remote_target = if workspace.workspace_kind == WorkspaceKind::Remote {
+        Some(
+            remote_content_search_target(&state, &workspace)
+                .await
+                .map_err(|error| {
+                    remote_content_search_refusal_message(
+                        "search_file_contents",
+                        &request.root_path,
+                        &error,
+                    )
+                })?,
+        )
+    } else {
+        None
+    };
 
     let search_id = request.search_id.clone();
     let cancel_flag = register_search(&state, search_id.as_deref());
@@ -5159,7 +5259,28 @@ pub async fn search_file_contents(
         include_directories: false,
     };
 
-    let result = if should_use_workspace_search(&state, &workspace).await {
+    let result = if let Some(target) = remote_target {
+        search_remote_contents(
+            target,
+            RemoteContentSearchQuery {
+                pattern: request.pattern.clone(),
+                case_sensitive: request.case_sensitive,
+                use_regex: request.use_regex,
+                whole_word: request.whole_word,
+                limit,
+                cancel_flag,
+            },
+        )
+        .await
+        .map(|outcome| (outcome, None))
+        .map_err(|error| {
+            remote_content_search_refusal_message(
+                "search_file_contents",
+                &request.root_path,
+                &error,
+            )
+        })
+    } else if should_use_workspace_search(&state, &workspace).await {
         search_file_contents_via_workspace_search(
             &state,
             &workspace,
@@ -5381,12 +5502,21 @@ pub async fn start_search_file_contents_stream(
     .await?;
     request.root_path = workspace.root_path.to_string_lossy().into_owned();
 
-    if let Some(message) =
-        remote_content_search_refusal(&state, "start_search_file_contents_stream", &workspace).await
-    {
-        error!("Content search stream refused: {}", message);
-        return Err(message);
-    }
+    let remote_target = if workspace.workspace_kind == WorkspaceKind::Remote {
+        Some(
+            remote_content_search_target(&state, &workspace)
+                .await
+                .map_err(|error| {
+                    remote_content_search_refusal_message(
+                        "start_search_file_contents_stream",
+                        &request.root_path,
+                        &error,
+                    )
+                })?,
+        )
+    } else {
+        None
+    };
 
     let search_id = ensure_search_id(request.search_id.clone(), "content-stream");
     let cancel_flag = register_search(&state, Some(&search_id));
@@ -5435,7 +5565,45 @@ pub async fn start_search_file_contents_stream(
     ));
 
     tokio::spawn(async move {
-        let result = if use_workspace_search {
+        let result = if let Some(target) = remote_target {
+            let result = search_remote_contents(
+                target,
+                RemoteContentSearchQuery {
+                    pattern: pattern.clone(),
+                    case_sensitive,
+                    use_regex,
+                    whole_word,
+                    limit,
+                    cancel_flag: cancel_flag.clone(),
+                },
+            )
+            .await;
+            if let Ok(outcome) = &result {
+                if !cancel_flag
+                    .as_ref()
+                    .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                {
+                    for group in group_search_results(outcome.results.clone()) {
+                        openbitfun_core::infrastructure::FileSearchProgressSink::report(
+                            progress_sink.as_ref(),
+                            group,
+                        );
+                    }
+                    openbitfun_core::infrastructure::FileSearchProgressSink::flush(
+                        progress_sink.as_ref(),
+                    );
+                }
+            }
+            result.map(|outcome| (outcome, None)).map_err(|error| {
+                openbitfun_core::util::errors::OpenBitFunError::service(
+                    remote_content_search_refusal_message(
+                        "start_search_file_contents_stream",
+                        &root_path,
+                        &error,
+                    ),
+                )
+            })
+        } else if use_workspace_search {
             let result = workspace_search_runner
                 .as_ref()
                 .expect("workspace search runner should exist when enabled")

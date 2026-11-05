@@ -130,7 +130,18 @@ pub(crate) fn resolve_position(
     }
 }
 
-pub(crate) fn open_window(
+/// Desktop-only presentation metadata lives in the record's forward-compatible
+/// extension map, not in the portable Agent tool's configuration contract.
+pub(crate) fn desktop_pinned(card: &DesktopCardRecord) -> bool {
+    !card.always_on_top
+        && card
+            .extra
+            .get("desktopPinned")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+}
+
+pub(crate) async fn open_window(
     app: &tauri::AppHandle,
     card: &DesktopCardRecord,
     position: Option<DesktopCardPosition>,
@@ -140,13 +151,7 @@ pub(crate) fn open_window(
     }
     let label = window_label(&card.id);
     if let Some(window) = app.get_webview_window(&label) {
-        if let Err(error) = window.set_always_on_top(card.always_on_top) {
-            log::warn!(
-                "Failed to update desktop card stacking: card_id={}, error={}",
-                card.id,
-                error
-            );
-        }
+        apply_stacking(app, &card.id, card.always_on_top, desktop_pinned(card)).await?;
         if let Err(error) = window.unminimize() {
             log::debug!(
                 "Failed to unminimize desktop card window: card_id={}, error={}",
@@ -186,6 +191,12 @@ pub(crate) fn open_window(
     let window = builder
         .build()
         .map_err(|error| format!("Failed to create desktop card window: {error}"))?;
+    if let Err(error) =
+        apply_stacking(app, &card.id, card.always_on_top, desktop_pinned(card)).await
+    {
+        let _ = window.destroy();
+        return Err(error);
+    }
     window
         .show()
         .map_err(|error| format!("Failed to show desktop card window: {error}"))
@@ -215,16 +226,84 @@ pub(crate) fn apply_window_size(app: &tauri::AppHandle, card_id: &str, size: Des
     }
 }
 
-pub(crate) fn apply_always_on_top(app: &tauri::AppHandle, card_id: &str, always_on_top: bool) {
-    if let Some(window) = app.get_webview_window(&window_label(card_id)) {
-        if let Err(error) = window.set_always_on_top(always_on_top) {
-            log::warn!(
-                "Failed to update desktop card stacking: card_id={}, error={}",
-                card_id,
-                error
-            );
-        }
+/// Whether a desktop for pinned cards exists right now. Checked before
+/// recreating a pinned card's window so recovery retries do not churn
+/// WebViews while Explorer is still starting.
+pub(crate) fn desktop_available() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        super::desktop_layer::desktop_available()
     }
+    #[cfg(not(windows))]
+    {
+        Err("Pinning cards to the desktop is supported only on Windows.".to_string())
+    }
+}
+
+/// Calls `on_restart` when Windows Explorer restarts (`TaskbarCreated`), so
+/// pinned cards can be reattached to the new desktop.
+#[cfg(windows)]
+pub(crate) fn watch_shell_restarts(
+    app: &tauri::AppHandle,
+    on_restart: Box<dyn Fn() + Send + Sync>,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window is unavailable.".to_string())?;
+    let native_window = window.clone();
+    window
+        .run_on_main_thread(move || {
+            let result = native_window
+                .hwnd()
+                .map_err(|error| error.to_string())
+                .and_then(|hwnd| {
+                    super::desktop_layer::install_shell_restart_hook(hwnd, on_restart)
+                });
+            if let Err(error) = result {
+                log::warn!(
+                    "Failed to watch for Windows Explorer restarts: error={}",
+                    error
+                );
+            }
+        })
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) async fn apply_stacking(
+    app: &tauri::AppHandle,
+    card_id: &str,
+    always_on_top: bool,
+    desktop_pinned: bool,
+) -> Result<(), String> {
+    if desktop_pinned && !cfg!(windows) {
+        return Err("Pinning cards to the desktop is supported only on Windows.".to_string());
+    }
+    let Some(window) = app.get_webview_window(&window_label(card_id)) else {
+        return Ok(()); // Hidden cards apply the saved mode when shown.
+    };
+    #[cfg(windows)]
+    {
+        let native_window = window.clone();
+        let (send, receive) = tokio::sync::oneshot::channel();
+        window
+            .run_on_main_thread(move || {
+                let result = native_window
+                    .hwnd()
+                    .map_err(|error| error.to_string())
+                    .and_then(|hwnd| super::desktop_layer::set_pinned(hwnd, desktop_pinned));
+                let _ = send.send(result);
+            })
+            .map_err(|error| error.to_string())?;
+        receive.await.map_err(|error| error.to_string())??;
+    }
+    // Parenting removes topmost before attaching; never promote a child window
+    // back into the global topmost band through Tauri's top-level setter.
+    if !desktop_pinned {
+        window
+            .set_always_on_top(always_on_top)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 pub(crate) fn bring_to_front(app: &tauri::AppHandle, card_id: &str) {

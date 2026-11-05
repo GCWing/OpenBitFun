@@ -1,0 +1,46 @@
+.openbitfun-device-switch-curtain {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  background: var(--openbitfun-color-surface-scene);
+  animation: openbitfun-device-switch-curtain-in var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard) both;
+
+  &[data-phase='leaving'] {
+    pointer-events: none;
+    animation: openbitfun-device-switch-curtain-out 220ms var(--openbitfun-motion-easing-standard) both;
+  }
+
+  // Fast switches finish before the spinner would appear: no flicker.
+  &__spinner {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    animation: openbitfun-device-switch-curtain-spinner 200ms var(--openbitfun-motion-easing-standard) 300ms forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+
+    &[data-phase='leaving'] {
+      animation: none;
+      opacity: 0;
+    }
+  }
+}
+
+@keyframes openbitfun-device-switch-curtain-spinner {
+  to { opacity: var(--openbitfun-opacity-muted); }
+}
+
+@keyframes openbitfun-device-switch-curtain-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes openbitfun-device-switch-curtain-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}

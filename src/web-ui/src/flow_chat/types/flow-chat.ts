@@ -1,3 +1,4 @@
+import type { SessionLastTurn } from '@/shared/types/session-history';
 /**
  * Flow Chat type definitions
  * Supports mixed streaming output.
@@ -113,6 +114,27 @@ export interface FlowToolItem extends FlowItem {
   isParamsStreaming?: boolean;  // Params are streaming in.
   partialParams?: Record<string, any>;  // Partial params during streaming.
   _paramsBuffer?: string;  // Internal buffer for accumulated params.
+  /** Native OpenUI Lang stream, independent of tool-call JSON framing. */
+  _genUIStream?: {
+    messageId: string;
+    format: 'openui-lang';
+    content: string;
+    nextSeq: number;
+    appId?: string;
+    title?: string;
+    template?: string;
+    libraryId?: string;
+    libraryRevision?: number;
+    /** Buffered future deltas, keyed by sequence number. */
+    pending?: Record<string, {
+      text: string;
+      appId?: string;
+      title?: string;
+      template?: string;
+      libraryId?: string;
+      libraryRevision?: number;
+    }>;
+  };
 
   /**
    * Runtime re-attachment marker. This item was reconstructed from an
@@ -602,6 +624,13 @@ export interface Session {
   /** Result identity from a lightweight summary that may precede transcript hydration. */
   unreadCompletionTurnId?: string;
   unreadCompletionGeneration?: number;
+  /**
+   * The host's own record of the unread result (its `unreadCompletionTarget`
+   * or last turn). A read receipt must name this exact result or the host
+   * keeps the session unread, so it survives until the receipt is sent even
+   * when the transcript was never loaded.
+   */
+  unreadCompletionReceipt?: SessionLastTurn;
 
   /**
    * Set when a session requires user attention while not the active session.

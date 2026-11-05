@@ -91,6 +91,9 @@ pub struct ToolExecutionContext {
     pub agent_type: String,
     pub workspace: Option<WorkspaceBinding>,
     pub primary_model_facts: PrimaryModelFacts,
+    /// Exact producing client; auxiliary tool review must retain account and
+    /// reasoning configuration instead of resolving the model again.
+    pub model_client: Option<Arc<crate::infrastructure::ai::AIClient>>,
     pub context_vars: HashMap<String, String>,
     pub subagent_parent_info: Option<SubagentParentInfo>,
     pub permission_delegation: Option<PermissionDelegationContext>,

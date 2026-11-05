@@ -9,6 +9,7 @@ import {
   hydrateSessionHistoryForDetail,
   pendingHistoryLoadKey,
   preloadHistoricalSessionForOpen,
+  prewarmHistoricalSession,
   reloadSessionTitle,
   retryCreateBackendSession,
   resolveAgentTypeForSessionCreation,
@@ -40,6 +41,8 @@ const agentApiMocks = vi.hoisted(() => ({
 const configApiMocks = vi.hoisted(() => ({
   getConfig: vi.fn(),
 }));
+const projectDefaults = vi.hoisted(() => ({ read: vi.fn(async (_id: string) => ({ supported: true, defaults: {} as { mode?: string } })) }));
+vi.mock('@/infrastructure/config/services/ProjectDefaultsService', () => ({ readProjectDefaults: projectDefaults.read }));
 
 const configManagerMocks = vi.hoisted(() => ({
   getConfigs: vi.fn(),
@@ -295,6 +298,7 @@ function createContext(
 }
 
 describe('resolveAgentTypeForSessionCreation', () => {
+  beforeEach(() => { projectDefaults.read.mockResolvedValue({ supported: true, defaults: {} }); });
   afterEach(() => {
     vi.clearAllMocks();
   });
@@ -310,6 +314,30 @@ describe('resolveAgentTypeForSessionCreation', () => {
     ]);
 
     await expect(resolveAgentTypeForSessionCreation(undefined, null)).resolves.toBe('PlannerPlus');
+  });
+
+  it('uses the owning project mode before the global preference and preserves explicit choices', async () => {
+    projectDefaults.read.mockResolvedValue({ supported: true, defaults: { mode: 'Ultimate' } });
+    agentApiMocks.getAvailableModes.mockResolvedValue([{ id: 'Standard' }, { id: 'Ultimate' }]);
+    const workspace = { id: 'ssh-project', workspaceKind: 'remote' } as any;
+    await expect(resolveAgentTypeForSessionCreation(undefined, workspace)).resolves.toBe('Ultimate');
+    expect(projectDefaults.read).toHaveBeenCalledWith('ssh-project');
+    await expect(resolveAgentTypeForSessionCreation('Standard', workspace)).resolves.toBe('Standard');
+  });
+
+  it('issues the default-mode reads together and keeps the project mode when the global read fails', async () => {
+    const project = createDeferred<{ supported: boolean; defaults: { mode?: string } }>();
+    const reader = vi.fn(() => project.promise);
+    configApiMocks.getConfig.mockRejectedValue(new Error('preference unavailable'));
+    agentApiMocks.getAvailableModes.mockResolvedValue([{ id: 'Standard' }, { id: 'Ultimate' }]);
+    const resolved = resolveAgentTypeForSessionCreation(undefined, { id: 'project' } as any, reader);
+    await Promise.resolve();
+    expect(reader).toHaveBeenCalledTimes(1);
+    expect(configApiMocks.getConfig).toHaveBeenCalledTimes(1);
+    expect(agentApiMocks.getAvailableModes).toHaveBeenCalledTimes(1);
+    expect(projectDefaults.read).not.toHaveBeenCalled();
+    project.resolve({ supported: true, defaults: { mode: 'Ultimate' } });
+    await expect(resolved).resolves.toBe('Ultimate');
   });
 
   it('does not override any explicit mode, including the Standard Harness id', async () => {
@@ -1023,6 +1051,24 @@ describe('SessionModule historical session coordination', () => {
     );
   });
 
+  it.each(['local', 'peer'])('retains a paged %s tail on reopen without downloading the whole conversation', async surface => {
+    activateSurface(surface);
+    const session = createSession({
+      isHistorical: false, historyState: 'ready', isPartial: true,
+      dialogTurns: [{ id: 'tail', userMessage: { id: 'user-tail', content: 'Latest', timestamp: 1 },
+        modelRounds: [{ items: [{ type: 'text', text: 'Answer' }] }], status: 'completed' } as any],
+      loadedTurnCount: 1, totalTurnCount: 100,
+    });
+    if (surface === 'local') session.turnCatalog = {
+      sessionId: session.sessionId, revision: 'catalog', totalTurnCount: 100, entries: [],
+    } as any;
+    const { context, flowChatStore } = createContext(session, { activeSessionId: 'other' });
+    await switchChatSession(context, session.sessionId);
+    expect(flowChatStore.switchSession).toHaveBeenCalledWith(session.sessionId);
+    expect(flowChatStore.ensureSessionFullHistory).not.toHaveBeenCalled();
+    expect(flowChatStore.loadSessionHistory).not.toHaveBeenCalled();
+  });
+
   it('touches only the latest active session during rapid switches', async () => {
     const firstSession = createSession({
       sessionId: 'history-1',
@@ -1130,6 +1176,23 @@ describe('SessionModule historical session coordination', () => {
 
     load.resolve();
     await load.promise;
+  });
+
+  it('upgrades an active-only preload when a local prewarm must retain its inactive tail', async () => {
+    const firstLoad = createDeferred<void>();
+    const { context, flowChatStore } = createContext(createSession());
+    context.pendingHistoryLoads.set(pendingHistoryLoadKey('history-other'), Promise.resolve());
+    flowChatStore.loadSessionHistory.mockReturnValueOnce(firstLoad.promise);
+    preloadHistoricalSessionForOpen(context, 'history-1');
+    prewarmHistoricalSession(context, 'history-1');
+    expect(flowChatStore.loadSessionHistory).toHaveBeenCalledTimes(1);
+    firstLoad.resolve();
+    await firstLoad.promise;
+    await vi.waitFor(() => expect(flowChatStore.loadSessionHistory).toHaveBeenCalledTimes(2));
+    expect(flowChatStore.loadSessionHistory).toHaveBeenLastCalledWith('history-1', {
+      includeInternal: undefined, deferFullHistoryUntilActive: true, retainInactiveTail: true,
+    });
+    expect(flowChatStore.switchSession).not.toHaveBeenCalled();
   });
 
   it('deduplicates concurrent detail hydration and includes internal child output', async () => {

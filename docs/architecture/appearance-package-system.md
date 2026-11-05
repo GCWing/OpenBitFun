@@ -349,7 +349,7 @@ Portal 必须挂载到统一 `AppearanceOverlayHost`，Portal 内组件仍使用
 
 ## 独立渲染器
 
-Monaco、xterm、canvas、mermaid、生成式 widget 等不依赖普通 DOM CSS 的渲染器通过
+Monaco、xterm、mermaid、生成式 widget 等不依赖普通 DOM CSS 的渲染器通过
 `AppearanceRendererAdapter` 注册：
 
 ```ts
@@ -357,8 +357,7 @@ interface AppearanceRendererSettingsMap {
   monaco: MonacoAppearanceSettings;
   xterm: XtermAppearanceSettings;
   mermaid: MermaidAppearanceSettings;
-  canvas: CanvasAppearanceSettings;
-  widget: WidgetAppearanceSettings;
+  'generative-widget': WidgetAppearanceSettings;
 }
 
 interface AppearanceRendererAdapter<K extends keyof AppearanceRendererSettingsMap> {

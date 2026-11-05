@@ -1,39 +1,45 @@
-import { useCallback, useEffect, useState, type SetStateAction } from 'react';
-import type { SessionExpandLevel } from './sessionNavExpand';
+import { useCallback, useLayoutEffect, useSyncExternalStore } from 'react';
+import { SESSIONS_INITIAL_COUNT } from './sessionNavExpand';
 
-/** Data discovery never expands the list. Each workspace/source view starts
- * compact, even when another view already has hundreds of metadata rows. */
-export function useSessionNavExpansion(scope: string, pageSize: number) {
-  const [state, setState] = useState({ scope, level: 0 as SessionExpandLevel, displayCount: pageSize });
-  useEffect(() => {
-    setState(previous => previous.scope === scope ? previous : { scope, level: 0, displayCount: pageSize });
-  }, [pageSize, scope]);
+/**
+ * Expansion belongs to the device/workspace/source view, not either of its
+ * live and background React projections. Publish a click immediately: during
+ * replacement React renders the new list before cleaning up the old one.
+ * An unmount hand-off therefore always arrives too late (and can leave an
+ * older expanded value for the next switch).
+ */
+const counts = new Map<string, number>();
+const listeners = new Set<() => void>();
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+};
+const notify = () => { for (const listener of listeners) listener(); };
 
-  const setExpandLevel = useCallback((level: SessionExpandLevel) => {
-    setState(previous => ({
-      scope,
-      level,
-      displayCount: level === 2 && previous.scope === scope ? previous.displayCount : pageSize,
-    }));
-  }, [pageSize, scope]);
+/** Reset one workspace's source views, or every view for Collapse All. */
+export function resetSessionNavExpansion(workspaceScope?: string): void {
+  let changed = false;
+  for (const key of counts.keys()) {
+    if (workspaceScope === undefined || key === workspaceScope || key.startsWith(`${workspaceScope}:`)) {
+      counts.delete(key);
+      changed = true;
+    }
+  }
+  if (changed) notify();
+}
 
-  const setLevel2DisplayCount = useCallback((next: SetStateAction<number>) => {
-    setState(previous => {
-      const current = previous.scope === scope ? previous.displayCount : pageSize;
-      return {
-        scope,
-        level: previous.scope === scope ? previous.level : 0,
-        displayCount: typeof next === 'function' ? next(current) : next,
-      };
-    });
-  }, [pageSize, scope]);
-
-  return {
-    // Limit the very first render after a filter/device switch, before effects
-    // run, so the previous view cannot briefly mount its entire expanded list.
-    expandLevel: state.scope === scope ? state.level : 0 as SessionExpandLevel,
-    level2DisplayCount: state.scope === scope ? state.displayCount : pageSize,
-    setExpandLevel,
-    setLevel2DisplayCount,
-  };
+export function useSessionNavExpansion(scope: string, { visible = true }: { visible?: boolean } = {}) {
+  const read = useCallback(() => counts.get(scope) ?? SESSIONS_INITIAL_COUNT, [scope]);
+  const displayCount = useSyncExternalStore(subscribe, read, read);
+  // Retained live lists also support visibility without being unmounted.
+  // Background lists reset at the workspace disclosure action, before unmount.
+  useLayoutEffect(() => { if (!visible) resetSessionNavExpansion(scope); }, [scope, visible]);
+  const setDisplayCount = useCallback((value: number) => {
+    const next = Math.max(SESSIONS_INITIAL_COUNT, value);
+    if (next === (counts.get(scope) ?? SESSIONS_INITIAL_COUNT)) return;
+    if (next === SESSIONS_INITIAL_COUNT) counts.delete(scope);
+    else counts.set(scope, next);
+    notify();
+  }, [scope]);
+  return { displayCount: visible ? displayCount : SESSIONS_INITIAL_COUNT, setDisplayCount };
 }

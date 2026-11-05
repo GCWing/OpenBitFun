@@ -97,6 +97,14 @@ async fn dispatch_surface_event(
     );
     let (sender, receiver) = oneshot::channel();
     lock_pending_responses().insert(request_id.clone(), sender);
+    // Cancellation drops the pending sender as well as the receiver.
+    struct PendingGuard(String);
+    impl Drop for PendingGuard {
+        fn drop(&mut self) {
+            lock_pending_responses().remove(&self.0);
+        }
+    }
+    let _pending = PendingGuard(request_id.clone());
 
     let Some(payload) = payload.as_object_mut() else {
         lock_pending_responses().remove(&request_id);
@@ -1287,8 +1295,10 @@ mod tests {
         let legacy: super::ProductControlSurfaceReadyRequest =
             serde_json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(legacy.creation_api_version, None);
-        let current: super::ProductControlSurfaceReadyRequest =
-            serde_json::from_value(serde_json::json!({"creationApiVersion": 1})).unwrap();
+        let current: super::ProductControlSurfaceReadyRequest = serde_json::from_value(
+            serde_json::json!({"creationApiVersion": 1, "genUiApiVersion": 1}),
+        )
+        .unwrap();
         assert_eq!(current.creation_api_version, Some(1));
     }
     use super::*;

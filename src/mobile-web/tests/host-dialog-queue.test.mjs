@@ -33,6 +33,40 @@ function fixture() {
     lose:()=>{loseResponse=true;},restart:()=>{epoch='owner-2';receipts.clear();},get executions(){return executions;}};
 }
 const message={content:'continue',agentType:'Standard',attachments:[],metadata:{}};
+test('a queue prepared alongside model selection sends without another list and keeps the durable outbox', async () => {
+  const f = fixture();
+  const queue = f.create();
+  const prepared = await queue.refresh();
+  await queue.submit(message, { text: 'continue' }, 'prepared-turn', prepared);
+  assert.deepEqual(f.calls.map(call => call.action), ['list', 'submit']);
+  assert.equal(f.calls[1].queueEpoch, prepared.queueEpoch);
+  assert.equal(f.calls[1].message.turnId, 'prepared-turn');
+  assert.equal(f.executions, 1);
+});
+
+test('a known host restart invalidates an already prepared submission', async () => {
+  const f = fixture();
+  const queue = f.create();
+  const prepared = await queue.refresh();
+  f.restart();
+  await queue.refresh();
+  await assert.rejects(queue.submit(message, {}, 'prepared-turn', prepared), /queue_scope_expired/);
+  assert.equal(f.executions, 0);
+  assert.equal(f.calls.some(call => call.action === 'submit'), false);
+});
+
+test('a prepared submission with an ambiguous receipt still recovers the original turn', async () => {
+  const f = fixture();
+  const queue = f.create();
+  const prepared = await queue.refresh();
+  f.lose();
+  await assert.rejects(queue.submit(message, {}, 'prepared-turn', prepared));
+  const reopened = f.create();
+  await reopened.refresh();
+  await reopened.retry(reopened.getSnapshot().pending[0]);
+  assert.equal(f.executions, 1);
+  assert.equal(f.calls.filter(call => call.action === 'submit').length, 1);
+});
 test('lost acceptance survives page recreation and queries original ID without a duplicate send',async()=>{
  const f=fixture();const first=f.create();f.lose();await assert.rejects(first.submit(message));
  const stored=[...f.records.values()][0];assert.equal(stored.accepted,undefined);

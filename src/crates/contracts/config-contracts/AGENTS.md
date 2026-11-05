@@ -48,3 +48,6 @@ Focused verification:
 ```bash
 cargo test -p openbitfun-config-contracts --lib
 ```
+
+For project default overlays and legacy configuration round trips, use
+`cargo test -p openbitfun-config-contracts --lib project_defaults`.

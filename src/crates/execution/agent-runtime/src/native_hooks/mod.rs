@@ -35,7 +35,10 @@ mod settings;
 #[cfg(feature = "native-hook-runtime")]
 pub use call::{HookCall, HookCallPayload};
 #[cfg(feature = "native-hook-runtime")]
-pub use engine::{AgentHookEngine, PluginHookDispatchResult, MAX_HOOK_MODEL_OUTPUT_BYTES};
+pub use engine::{
+    AgentHookEngine, HookProcessProvider, HookProcessResult, PluginHookDispatchResult,
+    MAX_HOOK_MODEL_OUTPUT_BYTES,
+};
 #[cfg(feature = "native-hook-runtime")]
 pub use handler::{
     BuiltinHookExecutor, CommandHookOptions, HookHandler, HookHandlerResult, HookInputAdapter,

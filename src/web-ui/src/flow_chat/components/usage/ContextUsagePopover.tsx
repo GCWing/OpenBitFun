@@ -8,6 +8,7 @@ import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPos
 import { formatTokenCount, formatUsagePercent } from './usageReportUtils';
 import { useUsageSeriesHighlight } from './useUsageSeriesHighlight';
 import { useContextPreview } from './useContextPreview';
+import { classifyPeerHostRefusal } from '@/infrastructure/peer-device/peerHostRefusal';
 import './ContextUsagePopover.scss';
 
 const CATEGORIES = [
@@ -39,7 +40,9 @@ export function ContextUsagePopover({
     ...previewSession, reportSessionId: previewSession?.sessionId,
   });
   const [context, setContext] = useState<UsageContextBreakdown>();
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>(loadContext ? 'loading' : 'ready');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error' | 'unsupported' | 'updateRequired'>(
+    loadContext ? 'loading' : 'ready',
+  );
   // Snapshot the loader on open: live token updates must not re-fetch the report.
   const loaderRef = useRef(loadContext);
   useEffect(() => {
@@ -47,7 +50,12 @@ export function ContextUsagePopover({
     if (loaderRef.current) {
       void loaderRef.current().then(value => {
         if (current) { setContext(value); setStatus('ready'); }
-      }, () => { if (current) setStatus('error'); });
+      }, (error: unknown) => {
+        if (!current) return;
+        // A peer host without the report is an expected state, not a load failure.
+        const refusal = classifyPeerHostRefusal(error);
+        setStatus(refusal ? (refusal.kind === 'updateRequired' ? 'updateRequired' : 'unsupported') : 'error');
+      });
     }
     return () => { current = false; };
   }, []);
@@ -154,7 +162,11 @@ export function ContextUsagePopover({
         </> : <div className="context-usage-popover__empty" role="status" aria-live="polite" aria-busy={status === 'loading'}>
           <Empty icon={<Icon glyph={ChartPie} />} imageSize="sm" title={
             <span data-openbitfun-product-component="context-usage-popover" data-openbitfun-product-part="status">
-              {t(status === 'loading' ? 'usage.context.loading' : status === 'error' ? 'usage.context.loadFailed' : 'usage.context.unavailable')}
+              {status === 'loading' ? t('usage.context.loading')
+                : status === 'error' ? t('usage.context.loadFailed')
+                  : status === 'unsupported' ? t('usage.context.unsupported')
+                    : status === 'updateRequired' ? t('usage.context.updateRequired')
+                      : t('usage.context.unavailable')}
             </span>
           } />
         </div>}

@@ -3,8 +3,9 @@ import { startAutoSync } from '@/flow_chat/services/storeSync';
 import { workspaceManager, type WorkspaceEvent } from '@/infrastructure/services/business/workspaceManager';
 import { getActiveSurfaceId, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import { createLogger } from '@/shared/utils/logger';
+import { useDeviceOpenIntent } from '@/infrastructure/peer-device/deviceOpenIntent';
 import { registerSessionSceneNavigation, useSceneStore } from '../stores/sceneStore';
-import { isSessionSceneId, type SessionSceneTarget } from '../components/SceneBar/types';
+import { getSessionSceneTabId, isSessionSceneId, sessionSceneWorkspaceId, type SessionSceneTarget } from '../components/SceneBar/types';
 import { startSessionPaneLayoutSync } from '../scenes/session/sessionPaneLayoutSync';
 import { resolveSessionSceneTarget, resolveSessionSceneWorkspace } from './sessionSceneTarget';
 import { selectedSessionTab, tabPane } from '../workbench/scenePaneModel';
@@ -39,7 +40,15 @@ export function startSessionSceneLifecycle(): () => void {
       return workspace ? workspace.id === state.activeWorkspaceId : !state.currentWorkspace;
     },
     activate: async (target, isCurrent) => {
-      if (target.surfaceId !== getActiveSurfaceId() || !isCurrent()) return false;
+      if (!isCurrent()) return false;
+      if (target.surfaceId !== getActiveSurfaceId()) {
+        // Another device's tab: render that device and open the session there,
+        // the same open as its sidebar row. The open holds and selects the tab.
+        const { openAgentCompanionSession } = await import('./openAgentCompanionSession');
+        void openAgentCompanionSession(target.sessionId, target.surfaceId, sessionSceneWorkspaceId(target))
+          .catch(error => log.warn('Failed to open another device session tab', { surfaceId: target.surfaceId, error }));
+        return false;
+      }
       try {
         const { activateMainSession } = await import('@/flow_chat/services/sessionActivation');
         if (!isCurrent()) return false;
@@ -47,8 +56,14 @@ export function startSessionSceneLifecycle(): () => void {
       } catch (error) {
         if (isCurrent() && !isSurfaceChangedError(error)) {
           log.error('Failed to activate session tab', { sessionId: target.sessionId, error });
-          const { notificationService } = await import('@/shared/notification-system');
-          if (isCurrent()) notificationService.error(error instanceof Error ? error.message : String(error));
+          const [{ notificationService }, { peerReplyLostMessage }, { i18nService }] = await Promise.all([
+            import('@/shared/notification-system'),
+            import('@/infrastructure/peer-device/peerReplyLost'),
+            import('@/infrastructure/i18n'),
+          ]);
+          const message = peerReplyLostMessage(error, (key, options) => i18nService.t(key, options))
+            ?? (error instanceof Error ? error.message : String(error));
+          if (isCurrent()) notificationService.error(message);
         }
         return false;
       }
@@ -69,6 +84,12 @@ export function startSessionSceneLifecycle(): () => void {
         previousSelection = current();
         previousWorkspaces = new Map(workspaceManager.getState().openedWorkspaces);
         useSceneStore.getState().resetForPeerSwitch(true);
+        // The device's own active session comes back to its kept tab.
+        const scenes = useSceneStore.getState();
+        if (previousSelection && !scenes.activeTabId?.startsWith('session:') && !scenes.pendingTabId
+          && scenes.openTabs.some(tab => tab.id === getSessionSceneTabId(previousSelection!))) {
+          scenes.openSessionScene(previousSelection);
+        }
       }
       const closedWorkspace = event?.type === 'workspace:closed' || event?.type === 'workspace:removed'
         ? previousWorkspaces.get(event.workspaceId) : undefined;
@@ -116,9 +137,14 @@ export function startSessionSceneLifecycle(): () => void {
   const unsubscribeSessions = flowChatStore.subscribe(() => reconcile());
   const unsubscribeScenes = useSceneStore.subscribe(() => reconcile());
   const unsubscribeWorkspaces = workspaceManager.addEventListener(reconcile);
+  // A held cross-device tab is released (or adopted) when its open settles.
+  const unsubscribeDeviceOpen = useDeviceOpenIntent.subscribe((state, previous) => {
+    if (previous.intent && !state.intent) reconcile();
+  });
   reconcile();
 
   return () => {
+    unsubscribeDeviceOpen();
     unsubscribeSessions();
     unsubscribeScenes();
     unsubscribeWorkspaces();

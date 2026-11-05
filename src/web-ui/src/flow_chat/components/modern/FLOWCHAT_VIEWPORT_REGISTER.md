@@ -14,6 +14,21 @@ Every deliberate write to the FlowChat scroller goes through one register, which
 decides whether the writer may act. This document covers the register, what it
 replaced, the two writers that stand outside it, and the trail it leaves.
 
+## Coordinate conventions
+
+Public navigation targets and persisted viewport snapshots remain top-origin.
+`flowChatScrollCoordinates.ts` reads that logical offset and the register converts
+writes to the scroller's native convention. Historical scrollers have a bottom
+origin: native zero is the latest position and negative values move toward older
+content. A growing older prefix changes the logical top offset without any
+native scroll travel or deliberate viewport write.
+
+`readReaderScrollPosition` and the DOM reading anchor therefore account native
+travel, not total scroll range. `shift` is a signed native displacement in both
+conventions. Explicit history/live origin handoffs preserve an actual visible
+row through the existing register; the virtualizer receives immediate readback
+before releasing its retained window.
+
 ## Who May Move the Viewport at All
 
 Continuous movement belongs to `useFlowChatFollowOutput`; one-shot navigation
@@ -43,7 +58,8 @@ be undone.
 
 **Repairing a displacement is not on this list**, and putting it there was a
 mistake worth keeping recorded. The prepend compensation and the viewport anchor
-both use `viewportOwner.shift` — see *A Displacement Is Not a Movement* in
+both use `viewportOwner.shift`. Prepend compensation belongs only to the live
+top-origin layout; historical tail loading uses no compensation. See
 `FLOWCHAT_HISTORY_PAGING.md`.
 
 **Taking ownership and writing are one call.** Adding a writer without declaring
@@ -79,6 +95,22 @@ Only the parts that were really answering "is someone else moving the viewport"
 are gone.
 
 ## What Counts as a Gesture
+
+Native scroll and input subscriptions live for the scroller's lifetime. The
+callbacks they consume are refreshed after each React commit through a ref.
+TanStack's earlier native scroll listener can synchronously commit a new virtual
+window. If that commit tears down and rebinds the list's later listener, DOM event
+dispatch skips the removed listener and does not call its replacement for the
+same event. That loses the whole scroll observation: edge fade, follow, anchor,
+visible Turn, snapshot and history-boundary evaluation.
+
+The first-message fade regression exposed this with `scrollTop: 0` while
+`data-scroll-at-start` remained `false`. A native-event fixture with an earlier
+listener forcing a synchronous virtualizer commit reproduces the lost update;
+the ordinary scroll fixture alone does not. Keep callbacks current without
+rebinding subscriptions, and clean up when the scroller/session is replaced.
+The fix changes no scroll target, ownership priority or CSS mask, and needs no
+polling, delayed repaint or extra scroll writer.
 
 Selecting transcript text hands the viewport to the reader through the existing
 user-gesture path. The selection toolbar waits for pointer release and uses a

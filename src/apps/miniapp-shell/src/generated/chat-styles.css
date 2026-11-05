@@ -2014,7 +2014,12 @@
   .openbitfun-chat-input__boost-submenu-spinner {
     animation: none;
   }
-}.flow-text-block .markdown-renderer pre,
+}.flow-text-block:not([hidden]):not(.flow-text-block--runtime-status) {
+  display: flex;
+  flex-direction: column;
+}
+
+.flow-text-block .markdown-renderer pre,
 .flow-text-block .markdown-renderer .code-block-wrapper,
 .flow-text-block .markdown-renderer .table-wrapper,
 .flow-text-block .markdown-renderer .mermaid-block,
@@ -2068,6 +2073,9 @@
   }
 }
 .user-message-item-shell {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
   --_user-message-radius: var(--openbitfun-control-flow-chat-user-message-radius);
   --_user-message-padding-inline: var(--_user-message-radius);
   position: relative;
@@ -2205,6 +2213,13 @@
   align-items: flex-start;
   justify-content: center;
   gap: var(--openbitfun-control-flow-chat-inline-gap);
+}
+
+.user-message-item__host-evidence {
+  margin: 0;
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-flow-meta-font-size);
+  line-height: var(--openbitfun-type-flow-meta-line-height);
 }
 
 .user-message-item__main-contents-bridge {

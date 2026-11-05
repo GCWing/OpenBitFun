@@ -364,7 +364,18 @@ impl DialogScheduler {
         let session = &request.session_id;
         openbitfun_core_types::validate_session_id(session).map_err(error)?;
         let _admission = self.host_queue_locks.lock(session).await;
-        if self.session_manager.get_session(session).is_none() {
+        // Passive observers (queue panels, timeline projection) poll a session
+        // that may not be restored on this execution host yet, e.g. right after
+        // a local <-> remote workspace switch. Reads may degrade: the scheduler
+        // keeps its own receipts, so report that state without failing every
+        // poll. Mutations keep failing — accepting user work against a session
+        // this runtime cannot vouch for would silently lose it.
+        let session_unloaded = self.session_manager.get_session(session).is_none();
+        if !matches!(
+            request.action,
+            DialogQueueAction::List | DialogQueueAction::Get { .. }
+        ) && session_unloaded
+        {
             return Err(PortError::new(
                 PortErrorKind::NotFound,
                 "Session is not loaded on the execution host",
