@@ -254,7 +254,7 @@ impl RelayClient {
     }
     pub async fn connect_authenticated(&self, token: &str, _device_name: &str) -> Result<()> {
         let (ready, receive) = oneshot::channel();
-        let epoch = {
+        let (epoch, url, lease) = {
             let mut owner = self.owner.lock().unwrap();
             let url = owner
                 .url
@@ -268,6 +268,19 @@ impl RelayClient {
             owner.sender = None;
             owner.replies.clear();
             let lease = self.routing_lease(&url);
+            (epoch, url, lease)
+        };
+        // Reset the previous connection before either independent cold-start
+        // dependency begins. The account can fetch a peer key while this
+        // socket authenticates, and that fresh key survives initial AuthOk.
+        if let Some(session) = &self.account_session {
+            session.clear_peer_keys().await;
+        }
+        {
+            let mut owner = self.owner.lock().unwrap();
+            if owner.epoch != epoch {
+                return Err(anyhow!("Relay authentication superseded"));
+            }
             owner.task = Some(tokio::spawn(Self::run(
                 self.owner.clone(),
                 self.events.clone(),
@@ -279,8 +292,7 @@ impl RelayClient {
                 lease,
                 ready,
             )));
-            epoch
-        };
+        }
         match tokio::time::timeout(Duration::from_secs(20), receive).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(anyhow!("Relay authentication cancelled")),
@@ -340,8 +352,10 @@ impl RelayClient {
                     // Invalidate before publishing the socket. Clearing in an
                     // asynchronous AuthOk listener can discard the first RPC's
                     // negotiated response after a cold connection succeeds.
-                    if let Some(session) = &account_session {
-                        session.clear_peer_keys().await;
+                    if connected_once {
+                        if let Some(session) = &account_session {
+                            session.clear_peer_keys().await;
+                        }
                     }
                     let first = !connected_once;
                     connected_once = true;

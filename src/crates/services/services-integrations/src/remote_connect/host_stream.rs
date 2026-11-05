@@ -16,7 +16,7 @@ use std::{
 
 mod turn_history;
 use turn_history::TurnSnapshot;
-pub use turn_history::{TurnHistoryPage, TurnHistoryRequest};
+pub use turn_history::{TurnHistoryPage, TurnHistoryRequest, MAX_TURN_HISTORY_PAGE_BYTES};
 
 /// Contains a separator rejected by runtime Session IDs, so control metadata
 /// cannot alias a user's session.

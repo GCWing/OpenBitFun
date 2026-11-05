@@ -849,9 +849,11 @@ impl AccountClient {
                 let (transport, mut events) = super::relay_client::RelayClient::new_controller();
                 let transport = transport.with_account_session(session);
                 transport.connect(relay_url).await?;
-                transport
-                    .connect_authenticated(&session.token, "Controller")
-                    .await?;
+                tokio::try_join!(
+                    biased;
+                    transport.connect_authenticated(&session.token, "Controller"),
+                    session.peer_cipher(relay_url, target_device_id),
+                )?;
                 let event_session = session.for_peer_messages();
                 let event_relay = relay_url.to_string();
                 tokio::spawn(async move {
@@ -907,6 +909,8 @@ impl AccountClient {
                 Ok::<_, anyhow::Error>(Arc::new(transport))
             })
             .await?;
+        // Re-resolve through the cache after authentication: a presence/key
+        // invalidation during setup must win over the speculative key read.
         let peer = session.peer_cipher(relay_url, target_device_id).await?;
         let (data, nonce) = super::encryption::encrypt_relay_message(
             &peer.key,
@@ -1278,6 +1282,122 @@ mod tests {
         );
         peer.observe(PeerEncodingOffer::Host(false));
         assert!(!peer.host_accepts.load(Ordering::Relaxed));
+    }
+
+    #[tokio::test]
+    async fn cold_rpc_authenticates_and_fetches_the_peer_key_concurrently() {
+        use futures::{SinkExt, StreamExt};
+        use serde_json::json;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let key_pair = super::super::encryption::KeyPair::generate();
+        let public_key = key_pair.public_key_base64();
+        let message_key = device_crypto::derive_message_key(
+            &[7; 32],
+            &super::super::encryption::parse_public_key(&public_key).unwrap(),
+        )
+        .unwrap();
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let completed = Arc::new(tokio::sync::Notify::new());
+        let server_completed = completed.clone();
+        let server = tokio::spawn(async move {
+            let mut handlers = tokio::task::JoinSet::new();
+            // Exactly one HTTP lookup and one socket serve both RPCs. Holding
+            // auth until the key request arrives proves the setup overlaps.
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let barrier = barrier.clone();
+                let completed = server_completed.clone();
+                let public_key = public_key.clone();
+                handlers.spawn(async move {
+                    let mut peek = [0; 4096];
+                    let length = stream.peek(&mut peek).await.unwrap();
+                    if String::from_utf8_lossy(&peek[..length]).starts_with("GET /api/devices/") {
+                        let mut request = Vec::new();
+                        while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                            let length = stream.read(&mut peek).await.unwrap();
+                            assert!(length > 0);
+                            request.extend_from_slice(&peek[..length]);
+                        }
+                        assert!(String::from_utf8_lossy(&request)
+                            .starts_with("GET /api/devices/peer/key "));
+                        barrier.wait().await;
+                        let body = json!({"device_id":"peer", "public_key":public_key}).to_string();
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            body.len(), body,
+                        );
+                        stream.write_all(response.as_bytes()).await.unwrap();
+                        return;
+                    }
+                    let mut socket = accept_async(stream).await.unwrap();
+                    let handshake = json!({
+                        "sid": "fixture",
+                        "upgrades": [],
+                        "pingInterval": 25000,
+                        "pingTimeout": 5000,
+                        "maxPayload": 1000000,
+                    });
+                    socket.send(Message::Text(format!("0{handshake}").into())).await.unwrap();
+                    let auth = socket.next().await.unwrap().unwrap().into_text().unwrap();
+                    let auth: serde_json::Value =
+                        serde_json::from_str(auth.strip_prefix("40").unwrap()).unwrap();
+                    assert_eq!(auth["token"], "fixture");
+                    barrier.wait().await;
+                    socket.send(Message::Text("40{\"sid\":\"fixture\"}".into())).await.unwrap();
+                    let authenticated = json!([
+                        "auth-ok", {"userId":"account", "deviceId":"controller"},
+                    ]);
+                    socket.send(Message::Text(format!("42{authenticated}").into())).await.unwrap();
+                    for index in 0..2 {
+                        let request = socket.next().await.unwrap().unwrap().into_text().unwrap();
+                        let request = request.strip_prefix("42").unwrap();
+                        let event_start = request.find('[').unwrap();
+                        let event: serde_json::Value = serde_json::from_str(&request[event_start..]).unwrap();
+                        assert_eq!(event[0], "rpc-call");
+                        let envelope = &event[1]["params"];
+                        let command = super::super::encryption::decrypt_from_base64(
+                            &message_key,
+                            envelope["encrypted_data"].as_str().unwrap(),
+                            envelope["nonce"].as_str().unwrap(),
+                        ).unwrap();
+                        assert_eq!(command, format!("request-{index}"));
+                        let (data, nonce) = super::super::encryption::encrypt_relay_message(
+                            &message_key,
+                            &format!("reply-{index}"),
+                            true,
+                        ).unwrap();
+                        let reply = json!([{"ok":true, "result": {
+                            "encrypted_data":data, "nonce":nonce, "accept_encoding":"zstd-1",
+                        }}]);
+                        socket.send(Message::Text(format!("43{}{reply}", &request[..event_start]).into()))
+                            .await.unwrap();
+                    }
+                    completed.notified().await;
+                });
+            }
+            while let Some(result) = handlers.join_next().await {
+                result.unwrap();
+            }
+        });
+        let session = AccountSession::new("fixture".into(), "account".into(), [7; 32]);
+        let client = AccountClient::new();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            for index in 0..2 {
+                let reply = client
+                    .device_rpc(&url, &session, "peer", &format!("request-{index}"))
+                    .await
+                    .unwrap();
+                assert_eq!(reply, format!("reply-{index}"));
+            }
+            completed.notify_one();
+            server.await.unwrap();
+        })
+        .await
+        .expect("authentication and the key lookup must progress concurrently");
     }
 
     #[tokio::test]

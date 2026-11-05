@@ -53,6 +53,10 @@ slices that are outside pure product logic but still platform-neutral.
   The immutable snapshot spans bounded packets, carries an older-Turn boundary
   separately from its packet offset, and uses the live cursor captured before
   source IO as its revision fence. It never allocates live event sequences.
+  Controllers may offer `turn_history.max_bytes` to receive up to 4 MiB of
+  snapshot records per response. Omitted offers retain the ordinary page byte
+  budget. Older hosts ignore the hint and readers follow `next_offset` until
+  the same snapshot is complete. Live pages keep their own byte budget.
   Snapshot IDs are controller/stream scoped and epoch fenced; retained bodies
   are byte bounded and expire with leases/grace (one oversized Turn may exceed
   the budget). Identity-only tombstone tracking must not suppress subsequent
