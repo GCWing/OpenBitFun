@@ -21,13 +21,14 @@ export function HistorySessionLoadingBoundary({
   identity, loading, hasTranscript, disabled, intent, label, onPresentationChange, children,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const initialPhase: Phase = loading || hasTranscript ? 'loading' : 'idle';
   const [state, setState] = useState<{ identity: string; phase: Phase }>({
-    identity, phase: loading ? 'loading' : 'idle',
+    identity, phase: initialPhase,
   });
   if (state.identity !== identity) {
-    setState({ identity, phase: loading ? 'loading' : 'idle' });
+    setState({ identity, phase: initialPhase });
   }
-  const phase = state.identity === identity ? state.phase : loading ? 'loading' : 'idle';
+  const phase = state.identity === identity ? state.phase : initialPhase;
   const covering = !disabled && (loading || phase !== 'idle');
 
   useLayoutEffect(() => {
@@ -40,7 +41,8 @@ export function HistorySessionLoadingBoundary({
         ? { identity, phase: next }
         : previous
     ));
-    if (disabled) { setPhase('idle'); return; }
+    // Inactive scenes expose their placeholder and recheck the viewport on resume.
+    if (disabled) { setPhase(hasTranscript ? 'loading' : 'idle'); return; }
     if (loading) { setPhase('loading'); return; }
     if (phase === 'idle') return;
 

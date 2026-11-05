@@ -74,6 +74,42 @@ describe('history loading presentation handoff', () => {
     expect(HTMLElement.prototype.getBoundingClientRect).not.toHaveBeenCalled();
   });
 
+  it('waits for viewport settlement when a warm transcript mounts with complete data', async () => {
+    const presented = vi.fn();
+    render({ loading: false, children: transcript(false), onPresentationChange: presented });
+    expect(phase()).toBe('loading');
+    expect(presented).toHaveBeenLastCalledWith('local:session-a', false);
+    await act(async () => { element('.virtual-message-list').dataset.openViewportSettled = 'true'; });
+    expect(phase()).toBe('idle');
+    expect(presented).toHaveBeenLastCalledWith('local:session-a', true);
+    expect(HTMLElement.prototype.getBoundingClientRect).not.toHaveBeenCalled();
+  });
+
+  it('presents a settled long answer with the user message outside the viewport', async () => {
+    const content = <>
+      <div className="user-message" data-turn-id="turn-a">Earlier question</div>
+      <div className="answer">The visible end of a long answer</div>
+    </>;
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+      return this.matches('.user-message') ? new DOMRect(0, -2_000, 600, 40) : new DOMRect(0, 0, 600, 400);
+    });
+    render({ loading: false, children: transcript(false, content) });
+    expect(phase()).toBe('loading');
+    await act(async () => { element('.virtual-message-list').dataset.openViewportSettled = 'true'; });
+    expect(phase()).toBe('idle');
+    expect(element('.history-session-loading__content').style.opacity).toBe('');
+    expect(HTMLElement.prototype.getBoundingClientRect).not.toHaveBeenCalled();
+  });
+
+  it('waits for the new warm session viewport after changing session identity', async () => {
+    render({ loading: false });
+    expect(phase()).toBe('idle');
+    render({ identity: 'local:session-b', loading: false, children: transcript(false) });
+    expect(phase()).toBe('loading');
+    await act(async () => { element('.virtual-message-list').dataset.openViewportSettled = 'true'; });
+    expect(phase()).toBe('idle');
+  });
+
   it('waits for a nested transcript mounted after the data commit', async () => {
     const placeholder = <div className="transcript-host" />;
     render({ children: placeholder });
@@ -208,6 +244,15 @@ describe('history loading presentation handoff', () => {
     expect(phase()).toBe('idle');
     element('button').click();
     expect(action).toHaveBeenCalledOnce();
+  });
+
+  it('waits for a suspended viewport when its scene becomes active again', async () => {
+    render({ loading: false, disabled: true, children: transcript(false) });
+    expect(phase()).toBe('idle');
+    render({ loading: false, disabled: false, children: transcript(false) });
+    expect(phase()).toBe('loading');
+    await act(async () => { element('.virtual-message-list').dataset.openViewportSettled = 'true'; });
+    expect(phase()).toBe('idle');
   });
 
   it('uses the same delayed indicator and immediate settled presentation with reduced motion', () => {

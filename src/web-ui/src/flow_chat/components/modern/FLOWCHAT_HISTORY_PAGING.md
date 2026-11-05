@@ -5,13 +5,20 @@
 `HistorySessionLoadingBoundary` covers open intents, cold hydration and bookmark
 restoration with seven 24px lines and a rounded user bubble. Session loading
 indicators appear after 200 ms, including reduced-motion mode and new-session
-creation. The boundary retains the loading surface until the complete Turn,
-existing initial-content gate and `data-open-viewport-settled` are ready. It then
+creation. The boundary retains the loading surface until the complete Turn and
+`data-open-viewport-settled` are ready. It then
 publishes the transcript immediately in the same React commit. Warm session
-switches also display their settled content immediately.
+switches also pass through the viewport gate and display settled content immediately.
 
-The presentation callback releases the existing two-paint barrier for background
-history reads. Interaction and focus stay guarded until content is presented.
+The opening boundary owns content presentation for both cold and warm opens,
+including restored reading positions. A completed Turn may place its user
+message above the visible answer. Opening follows the settled viewport at either
+position.
+Background history reads and command snapshots are released after presentation
+and the existing two-paint barrier. Runtime context recovery can remain pending
+while the complete persisted transcript is readable.
+
+Interaction and focus stay guarded until content is presented.
 Session and surface-activation changes disconnect old readiness observers.
 Failures, inactive scenes and hidden documents release the loading surface.
 Streaming updates and virtual-window remounts retain the settled presentation.
