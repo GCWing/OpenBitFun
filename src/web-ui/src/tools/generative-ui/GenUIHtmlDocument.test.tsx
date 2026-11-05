@@ -8,6 +8,21 @@ describe('GenUI HTML documents', () => {
     expect(GENUI_HTML_RUNTIME).toEqual(genUICatalog.htmlRuntime);
   });
 
+  it('passes the active Appearance mode into the isolated document', () => {
+    const result = sanitizeGenUIHtmlSource(
+      { kind: 'html-document', html: '<main>Theme aware</main>' },
+      undefined,
+      ':root{color-scheme:dark;--openbitfun-color-content-primary:#f3f3f5}',
+      false,
+      false,
+      false,
+      'dark',
+    );
+    expect(result.document).toContain('<html data-openbitfun-appearance-mode="dark">');
+    expect(result.document).toContain('color-scheme:dark');
+    expect(result.document).toContain('--openbitfun-color-content-primary:#f3f3f5');
+  });
+
   it('keeps HTML/SVG content while removing active and unsafe host paths', () => {
     const result = sanitizeGenUIHtmlSource({
       kind: 'html-document',

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type RefObject } from "react";
 
-/** "dark" when the element sits inside data-theme="dark" (its used color-scheme), else "light". */
+/** Read the active host color-scheme and refresh when its Appearance mode changes. */
 export function useColorScheme(ref: RefObject<HTMLElement | null>): "light" | "dark" {
   const [scheme, setScheme] = useState<"light" | "dark">("light");
   useEffect(() => {
@@ -11,9 +11,9 @@ export function useColorScheme(ref: RefObject<HTMLElement | null>): "light" | "d
       setScheme(value.trim() === "dark" ? "dark" : "light");
     };
     read();
-    // Theme switches flip a data-theme attribute somewhere above us.
+    // Appearance switches the mode on the document root.
     const observer = new MutationObserver(read);
-    observer.observe(document.documentElement, { attributes: true, subtree: true, attributeFilter: ["data-theme"] });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-openbitfun-appearance-mode", "data-theme"] });
     return () => observer.disconnect();
   }, [ref]);
   return scheme;

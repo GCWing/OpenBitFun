@@ -1,6 +1,7 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useColorScheme } from '../openui/scheme';
 import type { GeoJSONSource, Map as MapLibreMap, Marker } from 'maplibre-gl';
 import type { GenUIComponentProps } from '../../genUILibrary';
 import type { GenUIAsyncExecuteOptions, GenUIAsyncRuntime } from '../../genUIAsyncCapabilities';
@@ -223,6 +224,7 @@ export default function MapView({ view, emit, asyncRuntime, isStreaming }: Pick<
   const [group, setGroup] = useState('all');
   const [infoOpen, setInfoOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dark = useColorScheme(containerRef) === 'dark';
   const surfaceRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef(new Map<string, { marker: Marker; element: HTMLDivElement; pin: HTMLSpanElement; label: HTMLSpanElement }>());
@@ -232,7 +234,6 @@ export default function MapView({ view, emit, asyncRuntime, isStreaming }: Pick<
   const userMovedRef = useRef(false);
   const anchoredRef = useRef(false);
   const styledDarkRef = useRef(false);
-  const dark = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches;
   const darkRef = useRef(dark);
   darkRef.current = dark;
   const maxHeight = Math.min(MAX_HEIGHT, Math.max(200, typeof view.props.height === 'number' ? view.props.height : 400));
