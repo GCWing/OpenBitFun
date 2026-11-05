@@ -55,8 +55,8 @@
     font-family: var(--openbitfun-type-label-selected-font-family);
     font-size: var(--openbitfun-type-micro-font-size);
     font-weight: var(--openbitfun-type-label-selected-font-weight);
-    line-height: 14px;
-    letter-spacing: 0.02em;
+    line-height: var(--openbitfun-type-micro-line-height);
+    letter-spacing: var(--openbitfun-type-micro-letter-spacing);
     white-space: nowrap;
     pointer-events: none;
     animation: openbitfun-scene-device-group-in var(--openbitfun-motion-duration-normal)
