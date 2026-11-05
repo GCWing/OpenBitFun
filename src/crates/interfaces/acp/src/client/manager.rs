@@ -50,9 +50,11 @@ use super::remote_capability_store::RemoteAcpCapabilityStore;
 use super::remote_session::{preferred_resume_strategies, AcpRemoteSessionStrategy};
 use super::remote_shell::{remote_user_shell_command, render_remote_env_assignments, shell_escape};
 use super::requirements::{
-    acp_requirement_spec, apply_command_environment, install_npm_cli_package,
-    install_remote_npm_cli_package, predownload_npm_adapter, probe_executable, probe_npm_adapter,
-    probe_remote_executable, probe_remote_npx_adapter, resolve_configured_command,
+    acp_requirement_spec, adapter_ready_for_launch, apply_command_environment,
+    install_npm_cli_package, install_remote_npm_cli_package, npx_adapter_launch,
+    predownload_npm_adapter, prepare_npx_adapter, prepare_remote_npx_adapter, probe_executable,
+    probe_npm_adapter, probe_remote_executable, probe_remote_npx_adapter,
+    resolve_configured_command, ADAPTER_DOWNLOAD_TIMEOUT,
 };
 use super::session_options::{
     model_config_id, session_options_from_state, AcpAvailableCommand, AcpSessionContextUsage,
@@ -511,7 +513,11 @@ impl AcpClientService {
         client_id: &str,
     ) -> OpenBitFunResult<()> {
         let configs = self.load_configs().await?;
-        let spec = acp_requirement_spec(client_id, configs.get(client_id));
+        let config = configs
+            .get(client_id)
+            .cloned()
+            .or_else(|| default_config_for_builtin_client(client_id));
+        let spec = acp_requirement_spec(client_id, config.as_ref());
         let adapter = spec.adapter.ok_or_else(|| {
             OpenBitFunError::config(format!(
                 "ACP client '{}' does not use a downloadable adapter",
@@ -519,7 +525,17 @@ impl AcpClientService {
             ))
         })?;
 
-        predownload_npm_adapter(adapter.package, adapter.bin).await
+        // Download exactly what the launch will run; any other spec lands in a
+        // different npx cache entry and leaves the launch to download it again.
+        match config
+            .as_ref()
+            .and_then(|config| npx_adapter_launch(config, &adapter).map(|launch| (config, launch)))
+        {
+            Some((config, launch)) => prepare_npx_adapter(client_id, config, &launch)
+                .await
+                .map_err(|error| error.into_error(client_id, launch.spec())),
+            None => predownload_npm_adapter(adapter.package, adapter.bin).await,
+        }
     }
 
     pub async fn install_client_cli(
@@ -1788,6 +1804,12 @@ impl AcpClientService {
         {
             ensure_bundled_profile(profile).await?;
         }
+        if let Some(adapter) = acp_requirement_spec(client_id, Some(config)).adapter {
+            if let Some(launch) = npx_adapter_launch(config, &adapter) {
+                let result = prepare_npx_adapter(client_id, config, &launch).await;
+                adapter_ready_for_launch(client_id, launch.spec(), result)?;
+            }
+        }
 
         let program = resolve_configured_command(&config.command, &config.env);
         let mut command = openbitfun_core::util::process_manager::create_tokio_command(&program);
@@ -1896,6 +1918,14 @@ impl AcpClientService {
                 remote_connection_id,
             )
             .await?;
+        }
+        if let Some(adapter) = acp_requirement_spec(client_id, Some(config)).adapter {
+            if let Some(launch) = npx_adapter_launch(config, &adapter) {
+                let result =
+                    prepare_remote_npx_adapter(&ssh_manager, remote_connection_id, config, &launch)
+                        .await;
+                adapter_ready_for_launch(client_id, launch.spec(), result)?;
+            }
         }
         let transport = ssh_manager
             .open_workspace_stdio(remote_connection_id, &command)
@@ -2098,7 +2128,10 @@ async fn wait_for_client_connection(
             )));
         }
 
-        if started_at.elapsed() >= CLIENT_STARTUP_TIMEOUT {
+        // The starting caller may first spend up to the adapter download timeout
+        // before its own handshake timeout begins, and it fails the connection
+        // itself when either runs out.
+        if started_at.elapsed() >= ADAPTER_DOWNLOAD_TIMEOUT + CLIENT_STARTUP_TIMEOUT {
             return Err(startup_timeout_error(&client.client_id, "initialize"));
         }
 

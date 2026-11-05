@@ -13,7 +13,9 @@ use super::config::{AcpClientConfig, AcpRequirementProbeItem};
 use super::remote_shell::{remote_user_shell_command, render_remote_env_assignments, shell_escape};
 
 const REQUIREMENT_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
-const ADAPTER_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
+/// A first download of an adapter that bundles its agent binary (Claude Code's
+/// is about 300 MB) routinely takes longer than two minutes.
+pub(crate) const ADAPTER_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 const CLI_INSTALL_TIMEOUT: Duration = Duration::from_secs(600);
 
 pub(crate) struct AcpRequirementSpec<'a> {
@@ -304,6 +306,193 @@ pub(crate) async fn predownload_npm_adapter(package: &str, bin: &str) -> OpenBit
             "Failed to predownload ACP adapter '{}': {}",
             package, error
         ))),
+    }
+}
+
+/// An npx command line that launches a built-in adapter, split at the package
+/// spec npx installs before it runs the adapter.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct NpxAdapterLaunch<'a> {
+    options: &'a [String],
+    spec: &'a str,
+    bin: &'a str,
+}
+
+/// Finds the adapter package spec in a configured npx launch.
+///
+/// npx keys its install cache by the spec text exactly as written, so a
+/// download only helps a later launch when both use this same spec.
+pub(crate) fn npx_adapter_launch<'a>(
+    config: &'a AcpClientConfig,
+    adapter: &AcpAdapterSpec<'a>,
+) -> Option<NpxAdapterLaunch<'a>> {
+    if !is_npx_command(&config.command) {
+        return None;
+    }
+    let index = config
+        .args
+        .iter()
+        .position(|arg| is_package_spec(arg, adapter.package))?;
+    Some(NpxAdapterLaunch {
+        options: &config.args[..index],
+        spec: &config.args[index],
+        bin: adapter.bin,
+    })
+}
+
+impl NpxAdapterLaunch<'_> {
+    pub(crate) fn spec(&self) -> &str {
+        self.spec
+    }
+
+    /// Installs the launch spec without starting an ACP session: the adapter
+    /// prints its version and exits once npx has it in place.
+    fn prepare_args(&self) -> Vec<String> {
+        let mut args = self.options.to_vec();
+        if !args.iter().any(|arg| arg == "--yes" || arg == "-y") {
+            args.push("--yes".to_string());
+        }
+        args.push(format!("--package={}", self.spec));
+        args.push("--".to_string());
+        args.push(self.bin.to_string());
+        args.push("--version".to_string());
+        args
+    }
+}
+
+fn is_npx_command(command: &str) -> bool {
+    Path::new(command.trim())
+        .file_stem()
+        .and_then(OsStr::to_str)
+        .is_some_and(|stem| stem.eq_ignore_ascii_case("npx"))
+}
+
+fn is_package_spec(arg: &str, package: &str) -> bool {
+    arg.strip_prefix(package)
+        .is_some_and(|version| version.is_empty() || version.starts_with('@'))
+}
+
+/// Why an adapter could not be put in place before its launch.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum AdapterPrepareError {
+    /// The download outlasted [`ADAPTER_DOWNLOAD_TIMEOUT`].
+    TimedOut,
+    /// npx ran and failed, or could not be run.
+    Failed(String),
+}
+
+impl AdapterPrepareError {
+    pub(crate) fn into_error(self, client_id: &str, spec: &str) -> OpenBitFunError {
+        match self {
+            Self::TimedOut => OpenBitFunError::service(format!(
+                "Downloading the ACP adapter '{}' for client '{}' did not finish within {}s. Check the network or npm registry and try again.",
+                spec,
+                client_id,
+                ADAPTER_DOWNLOAD_TIMEOUT.as_secs()
+            )),
+            Self::Failed(detail) => OpenBitFunError::service(format!(
+                "Failed to download the ACP adapter '{}' for client '{}': {}",
+                spec, client_id, detail
+            )),
+        }
+    }
+}
+
+/// Applies the launch policy to an adapter preparation result.
+///
+/// Only a download that outlasts its own timeout fails the launch: retrying it
+/// under the shorter handshake timeout cannot succeed. Any other failure is
+/// logged and left to the launch, which reports it the same way it always has.
+pub(crate) fn adapter_ready_for_launch(
+    client_id: &str,
+    spec: &str,
+    result: Result<(), AdapterPrepareError>,
+) -> OpenBitFunResult<()> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(AdapterPrepareError::TimedOut) => {
+            Err(AdapterPrepareError::TimedOut.into_error(client_id, spec))
+        }
+        Err(AdapterPrepareError::Failed(detail)) => {
+            log::warn!(
+                "ACP adapter preparation failed; launching anyway: id={} spec={} error={}",
+                client_id,
+                spec,
+                detail
+            );
+            Ok(())
+        }
+    }
+}
+
+/// Lets npx finish installing the adapter before the launch starts timing the
+/// ACP handshake, so a new adapter release is not killed halfway through its
+/// download.
+pub(crate) async fn prepare_npx_adapter(
+    client_id: &str,
+    config: &AcpClientConfig,
+    launch: &NpxAdapterLaunch<'_>,
+) -> Result<(), AdapterPrepareError> {
+    let program = resolve_configured_command(&config.command, &config.env);
+    let mut command = openbitfun_core::util::process_manager::create_tokio_command(&program);
+    command.args(launch.prepare_args());
+    apply_command_environment(&mut command, Some(&config.env));
+    let started_at = std::time::Instant::now();
+    match tokio::time::timeout(ADAPTER_DOWNLOAD_TIMEOUT, command.output()).await {
+        Ok(Ok(output)) if output.status.success() => {
+            log::debug!(
+                "ACP adapter ready: id={} spec={} duration_ms={}",
+                client_id,
+                launch.spec,
+                started_at.elapsed().as_millis()
+            );
+            Ok(())
+        }
+        Ok(Ok(output)) => Err(AdapterPrepareError::Failed(command_error_summary(
+            &output.stderr,
+            &output.stdout,
+        ))),
+        Ok(Err(error)) => Err(AdapterPrepareError::Failed(error.to_string())),
+        Err(_) => Err(AdapterPrepareError::TimedOut),
+    }
+}
+
+/// The SSH-host counterpart of [`prepare_npx_adapter`].
+pub(crate) async fn prepare_remote_npx_adapter(
+    ssh_manager: &SSHConnectionManager,
+    connection_id: &str,
+    config: &AcpClientConfig,
+    launch: &NpxAdapterLaunch<'_>,
+) -> Result<(), AdapterPrepareError> {
+    let mut parts = vec![shell_escape(config.command.trim())];
+    parts.extend(launch.prepare_args().iter().map(|arg| shell_escape(arg)));
+    let command = remote_user_shell_command(&format!(
+        "{}{}",
+        render_remote_env_prefix(Some(&config.env)),
+        parts.join(" ")
+    ));
+    let timeout_ms = u64::try_from(ADAPTER_DOWNLOAD_TIMEOUT.as_millis()).unwrap_or(u64::MAX);
+    match ssh_manager
+        .execute_command_with_options(
+            connection_id,
+            &command,
+            SSHCommandOptions {
+                timeout_ms: Some(timeout_ms),
+                cancellation_token: None,
+            },
+        )
+        .await
+    {
+        Ok(output) if output.timed_out => Err(AdapterPrepareError::TimedOut),
+        Ok(output) if output.exit_code == 0 && !output.interrupted => Ok(()),
+        Ok(output) if output.interrupted => Err(AdapterPrepareError::Failed(
+            "command was cancelled".to_string(),
+        )),
+        Ok(output) => Err(AdapterPrepareError::Failed(remote_command_error_summary(
+            &output.stderr,
+            &output.stdout,
+        ))),
+        Err(error) => Err(AdapterPrepareError::Failed(error.to_string())),
     }
 }
 
@@ -633,6 +822,123 @@ fn executable_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::builtin_clients::default_config_for_builtin_client;
+
+    fn claude_adapter() -> AcpAdapterSpec<'static> {
+        acp_requirement_spec("claude-code", None)
+            .adapter
+            .expect("Claude adapter")
+    }
+
+    fn npx_config(command: &str, args: &[&str]) -> AcpClientConfig {
+        let mut config = default_config_for_builtin_client("claude-code").expect("builtin config");
+        config.command = command.to_string();
+        config.args = args.iter().map(|arg| (*arg).to_string()).collect();
+        config
+    }
+
+    #[test]
+    fn adapter_preparation_installs_the_spec_the_builtin_launch_runs() {
+        let config = default_config_for_builtin_client("claude-code").expect("builtin config");
+        let adapter = claude_adapter();
+        let launch = npx_adapter_launch(&config, &adapter).expect("npx launch");
+
+        // npx caches by spec text, so preparation must name the launch arg verbatim.
+        assert!(config.args.iter().any(|arg| arg == launch.spec()));
+        assert_eq!(
+            launch.prepare_args(),
+            [
+                "--yes",
+                "--package=@agentclientprotocol/claude-agent-acp@latest",
+                "--",
+                "claude-agent-acp",
+                "--version",
+            ]
+            .map(str::to_string)
+        );
+    }
+
+    #[test]
+    fn adapter_launch_keeps_pinned_versions_and_npx_options() {
+        let config = npx_config(
+            "/opt/homebrew/bin/npx",
+            &[
+                "-y",
+                "--registry=https://registry.example.test/",
+                "@agentclientprotocol/claude-agent-acp@0.99.0",
+                "--adapter-flag",
+            ],
+        );
+        let adapter = claude_adapter();
+        let launch = npx_adapter_launch(&config, &adapter).expect("npx launch");
+
+        assert_eq!(
+            launch.spec(),
+            "@agentclientprotocol/claude-agent-acp@0.99.0"
+        );
+        assert_eq!(
+            launch.prepare_args(),
+            [
+                "-y",
+                "--registry=https://registry.example.test/",
+                "--package=@agentclientprotocol/claude-agent-acp@0.99.0",
+                "--",
+                "claude-agent-acp",
+                "--version",
+            ]
+            .map(str::to_string)
+        );
+    }
+
+    #[test]
+    fn adapter_launch_matches_bare_specs_and_windows_shims() {
+        let config = npx_config("npx.cmd", &["@agentclientprotocol/claude-agent-acp"]);
+        let adapter = claude_adapter();
+        let launch = npx_adapter_launch(&config, &adapter).expect("npx launch");
+
+        assert_eq!(launch.spec(), "@agentclientprotocol/claude-agent-acp");
+        assert_eq!(launch.prepare_args()[0], "--yes");
+    }
+
+    #[test]
+    fn adapter_launch_ignores_commands_that_npx_does_not_install() {
+        let adapter = claude_adapter();
+        for config in [
+            npx_config("claude-agent-acp", &[]),
+            npx_config(
+                "npm",
+                &["exec", "@agentclientprotocol/claude-agent-acp@latest"],
+            ),
+            npx_config(
+                "npx",
+                &["--yes", "@agentclientprotocol/claude-agent-acp-fork@latest"],
+            ),
+            npx_config("npx", &["--yes", "./local-adapter"]),
+        ] {
+            assert_eq!(npx_adapter_launch(&config, &adapter), None, "{config:?}");
+        }
+    }
+
+    #[test]
+    fn only_a_download_timeout_fails_the_launch() {
+        assert!(adapter_ready_for_launch("claude-code", "spec", Ok(())).is_ok());
+        assert!(adapter_ready_for_launch(
+            "claude-code",
+            "spec",
+            Err(AdapterPrepareError::Failed("offline".to_string())),
+        )
+        .is_ok());
+
+        let error = adapter_ready_for_launch(
+            "claude-code",
+            "@agentclientprotocol/claude-agent-acp@latest",
+            Err(AdapterPrepareError::TimedOut),
+        )
+        .expect_err("timeout fails the launch")
+        .to_string();
+        assert!(error.contains("@agentclientprotocol/claude-agent-acp@latest"));
+        assert!(error.contains(&format!("{}s", ADAPTER_DOWNLOAD_TIMEOUT.as_secs())));
+    }
 
     #[test]
     fn npm_adapter_argument_builders_preserve_cli_order() {
