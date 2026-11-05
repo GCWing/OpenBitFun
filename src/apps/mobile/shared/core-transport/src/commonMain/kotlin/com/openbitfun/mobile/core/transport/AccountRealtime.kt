@@ -20,9 +20,12 @@ import kotlin.random.Random
 internal const val MAX_ACCOUNT_FRAME_BYTES = 256 * 1024
 
 internal interface AccountRpcConnection {
+    val peerEncodings: MutableStateFlow<Set<String>>? get() = null
+    suspend fun readyForEncoding(): MutableStateFlow<Set<String>>? = peerEncodings
     val notifications: Flow<JsonObject> get() = emptyFlow()
     val connections: Flow<Long> get() = emptyFlow()
-    suspend fun call(target: String, params: JsonElement, timeoutMs: Long): JsonElement
+    suspend fun call(target: String, params: JsonElement, timeoutMs: Long,
+        expectedEncodings: MutableStateFlow<Set<String>>? = null): JsonElement
     fun close()
 }
 
@@ -40,6 +43,7 @@ internal class AccountRealtime(
     private val updates = MutableSharedFlow<JsonObject>(extraBufferCapacity = 100)
     private val generation = MutableStateFlow(0L)
     private val connectionFailure = MutableStateFlow<Throwable?>(null)
+    override val peerEncodings get() = state.value?.encodings?.value
     override val notifications: SharedFlow<JsonObject> = updates.asSharedFlow()
     override val connections: StateFlow<Long> = generation.asStateFlow()
     private val owner = scope.launch { supervise() }.also { job ->
@@ -49,6 +53,7 @@ internal class AccountRealtime(
     }
 
     private class Epoch(val socket: DefaultClientWebSocketSession) {
+        val encodings = MutableStateFlow(MutableStateFlow(emptySet<String>()))
         val ready = CompletableDeferred<Unit>()
         val mutex = Mutex()
         val pending = mutableMapOf<Int, CompletableDeferred<JsonElement>>()
@@ -62,18 +67,27 @@ internal class AccountRealtime(
         }
     }
 
-    override suspend fun call(target: String, params: JsonElement, timeoutMs: Long): JsonElement {
+    private suspend fun readyEpoch(): Epoch = try {
+        if (!owner.isActive) throw CloudAccountException(CloudAccountFailure.AUTHENTICATION)
+        withTimeout(RELAY_CONNECT_TIMEOUT_MS) { state.filterNotNull().first().also { it.ready.await() } }
+    } catch (timeout: TimeoutCancellationException) {
+        throw CloudAccountException(CloudAccountFailure.TIMEOUT, null, connectionFailure.value ?: timeout)
+    }
+
+    override suspend fun readyForEncoding() = readyEpoch().encodings.value
+
+    override suspend fun call(target: String, params: JsonElement, timeoutMs: Long,
+        expectedEncodings: MutableStateFlow<Set<String>>?): JsonElement {
         require(timeoutMs in 1..Int.MAX_VALUE.toLong()) { "Invalid RPC timeout" }
         try {
-            if (!owner.isActive) throw CloudAccountException(CloudAccountFailure.AUTHENTICATION)
-            val epoch = withTimeout(RELAY_CONNECT_TIMEOUT_MS) {
-                state.filterNotNull().first().also { it.ready.await() }
-            }
+            val epoch = readyEpoch()
+            assertEncodingCurrent(expectedEncodings)
             val wireParams = payloads.uploadIfLarge(params)
             if (!owner.isActive || epoch.closed || state.value !== epoch) throw CloudAccountException(CloudAccountFailure.NETWORK)
             val reply = CompletableDeferred<JsonElement>()
             val id = epoch.mutex.withLock {
                 if (epoch.closed || state.value !== epoch) throw CloudAccountException(CloudAccountFailure.NETWORK)
+                assertEncodingCurrent(expectedEncodings)
                 val id = epoch.nextId++
                 epoch.pending[id] = reply
                 id
@@ -86,6 +100,7 @@ internal class AccountRealtime(
                 // If write or ack fails, execution may already have happened.
                 // Only durable writes with a stable localId may be retried.
                 val response = withTimeout(timeoutMs) {
+                    assertEncodingCurrent(expectedEncodings)
                     epoch.socket.send(EngineIO.encodeSocketIO(EngineIOPacket.Message(packet)))
                     val result = reply.await().jsonObject
                     if (result["ok"]?.jsonPrimitive?.booleanOrNull != true) {
@@ -101,6 +116,13 @@ internal class AccountRealtime(
             }
         } catch (timeout: TimeoutCancellationException) {
             throw CloudAccountException(CloudAccountFailure.TIMEOUT, null, connectionFailure.value ?: timeout)
+        }
+    }
+
+    private fun assertEncodingCurrent(expected: MutableStateFlow<Set<String>>?) {
+        if (expected != null && expected !== peerEncodings) {
+            throw CloudAccountException(CloudAccountFailure.NETWORK, null,
+                IllegalStateException("Relay capabilities changed; request was not submitted"))
         }
     }
 
@@ -160,6 +182,9 @@ internal class AccountRealtime(
                                 if (name == "update" || name == "ephemeral") {
                                     val value = message.payload.getOrNull(1)?.jsonObject
                                         ?: throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE)
+                                    if (name == "ephemeral" && value["type"]?.jsonPrimitive?.contentOrNull == "device-presence") {
+                                        epoch.encodings.value = MutableStateFlow(emptySet())
+                                    }
                                     // Overflow closes this epoch; reconnect triggers durable catch-up.
                                     if (!updates.tryEmit(value)) throw CloudAccountException(CloudAccountFailure.NETWORK)
                                 }

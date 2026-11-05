@@ -9,6 +9,7 @@ import {
   hydrateSessionHistoryForDetail,
   pendingHistoryLoadKey,
   preloadHistoricalSessionForOpen,
+  prewarmHistoricalSession,
   reloadSessionTitle,
   retryCreateBackendSession,
   resolveAgentTypeForSessionCreation,
@@ -1175,6 +1176,23 @@ describe('SessionModule historical session coordination', () => {
 
     load.resolve();
     await load.promise;
+  });
+
+  it('upgrades an active-only preload when a local prewarm must retain its inactive tail', async () => {
+    const firstLoad = createDeferred<void>();
+    const { context, flowChatStore } = createContext(createSession());
+    context.pendingHistoryLoads.set(pendingHistoryLoadKey('history-other'), Promise.resolve());
+    flowChatStore.loadSessionHistory.mockReturnValueOnce(firstLoad.promise);
+    preloadHistoricalSessionForOpen(context, 'history-1');
+    prewarmHistoricalSession(context, 'history-1');
+    expect(flowChatStore.loadSessionHistory).toHaveBeenCalledTimes(1);
+    firstLoad.resolve();
+    await firstLoad.promise;
+    await vi.waitFor(() => expect(flowChatStore.loadSessionHistory).toHaveBeenCalledTimes(2));
+    expect(flowChatStore.loadSessionHistory).toHaveBeenLastCalledWith('history-1', {
+      includeInternal: undefined, deferFullHistoryUntilActive: true, retainInactiveTail: true,
+    });
+    expect(flowChatStore.switchSession).not.toHaveBeenCalled();
   });
 
   it('deduplicates concurrent detail hydration and includes internal child output', async () => {

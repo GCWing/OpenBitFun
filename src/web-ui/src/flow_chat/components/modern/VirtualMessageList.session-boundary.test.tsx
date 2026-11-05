@@ -12,6 +12,7 @@ import { finishSubmittedMessageScrollIntent, registerSubmittedMessageScrollInten
 import { readingLinePxForViewport, tailSpacerPxForViewport } from './flowChatTailFollow';
 import { ONE_SHOT_NAVIGATION_HOLD_MS } from './flowChatViewportOwnership';
 import { VirtualMessageList, type VirtualMessageListRef } from './VirtualMessageList';
+import { HistorySessionLoadingBoundary } from './HistorySessionLoadingBoundary';
 import type { FlowChatViewportOwnerApi } from './useFlowChatViewportOwner';
 import { FlowChatVolatileContext } from './FlowChatContext';
 import { useFlowGroupState } from './useFlowGroupState';
@@ -660,6 +661,37 @@ describe('VirtualMessageList natural scroll contract', () => {
     mocks.followsNow = true;
     mocks.viewportOwner!.claim('follow-output');
     expect(mocks.reconcileOpeningMeasurement?.()).toBe(false);
+  });
+
+  it('presents a warm long Turn as soon as its tail settles with the question above the viewport', async () => {
+    const restoreLayout = fakeLayout({ clientHeight: 600, scrollHeight: 600, turnTopFromScrollerTop: 0 });
+    const presented = vi.fn();
+    mocks.items = [userMessage('turn-1', 'message-1', 'Question'), modelRound('turn-1', 'round-1', 'Answer')];
+    try {
+      HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+        if (this.dataset.itemType === 'user-message') return new DOMRect(0, -1_000, 600, 40);
+        if (this.dataset.itemType === 'model-round') return new DOMRect(0, -900, 600, 1_450);
+        return new DOMRect(0, 0, 600, 600);
+      };
+      act(() => root.render(
+        <HistorySessionLoadingBoundary identity="local:session-1" loading={false} hasTranscript
+          disabled={false} intent={false} label="Loading conversation" onPresentationChange={presented}>
+          <VirtualMessageList />
+        </HistorySessionLoadingBoundary>,
+      ));
+      expect(presented).toHaveBeenLastCalledWith('local:session-1', false);
+      for (let frame = 1; frame <= 2; frame += 1) {
+        const pending = [...animationFrames.values()];
+        animationFrames.clear();
+        await act(async () => { pending.forEach(callback => callback(frame * 16)); });
+      }
+      expect(container.querySelector('[data-open-viewport-settled="true"]')).not.toBeNull();
+      expect(presented).toHaveBeenLastCalledWith('local:session-1', true);
+      expect(container.querySelector('[data-history-loading-phase="loading"]')).toBeNull();
+      expect(container.querySelector<HTMLElement>('[data-item-type="user-message"]')!.getBoundingClientRect().bottom).toBeLessThan(0);
+    } finally {
+      restoreLayout();
+    }
   });
 
   it('keeps button activation and consumed keys out of scroll intent, while transcript navigation still scrolls', async () => {
@@ -2325,6 +2357,7 @@ describe('VirtualMessageList natural scroll contract', () => {
 
   it('materializes and restores a saved reading position without starting tail follow', async () => {
     const listRef = React.createRef<VirtualMessageListRef>();
+    const presented = vi.fn();
     const initialViewportSnapshot = {
       sessionId: 'session-1',
       presentationMode: 'tail' as const,
@@ -2344,10 +2377,13 @@ describe('VirtualMessageList natural scroll contract', () => {
     const restoreLayout = fakeLayout(layout);
     try {
       act(() => root.render(
-        <VirtualMessageList
-          ref={listRef}
-          initialViewportSnapshot={initialViewportSnapshot}
-        />,
+        <HistorySessionLoadingBoundary identity="local:session-1" loading={false} hasTranscript
+          disabled={false} intent={false} label="Loading conversation" onPresentationChange={presented}>
+          <VirtualMessageList
+            ref={listRef}
+            initialViewportSnapshot={initialViewportSnapshot}
+          />
+        </HistorySessionLoadingBoundary>,
       ));
       const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
       scroller.getBoundingClientRect = () => (
@@ -2357,8 +2393,10 @@ describe('VirtualMessageList natural scroll contract', () => {
       expect(mocks.startAtTailOnMount).toBe(false);
       expect(mocks.virtualizerStartsAtTail).toBe(false);
       expect(scroller.scrollTop).toBe(140);
+      expect(presented).toHaveBeenLastCalledWith('local:session-1', false);
       await settleOpenReveal();
       expect(container.querySelector('[data-open-viewport-settled="true"]')).not.toBeNull();
+      expect(presented).toHaveBeenLastCalledWith('local:session-1', true);
     } finally {
       restoreLayout();
     }

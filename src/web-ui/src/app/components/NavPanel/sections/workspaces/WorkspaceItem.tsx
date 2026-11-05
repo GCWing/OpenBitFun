@@ -47,6 +47,7 @@ import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import {
   getHistorySessionOpenTransitionSnapshot,
+  SESSION_LOADING_DELAY_MS,
   subscribeHistorySessionOpenTransition,
 } from '@/flow_chat/services/sessionOpenIntent';
 import {
@@ -85,9 +86,6 @@ const AssistantSessionHistory = lazyWithRecovery(() => import('./AssistantSessio
 const WorkspaceSessionBatchModal = lazyWithRecovery(() => import('./WorkspaceSessionBatchModal'));
 const ScheduledJobsModal = lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
 
-/** Fast creates finish inside this window and never flash a spinner. */
-const NEW_SESSION_PENDING_VISIBLE_DELAY_MS = 140;
-
 function useDelayedPendingIndicator(pending: boolean): boolean {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -95,7 +93,7 @@ function useDelayedPendingIndicator(pending: boolean): boolean {
       setVisible(false);
       return;
     }
-    const timer = window.setTimeout(() => setVisible(true), NEW_SESSION_PENDING_VISIBLE_DELAY_MS);
+    const timer = window.setTimeout(() => setVisible(true), SESSION_LOADING_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [pending]);
   return pending && visible;

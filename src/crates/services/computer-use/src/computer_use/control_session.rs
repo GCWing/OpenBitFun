@@ -214,6 +214,43 @@ pub fn snapshot() -> ControlSnapshot {
             ..Default::default()
         })
 }
+
+/// Idle observers wait on resource transitions instead of repeatedly reading
+/// the same status. Registration precedes the snapshot read to close the race
+/// with Start, Stop and a new sharing request.
+pub async fn snapshot_after(generation: u64, state: &str) -> ControlSnapshot {
+    wait_for_snapshot_change(&SCOPE_CHANGED, generation, state, snapshot).await
+}
+
+async fn wait_for_snapshot_change(
+    changed: &tokio::sync::Notify,
+    generation: u64,
+    state: &str,
+    read: impl Fn() -> ControlSnapshot,
+) -> ControlSnapshot {
+    let timeout = tokio::time::sleep(std::time::Duration::from_secs(5));
+    tokio::pin!(timeout);
+    loop {
+        let notification = changed.notified();
+        tokio::pin!(notification);
+        notification.as_mut().enable();
+        let current = read();
+        if current.generation != generation
+            || current.state != state
+            || matches!(
+                current.state.as_str(),
+                "active" | "starting" | "awaiting_share"
+            )
+        {
+            return current;
+        }
+        tokio::select! {
+            _ = notification => {},
+            _ = &mut timeout => return read(),
+        }
+    }
+}
+
 pub(crate) fn start(owner: &str, mode: ControlMode) -> Result<ControlSnapshot, String> {
     let generation = {
         let mut r = locked()?;
@@ -450,11 +487,26 @@ pub(crate) fn record_pointer(x: f64, y: f64, click: bool) {
     let _ = target;
 }
 pub fn acquire(owner: &str, action: &str) -> Result<Box<dyn ComputerUseActionLease>, String> {
-    let token = locked()?.admission.admit(owner, action, executor())?;
+    let token = admit_action(&mut *locked()?, owner, action, &SCOPE_CHANGED)?;
     Ok(Box::new(Lease {
         token,
         complete: false,
     }))
+}
+fn admit_action(
+    resource: &mut Resource,
+    owner: &str,
+    action: &str,
+    changed: &tokio::sync::Notify,
+) -> Result<ControlToken, String> {
+    let generation = resource.admission.snapshot.generation;
+    let token = resource.admission.admit(owner, action, executor())?;
+    // The first action may implicitly start control without start_control or
+    // a bound target. Wake idle observers before native work can block.
+    if resource.admission.snapshot.generation != generation {
+        changed.notify_waiters();
+    }
+    Ok(token)
 }
 struct Lease {
     token: ControlToken,
@@ -603,6 +655,106 @@ pub fn preview(generation: u64) -> Result<Option<ControlPreview>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test(start_paused = true)]
+    async fn implicit_first_action_wakes_idle_status_without_notifying_later_actions() {
+        let changed = tokio::sync::Notify::new();
+        let resource = Mutex::new(Resource::default());
+        let wait =
+            wait_for_snapshot_change(&changed, 0, "idle", || projected(&resource.lock().unwrap()));
+        tokio::pin!(wait);
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        assert!(std::future::Future::poll(wait.as_mut(), &mut context).is_pending());
+
+        let first = admit_action(&mut resource.lock().unwrap(), "task", "wait", &changed).unwrap();
+        let std::task::Poll::Ready(snapshot) =
+            std::future::Future::poll(wait.as_mut(), &mut context)
+        else {
+            panic!("Implicit control must wake status before the five-second timeout");
+        };
+        assert_eq!(
+            (snapshot.generation, snapshot.state.as_str()),
+            (1, "active")
+        );
+        assert_eq!(snapshot.owner.as_deref(), Some("task"));
+        assert!(snapshot.target.is_none());
+        assert!(resource
+            .lock()
+            .unwrap()
+            .admission
+            .release(first, true)
+            .is_none());
+
+        let notification = changed.notified();
+        tokio::pin!(notification);
+        notification.as_mut().enable();
+        let next = admit_action(&mut resource.lock().unwrap(), "task", "wait", &changed).unwrap();
+        assert!(std::future::Future::poll(notification.as_mut(), &mut context).is_pending());
+        assert!(resource
+            .lock()
+            .unwrap()
+            .admission
+            .release(next, true)
+            .is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn idle_status_wait_wakes_for_control_and_expires_without_polling() {
+        let changed = tokio::sync::Notify::new();
+        let state = Mutex::new(ControlSnapshot {
+            generation: 3,
+            state: "idle".into(),
+            ..Default::default()
+        });
+        let read = || state.lock().unwrap().clone();
+        let wait = wait_for_snapshot_change(&changed, 3, "idle", read);
+        tokio::pin!(wait);
+        assert!(std::future::Future::poll(
+            wait.as_mut(),
+            &mut std::task::Context::from_waker(std::task::Waker::noop())
+        )
+        .is_pending());
+        state.lock().unwrap().state = "awaiting_share".into();
+        changed.notify_waiters();
+        assert_eq!(wait.await.state, "awaiting_share");
+
+        state.lock().unwrap().state = "stopped".into();
+        let wait = wait_for_snapshot_change(&changed, 3, "stopped", read);
+        tokio::pin!(wait);
+        assert!(std::future::Future::poll(
+            wait.as_mut(),
+            &mut std::task::Context::from_waker(std::task::Waker::noop())
+        )
+        .is_pending());
+        tokio::time::advance(std::time::Duration::from_secs(5)).await;
+        assert_eq!(wait.await.state, "stopped");
+    }
+
+    #[tokio::test]
+    async fn status_wait_returns_immediately_for_active_or_changed_control() {
+        for (generation, state) in [
+            (4, "idle"),
+            (3, "active"),
+            (3, "starting"),
+            (3, "awaiting_share"),
+        ] {
+            let changed = tokio::sync::Notify::new();
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                wait_for_snapshot_change(&changed, 3, "idle", || ControlSnapshot {
+                    generation,
+                    state: state.into(),
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                (result.generation, result.state.as_str()),
+                (generation, state)
+            );
+        }
+    }
+
     #[test]
     fn old_native_stream_cannot_stop_a_return_to_the_same_window() {
         let mut r = Resource::default();

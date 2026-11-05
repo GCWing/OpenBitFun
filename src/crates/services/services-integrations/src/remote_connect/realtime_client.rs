@@ -284,9 +284,22 @@ impl RealtimeSender {
         params: Value,
         timeout: Duration,
     ) -> Result<Value> {
+        self.call_with_timeout_guarded(target, params, timeout, || Ok(()))
+            .await
+    }
+
+    pub(super) async fn call_with_timeout_guarded(
+        &self,
+        target: &str,
+        params: Value,
+        timeout: Duration,
+        before_send: impl Fn() -> Result<()>,
+    ) -> Result<Value> {
+        before_send()?;
         let params = self.payloads.upload_if_large(params).await?;
         let deadlines = RpcCallDeadlines::for_timeout(timeout);
         let ack = tokio::time::timeout(deadlines.overall, async {
+            before_send()?;
             self.sender
                 .emit(RpcCall(rpc_call_payload(target, params, deadlines.target)))
                 .await?
@@ -324,6 +337,101 @@ impl RealtimeSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn prepared_request_is_rejected_when_capabilities_change_during_bulk_upload() {
+        use futures::{SinkExt, StreamExt};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let session =
+            super::super::account::AccountSession::new("token".into(), "user".into(), [7; 32]);
+        let server_session = session.clone();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            let handshake = json!({"sid":"fixture", "upgrades":[], "pingInterval":25000,
+                "pingTimeout":5000, "maxPayload":1000000});
+            socket
+                .send(Message::Text(format!("0{handshake}").into()))
+                .await
+                .unwrap();
+            assert!(socket
+                .next()
+                .await
+                .unwrap()
+                .unwrap()
+                .into_text()
+                .unwrap()
+                .starts_with("40"));
+            socket
+                .send(Message::Text("40{\"sid\":\"fixture\"}".into()))
+                .await
+                .unwrap();
+            let authenticated = json!(["auth-ok", {"userId":"user", "deviceId":"controller"}]);
+            socket
+                .send(Message::Text(format!("42{authenticated}").into()))
+                .await
+                .unwrap();
+
+            let (mut upload, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 8192];
+            let header_end = loop {
+                let length = upload.read(&mut buffer).await.unwrap();
+                assert!(length > 0);
+                request.extend_from_slice(&buffer[..length]);
+                if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                    break end + 4;
+                }
+            };
+            let header = String::from_utf8_lossy(&request[..header_end]);
+            assert!(header.starts_with("POST /v1/rpc/payloads "));
+            let body_length = header
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+                .unwrap();
+            while request.len() < header_end + body_length {
+                let length = upload.read(&mut buffer).await.unwrap();
+                assert!(length > 0);
+                request.extend_from_slice(&buffer[..length]);
+            }
+            server_session.clear_peer_keys().await;
+            let body = json!({"$relayPayload":{"id":uuid::Uuid::new_v4().to_string(),"bytes":body_length}}).to_string();
+            upload.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+            tokio::select! {
+                _ = finished_rx => {},
+                frame = socket.next() => panic!("Retired ciphertext reached the wire: {frame:?}"),
+            }
+        });
+        let connection = RealtimeConnection::connect(&url, "token", false)
+            .await
+            .unwrap();
+        let before_send = session.peer_message_guard();
+        let error = connection
+            .sender()
+            .call_with_timeout_guarded(
+                "host",
+                json!({"encrypted_data":"x".repeat(140_000)}),
+                Duration::from_secs(5),
+                || before_send(true),
+            )
+            .await
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("capabilities changed; request was not submitted"));
+        finished_tx.send(()).unwrap();
+        server.await.unwrap();
+        connection.close().await;
+    }
 
     #[tokio::test]
     async fn a_dropped_acknowledgement_reads_as_a_lost_reply() {

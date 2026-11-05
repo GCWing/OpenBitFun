@@ -243,6 +243,26 @@ fn session_model_allows_fallback(binding_policy: SessionModelBindingPolicy) -> b
     binding_policy == SessionModelBindingPolicy::Mutable
 }
 
+/// Project the same authoritative selection for runtime and persisted headers.
+pub fn session_model_target(
+    session: Session,
+) -> openbitfun_core_types::model_pool::SessionModelTarget {
+    use openbitfun_core_types::model_pool::{ModelSelection, SessionModelTarget};
+    let selection = if let Some(pool_id) = session.config.model_pool_id {
+        ModelSelection::Pool { pool_id }
+    } else {
+        ModelSelection::Model {
+            model_ref: session.config.model_id.unwrap_or_else(|| "primary".into()),
+        }
+    };
+    SessionModelTarget {
+        session_id: session.session_id,
+        selection,
+        reasoning_preset: session.config.reasoning_preset,
+        binding: session.config.model_pool_binding,
+    }
+}
+
 fn effective_session_model_selector(
     ai_config: &crate::service::config::types::AIConfig,
     session: &Session,
@@ -2989,6 +3009,53 @@ impl SessionManager {
     /// Get session
     pub fn get_session(&self, session_id: &str) -> Option<Session> {
         self.sessions.get(session_id).map(|s| s.clone())
+    }
+
+    /// Read selector facts without restoring history, reserving runtime capacity,
+    /// or waiting for an executing Turn's mutation permit. An omitted locator
+    /// supports legacy callers only when this host already owns the session.
+    pub(crate) async fn read_session_header(
+        &self,
+        storage_path: Option<&Path>,
+        session_id: &str,
+        include_internal: bool,
+    ) -> OpenBitFunResult<Session> {
+        openbitfun_core_types::validate_session_id(session_id)
+            .map_err(OpenBitFunError::Validation)?;
+        if let Some(path) = storage_path {
+            self.validate_session_storage_path_binding(session_id, path)?;
+        }
+        let session = match self.get_session(session_id) {
+            Some(session) => session,
+            None => {
+                let path = storage_path.ok_or_else(|| {
+                    OpenBitFunError::NotFound(format!("Session not found: {session_id}"))
+                })?;
+                let persisted = self
+                    .persistence_manager
+                    .load_session_header(path, session_id)
+                    .await;
+                // A real restore or selector update may have completed during
+                // disk IO. Its live selection takes precedence over disk.
+                self.validate_session_storage_path_binding(session_id, path)?;
+                self.get_session(session_id).map(Ok).unwrap_or(persisted)?
+            }
+        };
+        if let Some(path) = storage_path {
+            self.validate_session_storage_path_binding(session_id, path)?;
+        }
+        if !include_internal
+            && (session.kind != SessionKind::Standard
+                || SessionMetadata::is_legacy_leaked_subagent_identity(
+                    session.created_by.as_deref(),
+                    &session.session_name,
+                ))
+        {
+            return Err(OpenBitFunError::NotFound(format!(
+                "Session not found: {session_id}"
+            )));
+        }
+        Ok(session)
     }
 
     /// Read only the execution fact; navigation must not clone Session content.
@@ -5955,18 +6022,15 @@ impl SessionManager {
             .persistence_manager
             .load_session_revert_state(session_storage_path, session_id)
             .await?;
-        let effective_tail_turn_count = staged_revert
-            .as_ref()
-            .map(|_| None)
-            .unwrap_or(tail_turn_count);
         let session_started_at = Instant::now();
         let (mut session, mut persisted_turns, mut total_turn_count, turn_load) =
-            if let Some(tail_turn_count) = effective_tail_turn_count {
+            if let Some(tail_turn_count) = tail_turn_count {
                 self.persistence_manager
-                    .load_session_with_tail_turns_timed(
+                    .load_session_with_tail_turns_before_timed(
                         session_storage_path,
                         session_id,
                         tail_turn_count,
+                        staged_revert.as_ref().map(|revert| revert.boundary_turn),
                     )
                     .await?
             } else {
@@ -5979,7 +6043,9 @@ impl SessionManager {
             };
         if let Some(revert) = staged_revert.as_ref() {
             persisted_turns.retain(|turn| turn.turn_index < revert.boundary_turn);
-            total_turn_count = persisted_turns.len();
+            if tail_turn_count.is_none() {
+                total_turn_count = persisted_turns.len();
+            }
         }
         let load_session_with_turns_duration_ms = elapsed_ms_u64(session_started_at);
         debug!(
@@ -13613,6 +13679,100 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn session_permission_read_preserves_override_legacy_default_and_live_turn_authority() {
+        use openbitfun_services_core::session::SessionStorageLayout;
+
+        let workspace = TestWorkspace::new();
+        let paths = workspace.path_manager();
+        let persistence = Arc::new(PersistenceManager::new(paths.clone()).unwrap());
+        let manager = test_manager(persistence.clone());
+        let id = Uuid::new_v4().to_string();
+        let mut session = Session::new_with_id(
+            id.clone(),
+            "Permission header".into(),
+            "Standard".into(),
+            SessionConfig {
+                workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+        );
+        let storage_path = paths.project_sessions_dir(workspace.path());
+        let layout = SessionStorageLayout::new(&storage_path);
+        for mode in [
+            None,
+            Some(PermissionMode::Ask),
+            Some(PermissionMode::AutoApprove),
+            Some(PermissionMode::FullAccess),
+        ] {
+            session.config.permission_mode = mode;
+            persistence
+                .save_session(workspace.path(), &session)
+                .await
+                .unwrap();
+            let header = manager
+                .read_session_header(Some(&storage_path), &id, false)
+                .await
+                .unwrap();
+            // Read the session override as stored. None continues to mean
+            // inherit; a query must not resolve or persist a global default.
+            assert_eq!(header.config.permission_mode, mode);
+            assert!(manager.get_session(&id).is_none());
+            assert!(manager.active_session_permits.is_empty());
+            assert!(!manager.context_store.has_session(&id));
+        }
+        let state_path = layout.state_path(&id);
+        let mut state: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+        state["runtime_state"] = serde_json::to_value(SessionState::Processing {
+            current_turn_id: "interrupted".into(),
+            phase: ProcessingPhase::Thinking,
+        })
+        .unwrap();
+        std::fs::write(&state_path, serde_json::to_vec(&state).unwrap()).unwrap();
+        let header = manager
+            .read_session_header(Some(&storage_path), &id, false)
+            .await
+            .unwrap();
+        assert!(matches!(header.state, SessionState::Idle));
+        assert_eq!(
+            manager.active_turn_permission_mode(&id, "interrupted"),
+            None
+        );
+        assert!(manager.get_session(&id).is_none());
+
+        std::fs::remove_file(&state_path).unwrap();
+        let legacy = manager
+            .read_session_header(Some(&storage_path), &id, false)
+            .await
+            .unwrap();
+        assert_eq!(legacy.config.permission_mode, None);
+        assert!(!state_path.exists());
+        // Without a workspace or live Session, the override is unknown rather
+        // than inherited. Do not manufacture a null/default permission reply.
+        assert!(manager.read_session_header(None, &id, false).await.is_err());
+
+        session.state = SessionState::Processing {
+            current_turn_id: "live-turn".into(),
+            phase: ProcessingPhase::Thinking,
+        };
+        manager.sessions.insert(id.clone(), session);
+        assert!(manager.set_active_turn_permission_mode(&id, "live-turn", PermissionMode::Ask));
+        let live = manager.read_session_header(None, &id, false).await.unwrap();
+        assert_eq!(
+            live.config.permission_mode,
+            Some(PermissionMode::FullAccess)
+        );
+        assert_eq!(
+            manager.active_turn_permission_mode(&id, "live-turn"),
+            Some(PermissionMode::Ask)
+        );
+        assert_eq!(
+            manager.active_turn_permission_mode(&id, "interrupted"),
+            None
+        );
+    }
+
+    #[tokio::test]
     async fn session_permission_mode_is_per_session_and_clearable() {
         let workspace = TestWorkspace::new();
         let manager = in_memory_test_manager();
@@ -14376,6 +14536,240 @@ mod tests {
             .unwrap();
         assert_eq!(saved.config.model_routing.as_deref(), Some("manual"));
         assert_eq!(saved.config.model_id.as_deref(), Some("chosen-model"));
+        assert!(manager.get_session(&id).is_none());
+    }
+
+    #[tokio::test]
+    async fn cold_session_model_read_ignores_history_and_context_without_activating_runtime() {
+        use openbitfun_core_types::model_pool::{ModelPoolBinding, ModelSelection};
+        use openbitfun_services_core::session::SessionStorageLayout;
+
+        let workspace = TestWorkspace::new();
+        let paths = workspace.path_manager();
+        let persistence = Arc::new(PersistenceManager::new(paths.clone()).unwrap());
+        let manager = test_manager(persistence.clone());
+        let id = Uuid::new_v4().to_string();
+        let binding = ModelPoolBinding {
+            pool_id: "pool".into(),
+            model_id: "chosen-member".into(),
+            configuration_fingerprint: "current-binding".into(),
+            generation: 7,
+        };
+        let session = Session::new_with_id(
+            id.clone(),
+            "Cold selector read".into(),
+            "Standard".into(),
+            SessionConfig {
+                workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                model_id: Some("primary".into()),
+                model_pool_id: Some("pool".into()),
+                model_pool_binding: Some(binding.clone()),
+                reasoning_preset: Some("high".into()),
+                model_routing: Some("manual".into()),
+                ..Default::default()
+            },
+        );
+        persistence
+            .save_session(workspace.path(), &session)
+            .await
+            .unwrap();
+        let storage_path = paths.project_sessions_dir(workspace.path());
+        let layout = SessionStorageLayout::new(&storage_path);
+        std::fs::create_dir_all(layout.turns_dir(&id)).unwrap();
+        std::fs::create_dir_all(layout.snapshots_dir(&id)).unwrap();
+        let unreadable = "unreadable unrelated historical content".repeat(32_768);
+        std::fs::write(layout.turn_path(&id, 0), &unreadable).unwrap();
+        std::fs::write(layout.context_snapshot_path(&id, 0), &unreadable).unwrap();
+        let state_bytes = std::fs::read(layout.state_path(&id)).unwrap();
+        let metadata_bytes = std::fs::read(layout.metadata_path(&id)).unwrap();
+
+        let header = manager
+            .read_session_header(Some(&storage_path), &id, false)
+            .await
+            .unwrap();
+        assert!(header.dialog_turn_ids.is_empty());
+        assert_eq!(header.config.model_routing.as_deref(), Some("manual"));
+        let target = super::session_model_target(header);
+        assert_eq!(
+            target.selection,
+            ModelSelection::Pool {
+                pool_id: "pool".into()
+            }
+        );
+        assert_eq!(target.binding, Some(binding));
+        assert_eq!(target.reasoning_preset.as_deref(), Some("high"));
+        assert!(manager.get_session(&id).is_none());
+        assert!(!manager
+            .is_session_loaded_from_storage_path(&storage_path, &id)
+            .unwrap());
+        assert!(manager.active_session_permits.is_empty());
+        assert!(manager.session_write_locks.is_empty());
+        assert!(!manager.context_store.has_session(&id));
+        assert!(!manager.session_storage_path_index.contains_key(&id));
+        assert_eq!(std::fs::read(layout.state_path(&id)).unwrap(), state_bytes);
+        assert_eq!(
+            std::fs::read(layout.metadata_path(&id)).unwrap(),
+            metadata_bytes
+        );
+        assert_eq!(
+            std::fs::read_to_string(layout.turn_path(&id, 0)).unwrap(),
+            unreadable
+        );
+        assert_eq!(
+            std::fs::read_to_string(layout.context_snapshot_path(&id, 0)).unwrap(),
+            unreadable
+        );
+    }
+
+    #[tokio::test]
+    async fn session_model_read_prefers_live_selection_without_waiting_for_turn_or_ignoring_scope()
+    {
+        use openbitfun_core_types::model_pool::ModelSelection;
+
+        let workspace = TestWorkspace::new();
+        let persistence = Arc::new(PersistenceManager::new(workspace.path_manager()).unwrap());
+        let manager = test_manager(persistence);
+        let id = Uuid::new_v4().to_string();
+        let mut session = Session::new_with_id(
+            id.clone(),
+            "Live selector".into(),
+            "Standard".into(),
+            SessionConfig {
+                model_id: Some("live-model".into()),
+                reasoning_preset: Some("low".into()),
+                ..Default::default()
+            },
+        );
+        session.state = SessionState::Processing {
+            current_turn_id: "running".into(),
+            phase: ProcessingPhase::Thinking,
+        };
+        manager.sessions.insert(id.clone(), session);
+        manager.bind_session_storage_path_committed(&id, workspace.path().to_path_buf());
+        // No persisted session exists. A running Turn holds this permit until
+        // completion; reading the selector must still return its live facts.
+        let _turn = manager.acquire_session_mutation(&id).await.unwrap();
+        let header = tokio::time::timeout(
+            Duration::from_secs(1),
+            manager.read_session_header(Some(workspace.path()), &id, false),
+        )
+        .await
+        .expect("a model read must not wait for the running Turn")
+        .unwrap();
+        assert!(matches!(header.state, SessionState::Processing { .. }));
+        let target = super::session_model_target(header);
+        assert_eq!(
+            target.selection,
+            ModelSelection::Model {
+                model_ref: "live-model".into()
+            }
+        );
+        assert_eq!(target.reasoning_preset.as_deref(), Some("low"));
+        assert!(manager.read_session_header(None, &id, false).await.is_ok());
+        assert!(manager
+            .read_session_header(Some(&workspace.path().join("other")), &id, false)
+            .await
+            .is_err());
+        manager.sessions.get_mut(&id).unwrap().kind = SessionKind::Subagent;
+        assert!(manager.read_session_header(None, &id, false).await.is_err());
+        assert!(manager.read_session_header(None, &id, true).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn cold_session_model_read_preserves_legacy_metadata_and_internal_visibility() {
+        use openbitfun_core_types::model_pool::{ModelSelection, SessionModelTarget};
+        use openbitfun_services_core::session::SessionStorageLayout;
+
+        let workspace = TestWorkspace::new();
+        let paths = workspace.path_manager();
+        let persistence = Arc::new(PersistenceManager::new(paths.clone()).unwrap());
+        let manager = test_manager(persistence.clone());
+        let id = Uuid::new_v4().to_string();
+        let mut session = Session::new_with_id(
+            id.clone(),
+            "Legacy selector".into(),
+            "Standard".into(),
+            SessionConfig {
+                workspace_path: Some(workspace.path().to_string_lossy().into()),
+                model_id: Some("fast".into()),
+                ..Default::default()
+            },
+        );
+        persistence
+            .save_session(workspace.path(), &session)
+            .await
+            .unwrap();
+        let storage_path = paths.project_sessions_dir(workspace.path());
+        let layout = SessionStorageLayout::new(&storage_path);
+        std::fs::remove_file(layout.state_path(&id)).unwrap();
+        let metadata_bytes = std::fs::read(layout.metadata_path(&id)).unwrap();
+        let target = super::session_model_target(
+            manager
+                .read_session_header(Some(&storage_path), &id, false)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            target.selection,
+            ModelSelection::Model {
+                model_ref: "fast".into()
+            }
+        );
+        assert_eq!(target.reasoning_preset, None);
+        assert_eq!(target.binding, None);
+        let old_payload =
+            json!({ "sessionId": id, "selection": { "kind": "model", "model_ref": "fast" } });
+        let old_target: SessionModelTarget = serde_json::from_value(old_payload).unwrap();
+        assert_eq!(target, old_target);
+        assert_eq!(
+            serde_json::from_value::<SessionModelTarget>(serde_json::to_value(&target).unwrap())
+                .unwrap(),
+            old_target
+        );
+        assert!(!layout.state_path(&id).exists());
+        assert_eq!(
+            std::fs::read(layout.metadata_path(&id)).unwrap(),
+            metadata_bytes
+        );
+        assert!(manager.read_session_header(None, &id, false).await.is_err());
+        assert!(manager
+            .read_session_header(Some(&storage_path), "missing-session", false)
+            .await
+            .is_err());
+        session.kind = SessionKind::Subagent;
+        persistence
+            .save_session(workspace.path(), &session)
+            .await
+            .unwrap();
+        assert!(manager
+            .read_session_header(Some(&storage_path), &id, false)
+            .await
+            .is_err());
+        assert!(manager
+            .read_session_header(Some(&storage_path), &id, true)
+            .await
+            .is_ok());
+        // Pre-kind releases leaked internal children as Standard sessions.
+        // Keep the metadata owner's compatibility rule for both cold and live reads.
+        session.kind = SessionKind::Standard;
+        session.created_by = Some("session-parent".into());
+        session.session_name = "Subagent: legacy child".into();
+        persistence
+            .save_session(workspace.path(), &session)
+            .await
+            .unwrap();
+        assert!(manager
+            .read_session_header(Some(&storage_path), &id, false)
+            .await
+            .is_err());
+        assert!(manager
+            .read_session_header(Some(&storage_path), &id, true)
+            .await
+            .is_ok());
+        manager.sessions.insert(id.clone(), session);
+        assert!(manager.read_session_header(None, &id, false).await.is_err());
+        assert!(manager.read_session_header(None, &id, true).await.is_ok());
+        manager.sessions.remove(&id);
         assert!(manager.get_session(&id).is_none());
     }
 
@@ -17542,6 +17936,160 @@ mod tests {
             .context_store
             .get_context_messages(&session_id)
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn restore_session_view_tail_with_staged_revert_reads_only_visible_tail() {
+        use crate::agentic::session::revert::{
+            SessionRevertPhase, SessionRevertState, SESSION_REVERT_SCHEMA_VERSION,
+        };
+        use openbitfun_services_core::session::SessionStorageLayout;
+
+        let workspace = TestWorkspace::new();
+        let paths = workspace.path_manager();
+        let persistence = Arc::new(PersistenceManager::new(paths.clone()).unwrap());
+        let manager = test_manager(persistence.clone());
+        let session_id = Uuid::new_v4().to_string();
+        let session = Session::new_with_id(
+            session_id.clone(),
+            "Visible history tail".into(),
+            "Standard".into(),
+            SessionConfig {
+                workspace_path: Some(workspace.path().to_string_lossy().into()),
+                ..Default::default()
+            },
+        );
+        persistence
+            .save_session(workspace.path(), &session)
+            .await
+            .unwrap();
+        // A sparse legacy sequence proves the boundary is a storage index,
+        // while total_turn_count and tail selection use visible ordinals.
+        for index in [0, 2, 4, 7] {
+            let mut turn = DialogTurnData::new(
+                format!("turn-{index}"),
+                index,
+                session_id.clone(),
+                UserMessageData {
+                    id: format!("user-{index}"),
+                    content: format!("prompt {index}"),
+                    timestamp: index as u64,
+                    metadata: None,
+                },
+            );
+            turn.mark_completed();
+            persistence
+                .save_dialog_turn(workspace.path(), &turn)
+                .await
+                .unwrap();
+        }
+        let storage_path = paths.project_sessions_dir(workspace.path());
+        let layout = SessionStorageLayout::new(&storage_path);
+        let answer = "complete last visible answer\n".repeat(8192);
+        let rounds = SessionManager::build_model_rounds_from_messages(
+            &[Message::assistant(answer.clone()).with_round_id("visible-round".into())],
+            "turn-2",
+            2,
+        );
+        // Keep an old persisted shape: no kind, recovery, usage or finish fields.
+        let legacy_turn = json!({
+            "schema_version": 1,
+            "turnId": "turn-2", "turnIndex": 2, "sessionId": session_id,
+            "timestamp": 2, "startTime": 2, "status": "completed",
+            "userMessage": { "id": "user-2", "content": "visible prompt", "timestamp": 2 },
+            "modelRounds": rounds,
+        });
+        std::fs::write(
+            layout.turn_path(&session_id, 2),
+            serde_json::to_vec(&legacy_turn).unwrap(),
+        )
+        .unwrap();
+        std::fs::remove_file(layout.turn_catalog_path(&session_id)).unwrap();
+        // Neither unrelated older content nor the hidden suffix may be parsed.
+        for index in [0, 4, 7] {
+            std::fs::write(
+                layout.turn_path(&session_id, index),
+                "unreadable unrelated turn",
+            )
+            .unwrap();
+        }
+        let mut revert = SessionRevertState {
+            schema_version: SESSION_REVERT_SCHEMA_VERSION,
+            boundary_turn: 4,
+            original_turn_end: 8,
+            phase: SessionRevertPhase::Staged,
+            workspace_checkpoint: Vec::new(),
+        };
+        persistence
+            .save_session_revert_state(workspace.path(), &session_id, &revert)
+            .await
+            .unwrap();
+
+        // Local path resolution and the resolved host-storage entry used by
+        // Peer callers must share the same bounded restore behavior.
+        for resolved_storage in [false, true] {
+            let (view, turns, total, timing) = if resolved_storage {
+                manager
+                    .restore_session_view_from_storage_path_tail_timed(
+                        &storage_path,
+                        &session_id,
+                        1,
+                    )
+                    .await
+            } else {
+                manager
+                    .restore_session_view_tail_timed(workspace.path(), &session_id, 1)
+                    .await
+            }
+            .expect("only the requested visible Turn should be read");
+            assert_eq!(total, 2);
+            assert_eq!(timing.turn_load.requested_tail_turn_count, Some(1));
+            assert_eq!(timing.turn_load.loaded_turn_count, 1);
+            assert_eq!(view.dialog_turn_ids, ["turn-2"]);
+            assert_eq!(turns.len(), 1);
+            assert_eq!(turns[0].turn_index, 2);
+            assert_eq!(turns[0].model_rounds[0].text_items[0].content, answer);
+            let round_trip: DialogTurnData =
+                serde_json::from_value(serde_json::to_value(&turns[0]).unwrap()).unwrap();
+            assert_eq!(round_trip.model_rounds[0].text_items[0].content, answer);
+            let catalog = persistence
+                .load_session_turn_catalog(&storage_path, &session_id, &turns, total)
+                .await
+                .unwrap();
+            assert_eq!(
+                catalog
+                    .entries
+                    .iter()
+                    .map(|entry| entry.storage_turn_index)
+                    .collect::<Vec<_>>(),
+                [0, 2]
+            );
+            assert!(manager.get_session(&session_id).is_none());
+        }
+
+        let (_, turns, total, _) = manager
+            .restore_session_view_tail_timed(workspace.path(), &session_id, 0)
+            .await
+            .unwrap();
+        assert!(turns.is_empty());
+        assert_eq!(total, 2);
+        revert.boundary_turn = 0;
+        persistence
+            .save_session_revert_state(workspace.path(), &session_id, &revert)
+            .await
+            .unwrap();
+        let (_, turns, total, _) = manager
+            .restore_session_view_tail_timed(workspace.path(), &session_id, 1)
+            .await
+            .unwrap();
+        assert!(turns.is_empty());
+        assert_eq!(total, 0);
+        for index in [0, 4, 7] {
+            assert_eq!(
+                std::fs::read_to_string(layout.turn_path(&session_id, index)).unwrap(),
+                "unreadable unrelated turn"
+            );
+        }
     }
 
     #[tokio::test]

@@ -76,8 +76,28 @@ pub fn decrypt(
 
 /// Convenience: encrypt a string and return base64-encoded `(data, nonce)`.
 pub fn encrypt_to_base64(shared_secret: &[u8; 32], plaintext: &str) -> Result<(String, String)> {
-    let (ct, nonce) = encrypt(shared_secret, plaintext.as_bytes())?;
-    Ok((BASE64.encode(ct), BASE64.encode(nonce)))
+    encrypt_relay_message(shared_secret, plaintext, false)
+}
+
+pub fn encrypt_relay_message(
+    shared_secret: &[u8; 32],
+    plaintext: &str,
+    accepts_zstd: bool,
+) -> Result<(String, String)> {
+    let (data, nonce, _) =
+        encrypt_relay_message_with_encoding(shared_secret, plaintext, accepts_zstd)?;
+    Ok((data, nonce))
+}
+
+pub(super) fn encrypt_relay_message_with_encoding(
+    shared_secret: &[u8; 32],
+    plaintext: &str,
+    accepts_zstd: bool,
+) -> Result<(String, String, bool)> {
+    let bytes = super::message_encoding::encode(plaintext.as_bytes(), accepts_zstd)?;
+    let uses_zstd = bytes.first() == Some(&0xff);
+    let (ct, nonce) = encrypt(shared_secret, &bytes)?;
+    Ok((BASE64.encode(ct), BASE64.encode(nonce), uses_zstd))
 }
 
 /// Convenience: decrypt from base64-encoded `(data, nonce)`.
@@ -86,6 +106,18 @@ pub fn decrypt_from_base64(
     ciphertext_b64: &str,
     nonce_b64: &str,
 ) -> Result<String> {
+    super::message_encoding::decode(open_relay_ciphertext(
+        shared_secret,
+        ciphertext_b64,
+        nonce_b64,
+    )?)
+}
+
+pub(super) fn open_relay_ciphertext(
+    shared_secret: &[u8; 32],
+    ciphertext_b64: &str,
+    nonce_b64: &str,
+) -> Result<Vec<u8>> {
     let ct = BASE64
         .decode(ciphertext_b64)
         .map_err(|e| anyhow!("base64 decode ciphertext: {e}"))?;
@@ -102,8 +134,7 @@ pub fn decrypt_from_base64(
     let mut nonce = [0u8; NONCE_SIZE];
     nonce.copy_from_slice(&nonce_vec);
 
-    let plaintext = decrypt(shared_secret, &ct, &nonce)?;
-    String::from_utf8(plaintext).map_err(|e| anyhow!("utf8 decode: {e}"))
+    decrypt(shared_secret, &ct, &nonce)
 }
 
 /// Parse a base64-encoded public key into 32-byte array.

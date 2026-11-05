@@ -4,6 +4,10 @@
 use super::*;
 
 const VERSION: u32 = 1;
+/// Desktop controllers can receive a larger bounded snapshot packet, avoiding
+/// another acknowledged RPC for ordinary tool-heavy Turns. Live pages retain
+/// their smaller budget so background history cannot change event batching.
+pub const MAX_TURN_HISTORY_PAGE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TurnHistoryRequest {
@@ -14,6 +18,8 @@ pub struct TurnHistoryRequest {
     pub snapshot_id: Option<String>,
     #[serde(default)]
     pub offset: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_bytes: Option<usize>,
 }
 
 impl TurnHistoryRequest {
@@ -23,6 +29,7 @@ impl TurnHistoryRequest {
             before_turn: None,
             snapshot_id: None,
             offset: 0,
+            max_bytes: None,
         }
     }
 }
@@ -100,6 +107,7 @@ impl HostStreamHub {
                     id,
                     history.offset,
                     request.limit,
+                    history.max_bytes,
                 );
             }
             // Capture BEFORE IO. Controls may append while the source is read;
@@ -220,7 +228,14 @@ impl HostStreamHub {
             batch.before.is_some(),
             started.elapsed().as_millis()
         );
-        log.read_turn_snapshot(device, &request.stream_id, &id, 0, request.limit)
+        log.read_turn_snapshot(
+            device,
+            &request.stream_id,
+            &id,
+            0,
+            request.limit,
+            history.max_bytes,
+        )
     }
 }
 
@@ -232,6 +247,7 @@ impl StreamLog {
         id: &str,
         offset: usize,
         limit: Option<usize>,
+        max_bytes: Option<usize>,
     ) -> Result<StreamPage> {
         let snapshot = self
             .turn_snapshots
@@ -246,13 +262,16 @@ impl StreamLog {
         snapshot.last_activity = Instant::now();
         let mut bytes = 0;
         let mut events = Vec::new();
+        let byte_budget = max_bytes
+            .unwrap_or(PAGE_BYTES)
+            .clamp(1, MAX_TURN_HISTORY_PAGE_BYTES);
         for (event, size) in snapshot.events.iter().skip(offset) {
             if !events.is_empty()
                 && (events.len()
                     >= limit
                         .unwrap_or(DEFAULT_PAGE_EVENTS)
                         .clamp(1, MAX_PAGE_EVENTS)
-                    || bytes + size > PAGE_BYTES)
+                    || bytes + size > byte_budget)
             {
                 break;
             }
@@ -448,6 +467,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn requested_byte_budget_batches_a_complete_turn_and_caps_larger_offers() {
+        let hub = HostStreamHub::start(Arc::new(Quiet));
+        let mut body = records(0, 2);
+        for record in &mut body[1..] {
+            record["item"]["data"]["content"] = "a".repeat(PAGE_BYTES * 2 / 3).into();
+        }
+        let mut read = request();
+        read.turn_history.as_mut().unwrap().max_bytes = Some(MAX_TURN_HISTORY_PAGE_BYTES);
+        let page = hub
+            .read_history("desktop", &read, |_| {
+                let records = body.clone();
+                async {
+                    Ok(HistoryBatch {
+                        records,
+                        before: Some(0),
+                    })
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(page.events.len(), 3);
+        assert_eq!(page.turn_history.as_ref().unwrap().next_offset, None);
+        assert_eq!(page.turn_history.as_ref().unwrap().before_turn, Some(0));
+
+        // An old controller retains its byte bound for the identical Turn.
+        let legacy = hub
+            .read_history("old", &request(), |_| {
+                let records = body.clone();
+                async {
+                    Ok(HistoryBatch {
+                        records,
+                        before: None,
+                    })
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(legacy.events.len(), 2);
+        assert_eq!(legacy.turn_history.unwrap().next_offset, Some(2));
+
+        read.turn_history.as_mut().unwrap().max_bytes = Some(usize::MAX);
+        for record in &mut body[1..] {
+            record["item"]["data"]["content"] = "b".repeat(MAX_TURN_HISTORY_PAGE_BYTES / 2).into();
+        }
+        let bounded = hub
+            .read_history("large", &read, |_| {
+                let records = body.clone();
+                async {
+                    Ok(HistoryBatch {
+                        records,
+                        before: None,
+                    })
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(bounded.events.len(), 2);
+        assert_eq!(bounded.turn_history.unwrap().next_offset, Some(2));
+    }
+
+    #[tokio::test]
     async fn packets_keep_byte_bounds_and_snapshots_are_controller_scoped_and_epoch_fenced() {
         let hub = HostStreamHub::start(Arc::new(Quiet));
         let mut body = records(0, 2);
@@ -519,6 +599,24 @@ mod tests {
 
     #[test]
     fn legacy_wire_shapes_round_trip_without_new_fields_and_ignore_the_read_offer() {
+        let old_turn = serde_json::json!({"version":1,"offset":0});
+        let turn: TurnHistoryRequest = serde_json::from_value(old_turn.clone()).unwrap();
+        assert_eq!(turn.max_bytes, None);
+        assert_eq!(serde_json::to_value(turn).unwrap(), old_turn);
+        #[derive(Deserialize)]
+        struct LegacyTurnRequest {
+            version: u32,
+            offset: usize,
+        }
+        let legacy_turn: LegacyTurnRequest = serde_json::from_value(
+            serde_json::to_value(TurnHistoryRequest {
+                max_bytes: Some(MAX_TURN_HISTORY_PAGE_BYTES),
+                ..TurnHistoryRequest::latest()
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!((legacy_turn.version, legacy_turn.offset), (1, 0));
         let old = serde_json::json!({"stream_id":"s","subscribe":true,"limit":48});
         let read: StreamReadRequest = serde_json::from_value(old.clone()).unwrap();
         assert!(read.turn_history.is_none());

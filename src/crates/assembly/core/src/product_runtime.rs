@@ -1713,6 +1713,19 @@ impl CoreAgentRuntimeCompatibility {
             .get_session(session_id))
     }
 
+    /// Read host-owned model/config facts without loading a cold runtime.
+    pub async fn read_session_header(
+        &self,
+        storage_path: Option<&Path>,
+        session_id: &str,
+        include_internal: bool,
+    ) -> OpenBitFunResult<Session> {
+        self.coordinator
+            .get_session_manager()
+            .read_session_header(storage_path, session_id, include_internal)
+            .await
+    }
+
     pub async fn update_loaded_session_title(
         &self,
         session_id: &str,

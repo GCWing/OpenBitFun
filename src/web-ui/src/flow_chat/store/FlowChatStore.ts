@@ -8161,21 +8161,25 @@ export class FlowChatStore {
    * metadata path (model context window, state machines) before they are
    * opened. Untouched seeds only; a session that already has history stays.
    */
-  public async promoteSeededSessions(): Promise<void> {
+  public async promoteSeededSessions(targetSessionId?: string): Promise<void> {
     const container = this.activeSurface;
+    const scope = getActiveSurfaceScope();
     const byWorkspace = new Map<string, SeededSessionRecord[]>();
     for (const [sessionId, record] of container.seededSessions) {
+      if (targetSessionId !== undefined && sessionId !== targetSessionId) continue;
       if (!this.isRebuildableSeed(sessionId)) continue;
       const group = byWorkspace.get(record.workspaceId) ?? [];
       group.push(record);
       byWorkspace.set(record.workspaceId, group);
     }
     for (const records of byWorkspace.values()) {
+      scope.assertCurrent('promote device catalog sessions');
       const [first] = records;
       await this.processPersistedSessionMetadataList(
         records.map(record => record.metadata), first.workspacePath, first.remoteConnectionId, first.remoteSshHost,
       );
     }
+    scope.assertCurrent('finish device catalog session promotion');
   }
 
   /**
@@ -9256,12 +9260,24 @@ export class FlowChatStore {
       limit?: number;
       includeInternal?: boolean;
       deferFullHistoryUntilActive?: boolean;
+      /** Retain a speculative last-Turn read without loading older history. */
+      retainInactiveTail?: boolean;
       /** A background source refresh must not replace a view after drafting starts. */
       shouldApply?: () => boolean;
     }
   ): Promise<void> {
     const traceStartedAt = nowMs();
     const initialSession = this.state.sessions.get(sessionId);
+    const prewarmStillApplies = (): boolean => {
+      if (options?.retainInactiveTail !== true) return true;
+      const session = this.state.sessions.get(sessionId);
+      return session?.isHistorical === true
+        && session.dialogTurns === initialSession?.dialogTurns
+        && session.config === initialSession?.config
+        && session.workspaceId === initialSession?.workspaceId
+        && session.remoteConnectionId === initialSession?.remoteConnectionId
+        && session.remoteSshHost === initialSession?.remoteSshHost;
+    };
     const remoteConnectionId = initialSession?.remoteConnectionId;
     const remoteSshHost = initialSession?.remoteSshHost;
     const remote = isRemoteTraceContext(remoteConnectionId, remoteSshHost);
@@ -9351,7 +9367,7 @@ export class FlowChatStore {
       initialSession.historyState === 'metadata-only';
     let hydratingStateNotified = false;
     const notifyHydratingState = (): void => {
-      if (options?.shouldApply) return;
+      if (options?.shouldApply || options?.retainInactiveTail) return;
       if (suppressInitialHydratingState) {
         return;
       }
@@ -9544,7 +9560,7 @@ export class FlowChatStore {
       // machine they are about to drive is shared, so a stale hydrate must stop
       // here rather than commit into whichever surface is rendered now.
       scope.assertCurrent('loadSessionHistory');
-      if (options?.shouldApply && !options.shouldApply()) return;
+      if (!prewarmStillApplies() || (options?.shouldApply && !options.shouldApply())) return;
       // A local restore may have started just before the observer bound this
       // session. Re-check ownership after every restore await and before any
       // commit or state-machine mutation so that late empty history cannot
@@ -9564,6 +9580,7 @@ export class FlowChatStore {
 
       const skipStaleLocalHydrateCommit =
         !remote &&
+        options?.retainInactiveTail !== true &&
         options?.deferFullHistoryUntilActive === true &&
         this.state.activeSessionId !== sessionId;
       if (skipStaleLocalHydrateCommit) {
@@ -9798,6 +9815,8 @@ export class FlowChatStore {
         }
       }
     } catch (error) {
+      if (isSurfaceChangedError(error)) throw error;
+      if (!prewarmStillApplies()) return;
       // The same race can fail instead of resolving. Once dispatch owns the
       // session, that stale local failure must not relabel its projection as a
       // failed historical session or surface an irrelevant restore error.

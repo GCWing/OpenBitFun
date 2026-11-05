@@ -9,6 +9,8 @@ import java.security.MessageDigest
 import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 /** Uses Android's actual engine: the JVM production engine does not reject frame-limit setters. */
 class OkHttpRealtimeTest {
@@ -21,10 +23,16 @@ class OkHttpRealtimeTest {
     @Test
     fun androidEngineReconnectsAfterConnectionReset() = exerciseReconnect(true, true)
 
-    private fun exerciseReconnect(interruptFirst: Boolean, resetFirst: Boolean = false): Unit = runBlocking {
+    @Test
+    fun preparedRpcCannotCrossPresenceGenerationButAcknowledgedResultSurvives() =
+        exerciseReconnect(false, invalidateCapabilities = true)
+
+    private fun exerciseReconnect(interruptFirst: Boolean, resetFirst: Boolean = false,
+        invalidateCapabilities: Boolean = false): Unit = runBlocking {
         ServerSocket(0).use { server ->
             server.soTimeout = 10_000
             val received = CompletableDeferred<Unit>()
+            val capturedCapabilities = CompletableDeferred<Unit>()
             val host = async(Dispatchers.IO) {
                 repeat(if (interruptFirst) 2 else 1) { connectionIndex ->
                 server.accept().use { socket ->
@@ -72,8 +80,16 @@ class OkHttpRealtimeTest {
                         if (resetFirst) socket.setSoLinger(true, 0) else delay(500)
                         return@use
                     }
+                    if (invalidateCapabilities) {
+                        capturedCapabilities.await()
+                        send("42[\"ephemeral\",{\"type\":\"device-presence\"}]")
+                    }
                     val request = receive()
                     check(request.startsWith("42"))
+                    check(!request.contains("stale"))
+                    if (invalidateCapabilities) {
+                        send("42[\"ephemeral\",{\"type\":\"device-presence\"}]")
+                    }
                     val ackId = request.substring(2, request.indexOf('['))
                     send("43$ackId[{\"ok\":true,\"result\":{\"value\":42}}]")
                     // Keep the epoch alive until the caller receives the ack.
@@ -85,8 +101,20 @@ class OkHttpRealtimeTest {
             val realtime = AccountRealtime(http, "http://127.0.0.1:${server.localPort}", "test-token")
             try {
                 if (interruptFirst) withTimeout(10_000) { realtime.connections.first { it >= 2 } }
+                if (invalidateCapabilities) {
+                    val prepared = realtime.readyForEncoding()
+                    capturedCapabilities.complete(Unit)
+                    withTimeout(5_000) {
+                        while (realtime.peerEncodings === prepared) delay(1)
+                    }
+                    val error = assertFailsWith<CloudAccountException> {
+                        realtime.call("host", buildJsonObject { put("cmd", "stale") }, 5000, prepared)
+                    }
+                    assertEquals(CloudAccountFailure.NETWORK, error.failure)
+                    assertTrue(error.cause?.message?.contains("not submitted") == true)
+                }
                 val result = withTimeout(10_000) {
-                    realtime.call("host", buildJsonObject { put("cmd", "ping") }, 5000)
+                    realtime.call("host", buildJsonObject { put("cmd", "ping") }, 5000, realtime.readyForEncoding())
                 }
                 assertEquals(42, result.jsonObject.getValue("value").jsonPrimitive.int)
                 assertEquals(if (interruptFirst) 2 else 1, realtime.connections.value)

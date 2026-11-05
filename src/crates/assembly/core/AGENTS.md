@@ -339,6 +339,14 @@ against full materialization locally, use the same target with
 `history_page_benchmark -- --ignored --nocapture`; it checks content equivalence
 and reports timings without asserting a machine-dependent latency in CI.
 
+For opening a staged-revert Session at its last complete visible Turn, run
+`cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib restore_session_view_tail_with_staged_revert`.
+This exercises local workspace resolution and the host-storage entry used by
+Peer callers, sparse legacy histories, complete payloads and untouched hidden
+files; it does not establish live remote behavior. The same target with
+`staged_revert_tail_benchmark -- --ignored --nocapture` compares real-file full
+materialization with the bounded visible-tail read without a CI timing assertion.
+
 For workspace metadata catalog paging, cache reuse and cross-process invalidation:
 `cargo test --locked -p openbitfun-core --no-default-features --features external-sources,git,product-search --lib -- catalog_snapshot_ catalog_query_pages_`.
 
@@ -370,16 +378,23 @@ include the concrete image-tool owner in the same focused fixture:
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-image-analysis --lib -- image_input input_model_tests
 ```
 
-For model selector latency, run the catalog and session mutation owner fixtures:
+For model selector latency, run the catalog and session owner fixtures:
 
 ```bash
 cargo test --locked -p openbitfun-core --no-default-features --features model-catalog --lib infrastructure::ai::reasoning_catalog::tests
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib session_model_update
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib session_model_read
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib -- session_permission_read session_permission_mode active_turn_permission_mode
 cargo test --locked -p openbitfun-core --no-default-features --features remote-connect,git --lib remote_attach_and_mutation_paths_preserve_workspace_ownership_facts
 ```
 
-Catalog snapshots remain usable during background refresh. Selector mutations
-must not restore cold transcripts or reserve active-session capacity; preserve
+Catalog snapshots remain usable during background refresh. Selector reads use
+live session facts or a persisted header, without reading Turns/context, acquiring
+the running Turn's mutation permit, or marking a cold runtime as loaded. Desktop
+and CLI Peer adapters preserve storage scope and internal-session visibility.
+Permission reads preserve the optional session override; only the live runtime
+can supply an active Turn and its temporary override.
+Selector mutations must not restore cold transcripts or reserve active-session capacity; preserve
 writer ownership, unknown persisted fields, legacy metadata-only sessions, and
 both state/metadata projections on failure. These fixtures cover local storage
 and remote routing contracts, not live SSH/relay/peer/dispatch connections.

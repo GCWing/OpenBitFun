@@ -32,6 +32,7 @@
     "test:terminal-browser": "node --test tests/terminal-browser.test.mjs tests/native-terminal-renderer-browser.test.mjs"
   },
   "dependencies": {
+    "@bokuweb/zstd-wasm": "0.0.27",
     "@noble/ciphers": "^2.1.1",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",

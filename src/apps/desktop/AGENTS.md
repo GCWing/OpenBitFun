@@ -175,12 +175,16 @@ For model selector request compatibility and configuration effect routing:
 ```bash
 cargo test --locked -p openbitfun-desktop --lib update_session_model_distinguishes_omitted_null_and_explicit_reasoning_presets
 cargo test --locked -p openbitfun-desktop --lib model_routing_status_preserves_legacy_requests_and_internal_session_opt_in
+cargo test --locked -p openbitfun-desktop --lib session_permission_read
 cargo test --locked -p openbitfun-desktop --lib backend_effect_routing_is_owned_by_the_control_transaction
 ```
 
 Use the Core guide's session-model tests for cold persistence, no-op writes,
 rollback, and ownership; the Desktop adapter must not restore history for a
-model selection alone.
+model selection alone. Permission reads use the same header path, preserve a
+missing override as `null`, and obtain active-Turn facts only from the live runtime.
+Legacy scope-less reads require a loaded session; an unknown override must fail
+instead of pretending to inherit the default.
 
 For MiniApp Agent session and context changes, run
 `cargo test --locked -p openbitfun-desktop --lib api::miniapp_agent_api::tests`.

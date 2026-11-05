@@ -28,12 +28,28 @@ slices that are outside pure product logic but still platform-neutral.
   orchestration ports, LAN endpoint helpers, IM bot provider clients,
   provider-private cursor caches, mobile-web relay upload, image-context adapter
   contracts, remote workspace helpers, and command/response assembly.
+- Device RPC requests, responses and one-way events share the optional
+  `accept_encoding: "zstd-1"` offer on their opaque encrypted envelope.
+  Machine hosts announce on presence. Hidden controllers offer on their first
+  ordinary request. Each reply uses its caller's offer. Connection and directory
+  changes expire learned capabilities. Relay-consumed fields keep their current
+  encoding.
+- Capable senders try Zstandard level 1 on UTF-8 bodies over 256 bytes, up to
+  64 MiB. Use the result only if the full frame is smaller. AES-GCM seals the
+  bytes `FF 4F 5A 01`, a little-endian u32 original length and one Zstandard
+  frame, or the original UTF-8 JSON. Receivers authenticate before decoding
+  and verify the size and frame boundary. The cross-client vector lives in
+  `src/shared/relay-protocol-contract-fixtures/relay-message-encoding.json`.
 - `remote_connect::host_stream` is the host-side owner of on-demand session,
   terminal and catalog streams: an in-memory, byte-bounded per-stream log with
   an epoch, `read_stream`/`unsubscribe_stream` handling, and `HostStreamNotifier`
   hint leases. `remote_connect::host_stream_subscriber` is the Rust controller
   reader. Neither the relay nor any client persists stream content; do not add
   relay-stored history, `get_session_key`, or a durable stream cache here.
+- Compressed Relay ciphertext carries its peer capability generation through
+  key lookup and bulk upload. Check that generation immediately before wire
+  submission. A retired generation is an unsent failure. Preserve an already
+  acknowledged result and leave mutation replay to the durable request owner.
 - Session history reads use `HostStreamHub::read_history` with a Core-owned
   source loader. The optional `turn_history` v1 offer selects exactly one Turn;
   its response acknowledgement enables the mode, while older hosts retain the
@@ -41,6 +57,10 @@ slices that are outside pure product logic but still platform-neutral.
   The immutable snapshot spans bounded packets, carries an older-Turn boundary
   separately from its packet offset, and uses the live cursor captured before
   source IO as its revision fence. It never allocates live event sequences.
+  Controllers may offer `turn_history.max_bytes` to receive up to 4 MiB of
+  snapshot records per response. Omitted offers retain the ordinary page byte
+  budget. Older hosts ignore the hint and readers follow `next_offset` until
+  the same snapshot is complete. Live pages keep their own byte budget.
   Snapshot IDs are controller/stream scoped and epoch fenced; retained bodies
   are byte bounded and expire with leases/grace (one oversized Turn may exceed
   the budget). Identity-only tombstone tracking must not suppress subsequent
@@ -158,6 +178,7 @@ cargo test -p openbitfun-services-integrations --no-default-features --features 
 cargo test -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::manager::tests::workspace_
 cargo test -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::wsl::tests::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::relay_deploy::tests::
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::message_encoding::tests
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::account::tests
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::relay_client::tests::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::host_stream::

@@ -46,14 +46,16 @@ export function ComputerUseControlCard() {
   useEffect(() => {
     let disposed = false;
     let refused = false;
+    let observed: ComputerUseControlSnapshot | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setView(undefined);
     setStopping(false);
     const poll = async () => {
       const revision = mutation.current;
       try {
-        const next = await computerUseControlAPI.status();
+        const next = await computerUseControlAPI.status(observed);
         if (disposed || !scope.isCurrent() || revision !== mutation.current) return;
+        observed = next;
         setView(previous => ({ epoch: scope.epoch, snapshot: next,
           ...(next.state === 'active' && previous?.epoch === scope.epoch && previous.snapshot.generation === next.generation
             && previous.snapshot.target === next.target
@@ -85,6 +87,7 @@ export function ComputerUseControlCard() {
           }
         }
       } catch (error) {
+        observed = undefined;
         // A host that refuses the command has no device control: asking it
         // again every second only competes with real work for the link.
         refused = classifyPeerHostRefusal(error) !== null;

@@ -29,6 +29,7 @@ kotlin {
         commonMain.dependencies {
             api(project(":core-protocol"))
             api(project(":core-crypto"))
+            implementation(libs.zstd.kmp)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             // Bodies are encoded with RelayJson by hand rather than through
@@ -70,6 +71,16 @@ kotlin {
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
         }
+    }
+}
+
+// Android host tests execute on the build JVM. Select the upstream desktop
+// JNI variant for that runtime only; APKs and ART tests use the Android AAR.
+configurations.named("androidHostTestRuntimeClasspath") {
+    resolutionStrategy.dependencySubstitution {
+        val zstd = libs.zstd.kmp.get()
+        substitute(module(zstd.module.toString()))
+            .using(module("com.squareup.zstd:zstd-kmp-jvm:${zstd.version}"))
     }
 }
 

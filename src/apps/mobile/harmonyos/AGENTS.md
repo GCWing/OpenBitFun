@@ -76,6 +76,12 @@ source scripts/ohos-env.sh
 "$HVIGORW" --mode module -p module=entry@default -p ohos.test.type=LocalTest test --no-daemon
 ```
 
+Relay Zstd encode/decode uses N-API async work through
+`services/RelayMessageEncoding.ets`. The wrapper bounds the worker wait, and
+compressed messages retain their capability generation until submission. Verify
+presence changes during upload, settled replies, and codec waits with
+`node --test tools/tests/relay-message-generation.test.cjs`.
+
 For window inset subscription lifecycle and late completion regressions, run
 `node --test tools/tests/window-insets-lifecycle.test.cjs tools/tests/immersive-bottom.test.cjs`.
 The lifecycle tests run the production service with deferred platform window

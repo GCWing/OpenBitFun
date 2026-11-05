@@ -3,7 +3,7 @@
 //! RPC, and closing the subscriber only stops observing that host.
 use super::{
     account::{AccountClient, AccountSession, StreamHint},
-    host_stream::{StreamPage, StreamReadRequest, TurnHistoryRequest},
+    host_stream::{StreamPage, StreamReadRequest, TurnHistoryRequest, MAX_TURN_HISTORY_PAGE_BYTES},
 };
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
@@ -288,6 +288,7 @@ impl Reader {
                         snapshot_id: Some(snapshot.snapshot_id.clone()),
                         offset,
                         before_turn: None,
+                        max_bytes: Some(MAX_TURN_HISTORY_PAGE_BYTES),
                     }),
                     ..Default::default()
                 })
@@ -368,7 +369,10 @@ impl Reader {
                 stream_id: self.session_id.clone(),
                 subscribe: true,
                 limit: Some(FIRST_PAGE_EVENTS),
-                turn_history: Some(TurnHistoryRequest::latest()),
+                turn_history: Some(TurnHistoryRequest {
+                    max_bytes: Some(MAX_TURN_HISTORY_PAGE_BYTES),
+                    ..TurnHistoryRequest::latest()
+                }),
                 ..Default::default()
             })
             .await?;
@@ -434,6 +438,7 @@ impl Reader {
             stream_id: self.session_id.clone(),
             before: (!self.turn_history).then_some(self.oldest),
             turn_history: self.turn_history.then(|| TurnHistoryRequest {
+                max_bytes: Some(MAX_TURN_HISTORY_PAGE_BYTES),
                 before_turn: self.before_turn,
                 ..TurnHistoryRequest::latest()
             }),

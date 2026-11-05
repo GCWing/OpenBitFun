@@ -114,7 +114,7 @@ describe('openOnDevice', () => {
     expect(peer.switchToDevice).not.toHaveBeenCalled();
   });
 
-  it('shows the open overlay at once, promotes seeds after the switch, and opens a seeded session without a read', async () => {
+  it('opens the chosen row without waiting for all device seeds to be promoted', async () => {
     mocks.sessions.set('s-1', { sessionId: 's-1' });
     const peer = peerContext();
     await openDeviceSession(peer, peerSlot, 'ws-1', { sessionId: 's-1' }, 'Title');
@@ -125,7 +125,7 @@ describe('openOnDevice', () => {
     // The session's stream starts before the switch, not after it.
     expect(mocks.prewarm).toHaveBeenCalledWith('peer-a', 's-1');
     expect(mocks.prewarm.mock.invocationCallOrder[0]).toBeLessThan(peer.switchToDevice.mock.invocationCallOrder[0]);
-    expect(mocks.promote).toHaveBeenCalledOnce();
+    expect(mocks.promote).not.toHaveBeenCalled();
     expect(mocks.adopt).not.toHaveBeenCalled();
     expect(mocks.ensureMetadata).not.toHaveBeenCalled();
     expect(mocks.openMainSession).toHaveBeenCalledWith('s-1', expect.objectContaining({ workspaceId: 'ws-1' }));

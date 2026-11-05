@@ -20,7 +20,8 @@ import { useApp } from '../hooks/useApp';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { FlowChatManager } from '../../flow_chat/services/FlowChatManager';
-import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceId, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
+import { getDeviceOpenIntent, selectsDeviceSession } from '@/infrastructure/peer-device/deviceOpenIntent';
 import WorkspaceBody from './WorkspaceBody';
 import { WindowResizeLayout } from './WindowResizeLayout';
 import { useToolbarModeContext } from '../../flow_chat/components/toolbar-mode/ToolbarModeContext';
@@ -269,6 +270,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     let cancelled = false;
     const initializeFlowChat = async () => {
       if (!currentWorkspace?.rootPath) return;
+      const explicitOpen = getDeviceOpenIntent();
 
       // Remote session index and turns live under ~/.openbitfun/remote_ssh/... (local disk).
       // Always initialize FlowChat so historical sessions list even when SSH is not connected yet.
@@ -290,6 +292,10 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
         if (cancelled) {
           return;
         }
+        // The explicit device action opens or creates its own session, even
+        // when this workspace's metadata page is empty.
+        if (selectsDeviceSession(explicitOpen, getActiveSurfaceId())
+          || selectsDeviceSession(getDeviceOpenIntent(), getActiveSurfaceId())) return;
 
         let sessionId: string | undefined;
         const { flowChatStore } = await import('@/flow_chat/store/FlowChatStore');

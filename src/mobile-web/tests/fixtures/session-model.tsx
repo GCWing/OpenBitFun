@@ -198,9 +198,10 @@ export function mountSessionModelFixture(options: { legacy?: boolean; fencing?: 
   const transport = Object.assign(Object.create(RelayHttpClient.prototype), {
     identityGeneration: 0,
     deviceMessageKeys: new Map(),
+    peerEncodings: new Set<string>(),
     withAccount: (operation: (identity: { generation: number }) => Promise<unknown>) => operation({ generation: 0 }),
     deviceMessageKey: async () => messageKey,
-    realtime: { call: async (target: string, envelope: { encrypted_data: string; nonce: string }) => {
+    realtime: { ready: async () => {}, call: async (target: string, envelope: { encrypted_data: string; nonce: string }) => {
       const command = JSON.parse(await decrypt(messageKey, envelope.encrypted_data, envelope.nonce));
       const response = await hostRpc(target, command);
       const encrypted = await encrypt(messageKey, JSON.stringify(response));

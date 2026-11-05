@@ -55,7 +55,8 @@ const mockSubmitSteering = vi.fn();
 
 vi.mock('../hostDialogQueue', () => ({
   hostQueueSupported: (...args: unknown[]) => mockHostQueueSupported(...args),
-  hostDialogQueue: () => ({ submit: mockHostQueueSubmit, act: mockHostQueueAct }),
+  hostDialogQueue: () => ({ submit: mockHostQueueSubmit, act: mockHostQueueAct,
+    refresh: vi.fn(async () => ({ queueEpoch: 'host-epoch' })) }),
   queueImageAttachments: () => [],
 }));
 

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { FlowChatOpeningBoundary } from './FlowChatOpeningBoundary';
+import { SESSION_LOADING_DELAY_MS } from '../../services/sessionOpenIntent';
 import './HistorySessionLoadingBoundary.scss';
 
 interface Props {
@@ -13,35 +14,21 @@ interface Props {
   children: ReactNode;
 }
 
-type Phase = 'idle' | 'loading' | 'exiting' | 'revealing';
-// Readiness already includes the viewport's layout commit. Keep the handoff
-// brief: decoration must not add nearly half a second to a complete read.
-const EXIT_DURATION = 80;
-const REVEAL_DURATION = 100;
-/**
- * A load shorter than this never showed its skeleton (it fades in after a
- * delay, see the stylesheet): the transcript just fades in, without the
- * skeleton hand-over, so a fast open is not made to wait on choreography.
- */
-const QUICK_LOAD_MS = 260;
-const QUICK_REVEAL_DURATION = 80;
+type Phase = 'idle' | 'loading';
 
 /** Presentation only. The existing viewport owner decides when the transcript is settled. */
 export function HistorySessionLoadingBoundary({
   identity, loading, hasTranscript, disabled, intent, label, onPresentationChange, children,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const coverStartedAt = useRef<{ identity: string; at: number } | null>(null);
-  if (loading && coverStartedAt.current?.identity !== identity) {
-    coverStartedAt.current = { identity, at: performance.now() };
-  }
+  const initialPhase: Phase = loading || hasTranscript ? 'loading' : 'idle';
   const [state, setState] = useState<{ identity: string; phase: Phase }>({
-    identity, phase: loading ? 'loading' : 'idle',
+    identity, phase: initialPhase,
   });
   if (state.identity !== identity) {
-    setState({ identity, phase: loading ? 'loading' : 'idle' });
+    setState({ identity, phase: initialPhase });
   }
-  const phase = state.identity === identity ? state.phase : loading ? 'loading' : 'idle';
+  const phase = state.identity === identity ? state.phase : initialPhase;
   const covering = !disabled && (loading || phase !== 'idle');
 
   useLayoutEffect(() => {
@@ -54,127 +41,54 @@ export function HistorySessionLoadingBoundary({
         ? { identity, phase: next }
         : previous
     ));
-    if (disabled) { setPhase('idle'); return; }
+    // Inactive scenes expose their placeholder and recheck the viewport on resume.
+    if (disabled) { setPhase(hasTranscript ? 'loading' : 'idle'); return; }
     if (loading) { setPhase('loading'); return; }
     if (phase === 'idle') return;
 
     const root = rootRef.current;
     const content = root?.querySelector<HTMLElement>('.history-session-loading__content');
-    const view = root?.ownerDocument.defaultView;
-    if (!root || !content || !view) { setPhase('idle'); return; }
-    const media = view.matchMedia?.('(prefers-reduced-motion: reduce)');
-    const animations: Animation[] = [];
+    if (!root || !content) { setPhase('idle'); return; }
+
     let cancelled = false;
-    let started = false;
     const observer = new MutationObserver(checkReady);
-    const cleanup = () => {
+    function cleanup() {
       cancelled = true;
       observer.disconnect();
-      media?.removeEventListener('change', settle);
-      root.ownerDocument.removeEventListener('visibilitychange', onVisibility);
-      animations.forEach(animation => animation.cancel());
-      content.style.removeProperty('mask-image');
-      content.style.removeProperty('mask-size');
-      content.style.removeProperty('mask-repeat');
-    };
+      root!.ownerDocument.removeEventListener('visibilitychange', onVisibility);
+    }
     function settle() {
-      // Keep the completed reveal visible until React commits the idle phase.
-      content!.style.removeProperty('opacity');
+      if (cancelled) return;
       cleanup();
       setPhase('idle');
     }
-    function onVisibility() { if (root!.ownerDocument.hidden) settle(); }
-    function animate(element: HTMLElement, frames: Keyframe[], options: KeyframeAnimationOptions) {
-      const animation = element.animate(frames, options);
-      animations.push(animation);
-      // Also handle cancellation if a subsequent animation fails to start.
-      void animation.finished.catch(() => {});
-      return animation;
+    function onVisibility() {
+      if (root!.ownerDocument.hidden) settle();
     }
-
     function checkReady() {
-      if (cancelled || started || !root || !content || !view) return;
+      if (cancelled || !content) return;
+      if (root!.ownerDocument.hidden) { settle(); return; }
       const transcript = content.querySelector<HTMLElement>('.virtual-message-list');
       if (hasTranscript && !transcript) return;
       if (transcript?.dataset.openViewportSettled === 'false') {
         observer.observe(transcript, { attributes: true, attributeFilter: ['data-open-viewport-settled'] });
         return;
       }
-      started = true;
-      observer.disconnect();
-      if (media?.matches || root.ownerDocument.hidden || !content.animate) { settle(); return; }
-
-      void transition().catch(() => { if (!cancelled) settle(); });
+      // The complete Turn and viewport are ready. Publish this commit directly.
+      settle();
     }
 
-    async function transition() {
-      if (!root || !content || !view) return;
-      const skeleton = root.querySelector<HTMLElement>('.history-session-skeleton');
-      if (!skeleton) { settle(); return; }
-      const shownFor = coverStartedAt.current?.identity === identity
-        ? performance.now() - coverStartedAt.current.at : Infinity;
-      if (shownFor < QUICK_LOAD_MS) {
-        setPhase('revealing');
-        const quick = animate(content, [{ opacity: 0 }, { opacity: 1 }], {
-          duration: QUICK_REVEAL_DURATION, easing: 'ease-out', fill: 'forwards',
-        });
-        await quick.finished;
-        if (!cancelled) settle();
-        return;
-      }
-      const viewport = content.getBoundingClientRect();
-      // Read only the bounded rendered window, once, after its opening placement.
-      // Animate the decorative overlay, never the measured rows or their geometry.
-      const regions = Array.from(content.querySelectorAll<HTMLElement>('.virtual-item-wrapper'))
-        .map(element => element.getBoundingClientRect())
-        .filter(rect => rect.width > 0 && rect.bottom > viewport.top && rect.top < viewport.bottom);
-      setPhase('exiting');
-      for (const bar of skeleton.querySelectorAll<HTMLElement>('[data-history-loading-line]')) {
-        const rect = bar.getBoundingClientRect();
-        const region = regions.find(candidate => rect.top >= candidate.top && rect.top < candidate.bottom);
-        const transform = region && rect.width > 0
-          ? `translateX(${Math.max(viewport.left, region.left) - rect.left}px) scaleX(${Math.min(region.width * 0.8, viewport.width) / rect.width})`
-          : 'none';
-        animate(bar, [
-          { opacity: view.getComputedStyle(bar).opacity, transform: 'none' },
-          { opacity: 0.5, transform, offset: 0.58 },
-          { opacity: 0, transform },
-        ], { duration: EXIT_DURATION, easing: 'ease-out', fill: 'forwards' });
-      }
-      const bubble = skeleton.querySelector<HTMLElement>('.history-session-skeleton__user');
-      if (bubble) animate(bubble, [{ opacity: 1 }, { opacity: 0 }], {
-        duration: EXIT_DURATION * 0.85, fill: 'forwards',
-      });
-
-      await Promise.all(animations.map(animation => animation.finished));
-      if (cancelled) return;
-      // Remove the entire opaque shield before revealing text. No skeleton/text overlap.
-      setPhase('revealing');
-      content.style.maskImage = 'linear-gradient(to bottom, var(--openbitfun-color-content-on-light) 46%, transparent 54%)';
-      content.style.maskSize = '100% 220%';
-      content.style.maskRepeat = 'no-repeat';
-      const reveal = animate(content, [
-        { opacity: 0, maskPosition: '0% 100%' },
-        { opacity: 1, maskPosition: '0% 0%' },
-      ], { duration: REVEAL_DURATION, easing: 'ease-out', fill: 'forwards' });
-      await reveal.finished;
-      if (!cancelled) settle();
-    }
-
-    media?.addEventListener('change', settle);
     root.ownerDocument.addEventListener('visibilitychange', onVisibility);
-    // Watch root attachment and its readiness attribute, never streamed row mutations.
-    observer.observe(content, { childList: true });
+    observer.observe(content, { childList: true, subtree: true });
     checkReady();
     return cleanup;
-    // Phase changes belong to this one transition, not a new request to run it.
+    // Phase changes belong to this request's readiness observer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity, loading, hasTranscript, disabled]);
 
-  const skeleton = <HistorySessionSkeleton />;
+  const skeleton = <HistorySessionSkeleton key={identity} />;
   const overlayProps = {
     className: 'history-session-loading__overlay',
-    hidden: !loading && phase === 'revealing',
     role: 'status',
     'aria-label': label,
   };
@@ -208,7 +122,8 @@ export function HistorySessionLoadingBoundary({
 /** The history loading skeleton, shared with presentations that precede a session (a device switch). */
 export function HistorySessionSkeleton() {
   return (
-    <div className="history-session-skeleton" aria-hidden="true" data-openbitfun-component="modern-flow-chat" data-openbitfun-part="historySkeleton">
+    <div className="history-session-skeleton" style={{ animationDelay: `${SESSION_LOADING_DELAY_MS}ms` }}
+      aria-hidden="true" data-openbitfun-component="modern-flow-chat" data-openbitfun-part="historySkeleton">
       <div className="history-session-skeleton__column">
         <div className="history-session-skeleton__user"><span /><span /></div>
         <div className="history-session-skeleton__group history-session-skeleton__group--first">

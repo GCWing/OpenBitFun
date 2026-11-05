@@ -253,19 +253,30 @@ pub(crate) async fn session_permission_mode(
     if active_turn_only && turn_id.is_none() {
         return Err("turn_id is required".into());
     }
-    if optional_string(request, "workspaceId").is_some()
-        || optional_string(request, "workspacePath").is_some()
-    {
-        super::session::ensure_coordinator_session(state, args).await?;
-    }
     let manager = &state.compatibility;
-    let session = manager
+    let session = if mutate {
+        if optional_string(request, "workspaceId").is_some()
+            || optional_string(request, "workspacePath").is_some()
+        {
+            super::session::ensure_coordinator_session(state, args).await?;
+        }
+        manager
+            .loaded_session_snapshot(session_id)
+            .map_err(|error| error.to_string())?
+            .ok_or("Session is not loaded")?
+    } else {
+        super::session::read_session_header_for_selector(state, request, session_id).await?
+    };
+    // Persisted state cannot establish a live Turn, even when a previous
+    // process stopped while its on-disk snapshot still said Processing.
+    let live_session = manager
         .loaded_session_snapshot(session_id)
-        .map_err(|error| error.to_string())?
-        .ok_or("Session is not loaded")?;
-    let active_turn_id = turn_id.filter(|turn_id| matches!(
-        &session.state, SessionState::Processing { current_turn_id, .. } if current_turn_id == turn_id
-    ));
+        .map_err(|error| error.to_string())?;
+    let active_turn_id = turn_id.filter(|turn_id| {
+        live_session.as_ref().is_some_and(|live| matches!(
+            &live.state, SessionState::Processing { current_turn_id, .. } if current_turn_id == turn_id
+        ))
+    });
     if mutate {
         if active_turn_only {
             let turn_id = active_turn_id
@@ -292,7 +303,7 @@ pub(crate) async fn session_permission_mode(
         }
     }
     Ok(serde_json::json!({
-        "mode": manager.session_permission_mode(session_id),
+        "mode": if mutate { manager.session_permission_mode(session_id) } else { session.config.permission_mode },
         "turnMode": active_turn_id.as_deref().and_then(|turn| manager.active_turn_permission_mode(session_id, turn)),
         "activeTurnId": active_turn_id,
     }))

@@ -197,7 +197,6 @@ export interface VirtualMessageListRef {
   scrollToPhysicalBottom: () => void;
   scrollToTurnEnd: (turnId: string) => boolean;
   isTurnRenderedInViewport: (turnId: string) => boolean;
-  isTurnTextRenderedInViewport: (turnId: string) => boolean;
   scrollToLatestEndPosition: () => void;
   navigateToTurn: (turnId: string, options?: TurnNavigationOptions) => boolean;
   navigateToTurnWithStatus: (
@@ -2078,17 +2077,6 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     return Boolean(scroller && element && isElementVisibleInScroller(element, scroller));
   }, [getRenderedUserMessageElement]);
 
-  const isTurnTextRenderedInViewport = useCallback((turnId: string) => {
-    const scroller = scrollerElementRef.current;
-    const element = getRenderedUserMessageElement(turnId);
-    return Boolean(
-      scroller &&
-      element &&
-      element.textContent?.trim() &&
-      isElementVisibleInScroller(element, scroller)
-    );
-  }, [getRenderedUserMessageElement]);
-
   const clearSearchMatch = useCallback(() => {
     searchNavigationRequestIdRef.current += 1;
     reader.set('navigation:thinking', '');
@@ -2422,7 +2410,6 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     scrollToPhysicalBottom,
     scrollToTurnEnd,
     isTurnRenderedInViewport,
-    isTurnTextRenderedInViewport,
     scrollToLatestEndPosition,
     navigateToTurn,
     navigateToTurnWithStatus,
@@ -2439,7 +2426,6 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     focusItem,
     prepareItemNavigation,
     isTurnRenderedInViewport,
-    isTurnTextRenderedInViewport,
     navigateToTurn,
     navigateToTurnWithStatus,
     prepareTurnNavigation,

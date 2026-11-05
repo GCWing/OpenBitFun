@@ -248,7 +248,9 @@ export class TauriTransportAdapter implements ITransportAdapter {
     }
 
     const adapterInitStartedAt = nowMs();
-    await this.ensureInitialized();
+    // Once initialized, dispatch immediately so host work can overlap the
+    // remaining React commit instead of waiting for another microtask.
+    if (!this.invokeFn) await this.ensureInitialized();
     if (timing) {
       timing.adapterInitDurationMs = elapsedMs(adapterInitStartedAt);
     }

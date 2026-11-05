@@ -119,6 +119,17 @@ describe('Tauri adapter expected errors', () => {
     expect(timing.transportDurationMs).toEqual(expect.any(Number));
   });
 
+  it('starts a warm native request before unrelated synchronous rendering can postpone dispatch', async () => {
+    invokeMock.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true });
+    const adapter = new TauriTransportAdapter();
+    await adapter.request('get_model_pools', {});
+    invokeMock.mockClear();
+
+    const pending = adapter.request('get_session_model_target', { request: { sessionId: 'session-1' } });
+    expect(invokeMock).toHaveBeenCalledWith('get_session_model_target', { request: { sessionId: 'session-1' } });
+    await expect(pending).resolves.toEqual({ ok: true });
+  });
+
   it('routes a positioned Tauri event once across adapter instances', async () => {
     const handlers = new Map<string, (event: { payload: unknown }) => void>();
     const underlyingUnlisten = vi.fn();

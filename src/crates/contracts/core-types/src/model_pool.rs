@@ -16,6 +16,10 @@ pub enum ModelSelection {
 pub struct SessionModelTarget {
     pub session_id: String,
     pub selection: ModelSelection,
+    /// New hosts include null for the default reasoning setting. Controllers
+    /// must keep the legacy write path when this field is absent on the wire.
+    #[serde(default)]
+    pub reasoning_preset: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<ModelPoolBinding>,
 }
@@ -75,6 +79,30 @@ pub struct ModelPoolBinding {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_target_reads_legacy_payload_and_exposes_known_reasoning() {
+        let legacy = serde_json::json!({
+            "sessionId": "s", "selection": { "kind": "model", "model_ref": "primary" }
+        });
+        let mut target: SessionModelTarget = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(target.reasoning_preset, None);
+        let current = serde_json::to_value(&target).unwrap();
+        assert_eq!(current["selection"], legacy["selection"]);
+        assert_eq!(current["reasoningPreset"], serde_json::Value::Null);
+        assert!(current.get("reasoningPreset").is_some());
+        assert_eq!(
+            serde_json::from_value::<SessionModelTarget>(current).unwrap(),
+            target
+        );
+        target.reasoning_preset = Some("high".into());
+        let current = serde_json::to_value(&target).unwrap();
+        assert_eq!(current["reasoningPreset"], "high");
+        assert_eq!(
+            serde_json::from_value::<SessionModelTarget>(current).unwrap(),
+            target
+        );
+    }
 
     #[test]
     fn member_context_budget_is_optional_on_the_wire() {

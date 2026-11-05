@@ -1314,14 +1314,22 @@ impl SessionMetadata {
     }
 
     pub fn is_legacy_leaked_subagent_candidate(&self) -> bool {
-        let Some(created_by) = self.created_by.as_deref() else {
+        Self::is_legacy_leaked_subagent_identity(self.created_by.as_deref(), &self.session_name)
+    }
+
+    /// Apply the metadata visibility rule to a live or persisted Session header.
+    pub fn is_legacy_leaked_subagent_identity(
+        created_by: Option<&str>,
+        session_name: &str,
+    ) -> bool {
+        let Some(created_by) = created_by else {
             return false;
         };
         if !created_by.starts_with("session-") {
             return false;
         }
 
-        self.session_name.starts_with("Subagent: ")
+        session_name.starts_with("Subagent: ")
     }
 
     pub fn should_hide_from_user_lists(&self) -> bool {

@@ -18,6 +18,7 @@ pub mod host_stream;
 pub mod host_stream_subscriber;
 pub mod html_preview;
 mod lan;
+pub mod message_encoding;
 mod model_write_fence;
 mod page_upload;
 pub mod pairing;

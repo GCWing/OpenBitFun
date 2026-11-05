@@ -7,7 +7,7 @@
  * surface fences are the ones remote control already uses.
  */
 
-import { getActiveSurfaceId, getActiveSurfaceScope, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceId, getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { i18nService } from '@/infrastructure/i18n';
 import { clearHistorySessionOpenTransition, dispatchHistorySessionOpenIntent } from '@/flow_chat/services/sessionOpenIntent';
 import type { SessionMetadata } from '@/shared/types/session-history';
@@ -57,8 +57,7 @@ export type DeviceActivationResult = 'activated' | 'superseded';
  * Render `slot`'s device. Returns `superseded` when a newer switch won.
  *
  * The device's sessions are already in its container (seeded from the device
- * catalog), so nothing is read here beyond the switch itself. Seeds are
- * promoted through the normal metadata path before anything opens them.
+ * catalog). Session activation promotes the chosen row lazily.
  */
 export async function activateDeviceSlot(
   peer: PeerDeviceContextValue | null,
@@ -72,16 +71,6 @@ export async function activateDeviceSlot(
     ? await peer.switchToLocal('sidebar')
     : await peer.switchToDevice(slot.deviceId!, slot.name);
   log.info('Device surface rendered for open', { surfaceId: slot.surfaceId, outcome, switchMs: Math.round(now() - startedAt) });
-  if (outcome === 'activated') {
-    const promoteStartedAt = now();
-    try {
-      await flowChatStore.promoteSeededSessions();
-    } catch (error) {
-      if (isSurfaceChangedError(error)) throw error;
-      log.warn('Failed to promote seeded sessions', { surfaceId: slot.surfaceId, error });
-    }
-    log.info('Seeded sessions promoted', { surfaceId: slot.surfaceId, promoteMs: Math.round(now() - promoteStartedAt) });
-  }
   return outcome;
 }
 
@@ -215,6 +204,7 @@ export async function activateDeviceForSession(
   sessionId: string,
 ): Promise<Session | null> {
   if (await activateDeviceSlot(peer, slot) !== 'activated') return null;
+  await flowChatStore.promoteSeededSessions(sessionId);
   const session = flowChatStore.getState().sessions.get(sessionId);
   if (!session) throw new Error(i18nService.t('common:nav.devices.sessionUnavailable'));
   return session;

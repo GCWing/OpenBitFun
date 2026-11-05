@@ -61,6 +61,15 @@ macOS's Sharing menu on other systems nor suppresses native capture borders.
 Product feedback adds target, mode, action, preview and Stop without claiming to
 replace system consent or system Stop Sharing.
 
+The Desktop status response advertises `control-status-wait-v1`. After observing
+an idle or stopped state, a controller can pass its `generation` and `state` to
+the same status command. The native service registers a transition notification
+before reading state and returns on a change or after five seconds. Active,
+starting and sharing-request states return immediately. The card retains its
+one-second refresh gap and scopes pending responses to the device activation.
+Legacy hosts use the existing immediate status read. Status waits use background
+transport capacity, while Stop uses the interactive request queue.
+
 ## Browser tool orchestration
 
 `ControlHub.browser.navigate {url, observe?}` is the task entry point for rendered

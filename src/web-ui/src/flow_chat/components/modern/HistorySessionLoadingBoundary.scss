@@ -16,7 +16,6 @@
     touch-action: none;
   }
 
-  &__overlay[hidden] { display: none; }
 }
 
 .history-session-skeleton {
@@ -110,7 +109,6 @@
     animation: history-session-skeleton-light calc(var(--openbitfun-motion-duration-loop) * 5.5) ease-in-out infinite;
   }
 
-  [data-history-loading-phase='exiting'] .history-session-skeleton { animation-play-state: paused; }
 }
 
 @keyframes history-session-skeleton-light {
@@ -121,7 +119,7 @@
 // The skeleton appears only once a load has lasted long enough to notice; a
 // fast open goes straight to its transcript.
 .history-session-loading__overlay .history-session-skeleton {
-  animation: history-session-skeleton-reveal 180ms ease-out 140ms both;
+  animation: history-session-skeleton-reveal 180ms ease-out both;
 }
 
 @keyframes history-session-skeleton-reveal {
@@ -130,5 +128,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .history-session-loading__overlay .history-session-skeleton { animation: none; }
+  .history-session-loading__overlay .history-session-skeleton { animation-duration: 0ms; }
 }

@@ -52,6 +52,21 @@ permissions without fetching the transcript. Keep its revisions and surface fenc
 separate from history pagination. Neither a WebSocket connection nor an event
 listener alone recovers an interaction emitted before attachment.
 
+Explicit `session:`, `assistant:` and `new:` device actions own the session
+selection during activation. Workspace initialization defers automatic selection
+to that action, and activation promotes the selected catalog row on demand.
+Device-only switches retain automatic workspace/session restoration. Background
+catalogs catch up for the departed device and from their own host hints.
+
+Submission prepares the host queue snapshot alongside model synchronization.
+The durable outbox and host admission still enforce the observed queue epoch,
+Turn identity and deduplication. A fresh model target that includes
+`reasoningPreset` lets the client omit an identical model write. Legacy targets
+take the existing model update path. Registry-level command refusals are cached
+within the connection's capability generation and cleared by renegotiation.
+Peer turn checkpoints use explicit field updates for UI-owned title and
+notification metadata.
+
 ## Invariants (do not regress)
 
 0. **A surface switch is a view change, not a teardown.** Attachments and the

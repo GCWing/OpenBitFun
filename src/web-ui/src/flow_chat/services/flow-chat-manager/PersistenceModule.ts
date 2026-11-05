@@ -7,7 +7,7 @@ import { requireSessionOwningWorkspaceId } from '../../utils/sessionOrdering';
 
 import { createLogger } from '@/shared/utils/logger';
 import type { UiSessionMetadataField } from '@/infrastructure/api/service-api/SessionAPI';
-import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceScope, isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
 import type { FlowChatContext, DialogTurn } from './types';
 import { buildSessionMetadata } from '../../utils/sessionMetadata';
 import { settleInterruptedDialogTurn } from '../../utils/dialogTurnStability';
@@ -561,6 +561,9 @@ export async function updateSessionMetadata(
   options?: { unreadReceipt?: SessionLastTurn },
 ): Promise<void> {
   const scope = getActiveSurfaceScope();
+  // Runtime checkpoints already update host activity and counts. A peer
+  // controller writes presentation metadata only for an explicit UI change.
+  if (!fields && !isLocalSurface(scope.surfaceId)) return;
   try {
     const { sessionAPI } = await import('@/infrastructure/api/service-api/SessionAPI');
     if (!scope.isCurrent()) return;

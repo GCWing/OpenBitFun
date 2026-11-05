@@ -2184,28 +2184,23 @@ pub struct ModelRoutingStatusRequest {
 #[tauri::command]
 pub async fn get_model_routing_status(
     runtime: State<'_, DesktopRuntimeContext>,
-    coordinator: State<'_, Arc<ConversationCoordinator>>,
     request: ModelRoutingStatusRequest,
 ) -> Result<
     openbitfun_core::agentic::execution::round_model_routing::configuration::ModelRoutingStatus,
     String,
 > {
     let session = if let Some(id) = request.session_id.as_deref() {
-        ensure_session_loaded_for_selector_update(
-            runtime.inner(),
-            id,
-            request.workspace_id,
-            request.workspace_path,
-            request.remote_connection_id,
-            request.remote_ssh_host,
-            request.include_internal,
-        )
-        .await?;
         Some(
-            coordinator
-                .get_session_manager()
-                .get_session(id)
-                .ok_or("Session not found")?,
+            read_session_header_for_selector(
+                runtime.inner(),
+                id,
+                request.workspace_id,
+                request.workspace_path,
+                request.remote_connection_id,
+                request.remote_ssh_host,
+                request.include_internal,
+            )
+            .await?,
         )
     } else {
         None
@@ -2371,7 +2366,7 @@ pub async fn get_session_permission_mode(
     if session_id.is_empty() {
         return Err("session_id is required".to_string());
     }
-    ensure_session_loaded_for_selector_update(
+    let session = read_session_header_for_selector(
         runtime.inner(),
         &session_id,
         request.workspace_id,
@@ -2400,12 +2395,43 @@ pub async fn get_session_permission_mode(
             .map(|_| turn_id.to_string())
     });
     Ok(SessionPermissionModeResponse {
-        mode: session_manager.session_permission_mode(&session_id),
+        mode: session.config.permission_mode,
         turn_mode: active_turn_id
             .as_deref()
             .and_then(|turn_id| session_manager.active_turn_permission_mode(&session_id, turn_id)),
         active_turn_id,
     })
+}
+
+pub(crate) async fn read_session_header_for_selector(
+    runtime: &DesktopRuntimeContext,
+    session_id: &str,
+    workspace_id: Option<String>,
+    workspace_path: Option<String>,
+    remote_connection_id: Option<String>,
+    remote_ssh_host: Option<String>,
+    include_internal: bool,
+) -> Result<openbitfun_core::agentic::core::Session, String> {
+    let workspace_id = workspace_id
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty());
+    let workspace_path = workspace_path
+        .map(|path| path.trim().to_string())
+        .unwrap_or_default();
+    runtime
+        .session_application()
+        .read_session_header(
+            desktop_session_scope(
+                workspace_id,
+                workspace_path,
+                remote_connection_id,
+                remote_ssh_host,
+            ),
+            session_id,
+            include_internal,
+        )
+        .await
+        .map_err(|error| error.to_string())
 }
 
 pub(crate) async fn ensure_session_loaded_for_selector_update(
@@ -4477,6 +4503,45 @@ mod tests {
         }))
         .expect("explicit reasoning preset");
         assert_eq!(explicit.reasoning_preset, Some(Some("high".to_string())));
+    }
+
+    #[test]
+    fn session_permission_read_keeps_legacy_scope_and_nullable_wire_fields() {
+        let legacy: UpdateSessionPermissionModeRequest = serde_json::from_value(json!({
+            "sessionId": "session-1"
+        }))
+        .unwrap();
+        assert_eq!(legacy.mode, None);
+        assert_eq!(legacy.turn_id, None);
+        assert_eq!(legacy.workspace_id, None);
+        assert_eq!(legacy.workspace_path, None);
+        assert!(!legacy.include_internal);
+        let scoped: UpdateSessionPermissionModeRequest = serde_json::from_value(json!({
+            "sessionId": "session-1", "workspaceId": "workspace-1",
+            "turnId": "turn-1", "includeInternal": true, "futureField": true
+        }))
+        .unwrap();
+        assert_eq!(scoped.turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(scoped.workspace_id.as_deref(), Some("workspace-1"));
+        assert!(scoped.include_internal);
+        assert_eq!(
+            serde_json::to_value(SessionPermissionModeResponse {
+                mode: None,
+                turn_mode: None,
+                active_turn_id: None,
+            })
+            .unwrap(),
+            json!({ "mode": null, "turnMode": null, "activeTurnId": null })
+        );
+        assert_eq!(
+            serde_json::to_value(SessionPermissionModeResponse {
+                mode: Some(PermissionMode::FullAccess),
+                turn_mode: Some(PermissionMode::Ask),
+                active_turn_id: Some("turn-1".into()),
+            })
+            .unwrap(),
+            json!({ "mode": "full_access", "turnMode": "ask", "activeTurnId": "turn-1" })
+        );
     }
 
     #[test]
