@@ -1035,7 +1035,7 @@ impl RemoteConnectService {
         self.stop_device_connection_inner().await;
 
         let (client, mut event_rx) = RelayClient::new_device_host(priority);
-        let client = client.with_encoding_announcements(session);
+        let client = client.with_account_session(session);
         client.connect(relay_url).await?;
         client
             .connect_authenticated(&session.token, device_name)

@@ -101,7 +101,10 @@ impl OnlinePeers {
                 let result = async {
                     let (data, nonce) = session.encrypt_for_peer(&relay, &target, &hello).await?;
                     sender
-                        .event(&target, super::relay_client::device_envelope(&data, &nonce))
+                        .event(
+                            &target,
+                            super::relay_client::device_envelope(&data, &nonce, true),
+                        )
                         .await
                 }
                 .await;

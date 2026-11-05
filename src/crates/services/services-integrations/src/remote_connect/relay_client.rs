@@ -15,8 +15,12 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 
-pub(super) fn device_envelope(data: &str, nonce: &str) -> serde_json::Value {
-    json!({"encrypted_data": data, "nonce": nonce, "accept_encoding": super::message_encoding::ZSTD_ENCODING})
+pub(super) fn device_envelope(data: &str, nonce: &str, offer_zstd: bool) -> serde_json::Value {
+    let mut envelope = json!({"encrypted_data": data, "nonce": nonce});
+    if offer_zstd {
+        envelope["accept_encoding"] = super::message_encoding::ZSTD_ENCODING.into();
+    }
+    envelope
 }
 
 pub const RELAY_INBOUND_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -165,7 +169,7 @@ impl Drop for EpochCleanup {
     }
 }
 pub struct RelayClient {
-    encoding_session: Option<super::account::AccountSession>,
+    account_session: Option<super::account::AccountSession>,
     owner: Arc<Mutex<Owner>>,
     events: mpsc::Sender<RelayEvent>,
     machine: bool,
@@ -187,8 +191,8 @@ impl RelayClient {
     pub fn new_controller() -> (Self, mpsc::Receiver<RelayEvent>) {
         Self::with_role(false, None)
     }
-    pub fn with_encoding_announcements(mut self, session: &super::account::AccountSession) -> Self {
-        self.encoding_session = Some(session.clone());
+    pub fn with_account_session(mut self, session: &super::account::AccountSession) -> Self {
+        self.account_session = Some(session.for_peer_messages());
         self
     }
 
@@ -199,7 +203,7 @@ impl RelayClient {
         let (events, receiver) = mpsc::channel(128);
         (
             Self {
-                encoding_session: None,
+                account_session: None,
                 owner: Arc::new(Mutex::new(Owner {
                     epoch: 0,
                     state: ConnectionState::Disconnected,
@@ -271,7 +275,7 @@ impl RelayClient {
                 url,
                 token.to_owned(),
                 self.machine,
-                self.encoding_session.clone(),
+                self.account_session.clone(),
                 lease,
                 ready,
             )));
@@ -308,7 +312,7 @@ impl RelayClient {
         url: String,
         token: String,
         machine: bool,
-        encoding_session: Option<super::account::AccountSession>,
+        account_session: Option<super::account::AccountSession>,
         // Moved into this task: dropping it releases routing to the next host.
         mut lease: Option<RoutingLease>,
         ready: oneshot::Sender<Result<()>>,
@@ -333,6 +337,12 @@ impl RelayClient {
             let connection = RealtimeConnection::connect(&url, &token, machine).await;
             match connection {
                 Ok(mut connection) => {
+                    // Invalidate before publishing the socket. Clearing in an
+                    // asynchronous AuthOk listener can discard the first RPC's
+                    // negotiated response after a cold connection succeeds.
+                    if let Some(session) = &account_session {
+                        session.clear_peer_keys().await;
+                    }
                     let first = !connected_once;
                     connected_once = true;
                     {
@@ -384,10 +394,13 @@ impl RelayClient {
                             }
                         };
                         if let (Some(session), Incoming::Ephemeral(event)) =
-                            (&encoding_session, &incoming)
+                            (&account_session, &incoming)
                         {
                             if event.payload.0["type"] == "device-presence" {
-                                online.announce(session, &url, &connection, &event.payload.0);
+                                session.clear_peer_keys().await;
+                                if machine {
+                                    online.announce(session, &url, &connection, &event.payload.0);
+                                }
                             }
                         }
                         if !Self::route(&owner, &events, epoch, incoming).await {
@@ -607,7 +620,7 @@ impl RelayClient {
         timeout: Duration,
     ) -> Result<(String, String)> {
         let (data, nonce, _) = self
-            .request_device_message(target, encrypted_data, nonce, timeout)
+            .request_device_message(target, encrypted_data, nonce, timeout, false)
             .await?;
         Ok((data, nonce))
     }
@@ -618,6 +631,7 @@ impl RelayClient {
         encrypted_data: &str,
         nonce: &str,
         timeout: Duration,
+        offer_zstd: bool,
     ) -> Result<(String, String, bool)> {
         let sender = self
             .owner
@@ -627,7 +641,11 @@ impl RelayClient {
             .clone()
             .ok_or_else(|| anyhow!("Relay is disconnected; request was not submitted"))?;
         let result = sender
-            .call_with_timeout(target, device_envelope(encrypted_data, nonce), timeout)
+            .call_with_timeout(
+                target,
+                device_envelope(encrypted_data, nonce, offer_zstd),
+                timeout,
+            )
             .await?;
         let data = result["encrypted_data"]
             .as_str()
@@ -656,20 +674,19 @@ impl RelayClient {
                 .ok_or_else(|| anyhow!("Relay is disconnected"))?;
             (sender, state.replies.remove(correlation))
         };
+        // Opaque callers may provide their own decryption path. Only the
+        // account host that installed the codec advertises it to a peer.
+        let envelope = device_envelope(encrypted_data, nonce, self.account_session.is_some());
         if let Some(reply) = reply {
             if reply.source != target || reply.deadline <= Instant::now() {
                 bail!("RPC response owner expired");
             }
-            sender
-                .respond(reply.id, device_envelope(encrypted_data, nonce))
-                .await
+            sender.respond(reply.id, envelope).await
         } else {
             if correlation.starts_with("rpc-") {
                 bail!("RPC acknowledgement is no longer pending");
             }
-            sender
-                .event(target, device_envelope(encrypted_data, nonce))
-                .await
+            sender.event(target, envelope).await
         }
     }
     pub async fn disconnect(&self) {
@@ -995,6 +1012,10 @@ mod tests {
                             serde_json::from_str(&request[event_start..]).unwrap();
                         assert_eq!(event[0], "rpc-call");
                         assert_eq!(event[1]["method"], "peer:invoke");
+                        assert!(
+                            event[1]["params"].get("accept_encoding").is_none(),
+                            "an opaque RPC caller owns its decoder"
+                        );
                         assert_eq!(
                             event[1]["params"]["encrypted_data"],
                             if call == 0 { "request" } else { "pending" }

@@ -1,3 +1,4 @@
+use crate::remote_connect::account::{AccountSession, MASTER_KEY_LEN};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::future::Future;
@@ -180,14 +181,10 @@ pub struct BotChatState {
     /// desktop when the bot is paired so the bot can reach the same relay.
     #[serde(skip, default)]
     pub relay_url: Option<String>,
-    /// Delegated account token + master key for multi-device control. Set by
-    /// the desktop layer when the paired desktop has account login. These are
-    /// in-memory only (`serde(skip)`) — the master key is never persisted,
-    /// mirroring the `AccountSession.master_key` in-memory-only contract.
-    #[serde(skip, default)]
-    pub delegated_token: Option<String>,
-    #[serde(skip, default)]
-    pub delegated_master_key: Option<Vec<u8>>,
+    /// A chat's in-memory controller identity. Clones for submitted turns
+    /// share its connection and per-peer encoding offers.
+    #[serde(skip)]
+    pub delegated_account: Option<AccountSession>,
     /// When Some, the bot operates on a remote device via HTTP RPC instead
     /// of the local desktop. Set by `/devices` → pick a device.
     /// Cleared by `/devices` → pick "local" or selecting an offline device.
@@ -249,8 +246,7 @@ impl BotChatState {
             pending_invalid_count: 0,
             last_menu_commands: Vec::new(),
             relay_url: None,
-            delegated_token: None,
-            delegated_master_key: None,
+            delegated_account: None,
             active_remote_device: None,
             account_remote_context: false,
         }
@@ -301,14 +297,19 @@ impl BotChatState {
     /// so the bot can call the relay's device-control endpoints directly.
     /// The master key is kept in memory only; callers must never persist it.
     pub fn set_delegated_identity(&mut self, token: String, master_key: Vec<u8>) {
-        self.delegated_token = Some(token);
-        self.delegated_master_key = Some(master_key);
+        self.delegated_account = match <[u8; MASTER_KEY_LEN]>::try_from(master_key) {
+            Ok(key) => Some(AccountSession::new(token, String::new(), key)),
+            Err(key) => {
+                log::warn!("Invalid delegated device key length: {}", key.len());
+                None
+            }
+        };
     }
 
     /// Whether a delegated account identity is available for multi-device
     /// control. Both the token and the master key must be present.
     pub fn has_delegated_identity(&self) -> bool {
-        self.delegated_token.is_some() && self.delegated_master_key.is_some()
+        self.delegated_account.is_some()
     }
 
     /// Switch command routing to an account device and fence every workspace
@@ -344,8 +345,7 @@ impl BotChatState {
     /// old device selection with the replacement account's credentials.
     pub fn clear_delegated_identity(&mut self) {
         self.relay_url = None;
-        self.delegated_token = None;
-        self.delegated_master_key = None;
+        self.delegated_account = None;
 
         let was_remote = self.active_remote_device.take().is_some() || self.account_remote_context;
         self.account_remote_context = false;

@@ -552,7 +552,7 @@ async fn peer_preview_fixture(benchmark: bool) {
     .await
     .unwrap();
     let (client, mut events) = RelayClient::new();
-    let client = Arc::new(client);
+    let client = Arc::new(client.with_account_session(&target));
     client.connect(&host.url()).await.unwrap();
     client
         .connect_authenticated(&target.token, "preview-peer")

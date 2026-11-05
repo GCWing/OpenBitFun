@@ -115,6 +115,15 @@ impl AccountSession {
         }
     }
 
+    // The receive loop shares the peer keys and hint channel. It must not
+    // retain the registry which owns its own socket after the account closes.
+    pub(super) fn for_peer_messages(&self) -> Self {
+        Self {
+            transports: Default::default(),
+            ..self.clone()
+        }
+    }
+
     /// Stream change hints from hosts. `None` marks a (re)connect; receiver lag
     /// means catch up every subscribed stream.
     pub fn stream_hints(&self) -> tokio::sync::broadcast::Receiver<Option<StreamHint>> {
@@ -838,13 +847,12 @@ impl AccountClient {
         let transport = cell
             .get_or_try_init(|| async {
                 let (transport, mut events) = super::relay_client::RelayClient::new_controller();
+                let transport = transport.with_account_session(session);
                 transport.connect(relay_url).await?;
                 transport
                     .connect_authenticated(&session.token, "Controller")
                     .await?;
-                let hints = session.hints.clone();
-                let peer_keys = session.peer_keys.clone();
-                let event_session = session.clone();
+                let event_session = session.for_peer_messages();
                 let event_relay = relay_url.to_string();
                 tokio::spawn(async move {
                     while let Some(event) = events.recv().await {
@@ -890,11 +898,7 @@ impl AccountClient {
                             RelayEvent::Connected
                             | RelayEvent::Reconnected
                             | RelayEvent::AuthOk { .. } => {
-                                peer_keys.lock().await.clear();
-                                let _ = hints.send(None);
-                            }
-                            RelayEvent::DevicePresence { .. } => {
-                                peer_keys.lock().await.clear();
+                                let _ = event_session.hints.send(None);
                             }
                             _ => {}
                         }
@@ -910,7 +914,7 @@ impl AccountClient {
             peer.host_accepts.load(Ordering::Relaxed),
         )?;
         let (encrypted_data, nonce, accepts_zstd) = transport
-            .request_device_message(target_device_id, &data, &nonce, timeout)
+            .request_device_message(target_device_id, &data, &nonce, timeout, true)
             .await?;
         session
             .open_peer_message(

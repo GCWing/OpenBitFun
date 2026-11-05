@@ -182,7 +182,7 @@ impl CliAccountRoutingHost {
         // A Desktop host on this machine serves the shared device first; this
         // client stands by and takes over once that host exits.
         let (client, mut event_rx) = RelayClient::new_device_host(DeviceRoutingPriority::Secondary);
-        let client = client.with_encoding_announcements(&request.session);
+        let client = client.with_account_session(&request.session);
         client.connect(&request.relay_url).await?;
         client
             .connect_authenticated(&request.session.token, &request.device_name)
@@ -438,12 +438,6 @@ impl CliAccountRoutingHost {
                 }
             }
             RelayEvent::DevicePresence { devices } => {
-                if let Ok((session, _)) = runtime
-                    .read_account_context_for_generation(account_generation)
-                    .await
-                {
-                    session.clear_peer_keys().await;
-                }
                 tracing::info!("Device presence updated: {} online", devices.len());
                 if !self
                     .routing_loop_is_current(account_generation, relay_client)

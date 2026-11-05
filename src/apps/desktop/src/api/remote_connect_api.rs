@@ -2767,7 +2767,6 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                     break;
                 }
                 RelayEvent::DevicePresence { devices } => {
-                    event_session.clear_peer_keys().await;
                     let Some(_routing_effect) = lock_current_device_routing(&event_owner).await
                     else {
                         break 'routing_events;
