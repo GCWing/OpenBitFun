@@ -457,16 +457,19 @@ export const localSessionDriver: SessionDriver = {
         applyGeneratingTitlePlaceholder(context, sessionId, message);
       }
 
-      if (!acpClientId) {
-        await syncSessionModelSelection(context, sessionId, currentAgentType, surfaceScope);
-      }
     };
     if (!acpClientId && hostQueueSupported(sessionId) && (!options?.execution || options.execution.kind === 'standard')) {
       if (readySession.isHistorical || context.pendingHistoryLoads.has(surfaceScope.key('history-load', surfaceScope.epoch, sessionId))) {
         throw new Error('Session history is still restoring, please retry once loading finishes');
       }
+      await prepareSubmission();
       const queue = hostDialogQueue(sessionId);
-      const [, queueSnapshot] = await Promise.all([prepareSubmission(), queue.refresh()]);
+      // Worktree binding above may change the host's session storage scope.
+      // Its completion fences both independent preparation reads below.
+      const [, queueSnapshot] = await Promise.all([
+        syncSessionModelSelection(context, sessionId, currentAgentType, surfaceScope),
+        queue.refresh(),
+      ]);
       surfaceScope.assertCurrent('prepare host message');
       await inheritReviewPermissionMode(readySession, context.flowChatStore.getState().sessions,
         () => surfaceScope.assertCurrent('inherit review session permission mode'));
@@ -559,6 +562,9 @@ export const localSessionDriver: SessionDriver = {
     });
 
     await prepareSubmission();
+    if (!acpClientId) {
+      await syncSessionModelSelection(context, sessionId, currentAgentType, surfaceScope);
+    }
 
     const updatedSession = context.flowChatStore.getState().sessions.get(sessionId);
     if (!updatedSession) {

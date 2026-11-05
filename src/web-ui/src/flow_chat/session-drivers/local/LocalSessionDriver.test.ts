@@ -40,7 +40,8 @@ vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
 }));
 
 vi.mock('@/infrastructure/api/service-api/SessionAPI', () => ({ sessionAPI: {} }));
-vi.mock('@/infrastructure/api/service-api/WorktreeAPI', () => ({ worktreeAPI: {} }));
+const worktreeMocks = vi.hoisted(() => ({ bind: vi.fn() }));
+vi.mock('@/infrastructure/api/service-api/WorktreeAPI', () => ({ worktreeAPI: { bindSession: worktreeMocks.bind } }));
 vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
   workspaceManager: {
     getState: () => ({
@@ -398,6 +399,27 @@ describe('host queue submissions', () => {
     expect(queueMocks.submit).not.toHaveBeenCalled();
     finishModel();
     await pending;
+    expect(queueMocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it('binds a requested worktree before preparing the host queue and model', async () => {
+    const { context, session } = createHarness([]);
+    session.mode = 'Standard';
+    session.config.worktreeIsolationRequested = true;
+    context.flowChatStore.updateSessionExecutionTarget = vi.fn();
+    let finishBinding!: (value: unknown) => void;
+    worktreeMocks.bind.mockImplementationOnce(() => new Promise(resolve => { finishBinding = resolve; }));
+    const pending = localSessionDriver.startTurn(context, {
+      ...startTurnInput(session), acpClientId: undefined, currentAgentType: 'Standard', isFirstMessage: false,
+    }, { createdLocalTurnId: null, hostAcceptedTurn: false });
+    await Promise.resolve();
+    expect(worktreeMocks.bind).toHaveBeenCalledOnce();
+    expect(queueMocks.refresh).not.toHaveBeenCalled();
+    expect(syncSessionModelSelection).not.toHaveBeenCalled();
+    finishBinding({ workspaceId: 'worktree', workspacePath: '/worktrees/new', projectWorkspacePath: WORKSPACE_PATH,
+      projectWorkspaceId: 'project-workspace', executionTarget: { kind: 'managedWorktree', worktreeId: 'worktree-1' } });
+    await pending;
+    expect(queueMocks.refresh).toHaveBeenCalledOnce();
     expect(queueMocks.submit).toHaveBeenCalledOnce();
   });
 });
