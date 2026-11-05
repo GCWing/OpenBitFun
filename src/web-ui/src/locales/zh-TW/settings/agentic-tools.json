@@ -13,6 +13,10 @@
     "subagents": {
       "title": "子智慧體",
       "description": "一般子智能體與 Swarm 的並行上限分別生效"
+    },
+    "sideQuestions": {
+      "title": "側問",
+      "description": "選擇 /btw 側問使用的模型"
     }
   },
   "config": {
@@ -42,7 +46,9 @@
     "subagentModelSettings": "前往智慧體頁面為子智慧體個別設定模型",
     "subagentModelInherit": "繼承父會話",
     "subagentDefaultModel": "子智能體預設模型",
-    "subagentDefaultModelDesc": "未個別指定模型的子智慧體使用此設定。"
+    "subagentDefaultModelDesc": "未個別指定模型的子智慧體使用此設定。",
+    "btwModel": "側問模型",
+    "btwModelDesc": "使用 /btw 側問時不沿用主會話的模型，而是使用此設定。"
   },
   "filters": {
     "all": "全部",

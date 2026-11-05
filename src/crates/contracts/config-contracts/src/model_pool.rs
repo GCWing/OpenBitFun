@@ -101,6 +101,15 @@ pub struct SubagentModelSelections {
 pub struct AgentModelSelections {
     pub mode: openbitfun_core_types::model_pool::ModelSelection,
     pub subagents: SubagentModelSelections,
+    /// Model used by `/btw` side questions. `Inherit` keeps the parent session
+    /// model, which is the behavior of every configuration written before this
+    /// field existed.
+    #[serde(default = "default_btw_model_selection")]
+    pub btw: AgentModelSelection,
+}
+
+fn default_btw_model_selection() -> AgentModelSelection {
+    AgentModelSelection::Inherit
 }
 
 impl AgentModelSelections {
@@ -123,6 +132,7 @@ impl AgentModelSelections {
         if !mode_valid
             || !valid(&self.subagents.default)
             || !valid(&self.subagents.fork)
+            || !valid(&self.btw)
             || !self.subagents.builtin.values().all(valid)
         {
             return Err(
@@ -164,6 +174,7 @@ impl Default for AgentModelSelections {
                 )]),
                 fork: AgentModelSelection::Inherit,
             },
+            btw: default_btw_model_selection(),
         }
     }
 }
@@ -184,6 +195,8 @@ impl AgentModelSelections {
                     .collect(),
                 fork: legacy.subagents.fork.clone().into(),
             },
+            // Legacy defaults never carried a side-question model; keep inheriting.
+            btw: default_btw_model_selection(),
         }
     }
 }
@@ -327,6 +340,35 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&ai.agent_model_defaults).unwrap(),
             legacy
+        );
+    }
+
+    #[test]
+    fn side_question_selection_defaults_to_inherit_for_existing_records() {
+        // Records written before `btw` existed must keep inheriting the parent
+        // session model instead of failing deserialization.
+        let legacy = json!({
+            "mode": {"kind": "model", "model_ref": "primary"},
+            "subagents": {
+                "default": {"kind": "model", "model_ref": "fast"},
+                "builtin": {},
+                "fork": {"kind": "inherit"}
+            }
+        });
+        let mut ai = crate::types::AIConfig::default();
+        ai.agent_model_selections = Some(legacy.clone());
+        let selections = ai.effective_model_selections().unwrap();
+        assert_eq!(selections.btw, AgentModelSelection::Inherit);
+
+        let mut configured = selections.clone();
+        configured.btw = AgentModelSelection::Model {
+            model_ref: "economy".into(),
+        };
+        ai.set_model_selections(configured.clone()).unwrap();
+        assert_eq!(ai.effective_model_selections().unwrap(), configured);
+        assert_eq!(
+            serde_json::to_value(&ai).unwrap()["agent_model_selections"]["btw"],
+            json!({"kind": "model", "model_ref": "economy"})
         );
     }
 

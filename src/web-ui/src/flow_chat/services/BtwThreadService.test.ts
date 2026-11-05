@@ -10,6 +10,7 @@ const mockUpdateSessionModelName = vi.fn();
 const mockUpdateSessionReasoningPreset = vi.fn();
 const mockEnsureBackendSession = vi.fn();
 const mockUpdateSessionModelPool = vi.fn();
+const mockReadBtwModelSelection = vi.fn();
 
 const sessions = new Map<string, any>();
 
@@ -58,6 +59,10 @@ vi.mock('@/shared/notification-system', () => ({
   },
 }));
 
+vi.mock('@/infrastructure/config/services/modelSelections', () => ({
+  readBtwModelSelection: (...args: any[]) => mockReadBtwModelSelection(...args),
+}));
+
 import {
   createBtwChildSession,
   createBtwSessionPlaceholder,
@@ -87,6 +92,7 @@ describe('BtwThreadService', () => {
       ],
     });
     mockAskStream.mockResolvedValue({ ok: true });
+    mockReadBtwModelSelection.mockResolvedValue({ kind: 'inherit' });
     mockCreateSession.mockResolvedValue({
       sessionId: 'child-1',
     });
@@ -239,6 +245,53 @@ describe('BtwThreadService', () => {
     expect(mockUpdateSessionModelName).toHaveBeenCalledWith(result.childSessionId, 'primary');
     expect(mockUpdateSessionReasoningPreset).toHaveBeenCalledWith(result.childSessionId, 'high');
     expect(mockUpdateSessionModelName).toHaveBeenCalledWith(result.childSessionId, 'primary');
+  });
+
+  it('starts the placeholder on the configured side question model instead of the parent model', () => {
+    sessions.get('parent-1').config.modelPoolId = 'parent-pool';
+    sessions.get('parent-1').config.modelPoolBinding = { poolId: 'parent-pool', modelId: 'member-a', generation: 1 };
+
+    const result = createBtwSessionPlaceholder({
+      parentSessionId: 'parent-1',
+      childSessionName: 'Side question',
+      defaultModelSelection: { kind: 'model', model_ref: 'fast' },
+    });
+
+    expect(mockUpdateSessionModelName).toHaveBeenCalledWith(result.childSessionId, 'fast');
+    expect(mockUpdateSessionReasoningPreset).toHaveBeenCalledWith(result.childSessionId, undefined);
+    expect(mockUpdateSessionModelPool).not.toHaveBeenCalled();
+  });
+
+  it('mirrors a configured side question pool without claiming an explicit pool change', () => {
+    const result = createBtwSessionPlaceholder({
+      parentSessionId: 'parent-1',
+      childSessionName: 'Side question',
+      defaultModelSelection: { kind: 'pool', pool_id: 'btw-pool' },
+    });
+
+    expect(mockUpdateSessionModelPool).toHaveBeenCalledWith(result.childSessionId, 'btw-pool', undefined);
+    expect(mockUpdateSessionModelName).not.toHaveBeenCalled();
+  });
+
+  it('reads the configured side question model when the thread starts', async () => {
+    mockReadBtwModelSelection.mockResolvedValue({ kind: 'model', model_ref: 'fast' });
+    mockAddExternalSession.mockImplementationOnce((sessionId, title, mode, workspacePath, meta) => {
+      sessions.set(sessionId, {
+        sessionId, title, mode, workspacePath, config: {},
+        sessionKind: meta?.sessionKind, parentSessionId: meta?.parentSessionId,
+        btwOrigin: meta?.btwOrigin, isTransient: meta?.isTransient,
+        agentBackedTransient: meta?.agentBackedTransient,
+      });
+    });
+
+    const { childSessionId } = await startBtwThread({
+      parentSessionId: 'parent-1',
+      question: 'Quick question',
+      workspacePath: '/workspace',
+    });
+
+    expect(mockReadBtwModelSelection).toHaveBeenCalled();
+    expect(mockUpdateSessionModelName).toHaveBeenCalledWith(childSessionId, 'fast');
   });
 
   it('retains quote metadata and stable request identity on a failed initial submission retry', async () => {

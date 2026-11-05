@@ -13,6 +13,10 @@
     "subagents": {
       "title": "子智能体",
       "description": "普通子智能体与 Swarm 的并发上限分别生效"
+    },
+    "sideQuestions": {
+      "title": "侧问",
+      "description": "选择 /btw 侧问使用的模型"
     }
   },
   "config": {
@@ -42,7 +46,9 @@
     "subagentModelSettings": "前往智能体页面为子智能体单独设置模型",
     "subagentModelInherit": "继承父会话",
     "subagentDefaultModel": "子智能体默认模型",
-    "subagentDefaultModelDesc": "未单独指定模型的子智能体使用此设置。"
+    "subagentDefaultModelDesc": "未单独指定模型的子智能体使用此设置。",
+    "btwModel": "侧问模型",
+    "btwModelDesc": "使用 /btw 侧问时不再沿用主会话的模型，而是使用此设置。"
   },
   "filters": {
     "all": "全部",
