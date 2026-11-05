@@ -29,7 +29,6 @@ use serde_json::Value;
 use std::sync::Arc;
 
 const DEFERRED_TOOL_LOADING_CONTEXT_KEY: &str = "enable_deferred_tool_loading";
-const GENERATIVE_UI_ENABLED_CONFIG_PATH: &str = "ai.generative_ui_enabled";
 
 /// Read-only tool catalog DTO returned by `get_all_tools_info`.
 ///
@@ -243,22 +242,6 @@ impl ProductToolCatalogProvider {
         (allowed_tools, exposure_overrides)
     }
 
-    async fn filter_genui_by_setting(allowed_tools: &mut Vec<String>) {
-        if !allowed_tools.iter().any(|name| name == "GenerativeUI") {
-            return;
-        }
-        let enabled = match crate::service::config::get_global_config_service().await {
-            Ok(service) => service
-                .get_config::<bool>(Some(GENERATIVE_UI_ENABLED_CONFIG_PATH))
-                .await
-                .unwrap_or(false),
-            Err(_) => false,
-        };
-        if !enabled {
-            allowed_tools.retain(|name| name != "GenerativeUI");
-        }
-    }
-
     async fn default_deferred_tools(&self) -> Vec<ToolRef> {
         let registry = get_global_tool_registry();
         let registry = registry.read().await;
@@ -281,12 +264,11 @@ impl ProductToolCatalogProvider {
         let policy = agent_registry
             .get_agent_tool_policy(agent_type, workspace_id)
             .await;
-        let (mut allowed_tools, exposure_overrides) = Self::resolve_manifest_inputs(
+        let (allowed_tools, exposure_overrides) = Self::resolve_manifest_inputs(
             &policy.allowed_tools,
             &policy.exposure_overrides,
             context,
         );
-        Self::filter_genui_by_setting(&mut allowed_tools).await;
         let visible_tools =
             resolve_product_visible_tools(&allowed_tools, &exposure_overrides, context).await;
         Ok(visible_tools.deferred_tools)
@@ -304,12 +286,11 @@ impl ProductToolCatalogProvider {
         let policy = agent_registry
             .get_agent_tool_policy(agent_type, workspace_id)
             .await;
-        let (mut allowed_tools, exposure_overrides) = Self::resolve_manifest_inputs(
+        let (allowed_tools, exposure_overrides) = Self::resolve_manifest_inputs(
             &policy.allowed_tools,
             &policy.exposure_overrides,
             context,
         );
-        Self::filter_genui_by_setting(&mut allowed_tools).await;
         let visible_tools =
             resolve_product_visible_tools(&allowed_tools, &exposure_overrides, context).await;
         let mut tools = visible_tools.direct_tools;
@@ -341,7 +322,6 @@ pub(crate) async fn resolve_product_visible_tools(
             exposure_overrides,
             context,
         );
-    ProductToolCatalogProvider::filter_genui_by_setting(&mut allowed_tools).await;
     let tool_snapshot = contextual_tool_snapshot(context).await;
     append_selected_plugin_tool_names(&mut allowed_tools, &tool_snapshot, context).await;
     resolve_contextual_visible_tools(
@@ -365,7 +345,6 @@ pub(crate) async fn resolve_product_tool_manifest(
             exposure_overrides,
             context,
         );
-    ProductToolCatalogProvider::filter_genui_by_setting(&mut allowed_tools).await;
     let tool_snapshot = contextual_tool_snapshot(context).await;
     append_selected_plugin_tool_names(&mut allowed_tools, &tool_snapshot, context).await;
     let mut manifest = resolve_contextual_tool_manifest(

@@ -261,8 +261,6 @@
   "genui": {
     "title": "生成式 UI",
     "description": "選擇新建生成式 UI 應用使用的元件庫。既有應用會繼續使用已儲存的元件庫與版本。",
-    "enable": "啟用生成式 UI",
-    "enableDescription": "啟用後，支援的智能體會取得 GenUI 工具和元件生成指令；關閉後不會占用一般開發會話的上下文。",
     "collection": "生成式 UI 設定",
     "loading": "正在讀取元件設定",
     "retry": "重試",

@@ -1361,10 +1361,6 @@ pub struct AIConfig {
     #[serde(default = "default_generative_ui_library")]
     pub generative_ui_library: String,
 
-    /// Expose the GenerativeUI tool and its authoring prompt to agents.
-    #[serde(default)]
-    pub generative_ui_enabled: bool,
-
     /// Allow Computer Use when the executing host has a native provider.
     /// System consent and tool approval remain independent; persisted opt-outs win.
     #[serde(default = "default_true")]
@@ -2333,7 +2329,6 @@ impl Default for AIConfig {
             enable_edit_constraint_guard: false,
             allow_tool_json_repair: true,
             generative_ui_library: default_generative_ui_library(),
-            generative_ui_enabled: false,
             computer_use_enabled: true,
             browser_control_preferred_browser: String::new(),
             web_search: WebSearchConfig::default(),
