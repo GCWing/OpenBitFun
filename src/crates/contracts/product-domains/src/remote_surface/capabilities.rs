@@ -102,6 +102,8 @@ pub enum PeerHostCapability {
     WorkspaceHtmlPreviewV1,
     /// `copy_session` copies a whole session without a caller-selected turn id.
     WholeSessionCopyV1,
+    /// Explicit model-free compaction and the local truncation configuration are understood.
+    LocalContextTruncationV1,
     /// Bounded session trajectory summaries and host-side body search.
     SessionTrajectoryV1,
     /// `search_referenceable_sessions` accepts an omitted query to browse.
@@ -162,6 +164,7 @@ impl PeerHostCapability {
         Self::WorkspaceIdReferencesV1,
         Self::WorkspaceHtmlPreviewV1,
         Self::WholeSessionCopyV1,
+        Self::LocalContextTruncationV1,
         Self::SessionTrajectoryV1,
         Self::SessionReferenceBrowseV1,
         Self::UserQuestionResponse,
@@ -215,6 +218,7 @@ impl PeerHostCapability {
             Self::SessionTrajectoryV1 => "session_trajectory_v1",
             Self::SessionReferenceBrowseV1 => "session_reference_browse_v1",
             Self::WholeSessionCopyV1 => "whole_session_copy_v1",
+            Self::LocalContextTruncationV1 => "local_context_truncation_v1",
             Self::UserQuestionResponse => "user_question_response",
             Self::UserQuestionInteractionV1 => "user_question_interaction_v1",
             Self::SshNoneAuthV1 => "ssh_none_auth_v1",
@@ -271,6 +275,7 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::WorkspaceIdReferencesV1,
     PeerHostCapability::WorkspaceHtmlPreviewV1,
     PeerHostCapability::WholeSessionCopyV1,
+    PeerHostCapability::LocalContextTruncationV1,
     PeerHostCapability::SessionTrajectoryV1,
     PeerHostCapability::SessionReferenceBrowseV1,
     PeerHostCapability::UserQuestionResponse,

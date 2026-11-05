@@ -17,12 +17,12 @@ use super::controller::{
     bind_outbound_record, continue_payload, finish_sync, provisioned_path, record_follow_up_state,
     release_unbound_preparation_baseline, result_bundle_path, same_target_identity,
     target_have_tips, validate_answer_request, validate_append_request, validate_continue_request,
-    validate_device_attachment_budget, validate_file_query_capability, validate_query_request,
-    validate_submission_preflight, validate_submit_ack, validate_submit_request,
-    DispatchAnswerRequest, DispatchAppendRequest, DispatchContinueRequest, DispatchJobRequest,
-    DispatchListJobsRequest, DispatchProbeTargetRequest, DispatchQueryJobRequest,
-    DispatchStatusRequest, DispatchSubmitRequest, DispatchSyncResultRequest,
-    DISPATCH_PROTOCOL_VERSION,
+    validate_device_attachment_budget, validate_file_query_capability,
+    validate_force_compaction_capability, validate_query_request, validate_submission_preflight,
+    validate_submit_ack, validate_submit_request, DispatchAnswerRequest, DispatchAppendRequest,
+    DispatchContinueRequest, DispatchJobRequest, DispatchListJobsRequest,
+    DispatchProbeTargetRequest, DispatchQueryJobRequest, DispatchStatusRequest,
+    DispatchSubmitRequest, DispatchSyncResultRequest, DISPATCH_PROTOCOL_VERSION,
 };
 use super::preparation::{DispatchPreparationRequest, DispatchPreparationTarget};
 use super::{
@@ -497,6 +497,12 @@ pub async fn continue_device_job(
     let DispatchTarget::Device { device_id, .. } = &record.target else {
         unreachable!("load_device_record validates target kind")
     };
+    if request.force {
+        let protocol = rpc
+            .invoke(device_id, "dispatch_target_probe", json!({}))
+            .await?;
+        validate_force_compaction_capability(Some(&protocol))?;
+    }
     let response = rpc
         .invoke(
             device_id,

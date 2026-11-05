@@ -2647,6 +2647,7 @@ mod tests {
             .start_session_compaction(AgentSessionCompactionRequest {
                 session_id: "session-1".to_string(),
                 turn_id: "turn-compact-1".to_string(),
+                force: false,
             })
             .await
             .expect_err("missing compaction port must fail closed");
@@ -2671,6 +2672,7 @@ mod tests {
         let request = AgentSessionCompactionRequest {
             session_id: "session-1".to_string(),
             turn_id: "turn-compact-1".to_string(),
+            force: true,
         };
 
         let result = runtime

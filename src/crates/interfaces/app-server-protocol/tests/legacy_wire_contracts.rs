@@ -88,3 +88,16 @@ fn legacy_mixed_case_fields_and_response_defaults_remain_compatible() {
         })
     );
 }
+
+#[test]
+fn legacy_compact_request_keeps_omitted_force_wire_shape() {
+    use openbitfun_app_server_protocol::session::CompactSessionRequest;
+    let legacy = json!({"sessionId": "session", "turnId": "turn"});
+    let request: CompactSessionRequest = serde_json::from_value(legacy.clone()).unwrap();
+    assert!(!request.0.force);
+    assert_eq!(serde_json::to_value(request).unwrap(), legacy);
+    let forced = json!({"sessionId": "session", "turnId": "turn", "force": true});
+    let request: CompactSessionRequest = serde_json::from_value(forced.clone()).unwrap();
+    assert!(request.0.force);
+    assert_eq!(serde_json::to_value(request).unwrap(), forced);
+}

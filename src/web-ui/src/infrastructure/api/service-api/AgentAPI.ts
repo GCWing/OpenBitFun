@@ -244,6 +244,8 @@ export type PermissionRequestEvent =
 
 export interface CompactSessionRequest {
   sessionId: string;
+  /** Discard older context locally without calling the model. Omitted for legacy requests. */
+  force?: boolean;
   /** Workspace identity; authoritative when present. Paths below are IO projections. */
   workspaceId?: string;
   workspacePath?: string;

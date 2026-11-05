@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:f622fe54e98d2ae1",
+  "digest": "fnv1a64:865f11fd03008fd7",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -49,6 +49,7 @@
       "workspace_id_references_v1",
       "workspace_html_preview_v1",
       "whole_session_copy_v1",
+      "local_context_truncation_v1",
       "session_trajectory_v1",
       "session_reference_browse_v1",
       "user_question_response",
@@ -97,6 +98,7 @@
       "workspace_id_references_v1",
       "workspace_html_preview_v1",
       "whole_session_copy_v1",
+      "local_context_truncation_v1",
       "session_trajectory_v1",
       "session_reference_browse_v1",
       "user_question_response",

@@ -5,8 +5,10 @@
 //! removed.  It mutated already-sent message prefixes — invalidating provider
 //! KV caches on every pass — and stripped the model of memory of what it had
 //! already done, which directly drove repetitive tool-call loops in long
-//! exploratory subagents.  Token pressure is now handled by the AI-summary
-//! based full-context compression in `compressor.rs` and, as a final
+//! exploratory subagents. Token pressure uses model summaries by default.
+//! Explicit `/compact force` or the global local-truncation policy can instead
+//! discard complete old message units without rewriting retained messages or
+//! synthesizing a summary. Both transformations live in `compressor.rs`. As a final
 //! safety-net only, the `emergency_truncate_messages` path in
 //! `execution_engine.rs`.
 

@@ -7505,6 +7505,7 @@ impl SessionManager {
             context_messages,
             processing_phase,
             user_message_metadata,
+            false,
         )
         .await
     }
@@ -7521,6 +7522,7 @@ impl SessionManager {
         context_messages: Vec<Message>,
         processing_phase: ProcessingPhase,
         user_message_metadata: Option<serde_json::Value>,
+        allow_recoverable_error: bool,
     ) -> OpenBitFunResult<String> {
         self.ensure_persisted_turn_append_allowed(session_id)
             .await?;
@@ -7539,6 +7541,9 @@ impl SessionManager {
                 )));
             }
             SessionState::Error { .. } if kind == DialogTurnKind::UserDialog => {}
+            SessionState::Error {
+                recoverable: true, ..
+            } if kind == DialogTurnKind::ManualCompaction && allow_recoverable_error => {}
             SessionState::Error { error, .. } => {
                 return Err(OpenBitFunError::Validation(format!(
                     "Session must be idle before starting a turn: {}",
@@ -7685,6 +7690,7 @@ impl SessionManager {
             vec![user_message],
             ProcessingPhase::Starting,
             user_message_metadata,
+            false,
         )
         .await
     }
@@ -7780,6 +7786,7 @@ impl SessionManager {
             context_messages,
             ProcessingPhase::Starting,
             user_message_metadata,
+            false,
         )
         .await
     }
@@ -7853,6 +7860,7 @@ impl SessionManager {
         display_message: String,
         turn_id: Option<String>,
         user_message_metadata: Option<serde_json::Value>,
+        allow_recoverable_error: bool,
     ) -> OpenBitFunResult<String> {
         let turn_id = self
             .start_persisted_turn_locked(
@@ -7864,6 +7872,7 @@ impl SessionManager {
                 Vec::new(),
                 ProcessingPhase::Compacting,
                 user_message_metadata,
+                allow_recoverable_error,
             )
             .await?;
         debug!("Starting maintenance turn: turn_id={}", turn_id);

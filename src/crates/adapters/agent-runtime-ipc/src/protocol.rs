@@ -5,8 +5,9 @@ use crate::{RuntimeIpcOperation, RuntimeIpcOperationResult};
 use openbitfun_events::AgenticEventEnvelope;
 use openbitfun_product_domains::tool_permissions::PermissionRequestEvent;
 
-pub const PROTOCOL_VERSION: u32 = 19;
-/// Upgrade-only predecessor accepted by current clients.
+pub const PROTOCOL_VERSION: u32 = 20;
+/// Upgrade-only predecessors accepted by current clients.
+pub(crate) const LEGACY_COMPACTION_PROTOCOL_VERSION: u32 = 19;
 pub(crate) const LEGACY_WORKSPACE_PATH_PROTOCOL_VERSION: u32 = 18;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -112,6 +113,8 @@ pub struct InitializeResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeIpcCapabilities {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub local_context_truncation: bool,
     #[serde(default)]
     pub workspace_id_references: bool,
     pub health: bool,

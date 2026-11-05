@@ -20,6 +20,9 @@ struct CompressionSummaryArtifact {
 #[derive(Debug, Clone)]
 pub struct CompressionResult {
     pub messages: Vec<Message>,
+    /// Whether this transformation generated a new summary. A local result
+    /// may still retain an earlier summary verbatim among its recent messages.
+    has_new_summary: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +65,104 @@ impl ContextCompressor {
 
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Drop old context without synthesizing a summary or changing retained
+    /// messages. The caller supplies non-message overhead (tools, reminders,
+    /// and request reserves); leading system messages are accounted for here.
+    /// Results contain only conversation messages, as with model compression.
+    pub fn truncate_locally(
+        &self,
+        runtime_messages: &[Message],
+        context_window: usize,
+        fixed_tokens: usize,
+    ) -> OpenBitFunResult<CompressionResult> {
+        let system_count = runtime_messages
+            .iter()
+            .take_while(|message| message.role == MessageRole::System)
+            .count();
+        let system_tokens: usize = runtime_messages[..system_count]
+            .iter()
+            .map(|message| message.estimate_tokens_with_reasoning(true))
+            .sum();
+        let conversation = &runtime_messages[system_count..];
+        let units = Self::atomic_message_units(conversation);
+        let marker = Message::internal_reminder(
+            InternalReminderKind::CompressionContinuation,
+            "Earlier conversation was truncated locally without a model summary. Retained messages are verbatim; omitted messages are not available in this context. Continue from the retained user request and recent evidence. Consult the pre-truncation transcript if a reference is available and historical details are needed.",
+        );
+        let available = context_window.saturating_sub(fixed_tokens.saturating_add(system_tokens));
+        let first_user = conversation
+            .iter()
+            .position(Message::is_actual_user_message);
+        let latest_user = conversation
+            .iter()
+            .rposition(Message::is_actual_user_message);
+        let mut keep = vec![false; units.len()];
+        let mut retained_tokens = marker.estimate_tokens_with_reasoning(true);
+        for (index, unit) in units.iter().enumerate() {
+            if Some(unit.start) == first_user || Some(unit.start) == latest_user {
+                keep[index] = true;
+                retained_tokens = retained_tokens.saturating_add(unit.tokens);
+            }
+        }
+        if retained_tokens > available {
+            return Err(crate::OpenBitFunError::AIClient(
+                "Local context truncation cannot fit the retained user requests and fixed prompt overhead; context was not changed".into(),
+            ));
+        }
+        let target = Self::DEFAULT_RECENT_CONTEXT_TOKENS
+            .min(available / 2)
+            .max(retained_tokens);
+        // Even a short /compact force must remove old context. Reserve the
+        // oldest eligible unit for removal, then retain a recent atomic suffix.
+        let oldest_optional = keep.iter().position(|kept| !kept);
+        for index in (0..units.len()).rev() {
+            if keep[index] || Some(index) == oldest_optional {
+                continue;
+            }
+            let unit = &units[index];
+            let end = units
+                .get(index + 1)
+                .map_or(conversation.len(), |next| next.start);
+            // Reloadable reminders and old continuation markers are replaced
+            // by the current marker rather than accumulating on every pass.
+            if conversation[unit.start..end].iter().any(|message| {
+                message
+                    .internal_reminder_kind()
+                    .is_some_and(InternalReminderKind::should_drop_during_compaction)
+            }) {
+                continue;
+            }
+            if retained_tokens.saturating_add(unit.tokens) > target {
+                break;
+            }
+            keep[index] = true;
+            retained_tokens += unit.tokens;
+        }
+        let mut messages = Vec::new();
+        for (index, unit) in units.iter().enumerate() {
+            if keep[index] {
+                let end = units
+                    .get(index + 1)
+                    .map_or(conversation.len(), |next| next.start);
+                messages.extend_from_slice(&conversation[unit.start..end]);
+            }
+        }
+        let original_tokens: usize = conversation
+            .iter()
+            .map(|message| message.estimate_tokens_with_reasoning(true))
+            .sum();
+        if retained_tokens >= original_tokens {
+            return Err(crate::OpenBitFunError::AIClient(
+                "Local context truncation has no removable context that reduces token usage; context was not changed".into(),
+            ));
+        }
+        messages.push(marker);
+        Ok(CompressionResult {
+            messages,
+            has_new_summary: false,
+        })
     }
 
     pub fn plan_compression(
@@ -434,7 +535,10 @@ impl ContextCompressor {
             session_id,
             messages.len()
         );
-        Ok(CompressionResult { messages })
+        Ok(CompressionResult {
+            messages,
+            has_new_summary: true,
+        })
     }
 
     fn append_current_turn_todo_checkpoint(
@@ -501,9 +605,17 @@ impl ContextCompressor {
         transcript_uri: &str,
         transcript_index_range: &TranscriptLineRange,
     ) -> bool {
-        let Some(summary) = result.messages.iter_mut().find(|message| {
-            message.metadata.semantic_kind == Some(MessageSemanticKind::CompressionSummary)
-        }) else {
+        let target = if result.has_new_summary {
+            result.messages.iter().position(|message| {
+                message.metadata.semantic_kind == Some(MessageSemanticKind::CompressionSummary)
+            })
+        } else {
+            result.messages.iter().rposition(|message| {
+                message.internal_reminder_kind()
+                    == Some(InternalReminderKind::CompressionContinuation)
+            })
+        };
+        let Some(summary) = target.and_then(|index| result.messages.get_mut(index)) else {
             return false;
         };
         let MessageContent::Text(text) = &mut summary.content else {
@@ -613,6 +725,115 @@ mod tests {
         ToolCall, ToolResult,
     };
     use crate::service::session::TranscriptLineRange;
+
+    #[test]
+    fn local_truncation_preserves_requests_and_complete_tool_exchanges() {
+        let first = Message::user("Original task".into());
+        let latest = Message::user("Latest instruction".into());
+        let call = Message::assistant_with_tools("Recent call".into(), vec![todo_call()]);
+        let result = todo_result();
+        let messages = vec![
+            Message::system("System instructions".into()),
+            first.clone(),
+            Message::assistant("Old evidence ".repeat(8_000)),
+            latest.clone(),
+            call.clone(),
+            result.clone(),
+        ];
+        let truncated = ContextCompressor::new()
+            .truncate_locally(&messages, 32_000, 2_000)
+            .unwrap();
+        let ids: Vec<_> = truncated.messages.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            &ids[..4],
+            &[
+                first.id.as_str(),
+                latest.id.as_str(),
+                call.id.as_str(),
+                result.id.as_str()
+            ]
+        );
+        assert!(truncated
+            .messages
+            .iter()
+            .all(|m| m.metadata.compression_payload.is_none()));
+        let total: usize = truncated
+            .messages
+            .iter()
+            .map(|m| m.estimate_tokens_with_reasoning(true))
+            .sum();
+        assert!(total + 2_000 < 32_000);
+    }
+
+    #[test]
+    fn local_truncation_drops_large_tool_exchange_as_a_whole() {
+        let first = Message::user("Task".into());
+        let latest = Message::user("Continue".into());
+        let call = Message::assistant_with_tools("x".repeat(40_000), vec![todo_call()]);
+        let result = todo_result();
+        let messages = vec![
+            first,
+            Message::assistant("old".repeat(500)),
+            latest,
+            call.clone(),
+            result.clone(),
+        ];
+        let truncated = ContextCompressor::new()
+            .truncate_locally(&messages, 8_000, 1_000)
+            .unwrap();
+        assert!(truncated
+            .messages
+            .iter()
+            .all(|m| m.id != call.id && m.id != result.id));
+    }
+
+    #[test]
+    fn local_truncation_fails_without_discarding_oversized_user_requests() {
+        let messages = vec![
+            Message::user("Required instruction".repeat(1_000)),
+            Message::assistant("old".repeat(1_000)),
+        ];
+        assert!(ContextCompressor::new()
+            .truncate_locally(&messages, 100, 90)
+            .is_err());
+        assert!(ContextCompressor::new()
+            .truncate_locally(&[Message::user("Only request".into())], 32_000, 0)
+            .is_err());
+    }
+
+    #[test]
+    fn local_truncation_transcript_never_rewrites_a_retained_old_summary() {
+        let compressor = ContextCompressor::new();
+        let old_summary = Message::user(render_system_reminder("Earlier model summary"))
+            .with_semantic_kind(MessageSemanticKind::CompressionSummary);
+        let messages = vec![
+            Message::user("Original task".into()),
+            Message::assistant("Old evidence".repeat(1_000)),
+            old_summary.clone(),
+            Message::user("Continue".into()),
+        ];
+        let mut result = compressor.truncate_locally(&messages, 32_000, 0).unwrap();
+        assert!(compressor.append_transcript_reference(
+            &mut result,
+            "transcript://new-boundary",
+            &TranscriptLineRange {
+                start_line: 1,
+                end_line: 20
+            },
+        ));
+        let retained = result
+            .messages
+            .iter()
+            .find(|message| message.id == old_summary.id)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(retained).unwrap(),
+            serde_json::to_value(old_summary).unwrap()
+        );
+        assert!(
+            matches!(&result.messages.last().unwrap().content, MessageContent::Text(text) if text.contains("transcript://new-boundary"))
+        );
+    }
 
     fn todo_call() -> ToolCall {
         ToolCall {

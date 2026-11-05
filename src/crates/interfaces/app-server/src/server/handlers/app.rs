@@ -218,6 +218,17 @@ fn registered_capabilities(
             methods: methods.into_iter().map(str::to_string).collect(),
         });
     }
+    if host_policy
+        .map(|policy| policy.allows("session/compact"))
+        .unwrap_or(true)
+    {
+        capabilities.push(CapabilityDescriptor {
+            id: openbitfun_app_server_protocol::session::LOCAL_CONTEXT_TRUNCATION_CAPABILITY
+                .to_string(),
+            availability: CapabilityAvailability::Available,
+            methods: vec!["session/compact".to_string()],
+        });
+    }
     const PRODUCT_SEARCH_METHOD: &str = "search/sessionContent";
     if host_policy
         .map(|policy| policy.allows(PRODUCT_SEARCH_METHOD))

@@ -464,3 +464,42 @@ async fn stale_unix_socket_is_replaced_by_the_next_locked_owner() {
     drop(server);
     assert!(!endpoint.as_path().exists());
 }
+
+#[tokio::test]
+async fn force_compaction_without_capability_is_rejected_without_losing_the_connection() {
+    let runtime_root = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let identity = runtime_identity(workspace.path());
+    let server = RuntimeIpcServer::bind(runtime_root.path(), identity, server_config())
+        .await
+        .unwrap();
+    let discovery = server.discovery_record().clone();
+    let server_task = tokio::spawn(server.serve());
+    let client = RuntimeIpcClient::connect(
+        runtime_root.path(),
+        &discovery,
+        "compact",
+        "test",
+        Duration::from_secs(2),
+        Duration::from_secs(2),
+    )
+    .await
+    .unwrap();
+    assert!(!client.capabilities().local_context_truncation);
+    let error = client
+        .request(RuntimeIpcOperation::CompactSession {
+            request: openbitfun_runtime_ports::AgentSessionCompactionRequest {
+                session_id: "session".into(),
+                turn_id: "turn".into(),
+                force: true,
+            },
+        })
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, RuntimeIpcClientError::Remote(error) if error.code == RuntimeIpcErrorCode::OperationUnsupported)
+    );
+    client.health().await.unwrap();
+    drop(client);
+    server_task.await.unwrap().unwrap();
+}

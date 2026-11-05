@@ -5,6 +5,7 @@ use super::*;
 use crate::agentic::session::CompressionPlan;
 use crate::util::timing::elapsed_ms_u64;
 use openbitfun_agent_runtime::compression_prefetch::{CompressionPrefetch, PrefetchClaim};
+use openbitfun_config_contracts::LocalContextTruncation;
 
 // Logging-only scope: it must not inspect/consume the publication channel or
 // change the failure-at-claim semantics.
@@ -93,10 +94,16 @@ pub(super) fn merge_latest_context(
     Ok(result)
 }
 
-#[derive(Clone)]
+pub(super) enum CompressionSummary {
+    Model(String),
+    /// The provider rejected the summary context. The formal owner applies the
+    /// configured local policy against the latest canonical context.
+    LocalTruncation(OpenBitFunError),
+}
+
 pub(super) struct CompressionCandidate {
     pub plan: CompressionPlan,
-    pub summary: String,
+    pub summary: CompressionSummary,
     pub request_identity: serde_json::Value,
 }
 
@@ -116,6 +123,7 @@ pub(super) struct CompressionJob {
     workspace_services: Option<crate::agentic::workspace::WorkspaceServices>,
     trace: Option<ModelExchangeTraceConfig>,
     request_identity: serde_json::Value,
+    local_truncation: LocalContextTruncation,
 }
 
 impl CompressionJob {
@@ -208,7 +216,13 @@ impl CompressionJob {
             workspace_services: input.workspace_services.cloned(),
             trace: input.trace_config,
             request_identity,
+            local_truncation: LocalContextTruncation::ExplicitOnly,
         }
+    }
+
+    pub(super) fn with_local_truncation_policy(mut self, policy: LocalContextTruncation) -> Self {
+        self.local_truncation = policy;
+        self
     }
 
     async fn request_summary(&self, messages: &[Message]) -> OpenBitFunResult<String> {
@@ -284,11 +298,18 @@ impl CompressionJob {
                 Ok(summary) => {
                     return Ok(CompressionCandidate {
                         plan,
-                        summary,
+                        summary: CompressionSummary::Model(summary),
                         request_identity: self.request_identity.clone(),
                     });
                 }
                 Err(err) if err.is_recoverable_context_overflow() => {
+                    if self.local_truncation == LocalContextTruncation::OnContextOverflow {
+                        return Ok(CompressionCandidate {
+                            plan,
+                            summary: CompressionSummary::LocalTruncation(err),
+                            request_identity: self.request_identity.clone(),
+                        });
+                    }
                     warn!(
                         "Compression request exceeded provider context: session_id={}, turn_id={}, attempt={}/{}, recent_target_tokens={}, cutoff_message_index={}, next_recent_target_tokens={:?}, error={}",
                         session_id,

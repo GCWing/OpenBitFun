@@ -1,5 +1,8 @@
 //! Session-domain App Server wire schemas.
 
+/// Negotiated support for explicit, model-free session compaction.
+pub const LOCAL_CONTEXT_TRUNCATION_CAPABILITY: &str = "local_context_truncation_v1";
+
 #[cfg(feature = "rpc")]
 use agent_client_protocol::{JsonRpcRequest, JsonRpcResponse};
 use openbitfun_core_types::SessionUsageReport;

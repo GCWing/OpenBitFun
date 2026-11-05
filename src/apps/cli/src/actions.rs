@@ -710,7 +710,7 @@ static ACTION_SPECS: &[ActionSpec] = &[
         id: "compact_session",
         name: "Compact context",
         aliases: &["/compact", "/summarize"],
-        description: "Compact the current session context",
+        description: "Compact context; /compact force truncates locally without a model",
         contexts: CHAT,
         availability: ActionAvailability::Idle,
         handler: ActionHandler::CompactSession,

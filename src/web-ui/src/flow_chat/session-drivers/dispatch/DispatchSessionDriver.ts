@@ -500,7 +500,7 @@ export const dispatchSessionDriver: SessionDriver = {
     return response.cancelled;
   },
 
-  async compactSession(context: FlowChatContext, sessionId: string): Promise<void> {
+  async compactSession(context: FlowChatContext, sessionId: string, force?: boolean): Promise<void> {
     const session = context.flowChatStore.getState().sessions.get(sessionId);
     const jobId = session?.config.dispatchJobId;
     if (!jobId) {
@@ -519,7 +519,7 @@ export const dispatchSessionDriver: SessionDriver = {
     const retry = claimSubmissionRetry(
       COMPACT_RETRY_SCOPE,
       sessionId,
-      'compact',
+      force ? 'compact force' : 'compact',
       undefined,
       () =>
         globalThis.crypto?.randomUUID?.()
@@ -528,6 +528,7 @@ export const dispatchSessionDriver: SessionDriver = {
     try {
       const response = await dispatchApi.continueJob(jobId, retry.id, '', undefined, {
         kind: 'compact',
+        ...(force ? { force: true } : {}),
       });
       if (!response.accepted) {
         throw new Error(

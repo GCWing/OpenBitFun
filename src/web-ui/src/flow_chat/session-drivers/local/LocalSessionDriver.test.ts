@@ -6,7 +6,7 @@ import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurfac
 import { syncSessionModelSelection } from '../../utils/modelSync';
 import { consumeSubmittedMessageArrival } from '../../services/submittedMessagePresentation';
 
-const { mockCreateSession, mockStartAcpDialogTurn, mockStartAgenticDialogTurn, mockEnsureCoordinatorSession, mockTransition, mockUpdateSessionMetadata, mockGetMode, mockUpdateMode } = vi.hoisted(() => ({
+const { mockCreateSession, mockStartAcpDialogTurn, mockStartAgenticDialogTurn, mockEnsureCoordinatorSession, mockTransition, mockUpdateSessionMetadata, mockGetMode, mockUpdateMode, mockCompactSession } = vi.hoisted(() => ({
   mockCreateSession: vi.fn(),
   mockStartAcpDialogTurn: vi.fn(),
   mockStartAgenticDialogTurn: vi.fn(),
@@ -15,6 +15,7 @@ const { mockCreateSession, mockStartAcpDialogTurn, mockStartAgenticDialogTurn, m
   mockUpdateSessionMetadata: vi.fn(),
   mockGetMode: vi.fn(),
   mockUpdateMode: vi.fn(),
+  mockCompactSession: vi.fn(),
 }));
 
 const poolMocks = vi.hoisted(() => ({ list: vi.fn(), supported: vi.fn(() => false), read: vi.fn() }));
@@ -36,6 +37,7 @@ vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
     ensureCoordinatorSession: mockEnsureCoordinatorSession,
     getSessionPermissionMode: mockGetMode,
     updateSessionPermissionMode: mockUpdateMode,
+    compactSession: mockCompactSession,
   },
 }));
 
@@ -80,6 +82,25 @@ vi.mock('../../services/sessionTitleMetadata', () => ({
 
 const SESSION_ID = 'acp_dsh_session';
 const WORKSPACE_PATH = '/Users/user/workspace/project';
+
+describe('localSessionDriver compaction', () => {
+  it.each([undefined, true])('preserves remote workspace identity and force=%s', async force => {
+    mockCompactSession.mockReset().mockResolvedValue(undefined);
+    const session = {
+      workspaceId: 'remote-workspace',
+      workspacePath: '/remote/project',
+      remoteConnectionId: 'ssh-1',
+      remoteSshHost: 'remote-host',
+    };
+    const context = { flowChatStore: { getState: () => ({ sessions: new Map([['session-1', session]]) }) } } as any;
+    await localSessionDriver.compactSession(context, 'session-1', force);
+    expect(mockCompactSession).toHaveBeenCalledExactlyOnceWith({
+      sessionId: 'session-1', workspaceId: 'remote-workspace', workspacePath: '/remote/project',
+      remoteConnectionId: 'ssh-1', remoteSshHost: 'remote-host',
+      ...(force ? { force: true } : {}),
+    });
+  });
+});
 
 describe('localSessionDriver conversation creation', () => {
   beforeEach(() => {

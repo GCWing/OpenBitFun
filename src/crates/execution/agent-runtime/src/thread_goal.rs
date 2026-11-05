@@ -85,7 +85,7 @@ fn should_skip_goal_turn_accounting(
     user_message_metadata: Option<&serde_json::Value>,
 ) -> bool {
     let trimmed = user_input.trim();
-    if trimmed.eq_ignore_ascii_case("/compact")
+    if matches!(trimmed.split_whitespace().next(), Some(command) if command.eq_ignore_ascii_case("/compact") || command.eq_ignore_ascii_case("/summarize"))
         || trimmed.starts_with("/usage")
         || trimmed.starts_with("/btw")
         || (trimmed

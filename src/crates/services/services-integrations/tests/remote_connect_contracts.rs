@@ -3843,6 +3843,40 @@ fn dialog_queue_wire_keeps_legacy_send_messages_readable() {
     assert_eq!(serde_json::to_value(command).unwrap(), queue);
 }
 
+#[tokio::test]
+async fn remote_compaction_commands_fail_explicitly_without_submitting_a_model_turn() {
+    for source in [
+        RemoteConnectSubmissionSource::Relay,
+        RemoteConnectSubmissionSource::Bot,
+    ] {
+        for content in [
+            "/compact",
+            "/compact force",
+            "/COMPACT FORCE",
+            "/summarize force",
+        ] {
+            let host = RecordingDialogHost::new(true, Some("/remote/workspace"));
+            let error = submit_remote_dialog(
+                &host,
+                RemoteDialogSubmissionRequest {
+                    session_id: "session".into(),
+                    content: content.into(),
+                    display_content: None,
+                    agent_type: None,
+                    image_contexts: Vec::<String>::new(),
+                    policy: RemoteDialogSubmissionPolicy::for_source(source),
+                    turn_id: None,
+                },
+            )
+            .await
+            .unwrap_err();
+            assert!(error.contains("not supported by Remote Connect"));
+            assert!(host.events().is_empty());
+            assert!(host.submitted.lock().unwrap().is_none());
+        }
+    }
+}
+
 #[test]
 fn device_model_defaults_command_patches_slots_and_only_null_clears() {
     // An absent field keeps its slot, so an empty request changes nothing.
