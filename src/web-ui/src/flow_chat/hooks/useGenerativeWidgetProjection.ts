@@ -12,6 +12,8 @@ export function useGenerativeWidgetProjection(
   const key = origin
     ? JSON.stringify([origin.surfaceId, origin.sessionId, origin.turnId ?? '', origin.toolCallId ?? '', origin.toolItemId ?? ''])
     : '';
+  const sessionId = origin?.sessionId;
+  const turnId = origin?.turnId;
   const cacheRef = useRef<{ key: string; session: unknown; turn: unknown; snapshot: GenerativeWidgetProjection | null }>({
     key,
     session: undefined,
@@ -38,16 +40,16 @@ export function useGenerativeWidgetProjection(
     return cache.snapshot;
   }, [key, origin]);
   const subscribe = useCallback(
-    (callback: () => void) => origin ? flowChatStore.subscribeSelector(
+    (callback: () => void) => sessionId ? flowChatStore.subscribeSelector(
       state => {
-        const session = state.sessions.get(origin.sessionId);
-        const turn = origin.turnId ? session?.dialogTurns.find(value => value.id === origin.turnId) : undefined;
+        const session = state.sessions.get(sessionId);
+        const turn = turnId ? session?.dialogTurns.find(value => value.id === turnId) : undefined;
         return { session, turn };
       },
       () => callback(),
       { isEqual: (a, b) => a.session === b.session && a.turn === b.turn },
     ) : () => undefined,
-    [origin?.sessionId, origin?.turnId],
+    [sessionId, turnId],
   );
   return useSyncExternalStore(
     subscribe,

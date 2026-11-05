@@ -569,6 +569,7 @@ struct TurnPromptScaffoldInput<'a> {
     stage: &'a str,
     runtime_context_needs: RuntimeContextNeeds,
     tool_listing_sections: ToolListingSections,
+    genui_tool_available: bool,
     supports_image_understanding: bool,
     model_name: &'a str,
     current_agent: &'a dyn crate::agentic::agents::Agent,
@@ -1770,6 +1771,7 @@ impl ExecutionEngine {
         current_agent: &dyn crate::agentic::agents::Agent,
         prompt_context: Option<&PromptBuilderContext>,
         prompt_policy_id: Option<&str>,
+        genui_tool_available: bool,
     ) -> OpenBitFunResult<String> {
         // The GenUI profile is a fixed product route, just like the upstream
         // Open Intelligent UI pages. Keep its official lang-core prompt in the
@@ -1777,11 +1779,7 @@ impl ExecutionEngine {
         // still runs a general agent whose outer response is a JSON tool call.
         // Include the profile in the cache key so changing the setting cannot
         // reuse a prompt generated for the previous component library.
-        let genui_prompt = if current_agent
-            .default_tools()
-            .iter()
-            .any(|tool| tool == "GenerativeUI")
-        {
+        let genui_prompt = if genui_tool_available {
             Self::active_genui_system_prompt().await
         } else {
             None
@@ -1789,7 +1787,7 @@ impl ExecutionEngine {
         let genui_scope = genui_prompt
             .as_ref()
             .map(|(profile, _)| format!("|genui-profile:{profile}"))
-            .unwrap_or_default();
+            .unwrap_or_else(|| "|genui-profile:disabled".to_string());
         let identity = match prompt_policy_id {
             Some(policy_id) => {
                 SystemPromptCacheIdentity::new(format!("harness:{policy_id}{genui_scope}"))
@@ -1908,6 +1906,7 @@ impl ExecutionEngine {
                 input.current_agent,
                 prompt_context.as_ref(),
                 None,
+                input.genui_tool_available,
             )
             .await?;
 
@@ -2882,6 +2881,12 @@ impl ExecutionEngine {
                 RuntimeContextNeeds::from_tool_names(manifest.allowed_tool_names.iter())
             })
             .unwrap_or_default();
+        let genui_tool_available = tool_manifest.as_ref().is_some_and(|manifest| {
+            manifest
+                .allowed_tool_names
+                .iter()
+                .any(|tool| tool == "GenerativeUI")
+        });
         // Snapshot prompt-visible tool definitions once for this turn. Do not
         // re-resolve or rewrite them after GetToolSpec loads a deferred tool spec:
         // the loaded detail travels in tool results, while mutating the tool
@@ -2897,6 +2902,7 @@ impl ExecutionEngine {
                 supports_image_understanding: primary_supports_image_understanding,
                 tool_listing_sections,
                 runtime_context_needs,
+                genui_tool_available,
                 stage: "compression_scaffold",
             })
             .await?;
@@ -3820,6 +3826,7 @@ impl ExecutionEngine {
         } else {
             (vec![], None)
         };
+        let mut genui_tool_available = available_tools.iter().any(|tool| tool == "GenerativeUI");
         let final_tool_names = Self::finalize_tool_names(tool_definitions.as_deref());
         debug!(
             "Primary model and tool manifest resolved: session_id={}, turn_id={}, resolved_primary_model_id={}, primary_model_api_format={}, primary_model_supports_image_inputs={}, final_tool_count={}, final_tool_names={:?}, deferred_tool_names={:?}",
@@ -3844,6 +3851,7 @@ impl ExecutionEngine {
                 supports_image_understanding: primary_supports_image_understanding,
                 tool_listing_sections: tool_listing_sections.clone(),
                 runtime_context_needs,
+                genui_tool_available,
                 stage: "turn_start",
             })
             .await?;
@@ -4335,6 +4343,7 @@ impl ExecutionEngine {
                             supports_image_understanding: primary_supports_image_understanding,
                             tool_listing_sections: tool_listing_sections.clone(),
                             runtime_context_needs,
+                            genui_tool_available,
                             stage: "round_model_switch",
                         })
                         .await?;
@@ -4461,6 +4470,8 @@ impl ExecutionEngine {
                                 .await;
                         runtime_context_needs = runtime_context_needs_for_manifest(&manifest);
                         available_tools = manifest.allowed_tool_names;
+                        genui_tool_available =
+                            available_tools.iter().any(|tool| tool == "GenerativeUI");
                         deferred_tools = manifest.deferred_tool_names;
                         tool_definitions = Some(manifest.tool_definitions);
                     }
@@ -4472,6 +4483,7 @@ impl ExecutionEngine {
                             supports_image_understanding: primary_supports_image_understanding,
                             tool_listing_sections: tool_listing_sections.clone(),
                             runtime_context_needs,
+                            genui_tool_available,
                             stage: "model_pool_switch",
                         })
                         .await?;
@@ -4723,6 +4735,7 @@ impl ExecutionEngine {
                                 supports_image_understanding: primary_supports_image_understanding,
                                 tool_listing_sections: tool_listing_sections.clone(),
                                 runtime_context_needs,
+                                genui_tool_available,
                                 stage: "after_context_compression",
                             })
                             .await?;
@@ -5061,6 +5074,7 @@ impl ExecutionEngine {
                                         primary_supports_image_understanding,
                                     tool_listing_sections: tool_listing_sections.clone(),
                                     runtime_context_needs,
+                                    genui_tool_available,
                                     stage: "after_context_overflow_recovery",
                                 })
                                 .await?;

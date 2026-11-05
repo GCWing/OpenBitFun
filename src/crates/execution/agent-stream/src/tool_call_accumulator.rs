@@ -102,6 +102,7 @@ pub struct PendingToolCall {
     openui_seq: u64,
     openui_content_start: Option<usize>,
     openui_content_raw_scanned: Option<usize>,
+    openui_content_done: bool,
     openui_reset_next: bool,
     openui_app_id: Option<String>,
     openui_title: Option<String>,
@@ -287,7 +288,7 @@ fn quoted_string_end(input: &str, start: usize) -> Option<usize> {
     None
 }
 
-fn decoded_json_string_prefix(input: &str, start: usize) -> Option<String> {
+fn decoded_json_string_prefix_with_status(input: &str, start: usize) -> Option<(String, bool)> {
     if input.as_bytes().get(start) != Some(&b'"') {
         return None;
     }
@@ -296,7 +297,7 @@ fn decoded_json_string_prefix(input: &str, start: usize) -> Option<String> {
     while index < input.len() {
         let ch = input[index..].chars().next()?;
         if ch == '"' {
-            return Some(output);
+            return Some((output, true));
         }
         if ch != '\\' {
             output.push(ch);
@@ -347,17 +348,21 @@ fn decoded_json_string_prefix(input: &str, start: usize) -> Option<String> {
             _ => break,
         }
     }
-    Some(output)
+    Some((output, false))
 }
 
-fn decoded_json_string_delta(input: &str, cursor: usize) -> Option<(String, usize)> {
+fn decoded_json_string_prefix(input: &str, start: usize) -> Option<String> {
+    decoded_json_string_prefix_with_status(input, start).map(|(value, _)| value)
+}
+
+fn decoded_json_string_delta(input: &str, cursor: usize) -> Option<(String, usize, bool)> {
     let bytes = input.as_bytes();
     let mut index = cursor;
     while index < bytes.len() {
         match bytes[index] {
             b'"' => {
                 let encoded = format!("\"{}\"", input.get(cursor..index)?);
-                return Some((serde_json::from_str(&encoded).ok()?, index + 1));
+                return Some((serde_json::from_str(&encoded).ok()?, index + 1, true));
             }
             b'\\' => {
                 let Some(&escape) = bytes.get(index + 1) else {
@@ -401,10 +406,10 @@ fn decoded_json_string_delta(input: &str, cursor: usize) -> Option<(String, usiz
         }
     }
     if index == cursor {
-        return Some((String::new(), cursor));
+        return Some((String::new(), cursor, false));
     }
     let encoded = format!("\"{}\"", input.get(cursor..index)?);
-    Some((serde_json::from_str(&encoded).ok()?, index))
+    Some((serde_json::from_str(&encoded).ok()?, index, false))
 }
 
 /// Find JSON object field value starts without requiring the enclosing
@@ -497,9 +502,9 @@ fn find_openui_content_start(raw: &str) -> Option<usize> {
     None
 }
 
-fn extract_json_string_field(raw: &str, field: &str) -> Option<String> {
+fn extract_json_string_field(raw: &str, field: &str) -> Option<(String, bool)> {
     let start = find_object_field_start(raw, field)?;
-    decoded_json_string_prefix(raw, start)
+    decoded_json_string_prefix_with_status(raw, start)
 }
 
 fn extract_json_u64_field(raw: &str, field: &str) -> Option<u64> {
@@ -580,6 +585,7 @@ impl PendingToolCall {
         self.openui_seq = 0;
         self.openui_content_start = None;
         self.openui_content_raw_scanned = None;
+        self.openui_content_done = false;
         self.openui_reset_next = false;
         self.openui_app_id = None;
         self.openui_title = None;
@@ -824,22 +830,26 @@ impl PendingToolCalls {
                             pending
                                 .openui_content_start
                                 .or_else(|| find_openui_content_start(raw)),
-                            pending
-                                .openui_app_id
-                                .clone()
-                                .or_else(|| extract_json_string_field(raw, "id")),
-                            pending
-                                .openui_title
-                                .clone()
-                                .or_else(|| extract_json_string_field(raw, "title")),
-                            pending
-                                .openui_template
-                                .clone()
-                                .or_else(|| extract_json_string_field(raw, "template")),
-                            pending
-                                .openui_library_id
-                                .clone()
-                                .or_else(|| extract_json_string_field(raw, "libraryId")),
+                            pending.openui_app_id.clone().or_else(|| {
+                                extract_json_string_field(raw, "id")
+                                    .filter(|(_, closed)| *closed)
+                                    .map(|(value, _)| value)
+                            }),
+                            pending.openui_title.clone().or_else(|| {
+                                extract_json_string_field(raw, "title")
+                                    .filter(|(_, closed)| *closed)
+                                    .map(|(value, _)| value)
+                            }),
+                            pending.openui_template.clone().or_else(|| {
+                                extract_json_string_field(raw, "template")
+                                    .filter(|(_, closed)| *closed)
+                                    .map(|(value, _)| value)
+                            }),
+                            pending.openui_library_id.clone().or_else(|| {
+                                extract_json_string_field(raw, "libraryId")
+                                    .filter(|(_, closed)| *closed)
+                                    .map(|(value, _)| value)
+                            }),
                             pending
                                 .openui_library_revision
                                 .or_else(|| extract_json_u64_field(raw, "libraryRevision")),
@@ -854,29 +864,33 @@ impl PendingToolCalls {
                     pending.openui_template = template;
                     pending.openui_library_id = library_id;
                     pending.openui_library_revision = library_revision;
-                    if let Some(cursor) = pending.openui_content_raw_scanned {
-                        let decoded = decoded_json_string_delta(pending.raw_arguments(), cursor);
-                        if let Some((text, next_cursor)) = decoded {
-                            let reset = std::mem::take(&mut pending.openui_reset_next);
-                            pending.openui_content_raw_scanned = Some(next_cursor);
-                            if !text.is_empty() {
-                                pending.openui_content.push_str(&text);
-                                let seq = pending.openui_seq;
-                                pending.openui_seq = pending.openui_seq.saturating_add(1);
-                                outcome.genui_stream = Some(GenUIStreamChunk {
-                                    tool_id: pending.tool_id().to_string(),
-                                    tool_name: tool_name.clone(),
-                                    message_id: pending.tool_id().to_string(),
-                                    seq,
-                                    format: "openui-lang".to_string(),
-                                    text,
-                                    reset,
-                                    app_id: pending.openui_app_id.clone(),
-                                    title: pending.openui_title.clone(),
-                                    template: pending.openui_template.clone(),
-                                    library_id: pending.openui_library_id.clone(),
-                                    library_revision: pending.openui_library_revision,
-                                });
+                    if !pending.openui_content_done {
+                        if let Some(cursor) = pending.openui_content_raw_scanned {
+                            let decoded =
+                                decoded_json_string_delta(pending.raw_arguments(), cursor);
+                            if let Some((text, next_cursor, closed)) = decoded {
+                                let reset = std::mem::take(&mut pending.openui_reset_next);
+                                pending.openui_content_raw_scanned = Some(next_cursor);
+                                pending.openui_content_done = closed;
+                                if !text.is_empty() {
+                                    pending.openui_content.push_str(&text);
+                                    let seq = pending.openui_seq;
+                                    pending.openui_seq = pending.openui_seq.saturating_add(1);
+                                    outcome.genui_stream = Some(GenUIStreamChunk {
+                                        tool_id: pending.tool_id().to_string(),
+                                        tool_name: tool_name.clone(),
+                                        message_id: pending.tool_id().to_string(),
+                                        seq,
+                                        format: "openui-lang".to_string(),
+                                        text,
+                                        reset,
+                                        app_id: pending.openui_app_id.clone(),
+                                        title: pending.openui_title.clone(),
+                                        template: pending.openui_template.clone(),
+                                        library_id: pending.openui_library_id.clone(),
+                                        library_revision: pending.openui_library_revision,
+                                    });
+                                }
                             }
                         }
                     }
@@ -1000,6 +1014,59 @@ mod tests {
         assert_eq!(
             second.genui_stream.as_ref().map(|event| event.reset),
             Some(false)
+        );
+    }
+
+    #[test]
+    fn stops_streaming_openui_content_after_its_json_string_closes() {
+        let mut calls = PendingToolCalls::new();
+        let first = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            Some("call_genui".into()),
+            Some("GenerativeUI".into()),
+            Some(r#"{"source":{"kind":"openui-lang","content":"root = Text(\"done\")"}"#.into()),
+            false,
+        );
+        assert_eq!(
+            first.genui_stream.as_ref().map(|event| event.text.as_str()),
+            Some("root = Text(\"done\")")
+        );
+
+        let after_content = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            None,
+            None,
+            Some(r#","libraryId":"openbitfun.composable.v1"}"#.into()),
+            false,
+        );
+        assert!(after_content.genui_stream.is_none());
+    }
+
+    #[test]
+    fn waits_for_metadata_strings_to_close_before_caching_them() {
+        let mut calls = PendingToolCalls::new();
+        let partial = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            Some("call_genui".into()),
+            Some("GenerativeUI".into()),
+            Some(r#"{"title":"Dem"#.into()),
+            false,
+        );
+        assert_eq!(partial.genui_stream, None);
+
+        let completed = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            None,
+            None,
+            Some(r#"o","source":{"kind":"openui-lang","content":"root = Text("#.into()),
+            false,
+        );
+        assert_eq!(
+            completed
+                .genui_stream
+                .as_ref()
+                .and_then(|event| event.title.as_deref()),
+            Some("Demo")
         );
     }
 
