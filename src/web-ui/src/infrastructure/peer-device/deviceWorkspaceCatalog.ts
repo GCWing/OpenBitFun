@@ -489,8 +489,10 @@ export class DeviceWorkspaceCatalog {
     }
     this.update(entry, { status: entry.snapshot.status === 'ready' ? 'ready' : 'loading', error: undefined });
     try {
-      await this.negotiate(entry);
-      const raw = await this.io.invoke<APIWorkspaceInfo[]>(entry.deviceId, 'get_opened_workspaces', { request: {} });
+      const [, raw] = await Promise.all([
+        this.negotiate(entry),
+        this.io.invoke<APIWorkspaceInfo[]>(entry.deviceId, 'get_opened_workspaces', { request: {} }),
+      ]);
       if (!this.isCurrent(entry)) return;
       // The same display order the live list of this device uses.
       const workspaces = stableWorkspaceOrder(entry.surfaceId,
@@ -681,11 +683,12 @@ export class DeviceWorkspaceCatalog {
     }));
     // The device just left was not refreshed while rendered; read it again.
     // The device now rendered is drawn from its live list and needs no read.
+    let previousRendered = getActiveSurfaceId();
     disposers.push(onSurfaceActivated(() => {
       const rendered = getActiveSurfaceId();
-      for (const entry of this.entries.values()) {
-        if (entry.surfaceId !== rendered) this.invalidate(entry.surfaceId);
-      }
+      const departed = previousRendered;
+      previousRendered = rendered;
+      if (departed !== rendered) this.invalidate(departed);
     }));
     if (typeof document !== 'undefined') {
       const onVisible = () => {

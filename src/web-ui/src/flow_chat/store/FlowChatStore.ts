@@ -8161,21 +8161,25 @@ export class FlowChatStore {
    * metadata path (model context window, state machines) before they are
    * opened. Untouched seeds only; a session that already has history stays.
    */
-  public async promoteSeededSessions(): Promise<void> {
+  public async promoteSeededSessions(targetSessionId?: string): Promise<void> {
     const container = this.activeSurface;
+    const scope = getActiveSurfaceScope();
     const byWorkspace = new Map<string, SeededSessionRecord[]>();
     for (const [sessionId, record] of container.seededSessions) {
+      if (targetSessionId !== undefined && sessionId !== targetSessionId) continue;
       if (!this.isRebuildableSeed(sessionId)) continue;
       const group = byWorkspace.get(record.workspaceId) ?? [];
       group.push(record);
       byWorkspace.set(record.workspaceId, group);
     }
     for (const records of byWorkspace.values()) {
+      scope.assertCurrent('promote device catalog sessions');
       const [first] = records;
       await this.processPersistedSessionMetadataList(
         records.map(record => record.metadata), first.workspacePath, first.remoteConnectionId, first.remoteSshHost,
       );
     }
+    scope.assertCurrent('finish device catalog session promotion');
   }
 
   /**

@@ -21,6 +21,45 @@ import {
 import { TauriTransportAdapter } from './tauri-adapter';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
+describe('peer command refusal lifetime', () => {
+  it('remembers a registry refusal for this host and retries after a new handshake', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: false,
+      error: "command 'get_session_file_diff_stats' is not supported on CLI peer host: the CLI peer host has no handler for this command" }));
+    const adapter = new PeerDeviceTransportAdapter('peer-a', rpc);
+    for (const sessionId of ['first', 'second']) {
+      await expect(adapter.request('get_session_file_diff_stats', { request: { sessionId } })).rejects.toThrow('has no handler');
+    }
+    expect(rpc).toHaveBeenCalledTimes(1);
+    adapter.setHostCapabilities({});
+    rpc.mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { files: 2 } }));
+    await expect(adapter.request('get_session_file_diff_stats', { request: { sessionId: 'second' } })).resolves.toEqual({ files: 2 });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['Permission denied', 'Session not found', 'Storage unavailable'])('does not remember request-dependent failure %s', async error => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: false, error }));
+    const adapter = new PeerDeviceTransportAdapter('peer-a', rpc);
+    await expect(adapter.request('get_session_file_diff_stats', {})).rejects.toThrow(error);
+    await expect(adapter.request('get_session_file_diff_stats', {})).rejects.toThrow(error);
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not carry a late refusal into the next host generation', async () => {
+    const pending = createDeferred<string>();
+    const rpc = vi.fn().mockReturnValueOnce(pending.promise)
+      .mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: {} }));
+    const adapter = new PeerDeviceTransportAdapter('peer-a', rpc);
+    const request = adapter.request('get_session_file_diff_stats', {});
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
+    adapter.setHostCapabilities({});
+    pending.resolve(JSON.stringify({ resp: 'host_invoke_result', ok: false,
+      error: "command 'get_session_file_diff_stats' is unknown to this OpenBitFun CLI peer host version" }));
+    await expect(request).rejects.toThrow('unknown');
+    await expect(adapter.request('get_session_file_diff_stats', {})).resolves.toEqual({});
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('smart routing host capability', () => {
   it('rejects unsupported routing reads and mutations before RPC', async () => {
     const rpc = vi.fn();

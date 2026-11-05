@@ -40,7 +40,7 @@ export async function activateMainSession(sessionId: string, options?: SessionAc
   // A session first seen on a background device is promoted (model window,
   // state machine) before anything opens it, whichever entry point is used.
   if (flowChatStore.hasUnpromotedSeed(sessionId)) {
-    await flowChatStore.promoteSeededSessions();
+    await flowChatStore.promoteSeededSessions(sessionId);
     if (!isCurrent()) return false;
   }
   const session = flowChatStore.getState().sessions.get(sessionId);

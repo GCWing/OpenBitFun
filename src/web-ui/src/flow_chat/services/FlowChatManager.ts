@@ -25,6 +25,7 @@ import {
   type DeviceSurfaceId,
 } from '@/infrastructure/peer-device/deviceSurface';
 import type { WorkspaceInfo } from '@/shared/types';
+import { getDeviceOpenIntent, selectsDeviceSession } from '@/infrastructure/peer-device/deviceOpenIntent';
 import type { Session } from '../types/flow-chat';
 import {
   compareSessionsForDisplay,
@@ -221,6 +222,7 @@ export class FlowChatManager {
     preferredMode?: string
   ): Promise<boolean> {
     const scope = getActiveSurfaceScope();
+    const explicitOpen = getDeviceOpenIntent();
     try {
       await this.initializeEventListeners();
       if (this.disposed) {
@@ -292,6 +294,16 @@ export class FlowChatManager {
         initialMetadataPage.sessions.length > 0;
       const isCurrentInitializationRequest = () =>
         this.latestInitializationRequestKey === requestKey;
+      // A device open owns session selection. Loading the previous tab here
+      // races its requested session (or new draft) for the same Relay link.
+      if (selectsDeviceSession(explicitOpen, scope.surfaceId)
+        || selectsDeviceSession(getDeviceOpenIntent(), scope.surfaceId)) {
+        if (isCurrentInitializationRequest()) {
+          this.context.currentWorkspaceId = workspaceId;
+          this.context.currentWorkspacePath = workspacePath;
+        }
+        return hasHistoricalSessions;
+      }
       const activeSession = state.activeSessionId
         ? state.sessions.get(state.activeSessionId) ?? null
         : null;

@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FlowChatManager } from './FlowChatManager';
+import { beginDeviceOpen, endDeviceOpen } from '@/infrastructure/peer-device/deviceOpenIntent';
 import {
   activateSurface,
   isSurfaceChangedError,
@@ -159,6 +160,46 @@ function createHistoricalSession(overrides: Record<string, unknown> = {}) {
 }
 
 describe('FlowChatManager initialization', () => {
+  it.each(['switch:local', 'history:workspace', 'session-action:history-1'])('restores the session for a %s action', async key => {
+    const sessions = new Map([['history-1', createHistoricalSession()]]);
+    storeMocks.store = {
+      registerPersistUnreadCompletionCallback: vi.fn(),
+      getSurfaceGeneration: vi.fn(() => 0),
+      loadSessionMetadataPage: vi.fn(async () => ({ sessions: [], totalTopLevelCount: 1, hasMore: false })),
+      getState: vi.fn(() => ({ sessions, activeSessionId: 'history-1' })),
+      loadSessionHistory: vi.fn(),
+      switchSession: vi.fn(),
+    };
+    const intent = beginDeviceOpen({ surfaceId: 'local', key });
+    try {
+      const manager = FlowChatManager.getInstance();
+      await manager.initialize(workspaceFixture('D:/workspace/OpenBitFun', undefined, undefined));
+      expect(storeMocks.store.loadSessionHistory).toHaveBeenCalledWith('history-1');
+    } finally {
+      endDeviceOpen(intent);
+    }
+  });
+
+  it.each([null, 'history-1'])('leaves session selection to a device open with previous active session %s', async activeSessionId => {
+    const sessions = new Map([['history-1', createHistoricalSession()]]);
+    storeMocks.store = {
+      registerPersistUnreadCompletionCallback: vi.fn(),
+      getSurfaceGeneration: vi.fn(() => 0),
+      loadSessionMetadataPage: vi.fn(async () => ({ sessions: [], totalTopLevelCount: 1, hasMore: false })),
+      getState: vi.fn(() => ({ sessions, activeSessionId })),
+      loadSessionHistory: vi.fn(),
+      switchSession: vi.fn(),
+    };
+    const intent = beginDeviceOpen({ surfaceId: 'local', key: 'new:workspace' });
+    try {
+      const manager = FlowChatManager.getInstance();
+      await expect(manager.initialize(workspaceFixture('D:/workspace/OpenBitFun', undefined, undefined))).resolves.toBe(true);
+      expect(storeMocks.store.loadSessionHistory).not.toHaveBeenCalled();
+      expect(storeMocks.store.switchSession).not.toHaveBeenCalled();
+    } finally {
+      endDeviceOpen(intent);
+    }
+  });
   beforeEach(() => {
     resetDeviceSurfaceForTest();
     (FlowChatManager as any).instance = undefined;

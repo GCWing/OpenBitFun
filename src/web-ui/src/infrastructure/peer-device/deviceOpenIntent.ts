@@ -36,3 +36,9 @@ export function endDeviceOpen(intent: DeviceOpenIntent): void {
 export function getDeviceOpenIntent(): DeviceOpenIntent | null {
   return useDeviceOpenIntent.getState().intent;
 }
+
+/** These actions select their own session after activating the device. */
+export function selectsDeviceSession(intent: DeviceOpenIntent | null, surfaceId: DeviceSurfaceId): boolean {
+  return intent?.surfaceId === surfaceId
+    && ['session:', 'assistant:', 'new:'].some(prefix => intent.key.startsWith(prefix));
+}

@@ -465,15 +465,16 @@ export const localSessionDriver: SessionDriver = {
       if (readySession.isHistorical || context.pendingHistoryLoads.has(surfaceScope.key('history-load', surfaceScope.epoch, sessionId))) {
         throw new Error('Session history is still restoring, please retry once loading finishes');
       }
-      await prepareSubmission();
+      const queue = hostDialogQueue(sessionId);
+      const [, queueSnapshot] = await Promise.all([prepareSubmission(), queue.refresh()]);
+      surfaceScope.assertCurrent('prepare host message');
       await inheritReviewPermissionMode(readySession, context.flowChatStore.getState().sessions,
         () => surfaceScope.assertCurrent('inherit review session permission mode'));
       tracker.hostSubmitStarted = true;
-      const queue = hostDialogQueue(sessionId);
       const accepted = await queue.submit({ content: message, displayContent: displayMessage,
         agentType: currentAgentType, attachments: queueImageAttachments(options?.imageContexts),
         metadata: options?.userMessageMetadata ?? {} },
-        { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData }, options?.turnId);
+        { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData }, options?.turnId, queueSnapshot);
       tracker.hostAcceptedTurn = true;
       surfaceScope.assertCurrent('accept host message');
       if (options?.turnId && accepted.receipt?.turnId && accepted.receipt.turnId !== options.turnId) {

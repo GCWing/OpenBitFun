@@ -130,6 +130,25 @@ describe('PersistenceModule', () => {
     }), 'workspace-local', ['unreadCompletion', 'needsUserAttention']);
   });
 
+  it('keeps peer turn saves and explicit UI patches while avoiding automatic metadata round trips', async () => {
+    const original = getActiveSurfaceId();
+    activateSurface('legacy-cli');
+    try {
+      const context = createContext(createDialogTurn('completed'));
+      await saveDialogTurnToDisk(context, SESSION_ID, TURN_ID);
+      expect(mockSaveSessionTurn).toHaveBeenCalledTimes(1);
+      expect(mockLoadSessionMetadata).not.toHaveBeenCalled();
+      expect(mockSaveSessionMetadata).not.toHaveBeenCalled();
+
+      await updateSessionMetadata(context, SESSION_ID, ['titleMetadata']);
+      expect(mockSaveSessionMetadata).toHaveBeenCalledWith(
+        expect.any(Object), 'workspace-local', ['titleMetadata'],
+      );
+    } finally {
+      activateSurface(original);
+    }
+  });
+
   it('names the host receipt when the transcript was never loaded', async () => {
     const receipt = { turnId: 'host-turn', turnIndex: 4, status: 'cancelled' as const, executionGeneration: 3, recoveryPending: true };
     await updateSessionMetadata(createContext(createDialogTurn('completed')), SESSION_ID,

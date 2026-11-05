@@ -21,6 +21,34 @@ function fixture(config: Record<string, unknown> = {}, internal = false) {
 beforeEach(() => { vi.resetAllMocks(); resetDeviceSurfaceForTest(); mocks.supported.mockReturnValue(true); });
 
 describe('model pool send synchronization', () => {
+  it.each([null, 'high'])('skips a fixed-model write only when the host confirms matching reasoning %s', async reasoningPreset => {
+    const { context } = fixture({ reasoningPreset });
+    mocks.target.mockResolvedValue({ sessionId: 's', selection: { kind: 'model', model_ref: 'primary' }, reasoningPreset });
+    mocks.configs.mockResolvedValue({ 'ai.models': [], 'ai.default_models': {} });
+    await syncSessionModelSelection(context, 's', 'Standard');
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'low'])('synchronizes missing or different host reasoning %s', async reasoningPreset => {
+    const { context } = fixture({ reasoningPreset: 'high' });
+    mocks.target.mockResolvedValue({ sessionId: 's', selection: { kind: 'model', model_ref: 'primary' }, reasoningPreset });
+    mocks.configs.mockResolvedValue({ 'ai.models': [], 'ai.default_models': {} });
+    await syncSessionModelSelection(context, 's', 'Standard');
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'primary', reasoningPreset: 'high' }));
+  });
+
+  it('reads the host again on the next send after another controller changes its selection', async () => {
+    const { context } = fixture();
+    mocks.configs.mockResolvedValue({ 'ai.models': [], 'ai.default_models': {} });
+    mocks.target.mockResolvedValueOnce({ sessionId: 's', selection: { kind: 'model', model_ref: 'primary' }, reasoningPreset: null });
+    await syncSessionModelSelection(context, 's', 'Standard');
+    expect(mocks.update).not.toHaveBeenCalled();
+    mocks.target.mockResolvedValueOnce({ sessionId: 's', selection: { kind: 'model', model_ref: 'other' }, reasoningPreset: null });
+    await syncSessionModelSelection(context, 's', 'Standard');
+    expect(mocks.target).toHaveBeenCalledTimes(2);
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'primary' }));
+  });
+
   it('rehydrates pool intent without writing a legacy primary selection', async () => {
     const { context, pool } = fixture();
     mocks.target.mockResolvedValue({ sessionId: 's', selection: { kind: 'pool', pool_id: 'p' } });

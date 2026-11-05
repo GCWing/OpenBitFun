@@ -91,6 +91,24 @@ describe('DeviceWorkspaceCatalog', () => {
     release();
   });
 
+  it('reads the workspace directory while negotiating and waits for addressing before reading sessions', async () => {
+    let resolvePing!: (value: unknown) => void;
+    const ping = new Promise(resolve => { resolvePing = resolve; });
+    const normalInvoke = invoke.getMockImplementation()!;
+    invoke.mockImplementation((device, command, ...args) => command === 'peer_mode_ping'
+      ? ping : normalInvoke(device, command, ...args));
+    const release = catalog.retain('peer-a');
+    const releaseWorkspace = catalog.retainSessions('peer-a', 'ws-1');
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('peer-a', 'get_opened_workspaces', { request: {} });
+    expect(invoke.mock.calls.some(call => call[1] === 'list_persisted_sessions_page')).toBe(false);
+    resolvePing({ capabilities });
+    await flush();
+    expect(invoke.mock.calls.some(call => call[1] === 'list_persisted_sessions_page')).toBe(true);
+    releaseWorkspace();
+    release();
+  });
+
   it('loads sessions only for an expanded workspace and keeps top-level rows', async () => {
     catalog.retain('peer-a');
     await flush();
@@ -236,14 +254,18 @@ describe('DeviceWorkspaceCatalog', () => {
     release();
   });
 
-  it('refreshes catalogs once a device switch lands', async () => {
+  it('refreshes only the departed device when a device switch lands', async () => {
+    activateSurface(surfaceIdForDevice('peer-a'));
     catalog.retain('peer-a');
+    catalog.retain('peer-b');
+    catalog.retain('peer-c');
     await flush();
     invoke.mockClear();
     activateSurface(surfaceIdForDevice('peer-b'));
     await vi.advanceTimersByTimeAsync(DEVICE_CATALOG_INVALIDATE_DEBOUNCE_MS);
     await flush();
     expect(invoke).toHaveBeenCalledWith('peer-a', 'get_opened_workspaces', { request: {} });
+    expect(invoke.mock.calls.every(call => call[0] === 'peer-a')).toBe(true);
   });
 
   it('holds refreshes while a cross-device open runs and catches up once after it', async () => {

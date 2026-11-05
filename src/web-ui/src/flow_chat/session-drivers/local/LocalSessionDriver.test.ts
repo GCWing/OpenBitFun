@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { localSessionDriver } from './LocalSessionDriver';
 import type { DialogTurn } from '../../types/flow-chat';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { syncSessionModelSelection } from '../../utils/modelSync';
 import { consumeSubmittedMessageArrival } from '../../services/submittedMessagePresentation';
 
 const { mockCreateSession, mockStartAcpDialogTurn, mockStartAgenticDialogTurn, mockEnsureCoordinatorSession, mockTransition, mockUpdateSessionMetadata, mockGetMode, mockUpdateMode } = vi.hoisted(() => ({
@@ -357,10 +358,11 @@ describe('localSessionDriver review repair permissions', () => {
 });
 
 
-const queueMocks = vi.hoisted(() => ({ supported: vi.fn(() => false), submit: vi.fn() }));
+const queueMocks = vi.hoisted(() => ({ supported: vi.fn(() => false), submit: vi.fn(),
+  refresh: vi.fn(async () => ({ sessionId: 'acp_dsh_session', queueEpoch: 'host-epoch' })) }));
 vi.mock('../../services/hostDialogQueue', () => ({
   hostQueueSupported: queueMocks.supported,
-  hostDialogQueue: () => ({ submit: queueMocks.submit }),
+  hostDialogQueue: () => ({ submit: queueMocks.submit, refresh: queueMocks.refresh }),
   queueImageAttachments: () => [],
 }));
 
@@ -375,13 +377,28 @@ describe('host queue submissions', () => {
       options: { turnId: 'stable-request-id' } };
     const tracker = { createdLocalTurnId: null, hostAcceptedTurn: false };
     await localSessionDriver.startTurn(context, input, tracker);
-    expect(queueMocks.submit).toHaveBeenCalledWith(expect.objectContaining({ content: 'hello' }), expect.any(Object), 'stable-request-id');
+    expect(queueMocks.submit).toHaveBeenCalledWith(expect.objectContaining({ content: 'hello' }), expect.any(Object), 'stable-request-id', expect.objectContaining({ queueEpoch: 'host-epoch' }));
     expect(mockTransition).not.toHaveBeenCalled();
     expect(mockStartAgenticDialogTurn).not.toHaveBeenCalled();
     expect(context.contentBuffers.get(SESSION_ID)).toBe('active output');
     expect(context.activeTextItems.get(SESSION_ID)).toBe('active item');
     expect(addedTurns).toHaveLength(0);
     expect(tracker.hostAcceptedTurn).toBe(true);
+  });
+
+  it('prepares the queue while model synchronization is pending and submits only after both finish', async () => {
+    let finishModel!: () => void;
+    vi.mocked(syncSessionModelSelection).mockImplementationOnce(() => new Promise(resolve => { finishModel = resolve; }));
+    const { context, session } = createHarness([]);
+    session.mode = 'Standard';
+    const input = { ...startTurnInput(session), acpClientId: undefined, currentAgentType: 'Standard', isFirstMessage: false };
+    const pending = localSessionDriver.startTurn(context, input, { createdLocalTurnId: null, hostAcceptedTurn: false });
+    await Promise.resolve();
+    expect(queueMocks.refresh).toHaveBeenCalledOnce();
+    expect(queueMocks.submit).not.toHaveBeenCalled();
+    finishModel();
+    await pending;
+    expect(queueMocks.submit).toHaveBeenCalledOnce();
   });
 });
 
@@ -421,7 +438,7 @@ describe('worktree follow-up submissions', () => {
     });
     if (supportsQueue) {
       expect(queueMocks.submit).toHaveBeenCalledWith(
-        expect.objectContaining({ content: 'hello' }), expect.any(Object), undefined,
+        expect.objectContaining({ content: 'hello' }), expect.any(Object), undefined, expect.objectContaining({ queueEpoch: 'host-epoch' }),
       );
       expect(mockStartAgenticDialogTurn).not.toHaveBeenCalled();
     } else {

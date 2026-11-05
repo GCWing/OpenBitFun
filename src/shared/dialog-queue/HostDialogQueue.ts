@@ -169,9 +169,14 @@ export class HostDialogQueue {
       await this.publishPending();
     }
   }
-  submit(message: Omit<QueueMessage, 'turnId'>, draft?: unknown, requestedTurnId?: string): Promise<QueueSnapshot> {
+  submit(message: Omit<QueueMessage, 'turnId'>, draft?: unknown, requestedTurnId?: string,
+    preparedSnapshot?: QueueSnapshot): Promise<QueueSnapshot> {
     return this.serialize(async () => {
-      const snapshot = await this.refresh();
+      const snapshot = preparedSnapshot ?? await this.refresh();
+      if (snapshot.sessionId !== this.sessionId || !snapshot.queueEpoch
+        || (preparedSnapshot && this.view.snapshot?.queueEpoch !== snapshot.queueEpoch)) {
+        throw new Error('queue_scope_expired: refresh the host queue; do not automatically resend');
+      }
       const identity = messageIdentity(message);
       const previous = this.view.pending.find(record => {
         if (record.restoreIntent || record.request.action !== 'submit') return false;

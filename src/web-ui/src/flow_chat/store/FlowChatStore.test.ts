@@ -9435,6 +9435,19 @@ describe('background device session seeding', () => {
     workspaceFixtures.delete('peer-ws');
   });
 
+  it('promotes only the requested seed and leaves other rows available for lazy activation', async () => {
+    workspaceFixtures.set('peer-ws', { id: 'peer-ws', rootPath: '/srv/app', workspaceKind: 'normal' });
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1'), metadata('s-2')]));
+    activateSurface('peer-seed');
+    stateMachineManagerMock.getOrCreate.mockClear();
+    await flowChatStore.promoteSeededSessions('s-2');
+    expect(stateMachineManagerMock.getOrCreate).toHaveBeenCalledWith('s-2');
+    expect(stateMachineManagerMock.getOrCreate).not.toHaveBeenCalledWith('s-1');
+    expect(flowChatStore.hasUnpromotedSeed('s-1')).toBe(true);
+    expect(flowChatStore.hasUnpromotedSeed('s-2')).toBe(false);
+    workspaceFixtures.delete('peer-ws');
+  });
+
   it('refreshes navigation facts of a loaded background session without dropping its state', () => {
     flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
     activateSurface('peer-seed');

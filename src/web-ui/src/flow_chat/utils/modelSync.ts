@@ -6,7 +6,7 @@ import { modelSelectionsConfigPath, effectiveModelSelections } from '@/infrastru
  * MessageModule for existing callers.
  */
 
-import { modelPoolAPI, supportsModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
+import { modelPoolAPI, supportsModelPools, type SessionModelTarget } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import type { AIModelConfig, AgentModelDefaultsConfig, DefaultModelsConfig } from '@/infrastructure/config/types';
@@ -56,6 +56,7 @@ export async function syncSessionModelSelection(
   }
 
   let authoritativeModel: string | undefined;
+  let hostTarget: SessionModelTarget | undefined;
   if (supportsModelPools()) {
     const targetScope = { sessionId, workspaceId: sessionWorkspaceId(session),
       workspacePath: sessionProjectWorkspacePath(session), remoteConnectionId: session.remoteConnectionId,
@@ -64,6 +65,7 @@ export async function syncSessionModelSelection(
       ? await modelPoolAPI.select(targetScope, { kind: 'pool', pool_id: session.config.modelPoolId })
       : await modelPoolAPI.target(targetScope);
     surfaceScope.assertCurrent('synchronize model pool selection');
+    hostTarget = target;
     if (target.selection.kind === 'pool') {
       context.flowChatStore.updateSessionModelPool(sessionId, target.selection.pool_id, target.binding);
       return;
@@ -99,6 +101,13 @@ export async function syncSessionModelSelection(
   if (shouldSyncContextWindow) {
     context.flowChatStore.updateSessionMaxContextTokens(sessionId, desiredMaxContextTokens);
   }
+  // Compare the execution host's fresh model and reasoning together. Older
+  // hosts omit reasoningPreset, so they retain the compatibility write.
+  if (hostTarget?.sessionId === sessionId
+    && hostTarget.selection.kind === 'model'
+    && hostTarget.selection.model_ref === desiredModelId
+    && hostTarget.reasoningPreset !== undefined
+    && hostTarget.reasoningPreset === (session.config.reasoningPreset ?? null)) return;
   await agentAPI.updateSessionModel({
     sessionId,
     modelName: desiredModelId,

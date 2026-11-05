@@ -15365,6 +15365,7 @@ impl openbitfun_runtime_ports::AgentSessionModelPort for ConversationCoordinator
         Ok(openbitfun_core_types::model_pool::SessionModelTarget {
             session_id: session.session_id,
             selection,
+            reasoning_preset: session.config.reasoning_preset,
             binding: session.config.model_pool_binding,
         })
     }
@@ -15393,6 +15394,7 @@ impl openbitfun_runtime_ports::AgentSessionModelPort for ConversationCoordinator
         Ok(SessionModelTarget {
             session_id: session.session_id,
             selection,
+            reasoning_preset: session.config.reasoning_preset,
             binding: session.config.model_pool_binding,
         })
     }
