@@ -256,7 +256,9 @@ async fn re_registering_a_recreated_root_resumes_watching() {
     // registration, not treat it as a no-op because the config is unchanged.
     let temp = tempfile::tempdir().expect("tempdir");
     let root = temp.path().join("root");
+    let other_root = temp.path().join("other");
     fs::create_dir_all(&root).expect("root directory");
+    fs::create_dir_all(&other_root).expect("other root directory");
     let mut config = FileWatcherConfig::default();
     config.debounce_interval_ms = 40;
     config.ignore_hidden_files = false;
@@ -266,29 +268,47 @@ async fn re_registering_a_recreated_root_resumes_watching() {
         .watch_path(root.to_str().unwrap(), Some(config.clone()))
         .await
         .expect("initial watch");
-
-    fs::remove_dir_all(&root).expect("remove watched root");
-    fs::create_dir_all(&root).expect("recreate watched root");
-
     service
-        .watch_path(root.to_str().unwrap(), Some(config))
+        .watch_path(other_root.to_str().unwrap(), Some(config.clone()))
         .await
-        .expect("re-registration of a recreated root");
+        .expect("other root watch");
 
-    let file = root.join("command.md");
-    fs::write(&file, "created").expect("file in recreated root");
+    // inotify can deliver DELETE_SELF after the replacement registration.
+    // Repeat that interleaving and give every write a new path so queued events
+    // from a prior directory cannot satisfy the next recovery assertion.
+    let attempts = if cfg!(target_os = "linux") { 32 } else { 2 };
+    for attempt in 0..attempts {
+        fs::remove_dir_all(&root).expect("remove watched root");
+        fs::create_dir_all(&root).expect("recreate watched root");
 
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    loop {
-        let batch = tokio::time::timeout_at(deadline, events.recv())
+        service
+            .watch_path(root.to_str().unwrap(), Some(config.clone()))
             .await
-            .expect("recreated root should still emit events")
-            .expect("watch broadcast remains open");
-        if batch
-            .iter()
-            .any(|event| event.path == file.to_string_lossy())
-        {
-            break;
+            .expect("re-registration of a recreated root");
+
+        let file = root.join(format!("command-{attempt}.md"));
+        let other_file = other_root.join(format!("command-{attempt}.md"));
+        fs::write(&file, "created").expect("file in recreated root");
+        fs::write(&other_file, "created").expect("file in unaffected root");
+
+        let mut recovered_event = false;
+        let mut other_event = false;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while !recovered_event || !other_event {
+            let batch = tokio::time::timeout_at(deadline, events.recv())
+                .await
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "watch recovery attempt {attempt}: recreated root event={recovered_event}, other root event={other_event}"
+                    )
+                })
+                .expect("watch broadcast remains open");
+            recovered_event |= batch
+                .iter()
+                .any(|event| event.path == file.to_string_lossy());
+            other_event |= batch
+                .iter()
+                .any(|event| event.path == other_file.to_string_lossy());
         }
     }
 }

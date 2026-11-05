@@ -403,8 +403,19 @@ impl FileWatchService {
                 // the pre-incremental implementation got it for free by
                 // rebuilding the whole watcher on every call.
                 if !is_new {
-                    // May never have been registered; ignore unwatch failures.
-                    let _ = watcher.unwatch(&path_buf);
+                    if let Err(error) = watcher.unwatch(&path_buf) {
+                        // An already removed native watch can leave stale path
+                        // mappings in notify. On inotify, a queued DELETE_SELF
+                        // can then remove a new watch registered at that path.
+                        // Retire that backend before restoring registrations.
+                        debug!(
+                            "Rebuilding file watcher after failed unwatch: path={} error={}",
+                            path_buf.display(),
+                            error
+                        );
+                        drop(watcher_guard);
+                        return self.create_watcher().await;
+                    }
                 }
                 if let Err(error) = watcher.watch(&path_buf, mode) {
                     self.health
@@ -861,7 +872,7 @@ mod tests {
     };
     use crate::file_watch::{FileWatchFailure, FileWatchFailureCode, FileWatcherConfig};
     use notify::event::CreateKind;
-    use notify::{Event, EventKind};
+    use notify::{Event, EventKind, Watcher};
     use std::collections::HashMap;
     use std::fs;
     use std::path::Path;
@@ -1008,6 +1019,69 @@ mod tests {
             .expect("event after rebuild")
             .expect("watch event batch");
         assert!(batch.iter().any(|event| event.path.ends_with("SKILL.md")));
+    }
+
+    #[tokio::test]
+    async fn a_lost_native_registration_recovers_all_watched_roots() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        fs::create_dir_all(&first).expect("first root");
+        fs::create_dir_all(&second).expect("second root");
+        let mut config = FileWatcherConfig::default();
+        config.debounce_interval_ms = 0;
+        let service = FileWatchService::new(config.clone());
+        let mut events = service.subscribe();
+        for root in [&first, &second] {
+            service
+                .watch_path(root.to_str().unwrap(), Some(config.clone()))
+                .await
+                .expect("initial watch");
+        }
+
+        // Model the native backend losing a registration while the service
+        // still owns it. A repeat unwatch must now report WatchNotFound.
+        service
+            .watcher
+            .lock()
+            .await
+            .as_mut()
+            .expect("native watcher")
+            .unwatch(&first)
+            .expect("remove native registration");
+        service
+            .health
+            .mark_unhealthy(FileWatchFailure::backend_unavailable(
+                "native registration lost",
+                Some(first.to_string_lossy().into_owned()),
+            ));
+
+        service
+            .watch_path(first.to_str().unwrap(), Some(config))
+            .await
+            .expect("recover lost registration");
+        assert!(service.is_healthy());
+        assert!(service.status().failure.is_none());
+
+        let first_file = first.join("first.md");
+        let second_file = second.join("second.md");
+        fs::write(&first_file, "updated").expect("first root update");
+        fs::write(&second_file, "updated").expect("second root update");
+        let mut observed = std::collections::HashSet::new();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while observed.len() < 2 {
+            let batch = tokio::time::timeout_at(deadline, events.recv())
+                .await
+                .expect("both roots emit after recovery")
+                .expect("watch event batch");
+            for event in batch {
+                if event.path == first_file.to_string_lossy()
+                    || event.path == second_file.to_string_lossy()
+                {
+                    observed.insert(event.path);
+                }
+            }
+        }
     }
 
     #[tokio::test]
