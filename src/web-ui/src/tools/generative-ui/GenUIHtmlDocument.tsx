@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useEffect, useRef } from 'react';
+import { useColorScheme } from './components/openui/scheme';
 import { genUICatalog, type GenUIDesignSpec } from './genUIContract';
 import type { GenUIHtmlDocumentSource } from './genUITypes';
 
@@ -220,7 +221,7 @@ function inspectionBootstrap(): string {
  * retained in the source record but are deliberately disabled by this static
  * renderer until a host has negotiated the controlled bridge capability.
  */
-export function sanitizeGenUIHtmlSource(source: GenUIHtmlDocumentSource, specification?: GenUIDesignSpec, hostStyleResourceCss = '', scriptEnabled = false, inspectionEnabled = false, inlineScriptEnabled = false): GenUIHtmlSanitizeResult {
+export function sanitizeGenUIHtmlSource(source: GenUIHtmlDocumentSource, specification?: GenUIDesignSpec, hostStyleResourceCss = '', scriptEnabled = false, inspectionEnabled = false, inlineScriptEnabled = false, colorScheme: 'light' | 'dark' = 'light'): GenUIHtmlSanitizeResult {
   const diagnostics: string[] = [];
   const allowControlledScript = scriptEnabled && !inspectionEnabled;
   const scriptNonce = allowControlledScript || inspectionEnabled ? createCspNonce() : undefined;
@@ -307,7 +308,7 @@ export function sanitizeGenUIHtmlSource(source: GenUIHtmlDocumentSource, specifi
   }
   if (scriptNonce) policy.setAttribute('content', `default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; script-src 'nonce-${scriptNonce}'`);
   return {
-    document: `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${parsed.head.innerHTML}</head><body>${parsed.body.innerHTML}</body></html>`,
+    document: `<!doctype html><html data-openbitfun-appearance-mode="${colorScheme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${parsed.head.innerHTML}</head><body>${parsed.body.innerHTML}</body></html>`,
     diagnostics,
   };
 }
@@ -346,8 +347,10 @@ export default function GenUIHtmlDocument({ source, specification, designSpecId,
   inspection?: GenUIHtmlInspection;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const themeRef = useRef<HTMLDivElement>(null);
+  const colorScheme = useColorScheme(themeRef);
   const hostStyleResourceCss = useMemo(() => {
-    if (!specification?.styleResources.length || typeof document === 'undefined') return '';
+    if (typeof document === 'undefined') return '';
     const computed = getComputedStyle(document.documentElement);
     const tokens: string[] = [];
     for (let index = 0; index < computed.length; index++) {
@@ -358,14 +361,11 @@ export default function GenUIHtmlDocument({ source, specification, designSpecId,
       // into the opaque document's inline stylesheet.
       if (value && !/[{};]/.test(value)) tokens.push(`${name}:${value};`);
     }
-    const base = tokens.length
-      ? `:root{${tokens.join('')}}html,body{margin:0;min-height:100%;color:var(--openbitfun-color-content-primary);background:var(--openbitfun-color-surface-canvas);font-family:var(--openbitfun-type-body-md-font-family);font-size:var(--openbitfun-type-body-md-font-size);line-height:var(--openbitfun-type-body-md-line-height);}`
-      : '';
-    return base;
-  }, [specification]);
+    return `:root{color-scheme:${colorScheme};${tokens.join('')}}html,body{margin:0;min-height:100%;color:var(--openbitfun-color-content-primary);background:var(--openbitfun-color-surface-canvas);font-family:var(--openbitfun-type-body-md-font-family);font-size:var(--openbitfun-type-body-md-font-size);line-height:var(--openbitfun-type-body-md-line-height);}`;
+  }, [colorScheme]);
   const inspectionEnabled = Boolean(inspection);
   const canRunScript = Boolean(scriptEnabled && bridge && source.script?.trim() && !inspectionEnabled);
-  const sanitized = useMemo(() => sanitizeGenUIHtmlSource(source, specification, hostStyleResourceCss, canRunScript, inspectionEnabled, false), [source, specification, hostStyleResourceCss, canRunScript, inspectionEnabled]);
+  const sanitized = useMemo(() => sanitizeGenUIHtmlSource(source, specification, hostStyleResourceCss, canRunScript, inspectionEnabled, false, colorScheme), [source, specification, hostStyleResourceCss, canRunScript, inspectionEnabled, colorScheme]);
   useEffect(() => {
     if (!canRunScript || !bridge) return;
     const frame = frameRef.current;
@@ -485,7 +485,7 @@ export default function GenUIHtmlDocument({ source, specification, designSpecId,
       window.clearInterval(retryTimer);
     };
   }, [inspection]);
-  return <div className="gen-ui-html-document" data-gen-ui-html-document="true" data-gen-ui-source-kind={source.kind} data-gen-ui-sanitize-diagnostics={sanitized.diagnostics.length}>
+  return <div ref={themeRef} className="gen-ui-html-document" data-gen-ui-html-document="true" data-gen-ui-source-kind={source.kind} data-gen-ui-sanitize-diagnostics={sanitized.diagnostics.length}>
     <iframe
       title="Generated HTML document"
       className="gen-ui-html-document__frame"

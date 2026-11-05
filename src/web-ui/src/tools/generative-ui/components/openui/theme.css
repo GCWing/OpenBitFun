@@ -1,13 +1,10 @@
-/* Design tokens for the component library. Neutrals (font, text, surfaces,
-   borders) follow the OpenUI theme tokens, so components match the Agent
-   Interface in light and dark; the dark block only retunes status, chart and
-   map colors. */
+/* OpenUI components inherit the active OpenBitFun Appearance palette. */
 :root,
-[data-theme="light"] {
+[data-openbitfun-appearance-mode="light"] {
   color-scheme: light;
   --iui-font: var(--openui-font-body, "Inter", sans-serif);
   --iui-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --iui-canvas: var(--openui-foreground, #ffffff);
+  --iui-canvas: var(--openbitfun-color-surface-canvas, var(--openui-foreground, #ffffff));
   /* Greys are ink at an alpha, so they stack on any surface (cards, tints, sunk
      areas) and flip with the theme: track 4-6%, hover 5%, pressed or selected 8%,
      borders 8-10%. */
@@ -16,13 +13,13 @@
   --iui-surface: color-mix(in srgb, var(--iui-ink) 4%, transparent);
   --iui-surface-hover: color-mix(in srgb, var(--iui-ink) 8%, transparent);
   --iui-surface-strong: color-mix(in srgb, var(--iui-ink) 8%, transparent);
-  --iui-ink: var(--openui-text-neutral-primary, #0d0d0d);
+  --iui-ink: var(--openbitfun-color-content-primary, var(--openui-text-neutral-primary, #0d0d0d));
   --iui-ink-hover: color-mix(in oklch, var(--iui-ink) 82%, var(--iui-canvas));
-  --iui-on-ink: var(--openui-foreground, #ffffff);
-  --iui-muted: var(--openui-text-neutral-secondary, rgb(0 0 0 / 60%));
-  --iui-faint: var(--openui-text-neutral-secondary, rgb(0 0 0 / 60%));
-  --iui-border: color-mix(in srgb, var(--iui-ink) 8%, transparent);
-  --iui-border-strong: color-mix(in srgb, var(--iui-ink) 10%, transparent);
+  --iui-on-ink: var(--iui-canvas);
+  --iui-muted: var(--openbitfun-color-content-secondary, var(--openui-text-neutral-secondary, rgb(0 0 0 / 60%)));
+  --iui-faint: var(--openbitfun-color-content-muted, var(--openui-text-neutral-secondary, rgb(0 0 0 / 60%)));
+  --iui-border: var(--openbitfun-color-border-default, color-mix(in srgb, var(--iui-ink) 8%, transparent));
+  --iui-border-strong: var(--openbitfun-color-border-strong, color-mix(in srgb, var(--iui-ink) 10%, transparent));
   --iui-range-track: color-mix(in srgb, var(--iui-ink) 6%, transparent);
   --iui-range-thumb: var(--iui-ink);
   --iui-focus: var(--iui-ink);
@@ -35,24 +32,24 @@
   --iui-shadow-sm: 0 1px 3px rgb(0 0 0 / 5%);
   --iui-info: var(--iui-ink);
   --iui-info-soft: color-mix(in srgb, var(--iui-ink) 6%, transparent);
-  --iui-success: #00805d;
-  --iui-success-soft: #edf9f2;
-  --iui-warning: #8a5300;
-  --iui-warning-soft: #ffefc7;
-  --iui-danger: #c1322c;
-  --iui-danger-soft: #fff0ee;
+  --iui-success: var(--openbitfun-color-status-success-content, #00805d);
+  --iui-success-soft: var(--openbitfun-color-status-success-surface, #edf9f2);
+  --iui-warning: var(--openbitfun-color-status-warning-content, #8a5300);
+  --iui-warning-soft: var(--openbitfun-color-status-warning-surface, #ffefc7);
+  --iui-danger: var(--openbitfun-color-status-danger-content, #c1322c);
+  --iui-danger-soft: var(--openbitfun-color-status-danger-surface, #fff0ee);
   --iui-purple: #7040c1;
   --iui-purple-soft: #f4f0ff;
   --iui-pink: #b7377c;
   --iui-pink-soft: #fff0f6;
   /* Badge pills: a 6% neutral, and soft tints with darker same-hue text. */
   --iui-badge-neutral-soft: color-mix(in srgb, var(--iui-ink) 6%, transparent);
-  --iui-badge-success: #1f6b4f;
-  --iui-badge-success-soft: #e8f3ec;
-  --iui-badge-warning: #8a5300;
-  --iui-badge-warning-soft: #ffefc7;
-  --iui-badge-danger: #9f3a33;
-  --iui-badge-danger-soft: #f8e8e5;
+  --iui-badge-success: var(--openbitfun-color-status-success-content, #1f6b4f);
+  --iui-badge-success-soft: var(--openbitfun-color-status-success-surface, #e8f3ec);
+  --iui-badge-warning: var(--openbitfun-color-status-warning-content, #8a5300);
+  --iui-badge-warning-soft: var(--openbitfun-color-status-warning-surface, #ffefc7);
+  --iui-badge-danger: var(--openbitfun-color-status-danger-content, #9f3a33);
+  --iui-badge-danger-soft: var(--openbitfun-color-status-danger-surface, #f8e8e5);
   --iui-badge-purple: #5d4596;
   --iui-badge-purple-soft: #efebf7;
   --iui-badge-pink: #94456d;
@@ -84,29 +81,29 @@
   --iui-photo-empty-icon: var(--iui-border-strong);
 }
 
-:root[data-openui-theme="dark"],
-[data-theme="dark"] {
+:root[data-openbitfun-appearance-mode="dark"],
+[data-openbitfun-appearance-mode="dark"] {
   color-scheme: dark;
   --iui-shadow: 0 4px 20px rgb(0 0 0 / 35%);
   --iui-shadow-sm: 0 1px 3px rgb(0 0 0 / 30%);
   --iui-info: var(--iui-ink);
   --iui-info-soft: color-mix(in srgb, var(--iui-ink) 6%, transparent);
-  --iui-success: #5bcf9c;
-  --iui-success-soft: #13291f;
-  --iui-warning: #f0b84f;
-  --iui-warning-soft: #30250f;
-  --iui-danger: #ff7d74;
-  --iui-danger-soft: #3a1b19;
+  --iui-success: var(--openbitfun-color-status-success-content, #5bcf9c);
+  --iui-success-soft: var(--openbitfun-color-status-success-surface, #13291f);
+  --iui-warning: var(--openbitfun-color-status-warning-content, #f0b84f);
+  --iui-warning-soft: var(--openbitfun-color-status-warning-surface, #30250f);
+  --iui-danger: var(--openbitfun-color-status-danger-content, #ff7d74);
+  --iui-danger-soft: var(--openbitfun-color-status-danger-surface, #3a1b19);
   --iui-purple: #b49cff;
   --iui-purple-soft: #261f3a;
   --iui-pink: #f28cc0;
   --iui-pink-soft: #371b2a;
-  --iui-badge-success: #8fd3b2;
-  --iui-badge-success-soft: rgb(80 180 130 / 14%);
-  --iui-badge-warning: #e6c27c;
-  --iui-badge-warning-soft: rgb(220 170 80 / 14%);
-  --iui-badge-danger: #f0a39b;
-  --iui-badge-danger-soft: rgb(230 110 100 / 14%);
+  --iui-badge-success: var(--openbitfun-color-status-success-content, #8fd3b2);
+  --iui-badge-success-soft: var(--openbitfun-color-status-success-surface, rgb(80 180 130 / 14%));
+  --iui-badge-warning: var(--openbitfun-color-status-warning-content, #e6c27c);
+  --iui-badge-warning-soft: var(--openbitfun-color-status-warning-surface, rgb(220 170 80 / 14%));
+  --iui-badge-danger: var(--openbitfun-color-status-danger-content, #f0a39b);
+  --iui-badge-danger-soft: var(--openbitfun-color-status-danger-surface, rgb(230 110 100 / 14%));
   --iui-badge-purple: #c3b2f0;
   --iui-badge-purple-soft: rgb(160 130 240 / 14%);
   --iui-badge-pink: #eeaacb;

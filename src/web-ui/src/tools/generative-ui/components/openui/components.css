@@ -134,7 +134,7 @@
 .iui-button-soft:not(:disabled):hover, :is(.iui-button-outline, .iui-button-ghost):not(:disabled):active { background: var(--iui-pressed); }
 .iui-button-solid.iui-button-danger { background: var(--iui-danger); color: #fff; }
 .iui-button-solid.iui-button-success { background: var(--iui-success); color: #fff; }
-:is(:root[data-openui-theme="dark"], [data-theme="dark"]) .iui-button-solid:is(.iui-button-danger, .iui-button-success) { color: #121212; }
+:is(:root[data-openbitfun-appearance-mode="dark"], [data-openbitfun-appearance-mode="dark"]) .iui-button-solid:is(.iui-button-danger, .iui-button-success) { color: var(--iui-canvas); }
 .iui-button-solid:is(.iui-button-danger, .iui-button-success):not(:disabled):hover { filter: brightness(1.08); }
 :is(.iui-button-outline, .iui-button-soft, .iui-button-ghost).iui-button-danger { color: var(--iui-danger); }
 :is(.iui-button-outline, .iui-button-soft, .iui-button-ghost).iui-button-success { color: var(--iui-success); }
@@ -168,7 +168,7 @@
 /* Rows in a list keep still: the wash alone shows hover and press. */
 .iui-pressable:has(> .iui-row):not([aria-disabled="true"]):is(:hover, :active) { transform: none; }
 .iui-pressable.is-selected:not(:has(> .iui-row))::before { content: ""; position: absolute; top: 8px; right: 8px; z-index: 1; width: 18px; height: 18px; border-radius: 50%; background: var(--iui-ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-5'/%3E%3C/svg%3E") center / 12px no-repeat; }
-:root[data-openui-theme="dark"] .iui-pressable.is-selected:not(:has(> .iui-row))::before, [data-theme="dark"] .iui-pressable.is-selected:not(:has(> .iui-row))::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23171717' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-5'/%3E%3C/svg%3E"); }
+:is(:root[data-openbitfun-appearance-mode="dark"], [data-openbitfun-appearance-mode="dark"]) .iui-pressable.is-selected:not(:has(> .iui-row))::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23171717' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-5'/%3E%3C/svg%3E"); }
 .iui-pressable[aria-disabled="true"] { cursor: default; }
 .iui-pressable:focus-visible { outline: 2px solid var(--iui-focus); outline-offset: 2px; }
 
@@ -179,7 +179,7 @@
 .iui-input:focus, .iui-input:focus-visible { border-color: var(--iui-focus); box-shadow: 0 0 0 2px color-mix(in srgb, var(--iui-focus) 18%, transparent); outline: none; }
 .iui-textarea { min-height: 96px; resize: vertical; }
 .iui-select { appearance: none; padding-right: 38px; cursor: pointer; background: var(--iui-canvas) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23676767' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E") no-repeat right 12px center / 16px; }
-:is(:root[data-openui-theme="dark"], [data-theme="dark"]) .iui-select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ababab' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E"); }
+:is(:root[data-openbitfun-appearance-mode="dark"], [data-openbitfun-appearance-mode="dark"]) .iui-select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ababab' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E"); }
 .iui-date::-webkit-calendar-picker-indicator { opacity: .55; cursor: pointer; }
 
 .iui-segmented { display: inline-flex; align-self: flex-start; gap: 2px; max-width: 100%; padding: 3px; overflow-x: auto; border-radius: 999px; background: var(--iui-surface); scrollbar-width: none; }
@@ -187,7 +187,7 @@
 .iui-segmented > button { flex: 1 0 auto; padding: 6px 14px; border: 0; border-radius: 999px; background: transparent; color: var(--iui-muted); font-size: 13px; line-height: 1.4; white-space: nowrap; cursor: pointer; transition: background .2s, color .2s; }
 .iui-segmented > button:hover:not(.is-selected) { color: var(--iui-ink); }
 .iui-segmented > button.is-selected { background: var(--iui-canvas); color: var(--iui-ink); font-weight: 560; box-shadow: var(--iui-shadow-sm), 0 0 0 1px var(--iui-border); }
-:root[data-openui-theme="dark"] .iui-segmented > button.is-selected, [data-theme="dark"] .iui-segmented > button.is-selected { background: var(--iui-surface-strong); }
+:is(:root[data-openbitfun-appearance-mode="dark"], [data-openbitfun-appearance-mode="dark"]) .iui-segmented > button.is-selected { background: var(--iui-surface-strong); }
 
 /* Range: a 24px pill track with an 18px thumb inside a 40px hit area. */
 .iui-slider { display: flex; flex-direction: column; min-width: 0; }
