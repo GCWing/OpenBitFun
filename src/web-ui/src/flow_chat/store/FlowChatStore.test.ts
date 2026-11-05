@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flowChatStore, mergeModelRoundAttemptDiagnostics } from './FlowChatStore';
 import { sessionToVirtualItems } from './modernFlowChatStore';
+import { getTurnOutputDurationMs, getTurnUsageMetrics } from '../utils/turnUsageMetrics';
 import { buildModelRoundItemGroups } from '../components/modern/modelRoundItemGrouping';
 import { getVirtualItemFlowGroups } from '../grouping/selectors';
 import { convertDialogTurnToBackendFormat } from '../services/flow-chat-manager/PersistenceModule';
@@ -8114,6 +8115,54 @@ describe('FlowChatStore reconcile snapshot content safety', () => {
       flowChatStore.getState().sessions.get('history-1')
         ?.dialogTurns[0].modelRounds[0].items[0],
     ).toMatchObject({ content: 'OpenBitFun is an agentic IDE…' });
+  });
+
+  it.each([
+    ['settlement', undefined, 334],
+    ['settlement', 97, 334],
+    ['settlement', 450, 450],
+    ['peer-refresh', 97, 334],
+    ['peer-refresh', 450, 450],
+  ] as const)('keeps complete turn usage across %s with host output %s', async (path, hostOutput, expectedOutput) => {
+    await hydrateSessionWithContent();
+    flowChatStore.setState(prev => {
+      const session = prev.sessions.get('history-1')!;
+      const turn = session.dialogTurns[0];
+      const first = { ...turn.modelRounds[0], durationMs: 1792, streamDurationMs: 324, ttftMs: 1461 };
+      const second = { ...first, id: 'round-1', index: 1, durationMs: 2458, streamDurationMs: 877, ttftMs: 1573 };
+      return { sessions: new Map(prev.sessions).set('history-1', {
+        ...session, dialogTurns: [{ ...turn, status: 'completed', tokenUsage: undefined, modelRounds: [first, second] }],
+      }) };
+    });
+    flowChatStore.updateTokenUsage('history-1', { inputTokens: 28928, outputTokens: 97, totalTokens: 29025 }, 'turn-0');
+    flowChatStore.updateTokenUsage('history-1', { inputTokens: 42794, outputTokens: 237, totalTokens: 43031 }, 'turn-0');
+    expect(flowChatStore.getState().sessions.get('history-1')!.dialogTurns[0].tokenUsage?.outputTokens).toBe(334);
+    const hostInput = hostOutput === 97 ? 28928 : 71722;
+    apiMocks.restoreSessionView.mockResolvedValueOnce({
+      session: hostSession(),
+      turns: [{
+        ...createPersistedTurn(0),
+        modelRounds: [
+          { ...HYDRATED_ROUND, durationMs: 1792, streamDurationMs: 324, ttftMs: 1461 },
+          { ...HYDRATED_ROUND, id: 'round-1', roundIndex: 1, durationMs: 2458, streamDurationMs: 877, ttftMs: 1573 },
+        ],
+        endTime: 4250,
+        tokenUsage: hostOutput === undefined ? undefined : {
+          inputTokens: hostInput, outputTokens: hostOutput, totalTokens: hostInput + hostOutput, timestamp: Date.now() + 1000,
+        },
+      }],
+      contextRestoreState: 'ready',
+    });
+    if (path === 'settlement') {
+      await expect(flowChatStore.reconcileSettledDialogTurn('history-1', 'turn-0')).resolves.toBe(true);
+    } else {
+      peerModeFlagMock.active = true;
+      await flowChatStore.refreshPeerSessionSnapshot('history-1', { requireActiveSession: false });
+    }
+    const restored = flowChatStore.getState().sessions.get('history-1')!.dialogTurns[0];
+    expect(restored.tokenUsage?.outputTokens).toBe(expectedOutput);
+    expect(getTurnUsageMetrics(restored.tokenUsage, getTurnOutputDurationMs(restored.modelRounds)).outputRate)
+      .toBeCloseTo(expectedOutput / 4.25);
   });
 
   it('repairs a settled local or Peer projection from the host tail', async () => {

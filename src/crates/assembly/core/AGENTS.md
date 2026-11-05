@@ -299,6 +299,11 @@ them under `product-full`. `PathManager::with_user_root_for_tests` derives produ
 home from the user root's parent, so a fixture that relocates managed paths must
 place its user root below the directory it means to exercise.
 
+For durable per-turn token usage, client checkpoint reconciliation, and recovery:
+`cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib turn_usage`.
+The fixtures cover host-ledger isolation and client-free completion, not live SSH,
+Relay, Peer Device, or Detached Dispatch connections.
+
 For cold dialog startup and the production-feature scheduler stack regression:
 
 ```bash
