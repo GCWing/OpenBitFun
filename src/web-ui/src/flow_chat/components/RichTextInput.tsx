@@ -207,6 +207,8 @@ export interface RichTextInputProps
   disabled?: boolean;
   className?: string;
   contexts: ContextItem[];
+  /** Session and device activation identity; equal draft text must not share history. */
+  historyScope?: string;
   onRemoveContext: (id: string) => void;
   /** Re-adds contexts whose capsules come back through undo or redo. */
   onRestoreContexts?: (contexts: ContextItem[]) => void;
@@ -371,6 +373,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
   disabled = false,
   className = '',
   contexts,
+  historyScope,
   onRemoveContext,
   onRestoreContexts,
   onContextTriggerStateChange,
@@ -1938,6 +1941,10 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
 
     lastContextIdsRef.current = currentContextIds;
   }, [contexts, internalRef]);
+
+  useEffect(() => {
+    resetHistory();
+  }, [historyScope, resetHistory]);
 
   const handleFocus = useCallback(() => {
     setIsFocused(true);

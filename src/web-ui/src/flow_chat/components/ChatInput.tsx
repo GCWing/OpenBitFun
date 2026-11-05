@@ -6664,6 +6664,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               ))}
               <RichTextInput
                 ref={richTextInputRef}
+                historyScope={`${deviceSurfaceScope.epoch}:${deviceSurfaceScope.key(effectiveTargetSessionId)}`}
                 value={inputState.value}
                 onChange={handleInputChange}
                 onLargePaste={createLargePastePlaceholder}

@@ -357,6 +357,35 @@ describeWithJsdom('RichTextInput external sync', () => {
     }
   });
 
+  it('forgets undo and redo when the session or device activation changes with identical draft text', async () => {
+    const renderScope = async (historyScope: string, value: string) => {
+      await act(async () => root.render(<RichTextInput
+        value={value} historyScope={historyScope} onChange={() => {}}
+        contexts={emptyContexts} onRemoveContext={() => {}}
+      />));
+    };
+    await renderScope('local:session-a:1', '');
+    const editor = container.querySelector('.rich-text-input') as HTMLDivElement;
+    editor.textContent = 'private';
+    await act(async () => { editor.dispatchEvent(new window.InputEvent('input', { bubbles: true })); });
+    await renderScope('local:session-b:1', 'private');
+    await act(async () => { editor.dispatchEvent(new window.InputEvent('beforeinput', {
+      inputType: 'historyUndo', bubbles: true, cancelable: true,
+    })); });
+    expect(editor.textContent).toBe('private');
+    editor.textContent = 'private draft';
+    await act(async () => { editor.dispatchEvent(new window.InputEvent('input', { bubbles: true })); });
+    await act(async () => { editor.dispatchEvent(new window.InputEvent('beforeinput', {
+      inputType: 'historyUndo', bubbles: true, cancelable: true,
+    })); });
+    expect(editor.textContent).toBe('private');
+    await renderScope('peer:session-b:2', 'private');
+    await act(async () => { editor.dispatchEvent(new window.InputEvent('beforeinput', {
+      inputType: 'historyRedo', bubbles: true, cancelable: true,
+    })); });
+    expect(editor.textContent).toBe('private');
+  });
+
   it('removes leaked key characters from composer output while preserving joined emoji and IME text', async () => {
     const onChange = vi.fn();
     await act(async () => root.render(<RichTextInput value="" onChange={onChange} contexts={emptyContexts} onRemoveContext={() => {}} />));
