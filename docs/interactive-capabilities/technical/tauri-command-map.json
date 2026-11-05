@@ -1377,7 +1377,7 @@
       "visibility": "documented",
       "rustPath": "computer_use_control_status",
       "sourceFile": "src/apps/desktop/src/api/computer_use_api.rs",
-      "signature": "fn computer_use_control_status( ) -> Result<openbitfun_agent_tools::computer_use_control::ControlSnapshot, String>",
+      "signature": "fn computer_use_control_status( request: Option<ComputerUseControlStatusRequest>, ) -> Result<openbitfun_agent_tools::computer_use_control::ControlSnapshot, String>",
       "remoteWorkspacePolicy": "LocalOnly"
     },
     {
