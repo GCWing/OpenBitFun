@@ -5,7 +5,6 @@ import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { useI18n } from '@/infrastructure/i18n';
-import GenUIApplication from '@/tools/generative-ui/GenUIApplication';
 import { genUILibraryProfiles } from '@/tools/generative-ui/genUILibraryProfiles';
 import './GenUILibrarySection.scss';
 
