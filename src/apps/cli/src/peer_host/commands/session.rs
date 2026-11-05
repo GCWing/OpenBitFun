@@ -207,12 +207,9 @@ pub(super) async fn resolved_session_storage_scope(
 /// Whether the controller named the session's workspace, by ID or by the
 /// legacy path projection. Only such requests can (re)load the session.
 fn has_session_workspace_scope(request: &Value) -> bool {
-    ["workspaceId", "workspacePath"].iter().any(|key| {
-        request
-            .get(key)
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.trim().is_empty())
-    })
+    ["workspaceId", "workspacePath"]
+        .iter()
+        .any(|key| optional_string(request, key).is_some())
 }
 
 fn validated_session_id(request: &Value) -> Result<String, String> {
@@ -837,8 +834,9 @@ pub(crate) async fn get_session_thread_goal(
 pub(super) async fn read_session_header_for_selector(
     state: &PeerHostState,
     request: &Value,
+    session_id: &str,
 ) -> Result<openbitfun_core::agentic::core::Session, String> {
-    let session_id = validated_session_id(request)?;
+    openbitfun_core_types::validate_session_id(session_id)?;
     let storage_path = if has_session_workspace_scope(request) {
         ensure_session_workspace_runtime_ownership(state, request).await?;
         Some(resolved_session_storage_path(state, request).await?)
@@ -849,7 +847,7 @@ pub(super) async fn read_session_header_for_selector(
         .compatibility
         .read_session_header(
             storage_path.as_deref(),
-            &session_id,
+            session_id,
             optional_bool(request, "includeInternal").unwrap_or(false),
         )
         .await
@@ -861,8 +859,8 @@ pub(crate) async fn get_model_routing_status(
     args: &Value,
 ) -> Result<Value, String> {
     let request = request_value(args);
-    let session = if optional_string(request, "sessionId").is_some() {
-        Some(read_session_header_for_selector(state, request).await?)
+    let session = if let Some(session_id) = optional_string(request, "sessionId") {
+        Some(read_session_header_for_selector(state, request, &session_id).await?)
     } else {
         None
     };
@@ -1235,6 +1233,18 @@ mod tests {
 
     #[test]
     fn session_catalog_query_keeps_legacy_peers_and_workspace_identity_compatible() {
+        for field in [
+            "workspace_id",
+            "workspaceId",
+            "workspace_path",
+            "workspacePath",
+        ] {
+            let mut request = serde_json::json!({"sessionId": "session-1"});
+            request[field] = serde_json::json!("workspace");
+            assert!(super::has_session_workspace_scope(&request));
+            request[field] = serde_json::json!(" ");
+            assert!(!super::has_session_workspace_scope(&request));
+        }
         let query =
             serde_json::json!({"workspaceId": "main", "ordering": "updated", "source": "codex"});
         for field in ["workspace_id", "workspaceId"] {

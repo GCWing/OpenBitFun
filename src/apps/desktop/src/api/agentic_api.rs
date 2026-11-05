@@ -2366,7 +2366,7 @@ pub async fn get_session_permission_mode(
     if session_id.is_empty() {
         return Err("session_id is required".to_string());
     }
-    ensure_session_loaded_for_selector_update(
+    let session = read_session_header_for_selector(
         runtime.inner(),
         &session_id,
         request.workspace_id,
@@ -2395,7 +2395,7 @@ pub async fn get_session_permission_mode(
             .map(|_| turn_id.to_string())
     });
     Ok(SessionPermissionModeResponse {
-        mode: session_manager.session_permission_mode(&session_id),
+        mode: session.config.permission_mode,
         turn_mode: active_turn_id
             .as_deref()
             .and_then(|turn_id| session_manager.active_turn_permission_mode(&session_id, turn_id)),
@@ -4503,6 +4503,45 @@ mod tests {
         }))
         .expect("explicit reasoning preset");
         assert_eq!(explicit.reasoning_preset, Some(Some("high".to_string())));
+    }
+
+    #[test]
+    fn session_permission_read_keeps_legacy_scope_and_nullable_wire_fields() {
+        let legacy: UpdateSessionPermissionModeRequest = serde_json::from_value(json!({
+            "sessionId": "session-1"
+        }))
+        .unwrap();
+        assert_eq!(legacy.mode, None);
+        assert_eq!(legacy.turn_id, None);
+        assert_eq!(legacy.workspace_id, None);
+        assert_eq!(legacy.workspace_path, None);
+        assert!(!legacy.include_internal);
+        let scoped: UpdateSessionPermissionModeRequest = serde_json::from_value(json!({
+            "sessionId": "session-1", "workspaceId": "workspace-1",
+            "turnId": "turn-1", "includeInternal": true, "futureField": true
+        }))
+        .unwrap();
+        assert_eq!(scoped.turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(scoped.workspace_id.as_deref(), Some("workspace-1"));
+        assert!(scoped.include_internal);
+        assert_eq!(
+            serde_json::to_value(SessionPermissionModeResponse {
+                mode: None,
+                turn_mode: None,
+                active_turn_id: None,
+            })
+            .unwrap(),
+            json!({ "mode": null, "turnMode": null, "activeTurnId": null })
+        );
+        assert_eq!(
+            serde_json::to_value(SessionPermissionModeResponse {
+                mode: Some(PermissionMode::FullAccess),
+                turn_mode: Some(PermissionMode::Ask),
+                active_turn_id: Some("turn-1".into()),
+            })
+            .unwrap(),
+            json!({ "mode": "full_access", "turnMode": "ask", "activeTurnId": "turn-1" })
+        );
     }
 
     #[test]

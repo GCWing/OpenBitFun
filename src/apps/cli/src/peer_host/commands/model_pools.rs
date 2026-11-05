@@ -18,7 +18,9 @@ pub(crate) async fn dispatch(
         let session_id = get_string(request, "sessionId")?;
         openbitfun_core_types::validate_session_id(&session_id)?;
         if command == "get_session_model_target" {
-            let session = super::session::read_session_header_for_selector(state, request).await?;
+            let session =
+                super::session::read_session_header_for_selector(state, request, &session_id)
+                    .await?;
             return serde_json::to_value(openbitfun_core::agentic::session::session_model_target(
                 session,
             ))

@@ -384,6 +384,7 @@ For model selector latency, run the catalog and session owner fixtures:
 cargo test --locked -p openbitfun-core --no-default-features --features model-catalog --lib infrastructure::ai::reasoning_catalog::tests
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib session_model_update
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib session_model_read
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib -- session_permission_read session_permission_mode active_turn_permission_mode
 cargo test --locked -p openbitfun-core --no-default-features --features remote-connect,git --lib remote_attach_and_mutation_paths_preserve_workspace_ownership_facts
 ```
 
@@ -391,6 +392,8 @@ Catalog snapshots remain usable during background refresh. Selector reads use
 live session facts or a persisted header, without reading Turns/context, acquiring
 the running Turn's mutation permit, or marking a cold runtime as loaded. Desktop
 and CLI Peer adapters preserve storage scope and internal-session visibility.
+Permission reads preserve the optional session override; only the live runtime
+can supply an active Turn and its temporary override.
 Selector mutations must not restore cold transcripts or reserve active-session capacity; preserve
 writer ownership, unknown persisted fields, legacy metadata-only sessions, and
 both state/metadata projections on failure. These fixtures cover local storage
