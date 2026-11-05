@@ -32,15 +32,34 @@ impl Tool for GenerativeUITool {
         "GenerativeUI"
     }
     async fn description(&self) -> OpenBitFunResult<String> {
-        Ok(
+        let mut description =
             "Stream an OpenUI Lang answer using the selected component collection. The selected profile renders the source in FlowChat as it arrives, with local state and actions. The result is transient in the current answer. Never generate TSX, React source or a per-app compilation artifact. Keep the same app ID when revising an application. Preserve requested features and user state when repairing errors. Query and Mutation calls are allowed only through explicitly registered host providers; never invent a network or storage fallback.".into()
-        )
+        ;
+        if let Ok(profile) = Self::selected_profile().await {
+            if let Some(resource_id) =
+                openbitfun_product_domains::generative_ui::system_prompt_resource_id_for_profile(
+                    &profile,
+                )
+            {
+                if let Some(prompt) =
+                    openbitfun_product_domains::generative_ui::system_prompt_for_resource_id(
+                        &resource_id,
+                    )
+                {
+                    description.push_str("\n\nLoad the host resource `");
+                    description.push_str(&resource_id);
+                    description.push_str("` before generating. Its content is the selected profile's complete OpenUI Lang authoring contract:\n\n");
+                    description.push_str(prompt);
+                }
+            }
+        }
+        Ok(description)
     }
     fn short_description(&self) -> String {
         "Create a streaming OpenUI Lang component answer.".into()
     }
     fn default_exposure(&self) -> ToolExposure {
-        ToolExposure::Direct
+        ToolExposure::Deferred
     }
     fn input_schema(&self) -> Value {
         let catalog = openbitfun_product_domains::generative_ui::catalog();
@@ -59,7 +78,7 @@ impl Tool for GenerativeUITool {
                 }
             }
         }
-        schema["description"] = json!("Stream an OpenUI Lang or HTML document in createSurface.source. Keep messages as a JSON array of message objects; never serialize the array into a string. OpenUI statements may render before the enclosing arguments close; updateDataModel is only for initial values. Source is the only accepted application representation and the result is rendered transiently in the current FlowChat answer. The active profile's official OpenUI authoring prompt is supplied as a scoped system instruction.");
+        schema["description"] = json!("Stream an OpenUI Lang or HTML document in createSurface.source. Keep messages as a JSON array of message objects; never serialize the array into a string. OpenUI statements may render before the enclosing arguments close; updateDataModel is only for initial values. Source is the only accepted application representation and the result is rendered transiently in the current FlowChat answer. Load the stable OpenUI Lang host resource named in the tool description before generating.");
         schema
     }
     async fn input_schema_for_model(&self) -> Value {

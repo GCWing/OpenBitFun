@@ -18,6 +18,38 @@ pub fn catalog() -> &'static Value {
 pub fn system_prompt_for_profile(profile: &str) -> Option<&'static str> {
     catalog()["genuiSystemPrompts"][profile].as_str()
 }
+
+pub const OPENUI_LANG_RESOURCE_ID_PREFIX: &str = "openbitfun.genui.openui-lang";
+
+pub fn system_prompt_resource_id_for_profile(profile: &str) -> Option<String> {
+    system_prompt_for_profile(profile)?;
+    Some(format!("{OPENUI_LANG_RESOURCE_ID_PREFIX}/{profile}"))
+}
+
+pub fn system_prompt_for_resource_id(resource_id: &str) -> Option<&'static str> {
+    let profile = resource_id.strip_prefix(&format!("{OPENUI_LANG_RESOURCE_ID_PREFIX}/"))?;
+    system_prompt_for_profile(profile)
+}
+
+#[cfg(test)]
+mod system_prompt_resource_tests {
+    use super::{
+        system_prompt_for_profile, system_prompt_for_resource_id,
+        system_prompt_resource_id_for_profile,
+    };
+
+    #[test]
+    fn stable_resource_id_resolves_the_selected_profile_prompt() {
+        let profile = "openbitfun";
+        let resource_id = system_prompt_resource_id_for_profile(profile).unwrap();
+        assert_eq!(
+            system_prompt_for_resource_id(&resource_id),
+            system_prompt_for_profile(profile)
+        );
+        assert!(system_prompt_for_resource_id("openbitfun.genui.openui-lang/unknown").is_none());
+    }
+}
+
 fn resolve(schema: &Value) -> &Value {
     match schema.get("$ref").and_then(Value::as_str) {
         Some(reference) => &catalog()["$defs"][reference.trim_start_matches("#/$defs/")],
@@ -77,7 +109,10 @@ pub fn generation_schema_for_profile(profile: &str) -> Result<Value, String> {
     create["properties"]["designSpec"]["properties"]["revision"] =
         serde_json::json!({"const": design_spec["revision"]});
     schema["description"] = serde_json::json!(format!(
-        "Generate the openbitfun.genui.v1 protocol for the selected GenUI profile. The GenerativeUI tool receives a JSON protocol object and messages must remain a JSON array of message objects, never a JSON-encoded string. When createSurface.source.kind is openui-lang, source.content must contain the raw OpenUI Lang program. The profile's official OpenUI lang-core rules, component signatures and worked examples are supplied in the system prompt. Selected adapter collection: {profile}; allowed createSurface.template: {}; selected design specification {design_spec_id}: {}. New applications must send a complete source document in createSurface.source and may send updateDataModel for initial values.",
+        "Generate the openbitfun.genui.v1 protocol for the selected GenUI profile. The GenerativeUI tool receives a JSON protocol object and messages must remain a JSON array of message objects, never a JSON-encoded string. When createSurface.source.kind is openui-lang, source.content must contain the raw OpenUI Lang program. Load host resource `{}` for the official OpenUI Lang rules, component signatures and worked examples before generating. Selected adapter collection: {profile}; allowed createSurface.template: {}; selected design specification {design_spec_id}: {}. New applications must send a complete source document in createSurface.source and may send updateDataModel for initial values.",
+        system_prompt_resource_id_for_profile(profile)
+            .as_deref()
+            .ok_or("Selected component collection has no OpenUI Lang prompt resource")?,
         selected[0],
         design_spec,
     ));
