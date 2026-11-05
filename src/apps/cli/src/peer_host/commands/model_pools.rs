@@ -17,6 +17,13 @@ pub(crate) async fn dispatch(
     ) {
         let session_id = get_string(request, "sessionId")?;
         openbitfun_core_types::validate_session_id(&session_id)?;
+        if command == "get_session_model_target" {
+            let session = super::session::read_session_header_for_selector(state, request).await?;
+            return serde_json::to_value(openbitfun_core::agentic::session::session_model_target(
+                session,
+            ))
+            .map_err(|error| error.to_string());
+        }
         super::session::ensure_session_workspace_runtime_ownership(state, request).await?;
         if state
             .compatibility
@@ -26,25 +33,18 @@ pub(crate) async fn dispatch(
         {
             super::session::restore_session(state, args).await?;
         }
-        let result = if command == "get_session_model_target" {
-            state
-                .agent_runtime
-                .get_session_model_target(&session_id)
-                .await
-        } else {
-            let selection = serde_json::from_value(
-                request
-                    .get("selection")
-                    .cloned()
-                    .ok_or("selection is required")?,
-            )
-            .map_err(|error| format!("Invalid model selection: {error}"))?;
-            state
-                .agent_runtime
-                .update_session_model_target(&session_id, selection)
-                .await
-        }
-        .map_err(|error| error.into_message())?;
+        let selection = serde_json::from_value(
+            request
+                .get("selection")
+                .cloned()
+                .ok_or("selection is required")?,
+        )
+        .map_err(|error| format!("Invalid model selection: {error}"))?;
+        let result = state
+            .agent_runtime
+            .update_session_model_target(&session_id, selection)
+            .await
+            .map_err(|error| error.into_message())?;
         return serde_json::to_value(result).map_err(|error| error.to_string());
     }
     if command == "retry_model_pool_member" {

@@ -834,20 +834,35 @@ pub(crate) async fn get_session_thread_goal(
     Ok(json!({ "goal": goal }))
 }
 
+pub(super) async fn read_session_header_for_selector(
+    state: &PeerHostState,
+    request: &Value,
+) -> Result<openbitfun_core::agentic::core::Session, String> {
+    let session_id = validated_session_id(request)?;
+    let storage_path = if has_session_workspace_scope(request) {
+        ensure_session_workspace_runtime_ownership(state, request).await?;
+        Some(resolved_session_storage_path(state, request).await?)
+    } else {
+        None
+    };
+    state
+        .compatibility
+        .read_session_header(
+            storage_path.as_deref(),
+            &session_id,
+            optional_bool(request, "includeInternal").unwrap_or(false),
+        )
+        .await
+        .map_err(|error| error.to_string())
+}
+
 pub(crate) async fn get_model_routing_status(
     state: &PeerHostState,
     args: &Value,
 ) -> Result<Value, String> {
     let request = request_value(args);
-    let session = if let Some(id) = optional_string(request, "sessionId") {
-        ensure_coordinator_session(state, args).await?;
-        Some(
-            state
-                .compatibility
-                .loaded_session_snapshot(&id)
-                .map_err(|error| error.to_string())?
-                .ok_or("Session not found")?,
-        )
+    let session = if optional_string(request, "sessionId").is_some() {
+        Some(read_session_header_for_selector(state, request).await?)
     } else {
         None
     };

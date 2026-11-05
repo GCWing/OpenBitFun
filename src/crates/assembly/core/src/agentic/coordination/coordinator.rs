@@ -15375,7 +15375,6 @@ impl openbitfun_runtime_ports::AgentSessionModelPort for ConversationCoordinator
         session_id: &str,
     ) -> openbitfun_runtime_ports::PortResult<openbitfun_core_types::model_pool::SessionModelTarget>
     {
-        use openbitfun_core_types::model_pool::{ModelSelection, SessionModelTarget};
         let session = self
             .session_manager
             .get_session(session_id)
@@ -15384,19 +15383,7 @@ impl openbitfun_runtime_ports::AgentSessionModelPort for ConversationCoordinator
                     "Session not found: {session_id}"
                 )))
             })?;
-        let selection = if let Some(pool_id) = session.config.model_pool_id {
-            ModelSelection::Pool { pool_id }
-        } else {
-            ModelSelection::Model {
-                model_ref: session.config.model_id.unwrap_or_else(|| "primary".into()),
-            }
-        };
-        Ok(SessionModelTarget {
-            session_id: session.session_id,
-            selection,
-            reasoning_preset: session.config.reasoning_preset,
-            binding: session.config.model_pool_binding,
-        })
+        Ok(crate::agentic::session::session_model_target(session))
     }
 
     async fn update_session_model(
