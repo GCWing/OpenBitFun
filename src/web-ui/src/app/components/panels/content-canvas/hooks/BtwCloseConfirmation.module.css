@@ -1,0 +1,29 @@
+.root {
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--openbitfun-space-3);
+}
+
+.message {
+  min-inline-size: 0;
+}
+
+.checkbox {
+  --btw-warning-icon-size: var(--openbitfun-layout-confirm-dialog-icon-glyph-size);
+  --btw-warning-column-gap: var(--openbitfun-layout-confirm-dialog-message-gap);
+  --btw-checkbox-control-size: 12px;
+
+  /* Center the checkbox control in the warning-icon column while keeping its
+     label aligned with the confirmation message column. */
+  align-self: flex-start;
+  margin-inline-start: calc(
+    -1 * (var(--btw-warning-icon-size) + var(--btw-warning-column-gap))
+    + (var(--btw-warning-icon-size) - var(--btw-checkbox-control-size)) / 2
+  );
+  gap: calc(
+    var(--btw-warning-column-gap)
+    + (var(--btw-warning-icon-size) - var(--btw-checkbox-control-size)) / 2
+  );
+}

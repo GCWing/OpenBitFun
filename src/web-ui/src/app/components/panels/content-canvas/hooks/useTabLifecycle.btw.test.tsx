@@ -15,6 +15,7 @@ vi.mock('@/shared/services/destroyTerminalSession', () => ({ destroyTerminalSess
 import { useTabLifecycle } from './useTabLifecycle';
 import { CanvasStoreModeContext, clearAgentCanvasForPeerSwitch, switchAgentCanvasScope, useAgentCanvasStore } from '../stores';
 import { useConfirmDialogStore } from '@/infrastructure/confirm-dialog/confirmDialogService';
+import { BTW_CLOSE_CONFIRMATION_STORAGE_KEY } from '@/infrastructure/preferences/btwCloseConfirmation';
 
 describe('BTW tab close transitions', () => {
   let root: Root;
@@ -37,6 +38,7 @@ describe('BTW tab close transitions', () => {
   beforeEach(async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.resetAllMocks();
+    localStorage.removeItem(BTW_CLOSE_CONFIRMATION_STORAGE_KEY);
     state.sessions.clear();
     state.discard.mockResolvedValue(undefined);
     state.save.mockResolvedValue(undefined);
@@ -124,6 +126,40 @@ describe('BTW tab close transitions', () => {
     expect(useAgentCanvasStore.getState().closedTabs).toEqual([]);
   });
 
+  it('remembers the opt-out only after confirming and skips future warnings', async () => {
+    let id!: string;
+    await act(async () => { id = addBtw('child'); });
+    const { pending } = await beginClose(() => lifecycle.handleCloseWithDirtyCheck(id, 'primary'));
+    const message = useConfirmDialogStore.getState().options?.message as React.ReactElement<{ onSkipChange: (skip: boolean) => void }>;
+    message.props.onSkipChange(true);
+    await act(async () => { useConfirmDialogStore.getState().confirm(); expect(await pending).toBe(true); });
+    expect(localStorage.getItem(BTW_CLOSE_CONFIRMATION_STORAGE_KEY)).toBe('true');
+
+    await act(async () => { addBtw('child-2'); });
+    const nextId = useAgentCanvasStore.getState().primaryGroup.tabs.at(-1)!.id;
+    const nextClose = lifecycle.handleCloseWithDirtyCheck(nextId, 'primary');
+    expect(useConfirmDialogStore.getState().isOpen).toBe(false);
+    await expect(nextClose).resolves.toBe(true);
+    expect(state.discard).toHaveBeenCalledWith('child-2');
+  });
+
+  it('does not remember the opt-out when cancelling or saving as a fork', async () => {
+    let id!: string;
+    await act(async () => { id = addBtw('child'); });
+    const { pending } = await beginClose(() => lifecycle.handleCloseWithDirtyCheck(id, 'primary'));
+    const message = useConfirmDialogStore.getState().options?.message as React.ReactElement<{ onSkipChange: (skip: boolean) => void }>;
+    message.props.onSkipChange(true);
+    useConfirmDialogStore.getState().cancel();
+    expect(await pending).toBe(false);
+    expect(localStorage.getItem(BTW_CLOSE_CONFIRMATION_STORAGE_KEY)).toBeNull();
+
+    const retry = lifecycle.handleCloseWithDirtyCheck(id, 'primary');
+    const retryMessage = useConfirmDialogStore.getState().options?.message as React.ReactElement<{ onSkipChange: (skip: boolean) => void }>;
+    retryMessage.props.onSkipChange(true);
+    await act(async () => { useConfirmDialogStore.getState().secondary(); expect(await retry).toBe(true); });
+    expect(localStorage.getItem(BTW_CLOSE_CONFIRMATION_STORAGE_KEY)).toBeNull();
+  });
+
   it('keeps the tab and reports cleanup failure', async () => {
     let id!: string;
     await act(async () => { id = addBtw('child'); });
@@ -141,7 +177,9 @@ describe('BTW tab close transitions', () => {
       useAgentCanvasStore.getState().addTab({ type: 'btw-session', title: 'review', data: { childSessionId: 'review' } }, 'active');
     });
     const { pending } = await beginClose(() => lifecycle.handleCloseAllWithDirtyCheck('primary'));
-    expect(useConfirmDialogStore.getState().options?.message).toBe('tabs.confirmCloseBtw');
+    expect(useConfirmDialogStore.getState().options?.message).toMatchObject({
+      props: { onSkipChange: expect.any(Function) },
+    });
     await act(async () => { useConfirmDialogStore.getState().confirm(); expect(await pending).toBe(true); });
     expect(state.discard.mock.calls.map(call => call[0]).sort()).toEqual(['child-a', 'child-b']);
     expect(useAgentCanvasStore.getState().primaryGroup.tabs.map(tab => tab.title)).toEqual(['pinned-child']);
