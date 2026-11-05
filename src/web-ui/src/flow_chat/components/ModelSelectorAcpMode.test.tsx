@@ -215,6 +215,47 @@ describe('ModelSelector ACP mode picker', () => {
     expect(onAvailabilityChange).toHaveBeenLastCalledWith({ status: 'ready', canSend: true });
   });
 
+  it('retries failed initialization from the startup notification and ignores it after unmount', async () => {
+    const events: any[] = [];
+    const handler = (event: Event) => events.push((event as CustomEvent).detail);
+    window.addEventListener('openbitfun:acp-session-creation', handler);
+    try {
+      vi.mocked(ACPClientAPI.getSessionOptions).mockRejectedValueOnce(new Error('Agent initialize failed'));
+      await act(async () => root.render(<ModelSelector currentMode="acp:dsh" sessionId="acp-session" />));
+      const failed = events.find(event => event.phase === 'finish');
+      expect(failed).toMatchObject({ succeeded: false, error: 'Agent initialize failed', action: 'restore' });
+      vi.mocked(ACPClientAPI.getSessionOptions).mockResolvedValueOnce({
+        currentModelId: 'remote', availableModels: [{ id: 'remote', name: 'Remote' }], configOptions: [],
+      });
+      await act(async () => failed.retry());
+      expect(ACPClientAPI.getSessionOptions).toHaveBeenCalledTimes(2);
+      expect(events.filter(event => event.phase === 'start')).toHaveLength(2);
+      expect(events.at(-1)).toMatchObject({ phase: 'finish', succeeded: true });
+      act(() => root.render(null));
+      await failed.retry();
+      expect(ACPClientAPI.getSessionOptions).toHaveBeenCalledTimes(2);
+    } finally {
+      window.removeEventListener('openbitfun:acp-session-creation', handler);
+    }
+  });
+
+  it('dismisses pending startup feedback when its session view is unmounted', async () => {
+    const events: any[] = [];
+    const handler = (event: Event) => events.push((event as CustomEvent).detail);
+    window.addEventListener('openbitfun:acp-session-creation', handler);
+    let resolve!: (options: AcpSessionOptions) => void;
+    try {
+      vi.mocked(ACPClientAPI.getSessionOptions).mockReturnValueOnce(new Promise(done => { resolve = done; }));
+      await act(async () => root.render(<ModelSelector currentMode="acp:dsh" sessionId="acp-session" />));
+      act(() => root.render(null));
+      expect(events.at(-1)).toMatchObject({ phase: 'finish', cancelled: true, requestId: events[0].requestId });
+      await act(async () => resolve({ availableModels: [], configOptions: [] }));
+      expect(events.at(-1)).toMatchObject({ phase: 'finish', succeeded: true });
+    } finally {
+      window.removeEventListener('openbitfun:acp-session-creation', handler);
+    }
+  });
+
   it('preserves cached ACP information when a background refresh fails', async () => {
     await renderWithOptions([], {
       currentModelId: 'remote-model',
@@ -260,6 +301,24 @@ describe('ModelSelector ACP mode picker', () => {
     expect(trigger?.textContent).toContain('New Model');
     expect(trigger?.textContent).not.toContain('Old Model');
     expect(trigger?.hasAttribute('aria-busy')).toBe(false);
+  });
+
+  it.each(['local', 'peer-b'])('reloads the same session under a new %s activation and rejects stale options', async surfaceId => {
+    let resolvePrevious!: (options: AcpSessionOptions) => void;
+    vi.mocked(ACPClientAPI.getSessionOptions)
+      .mockReturnValueOnce(new Promise(resolve => { resolvePrevious = resolve; }))
+      .mockResolvedValueOnce({
+        currentModelId: 'fresh-model', availableModels: [{ id: 'fresh-model', name: 'Fresh Model' }], configOptions: [],
+      });
+    await act(async () => root.render(<ModelSelector currentMode="acp:dsh" sessionId="acp-session" />));
+    await act(async () => { activateSurface(surfaceId); });
+    expect(ACPClientAPI.getSessionOptions).toHaveBeenCalledTimes(2);
+    await act(async () => resolvePrevious({
+      currentModelId: 'old-model', availableModels: [{ id: 'old-model', name: 'Old Model' }], configOptions: [],
+    }));
+    const trigger = container.querySelector('[data-testid="chat-model-selector-btn"]');
+    expect(trigger?.textContent).toContain('Fresh Model');
+    expect(trigger?.textContent).not.toContain('Old Model');
   });
 
   it('renders the mode as the whole picker when the agent offers no models', async () => {

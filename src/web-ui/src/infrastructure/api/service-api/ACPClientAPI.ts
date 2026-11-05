@@ -172,6 +172,8 @@ export interface AcpContextUsage {
 }
 
 export interface AcpSessionOptions {
+  /** Included by newer hosts to share the initial metadata read. Missing means use the commands endpoint. */
+  availableCommands?: AcpAvailableCommand[];
   currentModelId?: string;
   availableModels: AcpSessionModelOption[];
   modelConfigId?: string;
@@ -243,6 +245,8 @@ const requirementProbeInFlight = new Map<string, {
 }>();
 
 export class ACPClientAPI {
+  private static sessionOptionsInFlight = new Map<string, Promise<AcpSessionOptions>>();
+  private static commandSnapshotListeners = new Set<(event: AcpAvailableCommandsUpdatedEvent) => void>();
   private static cacheScope = getActiveSurfaceScope();
 
   private static clientListCache: {
@@ -454,16 +458,38 @@ export class ACPClientAPI {
     return api.invoke('cancel_acp_dialog_turn', { request });
   }
 
-  static async getSessionOptions(
+  static getSessionOptions(
     request: GetAcpSessionOptionsRequest
   ): Promise<AcpSessionOptions> {
-    return api.invoke('get_acp_session_options', { request });
+    const scope = getActiveSurfaceScope();
+    const key = scope.key(scope.epoch, request.sessionId, request.clientId, request.workspaceId,
+      request.workspacePath, request.remoteConnectionId, request.remoteSshHost);
+    const existing = this.sessionOptionsInFlight.get(key);
+    if (existing) return existing;
+    const pending = api.invoke<AcpSessionOptions>('get_acp_session_options', { request })
+      .then(options => {
+        scope.assertCurrent('load ACP session metadata');
+        if (Array.isArray(options.availableCommands)) {
+          const event = { sessionId: request.sessionId, clientId: request.clientId, commands: options.availableCommands };
+          this.commandSnapshotListeners.forEach(listener => listener(event));
+        }
+        return options;
+      }).finally(() => this.sessionOptionsInFlight.delete(key));
+    this.sessionOptionsInFlight.set(key, pending);
+    return pending;
   }
 
   static async getSessionCommands(
     request: GetAcpSessionOptionsRequest
   ): Promise<AcpAvailableCommand[]> {
-    return api.invoke('get_acp_session_commands', { request });
+    const scope = getActiveSurfaceScope();
+    const options = await this.getSessionOptions(request);
+    scope.assertCurrent('load ACP session commands');
+    if (Array.isArray(options.availableCommands)) return options.availableCommands;
+    // Older hosts do not advertise the combined snapshot. Keep their existing path.
+    const commands = await api.invoke<AcpAvailableCommand[]>('get_acp_session_commands', { request });
+    scope.assertCurrent('publish ACP session commands');
+    return commands;
   }
 
   static async setSessionModel(
@@ -481,10 +507,19 @@ export class ACPClientAPI {
   static onAvailableCommandsUpdated(
     callback: (event: AcpAvailableCommandsUpdatedEvent) => void
   ): () => void {
-    return api.listen<AcpAvailableCommandsUpdatedEvent>(
+    const scope = getActiveSurfaceScope();
+    const listener = (event: AcpAvailableCommandsUpdatedEvent) => {
+      if (scope.isCurrent()) callback(event);
+    };
+    this.commandSnapshotListeners.add(listener);
+    const unsubscribe = api.listen<AcpAvailableCommandsUpdatedEvent>(
       'agentic://acp-available-commands-updated',
-      callback
+      listener
     );
+    return () => {
+      this.commandSnapshotListeners.delete(listener);
+      unsubscribe();
+    };
   }
 
   static onPlanUpdated(callback: (event: AcpPlanUpdatedEvent) => void): () => void {

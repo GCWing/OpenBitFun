@@ -207,6 +207,16 @@ also run the focused state contracts:
 pnpm --dir src/web-ui run test:run src/app/services/sessionSceneLifecycle.test.ts src/flow_chat/services/sessionActivation.test.ts src/flow_chat/services/storeSync.test.ts src/app/stores/sceneStore.test.ts
 ```
 
+For ACP creation feedback, retries, metadata loading and cross-version fallback:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/layout/AcpSessionNotifications.test.tsx src/flow_chat/services/FlowChatManager.test.ts src/infrastructure/api/service-api/ACPClientAPI.test.ts src/flow_chat/components/ModelSelectorAcpMode.test.tsx src/flow_chat/hooks/useAcpSlashCommands.test.ts
+```
+
+These DOM/API fixtures cover delayed startup, duplicate creation, visible errors,
+retry, old-host metadata and simulated SSH/Peer identities. They do not establish
+native rendering, real provider latency or live remote behavior.
+
 For top session tabs (one per session, kept per device), selection and reconciliation:
 
 ```bash

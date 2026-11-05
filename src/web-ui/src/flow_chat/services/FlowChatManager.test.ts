@@ -227,6 +227,79 @@ describe('FlowChatManager initialization', () => {
     }
   });
 
+  it('deduplicates pending ACP creation and emits a visible lifecycle before the backend settles', async () => {
+    storeMocks.store = { registerPersistUnreadCompletionCallback: vi.fn(), createSession: vi.fn() };
+    const deferred = createDeferred<any>();
+    storeMocks.createAcpSession.mockReturnValue(deferred.promise);
+    storeMocks.loadSessionMetadata.mockResolvedValue({ sessionId: 'created', customMetadata: {} });
+    const events: any[] = [];
+    const handler = (event: Event) => events.push((event as CustomEvent).detail);
+    window.addEventListener('openbitfun:acp-session-creation', handler);
+    const manager = FlowChatManager.getInstance();
+    try {
+      const config = { workspaceId: 'repo', workspacePath: '/repo', remoteConnectionId: 'ssh-a' };
+      const first = manager.createAcpChatSession('codex', config);
+      const second = manager.createAcpChatSession('codex', { ...config });
+      await flushAsyncWork();
+      expect(storeMocks.createAcpSession).toHaveBeenCalledTimes(1);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ phase: 'start', clientId: 'codex', workspaceId: 'repo', action: 'create' });
+      expect(events[0].scope.isCurrent()).toBe(true);
+      expect(storeMocks.store.createSession).not.toHaveBeenCalled();
+      deferred.resolve({ sessionId: 'created', sessionName: 'Session', agentType: 'acp:codex' });
+      await expect(Promise.all([first, second])).resolves.toEqual(['created', 'created']);
+      expect(events[1]).toMatchObject({ requestId: events[0].requestId, phase: 'finish', succeeded: true });
+    } finally {
+      window.removeEventListener('openbitfun:acp-session-creation', handler);
+      manager.destroy();
+    }
+  });
+
+  it('reports ACP startup errors and releases the pending entry for retry', async () => {
+    storeMocks.store = { registerPersistUnreadCompletionCallback: vi.fn(), createSession: vi.fn() };
+    storeMocks.createAcpSession.mockRejectedValue(new Error('Adapter could not start'));
+    const events: any[] = [];
+    const handler = (event: Event) => events.push((event as CustomEvent).detail);
+    window.addEventListener('openbitfun:acp-session-creation', handler);
+    const manager = FlowChatManager.getInstance();
+    try {
+      await expect(manager.createAcpChatSession('codex', { workspaceId: 'repo', workspacePath: '/repo' }))
+        .rejects.toThrow('Adapter could not start');
+      expect(events[1]).toMatchObject({ phase: 'finish', succeeded: false, error: 'Adapter could not start' });
+      await expect(events[1].retry()).rejects.toThrow('Adapter could not start');
+      expect(storeMocks.createAcpSession).toHaveBeenCalledTimes(2);
+      expect(events[2].requestId).not.toBe(events[0].requestId);
+    } finally {
+      window.removeEventListener('openbitfun:acp-session-creation', handler);
+      manager.destroy();
+    }
+  });
+
+  it('does not reuse or publish ACP creation across device activations', async () => {
+    storeMocks.store = { registerPersistUnreadCompletionCallback: vi.fn(), createSession: vi.fn() };
+    const deferred = createDeferred<any>();
+    storeMocks.createAcpSession.mockReturnValue(deferred.promise);
+    storeMocks.loadSessionMetadata.mockResolvedValue({ sessionId: 'created', customMetadata: {} });
+    const manager = FlowChatManager.getInstance();
+    try {
+      const config = { workspaceId: 'repo', workspacePath: '/repo' };
+      const old = manager.createAcpChatSession('codex', config);
+      const oldRejection = expect(old).rejects.toSatisfy(isSurfaceChangedError);
+      await flushAsyncWork();
+      activateSurface('peer-b');
+      activateSurface('local');
+      const current = manager.createAcpChatSession('codex', config);
+      await flushAsyncWork();
+      expect(storeMocks.createAcpSession).toHaveBeenCalledTimes(2);
+      deferred.resolve({ sessionId: 'created', sessionName: 'Session', agentType: 'acp:codex' });
+      await oldRejection;
+      await current;
+      expect(storeMocks.store.createSession).toHaveBeenCalledTimes(1);
+    } finally {
+      manager.destroy();
+    }
+  });
+
   it('creates one empty Claw session when reinitializing a reset workspace', async () => {
     storeMocks.store = {
       registerPersistUnreadCompletionCallback: vi.fn(),

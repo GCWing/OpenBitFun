@@ -9,6 +9,7 @@ import { requireSessionWorkspaceId } from '../utils/sessionWorkspace';
  */
 
 import { processingStatusManager } from './ProcessingStatusManager';
+import { createAcpStartupRequestId, emitAcpSessionStartup } from './acpSessionStartup';
 import { FlowChatStore } from '../store/FlowChatStore';
 import { useModernFlowChatStore } from '../store/modernFlowChatStore';
 import { usePromptSuggestionStore } from '../store/promptSuggestionStore';
@@ -101,6 +102,7 @@ type FlowChatSendMessageOptions = Pick<
 const EVENT_LISTENER_RETRY_MS = 2000;
 
 export class FlowChatManager {
+  private acpCreationRequests = new Map<string, Promise<string>>();
   private static instance: FlowChatManager | null = null;
   private context: FlowChatContext;
   private eventListenerInitialized = false;
@@ -622,23 +624,39 @@ export class FlowChatManager {
 
   async createAcpChatSession(clientId: string, config: SessionConfig = {}): Promise<string> {
     const surfaceScope = getActiveSurfaceScope();
-    const titleDescriptor = createDefaultSessionTitleDescriptor((key, options) => i18nService.t(key, options));
-    // The workspace ID is the session's identity; the path is the ACP
-    // client's execution root and is only kept as an IO projection.
-    const workspaceId = requireSessionWorkspaceId({ config });
-    const workspacePath =
-      config.workspacePath?.trim() ||
-      this.context.currentWorkspacePath?.trim();
-    if (!workspacePath) {
-      throw new Error('Workspace path is required to create an ACP session');
-    }
+    const key = surfaceScope.key(surfaceScope.epoch, config.workspaceId, config.workspacePath,
+      config.remoteConnectionId, config.remoteSshHost, clientId);
+    const existing = this.acpCreationRequests.get(key);
+    if (existing) return existing;
+    // Install the in-flight entry before the lifecycle event can trigger another caller.
+    const pending = Promise.resolve().then(() => this.createAcpChatSessionOnce(clientId, config, surfaceScope))
+      .finally(() => this.acpCreationRequests.delete(key));
+    this.acpCreationRequests.set(key, pending);
+    return pending;
+  }
 
-    window.dispatchEvent(new CustomEvent('openbitfun:acp-session-creation', {
-      detail: { phase: 'start', clientId, action: 'create' },
-    }));
+  private async createAcpChatSessionOnce(
+    clientId: string, config: SessionConfig, surfaceScope: ReturnType<typeof getActiveSurfaceScope>,
+  ): Promise<string> {
+    surfaceScope.assertCurrent('create ACP session');
+    const startup = {
+      requestId: createAcpStartupRequestId(), clientId, action: 'create' as const,
+      scope: surfaceScope, workspaceId: config.workspaceId,
+      retry: async () => {
+        surfaceScope.assertCurrent('retry ACP session creation');
+        return this.createAcpChatSession(clientId, config);
+      },
+    };
+    emitAcpSessionStartup({ ...startup, phase: 'start' });
 
     let succeeded = false;
+    let failure: string | undefined;
     try {
+      const titleDescriptor = createDefaultSessionTitleDescriptor((key, options) => i18nService.t(key, options));
+      // The workspace ID owns identity; the path is only an execution projection.
+      const workspaceId = requireSessionWorkspaceId({ config });
+      const workspacePath = config.workspacePath?.trim() || this.context.currentWorkspacePath?.trim();
+      if (!workspacePath) throw new Error('Workspace path is required to create an ACP session');
       const response = await ACPClientAPI.createFlowSession({
         clientId,
         workspaceId,
@@ -673,10 +691,11 @@ export class FlowChatManager {
 
       succeeded = true;
       return response.sessionId;
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
+      throw error;
     } finally {
-      window.dispatchEvent(new CustomEvent('openbitfun:acp-session-creation', {
-        detail: { phase: 'finish', clientId, action: 'create', succeeded },
-      }));
+      emitAcpSessionStartup({ ...startup, phase: 'finish', succeeded, error: failure });
     }
   }
 

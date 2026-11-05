@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invokeMock = vi.hoisted(() => vi.fn());
+const listenMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./ApiClient', () => ({
   api: {
     invoke: invokeMock,
+    listen: listenMock,
   },
 }));
 
@@ -26,8 +28,87 @@ function createDeferred<T>() {
 describe('ACPClientAPI client list startup cache', () => {
   beforeEach(() => {
     invokeMock.mockReset();
+    listenMock.mockReset().mockReturnValue(vi.fn());
     vi.useRealTimers();
     vi.stubGlobal('window', { dispatchEvent: vi.fn() });
+  });
+
+  const sessionRequest = { clientId: 'codex', sessionId: 'session-1', workspaceId: 'repo', workspacePath: '/repo' };
+
+  it('publishes commands from a successful metadata retry to existing subscribers', async () => {
+    const ACPClientAPI = await importApi();
+    const callback = vi.fn();
+    const unsubscribe = ACPClientAPI.onAvailableCommandsUpdated(callback);
+    const commands = [{ name: 'help', description: 'Help' }];
+    invokeMock.mockRejectedValueOnce(new Error('Agent failed'))
+      .mockResolvedValue({ availableModels: [], configOptions: [], availableCommands: commands });
+    await expect(ACPClientAPI.getSessionCommands(sessionRequest)).rejects.toThrow('Agent failed');
+    await ACPClientAPI.getSessionOptions(sessionRequest);
+    expect(callback).toHaveBeenCalledWith({ sessionId: 'session-1', clientId: 'codex', commands });
+    unsubscribe();
+    await ACPClientAPI.getSessionOptions(sessionRequest);
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one initial metadata read for models and slash commands, including an empty command list', async () => {
+    const ACPClientAPI = await importApi();
+    const deferred = createDeferred<any>();
+    invokeMock.mockReturnValueOnce(deferred.promise);
+    const options = ACPClientAPI.getSessionOptions(sessionRequest);
+    const commands = ACPClientAPI.getSessionCommands({ ...sessionRequest });
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    deferred.resolve({ availableModels: [], configOptions: [], availableCommands: [] });
+    await expect(commands).resolves.toEqual([]);
+    await options;
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the original command endpoint for older hosts', async () => {
+    const ACPClientAPI = await importApi();
+    invokeMock.mockResolvedValueOnce({ availableModels: [], configOptions: [] })
+      .mockResolvedValueOnce([{ name: 'help', description: 'Help' }]);
+    await expect(ACPClientAPI.getSessionCommands(sessionRequest)).resolves.toEqual([{ name: 'help', description: 'Help' }]);
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'get_acp_session_commands', { request: sessionRequest });
+  });
+
+  it('releases failed metadata requests so initialization can retry', async () => {
+    const ACPClientAPI = await importApi();
+    invokeMock.mockRejectedValueOnce(new Error('Agent failed')).mockResolvedValueOnce({ availableCommands: [] });
+    await expect(ACPClientAPI.getSessionOptions(sessionRequest)).rejects.toThrow('Agent failed');
+    await expect(ACPClientAPI.getSessionCommands(sessionRequest)).resolves.toEqual([]);
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('never runs the legacy fallback on another device after a metadata request settles late', async () => {
+    const ACPClientAPI = await importApi();
+    const { activateSurface, isSurfaceChangedError } = await import('@/infrastructure/peer-device/deviceSurface');
+    const deferred = createDeferred<any>();
+    invokeMock.mockReturnValueOnce(deferred.promise);
+    const pending = ACPClientAPI.getSessionCommands(sessionRequest);
+    const rejection = expect(pending).rejects.toSatisfy(isSurfaceChangedError);
+    activateSurface('peer-b');
+    deferred.resolve({ availableModels: [], configOptions: [] });
+    await rejection;
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('isolates metadata reads by remote workspace and activation, without retaining settled snapshots', async () => {
+    const ACPClientAPI = await importApi();
+    const { activateSurface } = await import('@/infrastructure/peer-device/deviceSurface');
+    const deferred = createDeferred<any>();
+    invokeMock.mockImplementation(() => deferred.promise);
+    const first = ACPClientAPI.getSessionOptions(sessionRequest);
+    const oldRejection = expect(first).rejects.toBeDefined();
+    const remote = ACPClientAPI.getSessionOptions({ ...sessionRequest, remoteConnectionId: 'ssh-a' });
+    const remoteRejection = expect(remote).rejects.toBeDefined();
+    activateSurface('peer-b');
+    activateSurface('local');
+    const current = ACPClientAPI.getSessionOptions(sessionRequest);
+    expect(invokeMock).toHaveBeenCalledTimes(3);
+    deferred.resolve({ availableCommands: [] });
+    await Promise.all([oldRejection, remoteRejection, current]);
+    await ACPClientAPI.getSessionOptions(sessionRequest);
+    expect(invokeMock).toHaveBeenCalledTimes(4);
   });
 
   it.each(['clients', 'requirements'])('never reuses cached %s from another device', async (kind) => {
