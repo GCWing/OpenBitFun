@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useState, type RefObject } from 'react';
 import { createFlowChatSearchHighlightOwner } from './flowChatSearchDom';
 import {
   measureFlowChatFocusItem,
@@ -36,7 +36,7 @@ function sameLine(a: PresentationBox | null, b: PresentationBox | null): boolean
 
 /** Passive row presentation. It never scrolls, expands content, or reserves space. */
 export function useFlowChatSearchPresentation(
-  wrapper: HTMLElement | null,
+  target: HTMLElement | RefObject<HTMLElement | null> | null,
   query: string | undefined,
   matches: readonly SearchMatch[] | undefined,
   currentMatch: SearchMatch | undefined,
@@ -46,6 +46,9 @@ export function useFlowChatSearchPresentation(
   const focusSource = focus?.element;
 
   useLayoutEffect(() => {
+    // Resolve after refs attach: keeping a passive DOM owner in React state
+    // otherwise renders every virtual row twice on each scroll-window mount.
+    const wrapper = target && 'current' in target ? target.current : target;
     if (!wrapper) return;
     const handleFocus = (event: Event) => {
       const request = (event as CustomEvent<FocusLineRequest>).detail;
@@ -55,9 +58,10 @@ export function useFlowChatSearchPresentation(
     };
     wrapper.addEventListener(FOCUS_LINE_EVENT, handleFocus);
     return () => wrapper.removeEventListener(FOCUS_LINE_EVENT, handleFocus);
-  }, [wrapper]);
+  }, [target]);
 
   useLayoutEffect(() => {
+    const wrapper = target && 'current' in target ? target.current : target;
     const hasSearch = Boolean(query?.trim() && matches?.length);
     if (!wrapper || (!hasSearch && !focusSource)) {
       setLine(previous => previous === null ? previous : null);
@@ -107,7 +111,7 @@ export function useFlowChatSearchPresentation(
       wrapper.ownerDocument.fonts?.removeEventListener('loadingdone', scheduleRefresh);
       owner.dispose();
     };
-  }, [wrapper, query, matches, currentMatch, focusSource]);
+  }, [target, query, matches, currentMatch, focusSource]);
 
   return currentMatch || focusSource ? line : null;
 }

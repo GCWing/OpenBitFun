@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { prewarmMarkdownParse } from '@/infrastructure/markdown/markdownParseCache';
+import { markdownSections } from '@/infrastructure/markdown/markdownSections';
 import { useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { flowGroupToolLabels } from '../grouping/browse';
@@ -45,7 +46,9 @@ export function useConversationTimeline(sources: VirtualItem[], sessionId: strin
     // useful even if this view unmounts or sources change. The cache and worker
     // queue are bounded; cancelling here would make a later flush permanently
     // skip a job that never completed.
-    for (const text of texts) prewarmMarkdownParse(text);
+    for (const text of texts) {
+      for (const section of markdownSections(text)) prewarmMarkdownParse(text.slice(section.start, section.end));
+    }
   }, [sources]);
   const items = useMemo(() => {
     // Reader mutations can change a projection while the source array is stable.

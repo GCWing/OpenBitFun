@@ -60,9 +60,10 @@ test("brand playback cancels for reduced motion, pauses when hidden and cleans u
   const motion = Object.assign(new EventTarget(), { matches: true });
   const document = Object.assign(new EventTarget(), { hidden: false, defaultView: { matchMedia: () => motion } });
   const calls = [];
-  const animation = { cancel: () => calls.push("cancel"), pause: () => calls.push("pause"), play: () => calls.push("play") };
+  const animation = { effect: null, cancel: () => calls.push("cancel"), pause: () => calls.push("pause"), play: () => calls.push("play") };
   const stop = startBrandPlayback({ ownerDocument: document, animate() {} }, () => {
     calls.push("create");
+    animation.effect = { target: {} };
     return [animation];
   });
   assert.deepEqual(calls, [], "reduced motion must not start decorative animation");
@@ -74,9 +75,11 @@ test("brand playback cancels for reduced motion, pauses when hidden and cleans u
   document.dispatchEvent(new Event("visibilitychange"));
   motion.matches = true;
   motion.dispatchEvent(new Event("change"));
+  assert.equal(animation.effect, null, "reduced motion releases the effect target");
   motion.matches = false;
   motion.dispatchEvent(new Event("change"));
   stop();
+  assert.equal(animation.effect, null, "unmount releases keyframes and target ownership");
   document.dispatchEvent(new Event("visibilitychange"));
   assert.deepEqual(calls, ["create", "pause", "play", "cancel", "create", "cancel"]);
 });

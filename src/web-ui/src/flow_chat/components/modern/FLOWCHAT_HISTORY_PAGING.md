@@ -109,8 +109,9 @@ insert outside that reservation. No content-height estimate determines its
 position. Native `scrollTop` is zero at the latest content and
 negative toward earlier content.
 
-Earlier complete Turns extend the extent upward. Partial historical Turns never
-enter the rendered projection. Neither the old first item's
+Earlier complete Turns extend the extent upward. Incomplete historical Turn data
+never enters the presentation projection; DOM blocks within a complete Turn can
+be virtualized independently. Neither the old first item's
 estimated height nor the total height difference determines the viewport.
 `FlowChatPrependSnapshot`, leading-extent floors and passive follow corrections
 are disabled for this layout. The container's repeated `scrollToTurnEnd` opening

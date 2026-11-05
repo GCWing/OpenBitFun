@@ -65,7 +65,7 @@ export class FlowChatReaderState {
     if (this.values.get(key) === value) return;
     this.values.set(key, value);
     this.listeners.get(key)?.forEach(listener => listener());
-    if (key.startsWith('group:')) {
+    if (key.startsWith('group:') || key === 'navigation:whole-text') {
       this.notifyProjection();
     }
   }

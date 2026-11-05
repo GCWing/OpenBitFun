@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { ConversationExcerptContext } from '@/shared/types/context';
 import { excerptNumber } from '@/shared/utils/conversationExcerpt';
 import { findExcerptSource, resolveExcerptRange } from './flowChatSelection';
@@ -15,12 +15,13 @@ interface MarkerGroup {
 }
 
 /** Row-local overlays: annotation marks never modify transcript text or row height. */
-export function ConversationExcerptMarkers({ wrapper, turnId }: { wrapper: HTMLElement | null; turnId: string }) {
+export function useConversationExcerptMarkers(target: HTMLElement | RefObject<HTMLElement | null> | null, turnId: string) {
   const excerpts = useConversationExcerptSources(turnId);
   const [groups, setGroups] = useState<MarkerGroup[]>([]);
   const markerRefs = useRef(new Map<string, HTMLElement>());
   const [positions, setPositions] = useState(new Map<string, ExcerptMarkerPosition>());
   useLayoutEffect(() => {
+    const wrapper = target && 'current' in target ? target.current : target;
     if (!wrapper || !excerpts.length) { setGroups(previous => previous.length ? [] : previous); return; }
     const view = wrapper.ownerDocument.defaultView;
     if (!view) return;
@@ -39,7 +40,7 @@ export function ConversationExcerptMarkers({ wrapper, turnId }: { wrapper: HTMLE
           if (!excerptNumber(excerpt)) continue;
           if (!element || !range) continue;
           // Separate selections in one text block keep their own superscripts.
-          const key = JSON.stringify([fragment.flowItemId ?? null, fragment.start, fragment.end]);
+          const key = JSON.stringify([fragment.flowItemId ?? null, fragment.markdownStart, fragment.start, fragment.end]);
           const previous = next.get(key);
           if (previous) {
             if (!previous.excerpts.some(item => item.id === excerpt.id)) previous.excerpts = [...previous.excerpts, excerpt];
@@ -72,9 +73,10 @@ export function ConversationExcerptMarkers({ wrapper, turnId }: { wrapper: HTMLE
       wrapper.ownerDocument.removeEventListener('scroll', schedule, true);
       wrapper.ownerDocument.fonts?.removeEventListener('loadingdone', schedule);
     };
-  }, [wrapper, excerpts, turnId]);
+  }, [target, excerpts, turnId]);
 
   useLayoutEffect(() => {
+    const wrapper = target && 'current' in target ? target.current : target;
     if (!wrapper) return;
     const update = () => {
       const next = new Map<string, ExcerptMarkerPosition>();
@@ -93,7 +95,7 @@ export function ConversationExcerptMarkers({ wrapper, turnId }: { wrapper: HTMLE
     const resize = new ResizeObserver(update);
     markerRefs.current.forEach(marker => resize.observe(marker));
     return () => resize.disconnect();
-  }, [wrapper, groups]);
+  }, [target, groups]);
 
   return <>{groups.map(group => (
     <sup key={group.key}
@@ -105,4 +107,8 @@ export function ConversationExcerptMarkers({ wrapper, turnId }: { wrapper: HTMLE
       {group.excerpts.map(excerpt => <ConversationExcerptPreview key={excerpt.id} excerpt={excerpt} superscript origin="source" />)}
     </sup>
   ))}</>;
+}
+
+export function ConversationExcerptMarkers({ wrapper, turnId }: { wrapper: HTMLElement | null; turnId: string }) {
+  return useConversationExcerptMarkers(wrapper, turnId);
 }

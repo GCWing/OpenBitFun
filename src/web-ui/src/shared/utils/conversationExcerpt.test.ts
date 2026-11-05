@@ -10,6 +10,17 @@ const excerpt: ConversationExcerptContext = {
   comment: 'explain this',
 };
 describe('conversation excerpts', () => {
+  it('keeps identical selections in different Markdown sections as separate annotations', () => {
+    const first = { ...excerpt, fragments: [{ ...excerpt.fragments[0], markdownStart: 0 }] };
+    const second = { ...excerpt, id: 'section-2', comment: 'Another occurrence',
+      fragments: [{ ...excerpt.fragments[0], markdownStart: 3200 }] };
+    const reloaded = JSON.parse(JSON.stringify([first, second]));
+    expect(appendConversationExcerpt([first], second)).toEqual(reloaded);
+    expect(appendConversationExcerpt(reloaded, { ...second, id: 'duplicate', comment: 'Revised' }))
+      .toEqual([first, { ...second, comment: 'Revised' }]);
+    expect(isValidConversationExcerpt(first)).toBe(true);
+    expect(isValidConversationExcerpt(excerpt)).toBe(true);
+  });
   it('allocates a display number without changing identity and keeps it on duplicate edits', () => {
     const first = numberConversationExcerpt(excerpt, []);
     const second = numberConversationExcerpt({ ...excerpt, id: 'second' }, [first]);

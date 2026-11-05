@@ -16,6 +16,8 @@ export interface TimelineBlock {
   revealThinkingIds?: string[];
   /** Bounded, stable sibling grid; native rows wrap without reparenting cards. */
   layout?: 'agent-cards';
+  /** Presentation-only source coordinates. Canonical message text stays whole. */
+  markdownSection?: { start: number; end: number };
 }
 
 export type VirtualItem = VirtualContent & { timeline?: TimelineBlock };

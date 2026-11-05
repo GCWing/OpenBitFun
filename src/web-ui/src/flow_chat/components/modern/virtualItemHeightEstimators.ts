@@ -281,6 +281,13 @@ export function estimateVirtualItemHeight(
   context: VirtualItemHeightEstimateContext = {},
 ): VirtualItemHeightEstimate {
   if (item.timeline && item.type === 'model-round') {
+    if (item.timeline.markdownSection) {
+      const { start, end } = item.timeline.markdownSection;
+      return { heightPx: MODEL_ROUND_TEXT_BASE_HEIGHT_PX + estimateTextLineCount(end - start, context.availableWidthPx)
+        * MODEL_ROUND_TEXT_LINE_HEIGHT_PX
+        + item.data.items.filter(member => member.type !== 'text').reduce((sum, member) => sum + estimateFlowItemHeight(member, context).heightPx, 0),
+        confidence: 'low', kind: 'timeline-markdown' };
+    }
     if (item.timeline.layout === 'agent-cards') {
       const thoughts = item.data.items.filter(member => member.type === 'thinking');
       const cardCount = item.data.items.length - thoughts.length;

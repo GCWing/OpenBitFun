@@ -896,6 +896,8 @@ export interface MarkdownRendererProps {
   content: string;
   /** Compact conversation images; document renderers retain their original layout. */
   imageThumbnails?: boolean;
+  /** Recycle offscreen syntax decoration; source text remains selectable. */
+  deferCodeHighlighting?: boolean;
   /** Display a region while resolving Markdown references against all content. */
   sourceRange?: MarkdownSourceRange;
   /** Owning workspace ID; content opened from links is routed by it. `basePath` is only the IO root. */
@@ -928,6 +930,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
   singleLinePreview = false,
   content, 
   imageThumbnails = false,
+  deferCodeHighlighting = false,
   sourceRange,
   workspaceId,
   basePath,
@@ -971,6 +974,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
   const onHttpLinkClickRef = useLiveValueRef(onHttpLinkClick);
   const traceContextRef = useLiveValueRef(traceContext);
   const sourceRangeRef = useLiveValueRef(sourceRange);
+  const deferCodeHighlightingRef = useLiveValueRef(deferCodeHighlighting);
 
   // The overlay belongs to the renderer that resolved the image bytes: a
   // Markdown image is inline content, not an independently mounted viewer.
@@ -1358,17 +1362,25 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
         fontWeight: 'inherit',
         color: syntaxThemeRef.current['code[class*="language-"]']?.color,
       };
+      // The outer transcript already bounds ordinary Markdown sections. Keep
+      // their decoration for that row's lifetime: swapping complete <pre>
+      // trees on intersection can briefly shrink WebKit's scroll range and
+      // clamp a reader at the historical edge (83/166px in native traces).
+      // Only whole semantic documents need an additional inner code budget.
+      // Indivisible huge fences remain plaintext and need no visibility swap.
+      const recycleDecoration = deferCodeHighlightingRef.current
+        && markdownContentRef.current.length > 12_000 && code.length <= 24_000;
       return (
         <div className={`code-block-wrapper${hasMultipleLines ? '' : ' code-block-wrapper--single-line'}`} data-openbitfun-component="markdown" data-openbitfun-part="codeBlock" data-openbitfun-state={streaming ? 'streaming' : undefined}>
           <div className="code-block-toolbar" data-openbitfun-component="markdown" data-openbitfun-part="codeToolbar">
             <span className="code-block-lang">{formatCodeLanguageLabel(normalizedLang)}</span>
             <CopyButton code={code} />
           </div>
-          <MarkdownCodeBody>
+          <MarkdownCodeBody deferHighlighting={!thinking && recycleDecoration}>{visible => <>
             {/* Thinking must never mount a syntax highlighter, even after completion
                 or reopening. Bulk highlighting caused measured completion stalls;
                 keep this lightweight path independent of streaming state. */}
-            {thinking ? (
+            {thinking || !visible ? (
               <CodeBlockFallback
                 code={code}
                 language={normalizedLang}
@@ -1382,7 +1394,10 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
                 showLineNumbers={false}
                 customStyle={codeBodyStyle}
                 codeTagProps={{ style: codeTagStyle }}
-                preferFallback={streaming}
+                // A single indivisible fence may be megabytes. Keep its exact
+                // native text instead of synchronously building an unbounded
+                // syntax-token tree in the scrolling transcript.
+                preferFallback={streaming || (deferCodeHighlightingRef.current && code.length > 24_000)}
                 fallback={CodeBlockFallback}
                 fallbackProps={{
                   code,
@@ -1395,7 +1410,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
                 {code}
               </AsyncPrismSyntaxHighlighter>
             )}
-          </MarkdownCodeBody>
+          </>}</MarkdownCodeBody>
         </div>
       );
     },
@@ -1719,6 +1734,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
     syntaxThemeRef,
     traceContextRef,
     sourceRangeRef,
+    deferCodeHighlightingRef,
   ]);
   
   const textRevealRef = useRef<HTMLDivElement>(null);

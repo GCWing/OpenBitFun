@@ -165,6 +165,20 @@ describe('desktop follow ownership and lifecycle (supplied geometry, not visual 
     while (frames.size) { tick(); expect(scroller.scrollTop).toBeGreaterThanOrEqual(previous); previous = scroller.scrollTop; }
     expect(scroller.scrollTop).toBeCloseTo(1500, 0); expect(floor).toBe(1400);
   });
+  it('lands a large output batch without visiting intermediate virtual windows and leaves reader control intact', () => {
+    render(); submit(); output = true; normalTarget = 45000; signal();
+    const writesBefore = readbacks.length;
+    tick();
+    expect(scroller.scrollTop).toBe(45000);
+    expect(readbacks.slice(writesBefore)).toEqual([45000]);
+    expect(frames.size).toBe(0);
+    normalTarget = 45040; signal(); tick();
+    expect(scroller.scrollTop).toBeGreaterThan(45000);
+    expect(scroller.scrollTop).toBeLessThan(45040);
+    depart(); const readingTop = scroller.scrollTop;
+    normalTarget = 90000; signal(); settle();
+    expect(scroller.scrollTop).toBe(readingTop);
+  });
   it('does not place the same message again when completion notifies in a microtask', async () => {
     render(); submit();
     await act(async () => { await Promise.resolve(); });

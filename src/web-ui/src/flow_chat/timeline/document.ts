@@ -1,4 +1,5 @@
-import type { AnyFlowItem, FlowItem, FlowToolItem, ModelRound } from '../types/flow-chat';
+import { isStartupRenderTraceEnabled, startupTrace } from '@/shared/utils/startupTrace';
+import type { AnyFlowItem, FlowItem, FlowTextItem, FlowToolItem, ModelRound } from '../types/flow-chat';
 import type { VirtualItem, TimelineBlock } from '../types/flow-chat-projection';
 import { buildInlineToolGroupData, getProjectedModelRoundGroups, hasModelRoundLeadingControls } from '../grouping/roundGroups';
 import { getFlowGroupDisclosureChoice, isFlowGroupExpanded, type FlowGroupData } from '../grouping/types';
@@ -8,6 +9,8 @@ import type { FlowChatReaderState } from './readerState';
 import { getVirtualItemStableKey } from '../components/modern/virtualItemIdentity';
 import { getConcurrentCapsuleRows } from '../tool-cards/toolCapsuleLayout';
 import { AGENT_CARD_BATCH_SIZE, isAgentCardRun, isAgentLaunchCard } from './agentCardLayout';
+import { markdownSections } from '@/infrastructure/markdown/markdownSections';
+import { parseDeepResearchContent } from '../deep-research/deepResearchProtocol';
 
 export interface TimelineProjectionOptions {
   reader: FlowChatReaderState;
@@ -128,6 +131,7 @@ export class ConversationDocumentProjection {
   }
 
   project(sources: readonly VirtualItem[], options: TimelineProjectionOptions): VirtualItem[] {
+    const started = isStartupRenderTraceEnabled() ? performance.now() : undefined;
     if (this.labels !== options.toolLabels) {
       this.labels = options.toolLabels;
       this.sourceCache = new WeakMap();
@@ -186,6 +190,8 @@ export class ConversationDocumentProjection {
             : previous.timeline.group === extra.group)
           && previous.timeline.expanded === extra.expanded
           && previous.timeline.layout === layout
+          && previous.timeline.markdownSection?.start === extra.markdownSection?.start
+          && previous.timeline.markdownSection?.end === extra.markdownSection?.end
           && previous.timeline.first === extra.first && previous.timeline.last === extra.last
           && previous.timeline.revealThinkingIds?.join('|') === extra.revealThinkingIds?.join('|')
           && previous.isLastRound === isLastRound && previous.isTurnComplete === source.isTurnComplete
@@ -216,9 +222,24 @@ export class ConversationDocumentProjection {
       if (hasModelRoundLeadingControls(source.data)) add('round-header', `${source.data.id}:history`, emptyItems);
       const groups = getProjectedModelRoundGroups(source);
       let critical: FlowItem[] = [];
+      const addRun = (kind: 'content' | 'group-members', run: FlowItem[], extra: Partial<TimelineBlock>) => {
+        const last = run.at(-1);
+        const text = last?.type === 'text' && run.slice(0, -1).every(item => item.type === 'thinking') ? last as FlowTextItem : undefined;
+        const identity = text && `${source.turnId}:${text.id}`;
+        // Use the same source boundaries from first token through history reopen.
+        // Even one short section keeps its renderer and bookmark coordinate.
+        const sections = text && text.isMarkdown
+          && options.reader.get('navigation:whole-text', '') !== identity
+          && !parseDeepResearchContent(text.content).hasProtocol ? markdownSections(text.content) : undefined;
+        if (!sections) { add(kind, run[0].id, run, extra); return; }
+        sections.forEach((section, index) => add(kind, index === 0 ? run[0].id : `${text!.id}:markdown:${section.start}`, index === 0 ? run : [text!], {
+          ...extra, first: extra.first && index === 0, last: extra.last && index === sections.length - 1,
+          markdownSection: section,
+        }));
+      };
       const flush = (last = false) => {
         const runs = conversationContentRuns(critical);
-        runs.forEach((run, index) => add('content', run[0].id, run, { last: last && index === runs.length - 1 }));
+        runs.forEach((run, index) => addRun('content', run, { last: last && index === runs.length - 1 }));
         critical = [];
       };
       groups.forEach(group => {
@@ -240,7 +261,7 @@ export class ConversationDocumentProjection {
         // Member blocks hold only group metadata, never the full source tree.
         const memberGroup = { ...data, rounds: [], allItems: [] };
         const ordinals = new Map(all.filter(member => member.type === 'tool').map((member, index) => [member.id, index]));
-        runs.forEach((run, index) => add('group-members', run[0].id, run,
+        runs.forEach((run, index) => addRun('group-members', run,
           { group: memberGroup, expanded, first: index === 0, last: index === runs.length - 1,
             memberOrdinal: ordinals.get(run.find(member => member.type === 'tool')?.id ?? ''),
             revealThinkingIds: run.filter(member => browse.matchingThinkingIds.has(member.id)).map(member => member.id) }));
@@ -253,15 +274,21 @@ export class ConversationDocumentProjection {
       result.push(...rows);
     });
     this.previous = this.next;
+    if (started !== undefined) startupTrace.markPhase('flowchat_document_projection', {
+      durationMs: performance.now() - started, sourceCount: sources.length, rows: result.length,
+    });
     return result;
   }
 }
 
 /** Source/search indexes never leak into the virtualizer's block index space. */
-export function findTimelineBlockIndex(items: readonly VirtualItem[], sourceIndex: number, memberId?: string): number {
+export function findTimelineBlockIndex(items: readonly VirtualItem[], sourceIndex: number, memberId?: string, markdownStart?: number): number {
   if (memberId) {
     const ownsSource = (item: VirtualItem, index: number) => sourceIndex < 0 || (item.timeline?.sourceIndex ?? index) === sourceIndex;
-    const member = items.findIndex((item, index) => ownsSource(item, index) && item.timeline?.memberIds.includes(memberId));
+    const member = items.findIndex((item, index) => ownsSource(item, index)
+      && (markdownStart === undefined || !item.timeline?.markdownSection
+        || (item.timeline.markdownSection.start <= markdownStart && item.timeline.markdownSection.end > markdownStart))
+      && item.timeline?.memberIds.includes(memberId));
     if (member >= 0) return member;
     const group = items.findIndex((item, index) => ownsSource(item, index) && item.timeline?.kind === 'group-header'
       && item.timeline.group?.allItems.some(candidate => candidate.id === memberId));

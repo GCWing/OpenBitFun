@@ -50,7 +50,7 @@ before reporting a defect as new.
   waits for the animation at all. Neither may be a frame count: a frame count
   is not a duration, and a smooth scroll eases in slowly enough that its first
   frames do not move at all on a high-refresh display.
-- A jump to latest animates only within `FLOWCHAT_ANIMATED_JUMP_MAX_VIEWPORTS`
+- A jump to latest or a batch of followed output animates only within `FLOWCHAT_ANIMATED_JUMP_MAX_VIEWPORTS`
   and lands outright past it. Measured in viewports, never in pixels: the
   question is whether the reader can follow the movement, and what they can
   follow is a share of what they can see.
@@ -149,7 +149,9 @@ before reporting a defect as new.
   virtual windows; they must not determine the historical tail's position.
   Keep the latest complete Turn in a viewport-sized CSS shell with trailing
   flexible space, so short Turns start at the top and older Turns insert outside
-  its reservation. Historical virtual ranges admit complete Turns together.
+  its reservation. Publish complete Turn data atomically, but select resident
+  DOM by measured content blocks. The tail shell/footer stays resident; its
+  unmounted prefix belongs inside that shell, not above its minimum extent.
 - Do not select layout from `Session.isHistorical`: it is a hydration flag that
   clears at the first page. Keep the native history layout until actual runtime
   processing or submission, or an explicit presentation-mode handoff.
@@ -191,6 +193,13 @@ before reporting a defect as new.
 
 ## Virtualization and Rendering
 
+- Opening readiness follows the viewport's settled layout signal. The user
+  bubble may legitimately be virtualized away at a long reply's end; do not
+  reintroduce user-message polling or a fixed opening delay.
+- Viewport snapshot callbacks stay current through a ref. Capture synchronously
+  only on actual session unmount, not in effect cleanup on every history-window
+  change: mutation-phase geometry can see half-replaced virtual padding.
+
 - `useFlowChatVirtualizer.ts` is the only module that may import a virtualization
   library. It speaks in scroller offsets and item positions; anything that would
   make a caller aware of which library is underneath belongs inside it.
@@ -219,9 +228,12 @@ before reporting a defect as new.
   receipt; reduced motion, focus, and surface changes settle immediately.
 - Tool cards reflow naturally and dispatch only `tool-card-toggle` after an
   expanded-state change so the virtualizer can remeasure.
-- Stable virtual-item keys and projection identity must be preserved. Do not
-  split one `ModelRound` into multiple virtual items or reclassify projection
-  from a timer.
+- Preserve canonical `ModelRound`/FlowItem identities and stable presentation
+  keys. Semantic Markdown sections are display-only source ranges; the first
+  keeps the original key and later sections use source offsets. Never cut a
+  fence/list/table or reclassify a mounted live response from a timer. Live and
+  historical Markdown use identical source boundaries, including the first
+  short section; completion and reopening must preserve section coordinates.
 - Width reflow is one layout placement around the current visible content.
   Preserve measured/reserved history coordinates; never clear all sizes and
   animate back after selecting a window from replacement estimates. Retain

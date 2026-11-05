@@ -311,8 +311,8 @@ $track-item-gap: 10px;
   }
 
   // The goal's own two exits. They sit after the readout rather than inside it,
-  // because acting on a goal is a different gesture from opening it, and they
-  // are square like the context ring so a track with a goal keeps one rhythm.
+  // because acting on a goal is a different gesture from opening it. Keep
+  // these compact exits aligned with the other 18px track controls.
   &__goal-run,
   &__goal-clear {
     @include strip-control;
@@ -330,26 +330,48 @@ $track-item-gap: 10px;
   &__usage-btn {
     @include strip-control;
 
-    width: 18px;
+    width: var(--openbitfun-space-6);
+    height: var(--openbitfun-space-6);
     padding: 0;
+    transition:
+      background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      transform var(--openbitfun-motion-duration-instant) var(--openbitfun-motion-easing-standard);
+
+    // The composer context band already has a tint. Neutral interaction fills
+    // remain distinct on that surface in both light and dark themes.
+    &:hover:not(:disabled),
+    &[aria-expanded='true']:not(:disabled) {
+      background: var(--openbitfun-color-action-neutral-surface-hover);
+    }
+
+    &:is(:hover, :focus-visible, [aria-expanded='true']):not(:disabled) .is-track {
+      color: var(--openbitfun-color-content-secondary);
+    }
+
+    &:active:not(:disabled) {
+      background: var(--openbitfun-color-action-neutral-surface-pressed);
+      transform: scale(0.94);
+    }
   }
 
   &__usage-ring {
     position: relative;
     display: inline-flex;
-    flex: 0 0 12px;
-    width: 12px;
-    height: 12px;
+    flex: 0 0 var(--openbitfun-control-icon-button-xs-icon-size);
+    width: var(--openbitfun-control-icon-button-xs-icon-size);
+    height: var(--openbitfun-control-icon-button-xs-icon-size);
 
     svg {
       position: absolute;
       inset: 0;
-      width: 12px;
-      height: 12px;
+      width: 100%;
+      height: 100%;
     }
 
     .is-track {
       color: var(--openbitfun-color-field-border-hover);
+      transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
     }
 
     .is-value {
@@ -558,8 +580,7 @@ $track-item-gap: 10px;
       display: none;
     }
 
-    // A control that loses its label collapses to the same square target the
-    // context ring already is, so the row keeps one rhythm as it narrows
+    // Controls that lose their labels collapse to compact square targets
     // instead of leaving lopsided pills behind.
     &__permission-trigger {
       width: 18px;
@@ -580,6 +601,17 @@ $track-item-gap: 10px;
       width: 18px;
       padding: 0;
     }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-chat-input-workspace-strip__usage-btn,
+  .openbitfun-chat-input-workspace-strip__usage-ring .is-track {
+    transition: none;
+  }
+
+  .openbitfun-chat-input-workspace-strip__usage-btn:active:not(:disabled) {
+    transform: none;
   }
 }
 

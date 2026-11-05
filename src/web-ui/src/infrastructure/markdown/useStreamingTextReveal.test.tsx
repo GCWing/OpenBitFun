@@ -36,6 +36,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('streaming text arrival paint', () => {
+  it('does not scan settled history on mount, update or remount', () => {
+    const scan = vi.spyOn(document, 'createTreeWalker');
+    try {
+      const view = render(<Fixture text={'History '.repeat(10000)} streaming={false} />);
+      view.rerender(<Fixture text={'Updated history '.repeat(10000)} streaming={false} />);
+      view.unmount();
+      render(<Fixture text={'History '.repeat(10000)} streaming={false} />);
+      expect(scan).not.toHaveBeenCalled();
+      expect(highlights.size).toBe(0);
+    } finally { scan.mockRestore(); }
+  });
   it('skips DOM scanning while disabled and clears active paint without replay on re-enable', () => {
     const scan = vi.spyOn(document, 'createTreeWalker');
     try {

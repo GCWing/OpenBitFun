@@ -261,6 +261,7 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
  * Uses React.memo to avoid unnecessary re-renders.
  */
 interface FlowGroupItemRendererProps {
+  markdownSection?: { start: number; end: number };
   item: FlowItem;
   turnId: string;
   roundId?: string;
@@ -274,7 +275,7 @@ interface FlowGroupItemRendererProps {
   Item: FlowGroupView['Item'];
 }
 
-export const FlowGroupItemRenderer = React.memo<FlowGroupItemRendererProps>(({ item, turnId, roundId, withinGroup = true, isLastItem, forceThinkingExpanded, revealStreamingContent, retainForGroupCollapse, hidden, capsuleRow, Item }) => {
+export const FlowGroupItemRenderer = React.memo<FlowGroupItemRendererProps>(({ item, turnId, roundId, withinGroup = true, isLastItem, forceThinkingExpanded, revealStreamingContent, retainForGroupCollapse, hidden, capsuleRow, Item, markdownSection }) => {
   const {
     onToolConfirm,
     onToolReject,
@@ -312,6 +313,7 @@ export const FlowGroupItemRenderer = React.memo<FlowGroupItemRendererProps>(({ i
       return (
         <FlowTextBlock
           textItem={item as FlowTextItem}
+          markdownSection={markdownSection}
           hidden={hidden}
           traceContext={{ turnId, roundId, itemId: item.id }}
           testId="chat-assistant-message-content"

@@ -59,6 +59,23 @@ describe('shared search and source-navigation presentation', () => {
     expect(host.textContent).toBe('none');
   });
 
+  it('attaches focus navigation on the first commit without a DOM-state mount render', () => {
+    let renders = 0;
+    function RefHarness() {
+      renders++;
+      const ref = React.useRef<HTMLDivElement | null>(null);
+      const line = useFlowChatSearchPresentation(ref, undefined, undefined, undefined);
+      return <><div ref={ref} className="virtual-item-wrapper"><p data-flow-item-id="located">Source line</p></div><output>{line?.top ?? 'none'}</output></>;
+    }
+    act(() => root.render(<RefHarness />));
+    expect(renders).toBe(1);
+    const source = host.querySelector('p')!;
+    act(() => { clears.push(highlightFlowChatFocusTarget(source)); });
+    expect(host.querySelector('output')?.textContent).toBe('40');
+    act(() => vi.advanceTimersByTime(1600));
+    expect(host.querySelector('output')?.textContent).toBe('none');
+  });
+
   it('restores the existing search marker when source navigation ends', () => {
     act(() => root.render(<Harness wrapper={wrapper} search />));
     expect(host.textContent).toBe('10');

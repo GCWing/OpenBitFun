@@ -141,8 +141,8 @@ function parseArgs(argv) {
   if (!options.sessionPrefix.trim()) {
     throw new Error('--session-prefix cannot be empty');
   }
-  if (!['explore-only', 'mixed-visible', 'dense-visible', 'user-only-latest'].includes(options.scenario)) {
-    throw new Error('--scenario must be one of: explore-only, mixed-visible, dense-visible, user-only-latest');
+  if (!['explore-only', 'mixed-visible', 'dense-visible', 'tool-heavy', 'rich-text', 'code-block', 'user-only-latest'].includes(options.scenario)) {
+    throw new Error('--scenario must be one of: explore-only, mixed-visible, dense-visible, tool-heavy, rich-text, code-block, user-only-latest');
   }
   return options;
 }
@@ -165,7 +165,7 @@ Options:
   --last-active-at-base <n> Epoch-ms lastActiveAt for session index 0. Default: Date.now()
   --last-active-step-ms <n> lastActiveAt decrement per session index. Default: 1000
   --session-prefix <text>   Session id prefix. Default: perf-long-session
-  --scenario <name>         Fixture shape: mixed-visible, dense-visible, explore-only, or user-only-latest. Default: mixed-visible
+  --scenario <name>         Fixture shape: mixed-visible, dense-visible, tool-heavy, rich-text, code-block, explore-only, or user-only-latest. Default: mixed-visible
   --openbitfun-home <path>      OpenBitFun home root. Default: OPENBITFUN_E2E_HOME or isolated tests/e2e/.openbitfun/runtime/home; OPENBITFUN_HOME is used only with OPENBITFUN_E2E_USE_REAL_PROFILE=1
   --openbitfun-user-root <path> OpenBitFun user config root for seeding active workspace. Default: OPENBITFUN_E2E_USER_ROOT or isolated tests/e2e/.openbitfun/runtime/user-root; skipped for real profile unless provided
   --cleanup                 Remove generated sessions for the prefix.
@@ -210,7 +210,7 @@ function repeatedText(chars, label) {
   return `${label} ${'x'.repeat(chars - label.length - 1)}`;
 }
 
-function repeatedMarkdown(chars, turnIndex) {
+function repeatedMarkdown(chars, turnIndex, rich = false) {
   const seed = [
     `Synthetic assistant response ${turnIndex}`,
     '',
@@ -236,7 +236,7 @@ function repeatedMarkdown(chars, turnIndex) {
   const paragraph = `Visible markdown paragraph for turn ${turnIndex}. `;
   let content = seed;
   while (content.length < chars) {
-    content += paragraph;
+    content += rich ? `\n\n${seed}` : paragraph;
   }
   return content.slice(0, chars);
 }
@@ -343,10 +343,10 @@ function makeToolItems({ turnId, turnIndex, timestamp, toolResultChars, toolItem
   });
 }
 
-function makeTextItem({ turnId, turnIndex, timestamp, assistantChars, orderIndex }) {
+function makeTextItem({ turnId, turnIndex, timestamp, assistantChars, orderIndex, rich = false, codeBlock = false }) {
   return {
     id: `${turnId}-text-0`,
-    content: repeatedMarkdown(assistantChars, turnIndex),
+    content: codeBlock ? '```typescript\n' + `export const fixture${turnIndex} = "source stays selectable";\n`.repeat(Math.ceil(assistantChars / 60)) + '\n```' : repeatedMarkdown(assistantChars, turnIndex, rich),
     isStreaming: false,
     timestamp: timestamp + 20,
     isMarkdown: true,
@@ -409,7 +409,7 @@ function makeDenseToolItem({ turnId, turnIndex, groupIndex, timestamp, toolResul
   };
 }
 
-function makeDenseLatestModelRounds({ turnId, turnIndex, timestamp, assistantChars, toolResultChars, denseGroups }) {
+function makeDenseLatestModelRounds({ turnId, turnIndex, timestamp, assistantChars, toolResultChars, denseGroups, scenario }) {
   const textItems = [];
   const toolItems = [];
   const groupCount = Math.max(1, denseGroups);
@@ -428,14 +428,26 @@ function makeDenseLatestModelRounds({ turnId, turnIndex, timestamp, assistantCha
         orderIndex,
       }));
     } else {
-      toolItems.push(makeDenseToolItem({
+      const tool = makeDenseToolItem({
         turnId,
         turnIndex,
         groupIndex,
         timestamp,
         toolResultChars,
         orderIndex,
-      }));
+      });
+      if (scenario === 'tool-heavy') {
+        // Different real card families prevent the whole fixture collapsing
+        // into a single Read group. Payloads are recorded results, never run.
+        const edit = groupIndex % 2 === 1;
+        tool.toolName = edit ? 'Edit' : 'ExecCommand';
+        tool.toolCall.input = edit
+          ? { file_path: `/workspace/fixture-${groupIndex}.ts`, old_string: 'export const value = 1;\n', new_string: 'export const value = 2;\n' }
+          : { command: `printf 'fixture ${groupIndex}\\n'` };
+        tool.toolResult.result = edit ? { success: true, file_path: `/workspace/fixture-${groupIndex}.ts` }
+          : { output: Array.from({ length: Math.ceil(toolResultChars / 60) }, (_, line) => `fixture ${groupIndex} output line ${line}: completed successfully`).join('\n'), exit_code: 0 };
+      }
+      toolItems.push(tool);
     }
   }
 
@@ -475,7 +487,7 @@ function makeTurn({
   const isLatestTurn = turnIndex === totalTurns - 1;
   const modelRounds = scenario === 'user-only-latest' && isLatestTurn
     ? []
-    : scenario === 'dense-visible' && isLatestTurn
+    : (scenario === 'dense-visible' || scenario === 'tool-heavy') && isLatestTurn
     ? makeDenseLatestModelRounds({
       turnId,
       turnIndex,
@@ -483,6 +495,7 @@ function makeTurn({
       assistantChars,
       toolResultChars,
       denseGroups,
+      scenario,
     })
     : scenario === 'explore-only'
     ? [
@@ -528,7 +541,7 @@ function makeTurn({
         roundIndex: 1,
         timestamp: timestamp + 20,
         textItems: [
-          makeTextItem({ turnId, turnIndex, timestamp, assistantChars, orderIndex: 0 }),
+          makeTextItem({ turnId, turnIndex, timestamp, assistantChars, orderIndex: 0, rich: scenario === 'rich-text', codeBlock: scenario === 'code-block' }),
         ],
         toolItems: [],
         thinkingItems: [],
@@ -763,7 +776,7 @@ async function generate(options) {
           assistantChars: options.assistantChars,
           toolResultChars: options.toolResultChars,
           toolItems: options.toolItems,
-          scenario: options.scenario,
+          scenario: !isLongSession && options.scenario === 'tool-heavy' ? 'mixed-visible' : options.scenario,
           denseGroups: options.denseGroups,
         }),
       );

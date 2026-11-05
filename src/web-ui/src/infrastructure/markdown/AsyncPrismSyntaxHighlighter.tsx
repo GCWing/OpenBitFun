@@ -86,7 +86,7 @@ export const AsyncPrismSyntaxHighlighter: React.FC<AsyncPrismSyntaxHighlighterPr
   const renderTraceStartedAtMs = renderTraceEnabled ? performance.now() : null;
 
   useEffect(() => {
-    if (Highlighter) {
+    if (Highlighter || preferFallback) {
       return;
     }
 
@@ -148,7 +148,7 @@ export const AsyncPrismSyntaxHighlighter: React.FC<AsyncPrismSyntaxHighlighterPr
       cancelAfterPaint();
       clearScheduledLoad();
     };
-  }, [Highlighter]);
+  }, [Highlighter, preferFallback]);
 
   const traceMarker = renderTraceEnabled && renderTraceStartedAtMs !== null ? (
     <PrismRenderTrace

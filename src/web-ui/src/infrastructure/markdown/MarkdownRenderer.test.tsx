@@ -369,6 +369,8 @@ describe('Markdown file links', () => {
     { name: 'response', Renderer: MarkdownRenderer, scans: true },
   ])('runs arrival DOM scanning only for response Markdown: $name', async ({ Renderer, scans }) => {
     await import('./ThinkingMarkdown');
+    vi.stubGlobal('CSS', { highlights: new Map() });
+    vi.stubGlobal('Highlight', Set);
     const scan = vi.spyOn(document, 'createTreeWalker');
     try {
       await act(async () => root.render(<Renderer content="First" isStreaming />));
@@ -379,6 +381,7 @@ describe('Markdown file links', () => {
       expect(scan.mock.calls.some(([node]) => node === markdownRoot)).toBe(scans);
     } finally {
       scan.mockRestore();
+      vi.unstubAllGlobals();
     }
   });
 
@@ -436,6 +439,26 @@ describe('Markdown file links', () => {
     await act(async () => root.render(<MarkdownRenderer content={content} />));
     expect(container.querySelector('pre[data-fallback]')?.getAttribute('data-fallback')).toBe('false');
     expect(mocks.renderHighlighter).toHaveBeenCalled();
+  });
+
+  it('keeps an indivisible large chat fence selectable without building its token DOM', async () => {
+    const code = 'const value = 1;\n'.repeat(6500).trimEnd();
+    await act(async () => root.render(<MarkdownRenderer content={`\`\`\`ts\n${code}\n\`\`\``} deferCodeHighlighting />));
+    expect(container.querySelector('pre[data-fallback]')?.getAttribute('data-fallback')).toBe('true');
+    expect(container.querySelector('pre code')?.textContent).toBe(code);
+  });
+
+  it('keeps bounded chat decoration under the outer row lifetime without intersection remounts', async () => {
+    const observe = vi.fn();
+    vi.stubGlobal('IntersectionObserver', class { observe = observe; unobserve() {} disconnect() {} });
+    try {
+      await act(async () => root.render(<MarkdownRenderer content={'```ts\nconst value = 1;\n```'} deferCodeHighlighting />));
+      const pre = container.querySelector('pre[data-fallback="false"]');
+      expect(pre).not.toBeNull();
+      expect(observe).not.toHaveBeenCalled();
+      await act(async () => root.render(<MarkdownRenderer content={'```ts\nconst value = 1;\n```'} deferCodeHighlighting />));
+      expect(container.querySelector('pre[data-fallback="false"]')).toBe(pre);
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('copies the original code with the public named control and success feedback', async () => {

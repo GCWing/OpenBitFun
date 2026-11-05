@@ -43,7 +43,9 @@ export function isValidConversationExcerpt(value: unknown): value is Conversatio
 
 export function excerptIdentity(context: ConversationExcerptContext): string {
   return JSON.stringify([context.source.surfaceId, context.source.sessionId,
-    context.fragments.map(({ turnId, flowItemId, start, end, text }) => [turnId, flowItemId, start, end, text])]);
+    context.fragments.map(({ turnId, flowItemId, start, end, text, markdownStart }) =>
+      markdownStart === undefined ? [turnId, flowItemId, start, end, text]
+        : [turnId, flowItemId, start, end, text, markdownStart])]);
 }
 
 /** Duplicate selections update the existing note without replacing unrelated attachments. */

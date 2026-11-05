@@ -11,11 +11,11 @@ const mocks = vi.hoisted(() => ({
   markdownRenderer: vi.fn(),
 }));
 
-vi.mock('@/infrastructure/markdown', () => ({
-  MarkdownRenderer: (props: { content: string; isStreaming?: boolean }) => {
+vi.mock('@/infrastructure/markdown', async () => ({
+  MarkdownRenderer: (await import('react')).memo((props: { content: string; isStreaming?: boolean }) => {
     mocks.markdownRenderer(props);
     return <div data-testid="markdown-renderer">{props.content}</div>;
-  },
+  }),
 }));
 
 vi.mock('./modern/FlowChatContext', () => ({
@@ -51,6 +51,25 @@ describe('FlowTextBlock', () => {
     vi.clearAllMocks();
   });
 
+  it('reparses only the live semantic suffix and retains the source owner and completed prefix nodes', async () => {
+    const content = 'A paragraph with **bold** text and Unicode 中文.\n\n'.repeat(800);
+    const item: FlowTextItem = { id: 'long-stream', type: 'text', timestamp: 1, status: 'streaming', isStreaming: true, isMarkdown: true, content };
+    act(() => root.render(<FlowTextBlock textItem={item} />));
+    const owner = container.querySelector('[data-flow-item-id]');
+    const prefix = container.querySelector('[data-testid="markdown-renderer"]');
+    expect(mocks.markdownRenderer.mock.calls.length).toBeGreaterThan(5);
+    expect(mocks.markdownRenderer.mock.calls.filter(([props]) => props.isStreaming)).toHaveLength(1);
+    mocks.markdownRenderer.mockClear();
+    const appended = `${content}New streaming suffix.`;
+    act(() => root.render(<FlowTextBlock textItem={{ ...item, content: appended }} />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(container.textContent).toBe(appended);
+    expect(container.querySelector('[data-flow-item-id]')).toBe(owner);
+    expect(container.querySelector('[data-testid="markdown-renderer"]')).toBe(prefix);
+    expect(mocks.markdownRenderer.mock.calls.every(([props]) => props.content.length < 4000)).toBe(true);
+    expect(mocks.markdownRenderer.mock.calls.some(([props]) => props.content.includes('New streaming suffix.'))).toBe(true);
+  });
+
   it('does not re-render completed markdown just to settle streaming growth state', async () => {
     const textItem: FlowTextItem = {
       id: 'text-1',
@@ -68,6 +87,23 @@ describe('FlowTextBlock', () => {
     });
 
     expect(mocks.markdownRenderer).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a selected sealed live section mounted without reparsing when a later section grows', async () => {
+    const prefix = 'A stable paragraph.\n\n'.repeat(150);
+    const item: FlowTextItem = { id: 'sectioned', type: 'text', timestamp: 1, status: 'streaming', isStreaming: true, isMarkdown: true, content: prefix + 'Changing suffix.' };
+    act(() => root.render(<FlowTextBlock textItem={item} markdownSection={{ start: 0, end: prefix.length }} />));
+    const node = container.querySelector('[data-testid="markdown-renderer"]')!.firstChild!;
+    const range = document.createRange(); range.setStart(node, 2); range.setEnd(node, 16);
+    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+    mocks.markdownRenderer.mockClear();
+    act(() => root.render(<FlowTextBlock textItem={{ ...item, content: item.content + ' More output.'.repeat(600) }} markdownSection={{ start: 0, end: prefix.length }} />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(container.querySelector('[data-testid="markdown-renderer"]')!.firstChild).toBe(node);
+    expect(selection.toString()).toBe(prefix.slice(2, 16));
+    expect(mocks.markdownRenderer).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-streaming]')?.getAttribute('data-streaming')).toBe('false');
+    selection.removeAllRanges();
   });
 
   it.each(['', ' \n\t\u3000'])('renders no wrapper for blank text %j', content => {

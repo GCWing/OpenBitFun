@@ -123,7 +123,11 @@ export function useFlowChatFollowOutput(options: Options) {
     const elapsed = lastFrameAt.current === null ? 16 : Math.min(64, now - lastFrameAt.current);
     lastFrameAt.current = now;
     const opening = o.isOpeningViewport();
-    const candidate = opening || getMotionAwareScrollBehavior('smooth') === 'auto'
+    // A batched response can add dozens of screens in one commit. Traversing
+    // them mounts invisible intermediate rows and cannot be followed by a reader.
+    // Apply the same distance policy as an explicit jump to latest.
+    const behavior = resolveAnimatedJumpBehavior({ fromPx: from, targetPx: reachableTarget, clientHeight: scroller.clientHeight });
+    const candidate = opening || getMotionAwareScrollBehavior(behavior) === 'auto'
       ? reachableTarget : easeFollowOffset(from, reachableTarget, elapsed);
     const next = Math.abs(candidate - reachableTarget) <= EPSILON ? reachableTarget : candidate;
     if (Math.abs(reachableTarget - from) > EPSILON) {
