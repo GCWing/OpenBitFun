@@ -14,15 +14,17 @@ interface Props {
 }
 
 type Phase = 'idle' | 'loading' | 'exiting' | 'revealing';
-const EXIT_DURATION = 240;
-const REVEAL_DURATION = 200;
+// Readiness already includes the viewport's layout commit. Keep the handoff
+// brief: decoration must not add nearly half a second to a complete read.
+const EXIT_DURATION = 80;
+const REVEAL_DURATION = 100;
 /**
  * A load shorter than this never showed its skeleton (it fades in after a
  * delay, see the stylesheet): the transcript just fades in, without the
  * skeleton hand-over, so a fast open is not made to wait on choreography.
  */
 const QUICK_LOAD_MS = 260;
-const QUICK_REVEAL_DURATION = 140;
+const QUICK_REVEAL_DURATION = 80;
 
 /** Presentation only. The existing viewport owner decides when the transcript is settled. */
 export function HistorySessionLoadingBoundary({

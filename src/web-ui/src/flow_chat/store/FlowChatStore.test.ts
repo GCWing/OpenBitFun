@@ -4793,10 +4793,10 @@ describe('FlowChatStore historical session hydration state', () => {
       expect(apiMocks.restoreSessionView).toHaveBeenNthCalledWith(
         1,
         'history-1',
-        'test-workspace-2',
+        fixtureWorkspaceId('D:/workspace/OpenBitFun'),
         expect.any(String),
         undefined,
-        3,
+        1,
       );
       expect(
         flowChatStore.getState().sessions.get('history-1')?.dialogTurns.map(turn => turn.userMessage.content)
@@ -4817,7 +4817,7 @@ describe('FlowChatStore historical session hydration state', () => {
       expect(apiMocks.restoreSessionView).toHaveBeenNthCalledWith(
         2,
         'history-1',
-        'test-workspace-2',
+        fixtureWorkspaceId('D:/workspace/OpenBitFun'),
         expect.stringContaining('full'),
         undefined,
         undefined,
@@ -5519,10 +5519,10 @@ describe('FlowChatStore historical session hydration state', () => {
     expect(apiMocks.restoreSessionView).toHaveBeenNthCalledWith(
       1,
       'history-remote',
-      'test-workspace-2',
+      fixtureWorkspaceId('D:/workspace/OpenBitFun'),
       expect.any(String),
       undefined,
-      3,
+      1,
     );
   });
 
@@ -6498,6 +6498,36 @@ describe('FlowChatStore historical session hydration state', () => {
       presentation?.range,
     );
     expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['local', 'ssh'])('opens %s history with one Turn and warms an adjacent range only after paint without replacing the tail', async location => {
+    const catalog = createTurnCatalog(100);
+    const session = createSession({ sessionId: 'history-1', isHistorical: true, historyState: 'metadata-only',
+      ...(location === 'ssh' ? { remoteConnectionId: 'ssh-host', remoteSshHost: 'host.example' } : {}),
+    });
+    apiMocks.restoreSessionView.mockResolvedValueOnce({
+      session: { sessionId: 'history-1', sessionName: 'History', agentType: 'Standard', state: 'Idle', turnCount: 100, createdAt: 1 },
+      turns: [createPersistedTurn(99)], turnCatalog: catalog, contextRestoreState: 'pending',
+      isPartial: true, loadedTurnCount: 1, totalTurnCount: 100,
+    });
+    apiMocks.loadSessionTurnWindow.mockResolvedValueOnce({
+      status: 'ready', catalogRevision: catalog.revision, totalTurnCount: 100,
+      startOrdinal: 98, endOrdinalExclusive: 100, targetTurnId: 'turn-98',
+      turns: [98, 99].map(index => createPersistedTurn(index)),
+    });
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: session.sessionId }));
+    await flowChatStore.loadSessionHistory(session.sessionId);
+    expect(apiMocks.restoreSessionView).toHaveBeenCalledWith(session.sessionId, session.workspaceId, expect.any(String), undefined, 1);
+    expect(apiMocks.loadSessionTurnWindow).not.toHaveBeenCalled();
+    const tail = flowChatStore.getState().sessions.get(session.sessionId)!.dialogTurns;
+    expect(tail.map(turn => turn.id)).toEqual(['turn-99']);
+    flowChatStore.releaseSessionHistoryCompletionAfterInitialPaint(session.sessionId);
+    await flushAsyncWork();
+    expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledTimes(1);
+    expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledWith(expect.objectContaining({ targetStorageTurnIndex: 98, before: 0, after: 1 }));
+    expect(flowChatStore.getState().sessions.get(session.sessionId)!.dialogTurns).toBe(tail);
+    expect(flowChatStore.getSessionHistoryViewState(session.sessionId)?.activeRange).toBeNull();
+    expect(flowChatStore.hasPendingSessionHistoryCompletion(session.sessionId)).toBe(false);
   });
 
 
@@ -8690,12 +8720,13 @@ describe('FlowChatStore device surfaces', () => {
       // Known history and paging state survive; nothing claims a complete empty transcript.
       expect(session().historyState).toBe('failed');
       expect(session().isPartial).toBe(true);
-      expect(texts('peer-overdue')).toHaveLength(2);
+      expect(texts('peer-overdue')).toHaveLength(1);
       // The stalled read is closed, so its late page cannot mark it ready.
       expect(apiMocks.relayReady).toBeNull();
 
       // The retry receives the late page from the host cache and recovers.
       apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord('peer-overdue', 0, 1));
         apiMocks.relayRecord?.(itemRecord('peer-overdue', 0, 2));
         apiMocks.relayReady?.({ sessionId: 'peer-overdue', hasMore: false, oldestSeq: 1, cursor: 9 });
         return 'peer-overdue-retry';
@@ -8705,16 +8736,36 @@ describe('FlowChatStore device surfaces', () => {
       expect(texts('peer-overdue')).toHaveLength(3);
     });
 
-    it('applies each drained page in one pass', async () => {
+    it('keeps an incomplete historical Turn out of the replica and publishes all its items together', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-atomic');
+      vi.useFakeTimers();
+      try {
+        apiMocks.subscribeRelaySession.mockResolvedValueOnce('peer-atomic-subscription');
+        const opening = flowChatStore.loadRelaySessionHistory('peer-atomic');
+        await vi.advanceTimersByTimeAsync(0);
+        apiMocks.relayRecord?.(itemRecord('peer-atomic', 0, 0));
+        await vi.advanceTimersByTimeAsync(1000);
+        // Runtime/mailbox controls may flush while a page is crossing the bridge.
+        flowChatStore.settleRelaySessionRecords('peer-atomic');
+        expect(flowChatStore.getState().sessions.get('peer-atomic')!.dialogTurns).toHaveLength(0);
+        apiMocks.relayRecord?.(itemRecord('peer-atomic', 0, 1));
+        apiMocks.relayReady?.({ sessionId: 'peer-atomic', hasMore: false, oldestSeq: 1, cursor: 2 });
+        await opening;
+        expect(texts('peer-atomic')).toHaveLength(2);
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('applies each admitted whole-Turn batch in one pass', async () => {
       activateSurface(PEER_SURFACE_ID);
       seedSession('peer-drain');
       const pages = 6;
       const recordsPerPage = 50;
       const deliver = (page: number) => {
-        // Newest first, as the host reads history backward through one long turn.
+        // Newest Turn first; Rust admits whole Turns before the ready boundary.
         const start = (pages - 1 - page) * recordsPerPage;
         for (let index = 0; index < recordsPerPage; index += 1) {
-          apiMocks.relayRecord?.(itemRecord('peer-drain', 0, start + index));
+          apiMocks.relayRecord?.(itemRecord('peer-drain', pages - 1 - page, index));
         }
         apiMocks.relayReady?.({ sessionId: 'peer-drain', hasMore: page < pages - 1, oldestSeq: start + 1, cursor: pages * recordsPerPage });
       };
@@ -8748,7 +8799,8 @@ describe('FlowChatStore device surfaces', () => {
       snapshot.mockRestore();
       // Ready and catalog bookkeeping add a small constant per page, not per record.
       expect(storeUpdates).toBeLessThanOrEqual(pages * 4);
-      expect(texts('peer-drain')).toHaveLength(pages * recordsPerPage);
+      expect(session().dialogTurns).toHaveLength(pages);
+      for (let turn = 0; turn < pages; turn++) expect(texts('peer-drain', turn)).toHaveLength(recordsPerPage);
     });
 
     it('renders good turns past a failed one, stays failed, and retries the held turn', async () => {
@@ -9350,7 +9402,7 @@ describe('background device session seeding', () => {
     expect([...seeded.keys()]).toEqual(['s-1']);
     expect(seeded.get('s-1')).toMatchObject({ workspaceId: 'peer-ws', historyState: 'metadata-only', dialogTurns: [] });
     expect(flowChatStore.getState().sessions.has('local-1')).toBe(false);
-    expect(listener).toHaveBeenCalledWith('peer-seed');
+    expect(listener).toHaveBeenCalledWith('peer-seed', 'updated');
     // An identical page does not notify again.
     listener.mockClear();
     flowChatStore.subscribeSurfaceSessions(listener);

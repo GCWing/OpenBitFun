@@ -53,7 +53,7 @@ use openbitfun_services_integrations::remote_connect::{
     REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1, REMOTE_CAPABILITY_DIALOG_STEER_V1,
     REMOTE_CAPABILITY_HARNESS_PROFILES_V1, REMOTE_CAPABILITY_HOST_STREAM_V1,
     REMOTE_CAPABILITY_PLAN_BUILD_V1, REMOTE_CAPABILITY_SESSION_ROLLBACK_V1,
-    REMOTE_FILE_MAX_CHUNK_BYTES, REMOTE_FILE_MAX_READ_BYTES,
+    REMOTE_CAPABILITY_TURN_HISTORY_V1, REMOTE_FILE_MAX_CHUNK_BYTES, REMOTE_FILE_MAX_READ_BYTES,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -476,6 +476,14 @@ fn relay_records_carry_attachment_pixels_on_the_turn_record_alone() {
         .iter()
         .find(|record| record["id"] == "turn/turn-1")
         .expect("turn record is published");
+    assert_eq!(
+        turn_record["turnRecordIds"],
+        serde_json::json!(["turn/turn-1", "round/round-1", "item/item-1"])
+    );
+    assert!(records
+        .iter()
+        .skip(1)
+        .all(|record| record.get("turnRecordIds").is_none()));
     assert_eq!(
         images_of(turn_record),
         vec![
@@ -2363,6 +2371,7 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
             "user_question_interaction_v1",
             "background_result_delivery_v1",
             REMOTE_CAPABILITY_HOST_STREAM_V1,
+            REMOTE_CAPABILITY_TURN_HISTORY_V1,
             REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1
         ])
     );
@@ -2613,6 +2622,7 @@ fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
             "user_question_interaction_v1",
             "background_result_delivery_v1",
             REMOTE_CAPABILITY_HOST_STREAM_V1,
+            REMOTE_CAPABILITY_TURN_HISTORY_V1,
             REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1
         ])
     );

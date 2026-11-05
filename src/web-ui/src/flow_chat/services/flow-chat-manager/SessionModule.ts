@@ -329,10 +329,11 @@ function shouldHydrateHistoricalSessionBeforeSwitch(session: Session | undefined
 }
 
 function shouldCompletePartialHistoryAfterSwitch(session: Session | undefined): boolean {
-  // A live session can retain only its restored tail while still being marked
-  // non-historical. Completing it after an explicit switch restores the
-  // assistant rounds that cannot come from the user-only turn catalog.
-  return session?.isHistorical !== true
+  // Only legacy local hosts without a Turn-window catalog need this fallback.
+  // Opening a paged local or peer tail must not drain all history in the background.
+  return getActiveSurfaceScope().surfaceId === 'local'
+    && session?.turnCatalog?.sessionId !== session?.sessionId
+    && session?.isHistorical !== true
     && session?.historyState === 'ready'
     && session.isPartial === true
     && session.externalHistory?.mode !== 'follow';

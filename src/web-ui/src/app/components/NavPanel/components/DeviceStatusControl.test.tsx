@@ -208,6 +208,44 @@ afterEach(() => {
 });
 
 describe('device status card', () => {
+  it.each(['signed-out', 'loading', 'authorizing'])(
+    'opens device management directly when account identity is %s', status => {
+      state.identity = { status, me: null };
+      render(false);
+
+      act(() => element('nav-footer-device-status').click());
+
+      expect(onManageDevices).toHaveBeenCalledOnce();
+      expect(onOpenChange).toHaveBeenCalledExactlyOnceWith(false);
+      expect(element('nav-footer-device-status').getAttribute('aria-expanded')).toBe('false');
+      expect(document.querySelector('[data-testid="nav-device-status-popover"]')).toBeNull();
+      expect(state.refresh).not.toHaveBeenCalled();
+      expect(state.accountListDevices).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])('toggles the overview when signed in (peer active: %s)', async peerActive => {
+    state.identity = { status: 'signed-in', me: { user: { accountId: 'acct' } } };
+    state.overview = overview({ peer: peerActive ? { deviceId: 'peer-1', deviceName: 'Remote Mac' } : null });
+    state.getDeviceInfo.mockResolvedValue({ device_id: 'local', device_name: 'Workstation' });
+    state.accountListDevices.mockResolvedValue([]);
+    function Footer() {
+      const [open, setOpen] = React.useState(false);
+      return <DeviceStatusControl open={open} onOpenChange={setOpen} onManageDevices={onManageDevices} />;
+    }
+    act(() => root.render(<Footer />));
+
+    await act(async () => { element('nav-footer-device-status').click(); });
+    expect(element('nav-footer-device-status').getAttribute('aria-expanded')).toBe('true');
+    expect(element('nav-device-status-popover')).not.toBeNull();
+    expect(onManageDevices).not.toHaveBeenCalled();
+
+    act(() => element('nav-footer-device-status').click());
+    expect(element('nav-footer-device-status').getAttribute('aria-expanded')).toBe('false');
+    expect(document.querySelector('[data-testid="nav-device-status-popover"]')).toBeNull();
+    expect(onManageDevices).not.toHaveBeenCalled();
+  });
+
   it('pins an upward card by its bottom edge so height changes never reposition it', () => {
     render(false);
     const rect = (top: number, height: number, width: number) => ({

@@ -1561,8 +1561,7 @@ $_section-header-height: 22px;
 // Device overview — one compact model, local and connected states
 // ──────────────────────────────────────────────
 
-// The light that fills the card is the displayed device's state; registering it
-// lets the whole surface cross-fade between devices instead of snapping.
+// State color is limited to the device controls; the card stays neutral.
 @property --_device-overview-light {
   syntax: '<color>';
   inherits: true;
@@ -1577,10 +1576,8 @@ $_section-header-height: 22px;
   --_device-overview-inline-size: min(312px, calc(100vw - 16px));
   --_device-overview-stage-size: 120px;
   --_device-overview-inset: var(--openbitfun-space-4);
-  // Silver until a device is under control: this device and a device not yet
-  // connected share one neutral light; only a live connection turns green.
+  // Local and disconnected devices use neutral controls; a live connection is green.
   --_device-overview-light: var(--openbitfun-color-content-secondary);
-  --_device-overview-light-strength: 16%;
   position: fixed;
   z-index: var(--openbitfun-layer-popover);
   width: var(--_device-overview-inline-size);
@@ -1589,24 +1586,9 @@ $_section-header-height: 22px;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  background:
-    radial-gradient(
-      120% 78% at 50% 0%,
-      color-mix(in srgb, var(--_device-overview-light) var(--_device-overview-light-strength), transparent),
-      transparent 74%
-    ),
-    radial-gradient(
-      90% 55% at 100% 100%,
-      color-mix(in srgb, var(--_device-overview-light) calc(var(--_device-overview-light-strength) / 3), transparent),
-      transparent 70%
-    ),
-    var(--openbitfun-color-surface-raised);
+  background: var(--openbitfun-color-surface-raised);
   transition: --_device-overview-light var(--openbitfun-motion-duration-slow) var(--openbitfun-motion-easing-standard);
   animation: openbitfun-nav-popover-in 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
-
-  :where([data-color-scheme='dark']) & {
-    --_device-overview-light-strength: 26%;
-  }
 
   &[data-control-state='active'] {
     --_device-overview-light: var(--openbitfun-color-status-success-content);
@@ -1937,7 +1919,7 @@ $_section-header-height: 22px;
   }
 }
 
-// A soft top-lit fill reads as a material rather than a flat cut-out.
+// A single neutral fill keeps the device silhouette legible on the solid card.
 .openbitfun-device-overview__artwork-glyph {
   position: relative;
   justify-self: center;
@@ -1945,11 +1927,7 @@ $_section-header-height: 22px;
   height: 56%;
   margin-block-end: var(--openbitfun-space-2);
   aspect-ratio: 140 / 78;
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--openbitfun-color-content-primary) 72%, transparent),
-    color-mix(in srgb, var(--openbitfun-color-content-primary) 42%, transparent)
-  );
+  background: var(--openbitfun-color-content-secondary);
   mask: url('./assets/device.svg') center / contain no-repeat;
 }
 

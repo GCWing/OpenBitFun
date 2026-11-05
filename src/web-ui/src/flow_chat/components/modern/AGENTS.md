@@ -96,6 +96,10 @@ before reporting a defect as new.
 
 ## History Paging and the Anchor
 
+- Ordinary opens request only the last Turn on local, SSH and capable peer hosts.
+  Bookmark/search navigation retains its requested range. Optional adjacent
+  prefetch begins only after visible presentation and never recursively drains
+  history or fills a short last Turn's reserved blank space.
 - Deciding *that* a history boundary is worth asking about belongs to
   `flowChatHistoryBoundary.ts` and reads only a visible item range and the
   scroll distance to each end. `flowChatHistoryPager.ts` owns request eligibility;
@@ -114,7 +118,7 @@ before reporting a defect as new.
   38px user message to a 5012px model round.
 - Request completion and presentation layout are separate events, in either
   order. A page must pass both before another page can dispatch. Notify layout
-  only after measurement/prepend compensation; do not use timers as commit proof.
+  only after measurement/window reconciliation; do not use timers as commit proof.
 - After the first ask, another page requires fresh directional reader demand.
   Coalesce demand received during a request; clear it when the reader reverses
   or the boundary leaves the prefetch lead. Layout/resize/compensation alone
@@ -137,16 +141,28 @@ before reporting a defect as new.
 - `exhausted` is latched per *window*, not per session. It answers "nothing
   before this start ordinal", so the latch clears whenever the window's ordinals
   change — not only when a page is `applied`.
-- A history prepend must be compensated for in `VirtualMessageList`, by the
-  height of the items that arrived above. Keying measurements on item identity
-  covers the measurements; it does not move the scroll offset. The compensation
-  cannot finish the job on its own — most of the movement is the arrived items
-  measuring over the frames after it, and only the anchor's relationship
-  survives that.
-- That compensation and the viewport anchor are displacements, not positions:
-  `viewportOwner.shift`, never a write with an owner. A gesture must not be able
-  to refuse either — paging up happens only while the reader is scrolling up, so
-  anything a gesture can refuse here is refused every time.
+- Historical publication is atomic per complete Turn. Transport pages, timeouts
+  and terminal headers do not prove completeness; do not expose staged fragments.
+- Historical viewing uses a native bottom scroll origin. Older complete Turns
+  grow upward without prepend compensation,
+  leading-extent floors or passive follow writes. Unmounted row estimates select
+  virtual windows; they must not determine the historical tail's position.
+  Keep the latest complete Turn in a viewport-sized CSS shell with trailing
+  flexible space, so short Turns start at the top and older Turns insert outside
+  its reservation. Historical virtual ranges admit complete Turns together.
+- Do not select layout from `Session.isHistorical`: it is a hydration flag that
+  clears at the first page. Keep the native history layout until actual runtime
+  processing or submission, or an explicit presentation-mode handoff.
+- Keep chronological public indexes, DOM order and persisted top offsets stable.
+  Reverse internal indexes belong only to `useFlowChatVirtualizer`; native offset
+  conversion belongs to `flowChatScrollCoordinates` and the viewport register.
+- Reader demand and the DOM reading anchor use native scroll travel, not changes
+  in the total history range. An idle edge gesture can request a page without
+  anchoring a stationary bubble or manufacturing a new scroll position.
+- A reader repair uses an actually painted block. Publish its accepted offset
+  before releasing retained rows; delayed native scroll events must not remove
+  and recreate the same visible content. Live top-origin prepend compatibility
+  remains separate from native historical tail loading.
 - A scroll re-anchors the reader, except while the anchored Turn is missing from
   the rendered window. A correction is owed there and cannot be measured yet, so
   the anchor is carried through the scroll — credited with the reader's own
@@ -206,6 +222,17 @@ before reporting a defect as new.
 - Stable virtual-item keys and projection identity must be preserved. Do not
   split one `ModelRound` into multiple virtual items or reclassify projection
   from a timer.
+- Width reflow is one layout placement around the current visible content.
+  Preserve measured/reserved history coordinates; never clear all sizes and
+  animate back after selecting a window from replacement estimates. Retain
+  fractional row heights so virtual padding replaces their exact occupied space.
+- When a live-layout reflow releases an old extent, snapshot the viewport before changing
+  the range. Browser clamping is part of that transaction, never reader travel
+  and never a second displacement to animate.
+- An insertion before the internal virtual window retains the committed visible
+  keys until reading repair and offset readback are complete. Release retention
+  in that layout commit so newly visible blocks materialize. Native older pages
+  append after the internal window and require no prefix displacement.
 
 ## Verification
 

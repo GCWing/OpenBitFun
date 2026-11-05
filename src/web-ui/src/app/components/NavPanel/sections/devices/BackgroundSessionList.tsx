@@ -36,7 +36,6 @@ import {
   SESSIONS_PREFETCH_COUNT,
 } from '../sessions/sessionNavExpand';
 import { useSessionNavExpansion } from '../sessions/useSessionNavExpansion';
-import { isWorkspaceSessionsCollapsed } from '../workspaces/workspaceDisclosure';
 import { SessionStatusMark } from '../sessions/SessionStatusIndicator';
 import { useCatalogSessionStatus } from './catalogSessionStatus';
 import { openDeviceSession } from './openOnDevice';
@@ -269,8 +268,6 @@ export const BackgroundSessionList: React.FC<{
   const primaryWorkspaceId = workspaceIds[0] ?? '';
   const { displayCount, setDisplayCount } = useSessionNavExpansion(
     `${surfaceScopedKey(slot.surfaceId, flat ? undefined : primaryWorkspaceId)}:${sourceAgent}`,
-    // Unmounted by a collapse: reopening starts at the first rows.
-    { shouldHandOff: () => flat || !isWorkspaceSessionsCollapsed(slot.surfaceId, primaryWorkspaceId) },
   );
 
   const isRunning = useCallback((session: Session) => (

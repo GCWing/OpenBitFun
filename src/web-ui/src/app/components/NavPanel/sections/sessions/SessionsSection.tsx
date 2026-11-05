@@ -276,12 +276,10 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   const dispatchTransportByJobId = useDispatchJobStore(state => state.transportByJobId);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
-  const isVisibleRef = useRef(isVisible);
-  isVisibleRef.current = isVisible;
   const { displayCount, setDisplayCount } = useSessionNavExpansion(
     `${surfaceScopedKey(getActiveSurfaceId(), workspaceId)}:${sourceAgent}`,
     // Collapsing a workspace and opening it again starts at the first rows.
-    { visible: isVisible, shouldHandOff: () => isVisibleRef.current },
+    { visible: isVisible },
   );
   const surface = getActiveSurfaceScope();
   const initialMetadataKey = surface.key(workspaceId, surface.epoch);

@@ -14,6 +14,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod turn_history;
+use turn_history::TurnSnapshot;
+pub use turn_history::{TurnHistoryPage, TurnHistoryRequest};
+
 /// Contains a separator rejected by runtime Session IDs, so control metadata
 /// cannot alias a user's session.
 pub const HOST_CATALOG_ID: &str = "@host/catalog";
@@ -21,6 +25,7 @@ pub const HOST_CATALOG_ID: &str = "@host/catalog";
 pub const HOST_STREAM_CHANGED_EVENT: &str = "host-stream-changed";
 /// Advertised in `get_workspace_info.capabilities` by hosts serving `read_stream`.
 pub const REMOTE_CAPABILITY_HOST_STREAM_V1: &str = "host_stream_v1";
+pub const REMOTE_CAPABILITY_TURN_HISTORY_V1: &str = "host_stream_turn_history_v1";
 /// Returned to controllers that still ask for a relay-stored session key.
 pub const RELAY_SESSION_HISTORY_RETIRED_MESSAGE: &str = "Relay-stored session history has been retired; session content is now read directly from the online host. Update the controlling app to continue.";
 
@@ -59,6 +64,9 @@ pub struct StreamPage {
     /// Older history was evicted from host memory; `has_more=false` then means
     /// "unavailable", not "complete".
     pub truncated: bool,
+    /// Present only when the host accepted the optional single-Turn read offer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_history: Option<TurnHistoryPage>,
 }
 
 /// A stream read request as carried by `RemoteCommand::ReadStream`.
@@ -79,6 +87,9 @@ pub struct StreamReadRequest {
     /// Keep (or start) receiving change hints for this stream.
     #[serde(default)]
     pub subscribe: bool,
+    /// Optional read negotiation. Older hosts ignore it and return ordinary pages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_history: Option<TurnHistoryRequest>,
 }
 
 /// Delivers an encrypted `DeviceEvent` hint to one subscribed device. Hosts own
@@ -143,6 +154,10 @@ struct StreamLog {
     truncated: bool,
     subscribers: HashMap<String, Instant>,
     last_activity: Instant,
+    turn_snapshots: HashMap<String, TurnSnapshot>,
+    /// Snapshot identities participate in tombstones, but must not suppress a
+    /// later live publication that other subscribers have not received yet.
+    snapshot_record_turns: HashMap<String, String>,
 }
 
 impl StreamLog {
@@ -158,6 +173,8 @@ impl StreamLog {
             truncated: false,
             subscribers: HashMap::new(),
             last_activity: Instant::now(),
+            turn_snapshots: HashMap::new(),
+            snapshot_record_turns: HashMap::new(),
         }
     }
 
@@ -358,6 +375,7 @@ impl StreamLog {
             cursor: self.latest(),
             oldest_seq: self.oldest(),
             truncated: self.truncated,
+            turn_history: None,
         })
     }
 }
@@ -471,6 +489,10 @@ impl HostStreamHub {
                 let now = Instant::now();
                 state.streams.retain(|_, log| {
                     log.subscribers.retain(|_, expires| *expires > now);
+                    log.turn_snapshots.retain(|_, snapshot| {
+                        now.duration_since(snapshot.last_activity) < STREAM_GRACE
+                            && log.subscribers.contains_key(&snapshot.device)
+                    });
                     !log.subscribers.is_empty()
                         || now.duration_since(log.last_activity) < STREAM_GRACE
                 });
@@ -553,7 +575,10 @@ impl HostStreamHub {
         let Some(log) = state.streams.get_mut(session_id) else {
             return false;
         };
-        if log.history.is_none() {
+        if log.history.is_none()
+            && log.turn_snapshots.is_empty()
+            && log.snapshot_record_turns.is_empty()
+        {
             return false;
         }
         let subscribers = std::mem::take(&mut log.subscribers);
@@ -595,6 +620,9 @@ impl HostStreamHub {
         F: FnMut(Option<usize>) -> Fut,
         Fut: std::future::Future<Output = Result<HistoryBatch>>,
     {
+        if let Some(history) = &request.turn_history {
+            return self.read_turn_history(device, request, history, load).await;
+        }
         if request.after.is_some() && request.before.is_some() {
             bail!("read_stream accepts either after or before, not both");
         }
@@ -758,6 +786,8 @@ impl HostStreamHub {
         let mut state = self.lock();
         if let Some(log) = state.streams.get_mut(stream_id) {
             log.subscribers.remove(source_device_id);
+            log.turn_snapshots
+                .retain(|_, snapshot| snapshot.device != source_device_id);
             log.last_activity = Instant::now();
         }
     }
@@ -769,6 +799,8 @@ impl HostStreamHub {
         for log in state.streams.values_mut() {
             log.subscribers
                 .retain(|device, _| online_device_ids.iter().any(|id| id == device));
+            log.turn_snapshots
+                .retain(|_, snapshot| online_device_ids.contains(&snapshot.device));
         }
     }
 
@@ -930,11 +962,16 @@ fn diff_records(
     let removed: Vec<String> = log
         .record_index
         .iter()
-        .filter(|(id, entry)| !present.contains(*id) && (full || scope.contains(&entry.turn)))
+        .map(|(id, entry)| (id, &entry.turn))
+        .chain(log.snapshot_record_turns.iter())
+        .filter(|(id, turn)| !present.contains(*id) && (full || scope.contains(*turn)))
         .map(|(id, _)| id.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
         .collect();
     for id in removed {
         log.record_index.remove(&id);
+        log.snapshot_record_turns.remove(&id);
         changed.push(serde_json::json!({"sessionId":session_id,"id":id,"deleted":true}));
     }
     if changed.is_empty() {

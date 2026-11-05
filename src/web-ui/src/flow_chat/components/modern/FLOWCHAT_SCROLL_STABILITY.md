@@ -31,6 +31,12 @@ to content, it stops being a reservation and becomes the compensation engine
 that was removed in "remove synthetic tail-space scrolling" — do not rebuild
 that under a new name.
 
+Historical layout reserves the final complete Turn's minimum extent through
+CSS, based only on viewport height and the header gap. Flex places unused space
+below its content. Older Turns insert before this shell, never consume its
+trailing space, and do not change the final user row's inset through a new public
+index. The live spacer/follow contract below remains separate.
+
 ## Opening Reveal
 
 The opening transcript uses opacity and `aria-hidden` until its existing reveal
@@ -58,6 +64,20 @@ runtime confirmation using the read-only reveal probes.
 
 ## Transcript Width
 
+WebKit omits the leading `stable both-edges` gutter when its scroller uses
+reverse flex layout. `centerFlowChatExtent` normalizes the actual extent's
+horizontal centre against the scroller, before paint and on width/origin changes.
+It reads actual rectangles; `clientWidth` cannot infer both gutters in WebKit.
+A static WKWebView fixture with a 1000px panel/900px reading column reproduced
+15px displacement, then verified matching 58px text/composer edges and an 8px
+short-Turn top inset before and after an 800px prepend. This is layout evidence,
+not live desktop interaction or remote-transport acceptance.
+
+
+Native history holds its bottom origin through width changes. The leading-extent
+and reflow translation described in this section apply to the live layout.
+
+
 `FlowChatWidthBoundary` projects the controller-local Appearance width preference
 onto the ChatPane's transcript-width token, shared by the transcript and composer.
 The existing default is 900px and the preference minimum is two thirds (600px).
@@ -76,10 +96,11 @@ cancellation, capture loss, window blur, pane deactivation/resize and unmount
 cancel it and restore the previous preference. Arrow keys resize in physical
 directions (Shift uses a larger step); Home/End select bounds and double-click
 restores the default. Dragging suspends width-derived measurement through the
-existing pane-resize contract. The committed content width also enters the
-virtualizer's estimate context and layout signature, since a reading column can
-reflow while its full-width scroller keeps the same box. No new viewport writer
-or follow policy is introduced.
+existing pane-resize contract. Mounted-row ResizeObserver measurements remain
+active during preview; the full measurement pass runs at the settled width.
+The follow owner samples actual column geometry, so the preview and final
+preference update use the same atomic placement even when the scroller keeps
+the same box. No new viewport writer is introduced.
 
 The scroller's `--_flow-chat-top-mask-start` is registered as non-inheriting:
 only its own edge mask consumes the value. An opening trace placed a 562.3ms
@@ -157,40 +178,23 @@ end mid-viewport permanently, since nothing pulls the target back down.
 
 ## Opening a Session
 
-A session mounts against an unsettled transcript: item heights are still
-estimates, and an `isPartial` session pages older Turns in for hundreds of
-milliseconds. The end of content can travel thousands of pixels after the first
-alignment, so opening is its own phase with its own rules.
+An idle historical transcript opens with a native bottom scroll origin. Earlier
+content extends upward, including pages completing an existing Turn. Follow
+retains its ownership state for navigation policy but performs no passive
+viewport writes, leading-extent calculation or follow animation in that layout.
+See `FLOWCHAT_HISTORY_PAGING.md` for its lifetime and reading contract.
 
-**While opening, the transcript is hidden and the follow target is
-authoritative.** It tracks the content end exactly — no remembered offset, no
-gap tolerance, and no accommodation of a foreign `scrollTop` write. The
-virtualizer writes during this window too, as items measure and it corrects for
-the ones above the viewport; fighting it is invisible because nothing is
-painted, and accommodating it would be permanent once paging stops.
+An already active reply opens in the live top-origin layout. Its initial window
+is seeded near the tail and opening follow places the measured target without
+animation. Its trailing reservation, submission placement and output easing
+continue to use the rules below. Actual runtime processing or submission switches
+an idle history view to live layout; clearing the hydration flag does not.
 
-Nothing places the opening viewport by aligning to an item. The end of *real
-content* is above the resident tail spacer, and no item knows where that is, so
-the follow target writes the offset and the reveal waits for it.
-
-Session open enters follow-output as `session-open`, even with nothing
-streaming. The frame loop then runs on a `SETTLE_FRAMES` budget that refreshes
-whenever the target actually moves, so it tracks measurement and paging and then
-goes quiet. Without it nothing owns the viewport after the one-shot alignment,
-and the transcript strands wherever that early shot landed. `scrollToTurnEnd`
-deliberately does **not** exit follow-output for the same reason: it is the
-session-open placement and wants the same position the settle is converging on,
-and releasing ownership there hands the viewport back to nobody.
-
-**After the reveal, the follow target is cooperative.** The gap tolerance
-applies again, because from then on a shrinking content end means a card
-collapsed, not that measurement is still catching up.
-
-The reveal waits for a *semantic* signal — the last virtual item rendered with
-its end inside the viewport, plus the viewport in position — not for geometry to
-stop changing. Before the virtualizer renders anything, `scrollHeight` and the
-end sit unchanged at their unmeasured values, which is indistinguishable from
-having finished; a stability test reveals on frame 3 and shows the whole settle.
+Both layouts retain the opening paint gate and semantic reveal condition: the
+last virtual row is rendered with its end inside the viewport and the viewport
+has reached its target. A stationary unmeasured total height is not reveal proof.
+Old reading bookmarks restore the semantic item and offset before reveal, using
+the same persisted coordinate convention.
 
 ## Revealing a New Turn
 
@@ -393,57 +397,45 @@ viewport resting in the reserved blank is an intentional reader-controlled
 state. A gesture stops the loop before it can hide anything, and no later settle
 step reclaims the viewport.
 
-## Resizing Anchors the Viewport Bottom
+## Reflow Is One Layout Placement
 
-A plain scroller preserves `scrollTop` across a resize, which anchors the **top**
-edge — the bottom is where content gets revealed or swallowed. For a transcript
-that is backwards, because the interesting end is the bottom.
-`handleViewportResize` anchors there instead. Follow output already behaves this
-way for a viewport it owns; this is the same rule for one it does not, so the
-same drag stops producing two different results depending on whether the user
-had scrolled.
+The existing visible content is the reference for a width/height change. A
+settled answer must not move down on one paint and then ease back over later
+frames. The follower samples the actual row-column width and scroller height
+with each layout signal. Container resize handling first measures all mounted
+rows: row-observer and container-observer delivery order must yield the same
+placement, otherwise the same displacement is applied twice. This includes
+the CSS-only preview of a column drag:
+the persisted preference and the outer scroller can both remain unchanged.
 
-The two halves are not equally capable, and the difference is the useful part:
+A reflow translates the current offset and follow target by the same layout
+displacement, synchronously before paint. Only lag from actual output growth
+continues easing. The former leading floor is released for this reflow and
+captured again at the resulting position; ordinary collapse and reader-owned
+positions keep their floors. Capture the previous offset **before** releasing
+that floor: shrinking the scroll range can clamp the native offset immediately.
+Translating the already-clamped value subtracts the shrink twice, showing a jump
+and then an animated return. A higher-priority owner prevents both floor release
+and the write; the pending layout revision remains available for the next sample.
 
-- **A height change moves no content.** Preserving `scrollTop + clientHeight` is
-  exact and needs no judgement about what the user was doing, so it is applied
-  unconditionally. It also preserves the distance to the content end, which
-  makes "was at the end, stays at the end" fall out for free rather than being a
-  case. Growing the viewport is additionally a *restoration*: the browser used
-  to clamp a bottom-anchored viewport at `scrollHeight - clientHeight`, and the
-  resident spacer removed that clamp.
-- **A width change reflows the transcript.** Where the line that was on the
-  bottom edge went is a DOM question, and by the time the resize is observed the
-  reflow has already happened, so it cannot be answered after the fact.
-  Answering it would mean sampling an element anchor on the scroll path, which
-  is a `getBoundingClientRect` per scroll event. Instead only the one position
-  that can be recomputed from geometry is restored — the end of the transcript —
-  which needs `wasAtTail`, the band check from *before* the resize.
-  `VirtualMessageList` mirrors `isAtBottom` into a ref for that, and calls the
-  handler ahead of recomputing it.
+The virtualizer retains measured sizes and existing estimate reservations across
+width/font changes. Mounted rows replace them with their actual geometry;
+unmounted rows keep their reservation until they return. Resetting the entire
+cache to estimates first can select a different window before the original
+visible anchor has been placed. Normal-flow rows are measured in fractional CSS
+pixels, through ResizeObserver border boxes or synchronous rectangles. Padding
+must replace exactly the occupied height, not a separately rounded height for
+each row.
 
-**One correction is not enough.** A width change reflows every item and a height
-change makes the virtualizer render a different number of them; either way it
-re-measures over the following passes, so the content end keeps moving after the
-first callback. The correction therefore repeats over
-`TAIL_REALIGN_RESIZE_CALLBACKS`, a window opened only by a change to the
-scroller's own box. Streaming content growth arrives through the same observer
-and must never inherit that window — it moves the content end away from a
-resting viewport and can never strand it, so reacting to it would be all risk
-and no benefit.
+A reader keeps the existing visible block anchor. The resize observer restores
+that relationship before paint instead of capturing a new anchor after the
+content has moved. A column rewrap can still change the line breaks *inside* a
+long block; this is a block anchor, not a text-character anchor. The native scroll
+path continues to replace it when the reader moves.
 
-Two properties are shared with the gesture path, and one is not:
-
-- **Instant, never animated.** A height change moves the viewport by exactly the
-  height that was added or removed, so nothing appears to move at all; the rest
-  is a correction the user is already watching happen under the cursor. An
-  animation would add a scroll nobody asked for.
-- **No transfer of ownership** — unlike the gesture path. A gesture ending in
-  the blank says "take me to the end"; a layout change says nothing. The
-  browser's clamp never changed who owned the viewport either.
-
-Native scroll anchoring cannot help here: `overflow-anchor: none` is set
-throughout the transcript, because it fights the virtualizer.
+There is no callback-count window for reflow. Later output at the same layout
+revision follows its ordinary streaming policy. Native `overflow-anchor` remains
+`none`; the existing viewport register owns the atomic coordinate translation.
 
 ## An Animation Only as Far as the Reader Can Follow
 
@@ -616,11 +608,6 @@ content such as history state and `RuntimeStatusSlot`.
   while output is arriving therefore ends with one catch-up step covering
   whatever content grew during the animation — under the ease's snap threshold
   at ordinary streaming rates, and a visible jump above them.
-- A width change anchors the viewport bottom only for a viewport that was at the
-  end of the transcript. Everywhere else the reflow moves content out from under
-  the bottom edge and nothing puts it back, because the anchor would have to be
-  captured before the reflow. Closing this means sampling an element anchor on
-  the scroll path.
 - On a very short transcript the scrollbar exposes a viewport of empty range.
   The range is intentionally draggable and no longer bounces back.
 - The opening reveal has a hard frame cap. A session that pages for longer than

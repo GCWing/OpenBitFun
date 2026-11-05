@@ -125,6 +125,30 @@ records and responses from a device that is no longer rendered. Desktop
 `RelaySessionHistory` owns the subscription across initial loading, realtime
 delivery and older-page prefetch.
 
+Desktop/Web FlowChat history publishes complete Turns. The Rust subscriber offers
+`turn_history: {version: 1}` on `read_stream`; a response acknowledgement enables
+single-Turn snapshots. Hosts also advertise `host_stream_turn_history_v1`. The
+first read selects only the last Turn, independently of the ordering of live
+events. Large Turns travel in byte/event-bounded packets of one immutable snapshot;
+packet offsets and the older-Turn boundary are separate. The live cursor captured
+before source IO fences snapshot revisions, and normal live publication resumes
+after it. Snapshots are ephemeral, controller scoped, epoch fenced and byte bounded
+(one oversized Turn may exceed the budget); they add no persisted format or relay
+storage. Identity-only tombstone tracking preserves deletions without suppressing
+live publication to another controller.
+
+Hosts that omit the acknowledgement keep the record-page path: optional root
+`turnRecordIds` membership proves completeness across pages, including unchanged
+items older than a republished root. Older hosts without membership remain
+readable by finishing their available history before publication, so their first
+open can be slower. Missing records, non-advancing packets and epoch changes fail
+without exposing fragments. A terminal header alone never proves completeness.
+`RelaySessionHistory` stages controller-annotated `historyReplay` records outside
+the replica until ready. Live records remain incremental even while an older Turn
+is loading. After the last Turn is visibly presented, a visible view may prefetch
+one adjacent Turn; further reads follow reader demand. Switching back to a partial
+session does not automatically drain its history.
+
 Native mobile history keeps these record-page boundaries; a page is not a
 complete conversation turn. The initial replay and each older-history request
 reduce all received records before publishing one transcript projection. A turn
@@ -250,6 +274,16 @@ limit and project disclosure (window-wide, keyed by surface), so a device looks
 the same before, during and after a switch. Seeds carry no history or state
 machine; they are promoted through the normal metadata path before any open,
 and a seed that has been opened is never replaced by a later seed.
+
+The displayed row count belongs to the surface/workspace/source view and is
+published when the user expands or collapses it. Live and background lists
+read the same snapshot during replacement; an unmount-time handoff is too late
+for React's incoming render. Collapsing a workspace resets its source views;
+Collapse All resets every view. Counts are window-local presentation state.
+Disconnecting a control attachment disposes transcripts but leaves the
+independent catalog read lease intact. Disposal invalidates the projection's
+array deduplication and immediately reseeds metadata from that catalog, so
+the still-visible sidebar does not empty while waiting for another read.
 
 A cross-device open publishes a `DeviceOpenIntent` for its whole duration. While
 it is set, every device keeps its background rows (the rendered device hands

@@ -501,7 +501,7 @@ class RemoteConnectAPIService {
     return api.listen('session-interaction-changed', callback);
   }
 
-  onSessionReady(callback: (event: { sessionId: string; hasMore: boolean; oldestSeq: number; cursor: number }) => void): () => void {
+  onSessionReady(callback: (event: { sessionId: string; hasMore: boolean; oldestSeq: number; cursor: number; historyBatches?: boolean }) => void): () => void {
     return api.listen('relay://session-ready', callback);
   }
 

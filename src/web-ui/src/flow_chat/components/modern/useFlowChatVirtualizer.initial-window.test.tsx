@@ -70,6 +70,10 @@ describe('initial virtual window with the real virtualizer', () => {
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const height = this.offsetHeight;
+      return { top: 0, bottom: height, height, width: this.offsetWidth } as DOMRect;
+    });
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
       unobserve() {}

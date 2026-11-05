@@ -348,10 +348,10 @@ function sameDispatchTargetIdentity(
 }
 
 const METADATA_LIST_RECENT_DEDUPE_TTL_MS = 1000;
-const HISTORICAL_SESSION_INITIAL_REMOTE_TAIL_TURN_COUNT = 3;
-const HISTORICAL_SESSION_INITIAL_LOCAL_TAIL_TURN_COUNT = 3;
+const HISTORICAL_SESSION_INITIAL_REMOTE_TAIL_TURN_COUNT = 1;
+const HISTORICAL_SESSION_INITIAL_LOCAL_TAIL_TURN_COUNT = 1;
 /** Turns a session keeps in memory when the history budget evicts it. */
-const RESIDENT_TAIL_TURN_COUNT = HISTORICAL_SESSION_INITIAL_LOCAL_TAIL_TURN_COUNT;
+const RESIDENT_TAIL_TURN_COUNT = 3;
 const HISTORICAL_SESSION_FULL_HISTORY_IDLE_TIMEOUT_MS = 1500;
 const HISTORICAL_SESSION_PREVIOUS_WINDOW_TURN_COUNT = 12;
 const PEER_SESSION_REFRESH_TAIL_TURN_COUNT = 3;
@@ -4083,6 +4083,22 @@ export class FlowChatStore {
     sessionId: string,
     options?: FullHistoryHydrationReleaseOptions
   ): boolean {
+    this.activeSurface.relaySessionHistory.get(sessionId)?.markPresented();
+    const session = this.state.sessions.get(sessionId);
+    // Warm one adjacent range without changing the rendered tail. The native
+    // history shell intentionally leaves blank space below a short last Turn;
+    // cached older Turns are presented only when the reader asks for them.
+    if (getActiveSurfaceId() === 'local' && session?.isPartial && resourceBudget.canPrefetch()
+      && session.turnCatalog?.sessionId === sessionId && this.state.activeSessionId === sessionId) {
+      const first = canonicalSessionTurns(session)[0];
+      const firstOrdinal = session.turnCatalog.entries.find(entry => entry.turnId === first?.id)?.ordinal;
+      if (firstOrdinal !== undefined && firstOrdinal > 0) {
+        void this.loadSessionTurnWindow(sessionId, firstOrdinal - 1, { before: 0, after: 1, source: 'prefetch' })
+          .catch(error => {
+            if (!isSurfaceChangedError(error)) log.debug('Adjacent session history prefetch stopped', { sessionId, error });
+          });
+      }
+    }
     let released = false;
     for (const request of this.fullHistoryHydrationRequests.values()) {
       if (!this.ownedByActiveSurface(request) || request.sessionId !== sessionId) {
@@ -6039,6 +6055,7 @@ export class FlowChatStore {
     if (surfaceId === getActiveSurfaceId()) {
       this.notifyListeners();
     }
+    this.notifySurfaceSessions(surfaceId, 'discarded');
     return removedSessionIds;
   }
 
@@ -8040,23 +8057,23 @@ export class FlowChatStore {
     return false;
   }
 
-  private surfaceSessionListeners = new Set<(surfaceId: DeviceSurfaceId) => void>();
+  private surfaceSessionListeners = new Set<(surfaceId: DeviceSurfaceId, change: 'updated' | 'discarded') => void>();
 
   /** Sessions of any surface's container, for background-device navigation. */
   public getSurfaceSessions(surfaceId: DeviceSurfaceId): ReadonlyMap<string, Session> {
     return this.surfaceContainers.get(surfaceId)?.state.sessions ?? EMPTY_SESSION_MAP;
   }
 
-  /** Fires when a surface's sessions change: background seeding and active-state updates. */
-  public subscribeSurfaceSessions(listener: (surfaceId: DeviceSurfaceId) => void): () => void {
+  /** Directory projections also need to know when their container was disposed. */
+  public subscribeSurfaceSessions(listener: (surfaceId: DeviceSurfaceId, change: 'updated' | 'discarded') => void): () => void {
     this.surfaceSessionListeners.add(listener);
     return () => { this.surfaceSessionListeners.delete(listener); };
   }
 
-  private notifySurfaceSessions(surfaceId: DeviceSurfaceId): void {
+  private notifySurfaceSessions(surfaceId: DeviceSurfaceId, change: 'updated' | 'discarded' = 'updated'): void {
     for (const listener of Array.from(this.surfaceSessionListeners)) {
       try {
-        listener(surfaceId);
+        listener(surfaceId, change);
       } catch (error) {
         log.warn('Surface session listener threw', { error });
       }
@@ -9319,6 +9336,11 @@ export class FlowChatStore {
       if (!open) this.setSessionHistoryState(sessionId, 'hydrating');
       await this.loadRelaySessionHistory(sessionId);
       scope.assertCurrent('load relay session history');
+      startupTrace.markPhase('historical_session_hydrate_end', {
+        remote: true, sessionId, sessionTraceId, surfaceId: scope.surfaceId,
+        turnCount: this.state.sessions.get(sessionId)?.dialogTurns.length ?? 0,
+        durationMs: elapsedMs(traceStartedAt),
+      });
       return;
     }
     const suppressInitialHydratingState =

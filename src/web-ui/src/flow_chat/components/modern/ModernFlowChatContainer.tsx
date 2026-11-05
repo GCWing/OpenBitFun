@@ -1527,14 +1527,11 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
 
   useEffect(() => {
     const sessionId = activeSession?.sessionId;
+    if (!isViewportActive) releasedHistoryCompletionKeyRef.current = null;
     if (
       !isViewportActive ||
       !sessionId ||
       activeSession.historyState !== 'ready' ||
-      (
-        activeSession.contextRestoreState !== 'pending' &&
-        !hasPendingHistoryCompletion
-      ) ||
       !latestTurnId
     ) {
       return;
@@ -1619,6 +1616,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     isHistoryContentPresented,
     isViewportActive,
     latestTurnId,
+    surfaceScope.surfaceId,
     turnSummaries.length,
   ]);
 

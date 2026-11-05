@@ -97,6 +97,10 @@ describe('BtwVirtualSessionList', () => {
       return nextFrame;
     });
     vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const height = this.offsetHeight;
+      return { top: 0, bottom: height, height, width: this.offsetWidth } as DOMRect;
+    });
     vi.stubGlobal('ResizeObserver', class {
       targets = new Set<Element>();
       constructor(callback: ResizeObserverCallback) {

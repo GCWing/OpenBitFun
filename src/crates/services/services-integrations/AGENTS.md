@@ -35,16 +35,32 @@ slices that are outside pure product logic but still platform-neutral.
   reader. Neither the relay nor any client persists stream content; do not add
   relay-stored history, `get_session_key`, or a durable stream cache here.
 - Session history reads use `HostStreamHub::read_history` with a Core-owned
-  source loader. Backfill allocates decreasing JS-safe sequences below the
+  source loader. The optional `turn_history` v1 offer selects exactly one Turn;
+  its response acknowledgement enables the mode, while older hosts retain the
+  existing record-page reader. Hosts advertise `host_stream_turn_history_v1`.
+  The immutable snapshot spans bounded packets, carries an older-Turn boundary
+  separately from its packet offset, and uses the live cursor captured before
+  source IO as its revision fence. It never allocates live event sequences.
+  Snapshot IDs are controller/stream scoped and epoch fenced; retained bodies
+  are byte bounded and expire with leases/grace (one oversized Turn may exceed
+  the budget). Identity-only tombstone tracking must not suppress subsequent
+  live publication to other controllers. The subscriber publishes only a
+  validated complete snapshot and catches up live events during older reads.
+  Legacy record-page backfill allocates decreasing JS-safe sequences below the
   live sequence range; it never advances the forward cursor. One source gate
   orders backfill, live publication, and history invalidation. Undo/import and
   cache misses across evicted pages require an epoch fence, never silent skips.
   Only the requested page's bodies enter the bounded log; the pending source
-  batch is at most one persisted turn, which can itself be large. No wire or
-  persisted-format migration is required; all controllers retain `read_stream`.
-  `limit` is a budget for history reads: a page grows to the first record of its
+  batch is at most one persisted turn, which can itself be large. No persisted
+  migration is required; the optional wire fields keep `read_stream` compatible.
+  In legacy record paging, `limit` is a budget: a page grows to the first record of its
   oldest turn so no turn splits across pages, within the hard event and byte
   bounds. Controllers must not assume a page holds at most `limit` events.
+  Root records carry optional `turnRecordIds` membership. The Rust subscriber
+  joins bounded history pages until those members are present, even if a live
+  root moved ahead of its unchanged children; legacy hosts without membership
+  finish their available history read before presentation. Never treat a page
+  limit, a terminal header or a timeout as proof of a complete Turn.
 - The `remote-persistence` feature is the lightweight persisted-shape owner shared
   by Remote Connect, remote SSH, and offline migration. Keep it free of network,
   SSH transport, and runtime orchestration dependencies so owner readers and
@@ -144,7 +160,7 @@ cargo test -p openbitfun-services-integrations --no-default-features --features 
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::relay_deploy::tests::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::account::tests
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::relay_client::tests::
-cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::host_stream::tests::
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::host_stream::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::host_stream_subscriber::tests::
 cargo test -p openbitfun-services-integrations --no-default-features --features file-watch --test file_watch_contracts
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features workspace-search --test workspace_search_contracts

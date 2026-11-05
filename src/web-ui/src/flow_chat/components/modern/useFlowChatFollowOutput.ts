@@ -1,3 +1,4 @@
+import { readFlowChatScrollTop } from './flowChatScrollCoordinates';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import {
@@ -14,6 +15,8 @@ export type FollowOutputExitReason = 'session-changed' | 'viewport-inactive' | '
 export interface ViewportResizeInput { viewportHeightDeltaPx: number; wasAtTail: boolean }
 
 interface Options {
+  /** History's native scroll origin already holds the tail through reflow. */
+  nativeEndOrigin?: boolean;
   activeSessionId?: string;
   virtualItemCount: number;
   isStreaming: boolean;
@@ -23,6 +26,10 @@ interface Options {
   scrollerRef: RefObject<HTMLElement | null>;
   /** Refresh layout geometry once per layout signal; frames reuse this result. */
   readLayoutTarget: () => number;
+  /** Actual reading-column geometry, including CSS-only drag previews. */
+  readLayoutRevision?: () => string;
+  /** Release a previous wrapping-dependent floor before resolving a reflow. */
+  onLayoutReflow?: () => void;
   /** Returns the measured top placement, or null while materializing the row. */
   placeSubmittedMessage: (intent: SubmittedMessageScrollIntent) => number | null;
   hasRenderedOutput: (turnId: string) => boolean;
@@ -49,6 +56,7 @@ export function useFlowChatFollowOutput(options: Options) {
   const placingSubmission = useRef(false);
   const submittedTurn = useRef<string | null>(null);
   const target = useRef(0);
+  const layoutRevision = useRef<string>();
   const frame = useRef<number | null>(null);
   const lastFrameAt = useRef<number | null>(null);
   const downward = useRef<{ position: number } | null>(null);
@@ -106,11 +114,12 @@ export function useFlowChatFollowOutput(options: Options) {
       lastFrameAt.current = null;
       return;
     }
-    const from = scroller.scrollTop;
+    const from = readFlowChatScrollTop(scroller);
     // The browser may already have clamped a shrinking layout before its
     // ResizeObserver is delivered. Never animate toward an unreachable cache
     // entry, or leave an idle RAF chasing it until the next token arrives.
-    const reachableTarget = Math.min(target.current, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
+    const reachableTarget = o.nativeEndOrigin ? o.readLayoutTarget()
+      : Math.min(target.current, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
     const elapsed = lastFrameAt.current === null ? 16 : Math.min(64, now - lastFrameAt.current);
     lastFrameAt.current = now;
     const opening = o.isOpeningViewport();
@@ -120,11 +129,11 @@ export function useFlowChatFollowOutput(options: Options) {
     if (Math.abs(reachableTarget - from) > EPSILON) {
       // Refusal leaves the target intact. A short live gesture can outlast the
       // reader's deliberate arrival at bottom; it still outranks every write.
-      if (o.viewportOwner.write({ owner: 'follow-output', topPx: next })) o.onViewportOffset?.(scroller.scrollTop);
+      if (o.viewportOwner.write({ owner: 'follow-output', topPx: next })) o.onViewportOffset?.(readFlowChatScrollTop(scroller));
     } else if (from !== reachableTarget) {
-      if (o.viewportOwner.write({ owner: 'follow-output', topPx: reachableTarget })) o.onViewportOffset?.(scroller.scrollTop);
+      if (o.viewportOwner.write({ owner: 'follow-output', topPx: reachableTarget })) o.onViewportOffset?.(readFlowChatScrollTop(scroller));
     }
-    if (Math.abs(scroller.scrollTop - reachableTarget) > EPSILON) wake();
+    if (Math.abs(readFlowChatScrollTop(scroller) - reachableTarget) > EPSILON) wake();
     else lastFrameAt.current = null;
   };
 
@@ -141,14 +150,16 @@ export function useFlowChatFollowOutput(options: Options) {
     setFollowing(true);
     phase.current = 'following';
     target.current = o.readLayoutTarget();
+    layoutRevision.current = o.readLayoutRevision?.();
     const scroller = o.scrollerRef.current!;
     const animate = reason === 'jump-to-latest' && resolveAnimatedJumpBehavior({
-      fromPx: scroller.scrollTop, targetPx: target.current, clientHeight: scroller.clientHeight,
+      fromPx: readFlowChatScrollTop(scroller), targetPx: target.current, clientHeight: scroller.clientHeight,
     }) === 'smooth';
-    if (!animate && reason !== 'reader-at-bottom') {
-      if (o.viewportOwner.write({ owner: 'follow-output', topPx: target.current })) o.onViewportOffset?.(scroller.scrollTop);
+    if (!animate && reason !== 'reader-at-bottom'
+      && !(o.nativeEndOrigin && reason === 'session-open')) {
+      if (o.viewportOwner.write({ owner: 'follow-output', topPx: target.current })) o.onViewportOffset?.(readFlowChatScrollTop(scroller));
     }
-    wake();
+    if (!o.nativeEndOrigin || reason === 'jump-to-latest') wake();
   }, [available, discardPending, setFollowing, wake]);
 
   const trySubmission = useCallback(() => {
@@ -220,10 +231,27 @@ export function useFlowChatFollowOutput(options: Options) {
     }
   }, [available, exitFollowOutput, setFollowing, stop]);
 
-  const scheduleFollowToLatest = useCallback(() => {
+  const scheduleFollowToLatest = useCallback((layoutOnly = false) => {
     if (!available()) return;
     if (trySubmission()) return;
     const o = current.current;
+    if (o.nativeEndOrigin) {
+      // Earlier history changes neither the native offset nor the tail. Keep
+      // navigation's target current without manufacturing a scroll correction.
+      target.current = o.readLayoutTarget();
+      return;
+    }
+    const revision = o.readLayoutRevision?.();
+    const reflow = layoutOnly || (layoutRevision.current !== undefined && revision !== layoutRevision.current);
+    // Do not release a geometric floor underneath a higher-priority writer.
+    // Keep the old revision so the next permitted layout sample can place it.
+    if (reflow && following.current && o.viewportOwner.currentOwner() !== 'follow-output') return;
+    layoutRevision.current = revision;
+    // Releasing the old extent can synchronously clamp scrollTop. Capture the
+    // previous coordinate first; translating the clamped value applies the
+    // same shrink twice and paints precisely the jump-then-ease-back failure.
+    const beforeLayout = readFlowChatScrollTop(o.scrollerRef.current!);
+    if (reflow && following.current) o.onLayoutReflow?.();
     const next = o.readLayoutTarget();
     if (!following.current) return; // Growth can never take control from a reader.
     if (phase.current === 'awaiting-output') {
@@ -231,13 +259,39 @@ export function useFlowChatFollowOutput(options: Options) {
       if (next <= target.current + EPSILON) return;
       phase.current = 'following';
     }
+    const previousTarget = target.current;
     target.current = next;
-    if (o.isOpeningViewport()) {
-      if (o.viewportOwner.write({ owner: 'follow-output', topPx: next })) o.onViewportOffset?.(o.scrollerRef.current!.scrollTop);
+    if (reflow || o.isOpeningViewport()) {
+      // Reflow is a single layout placement. Animating it exposes the old
+      // coordinates first and then drags already-visible content back.
+      // Translate both coordinates so any genuine output lag remains intact.
+      const topPx = o.isOpeningViewport() ? next : Math.max(0, beforeLayout + next - previousTarget);
+      if (o.viewportOwner.write({ owner: 'follow-output', topPx })) o.onViewportOffset?.(readFlowChatScrollTop(o.scrollerRef.current!));
     }
     wake();
   }, [available, trySubmission, wake]);
   refresh.current = scheduleFollowToLatest;
+
+  // A measured row wholly above the viewport moved the coordinate system,
+  // not the output being followed. Translate both ends of the ongoing ease
+  // before paint so any remaining stream lag stays exactly the same.
+  const shiftLayout = useCallback((byPx: number): boolean => {
+    const o = current.current;
+    if (o.nativeEndOrigin) return false;
+    if (!following.current || !available() || o.viewportOwner.currentOwner() !== 'follow-output') return false;
+    const scroller = o.scrollerRef.current!;
+    const next = Math.max(0, readFlowChatScrollTop(scroller) + byPx);
+    // A short visible Turn keeps leading space beyond its natural content end.
+    // Its predecessors already reflowed in the DOM, but that floor may still
+    // describe the previous layout. Resolve it before a positive correction
+    // can be clamped; easing the missing distance later would expose the shift.
+    if (next > scroller.scrollHeight - scroller.clientHeight) o.readLayoutTarget();
+    if (!o.viewportOwner.write({ owner: 'follow-output', topPx: next })) return false;
+    target.current = Math.max(0, target.current + byPx);
+    // The virtualizer publishes the actual offset after updating its size
+    // cache. Publishing here would capture an anchor against the old sizes.
+    return true;
+  }, [available]);
 
   const handleScroll = useCallback(() => {
     const o = current.current;
@@ -248,7 +302,7 @@ export function useFlowChatFollowOutput(options: Options) {
     // A passive layout/scroll event is not downward reader travel.
     if (position < demand.position - 0.5) { downward.current = null; return; }
     if (position > demand.position + 0.5
-      && Math.abs(scroller.scrollTop - o.readLayoutTarget()) <= 2) {
+      && Math.abs(readFlowChatScrollTop(scroller) - o.readLayoutTarget()) <= 2) {
       enterFollowOutput('reader-at-bottom');
     }
   }, [available, enterFollowOutput]);
@@ -258,7 +312,7 @@ export function useFlowChatFollowOutput(options: Options) {
     if (direction === 'after') {
       downward.current = { position: o.viewportOwner.readReaderScrollPosition() };
       const scroller = o.scrollerRef.current;
-      if (scroller && Math.abs(scroller.scrollTop - o.readLayoutTarget()) <= 2) {
+      if (scroller && Math.abs(readFlowChatScrollTop(scroller) - o.readLayoutTarget()) <= 2) {
         enterFollowOutput('reader-at-bottom');
       }
     }
@@ -307,13 +361,14 @@ export function useFlowChatFollowOutput(options: Options) {
   // Completion changes no policy or target. The final rendered layout wakes
   // the same follower, including typewriter frames delivered after completion.
   return {
-    isFollowingOutput, enterFollowOutput, exitFollowOutput, scheduleFollowToLatest,
+    isFollowingOutput, enterFollowOutput, exitFollowOutput, scheduleFollowToLatest, shiftLayout,
     isFollowingOutputNow: useCallback(() => following.current, []),
-    isFollowCorrectingViewport: useCallback(() => following.current, []),
-    getFollowTargetScrollTop: useCallback(() => following.current ? target.current : null, []),
+    isFollowCorrectingViewport: useCallback(() => following.current && !current.current.nativeEndOrigin, []),
+    getFollowTargetScrollTop: useCallback(() => following.current
+      ? current.current.nativeEndOrigin ? current.current.readLayoutTarget() : target.current : null, []),
     handleUserScrollIntent, handleScroll,
     handleTurnsRolledBack: useCallback(() => enterFollowOutput('turns-rolled-back'), [enterFollowOutput]),
     // Reading keeps its top anchor; following recomputes the reading line.
-    handleViewportResize: useCallback((_input: ViewportResizeInput) => scheduleFollowToLatest(), [scheduleFollowToLatest]),
+    handleViewportResize: useCallback((_input: ViewportResizeInput) => scheduleFollowToLatest(true), [scheduleFollowToLatest]),
   };
 }

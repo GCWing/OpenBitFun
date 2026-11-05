@@ -418,7 +418,13 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
           aria-label={accessibleSummary}
           aria-expanded={open}
           aria-haspopup="dialog"
-          onClick={() => onOpenChange(!open)}
+          onClick={() => {
+            if (identity.status !== 'signed-in') {
+              handleManageDevices();
+              return;
+            }
+            onOpenChange(!open);
+          }}
           data-testid="nav-footer-device-status"
           data-openbitfun-component="nav-panel"
           data-openbitfun-part="deviceStatus"

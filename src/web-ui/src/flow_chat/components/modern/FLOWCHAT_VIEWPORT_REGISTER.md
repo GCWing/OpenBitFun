@@ -14,6 +14,21 @@ Every deliberate write to the FlowChat scroller goes through one register, which
 decides whether the writer may act. This document covers the register, what it
 replaced, the two writers that stand outside it, and the trail it leaves.
 
+## Coordinate conventions
+
+Public navigation targets and persisted viewport snapshots remain top-origin.
+`flowChatScrollCoordinates.ts` reads that logical offset and the register converts
+writes to the scroller's native convention. Historical scrollers have a bottom
+origin: native zero is the latest position and negative values move toward older
+content. A growing older prefix changes the logical top offset without any
+native scroll travel or deliberate viewport write.
+
+`readReaderScrollPosition` and the DOM reading anchor therefore account native
+travel, not total scroll range. `shift` is a signed native displacement in both
+conventions. Explicit history/live origin handoffs preserve an actual visible
+row through the existing register; the virtualizer receives immediate readback
+before releasing its retained window.
+
 ## Who May Move the Viewport at All
 
 Continuous movement belongs to `useFlowChatFollowOutput`; one-shot navigation
@@ -43,7 +58,8 @@ be undone.
 
 **Repairing a displacement is not on this list**, and putting it there was a
 mistake worth keeping recorded. The prepend compensation and the viewport anchor
-both use `viewportOwner.shift` — see *A Displacement Is Not a Movement* in
+both use `viewportOwner.shift`. Prepend compensation belongs only to the live
+top-origin layout; historical tail loading uses no compensation. See
 `FLOWCHAT_HISTORY_PAGING.md`.
 
 **Taking ownership and writing are one call.** Adding a writer without declaring
