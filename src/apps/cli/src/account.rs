@@ -463,7 +463,7 @@ impl CliAccountRoutingHost {
             RelayEvent::DeviceMessageReceived {
                 source_device_id,
                 correlation_id,
-                accepts_zstd,
+                encoding_offer,
                 encrypted_data,
                 nonce,
             } => {
@@ -490,7 +490,7 @@ impl CliAccountRoutingHost {
                             &source_device_id,
                             &encrypted_data,
                             &nonce,
-                            accepts_zstd,
+                            encoding_offer,
                         )
                         .await
                     {
@@ -553,6 +553,9 @@ impl CliAccountRoutingHost {
                 let Some(response) = run_rpc_stage(cancellation, model_write, execute).await else {
                     return;
                 };
+                if correlation_id.is_empty() {
+                    return;
+                }
                 let reply = async {
                     if !self
                         .routing_loop_is_current(account_generation, relay_client)
@@ -569,7 +572,11 @@ impl CliAccountRoutingHost {
                         })
                     });
                     let Ok((encrypted_response, response_nonce)) =
-                        encryption::encrypt_relay_message(&peer_key, &response_json, accepts_zstd)
+                        encryption::encrypt_relay_message(
+                            &peer_key,
+                            &response_json,
+                            encoding_offer.accepts_zstd(),
+                        )
                     else {
                         tracing::warn!("Failed to encrypt RPC response");
                         return;

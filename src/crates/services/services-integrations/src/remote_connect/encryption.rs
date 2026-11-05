@@ -95,6 +95,18 @@ pub fn decrypt_from_base64(
     ciphertext_b64: &str,
     nonce_b64: &str,
 ) -> Result<String> {
+    super::message_encoding::decode(open_relay_ciphertext(
+        shared_secret,
+        ciphertext_b64,
+        nonce_b64,
+    )?)
+}
+
+pub(super) fn open_relay_ciphertext(
+    shared_secret: &[u8; 32],
+    ciphertext_b64: &str,
+    nonce_b64: &str,
+) -> Result<Vec<u8>> {
     let ct = BASE64
         .decode(ciphertext_b64)
         .map_err(|e| anyhow!("base64 decode ciphertext: {e}"))?;
@@ -111,8 +123,7 @@ pub fn decrypt_from_base64(
     let mut nonce = [0u8; NONCE_SIZE];
     nonce.copy_from_slice(&nonce_vec);
 
-    let plaintext = decrypt(shared_secret, &ct, &nonce)?;
-    super::message_encoding::decode(plaintext)
+    decrypt(shared_secret, &ct, &nonce)
 }
 
 /// Parse a base64-encoded public key into 32-byte array.

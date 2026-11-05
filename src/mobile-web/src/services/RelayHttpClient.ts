@@ -124,6 +124,9 @@ export class RelayHttpClient {
     };
     this.realtime.onDeviceDirectoryChanged(notifyDirectory);
     this.realtime.onReconnect(notifyDirectory);
+    this.realtime.onStatus(status => {
+      if (status === 'disconnected') this.peerEncodings = new Set();
+    });
     this.realtime.onDeviceEvent(envelope => { void this.receiveDeviceEvent(envelope); });
     this.accountEpochValue += 1;
     this.directorySnapshot = [];
@@ -199,12 +202,16 @@ export class RelayHttpClient {
   private async receiveDeviceEvent(envelope: DeviceEventEnvelope): Promise<void> {
     const identity = this.identity;
     const target = this.getControlTargetSnapshot();
+    const encodings = this.peerEncodings;
     if (!identity || envelope.sourceDeviceId !== target.deviceId) return;
     try {
       const messageKey = await this.deviceMessageKey(identity, envelope.sourceDeviceId);
       if (this.identity !== identity || !this.isControlTargetCurrent(target)) return;
       const plaintext = JSON.parse(await decrypt(messageKey, envelope.encrypted_data, envelope.nonce)) as { cmd?: unknown; event?: unknown; payload?: unknown };
       if (plaintext?.cmd !== 'device_event' || typeof plaintext.event !== 'string') return;
+      if (encodings !== this.peerEncodings || this.identity !== identity || !this.isControlTargetCurrent(target)) return;
+      if (envelope.accept_encoding === relayZstd) encodings.add(envelope.sourceDeviceId);
+      else encodings.delete(envelope.sourceDeviceId);
       const hint = parseStreamHint(envelope.sourceDeviceId, plaintext.event, plaintext.payload);
       if (hint) for (const listener of this.streamHintListeners) listener(hint);
     } catch (error) {
@@ -388,6 +395,9 @@ export class RelayHttpClient {
     const targetEpoch = this.controlTargetEpochValue;
     return this.withAccount(async (identity) => {
       const messageKey = await this.deviceMessageKey(identity, targetDeviceId);
+      const connection = this.realtime;
+      if (!connection) throw new AccountIdentityChangedError();
+      await connection.ready();
       const encodings = this.peerEncodings;
       const plaintext = JSON.stringify(command);
       const { data: encData, nonce: encNonce } = await encrypt(
@@ -400,8 +410,6 @@ export class RelayHttpClient {
         throw new AccountIdentityChangedError();
       }
       const timeoutMs = options.timeoutMs ?? (options.retryable ? 20_000 : 130_000);
-      const connection = this.realtime;
-      if (!connection) throw new AccountIdentityChangedError();
       const data = await connection.call<{ encrypted_data: string; nonce: string; accept_encoding?: string }>(targetDeviceId,
         { encrypted_data: encData, nonce: encNonce, accept_encoding: acceptsRelayZstd() ? relayZstd : undefined }, {
           timeoutMs,

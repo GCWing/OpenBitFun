@@ -28,6 +28,18 @@ slices that are outside pure product logic but still platform-neutral.
   orchestration ports, LAN endpoint helpers, IM bot provider clients,
   provider-private cursor caches, mobile-web relay upload, image-context adapter
   contracts, remote workspace helpers, and command/response assembly.
+- Device RPC requests, responses and one-way events share the optional
+  `accept_encoding: "zstd-1"` offer on their opaque encrypted envelope.
+  Machine hosts announce on presence. Hidden controllers offer on their first
+  ordinary request. Each reply uses its caller's offer. Connection and directory
+  changes expire learned capabilities. Relay-consumed fields keep their current
+  encoding.
+- Capable senders try Zstandard level 1 on UTF-8 bodies over 256 bytes, up to
+  64 MiB. Use the result only if the full frame is smaller. AES-GCM seals the
+  bytes `FF 4F 5A 01`, a little-endian u32 original length and one Zstandard
+  frame, or the original UTF-8 JSON. Receivers authenticate before decoding
+  and verify the size and frame boundary. The cross-client vector lives in
+  `src/shared/relay-protocol-contract-fixtures/relay-message-encoding.json`.
 - `remote_connect::host_stream` is the host-side owner of on-demand session,
   terminal and catalog streams: an in-memory, byte-bounded per-stream log with
   an epoch, `read_stream`/`unsubscribe_stream` handling, and `HostStreamNotifier`
@@ -158,6 +170,7 @@ cargo test -p openbitfun-services-integrations --no-default-features --features 
 cargo test -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::manager::tests::workspace_
 cargo test -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::wsl::tests::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::relay_deploy::tests::
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::message_encoding::tests
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::account::tests
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::relay_client::tests::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::host_stream::

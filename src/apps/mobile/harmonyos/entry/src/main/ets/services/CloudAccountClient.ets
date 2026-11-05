@@ -445,6 +445,7 @@ export class CloudAccountClient {
     const socket = this.connection(relayUrl, session.token);
     const messageKey = await this.peerMessageKey(relayUrl, session, target);
     const nonce = Encoding.randomBytes(12);
+    await socket.ready();
     const encodings = socket.peerEncodings;
     const plainCommand = Encoding.utf8ToBytes(JSON.stringify(command));
     const encrypted = await this.cipher.encrypt(
@@ -531,19 +532,21 @@ export class CloudAccountClient {
       const frame = data as DeviceEventFrame;
       if (event !== 'ephemeral' || frame.type !== 'device-event') return;
       if (frame.sourceDeviceId !== target || !frame.params) return;
-      void this.decodeStreamHint(relayUrl, session, target, frame.params).then((hint?: HostStreamHint) => {
+      void this.decodeStreamHint(relayUrl, session, target, frame.params, socket.peerEncodings).then((hint?: HostStreamHint) => {
         if (hint) listener(hint);
       });
     });
   }
 
   private async decodeStreamHint(relayUrl: string, session: CloudAccountSession, target: string,
-    params: EncryptedPayload): Promise<HostStreamHint | undefined> {
+    params: EncryptedPayload, encodings: Set<string>): Promise<HostStreamHint | undefined> {
     try {
       const key = await this.peerMessageKey(relayUrl, session, target);
       const plain = await this.cipher.decrypt(Encoding.base64ToBytes(params.encrypted_data), key,
         Encoding.base64ToBytes(params.nonce));
       const body = Encoding.parseJsonObject<HostStreamHintPlaintext>(Encoding.bytesToUtf8(relayCodec.decodeRelayMessage(plain)));
+      if (params.accept_encoding === 'zstd-1') encodings.add(target);
+      else encodings.delete(target);
       return parseHostStreamHint(target, body);
     } catch (err) {
       // A frame this key cannot open means the peer re-keyed or the frame was

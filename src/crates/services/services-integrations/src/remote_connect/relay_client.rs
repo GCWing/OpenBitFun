@@ -79,6 +79,22 @@ impl DevicePresenceEntry {
         self.compatible.unwrap_or(true)
     }
 }
+/// An RPC caller and the machine serving RPC on the same device can run
+/// different builds. Only machine events and RPC replies identify the host.
+#[derive(Debug, Clone, Copy)]
+pub enum PeerEncodingOffer {
+    Host(bool),
+    Controller(bool),
+}
+
+impl PeerEncodingOffer {
+    pub fn accepts_zstd(self) -> bool {
+        match self {
+            Self::Host(accepted) | Self::Controller(accepted) => accepted,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum RelayEvent {
     Connected,
@@ -97,7 +113,7 @@ pub enum RelayEvent {
     DeviceMessageReceived {
         source_device_id: String,
         correlation_id: String,
-        accepts_zstd: bool,
+        encoding_offer: PeerEncodingOffer,
         encrypted_data: String,
         nonce: String,
     },
@@ -517,8 +533,10 @@ impl RelayClient {
                     .send(RelayEvent::DeviceMessageReceived {
                         source_device_id: source.into(),
                         correlation_id: correlation,
-                        accepts_zstd: value["params"]["accept_encoding"]
-                            == super::message_encoding::ZSTD_ENCODING,
+                        encoding_offer: PeerEncodingOffer::Controller(
+                            value["params"]["accept_encoding"]
+                                == super::message_encoding::ZSTD_ENCODING,
+                        ),
                         encrypted_data: data.into(),
                         nonce: nonce.into(),
                     })
@@ -547,8 +565,10 @@ impl RelayClient {
                         .send(RelayEvent::DeviceMessageReceived {
                             source_device_id: source.into(),
                             correlation_id: String::new(),
-                            accepts_zstd: value["params"]["accept_encoding"]
-                                == super::message_encoding::ZSTD_ENCODING,
+                            encoding_offer: PeerEncodingOffer::Host(
+                                value["params"]["accept_encoding"]
+                                    == super::message_encoding::ZSTD_ENCODING,
+                            ),
                             encrypted_data: data.into(),
                             nonce: nonce.into(),
                         })

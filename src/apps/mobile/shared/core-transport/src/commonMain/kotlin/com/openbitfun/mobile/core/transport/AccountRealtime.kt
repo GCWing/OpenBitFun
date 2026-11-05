@@ -21,6 +21,7 @@ internal const val MAX_ACCOUNT_FRAME_BYTES = 256 * 1024
 
 internal interface AccountRpcConnection {
     val peerEncodings: MutableStateFlow<Set<String>>? get() = null
+    suspend fun readyForEncoding(): MutableStateFlow<Set<String>>? = peerEncodings
     val notifications: Flow<JsonObject> get() = emptyFlow()
     val connections: Flow<Long> get() = emptyFlow()
     suspend fun call(target: String, params: JsonElement, timeoutMs: Long): JsonElement
@@ -65,13 +66,19 @@ internal class AccountRealtime(
         }
     }
 
+    private suspend fun readyEpoch(): Epoch = try {
+        if (!owner.isActive) throw CloudAccountException(CloudAccountFailure.AUTHENTICATION)
+        withTimeout(RELAY_CONNECT_TIMEOUT_MS) { state.filterNotNull().first().also { it.ready.await() } }
+    } catch (timeout: TimeoutCancellationException) {
+        throw CloudAccountException(CloudAccountFailure.TIMEOUT, null, connectionFailure.value ?: timeout)
+    }
+
+    override suspend fun readyForEncoding() = readyEpoch().encodings.value
+
     override suspend fun call(target: String, params: JsonElement, timeoutMs: Long): JsonElement {
         require(timeoutMs in 1..Int.MAX_VALUE.toLong()) { "Invalid RPC timeout" }
         try {
-            if (!owner.isActive) throw CloudAccountException(CloudAccountFailure.AUTHENTICATION)
-            val epoch = withTimeout(RELAY_CONNECT_TIMEOUT_MS) {
-                state.filterNotNull().first().also { it.ready.await() }
-            }
+            val epoch = readyEpoch()
             val wireParams = payloads.uploadIfLarge(params)
             if (!owner.isActive || epoch.closed || state.value !== epoch) throw CloudAccountException(CloudAccountFailure.NETWORK)
             val reply = CompletableDeferred<JsonElement>()

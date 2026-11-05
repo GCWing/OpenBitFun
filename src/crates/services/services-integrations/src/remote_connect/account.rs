@@ -1,8 +1,9 @@
 //! GitHub-authenticated device credentials and pairwise encrypted relay messages.
 
-use super::device_crypto;
+use super::{device_crypto, relay_client::PeerEncodingOffer};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, OnceCell};
 
@@ -56,16 +57,30 @@ pub struct StreamHint {
 // the cell on reconnect/presence change also discards any late negotiation.
 struct PeerCipher {
     key: [u8; 32],
-    accepts_zstd: std::sync::atomic::AtomicBool,
+    host_accepts: AtomicBool,
+    // A device room can include several controllers. A legacy listener keeps
+    // events in JSON until presence invalidates this generation.
+    event_offers: AtomicU8,
 }
 
 impl PeerCipher {
-    fn encode(&self, text: &str) -> Result<(String, String)> {
-        super::encryption::encrypt_relay_message(
-            &self.key,
-            text,
-            self.accepts_zstd.load(std::sync::atomic::Ordering::Relaxed),
-        )
+    const ACCEPTED: u8 = 1;
+    const LEGACY: u8 = 2;
+
+    fn observe(&self, offer: PeerEncodingOffer) {
+        if let PeerEncodingOffer::Host(accepted) = offer {
+            self.host_accepts.store(accepted, Ordering::Relaxed);
+        }
+        let flag = if offer.accepts_zstd() {
+            Self::ACCEPTED
+        } else {
+            Self::LEGACY
+        };
+        self.event_offers.fetch_or(flag, Ordering::Relaxed);
+    }
+
+    fn accepts_events(&self) -> bool {
+        self.event_offers.load(Ordering::Relaxed) == Self::ACCEPTED
     }
 }
 
@@ -180,7 +195,8 @@ impl AccountSession {
             let key = device_crypto::derive_message_key(&self.master_key, &public)?;
             Ok(Arc::new(PeerCipher {
                 key,
-                accepts_zstd: false.into(),
+                host_accepts: AtomicBool::new(false),
+                event_offers: AtomicU8::new(0),
             }))
         })
         .await
@@ -193,9 +209,8 @@ impl AccountSession {
         device_id: &str,
         plaintext: &str,
     ) -> Result<(String, String)> {
-        self.peer_cipher(relay_url, device_id)
-            .await?
-            .encode(plaintext)
+        let peer = self.peer_cipher(relay_url, device_id).await?;
+        super::encryption::encrypt_relay_message(&peer.key, plaintext, peer.accepts_events())
     }
 
     /// A reply belongs to one RPC caller even when old and new controllers
@@ -218,7 +233,8 @@ impl AccountSession {
         data: &str,
         nonce: &str,
     ) -> Result<String> {
-        self.decrypt_peer_message(relay_url, device_id, data, nonce, false)
+        let peer = self.peer_cipher(relay_url, device_id).await?;
+        self.open_peer_message(relay_url, device_id, peer, data, nonce, None)
             .await
     }
 
@@ -228,12 +244,24 @@ impl AccountSession {
         device_id: &str,
         data: &str,
         nonce: &str,
-        accepts_zstd: bool,
+        offer: PeerEncodingOffer,
     ) -> Result<String> {
         let peer = self.peer_cipher(relay_url, device_id).await?;
-        let (peer, plaintext) = match super::encryption::decrypt_from_base64(&peer.key, data, nonce)
-        {
-            Ok(plaintext) => (peer, plaintext),
+        self.open_peer_message(relay_url, device_id, peer, data, nonce, Some(offer))
+            .await
+    }
+
+    async fn open_peer_message(
+        &self,
+        relay_url: &str,
+        device_id: &str,
+        peer: Arc<PeerCipher>,
+        data: &str,
+        nonce: &str,
+        offer: Option<PeerEncodingOffer>,
+    ) -> Result<String> {
+        let (peer, bytes) = match super::encryption::open_relay_ciphertext(&peer.key, data, nonce) {
+            Ok(bytes) => (peer, bytes),
             Err(_) => {
                 // A device can rotate its private key while a controller is
                 // disconnected. Refresh its authenticated key once on failure.
@@ -241,14 +269,24 @@ impl AccountSession {
                     relay_url,
                     &format!("/api/devices/{}/key", urlencoding::encode(device_id)),
                 )?;
-                self.peer_keys.lock().await.remove(endpoint.as_str());
+                let mut keys = self.peer_keys.lock().await;
+                if keys
+                    .get(endpoint.as_str())
+                    .and_then(|cell| cell.get())
+                    .is_some_and(|cached| Arc::ptr_eq(cached, &peer))
+                {
+                    keys.remove(endpoint.as_str());
+                }
+                drop(keys);
                 let peer = self.peer_cipher(relay_url, device_id).await?;
-                let plaintext = super::encryption::decrypt_from_base64(&peer.key, data, nonce)?;
-                (peer, plaintext)
+                let bytes = super::encryption::open_relay_ciphertext(&peer.key, data, nonce)?;
+                (peer, bytes)
             }
         };
-        peer.accepts_zstd
-            .store(accepts_zstd, std::sync::atomic::Ordering::Relaxed);
+        let plaintext = super::message_encoding::decode(bytes)?;
+        if let Some(offer) = offer {
+            peer.observe(offer);
+        }
         Ok(plaintext)
     }
 }
@@ -815,7 +853,7 @@ impl AccountClient {
                             RelayEvent::DeviceMessageReceived {
                                 source_device_id,
                                 correlation_id,
-                                accepts_zstd,
+                                encoding_offer,
                                 encrypted_data,
                                 nonce,
                             } if correlation_id.is_empty() => {
@@ -828,7 +866,7 @@ impl AccountClient {
                                         &source_device_id,
                                         &encrypted_data,
                                         &nonce,
-                                        accepts_zstd,
+                                        encoding_offer,
                                     )
                                     .await
                                 else {
@@ -866,29 +904,24 @@ impl AccountClient {
             })
             .await?;
         let peer = session.peer_cipher(relay_url, target_device_id).await?;
-        let (data, nonce) = peer.encode(plaintext_command)?;
+        let (data, nonce) = super::encryption::encrypt_relay_message(
+            &peer.key,
+            plaintext_command,
+            peer.host_accepts.load(Ordering::Relaxed),
+        )?;
         let (encrypted_data, nonce, accepts_zstd) = transport
             .request_device_message(target_device_id, &data, &nonce, timeout)
             .await?;
-        // Remember the reply only in the generation which issued the call.
-        match super::encryption::decrypt_from_base64(&peer.key, &encrypted_data, &nonce) {
-            Ok(plaintext) => {
-                peer.accepts_zstd
-                    .store(accepts_zstd, std::sync::atomic::Ordering::Relaxed);
-                Ok(plaintext)
-            }
-            Err(_) => {
-                session
-                    .decrypt_peer_message(
-                        relay_url,
-                        target_device_id,
-                        &encrypted_data,
-                        &nonce,
-                        accepts_zstd,
-                    )
-                    .await
-            }
-        }
+        session
+            .open_peer_message(
+                relay_url,
+                target_device_id,
+                peer,
+                &encrypted_data,
+                &nonce,
+                Some(PeerEncodingOffer::Host(accepts_zstd)),
+            )
+            .await
     }
 }
 
@@ -1219,6 +1252,28 @@ mod tests {
             DEVICE_KIND_DESKTOP
         );
         server.await.unwrap();
+    }
+
+    #[test]
+    fn encoding_offers_are_scoped_to_the_rpc_host_and_event_recipients() {
+        let peer = PeerCipher {
+            key: [1; 32],
+            host_accepts: false.into(),
+            event_offers: 0.into(),
+        };
+        assert!(!peer.accepts_events());
+        peer.observe(PeerEncodingOffer::Controller(true));
+        assert!(peer.accepts_events());
+        assert!(!peer.host_accepts.load(Ordering::Relaxed));
+        peer.observe(PeerEncodingOffer::Controller(false));
+        peer.observe(PeerEncodingOffer::Host(true));
+        assert!(peer.host_accepts.load(Ordering::Relaxed));
+        assert!(
+            !peer.accepts_events(),
+            "a legacy controller shares the event room"
+        );
+        peer.observe(PeerEncodingOffer::Host(false));
+        assert!(!peer.host_accepts.load(Ordering::Relaxed));
     }
 
     #[tokio::test]

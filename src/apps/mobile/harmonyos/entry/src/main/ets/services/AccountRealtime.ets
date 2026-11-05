@@ -84,7 +84,7 @@ export class AccountRealtime {
     return result as EncryptedPayload;
   }
 
-  private ready(): Promise<void> {
+  ready(): Promise<void> {
     if (this.closed) return Promise.reject(new Error('Relay is closed'));
     if (this.connected) return Promise.resolve();
     return new Promise<void>((resolve, reject) => {

@@ -2802,7 +2802,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                 RelayEvent::DeviceMessageReceived {
                     source_device_id,
                     correlation_id,
-                    accepts_zstd,
+                    encoding_offer,
                     encrypted_data,
                     nonce,
                 } => {
@@ -2812,7 +2812,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                             &source_device_id,
                             &encrypted_data,
                             &nonce,
-                            accepts_zstd,
+                            encoding_offer,
                         )
                         .await
                     {
@@ -2984,7 +2984,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                                                         &rpc_session,
                                                         &source_device_id,
                                                         &correlation_id,
-                                                        accepts_zstd,
+                                                        encoding_offer.accepts_zstd(),
                                                         resp_value,
                                                     )
                                                     .await;
@@ -3011,7 +3011,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                                                         &rpc_session,
                                                         &source_device_id,
                                                         &correlation_id,
-                                                        accepts_zstd,
+                                                        encoding_offer.accepts_zstd(),
                                                         format!("RPC execute failed: {e}"),
                                                     )
                                                     .await;
@@ -3034,7 +3034,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                                             &event_session,
                                             &source_device_id,
                                             &correlation_id,
-                                            accepts_zstd,
+                                            encoding_offer.accepts_zstd(),
                                             format!("invalid RPC command: {e}"),
                                         )
                                         .await;
@@ -3058,7 +3058,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                                     &event_session,
                                     &source_device_id,
                                     &correlation_id,
-                                    accepts_zstd,
+                                    false, // The request could not be authenticated.
                                     format!("failed to decrypt RPC request: {e}"),
                                 )
                                 .await;

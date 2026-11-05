@@ -572,7 +572,7 @@ async fn peer_preview_fixture(benchmark: bool) {
                 correlation_id,
                 encrypted_data,
                 nonce,
-                ..
+                encoding_offer,
             } = event
             else {
                 continue;
@@ -590,7 +590,7 @@ async fn peer_preview_fixture(benchmark: bool) {
             let serving_requests = serving_requests.clone();
             handlers.spawn(async move {
                 let plaintext = target
-                    .decrypt_from_peer(&relay_url, &source_device_id, &encrypted_data, &nonce)
+                    .decrypt_peer_message(&relay_url, &source_device_id, &encrypted_data, &nonce, encoding_offer)
                     .await
                     .unwrap();
                 let RemoteCommand::HostInvoke { command, args } =
@@ -620,14 +620,15 @@ async fn peer_preview_fixture(benchmark: bool) {
                     value: Some(value),
                     error: None,
                 };
+                assert!(encoding_offer.accepts_zstd());
+                let json = serde_json::to_string(&response).unwrap();
                 let (data, nonce) = target
-                    .encrypt_for_peer(
-                        &relay_url,
-                        &source_device_id,
-                        &serde_json::to_string(&response).unwrap(),
-                    )
+                    .encrypt_reply(&relay_url, &source_device_id, &json, encoding_offer.accepts_zstd())
                     .await
                     .unwrap();
+                if json.len() > 4096 {
+                    assert!(data.len() < json.len(), "compressible fixture should shrink on the wire, even with base64");
+                }
                 serving_client
                     .send_device_message(&source_device_id, &correlation_id, &data, &nonce)
                     .await

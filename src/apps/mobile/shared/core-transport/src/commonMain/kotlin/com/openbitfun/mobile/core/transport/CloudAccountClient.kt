@@ -315,7 +315,7 @@ public class CloudAccountClient internal constructor(
         val historyKey = target + ":" + sessionId
         val historyRequests = Channel<CompletableDeferred<Unit>>(Channel.RENDEZVOUS)
         historyReaders[historyKey] = historyRequests
-        val hints = socket.notifications.mapNotNull { notice -> decodeStreamHint(relayUrl, session, target, notice) }
+        val hints = socket.notifications.mapNotNull { notice -> decodeStreamHint(relayUrl, session, target, notice, socket.peerEncodings) }
         val reads = object : HostStreamReads {
             override suspend fun read(after: Long?, before: Long?, epoch: Long?): StreamPageWire {
                 check(realtime.value?.socket === socket) { "Account changed" }
@@ -364,7 +364,10 @@ public class CloudAccountClient internal constructor(
      * hint. A hint that cannot be decrypted is dropped: the next keepalive or
      * reconnect re-reads the host anyway.
      */
-    private suspend fun decodeStreamHint(relayUrl: String, session: CloudAccountSession, target: String, notice: JsonObject): StreamHint? {
+    private suspend fun decodeStreamHint(
+        relayUrl: String, session: CloudAccountSession, target: String, notice: JsonObject,
+        encodings: MutableStateFlow<Set<String>>?,
+    ): StreamHint? {
         if (notice["type"]?.jsonPrimitive?.contentOrNull != "device-event") return null
         val source = notice["sourceDeviceId"]?.jsonPrimitive?.contentOrNull ?: return null
         if (source != target) return null
@@ -373,7 +376,9 @@ public class CloudAccountClient internal constructor(
         return try {
             val key = peerMessageKey(relayUrl, session, target)
             val plain = RelayMessageEncoding.decode(CloudAccountCipher.decrypt(decode(envelope.encryptedData), key, decode(envelope.nonce))).decodeToString(throwOnInvalidSequence = true)
-            parseStreamHint(source, RelayJson.parseToJsonElement(plain).jsonObject)
+            val event = RelayJson.parseToJsonElement(plain).jsonObject
+            encodings?.update { if (envelope.acceptEncoding == RelayMessageEncoding.NAME) it + target else it - target }
+            parseStreamHint(source, event)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
@@ -413,7 +418,7 @@ public class CloudAccountClient internal constructor(
         if (target.isEmpty()) throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE)
         val socket = connection(relayUrl, session.token)
         val messageKey = peerMessageKey(relayUrl, session, target)
-        val encodings = socket.peerEncodings
+        val encodings = socket.readyForEncoding()
         val payload = withContext(processingDispatcher) {
             val nonce = DeviceIdentity.randomBytes(12)
             val plain = RelayJson.encodeToString(RemoteCommand.serializer(), command).encodeToByteArray()
