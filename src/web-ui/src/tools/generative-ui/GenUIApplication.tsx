@@ -135,11 +135,11 @@ function Application({ product = genUIProduct, definition, initialState, readOnl
     Promise.resolve(onStateChange(next)).then(() => { if (alive.current) setPersistence('saved'); }, error => { if (alive.current) { setPersistence('failed'); setSaveError(error instanceof Error ? error.message : String(error)); } });
   };
   if (!source) {
-    return <GenUIHostSurface specification={designSpec}><div className="gen-ui-application" data-openbitfun-component="gen-ui-application" data-openbitfun-part="root" data-openbitfun-state="rejected">Semantic graph GenUI documents are no longer supported. Generate a complete OpenUI or HTML source document.</div></GenUIHostSurface>;
+    return <GenUIHostSurface specification={designSpec}><div className="gen-ui-application" data-openbitfun-component="gen-ui-application" data-openbitfun-part="root" data-openbitfun-state="rejected"><div data-openbitfun-component="gen-ui-application" data-openbitfun-part="content">Semantic graph GenUI documents are no longer supported. Generate a complete OpenUI or HTML source document.</div></div></GenUIHostSurface>;
   }
   return <GenUIHostSurface specification={designSpec}>
     <div className={'gen-ui-application gen-ui-application--' + (product.adapters[app.libraryId]?.adapterKind ?? 'unknown') + (designSpec?.shell.kind === 'phone' ? ' gen-ui-application--phone' : '') + (source.kind === 'html-document' ? ' gen-ui-application--document' : '')} data-openbitfun-component="gen-ui-application" data-openbitfun-part="root" data-gen-ui-app={app.id} data-gen-ui-library={app.libraryId} data-gen-ui-library-revision={app.libraryRevision} data-gen-ui-source-kind={source.kind} data-openbitfun-state={render === 'failed' || report.preflight === 'failed' ? 'rejected' : render === 'passed' ? 'rendered' : undefined} data-gen-ui-preflight={report.preflight} data-gen-ui-postcheck={report.render} data-gen-ui-save={persistence}>
-      {library && <GenUISourceDocument source={source} library={product.libraries[app.libraryId]} specification={designSpec} designSpecId={app.designSpec?.id} appId={app.id} sourceKey={definitionKey} initialState={state} isStreaming={streaming} readOnly={locked} onStateUpdate={next => {
+      <div data-openbitfun-component="gen-ui-application" data-openbitfun-part="content">{library && <GenUISourceDocument source={source} library={product.libraries[app.libraryId]} specification={designSpec} designSpecId={app.designSpec?.id} appId={app.id} sourceKey={definitionKey} initialState={state} isStreaming={streaming} readOnly={locked} onStateUpdate={next => {
         const nextKey = genUIContentKey(next);
         // OpenUI can report the same snapshot through both its field setter and
         // store subscription. A no-op owner update must stay a no-op or the
@@ -148,7 +148,7 @@ function Application({ product = genUIProduct, definition, initialState, readOnl
         lastStateKey.current = nextKey;
         setObserved(true); dirty.current = true;
         store.current.commit(next); setState(next); save(next);
-      }} onError={receiveOpenUIErrors} onAction={event => { setObserved(true); return onAction?.(event); }} toolProvider={toolProvider} asyncProvider={asyncProvider} asyncRuntime={asyncRuntime} asyncPermissions={asyncPermissions} asyncTarget={asyncTarget} asyncTargetId={asyncTargetId} onTargetEvent={onTargetEvent} htmlBridge={htmlBridge} htmlScriptEnabled={Boolean(!preview && !readOnly && !streaming)} />}
+      }} onError={receiveOpenUIErrors} onAction={event => { setObserved(true); return onAction?.(event); }} toolProvider={toolProvider} asyncProvider={asyncProvider} asyncRuntime={asyncRuntime} asyncPermissions={asyncPermissions} asyncTarget={asyncTarget} asyncTargetId={asyncTargetId} onTargetEvent={onTargetEvent} htmlBridge={htmlBridge} htmlScriptEnabled={Boolean(!preview && !readOnly && !streaming)} />}</div>
     </div>
   </GenUIHostSurface>;
 }

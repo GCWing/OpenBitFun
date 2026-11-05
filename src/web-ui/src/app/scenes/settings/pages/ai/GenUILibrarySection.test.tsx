@@ -26,20 +26,14 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); activateSurface('local'); });
 
-it('selects a collection, previews its real components, and never saves demo edits', async () => {
+it('selects a collection without rendering a demo preview', async () => {
   await mount();
-  expect(container.querySelector('[data-gen-ui-app]')?.getAttribute('data-gen-ui-app')).toBe('library-preview-openui');
+  expect(container.querySelector('[data-gen-ui-app]')).toBeNull();
+  expect(container.querySelector('.gen-ui-library-preview')).toBeNull();
   expect(container.querySelector('[data-openbitfun-part="profile"]')).toBeNull();
   expect(container.querySelector('[data-openbitfun-part="designSpec"]')).toBeNull();
   await select('openbitfun');
   expect(ports.save).toHaveBeenCalledExactlyOnceWith('ai.generative_ui_library', 'openbitfun');
-  await act(async () => {
-    const input = container.querySelector<HTMLInputElement>('[data-gen-ui-app] input[aria-label]')!;
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Transient');
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  expect(container.textContent).toContain('Transient');
-  expect(ports.save).toHaveBeenCalledTimes(1);
 });
 it('locks unavailable settings and preserves unknown future selections', async () => {
   ports.read.mockRejectedValueOnce(new Error('Unsupported host'));
@@ -56,7 +50,7 @@ it('keeps the committed selection and exposes save failures', async () => {
   await mount(); await select('openbitfun');
   expect(container.textContent).toContain('Offline');
   expect(container.querySelector('select')?.value).toBe('openui');
-  expect(container.querySelector('[data-gen-ui-app]')?.getAttribute('data-gen-ui-app')).toBe('library-preview-openui');
+  expect(container.querySelector('[data-gen-ui-app]')).toBeNull();
 });
 it('discards stale reads after an acknowledged selection', async () => {
   await mount();
@@ -74,7 +68,7 @@ it('cannot replace a new device selection with an old device save', async () => 
   await act(async () => activateSurface('peer-test'));
   await act(async () => pending.resolve());
   expect(container.querySelector('select')?.value).toBe('openbitfun');
-  expect(container.querySelector('[data-gen-ui-app]')?.getAttribute('data-gen-ui-app')).toBe('library-preview-openbitfun');
+  expect(container.querySelector('[data-gen-ui-app]')).toBeNull();
 });
 it('cannot hydrate an old device read after a switch', async () => {
   const pending = deferred<string>(); ports.read.mockReturnValueOnce(pending.promise);

@@ -122,7 +122,7 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
   let repairControl: React.ReactNode = null;
   if (fatalRender && currentVerification) {
     const repairable = Boolean(projection?.origin && currentVerification.diagnostics?.some(isFatalGenUIError));
-    if (repairable && !projection?.readOnly && !repairQueued && !repairPending) repairControl = <div className="openbitfun-generative-widget-panel__repair" data-openbitfun-component="generative-widget" data-openbitfun-state="repair-required">
+    if (repairable && !projection?.readOnly && !repairQueued && !repairPending) repairControl = <div className="openbitfun-generative-widget-panel__repair" data-openbitfun-component="generative-widget" data-openbitfun-part="repair" data-openbitfun-state="repair-required">
       <button type="button" disabled={repairPending} onClick={() => {
         if (!projection?.origin) return;
         setRepairPending(true);

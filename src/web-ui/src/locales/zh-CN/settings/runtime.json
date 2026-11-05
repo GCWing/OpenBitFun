@@ -276,31 +276,6 @@
     "styleResources": "样式资源",
     "hostShell": "宿主外壳",
     "designRules": "设计规则",
-    "acceptance": "验收检查",
-    "preview": {
-      "title": "交互预览",
-      "description": "可以直接操作示例控件。预览修改只保留在当前页面，不会保存到应用。新应用使用所选组件库和 UI 规范，已有应用沿用保存的规范身份。",
-      "live": "可交互",
-      "period": "周期",
-      "daily": "每日",
-      "weekly": "每周",
-      "noteValue": "与下方文本共享的一条备注",
-      "edited": "已修改的预览备注",
-      "note": "共享备注",
-      "progress": "完成进度",
-      "hint": "响应式组件",
-      "hintBody": "修改备注，下方绑定的文本会立即更新。",
-      "metric": "合计",
-      "unit": "项",
-      "sample": "示例数据 · 已适配的组件子集",
-      "table": "示例记录",
-      "item": "条目",
-      "amount": "数量",
-      "first": "第一步",
-      "second": "第二步",
-      "steps": "操作流程",
-      "plot": "函数图",
-      "card": "组件集合"
-    }
+    "acceptance": "验收检查"
   }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Select } from '@openbitfun/ui';
 import { ConfigLoadingState, ConfigPageRow, ConfigPageSection, ConfigRetryState } from '@/infrastructure/config/components/common';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
@@ -6,7 +6,7 @@ import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { useI18n } from '@/infrastructure/i18n';
 import GenUIApplication from '@/tools/generative-ui/GenUIApplication';
-import { createGenUILibraryPreview, genUILibraryProfiles } from '@/tools/generative-ui/genUILibraryPreview';
+import { genUILibraryProfiles } from '@/tools/generative-ui/genUILibraryProfiles';
 import './GenUILibrarySection.scss';
 
 const path = 'ai.generative_ui_library';
@@ -53,7 +53,6 @@ export default function GenUILibrarySection() {
   const options = Object.entries(genUILibraryProfiles).map(([value, profile]) => ({ value, label: profile.label }));
   const known = ready && Object.prototype.hasOwnProperty.call(genUILibraryProfiles, loaded.value);
   if (ready && !known) options.push({ value: loaded.value, label: loaded.value });
-  const preview = useMemo(() => ready && known ? createGenUILibraryPreview(loaded.value, t) : null, [ready, known, loaded?.value, t]);
   return <ConfigPageSection id="generative-ui-library" className="gen-ui-library-section" title={t('genui.title')} description={t('genui.description')} bodySurface={false}>
     {!ready ? error
       ? <ConfigRetryState message={error} retryLabel={t('genui.retry')} onRetry={() => void load()} />
@@ -64,19 +63,6 @@ export default function GenUILibrarySection() {
             <Select size="sm" aria-label={t('genui.collection')} options={options} value={loaded.value} disabled={saving} onValueChange={value => void save(String(value))} />
           </ConfigPageRow>
         </div>
-        {preview && <div data-openbitfun-component="gen-ui-library-settings" data-openbitfun-part="preview" className="gen-ui-library-preview" aria-label={t('genui.preview.title')}>
-          <div className="gen-ui-library-preview__header">
-            <div>
-              <span className="gen-ui-preview-kicker">{t('genui.preview.live')}</span>
-              <h4>{t('genui.preview.title')}</h4>
-              <p data-openbitfun-component="gen-ui-library-settings" data-openbitfun-part="caption" className="gen-ui-library-preview__caption">{t('genui.preview.description')}</p>
-            </div>
-            <span className="gen-ui-preview-status"><span aria-hidden="true" />{t('genui.preview.live')}</span>
-          </div>
-          <div className="gen-ui-library-preview__canvas">
-            <GenUIApplication key={scope.epoch + ':' + loaded.value} definition={preview} preview />
-          </div>
-        </div>}
         {error && <ConfigRetryState message={error} retryLabel={t('genui.retry')} onRetry={() => void load()} />}
       </>}
   </ConfigPageSection>;

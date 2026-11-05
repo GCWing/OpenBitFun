@@ -276,31 +276,6 @@
     "styleResources": "Style resources",
     "hostShell": "Host shell",
     "designRules": "Design rules",
-    "acceptance": "Acceptance checks",
-    "preview": {
-      "title": "Interactive preview",
-      "description": "Try these sample controls. Preview changes stay here and are never saved to an application. New apps use the selected library and UI specification; existing apps retain their saved specification identity.",
-      "live": "Interactive",
-      "period": "Period",
-      "daily": "Daily",
-      "weekly": "Weekly",
-      "noteValue": "A note shared with the text below",
-      "edited": "Updated preview note",
-      "note": "Shared note",
-      "progress": "Completion",
-      "hint": "Reactive components",
-      "hintBody": "Editing the note updates the bound text immediately.",
-      "metric": "Total",
-      "unit": "units",
-      "sample": "Sample data · adapted component subset",
-      "table": "Sample records",
-      "item": "Item",
-      "amount": "Amount",
-      "first": "First step",
-      "second": "Second step",
-      "steps": "Workflow",
-      "plot": "Function plot",
-      "card": "Component collection"
-    }
+    "acceptance": "Acceptance checks"
   }
 }

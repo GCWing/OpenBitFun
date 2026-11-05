@@ -276,31 +276,6 @@
     "styleResources": "樣式資源",
     "hostShell": "宿主外殼",
     "designRules": "設計規則",
-    "acceptance": "驗收檢查",
-    "preview": {
-      "title": "互動預覽",
-      "description": "可以直接操作範例控制項。預覽修改只保留在目前頁面，不會儲存至應用。新應用使用所選元件庫和 UI 規範，既有應用沿用已儲存的規範身分。",
-      "live": "可互動",
-      "period": "週期",
-      "daily": "每日",
-      "weekly": "每週",
-      "noteValue": "與下方文字共用的一則備註",
-      "edited": "已修改的預覽備註",
-      "note": "共用備註",
-      "progress": "完成進度",
-      "hint": "響應式元件",
-      "hintBody": "修改備註，下方綁定的文字會立即更新。",
-      "metric": "合計",
-      "unit": "項",
-      "sample": "範例資料 · 已適配的元件子集",
-      "table": "範例記錄",
-      "item": "項目",
-      "amount": "數量",
-      "first": "第一步",
-      "second": "第二步",
-      "steps": "操作流程",
-      "plot": "函數圖",
-      "card": "元件集合"
-    }
+    "acceptance": "驗收檢查"
   }
 }
