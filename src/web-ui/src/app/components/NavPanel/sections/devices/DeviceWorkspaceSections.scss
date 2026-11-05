@@ -71,8 +71,8 @@
     color: var(--openbitfun-color-surface-chrome);
     font-size: var(--openbitfun-type-meta-font-size);
     font-weight: var(--openbitfun-type-label-selected-font-weight);
-    line-height: 16px;
-    letter-spacing: normal;
+    line-height: var(--openbitfun-type-meta-line-height);
+    letter-spacing: var(--openbitfun-type-meta-letter-spacing);
   }
 
   // The rendered-device mark matches the capsule's weight, not the accent.
