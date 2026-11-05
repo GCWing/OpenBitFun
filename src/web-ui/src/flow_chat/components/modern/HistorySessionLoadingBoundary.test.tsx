@@ -9,19 +9,10 @@ import { modernFlowChatAppearanceDescriptor } from './appearance';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-type ControlledAnimation = {
-  element: HTMLElement;
-  frames: Keyframe[];
-  finish: () => void;
-  cancel: ReturnType<typeof vi.fn>;
-};
-
 describe('history loading presentation handoff', () => {
   let host: HTMLDivElement;
   let root: Root;
-  let animations: ControlledAnimation[];
   let media: MediaQueryList;
-  let reducedMotion: boolean;
   let hidden: boolean;
   const action = vi.fn();
   const originalAnimate = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
@@ -40,25 +31,16 @@ describe('history loading presentation handoff', () => {
   }
   const element = (selector: string) => host.querySelector<HTMLElement>(selector)!;
   const phase = () => element('[data-history-loading-phase]').dataset.historyLoadingPhase;
-  async function finish(list = [...animations]) {
-    await act(async () => { list.forEach(animation => animation.finish()); });
-  }
 
   beforeEach(() => {
     host = document.createElement('div');
     document.body.append(host);
     root = createRoot(host);
-    animations = [];
-    reducedMotion = false;
     hidden = false;
     action.mockReset();
-    // These loads last long enough to show the skeleton; see the quick-load case.
-    let clock = 0;
-    vi.spyOn(performance, 'now').mockImplementation(() => (clock += 1_000));
     media = Object.assign(new EventTarget(), {
-      media: '(prefers-reduced-motion: reduce)',
+      media: '(prefers-reduced-motion: reduce)', matches: false,
     }) as MediaQueryList;
-    Object.defineProperty(media, 'matches', { get: () => reducedMotion });
     vi.stubGlobal('matchMedia', () => media);
     vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
@@ -68,14 +50,7 @@ describe('history loading presentation handoff', () => {
     });
     Object.defineProperty(HTMLElement.prototype, 'animate', {
       configurable: true,
-      value: vi.fn(function (this: HTMLElement, frames: Keyframe[]) {
-        let finish!: () => void;
-        let reject!: (error: Error) => void;
-        const finished = new Promise<void>((resolve, rejectPromise) => { finish = resolve; reject = rejectPromise; });
-        const cancel = vi.fn(() => reject(new DOMException('Cancelled', 'AbortError')));
-        animations.push({ element: this, frames, finish, cancel });
-        return { finished, cancel } as unknown as Animation;
-      }),
+      value: vi.fn(() => { throw new Error('Presentation must be immediate'); }),
     });
   });
 
@@ -88,45 +63,58 @@ describe('history loading presentation handoff', () => {
     vi.unstubAllGlobals();
   });
 
-  it('waits for the viewport owner after data arrives without measuring unsettled rows', async () => {
+  it('waits for the viewport owner and presents settled content immediately', async () => {
     render({ children: transcript(false) });
     render({ loading: false, children: transcript(false) });
     expect(phase()).toBe('loading');
-    expect(animations).toHaveLength(0);
     expect(HTMLElement.prototype.getBoundingClientRect).not.toHaveBeenCalled();
     await act(async () => { element('.virtual-message-list').dataset.openViewportSettled = 'true'; });
-    expect(phase()).toBe('exiting');
-    expect(animations.length).toBeGreaterThan(0);
+    expect(phase()).toBe('idle');
+    expect(HTMLElement.prototype.animate).not.toHaveBeenCalled();
+    expect(HTMLElement.prototype.getBoundingClientRect).not.toHaveBeenCalled();
   });
 
-  it.each([0, 140, 199])('presents a settled %d ms load immediately without an animation delay', elapsed => {
+  it('waits for a nested transcript mounted after the data commit', async () => {
+    const placeholder = <div className="transcript-host" />;
+    render({ children: placeholder });
+    render({ loading: false, children: placeholder });
+    expect(phase()).toBe('loading');
+    await act(async () => {
+      const list = document.createElement('div');
+      list.className = 'virtual-message-list';
+      list.dataset.openViewportSettled = 'true';
+      element('.transcript-host').append(list);
+    });
+    expect(phase()).toBe('idle');
+  });
+
+  it.each([0, 140, 199, 200, 2_000])('presents a settled %d ms load without a post-load delay', elapsed => {
     const clock = vi.spyOn(performance, 'now').mockReturnValue(5_000);
     render();
     expect(element('.history-session-skeleton').style.animationDelay).toBe('200ms');
     clock.mockReturnValue(5_000 + elapsed);
     render({ loading: false });
     expect(phase()).toBe('idle');
-    expect(animations).toHaveLength(0);
+    expect(HTMLElement.prototype.animate).not.toHaveBeenCalled();
     expect(element('.history-session-loading__content').style.opacity).toBe('');
     element('button').click();
     expect(action).toHaveBeenCalledOnce();
   });
 
-  it('starts a fresh 200 ms indicator delay for a different session and for a repeated load', () => {
-    const clock = vi.spyOn(performance, 'now').mockReturnValue(5_000);
+  it('starts a fresh 200 ms indicator delay for a different session and a repeated load', () => {
     render();
     const initial = element('.history-session-skeleton');
     render({ identity: 'peer:session-b' });
-    expect(element('.history-session-skeleton')).not.toBe(initial);
+    const next = element('.history-session-skeleton');
+    expect(next).not.toBe(initial);
+    expect(next.style.animationDelay).toBe('200ms');
+    render({ identity: 'peer:session-b', loading: false });
+    expect(phase()).toBe('idle');
+    render({ identity: 'peer:session-b' });
+    expect(element('.history-session-skeleton')).not.toBe(next);
     expect(element('.history-session-skeleton').style.animationDelay).toBe('200ms');
     render({ identity: 'peer:session-b', loading: false });
     expect(phase()).toBe('idle');
-    clock.mockReturnValue(10_000);
-    render({ identity: 'peer:session-b' });
-    clock.mockReturnValue(10_199);
-    render({ identity: 'peer:session-b', loading: false });
-    expect(phase()).toBe('idle');
-    expect(animations).toHaveLength(0);
   });
 
   it('preserves legacy appearance packages while keeping the old spinner invisible', () => {
@@ -151,128 +139,84 @@ describe('history loading presentation handoff', () => {
   it.each([
     ['text', <p key="text">A restored answer.</p>],
     ['tools', <section key="tools"><button>Read file · Complete</button></section>],
-    ['code', <pre key="code">{'function restore() {\n  return history;\n}\n'.repeat(50)}</pre>],
-  ])('finishes every abstract element before revealing %s, without remounting the content', async (_, content) => {
+    ['code', <pre key="code">{'function restore() { return history; }'.repeat(50)}</pre>],
+  ])('presents complete %s in one commit while retaining the content node', (_, content) => {
     render({ children: transcript(true, content) });
     const row = element('.virtual-item-wrapper');
     render({ loading: false, children: transcript(true, content) });
-    const exits = [...animations];
-    expect(exits).toHaveLength(8); // Seven normal-height lines and one user bubble.
-    expect(element('.history-session-loading__content').style.opacity).toBe('0');
-    expect(exits.every(animation => !animation.element.matches('.history-session-loading__content'))).toBe(true);
-    await finish(exits.slice(0, -1));
-    expect(phase()).toBe('exiting');
-    expect(animations).toHaveLength(8);
-    await finish(exits.slice(-1));
-    expect(phase()).toBe('revealing');
-    expect(element('.history-session-loading__overlay').hidden).toBe(true);
-    expect(animations.at(-1)!.element).toBe(element('.history-session-loading__content'));
-    for (const exit of exits) {
-      expect(exit.frames.at(-1)?.opacity).toBe(0);
-      // Only horizontal deformation is permitted: the lines never become thin.
-      expect(exit.frames.every(frame => !('height' in frame) && !String(frame.transform).includes('scaleY'))).toBe(true);
-    }
-    await finish(animations.slice(-1));
     expect(phase()).toBe('idle');
     expect(host.querySelector('[role="status"]')).toBeNull();
     expect(element('.history-session-loading__content').style.opacity).toBe('');
-    expect(element('.history-session-loading__content').style.maskImage).toBe('');
     expect(element('.virtual-item-wrapper')).toBe(row);
     expect(row.style.cssText).toBe('');
     expect(element('.virtual-message-list').scrollTop).toBe(0);
+    expect(HTMLElement.prototype.animate).not.toHaveBeenCalled();
   });
 
-  it('keeps invisible transcript actions unavailable throughout the retained transition', async () => {
+  it('guards invisible transcript actions until viewport readiness', async () => {
     render();
-    render({ loading: false });
-    await finish();
+    render({ loading: false, children: transcript(false) });
     element('button').click();
     expect(action).not.toHaveBeenCalled();
     const wheel = new Event('wheel', { bubbles: true, cancelable: true });
     element('button').dispatchEvent(wheel);
     expect(wheel.defaultPrevented).toBe(true);
     expect(element('.history-session-loading__content').getAttribute('aria-hidden')).toBe('true');
-    await finish(animations.slice(-1));
+    await act(async () => { element('.virtual-message-list').dataset.openViewportSettled = 'true'; });
     element('button').click();
     expect(action).toHaveBeenCalledOnce();
     expect(element('.history-session-loading__content').hasAttribute('aria-hidden')).toBe(false);
   });
 
-  it('reports presentation only after the text reveal, and invalidates it on the next load', async () => {
+  it('reports presentation when the complete viewport settles and invalidates the next load', async () => {
     const presented = vi.fn();
     render({ onPresentationChange: presented });
     expect(presented).toHaveBeenLastCalledWith('local:session-a', false);
     presented.mockClear();
-    render({ loading: false, onPresentationChange: presented });
-    await finish();
+    render({ loading: false, onPresentationChange: presented, children: transcript(false) });
     expect(presented).not.toHaveBeenCalled();
-    await finish(animations.slice(-1));
+    await act(async () => { element('.virtual-message-list').dataset.openViewportSettled = 'true'; });
     expect(presented).toHaveBeenLastCalledWith('local:session-a', true);
     render({ identity: 'peer:session-b', onPresentationChange: presented });
     expect(presented).toHaveBeenLastCalledWith('peer:session-b', false);
   });
 
-  it('cancels stale animations when the session or device activation changes', async () => {
+  it('disconnects stale readiness observers when the session or device activation changes', async () => {
     render();
-    render({ loading: false });
-    const old = [...animations];
-    render({ identity: 'peer:activation-2:session-a' });
-    expect(old.every(animation => animation.cancel.mock.calls.length === 1)).toBe(true);
-    await finish(old);
+    render({ loading: false, children: React.cloneElement(transcript(false), { key: 'old' }) });
+    const old = element('.virtual-message-list');
+    render({ identity: 'peer:session-b', children: React.cloneElement(transcript(false), { key: 'new' }) });
+    render({ identity: 'peer:session-b', loading: false,
+      children: React.cloneElement(transcript(false), { key: 'new' }) });
+    await act(async () => { old.dataset.openViewportSettled = 'true'; });
     expect(phase()).toBe('loading');
-    expect(animations).toHaveLength(8);
     expect(element('.history-session-loading__content').style.opacity).toBe('0');
-    render({ identity: 'peer:activation-2:session-a', loading: false });
-    await finish(animations.slice(8));
-    expect(phase()).toBe('revealing');
+    await act(async () => { element('.virtual-message-list').dataset.openViewportSettled = 'true'; });
+    expect(phase()).toBe('idle');
   });
 
-  it('settles immediately when an opening is cancelled in favor of a warm session', async () => {
-    render();
-    render({ loading: false });
-    const old = [...animations];
+  it('settles immediately when an opening is cancelled in favor of a warm session', () => {
+    render({ children: transcript(false) });
     render({ identity: 'local:session-b', loading: false });
-    await finish(old);
     expect(phase()).toBe('idle');
     expect(host.querySelector('[role="status"]')).toBeNull();
   });
 
-  it('replaces a running reveal with the next loading request without leaking text', async () => {
-    render();
-    render({ loading: false });
-    await finish();
-    const reveal = animations.at(-1)!;
-    render();
-    expect(reveal.cancel).toHaveBeenCalledOnce();
-    expect(phase()).toBe('loading');
-    expect(element('.history-session-loading__overlay').hidden).toBe(false);
-    expect(element('.history-session-loading__content').style.maskImage).toBe('');
-    expect(element('.history-session-loading__content').style.opacity).toBe('0');
-  });
-
-  it('exposes failure or inactive content immediately and ignores the former completion', async () => {
-    render();
-    render({ loading: false });
+  it('exposes failure or inactive content immediately', () => {
+    render({ children: transcript(false) });
     render({ loading: false, disabled: true, hasTranscript: false, children: <button onClick={action}>Retry</button> });
-    await finish();
     expect(phase()).toBe('idle');
     element('button').click();
     expect(action).toHaveBeenCalledOnce();
   });
 
-  it('skips the handoff with reduced motion and settles if the preference changes mid-reveal', async () => {
-    reducedMotion = true;
+  it('uses the same delayed indicator and immediate settled presentation with reduced motion', () => {
+    Object.defineProperty(media, 'matches', { value: true });
     render();
+    expect(element('.history-session-skeleton').style.animationDelay).toBe('200ms');
     render({ loading: false });
     expect(phase()).toBe('idle');
-    expect(animations).toHaveLength(0);
-    reducedMotion = false;
-    render();
-    render({ loading: false });
-    await finish();
-    act(() => { reducedMotion = true; media.dispatchEvent(new Event('change')); });
-    expect(phase()).toBe('idle');
-    expect(animations.every(animation => animation.cancel.mock.calls.length === 1)).toBe(true);
+    expect(HTMLElement.prototype.animate).not.toHaveBeenCalled();
   });
 
   it('releases a hidden document without replaying when it becomes visible', async () => {
@@ -283,25 +227,13 @@ describe('history loading presentation handoff', () => {
     hidden = false;
     await act(async () => document.dispatchEvent(new Event('visibilitychange')));
     expect(phase()).toBe('idle');
-    expect(animations).toHaveLength(0);
   });
 
-  it('does not replay on later streaming updates or virtual row remounts', async () => {
+  it('keeps later streaming updates and virtual row remounts visible', () => {
     render();
     render({ loading: false });
-    await finish();
-    await finish(animations.slice(-1));
     render({ loading: false, children: transcript(true, <pre key="new-row">New virtual window</pre>) });
     expect(phase()).toBe('idle');
-    expect(animations).toHaveLength(9);
-  });
-
-  it('shows ready content if animation startup fails instead of retaining a shield', async () => {
-    render();
-    vi.mocked(HTMLElement.prototype.animate).mockImplementationOnce(() => { throw new Error('Animation unavailable'); });
-    render({ loading: false });
-    await act(async () => {});
-    expect(phase()).toBe('idle');
-    expect(host.querySelector('[role="status"]')).toBeNull();
+    expect(HTMLElement.prototype.animate).not.toHaveBeenCalled();
   });
 });

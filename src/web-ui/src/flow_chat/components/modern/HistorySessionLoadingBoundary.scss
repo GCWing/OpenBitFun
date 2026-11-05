@@ -16,7 +16,6 @@
     touch-action: none;
   }
 
-  &__overlay[hidden] { display: none; }
 }
 
 .history-session-skeleton {
@@ -110,7 +109,6 @@
     animation: history-session-skeleton-light calc(var(--openbitfun-motion-duration-loop) * 5.5) ease-in-out infinite;
   }
 
-  [data-history-loading-phase='exiting'] .history-session-skeleton { animation-play-state: paused; }
 }
 
 @keyframes history-session-skeleton-light {

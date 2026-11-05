@@ -3,28 +3,20 @@
 ## History loading presentation
 
 `HistorySessionLoadingBoundary` covers open intents, cold hydration and bookmark
-restoration with one content-independent composition: seven 24px lines, a rounded
-user bubble and a shared light field. Session loading indicators appear after
-200 ms, including reduced-motion mode and new-session creation. A complete,
-settled read inside that interval becomes visible immediately. Warm session
-switches also display their settled content immediately. The boundary retains
-the loading surface until the existing initial-content gate and
-`data-open-viewport-settled` both release.
-Only then does it read the rendered window once to align the decorative lines
-horizontally. Their height stays fixed; the measured rows are never animated,
-re-keyed or scrolled by this boundary.
+restoration with seven 24px lines and a rounded user bubble. Session loading
+indicators appear after 200 ms, including reduced-motion mode and new-session
+creation. The boundary retains the loading surface until the complete Turn,
+existing initial-content gate and `data-open-viewport-settled` are ready. It then
+publishes the transcript immediately in the same React commit. Warm session
+switches also display their settled content immediately.
 
-All abstract marks finish fading before the transcript's outer paint layer
-reveals. Its presentation callback releases the existing two-paint barrier for
-background history reads, so measurable but still hidden text does not
-count as a painted conversation. Interaction and focus stay guarded through
-that handoff. Session and surface-activation identity changes cancel old work;
-failures, inactive scenes,
-reduced motion and hidden documents settle without retaining an animation.
-Ordinary streaming and virtual-window remounts do not replay the transition.
-This is shared Web UI presentation and adds no persistence or transport shape.
+The presentation callback releases the existing two-paint barrier for background
+history reads. Interaction and focus stay guarded until content is presented.
+Session and surface-activation changes disconnect old readiness observers.
+Failures, inactive scenes and hidden documents release the loading surface.
+Streaming updates and virtual-window remounts retain the settled presentation.
 The old `historyOpenIntentSpinner` appearance part remains a hidden compatibility
-slot so installed appearance packages still validate; the new visual is exposed
+slot so installed appearance packages still validate. The skeleton is exposed
 through `historySkeleton`.
 
 ## Last-Turn opening
