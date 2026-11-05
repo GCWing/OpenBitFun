@@ -147,8 +147,8 @@ fn service_with_auth_route(service: &ImageServiceConfig) -> ImageServiceConfig {
         service.dialect = ImageDialect::ChatgptCodex;
         service.base_url.clear();
         service.request_url = None;
-        // An image-model ID cannot drive a Responses tool call. Resolve a chat
-        // model from this subscription's live catalog instead.
+        // The subscription Images adapter owns the image model. Keep the legacy
+        // model slot empty in the resolved view without rewriting stored data.
         service.model_name.clear();
         service.params.n = Some(1);
     }

@@ -920,11 +920,11 @@ pub enum ImageDialect {
     /// `POST {base}/services/aigc/multimodal-generation/generation`.
     #[serde(rename = "dashscope_native")]
     DashScopeNative,
-    /// ChatGPT subscription images, driven through Codex CLI's ChatGPT backend:
-    /// `POST {base}/responses` with an `image_generation` tool, streamed back as
-    /// SSE `response.output_item.done` items. This is a separate billing and
-    /// protocol path from [`Self::OpenAiImages`]: it takes the OAuth access token
-    /// from a Codex subscription login and never reaches the platform image API.
+    /// ChatGPT subscription images through the Codex subscription backend:
+    /// `POST {base}/images/generations` with a standalone Images JSON body.
+    /// This is a separate billing and protocol path from [`Self::OpenAiImages`]:
+    /// it takes the OAuth access token from a Codex subscription login and never
+    /// reaches the platform image API.
     #[serde(rename = "chatgpt_codex")]
     ChatgptCodex,
 }
@@ -935,7 +935,7 @@ impl ImageDialect {
         match self {
             Self::OpenAiImages => "/images/generations",
             Self::DashScopeNative => "/services/aigc/multimodal-generation/generation",
-            Self::ChatgptCodex => "/responses",
+            Self::ChatgptCodex => "/images/generations",
         }
     }
 
@@ -944,7 +944,7 @@ impl ImageDialect {
         match self {
             Self::OpenAiImages => MAX_IMAGES_PER_GENERATION_REQUEST,
             Self::DashScopeNative => 6,
-            // The subscription route returns one image per tool call.
+            // The subscription route generates one image per request.
             Self::ChatgptCodex => 1,
         }
     }
@@ -953,6 +953,21 @@ impl ImageDialect {
     /// a provider API key.
     pub fn requires_subscription(self) -> bool {
         matches!(self, Self::ChatgptCodex)
+    }
+}
+
+#[cfg(test)]
+mod image_dialect_compatibility {
+    use super::ImageDialect;
+
+    #[test]
+    fn subscription_wire_value_survives_the_images_endpoint_upgrade() {
+        let legacy = r#""chatgpt_codex""#;
+        let dialect: ImageDialect = serde_json::from_str(legacy).unwrap();
+        assert_eq!(serde_json::to_string(&dialect).unwrap(), legacy);
+        assert_eq!(dialect.endpoint_path(), "/images/generations");
+        assert!(dialect.requires_subscription());
+        assert_eq!(dialect.max_images_per_request(), 1);
     }
 }
 

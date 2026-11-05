@@ -376,3 +376,15 @@ and sends no inference request. This does not verify remote-host behavior.
 The image-generation filter uses synthetic HTTP credentials. The ignored Codex
 probe requires a real in-app subscription login and generates a billed image;
 run it explicitly only when live provider validation is needed.
+Set `PROBE_CODEX_IMAGE_OUTPUT_DIR` to save the generated image for visual review.
+Set `PROBE_CODEX_IMAGE_OUTPUT_FORMAT=gif` to request GIF output and
+`PROBE_CODEX_IMAGE_PROMPT` to describe the subject and looping motion. The probe
+checks the GIF signature; inspect frame count and timing in the saved file to
+confirm animation.
+The probe uses the production standalone subscription Images route and built-in
+image model. It does not discover or invoke a chat model. Saved legacy
+`/responses` endpoints are translated in memory to `/images/generations`.
+
+```bash
+cargo test --locked -p openbitfun-ai-adapters --features image-generation,subscription-auth --lib client::image_generation::tests::probe_codex_subscription_image_generation -- --ignored --exact --nocapture
+```

@@ -28,3 +28,6 @@ node scripts/check-core-boundaries.mjs
 ```
 
 For documentation-only changes, run `git diff --check`.
+
+For persisted image dialect values and endpoint compatibility, run
+`cargo test --locked -p openbitfun-core-types --lib ai::image_dialect_compatibility`.
