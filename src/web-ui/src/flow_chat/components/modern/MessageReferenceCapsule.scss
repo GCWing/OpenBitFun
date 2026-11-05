@@ -29,6 +29,22 @@
   color: var(--openbitfun-color-content-primary);
 }
 
+// Large pastes open a viewer, so the capsule is a button.
+.message-reference-capsule--large-paste {
+  border-color: transparent;
+  font-family: inherit;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--openbitfun-color-content-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--openbitfun-color-focus-ring);
+    outline-offset: 1px;
+  }
+}
+
 .message-reference-capsule__label,
 .user-message-item__reference-label {
   // Make the label (rather than the leading icon) supply the inline-flex baseline.

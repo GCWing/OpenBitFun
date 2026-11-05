@@ -10,6 +10,13 @@ import { MessageCircle, Plug } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ContextItem } from '../../shared/types/context';
 import { getRichTextExternalSyncAction } from './richTextInputSync';
+import { splitLargePasteText } from '../utils/largePasteMetadata';
+import {
+  classifyRichTextHistoryInput,
+  RichTextUndoHistory,
+  shouldStartRichTextHistoryGroup,
+  type RichTextHistoryEdit,
+} from './richTextInputHistory';
 import {
   getWidgetPromptReferenceMatches,
   parseWidgetPromptReferenceToken,
@@ -52,6 +59,70 @@ const MCP_REFERENCE_BADGE_ICON = renderToStaticMarkup(
 const EMPTY_PENDING_LARGE_PASTES: Record<string, string> = Object.freeze({});
 const LARGE_PASTE_CARET_ANCHOR = '\u200B';
 
+interface ComposerHistorySnapshot {
+  segments: ComposerPresentationSegment[];
+  /** Large paste bodies referenced by the segments, keyed by placeholder. */
+  largePastes: Record<string, string>;
+  /** Caret position measured in composer text (capsules count as their tag). */
+  caret: number;
+}
+
+const EMPTY_HISTORY_SNAPSHOT: ComposerHistorySnapshot = { segments: [], largePastes: {}, caret: 0 };
+
+function getComposerSegmentsLength(segments: readonly ComposerPresentationSegment[]): number {
+  return segments.reduce((length, segment) => length + (
+    segment.kind === 'text' ? segment.text.length
+      : segment.kind === 'context' ? segment.tag.length
+        : segment.token.length
+  ), 0);
+}
+
+function composerSegmentKey(segment: ComposerPresentationSegment): string {
+  if (segment.kind === 'text') return `t:${segment.text}`;
+  if (segment.kind === 'context') return `c:${segment.context.id}:${segment.tag}`;
+  return `i:${segment.token}`;
+}
+
+function isSameComposerHistorySnapshot(a: ComposerHistorySnapshot, b: ComposerHistorySnapshot): boolean {
+  return a.segments.length === b.segments.length
+    && a.segments.every((segment, index) => composerSegmentKey(segment) === composerSegmentKey(b.segments[index]))
+    && Object.keys(a.largePastes).length === Object.keys(b.largePastes).length
+    && Object.entries(a.largePastes).every(([placeholder, body]) => b.largePastes[placeholder] === body);
+}
+
+/** Places the caret in a flat editor rendered from history segments. */
+function setComposerCaretOffset(editor: HTMLElement, offset: number): void {
+  const selection = window.getSelection();
+  if (!selection) return;
+  let remaining = Math.max(offset, 0);
+  const children = Array.from(editor.childNodes);
+  for (let index = 0; index < children.length; index += 1) {
+    const node = children[index];
+    if (node.nodeType === Node.TEXT_NODE) {
+      const length = node.textContent?.length ?? 0;
+      if (remaining <= length) {
+        selection.collapse(node, remaining);
+        return;
+      }
+      remaining -= length;
+      continue;
+    }
+    if (remaining === 0) {
+      selection.collapse(editor, index);
+      return;
+    }
+    const length = node instanceof HTMLElement
+      ? (node.dataset.tagFormat ?? node.textContent ?? '').length
+      : 0;
+    if (remaining <= length) {
+      selection.collapse(editor, index + 1);
+      return;
+    }
+    remaining -= length;
+  }
+  selection.collapse(editor, children.length);
+}
+
 function getEditorBoundaryOffset(editor: HTMLElement, container: Node, offset: number): number | null {
   if (container === editor) {
     return offset >= 0 && offset <= editor.childNodes.length ? offset : null;
@@ -93,7 +164,10 @@ export interface InlineTriggerState {
 
 export type RichTextInputElement = HTMLDivElement & {
   getComposerPresentation?: () => ComposerPresentation | null;
-  restoreComposerPresentation?: (presentation: ComposerPresentation) => void;
+  restoreComposerPresentation?: (
+    presentation: ComposerPresentation,
+    options?: { largePastes?: Readonly<Record<string, string>> },
+  ) => void;
   insertTag?: (context: ContextItem) => void;
   insertContextTagReplacingTrigger?: (context: ContextItem) => void;
   replaceActiveContextTrigger?: (replacementText: string) => void;
@@ -121,6 +195,8 @@ export interface RichTextInputProps
   pendingLargePastes?: Record<string, string>;
   skillReferenceNames?: Readonly<Record<string, string>>;
   onUpdateLargePaste?: (placeholder: string, text: string) => string;
+  /** Restore the exact placeholder identities and bodies owned by an undo step. */
+  onRestoreLargePastes?: (pastes: Record<string, string>) => void;
   onRemoveLargePaste?: (placeholder: string) => void;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   onCompositionStart?: () => void;
@@ -131,7 +207,11 @@ export interface RichTextInputProps
   disabled?: boolean;
   className?: string;
   contexts: ContextItem[];
+  /** Session and device activation identity; equal draft text must not share history. */
+  historyScope?: string;
   onRemoveContext: (id: string) => void;
+  /** Re-adds contexts whose capsules come back through undo or redo. */
+  onRestoreContexts?: (contexts: ContextItem[]) => void;
   /** Callback when the @ context-picker trigger changes. */
   onContextTriggerStateChange?: (state: ContextTriggerState) => void;
   /** Callback when inline trigger state changes for / or $ */
@@ -282,6 +362,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
   pendingLargePastes = EMPTY_PENDING_LARGE_PASTES,
   skillReferenceNames,
   onUpdateLargePaste,
+  onRestoreLargePastes,
   onRemoveLargePaste,
   onKeyDown,
   onCompositionStart,
@@ -292,7 +373,9 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
   disabled = false,
   className = '',
   contexts,
+  historyScope,
   onRemoveContext,
+  onRestoreContexts,
   onContextTriggerStateChange,
   onInlineTriggerStateChange,
   ...restProps
@@ -320,6 +403,9 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     startOffset: 0,
   });
   const triggerSyncRef = useRef<(() => void) | null>(null);
+  // Capsule insertion can precede the parent's batched context prop update.
+  // Keep the payload on the live element until serialization can read it.
+  const tagContextsRef = useRef(new WeakMap<HTMLElement, ContextItem>());
 
   const closeContextPicker = useCallback(() => {
     if (!contextTriggerStateRef.current.isActive) {
@@ -352,6 +438,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
   // Create tag element with pill style
   const createTagElement = useCallback((context: ContextItem): HTMLSpanElement => {
     const tag = document.createElement('span');
+    tagContextsRef.current.set(tag, context);
     tag.className = 'rich-text-tag-pill';
     tag.dataset.openbitfunComponent = 'rich-text-input';
     tag.dataset.openbitfunPart = 'contextTag';
@@ -616,12 +703,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
       ?? createSkillReferenceElement(token);
   }, [createAdditionalModeReferenceElement, createMcpReferenceElement, createSkillReferenceElement, createWidgetReferenceElement]);
 
-  const buildComposerPresentation = useCallback((): ComposerPresentation | null => {
-    const editor = internalRef.current;
-    if (!editor) {
-      return null;
-    }
-
+  const collectComposerSegments = useCallback((root: Node): ComposerPresentationSegment[] => {
     const contextsById = new Map(contexts.map(context => [context.id, context]));
     const segments: ComposerPresentationSegment[] = [];
     const appendText = (text: string) => appendComposerTextSegment(segments, sanitizeText(text));
@@ -649,7 +731,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
 
       const contextId = element.dataset.contextId;
       if (contextId) {
-        const context = contextsById.get(contextId);
+        const context = contextsById.get(contextId) ?? tagContextsRef.current.get(element);
         if (context && context.type !== 'image') {
           segments.push({
             kind: 'context',
@@ -706,29 +788,56 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
       node.childNodes.forEach(traverse);
     };
 
-    editor.childNodes.forEach(traverse);
+    root.childNodes.forEach(traverse);
+    return segments;
+  }, [contexts]);
+
+  const buildComposerPresentation = useCallback((): ComposerPresentation | null => {
+    const editor = internalRef.current;
+    if (!editor) {
+      return null;
+    }
     return {
       version: COMPOSER_PRESENTATION_VERSION,
-      segments,
+      segments: collectComposerSegments(editor),
     };
-  }, [contexts, internalRef]);
+  }, [collectComposerSegments, internalRef]);
 
-  const restoreComposerPresentation = useCallback((presentation: ComposerPresentation) => {
+  const restoreComposerPresentation = useCallback((
+    presentation: ComposerPresentation,
+    options?: { largePastes?: Readonly<Record<string, string>> },
+  ) => {
     const editor = internalRef.current;
     if (!editor || presentation.version !== COMPOSER_PRESENTATION_VERSION) {
       return;
     }
 
+    // The parent sets the matching pending pastes in the same update; expose
+    // them now so the capsules open before that prop arrives.
+    const largePastes = options?.largePastes;
+    if (largePastes) {
+      largePasteValuesRef.current = { ...largePasteValuesRef.current, ...largePastes };
+    }
     const fragment = document.createDocumentFragment();
+    const appendTextWithMcpReferences = (text: string) => {
+      let cursor = 0;
+      for (const match of getMcpPromptReferenceMatches(text)) {
+        fragment.appendChild(document.createTextNode(text.slice(cursor, match.start)));
+        fragment.appendChild(createMcpReferenceElement(match.token) ?? document.createTextNode(match.token));
+        cursor = match.end;
+      }
+      fragment.appendChild(document.createTextNode(text.slice(cursor)));
+    };
+
     for (const segment of presentation.segments) {
       if (segment.kind === 'text') {
-        let cursor = 0;
-        for (const match of getMcpPromptReferenceMatches(segment.text)) {
-          fragment.appendChild(document.createTextNode(segment.text.slice(cursor, match.start)));
-          fragment.appendChild(createMcpReferenceElement(match.token) ?? document.createTextNode(match.token));
-          cursor = match.end;
+        for (const part of splitLargePasteText(segment.text, largePastes)) {
+          if (part.kind === 'paste') {
+            fragment.appendChild(createLargePasteElement(part.placeholder));
+          } else {
+            appendTextWithMcpReferences(part.text);
+          }
         }
-        fragment.appendChild(document.createTextNode(segment.text.slice(cursor)));
       } else if (segment.kind === 'context') {
         if (segment.context.type !== 'conversation-excerpt') {
           fragment.appendChild(createTagElement(segment.context));
@@ -747,11 +856,14 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
       selection.removeAllRanges();
       selection.addRange(range);
     }
-  }, [createInlineTokenElement, createMcpReferenceElement, createTagElement, internalRef]);
+  }, [createInlineTokenElement, createLargePasteElement, createMcpReferenceElement, createTagElement, internalRef]);
 
-  const renderValueWithInlineTokens = useCallback((editor: HTMLElement, text: string) => {
+  const buildInlineTokenFragment = useCallback((
+    text: string,
+    largePastePlaceholders: readonly string[],
+  ): DocumentFragment => {
     const fragment = document.createDocumentFragment();
-    const largePasteMatches = Object.keys(pendingLargePastes).flatMap((placeholder) => {
+    const largePasteMatches = largePastePlaceholders.flatMap((placeholder) => {
       const matches: Array<{
         start: number;
         end: number;
@@ -790,11 +902,6 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
       })),
     ].sort((a, b) => a.start - b.start || b.end - a.end);
 
-    if (matches.length === 0) {
-      editor.textContent = text;
-      return;
-    }
-
     let cursor = 0;
     for (const match of matches) {
       if (match.start < cursor) continue;
@@ -819,15 +926,18 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
       fragment.appendChild(document.createTextNode(text.slice(cursor)));
     }
 
-    editor.replaceChildren(fragment);
+    return fragment;
   }, [
     createAdditionalModeReferenceElement,
     createLargePasteElement,
     createMcpReferenceElement,
     createSkillReferenceElement,
     createWidgetReferenceElement,
-    pendingLargePastes,
   ]);
+
+  const renderValueWithInlineTokens = useCallback((editor: HTMLElement, text: string) => {
+    editor.replaceChildren(buildInlineTokenFragment(text, Object.keys(pendingLargePastes)));
+  }, [buildInlineTokenFragment, pendingLargePastes]);
 
   /** Map textContent offsets to a DOM Range to replace only the @ span. */
   const getRangeByTextOffsets = useCallback((root: Node, start: number, end: number): Range | null => {
@@ -1033,6 +1143,75 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     }
   }, []);
 
+  const captureHistorySnapshot = useCallback((): ComposerHistorySnapshot | null => {
+    const editor = internalRef.current;
+    if (!editor) return null;
+    const segments = collectComposerSegments(editor);
+    const largePastes: Record<string, string> = {};
+    for (const element of editor.querySelectorAll<HTMLElement>('[data-large-paste-placeholder]')) {
+      const placeholder = element.dataset.largePastePlaceholder;
+      const text = placeholder ? largePasteValuesRef.current[placeholder] : undefined;
+      if (placeholder && text !== undefined) largePastes[placeholder] = text;
+    }
+
+    let caret = getComposerSegmentsLength(segments);
+    const selection = window.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    if (range && editor.contains(range.endContainer)) {
+      const prefix = document.createRange();
+      prefix.selectNodeContents(editor);
+      prefix.setEnd(range.endContainer, range.endOffset);
+      const holder = document.createElement('div');
+      holder.appendChild(prefix.cloneContents());
+      caret = Math.min(caret, getComposerSegmentsLength(collectComposerSegments(holder)));
+    }
+    return { segments, largePastes, caret };
+  }, [collectComposerSegments, internalRef]);
+
+  // Read through a ref so history resets never re-run the external value sync.
+  const captureHistorySnapshotRef = useRef(captureHistorySnapshot);
+  captureHistorySnapshotRef.current = captureHistorySnapshot;
+  const historyRef = useRef<RichTextUndoHistory<ComposerHistorySnapshot> | null>(null);
+  const pendingHistoryEditRef = useRef<RichTextHistoryEdit | null>(null);
+  const lastHistoryEditRef = useRef<RichTextHistoryEdit | null>(null);
+  const lastHistorySelectionRef = useRef<{ node: Node | null; offset: number } | null>(null);
+  const applyingHistoryRef = useRef(false);
+
+  const getHistory = useCallback(() => {
+    if (!historyRef.current) {
+      historyRef.current = new RichTextUndoHistory<ComposerHistorySnapshot>(
+        EMPTY_HISTORY_SNAPSHOT,
+        isSameComposerHistorySnapshot,
+      );
+    }
+    return historyRef.current;
+  }, []);
+
+  /** Make the current DOM the history baseline, e.g. after an external value sync. */
+  const resetHistory = useCallback(() => {
+    getHistory().reset(captureHistorySnapshotRef.current() ?? EMPTY_HISTORY_SNAPSHOT);
+    pendingHistoryEditRef.current = null;
+    lastHistoryEditRef.current = null;
+  }, [getHistory]);
+
+  const recordHistory = useCallback(() => {
+    if (applyingHistoryRef.current) return;
+    const snapshot = captureHistorySnapshot();
+    if (!snapshot) return;
+    // No `beforeinput` means a programmatic change (capsule insert, paste
+    // handler, picker), which always gets its own undo step.
+    const edit = pendingHistoryEditRef.current;
+    pendingHistoryEditRef.current = null;
+    const startGroup = shouldStartRichTextHistoryGroup(lastHistoryEditRef.current, edit);
+    if (getHistory().record(snapshot, startGroup)) {
+      lastHistoryEditRef.current = edit;
+    }
+    const selection = window.getSelection();
+    lastHistorySelectionRef.current = selection
+      ? { node: selection.focusNode, offset: selection.focusOffset }
+      : null;
+  }, [captureHistorySnapshot, getHistory]);
+
   const handleInput = useCallback(() => {
     if (isComposingRef.current) return;
 
@@ -1086,17 +1265,102 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
         .map(element => element.dataset.contextId)
         .filter((id): id is string => !!id)
     );
-    const visibleContexts = contexts.filter(context => visibleContextIds.has(context.id));
+    const visibleContextsById = new Map(contexts
+      .filter(context => visibleContextIds.has(context.id))
+      .map(context => [context.id, context]));
+    for (const element of internalRef.current?.querySelectorAll<HTMLElement>('[data-context-id]') ?? []) {
+      const context = tagContextsRef.current.get(element);
+      if (context && !visibleContextsById.has(context.id)) visibleContextsById.set(context.id, context);
+    }
+    const visibleContexts = Array.from(visibleContextsById.values());
 
     onChange(textContent, visibleContexts);
+    recordHistory();
     
     // Ensure detection runs after DOM updates
     requestAnimationFrame(() => {
       detectActiveTrigger();
     });
-  }, [contexts, detectActiveTrigger, extractTextContent, getCursorOffset, internalRef, onChange, setCursorOffset]);
+  }, [contexts, detectActiveTrigger, extractTextContent, getCursorOffset, internalRef, onChange, recordHistory, setCursorOffset]);
 
   triggerSyncRef.current = handleInput;
+
+  const applyHistorySnapshot = useCallback((snapshot: ComposerHistorySnapshot) => {
+    const editor = internalRef.current;
+    if (!editor) return;
+
+    // Large pastes and contexts removed after the snapshot are restored with
+    // the text that references them; a renamed placeholder is rewritten.
+    const placeholderRenames = new Map<string, string>();
+    if (onRestoreLargePastes) {
+      onRestoreLargePastes({ ...snapshot.largePastes });
+    } else {
+      for (const [placeholder, text] of Object.entries(snapshot.largePastes)) {
+        if (largePasteValuesRef.current[placeholder] === text) continue;
+        const nextPlaceholder = onUpdateLargePaste?.(placeholder, text) ?? placeholder;
+        if (nextPlaceholder !== placeholder) placeholderRenames.set(placeholder, nextPlaceholder);
+      }
+    }
+    largePasteValuesRef.current = Object.fromEntries(Object.entries(snapshot.largePastes).map(
+      ([placeholder, text]) => [placeholderRenames.get(placeholder) ?? placeholder, text],
+    ));
+    const currentContextIds = new Set(contexts.map(context => context.id));
+    const missingContexts = snapshot.segments.flatMap(segment => (
+      segment.kind === 'context' && !currentContextIds.has(segment.context.id) ? [segment.context] : []
+    ));
+    if (missingContexts.length > 0) {
+      onRestoreContexts?.(missingContexts);
+    }
+
+    const placeholders = Object.keys(snapshot.largePastes).map(
+      placeholder => placeholderRenames.get(placeholder) ?? placeholder,
+    );
+    const fragment = document.createDocumentFragment();
+    for (const segment of snapshot.segments) {
+      if (segment.kind === 'text') {
+        const text = splitLargePasteText(segment.text, snapshot.largePastes)
+          .map(part => part.kind === 'text' ? part.text : placeholderRenames.get(part.placeholder) ?? part.placeholder)
+          .join('');
+        fragment.appendChild(buildInlineTokenFragment(text, placeholders));
+      } else if (segment.kind === 'context') {
+        fragment.appendChild(createTagElement(segment.context));
+      } else {
+        fragment.appendChild(createInlineTokenElement(segment.token) ?? document.createTextNode(segment.token));
+      }
+    }
+
+    applyingHistoryRef.current = true;
+    try {
+      editor.replaceChildren(fragment);
+      editor.focus();
+      setComposerCaretOffset(editor, snapshot.caret);
+      handleInput();
+    } finally {
+      applyingHistoryRef.current = false;
+    }
+    pendingHistoryEditRef.current = null;
+    lastHistoryEditRef.current = null;
+  }, [
+    buildInlineTokenFragment,
+    contexts,
+    createInlineTokenElement,
+    createTagElement,
+    handleInput,
+    internalRef,
+    onRestoreContexts,
+    onRestoreLargePastes,
+    onUpdateLargePaste,
+  ]);
+
+  const undoHistory = useCallback(() => {
+    const snapshot = getHistory().undo();
+    if (snapshot) applyHistorySnapshot(snapshot);
+  }, [applyHistorySnapshot, getHistory]);
+
+  const redoHistory = useCallback(() => {
+    const snapshot = getHistory().redo();
+    if (snapshot) applyHistorySnapshot(snapshot);
+  }, [applyHistorySnapshot, getHistory]);
 
   /**
    * Inserts pasted text at the caret, rebuilding capsule elements for the
@@ -1199,6 +1463,8 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     if (!text) return;
     const largePastePlaceholder = onLargePaste?.(text);
     if (largePastePlaceholder && internalRef.current) {
+      // Parent state is batched; the history snapshot needs the body now.
+      largePasteValuesRef.current = { ...largePasteValuesRef.current, [largePastePlaceholder]: text };
       const selection = window.getSelection();
       const selectedRange = selection?.rangeCount ? selection.getRangeAt(0) : null;
       const range = selectedRange && internalRef.current.contains(selectedRange.commonAncestorContainer)
@@ -1347,7 +1613,49 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     }
 
     onKeyDown?.(e);
-  }, [handleInput, internalRef, onKeyDown, onRemoveContext, onRemoveLargePaste, removeInlineTokenElement]);
+
+    // Parent handlers (image paste undo) run first and may claim the key.
+    const key = e.key.toLowerCase();
+    const isPrimaryModifier = (e.metaKey || e.ctrlKey) && !e.altKey;
+    if (!composing && !e.defaultPrevented && isPrimaryModifier) {
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undoHistory();
+      } else if ((key === 'z' && e.shiftKey) || (key === 'y' && e.ctrlKey && !e.metaKey && !e.shiftKey)) {
+        e.preventDefault();
+        redoHistory();
+      }
+    }
+  }, [handleInput, internalRef, onKeyDown, onRemoveContext, onRemoveLargePaste, redoHistory, removeInlineTokenElement, undoHistory]);
+
+  useEffect(() => {
+    const editor = internalRef.current;
+    if (!editor) return;
+    const handleBeforeInput = (event: InputEvent) => {
+      if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
+        // Native undo cannot see programmatic capsule edits; use the owned history.
+        event.preventDefault();
+        if (event.inputType === 'historyUndo') undoHistory();
+        else redoHistory();
+        return;
+      }
+      if (isComposingRef.current) return;
+      const selection = window.getSelection();
+      const previousSelection = lastHistorySelectionRef.current;
+      if (selection && (
+        !selection.isCollapsed
+        || selection.focusNode !== previousSelection?.node
+        || selection.focusOffset !== previousSelection?.offset
+      )) {
+        // Typing at a different location (or replacing a selection) is a new edit.
+        lastHistoryEditRef.current = null;
+      }
+      const { kind, data } = classifyRichTextHistoryInput(event.inputType, event.data);
+      pendingHistoryEditRef.current = { kind, data, at: Date.now() };
+    };
+    editor.addEventListener('beforeinput', handleBeforeInput);
+    return () => editor.removeEventListener('beforeinput', handleBeforeInput);
+  }, [internalRef, redoHistory, undoHistory]);
 
   // Insert tag at cursor
   const insertTagAtCursor = useCallback((context: ContextItem) => {
@@ -1566,9 +1874,12 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
       (internalRef.current as any).closeContextPicker = closeContextPicker;
       (internalRef.current as any).closeInlineTrigger = closeInlineTrigger;
       (internalRef.current as RichTextInputElement).getComposerPresentation = buildComposerPresentation;
-      (internalRef.current as RichTextInputElement).restoreComposerPresentation = restoreComposerPresentation;
+      (internalRef.current as RichTextInputElement).restoreComposerPresentation = (presentation, options) => {
+        restoreComposerPresentation(presentation, options);
+        resetHistory();
+      };
     }
-  }, [appendInlineTokenAtEnd, buildComposerPresentation, closeContextPicker, closeInlineTrigger, insertContextTagReplacingTrigger, insertTagAtCursor, openContextPicker, replaceActiveContextTrigger, replaceActiveInlineTrigger, restoreComposerPresentation, internalRef]);
+  }, [appendInlineTokenAtEnd, buildComposerPresentation, closeContextPicker, closeInlineTrigger, insertContextTagReplacingTrigger, insertTagAtCursor, openContextPicker, replaceActiveContextTrigger, replaceActiveInlineTrigger, resetHistory, restoreComposerPresentation, internalRef]);
 
   // Initialize and sync value changes from external sources.
   // This editor is effectively controlled by comparing the parent's value
@@ -1595,11 +1906,13 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
 
     if (syncAction === 'clear') {
       editor.textContent = '';
+      resetHistory();
       return;
     }
     
     if (syncAction === 'replace') {
       renderValueWithInlineTokens(editor, value);
+      resetHistory();
       
       // Restore cursor to the end
       requestAnimationFrame(() => {
@@ -1614,7 +1927,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
         editor.focus();
       });
     }
-  }, [extractTextContent, internalRef, renderValueWithInlineTokens, value]);
+  }, [extractTextContent, internalRef, renderValueWithInlineTokens, resetHistory, value]);
 
   // Remove tags for deleted contexts
   useEffect(() => {
@@ -1644,6 +1957,10 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     lastContextIdsRef.current = currentContextIds;
   }, [contexts, internalRef]);
 
+  useEffect(() => {
+    resetHistory();
+  }, [historyScope, resetHistory]);
+
   const handleFocus = useCallback(() => {
     setIsFocused(true);
     onFocus?.();
@@ -1662,6 +1979,8 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
   // Handle IME composition
   const handleCompositionStart = useCallback(() => {
     isComposingRef.current = true;
+    // Each IME commit is its own undo step.
+    pendingHistoryEditRef.current = { kind: 'composition', data: null, at: Date.now() };
     onCompositionStart?.();
   }, [onCompositionStart]);
 
@@ -1698,6 +2017,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
         activeLargePaste.placeholder,
         activeLargePaste.draft,
       ) ?? activeLargePaste.placeholder;
+      largePasteValuesRef.current = { ...largePasteValuesRef.current, [nextPlaceholder]: activeLargePaste.draft };
       capsule.replaceWith(createLargePasteElement(nextPlaceholder));
     }
     setActiveLargePaste(null);

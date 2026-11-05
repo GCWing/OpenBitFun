@@ -3,6 +3,7 @@ import { ChatInputAttachments } from './ChatInputAttachments';
 import { useExcerptComposerActions } from '../selection/useExcerptComposerActions';
 import { isConversationExcerpt, formatConversationExcerpt } from '@/shared/utils/conversationExcerpt';
 import { withConversationExcerpts } from '../utils/composerPresentation';
+import { expandLargePastes, pickReferencedLargePastes } from '../utils/largePasteMetadata';
 /**
  * Standalone chat input component
  * Separated from bottom bar, supports session-level state awareness
@@ -632,6 +633,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const removeContext = useContextStore(state => state.removeContext);
   const clearContexts = useContextStore(state => state.clearContexts);
   const replaceContexts = useContextStore(state => state.replaceContexts);
+  const restoreContexts = useCallback((items: ContextItem[]) => {
+    items.forEach(addContext);
+  }, [addContext]);
 
   const contextsRef = useRef(contexts);
   contextsRef.current = contexts;
@@ -2364,20 +2368,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    replacePendingLargePastes(Object.fromEntries(
-      entries.filter(([placeholder]) => text.includes(placeholder))
-    ));
+    replacePendingLargePastes(pickReferencedLargePastes(pendingLargePastesRef.current, text) ?? {});
   }, [replacePendingLargePastes]);
 
-  const expandPendingLargePastes = useCallback((text: string) => {
-    let expanded = text;
-    for (const [placeholder, actual] of Object.entries(pendingLargePastesRef.current)) {
-      if (expanded.includes(placeholder)) {
-        expanded = expanded.split(placeholder).join(actual);
-      }
-    }
-    return expanded;
-  }, []);
+  const expandPendingLargePastes = useCallback((text: string) => (
+    expandLargePastes(text, pendingLargePastesRef.current)
+  ), []);
 
   const expandComposerSpecialTokens = useCallback((text: string) => {
     return expandAdditionalModePromptReferenceTokens(
@@ -2422,6 +2418,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       /** Complete composer context replacement, including image attachments. */
       contexts?: ContextItem[];
       composerPresentation?: ComposerPresentation;
+      largePastes?: Record<string, string>;
       onlyIfEmpty?: boolean;
       mode?: 'replace' | 'append';
       separator?: string;
@@ -2447,10 +2444,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       if (composerPresentation && data.mode !== 'append') {
         const restoredValue = composerPresentationToEditorText(composerPresentation);
         replaceContexts(data.contexts ?? composerPresentationContexts(composerPresentation));
-        clearPendingLargePastes();
+        const restoredLargePastes = pickReferencedLargePastes(data.largePastes, restoredValue) ?? {};
+        replacePendingLargePastes(restoredLargePastes);
         dispatchInput({ type: 'SET_VALUE', payload: restoredValue });
         inputValueRef.current = restoredValue;
-        richTextInputRef.current?.restoreComposerPresentation?.(composerPresentation);
+        richTextInputRef.current?.restoreComposerPresentation?.(composerPresentation, {
+          largePastes: restoredLargePastes,
+        });
         richTextInputRef.current?.focus();
         return;
       }
@@ -2471,7 +2471,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           : content;
 
       if (data.mode !== 'append') {
-        clearPendingLargePastes();
+        // A restored message keeps its pasted bodies so the placeholders
+        // render as capsules again instead of becoming literal text.
+        replacePendingLargePastes(pickReferencedLargePastes(data.largePastes, nextValue) ?? {});
         if (data.contexts) {
           replaceContexts(data.contexts);
         }
@@ -2489,7 +2491,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     return () => {
       globalEventBus.off('fill-chat-input', handleFillChatInput);
     };
-  }, [addContext, clearPendingLargePastes, conversationScope, dispatchInput, replaceContexts]);
+  }, [addContext, conversationScope, dispatchInput, replaceContexts, replacePendingLargePastes]);
 
   // Expose current input value for external queries (e.g. deep review fill-back confirmation)
   React.useEffect(() => {
@@ -6662,11 +6664,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               ))}
               <RichTextInput
                 ref={richTextInputRef}
+                historyScope={`${deviceSurfaceScope.epoch}:${deviceSurfaceScope.key(effectiveTargetSessionId)}`}
                 value={inputState.value}
                 onChange={handleInputChange}
                 onLargePaste={createLargePastePlaceholder}
                 onPasteFiles={handleClipboardFiles}
                 pendingLargePastes={pendingLargePastes}
+                onRestoreLargePastes={replacePendingLargePastes}
                 skillReferenceNames={skillReferenceNames}
                 onUpdateLargePaste={updateLargePaste}
                 onRemoveLargePaste={removeLargePaste}
@@ -6677,6 +6681,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 disabled={!targetCanCompose || caps.transferInFlight || isInterruptedTurnRecoveryInFlight}
                 contexts={contexts}
                 onRemoveContext={removeContext}
+                onRestoreContexts={restoreContexts}
                 onContextTriggerStateChange={setContextTriggerState}
                 onInlineTriggerStateChange={setInlineTriggerState}
                 data-testid="chat-input-textarea"

@@ -2616,6 +2616,11 @@
 .user-message-item__lightbox-close[data-openbitfun-component=icon-button] > [data-openbitfun-part=icon] {
   display: contents;
 }
+
+.user-message-item__large-paste-text {
+  min-height: 280px;
+  font-family: var(--openbitfun-type-code-md-font-family);
+}
 /* Model round item styles (BEM). */
 .model-round-item:is([data-flow-item-stack], .explore-region__content, .flow-group-content-segment):not([data-agent-card-grid]) > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
 .subagent-projection-text--truncated):not([hidden]):not([data-thinking-attachment=side]) {
