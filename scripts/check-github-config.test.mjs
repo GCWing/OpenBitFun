@@ -481,7 +481,12 @@ test('keeps Rust CI independent, restore-only on PRs, and target-focused', () =>
     cliJob.strategy.matrix.include.find((entry) => entry.os === 'macos-15-intel').cache_key,
     'macos-intel',
   );
-  assert.equal(cliJob['timeout-minutes'], 30);
+  assert.equal(cliJob['timeout-minutes'], '${{ matrix.timeout_minutes }}');
+  assert.deepEqual(
+    cliJob.strategy.matrix.include.map((entry) => entry.timeout_minutes),
+    [30, 75, 30],
+    'Only the cold Intel macOS CLI build needs a longer job budget',
+  );
   assert.ok(
     cliJob.strategy.matrix.include.some((entry) => entry.os === 'windows-latest'),
     'Windows ConPTY contracts must run before Nightly',
