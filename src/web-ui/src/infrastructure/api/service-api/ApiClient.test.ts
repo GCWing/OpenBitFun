@@ -27,10 +27,16 @@ const loggerMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock('../adapters', () => ({
-  getTransportAdapter: () => adapterMocks,
-  isPeerLocalOnlyCommand: (command: string) => command === 'account_status',
-}));
+vi.mock('../adapters', async () => {
+  const actual = await vi.importActual<typeof import('../adapters')>('../adapters');
+  return {
+    getTransportAdapter: () => adapterMocks,
+    isPeerLocalOnlyCommand: (command: string) => command === 'account_status',
+    // The command-level log path consumes the transport classifier, so keep
+    // the real one instead of a stub that would break every rejection.
+    isExpectedTauriRequestError: actual.isExpectedTauriRequestError,
+  };
+});
 
 vi.mock('@/shared/utils/logger', () => ({
   createLogger: () => loggerMocks,

@@ -14,6 +14,7 @@ const globalStateMocks = vi.hoisted(() => ({
   getCurrentWorkspace: vi.fn(),
   getPrimaryAssistantWorkspace: vi.fn(),
   updateWorkspaceInfo: vi.fn(),
+  scanWorkspaceInfo: vi.fn(),
 }));
 
 const listenMock = vi.hoisted(() => vi.fn());
@@ -70,6 +71,7 @@ function configureGlobalState(): void {
   globalStateMocks.getCurrentWorkspace.mockResolvedValue(null);
   globalStateMocks.getPrimaryAssistantWorkspace.mockResolvedValue(null);
   globalStateMocks.updateWorkspaceInfo.mockReset();
+  globalStateMocks.scanWorkspaceInfo.mockReset();
 }
 
 async function getFreshWorkspaceManager() {
@@ -1061,5 +1063,64 @@ describe('WorkspaceManager host catalog hints', () => {
 
     expect(globalStateMocks.getOpenedWorkspaces).not.toHaveBeenCalled();
     expect(manager.getState().openedWorkspaces.size).toBe(1);
+  });
+});
+
+describe('WorkspaceManager state-quiet loading and error events', () => {
+  const workspace = {
+    id: 'workspace-quiet',
+    name: 'Quiet repo',
+    rootPath: '/repo/quiet',
+    workspaceKind: 'normal',
+    identity: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    configureGlobalState();
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
+      cleanupRemovedCount: 0,
+      recentWorkspaces: [workspace],
+      openedWorkspaces: [workspace],
+      currentWorkspace: workspace,
+      legacyRemoteWorkspace: null,
+    });
+    globalStateMocks.getCurrentWorkspace.mockResolvedValue(workspace);
+    globalStateMocks.getRecentWorkspaces.mockResolvedValue([workspace]);
+    globalStateMocks.getOpenedWorkspaces.mockResolvedValue([workspace]);
+  });
+
+  function collectEvents(manager: {
+    addEventListener: (listener: (event: { type: string }) => void) => () => void;
+  }): { types: string[]; unsubscribe: () => void } {
+    const types: string[] = [];
+    const unsubscribe = manager.addEventListener(event => {
+      types.push(event.type);
+    });
+    return { types, unsubscribe };
+  }
+
+  it('does not emit an instant-failure loading/error pair when a load starts cleanly', async () => {
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+
+    const { types } = collectEvents(manager);
+    globalStateMocks.scanWorkspaceInfo.mockResolvedValue(workspace);
+    await manager.scanWorkspaceInfo();
+
+    expect(types).not.toContain('workspace:error');
+    expect(types.filter(type => type === 'workspace:loading')).toEqual(['workspace:loading']);
+  });
+
+  it('still reports real failures through workspace:error', async () => {
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+
+    const { types } = collectEvents(manager);
+    globalStateMocks.scanWorkspaceInfo.mockRejectedValue(new Error('scan failed'));
+    await expect(manager.scanWorkspaceInfo()).rejects.toThrow('scan failed');
+
+    expect(types).toContain('workspace:error');
+    expect(manager.getState().error).toBe('scan failed');
   });
 });

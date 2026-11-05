@@ -347,10 +347,16 @@ class WorkspaceManager {
   }
 
   private setLoading(loading: boolean): void {
+    // State-quiet events: repeating an unchanged value would have listeners
+    // observe `workspace:loading` and `workspace:error` in the same tick —
+    // e.g. loading:true then error:null right after — and treat the pair as a
+    // load that failed instantly.
+    if (this.state.loading === loading) return;
     this.updateState({ loading }, { type: 'workspace:loading', loading });
   }
 
   private setError(error: string | null): void {
+    if (this.state.error === error) return;
     this.updateState({ error }, { type: 'workspace:error', error });
   }
 
