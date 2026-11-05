@@ -5955,18 +5955,15 @@ impl SessionManager {
             .persistence_manager
             .load_session_revert_state(session_storage_path, session_id)
             .await?;
-        let effective_tail_turn_count = staged_revert
-            .as_ref()
-            .map(|_| None)
-            .unwrap_or(tail_turn_count);
         let session_started_at = Instant::now();
         let (mut session, mut persisted_turns, mut total_turn_count, turn_load) =
-            if let Some(tail_turn_count) = effective_tail_turn_count {
+            if let Some(tail_turn_count) = tail_turn_count {
                 self.persistence_manager
-                    .load_session_with_tail_turns_timed(
+                    .load_session_with_tail_turns_before_timed(
                         session_storage_path,
                         session_id,
                         tail_turn_count,
+                        staged_revert.as_ref().map(|revert| revert.boundary_turn),
                     )
                     .await?
             } else {
@@ -5979,7 +5976,9 @@ impl SessionManager {
             };
         if let Some(revert) = staged_revert.as_ref() {
             persisted_turns.retain(|turn| turn.turn_index < revert.boundary_turn);
-            total_turn_count = persisted_turns.len();
+            if tail_turn_count.is_none() {
+                total_turn_count = persisted_turns.len();
+            }
         }
         let load_session_with_turns_duration_ms = elapsed_ms_u64(session_started_at);
         debug!(
@@ -17542,6 +17541,160 @@ mod tests {
             .context_store
             .get_context_messages(&session_id)
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn restore_session_view_tail_with_staged_revert_reads_only_visible_tail() {
+        use crate::agentic::session::revert::{
+            SessionRevertPhase, SessionRevertState, SESSION_REVERT_SCHEMA_VERSION,
+        };
+        use openbitfun_services_core::session::SessionStorageLayout;
+
+        let workspace = TestWorkspace::new();
+        let paths = workspace.path_manager();
+        let persistence = Arc::new(PersistenceManager::new(paths.clone()).unwrap());
+        let manager = test_manager(persistence.clone());
+        let session_id = Uuid::new_v4().to_string();
+        let session = Session::new_with_id(
+            session_id.clone(),
+            "Visible history tail".into(),
+            "Standard".into(),
+            SessionConfig {
+                workspace_path: Some(workspace.path().to_string_lossy().into()),
+                ..Default::default()
+            },
+        );
+        persistence
+            .save_session(workspace.path(), &session)
+            .await
+            .unwrap();
+        // A sparse legacy sequence proves the boundary is a storage index,
+        // while total_turn_count and tail selection use visible ordinals.
+        for index in [0, 2, 4, 7] {
+            let mut turn = DialogTurnData::new(
+                format!("turn-{index}"),
+                index,
+                session_id.clone(),
+                UserMessageData {
+                    id: format!("user-{index}"),
+                    content: format!("prompt {index}"),
+                    timestamp: index as u64,
+                    metadata: None,
+                },
+            );
+            turn.mark_completed();
+            persistence
+                .save_dialog_turn(workspace.path(), &turn)
+                .await
+                .unwrap();
+        }
+        let storage_path = paths.project_sessions_dir(workspace.path());
+        let layout = SessionStorageLayout::new(&storage_path);
+        let answer = "complete last visible answer\n".repeat(8192);
+        let rounds = SessionManager::build_model_rounds_from_messages(
+            &[Message::assistant(answer.clone()).with_round_id("visible-round".into())],
+            "turn-2",
+            2,
+        );
+        // Keep an old persisted shape: no kind, recovery, usage or finish fields.
+        let legacy_turn = json!({
+            "schema_version": 1,
+            "turnId": "turn-2", "turnIndex": 2, "sessionId": session_id,
+            "timestamp": 2, "startTime": 2, "status": "completed",
+            "userMessage": { "id": "user-2", "content": "visible prompt", "timestamp": 2 },
+            "modelRounds": rounds,
+        });
+        std::fs::write(
+            layout.turn_path(&session_id, 2),
+            serde_json::to_vec(&legacy_turn).unwrap(),
+        )
+        .unwrap();
+        std::fs::remove_file(layout.turn_catalog_path(&session_id)).unwrap();
+        // Neither unrelated older content nor the hidden suffix may be parsed.
+        for index in [0, 4, 7] {
+            std::fs::write(
+                layout.turn_path(&session_id, index),
+                "unreadable unrelated turn",
+            )
+            .unwrap();
+        }
+        let mut revert = SessionRevertState {
+            schema_version: SESSION_REVERT_SCHEMA_VERSION,
+            boundary_turn: 4,
+            original_turn_end: 8,
+            phase: SessionRevertPhase::Staged,
+            workspace_checkpoint: Vec::new(),
+        };
+        persistence
+            .save_session_revert_state(workspace.path(), &session_id, &revert)
+            .await
+            .unwrap();
+
+        // Local path resolution and the resolved host-storage entry used by
+        // Peer callers must share the same bounded restore behavior.
+        for resolved_storage in [false, true] {
+            let (view, turns, total, timing) = if resolved_storage {
+                manager
+                    .restore_session_view_from_storage_path_tail_timed(
+                        &storage_path,
+                        &session_id,
+                        1,
+                    )
+                    .await
+            } else {
+                manager
+                    .restore_session_view_tail_timed(workspace.path(), &session_id, 1)
+                    .await
+            }
+            .expect("only the requested visible Turn should be read");
+            assert_eq!(total, 2);
+            assert_eq!(timing.turn_load.requested_tail_turn_count, Some(1));
+            assert_eq!(timing.turn_load.loaded_turn_count, 1);
+            assert_eq!(view.dialog_turn_ids, ["turn-2"]);
+            assert_eq!(turns.len(), 1);
+            assert_eq!(turns[0].turn_index, 2);
+            assert_eq!(turns[0].model_rounds[0].text_items[0].content, answer);
+            let round_trip: DialogTurnData =
+                serde_json::from_value(serde_json::to_value(&turns[0]).unwrap()).unwrap();
+            assert_eq!(round_trip.model_rounds[0].text_items[0].content, answer);
+            let catalog = persistence
+                .load_session_turn_catalog(&storage_path, &session_id, &turns, total)
+                .await
+                .unwrap();
+            assert_eq!(
+                catalog
+                    .entries
+                    .iter()
+                    .map(|entry| entry.storage_turn_index)
+                    .collect::<Vec<_>>(),
+                [0, 2]
+            );
+            assert!(manager.get_session(&session_id).is_none());
+        }
+
+        let (_, turns, total, _) = manager
+            .restore_session_view_tail_timed(workspace.path(), &session_id, 0)
+            .await
+            .unwrap();
+        assert!(turns.is_empty());
+        assert_eq!(total, 2);
+        revert.boundary_turn = 0;
+        persistence
+            .save_session_revert_state(workspace.path(), &session_id, &revert)
+            .await
+            .unwrap();
+        let (_, turns, total, _) = manager
+            .restore_session_view_tail_timed(workspace.path(), &session_id, 1)
+            .await
+            .unwrap();
+        assert!(turns.is_empty());
+        assert_eq!(total, 0);
+        for index in [0, 4, 7] {
+            assert_eq!(
+                std::fs::read_to_string(layout.turn_path(&session_id, index)).unwrap(),
+                "unreadable unrelated turn"
+            );
+        }
     }
 
     #[tokio::test]

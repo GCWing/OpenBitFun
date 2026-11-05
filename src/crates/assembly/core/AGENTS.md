@@ -339,6 +339,14 @@ against full materialization locally, use the same target with
 `history_page_benchmark -- --ignored --nocapture`; it checks content equivalence
 and reports timings without asserting a machine-dependent latency in CI.
 
+For opening a staged-revert Session at its last complete visible Turn, run
+`cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib restore_session_view_tail_with_staged_revert`.
+This exercises local workspace resolution and the host-storage entry used by
+Peer callers, sparse legacy histories, complete payloads and untouched hidden
+files; it does not establish live remote behavior. The same target with
+`staged_revert_tail_benchmark -- --ignored --nocapture` compares real-file full
+materialization with the bounded visible-tail read without a CI timing assertion.
+
 For workspace metadata catalog paging, cache reuse and cross-process invalidation:
 `cargo test --locked -p openbitfun-core --no-default-features --features external-sources,git,product-search --lib -- catalog_snapshot_ catalog_query_pages_`.
 

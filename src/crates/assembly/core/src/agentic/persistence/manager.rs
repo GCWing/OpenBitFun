@@ -3162,16 +3162,48 @@ impl PersistenceManager {
         session_id: &str,
         tail_turn_count: usize,
     ) -> OpenBitFunResult<(Session, Vec<DialogTurnData>, usize, SessionTurnLoadTiming)> {
-        Self::validate_session_id(session_id)?;
-        #[cfg(feature = "external-sources")]
-        if let Some(view) = Box::pin(self.load_external_history_view(
+        self.load_session_with_tail_turns_before_timed(
             workspace_path,
             session_id,
-            Some(tail_turn_count),
-        ))
-        .await?
+            tail_turn_count,
+            None,
+        )
+        .await
+    }
+
+    /// Read the tail of the visible prefix without parsing the rolled-back
+    /// suffix or unrelated older Turns. The boundary is a storage index, not a
+    /// count: legacy histories can have gaps in their physical Turn sequence.
+    pub(crate) async fn load_session_with_tail_turns_before_timed(
+        &self,
+        workspace_path: &Path,
+        session_id: &str,
+        tail_turn_count: usize,
+        before_turn_index: Option<usize>,
+    ) -> OpenBitFunResult<(Session, Vec<DialogTurnData>, usize, SessionTurnLoadTiming)> {
+        Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some((mut session, mut turns, mut total_turn_count, mut timing)) =
+            Box::pin(self.load_external_history_view(
+                workspace_path,
+                session_id,
+                before_turn_index.is_none().then_some(tail_turn_count),
+            ))
+            .await?
         {
-            return Ok(view);
+            // External snapshots own their loading/cache contract. Keep that
+            // compatibility path, applying the same visible boundary before
+            // selecting its tail rather than filtering an already-cut suffix.
+            if let Some(boundary) = before_turn_index {
+                turns.retain(|turn| turn.turn_index < boundary);
+                total_turn_count = turns.len();
+                turns.drain(..turns.len().saturating_sub(tail_turn_count));
+                session.dialog_turn_ids = turns.iter().map(|turn| turn.turn_id.clone()).collect();
+                timing.requested_tail_turn_count = Some(tail_turn_count);
+                timing.loaded_turn_count = turns.len();
+                timing.total_turn_count = total_turn_count;
+            }
+            return Ok((session, turns, total_turn_count, timing));
         }
         #[cfg(feature = "external-sources")]
         self.ensure_external_session_materialized(workspace_path, session_id)
@@ -3201,14 +3233,17 @@ impl PersistenceManager {
         let state_duration = state_started_at.elapsed();
 
         let fast_path_started_at = Instant::now();
-        let fast_path_turns = self
-            .read_metadata_tail_turns(
+        let fast_path_turns = if before_turn_index.is_none() {
+            self.read_metadata_tail_turns(
                 &request.workspace_path,
                 &request.session_id,
                 metadata.turn_count,
                 tail_turn_count,
             )
-            .await?;
+            .await?
+        } else {
+            None
+        };
         let fast_path_duration = fast_path_started_at.elapsed();
 
         let (
@@ -3231,9 +3266,12 @@ impl PersistenceManager {
             )
         } else {
             let scan_started_at = Instant::now();
-            let indexed_paths = self
+            let mut indexed_paths = self
                 .list_indexed_turn_paths(&request.workspace_path, &request.session_id)
                 .await?;
+            if let Some(boundary) = before_turn_index {
+                indexed_paths.retain(|(index, _)| *index < boundary);
+            }
             let scan_duration = scan_started_at.elapsed();
             let total_turn_count = indexed_paths.len();
             let start = indexed_paths.len().saturating_sub(tail_turn_count);
@@ -5963,6 +6001,72 @@ mod tests {
 
         assert_eq!(view_turn_indices, vec![3, 4]);
         assert_eq!(total_turn_count, 5);
+    }
+
+    #[tokio::test]
+    #[ignore = "local staged-revert first-view performance comparison"]
+    async fn staged_revert_tail_benchmark_against_full_materialization() {
+        let workspace = TestWorkspace::new();
+        let manager = PersistenceManager::new(workspace.path_manager()).unwrap();
+        let session_id = Uuid::new_v4().to_string();
+        let session = Session::new_with_id(
+            session_id.clone(),
+            "Visible tail benchmark".into(),
+            "Standard".into(),
+            SessionConfig {
+                workspace_path: Some(workspace.path().to_string_lossy().into()),
+                ..Default::default()
+            },
+        );
+        manager
+            .save_session(workspace.path(), &session)
+            .await
+            .unwrap();
+        for index in 0..128 {
+            let turn = DialogTurnData::new(
+                format!("turn-{index}"),
+                index,
+                session_id.clone(),
+                user_message(&"x".repeat(128 * 1024)),
+            );
+            manager
+                .save_dialog_turn(workspace.path(), &turn)
+                .await
+                .unwrap();
+        }
+        let mut full_times = Vec::new();
+        let mut tail_times = Vec::new();
+        for _ in 0..7 {
+            let start = Instant::now();
+            let (_, mut full, _) = manager
+                .load_session_with_turns_timed(workspace.path(), &session_id)
+                .await
+                .unwrap();
+            full.retain(|turn| turn.turn_index < 96);
+            let total = full.len();
+            full.drain(..full.len().saturating_sub(1));
+            full_times.push(start.elapsed().as_micros());
+            let start = Instant::now();
+            let (_, tail, visible_total, timing) = manager
+                .load_session_with_tail_turns_before_timed(
+                    workspace.path(),
+                    &session_id,
+                    1,
+                    Some(96),
+                )
+                .await
+                .unwrap();
+            tail_times.push(start.elapsed().as_micros());
+            assert_eq!(visible_total, total);
+            assert_eq!(
+                serde_json::to_value(&tail).unwrap(),
+                serde_json::to_value(&full).unwrap()
+            );
+            assert_eq!(timing.loaded_turn_count, 1);
+        }
+        full_times.sort_unstable();
+        tail_times.sort_unstable();
+        eprintln!("staged revert tail median: full_us={} tail_us={} physical_turns=128 visible_turns=96 loaded_tail_turns=1", full_times[3], tail_times[3]);
     }
 
     #[tokio::test]
