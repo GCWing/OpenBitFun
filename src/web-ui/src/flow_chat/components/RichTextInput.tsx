@@ -85,7 +85,9 @@ function composerSegmentKey(segment: ComposerPresentationSegment): string {
 
 function isSameComposerHistorySnapshot(a: ComposerHistorySnapshot, b: ComposerHistorySnapshot): boolean {
   return a.segments.length === b.segments.length
-    && a.segments.every((segment, index) => composerSegmentKey(segment) === composerSegmentKey(b.segments[index]));
+    && a.segments.every((segment, index) => composerSegmentKey(segment) === composerSegmentKey(b.segments[index]))
+    && Object.keys(a.largePastes).length === Object.keys(b.largePastes).length
+    && Object.entries(a.largePastes).every(([placeholder, body]) => b.largePastes[placeholder] === body);
 }
 
 /** Places the caret in a flat editor rendered from history segments. */
@@ -193,6 +195,8 @@ export interface RichTextInputProps
   pendingLargePastes?: Record<string, string>;
   skillReferenceNames?: Readonly<Record<string, string>>;
   onUpdateLargePaste?: (placeholder: string, text: string) => string;
+  /** Restore the exact placeholder identities and bodies owned by an undo step. */
+  onRestoreLargePastes?: (pastes: Record<string, string>) => void;
   onRemoveLargePaste?: (placeholder: string) => void;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   onCompositionStart?: () => void;
@@ -356,6 +360,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
   pendingLargePastes = EMPTY_PENDING_LARGE_PASTES,
   skillReferenceNames,
   onUpdateLargePaste,
+  onRestoreLargePastes,
   onRemoveLargePaste,
   onKeyDown,
   onCompositionStart,
@@ -395,6 +400,9 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     startOffset: 0,
   });
   const triggerSyncRef = useRef<(() => void) | null>(null);
+  // Capsule insertion can precede the parent's batched context prop update.
+  // Keep the payload on the live element until serialization can read it.
+  const tagContextsRef = useRef(new WeakMap<HTMLElement, ContextItem>());
 
   const closeContextPicker = useCallback(() => {
     if (!contextTriggerStateRef.current.isActive) {
@@ -427,6 +435,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
   // Create tag element with pill style
   const createTagElement = useCallback((context: ContextItem): HTMLSpanElement => {
     const tag = document.createElement('span');
+    tagContextsRef.current.set(tag, context);
     tag.className = 'rich-text-tag-pill';
     tag.dataset.openbitfunComponent = 'rich-text-input';
     tag.dataset.openbitfunPart = 'contextTag';
@@ -719,7 +728,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
 
       const contextId = element.dataset.contextId;
       if (contextId) {
-        const context = contextsById.get(contextId);
+        const context = contextsById.get(contextId) ?? tagContextsRef.current.get(element);
         if (context && context.type !== 'image') {
           segments.push({
             kind: 'context',
@@ -1248,7 +1257,14 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
         .map(element => element.dataset.contextId)
         .filter((id): id is string => !!id)
     );
-    const visibleContexts = contexts.filter(context => visibleContextIds.has(context.id));
+    const visibleContextsById = new Map(contexts
+      .filter(context => visibleContextIds.has(context.id))
+      .map(context => [context.id, context]));
+    for (const element of internalRef.current?.querySelectorAll<HTMLElement>('[data-context-id]') ?? []) {
+      const context = tagContextsRef.current.get(element);
+      if (context && !visibleContextsById.has(context.id)) visibleContextsById.set(context.id, context);
+    }
+    const visibleContexts = Array.from(visibleContextsById.values());
 
     onChange(textContent, visibleContexts);
     recordHistory();
@@ -1268,11 +1284,18 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     // Large pastes and contexts removed after the snapshot are restored with
     // the text that references them; a renamed placeholder is rewritten.
     const placeholderRenames = new Map<string, string>();
-    for (const [placeholder, text] of Object.entries(snapshot.largePastes)) {
-      if (largePasteValuesRef.current[placeholder] === text) continue;
-      const nextPlaceholder = onUpdateLargePaste?.(placeholder, text) ?? placeholder;
-      if (nextPlaceholder !== placeholder) placeholderRenames.set(placeholder, nextPlaceholder);
+    if (onRestoreLargePastes) {
+      onRestoreLargePastes({ ...snapshot.largePastes });
+    } else {
+      for (const [placeholder, text] of Object.entries(snapshot.largePastes)) {
+        if (largePasteValuesRef.current[placeholder] === text) continue;
+        const nextPlaceholder = onUpdateLargePaste?.(placeholder, text) ?? placeholder;
+        if (nextPlaceholder !== placeholder) placeholderRenames.set(placeholder, nextPlaceholder);
+      }
     }
+    largePasteValuesRef.current = Object.fromEntries(Object.entries(snapshot.largePastes).map(
+      ([placeholder, text]) => [placeholderRenames.get(placeholder) ?? placeholder, text],
+    ));
     const currentContextIds = new Set(contexts.map(context => context.id));
     const missingContexts = snapshot.segments.flatMap(segment => (
       segment.kind === 'context' && !currentContextIds.has(segment.context.id) ? [segment.context] : []
@@ -1287,10 +1310,9 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     const fragment = document.createDocumentFragment();
     for (const segment of snapshot.segments) {
       if (segment.kind === 'text') {
-        let text = segment.text;
-        for (const [from, to] of placeholderRenames) {
-          text = text.split(from).join(to);
-        }
+        const text = splitLargePasteText(segment.text, snapshot.largePastes)
+          .map(part => part.kind === 'text' ? part.text : placeholderRenames.get(part.placeholder) ?? part.placeholder)
+          .join('');
         fragment.appendChild(buildInlineTokenFragment(text, placeholders));
       } else if (segment.kind === 'context') {
         fragment.appendChild(createTagElement(segment.context));
@@ -1318,6 +1340,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     handleInput,
     internalRef,
     onRestoreContexts,
+    onRestoreLargePastes,
     onUpdateLargePaste,
   ]);
 
@@ -1432,6 +1455,8 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     if (!text) return;
     const largePastePlaceholder = onLargePaste?.(text);
     if (largePastePlaceholder && internalRef.current) {
+      // Parent state is batched; the history snapshot needs the body now.
+      largePasteValuesRef.current = { ...largePasteValuesRef.current, [largePastePlaceholder]: text };
       const selection = window.getSelection();
       const selectedRange = selection?.rangeCount ? selection.getRangeAt(0) : null;
       const range = selectedRange && internalRef.current.contains(selectedRange.commonAncestorContainer)
@@ -1970,6 +1995,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
         activeLargePaste.placeholder,
         activeLargePaste.draft,
       ) ?? activeLargePaste.placeholder;
+      largePasteValuesRef.current = { ...largePasteValuesRef.current, [nextPlaceholder]: activeLargePaste.draft };
       capsule.replaceWith(createLargePasteElement(nextPlaceholder));
     }
     setActiveLargePaste(null);

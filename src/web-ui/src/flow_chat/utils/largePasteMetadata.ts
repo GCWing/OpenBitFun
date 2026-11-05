@@ -15,8 +15,11 @@ export function pickReferencedLargePastes(
   text: string,
 ): Record<string, string> | null {
   if (!pastes) return null;
+  const keys = new Set(splitLargePasteText(text, pastes).flatMap(
+    part => part.kind === 'paste' ? [part.placeholder] : [],
+  ));
   const referenced = Object.entries(pastes).filter(
-    ([placeholder, body]) => placeholder.length > 0 && typeof body === 'string' && text.includes(placeholder),
+    ([placeholder, body]) => keys.has(placeholder) && typeof body === 'string',
   );
   return referenced.length > 0 ? Object.fromEntries(referenced) : null;
 }

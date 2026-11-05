@@ -2368,9 +2368,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    replacePendingLargePastes(Object.fromEntries(
-      entries.filter(([placeholder]) => text.includes(placeholder))
-    ));
+    replacePendingLargePastes(pickReferencedLargePastes(pendingLargePastesRef.current, text) ?? {});
   }, [replacePendingLargePastes]);
 
   const expandPendingLargePastes = useCallback((text: string) => (
@@ -6671,6 +6669,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 onLargePaste={createLargePastePlaceholder}
                 onPasteFiles={handleClipboardFiles}
                 pendingLargePastes={pendingLargePastes}
+                onRestoreLargePastes={replacePendingLargePastes}
                 skillReferenceNames={skillReferenceNames}
                 onUpdateLargePaste={updateLargePaste}
                 onRemoveLargePaste={removeLargePaste}

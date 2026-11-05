@@ -18,7 +18,6 @@ const UserMessageLargePasteCapsule: React.FC<{
     className="message-reference-capsule message-reference-capsule--large-paste user-message-item__reference user-message-item__reference--large-paste"
     data-openbitfun-product-component="user-message-item"
     data-openbitfun-product-part="content"
-    data-openbitfun-state="large-paste"
     title={placeholder}
     onClick={(event) => {
       event.stopPropagation();

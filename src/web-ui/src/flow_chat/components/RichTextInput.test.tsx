@@ -261,6 +261,102 @@ describeWithJsdom('RichTextInput external sync', () => {
     expect(editor.textContent).toBe('12345你好');
   });
 
+  it.each([false, true])('keeps paste bodies through undo/redo and same-length edits (exact restore: %s)', async (exactRestore) => {
+    const placeholder = '[Pasted Content 1001 chars]';
+    const original = 'a'.repeat(1001);
+    const edited = 'b'.repeat(1001);
+    let currentPastes: Record<string, string> = {};
+    const Controlled = () => {
+      const [value, setValue] = useState('');
+      const [pastes, setPastes] = useState<Record<string, string>>({});
+      currentPastes = pastes;
+      return <RichTextInput
+        value={value}
+        onChange={(next) => {
+          setValue(next);
+          setPastes(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => next.includes(key))));
+        }}
+        pendingLargePastes={pastes}
+        onRestoreLargePastes={exactRestore ? setPastes : undefined}
+        onLargePaste={(text) => { setPastes(previous => ({ ...previous, [placeholder]: text })); return placeholder; }}
+        onUpdateLargePaste={(key, text) => { setPastes(previous => ({ ...previous, [key]: text })); return key; }}
+        contexts={emptyContexts}
+        onRemoveContext={() => {}}
+      />;
+    };
+    await act(async () => root.render(<Controlled />));
+    const editor = container.querySelector('.rich-text-input') as HTMLDivElement;
+    setCaret(editor, 0);
+    await act(async () => paste(editor, { text: original }));
+    const undo = async (redo = false) => {
+      await act(async () => { editor.dispatchEvent(new window.KeyboardEvent('keydown', {
+        key: 'z', metaKey: true, shiftKey: redo, bubbles: true, cancelable: true,
+      })); });
+    };
+    for (let cycle = 0; cycle < 2; cycle++) {
+      await undo();
+      expect(editor.querySelector('[data-large-paste-placeholder]')).toBeNull();
+      await undo(true);
+      expect(editor.querySelector('[data-large-paste-placeholder]')).not.toBeNull();
+      expect(currentPastes[placeholder]).toBe(original);
+    }
+    await act(async () => { (editor.querySelector('[data-large-paste-placeholder]') as HTMLElement).click(); });
+    const textarea = document.body.querySelector('.rich-text-large-paste-dialog__textarea textarea') as HTMLTextAreaElement;
+    expect(textarea.value).toBe(original);
+    await act(async () => Simulate.change(textarea, { target: { value: edited } } as never));
+    const buttons = textarea.closest('[role="dialog"]')!.querySelectorAll('button');
+    await act(async () => { (buttons[buttons.length - 1] as HTMLButtonElement).click(); });
+    expect(currentPastes[placeholder]).toBe(edited);
+    await undo();
+    expect(currentPastes[placeholder]).toBe(original);
+    await undo(true);
+    expect(currentPastes[placeholder]).toBe(edited);
+  });
+
+  it('restores a newly inserted context through undo and redo before another edit', async () => {
+    const context: ContextItem = { id: 'undo-file', type: 'file', fileName: 'file.ts', filePath: '/workspace/file.ts', timestamp: 1 };
+    const inputRef = createRef<RichTextInputElement>();
+    let add: () => void = () => {};
+    let currentContexts: ContextItem[] = [];
+    const Controlled = () => {
+      const [value, setValue] = useState('');
+      const [contexts, setContexts] = useState<ContextItem[]>([]);
+      currentContexts = contexts;
+      add = () => {
+        setContexts([context]);
+        inputRef.current?.insertTag?.(context);
+      };
+      return <RichTextInput
+        ref={inputRef}
+        value={value}
+        contexts={contexts}
+        onChange={(next, visible) => {
+          setValue(next);
+          const visibleIds = new Set(visible.map(item => item.id));
+          const removedIds = new Set(contexts.filter(item => !visibleIds.has(item.id)).map(item => item.id));
+          setContexts(previous => previous.filter(item => !removedIds.has(item.id)));
+        }}
+        onRemoveContext={id => setContexts(previous => previous.filter(item => item.id !== id))}
+        onRestoreContexts={items => setContexts(previous => [...previous, ...items])}
+      />;
+    };
+    await act(async () => root.render(<Controlled />));
+    await act(async () => add());
+    const editor = inputRef.current!;
+    expect(editor.querySelector('[data-context-id="undo-file"]')).not.toBeNull();
+    for (let cycle = 0; cycle < 2; cycle++) {
+      await act(async () => { editor.dispatchEvent(new window.KeyboardEvent('keydown', {
+        key: 'z', metaKey: true, bubbles: true, cancelable: true,
+      })); });
+      expect(currentContexts).toEqual([]);
+      await act(async () => { editor.dispatchEvent(new window.KeyboardEvent('keydown', {
+        key: 'z', metaKey: true, shiftKey: true, bubbles: true, cancelable: true,
+      })); });
+      expect(editor.querySelector('[data-context-id="undo-file"]')).not.toBeNull();
+      expect(currentContexts).toEqual([context]);
+    }
+  });
+
   it('removes leaked key characters from composer output while preserving joined emoji and IME text', async () => {
     const onChange = vi.fn();
     await act(async () => root.render(<RichTextInput value="" onChange={onChange} contexts={emptyContexts} onRemoveContext={() => {}} />));

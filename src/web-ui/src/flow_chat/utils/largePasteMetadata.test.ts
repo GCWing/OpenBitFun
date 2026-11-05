@@ -24,6 +24,7 @@ describe('largePasteMetadata', () => {
   });
 
   it('keeps only referenced pastes', () => {
+    expect(pickReferencedLargePastes({ [base]: 'deleted', [second]: 'kept' }, second)).toEqual({ [second]: 'kept' });
     expect(pickReferencedLargePastes({ [second]: 'b', '[Other]': 'c' }, `hi ${second}`)).toEqual({ [second]: 'b' });
     expect(pickReferencedLargePastes({ '[Other]': 'c' }, 'hi')).toBeNull();
     expect(pickReferencedLargePastes(undefined, 'hi')).toBeNull();
