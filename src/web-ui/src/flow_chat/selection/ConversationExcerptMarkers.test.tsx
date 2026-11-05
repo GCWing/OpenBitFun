@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { act, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationExcerptContext } from '@/shared/types/context';
-import { ConversationExcerptMarkers } from './ConversationExcerptMarkers';
+import { ConversationExcerptMarkers, useConversationExcerptMarkers } from './ConversationExcerptMarkers';
 import { ConversationExcerptSourceContext } from './conversationExcerptSourceContext';
 
 vi.mock('./ConversationExcerptAttachments', () => ({ ConversationExcerptPreview: () => null }));
@@ -96,5 +96,18 @@ describe('persistent annotation highlights', () => {
     act(() => root.render(null));
     expect(highlights.has(name)).toBe(false);
     expect(highlights.get('openbitfun-flowchat-excerpt')).toBe(temporary);
+  });
+
+  it('resolves a row ref on its first layout commit and disposes the selected source on unmount', () => {
+    function Row() {
+      const ref = useRef<HTMLDivElement | null>(null);
+      const markers = useConversationExcerptMarkers(ref, 'turn');
+      return <div ref={ref} data-turn-id="turn"><div data-flow-item-id="text">selected source</div>{markers}</div>;
+    }
+    act(() => root.render(<ConversationExcerptSourceContext.Provider value={new Map([['turn', [excerpt]]])}><Row /></ConversationExcerptSourceContext.Provider>));
+    expect([...highlights.get(name)!].map(range => range.toString())).toEqual(['selected']);
+    expect(container.contains([...highlights.get(name)!][0].startContainer)).toBe(true);
+    act(() => root.render(null));
+    expect(highlights.has(name)).toBe(false);
   });
 });

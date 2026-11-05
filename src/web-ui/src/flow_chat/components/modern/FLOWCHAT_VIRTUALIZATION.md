@@ -15,18 +15,21 @@ padding maps to physical bottom/top padding. Earlier records extend only the
 older side of the virtual range. Selecting a window does not require adding up
 unseen prefix heights to place the latest content.
 
-Historical range selection admits all blocks of each selected Turn together.
-The latest complete Turn stays resident and owns the CSS trailing-space shell;
-older Turns still virtualize. Stable Turn wrappers are present in live layout
-as well, so changing the origin does not reparent/remount visible blocks. An
-unmounted interval between selected Turns lives outside the tail's reservation.
-This trades per-block residency inside an individual historical Turn for atomic
-Turn presentation; a very large single Turn still requires rendering that Turn.
+Complete Turn data is published atomically; DOM residency is independently
+bounded by the visible content blocks and pixel overscan. Expanding a selected
+range to every block of its Turn defeated virtualization for tool-heavy sessions.
+Only the latest block/footer pins the CSS trailing-space shell. Stable Turn
+wrappers are present in live layout as well, so changing the origin does not
+reparent/remount visible blocks. An unmounted interval between Turns lives outside
+the tail reservation; an unmounted prefix of the latest Turn lives **inside** it.
+Putting that prefix above a minimum-height shell adds a second viewport of blank
+space. Pinned keys use the existing key index instead of scanning the document
+on every range extraction.
 
 Estimates still reserve space for unmounted content. Keyed measurements and
 fractional border-box sizes replace those reservations as rows mount. Preserve
 surviving reservations across width/font changes, prune retired keys, and keep
-range selection based on viewport overscan, expanded to complete Turns. An older measurement cannot
+range selection based on viewport overscan and interaction leases. An older measurement cannot
 shift the historical tail. Only a measured newer row wholly below a reader can
 shift their chosen position; that uses the viewport register and publishes its
 actual readback before another window is selected.
@@ -49,6 +52,90 @@ search/Turn navigation and existing bookmark coordinates. Native tail cases
 assert zero scroll writes as well as node and screen-position continuity.
 These supplied-geometry tests do not establish native paint or live remote
 behavior.
+
+## Large text and decoration residency
+
+`markdownSections` uses the existing streaming parser's block tokenizer to find
+semantic boundaries. It does not perform inline parsing or replace the product
+Markdown renderer/sanitizer. Live and historical replies project roughly 3,000-character
+sections using identical source boundaries. These are work budgets,
+not truncation: an individual fence, table, list or quote remains whole. Raw HTML,
+reference/footnote dependencies and structured research protocols keep their
+whole-document path. Canonical text and export/copy payloads stay unchanged.
+
+The first section retains its previous block key; later keys include the raw
+source offset. Thinking stays with the first section. Search translates whole
+message occurrence counts into section-local counts, including Unicode case
+folding. Section indexes and search boundary counts each have a 2 MiB/64-entry
+budget under the shared derived-resource budget. They retain neither DOM nor
+React trees, and never evict authoritative data.
+
+Each section owns a stable renderer from its first token through completion and
+history reopening. Sealed prefixes keep their selected DOM and skip rendering
+when only the canonical source suffix changes. Only the final section types and
+reveals new characters; sealing drains its remaining backlog before a new section
+continues. The visible window bounds DOM during live output as well as history.
+A short first section already uses source offset zero, so crossing the work budget
+does not replace its renderer. Section bookmarks therefore keep the same coordinate
+system after reopening, including medium replies below 12,000 characters. Sections
+have no arrival animation on viewport remount. Historical text does not walk/copy
+every rendered text node to initialize a reveal effect that cannot animate it.
+
+Conversation code keeps exact native text at all times. Ordinary sections release
+syntax decoration with the outer virtual row. Whole semantic documents can use a
+shared intersection observer, which preserves selected nodes and disconnects after
+its last reader. Streaming never starts the Prism loader.
+An indivisible fence over 24,000 characters retains its source-only rendering in
+chat: allocating an unbounded synchronous token tree would negate the viewport
+budget. Copy still includes all code; editor rendering remains separate.
+
+New excerpt fragments may carry an optional `markdownStart` navigation hint.
+Existing fragments retain their rendered-text offsets: explicit navigation
+materializes their whole source before resolving the range. A new fragment can
+fall back to the existing text/context resolver in a whole-source renderer.
+Ambiguous or removed text remains unavailable rather than targeting another copy.
+Whole-text reading bookmarks retain their original coordinate system when a
+live reply is reopened as historical text. New section bookmarks carry an
+optional `anchorMarkdownStart`; its absence on a legacy/live first-row bookmark
+requests whole-source presentation before restoring the saved offset. This is
+view state only and does not rewrite conversation records.
+
+No history transport, persisted Turn shape, execution behavior or remote IO path
+changes. Native evidence and remaining coverage limits are in
+`FLOWCHAT_VERIFICATION.md`.
+
+### Mounted-row lifetime and opening readiness
+
+Row refs attach without a state update. Search focus and excerpt highlights
+resolve the ref in the row's layout phase, so first-mount behavior stays intact
+without rendering every newly windowed row twice. Overscan follows its pixel
+budget, with a leaf cap for dense tools; a giant block does not require a second
+extra block merely to satisfy a minimum row count.
+
+Ordinary bounded Markdown keeps syntax decoration for the mounted row's lifetime.
+An additional code intersection budget is used only for whole Markdown documents
+over 12K characters; indivisible fences above the 24K syntax budget remain exact
+plaintext. Native traces caught full `pre` replacement at the historical edge
+briefly shrinking the WebView range by 83/166px, even though final row heights
+matched. Avoid redundant inner decoration swaps in already bounded rows.
+
+Decorative brand/Spinner playback explicitly cancels and detaches its WAAPI
+effects on unmount or reduced-motion activation, while ordinary
+offscreen/hidden playback still pauses and resumes. Cancellation alone left
+effect targets/keyframes retained in native switching diagnostics. This releases
+effect ownership; it is not a claim that WebKit collects every animation wrapper
+or that all process-memory growth has been eliminated.
+
+Opening follows the viewport's settled layout signal, including bookmark
+restoration. The user-message row is absent at a long reply's end. An earlier
+check spent all 30 retries on every successful long-Turn open, adding roughly
+500ms before the loading handoff; main removed that polling in `06e3472a6`.
+Background hydration still waits for the existing presentation/paint handoff.
+
+Viewport snapshots use the latest committed callback on the scheduled frame and
+only capture synchronously on actual session unmount. A callback dependency
+change is not an unmount: reading geometry from its cleanup can force layout
+while React has removed rows but has not inserted their replacement padding.
 
 ## Accepted steering display
 
@@ -651,7 +738,7 @@ and the empty space beside a bubble. See `RenderBlock::selectionGaps` in
 The internal model-round stack stays in block/inline flow so parallel capsules,
 Markdown margins, lists and card grids keep their existing layout. Selection
 remains native: no `user-select: none` on transcript ancestors, range replacement,
-custom selection overlay, extra selection listener or platform-specific path.
+custom selection overlay or platform-specific paint path.
 The flex boundary also contains the margins used by virtual-row measurement;
 do not restore block layout in an embedded pane. Stylesheet and DOM fixtures do
 not establish native selection paint; cross-message selection and scroll geometry

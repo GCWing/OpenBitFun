@@ -51,6 +51,7 @@ export function TimelineContentBlock({ item }: { item: Extract<VirtualItem, { ty
           data-model-config-id={item.data.modelConfigId || ''} data-effective-model-name={item.data.effectiveModelName || ''}
           data-streaming={item.data.isStreaming || gate.isAnyRevealing ? 'true' : 'false'}>
           {item.data.items.map((member, index) => <FlowGroupItemRenderer key={member.id} item={member}
+            markdownSection={block.markdownSection}
             turnId={item.turnId} roundId={item.data.id} withinGroup={Boolean(group)} Item={GroupMember} capsuleRow={parallel.get(member.id)}
             isLastItem={(group ? group.isLastGroupInTurn && block.last : item.isLastRound) && index === item.data.items.length - 1}
             forceThinkingExpanded={activeSessionOverride?.sessionKind !== 'subagent' && (item.layoutHints?.expandedThinkingItemIds.includes(member.id) || block.revealThinkingIds?.includes(member.id))}

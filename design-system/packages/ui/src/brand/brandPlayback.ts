@@ -6,11 +6,19 @@ export function startBrandPlayback(element: Element, createAnimations: () => Ani
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let animations: Animation[] = [];
   let visible = true;
+  const disposeAnimations = () => {
+    animations.forEach(animation => {
+      animation.cancel();
+      // Cancellation stops playback, but the effect still owns its target and
+      // keyframes. Release that graph when this playback lifetime ends.
+      animation.effect = null;
+    });
+    animations = [];
+  };
 
   const synchronize = () => {
     if (reducedMotion.matches) {
-      animations.forEach(animation => animation.cancel());
-      animations = [];
+      disposeAnimations();
     } else if (document.hidden || !visible) {
       animations.forEach(animation => animation.pause());
     } else if (animations.length === 0) {
@@ -28,7 +36,7 @@ export function startBrandPlayback(element: Element, createAnimations: () => Ani
   reducedMotion.addEventListener("change", synchronize);
   document.addEventListener("visibilitychange", synchronize);
   return () => {
-    animations.forEach(animation => animation.cancel());
+    disposeAnimations();
     observer?.disconnect();
     reducedMotion.removeEventListener("change", synchronize);
     document.removeEventListener("visibilitychange", synchronize);

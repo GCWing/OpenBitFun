@@ -16,6 +16,7 @@ import { DeepResearchProtocolGroup } from '../deep-research/DeepResearchProtocol
 import { parseDeepResearchContent } from '../deep-research/deepResearchProtocol';
 import { hasSessionFileProvider, readImageThroughSession, downloadFileThroughSession } from '../session-drivers/sessionFileNavigation';
 import { resolveSessionDriverId } from '../session-drivers/resolve';
+import { markdownSections } from '@/infrastructure/markdown/markdownSections';
 import './FlowTextBlock.scss';
 
 // Idle timeout (ms) after content stops growing.
@@ -25,6 +26,7 @@ interface FlowTextBlockProps {
   textItem: FlowTextItem;
   className?: string;
   hidden?: boolean;
+  markdownSection?: { start: number; end: number };
   /**
    * Replay the whole text through the typewriter on mount. Off by default: the
    * message list is virtualized, so a streaming block that scrolls out and back
@@ -45,6 +47,7 @@ export const FlowTextBlock = React.memo<FlowTextBlockProps>(({
   textItem,
   className = '',
   hidden,
+  markdownSection,
   replayStreamingOnMount = false,
   traceContext,
   testId,
@@ -85,14 +88,17 @@ export const FlowTextBlock = React.memo<FlowTextBlockProps>(({
   }, [onOpenVisualization]);
 
   // Normalize content to a string.
-  const content = typeof textItem.content === 'string'
+  const fullContent = typeof textItem.content === 'string'
     ? textItem.content
     : String(textItem.content || '');
+  const content = markdownSection ? fullContent.slice(markdownSection.start, markdownSection.end) : fullContent;
 
   const isStreaming = textItem.isStreaming &&
-    (textItem.status === 'streaming' || textItem.status === 'running');
+    (textItem.status === 'streaming' || textItem.status === 'running')
+    && (!markdownSection || markdownSection.end === fullContent.length);
   const { displayText: displayContent, isRevealing } = useTypewriter(content, isStreaming, {
     replayOnMount: replayStreamingOnMount,
+    revealImmediately: Boolean(markdownSection && markdownSection.end < fullContent.length),
   });
   useReportTypewriterReveal(textItem.id, isRevealing);
   // Keep streaming render mode until the typewriter finishes draining so the
@@ -161,19 +167,26 @@ export const FlowTextBlock = React.memo<FlowTextBlockProps>(({
     () => parseDeepResearchContent(displayContent),
     [displayContent],
   );
+  // A live message stays one selection/reveal owner. Only its changing suffix
+  // enters ReactMarkdown; sealed semantic prefixes keep memoized renderers.
+  const sections = useMemo(() => markdownSection || parsedContent.hasProtocol || !textItem.isMarkdown
+    ? [{ start: 0, end: displayContent.length }] : markdownSections(displayContent),
+  [displayContent, markdownSection, parsedContent.hasProtocol, textItem.isMarkdown]);
 
-  const renderMarkdown = (markdownContent: string, key?: React.Key) => (
+  const renderMarkdown = (markdownContent: string, key?: React.Key, streaming = markdownStreaming, continuation = false) => (
     <MarkdownRenderer
       key={key}
       content={markdownContent}
       imageThumbnails
+      deferCodeHighlighting
+      className={continuation ? 'flow-text-block__section' : undefined}
       workspaceId={markdownWorkspaceId}
       basePath={markdownBasePath}
       remoteConnectionId={markdownRemoteConnectionId}
       remoteSshHost={markdownRemoteSshHost}
       // Prefer deferred visual streaming so Prism upgrade does not share a
       // frame with footer insertion / list scroll settlement.
-      isStreaming={markdownStreaming}
+      isStreaming={streaming}
       onFileViewRequest={onFileViewRequest}
       fileActionsViaCallbackOnly={isDispatchSession}
       onImageRead={isDispatchSession ? readImage : undefined}
@@ -219,6 +232,7 @@ export const FlowTextBlock = React.memo<FlowTextBlockProps>(({
       className={`flow-text-block ${className} ${isActivelyStreaming ? 'streaming flow-text-block--streaming' : ''}`}
       data-testid={testId}
       data-flow-item-id={textItem.id}
+      data-source-markdown-start={markdownSection?.start}
       data-thinking-continuation=""
       hidden={hidden}
       data-status={textItem.status}
@@ -228,7 +242,8 @@ export const FlowTextBlock = React.memo<FlowTextBlockProps>(({
       {parsedContent.hasProtocol ? (
         renderStructuredContent()
       ) : textItem.isMarkdown ? (
-        renderMarkdown(displayContent)
+        sections.map((section, index) => renderMarkdown(displayContent.slice(section.start, section.end),
+          `markdown:${section.start}`, markdownStreaming && index === sections.length - 1, index > 0))
       ) : (
         <div data-openbitfun-component="flow-text-block" data-openbitfun-part="textContent" className="text-content">
           {displayContent}
@@ -241,14 +256,20 @@ export const FlowTextBlock = React.memo<FlowTextBlockProps>(({
   const next = nextProps.textItem;
   return (
     prev.id === next.id &&
-    prev.content === next.content &&
+    (prev.content === next.content || Boolean(prevProps.markdownSection && nextProps.markdownSection
+      && prevProps.markdownSection.end < prev.content.length && nextProps.markdownSection.end < next.content.length
+      && prev.content.slice(prevProps.markdownSection.start, prevProps.markdownSection.end)
+        === next.content.slice(nextProps.markdownSection.start, nextProps.markdownSection.end))) &&
     prev.isStreaming === next.isStreaming &&
+    prev.isMarkdown === next.isMarkdown &&
     prev.status === next.status &&
     prevProps.className === nextProps.className &&
     prevProps.replayStreamingOnMount === nextProps.replayStreamingOnMount &&
     prevProps.traceContext === nextProps.traceContext &&
     prevProps.testId === nextProps.testId &&
     prevProps.hidden === nextProps.hidden &&
+    prevProps.markdownSection?.start === nextProps.markdownSection?.start &&
+    prevProps.markdownSection?.end === nextProps.markdownSection?.end &&
     prevProps.testAttributes === nextProps.testAttributes
   );
 });

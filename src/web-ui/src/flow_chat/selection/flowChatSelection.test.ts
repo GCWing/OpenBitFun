@@ -22,6 +22,24 @@ function select(start: Node, end = start, startOffset = 0, endOffset = end.textC
 afterEach(() => { window.getSelection()?.removeAllRanges(); document.body.replaceChildren(); });
 
 describe('FlowChat selection snapshots', () => {
+  it('round trips section hints and distinguishes repeated text in different sections', () => {
+    const root = transcript('<div data-turn-id="turn-1"><div data-flow-item-id="reply" data-source-markdown-start="0"><p>Repeated</p></div><div data-flow-item-id="reply" data-source-markdown-start="3200"><p>Repeated</p></div></div>');
+    const paragraph = root.querySelectorAll('p')[1];
+    const snapshot = captureFlowChatSelection(root, select(paragraph.firstChild!), source)!;
+    const fragment = JSON.parse(JSON.stringify(snapshot.excerpt.fragments[0]));
+    expect(fragment.markdownStart).toBe(3200);
+    expect(resolveExcerptRange(findExcerptSource(root, fragment)!, fragment)?.startContainer).toBe(paragraph.firstChild);
+    // Existing snapshots have no hint and retain the full-source coordinate space.
+    const old = { ...fragment }; delete old.markdownStart;
+    expect(findExcerptSource(root, old)).toBeNull();
+    root.innerHTML = '<div data-turn-id="turn-1"><div data-flow-item-id="reply"><p>Repeated</p></div></div>';
+    expect(resolveExcerptRange(findExcerptSource(root, JSON.parse(JSON.stringify(old)))!, old)?.toString()).toBe('Repeated');
+    // A whole-source renderer can still resolve a new unambiguous excerpt.
+    expect(resolveExcerptRange(findExcerptSource(root, fragment)!, fragment)?.toString()).toBe('Repeated');
+    root.innerHTML = '<div data-turn-id="turn-1"><div data-flow-item-id="reply"><p>Repeated</p><p>Repeated</p></div></div>';
+    // Local offset zero in a later section must not select the first copy.
+    expect(resolveExcerptRange(findExcerptSource(root, fragment)!, fragment)).toBeNull();
+  });
   it('captures Markdown inline nodes and paragraph boundaries without controls', () => {
     const root = transcript('<div data-turn-id="turn-1"><div data-flow-item-id="text-1"><p>Hello <strong>world</strong></p><p>Next line</p><button>Copy</button></div></div>');
     const paragraphs = root.querySelectorAll('p');

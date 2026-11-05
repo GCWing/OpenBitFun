@@ -1350,10 +1350,11 @@ $_section-header-height: 22px;
   }
 
   &:hover,
+  &:active,
   &:focus-visible,
   &.is-open {
     color: var(--openbitfun-color-content-primary);
-    background: var(--openbitfun-color-action-quiet-hover);
+    @include shell-surfaces.navigation-hover-feedback;
   }
 
   &:focus-visible {
@@ -1465,14 +1466,19 @@ $_section-header-height: 22px;
     block-size: var(--openbitfun-control-icon-size-md);
   }
 
-  &:hover {
-    color: var(--openbitfun-color-content-primary);
-    background: var(--openbitfun-color-action-quiet-hover);
+  // The footer owns navigation feedback on the button itself. Keep IconButton's
+  // hover overlay from covering that shared surface with a second background.
+  &::before {
+    background: transparent;
   }
 
-  &.is-active {
+  &:hover,
+  &:active,
+  &:focus-visible,
+  &.is-active,
+  &.is-hover-open {
     color: var(--openbitfun-color-content-primary);
-    background: var(--openbitfun-color-action-quiet-hover);
+    @include shell-surfaces.navigation-hover-feedback;
   }
 
   &:focus-visible {
@@ -1529,12 +1535,6 @@ $_section-header-height: 22px;
 
 .openbitfun-nav-panel__footer-menu-wrap {
   position: relative;
-}
-
-// Hover-open subtle glow on the main button
-.openbitfun-nav-panel__footer-btn--icon.is-hover-open {
-  color: var(--openbitfun-color-content-primary);
-  background: var(--openbitfun-color-action-quiet-hover);
 }
 
 .openbitfun-nav-panel__footer-backdrop {
@@ -2994,8 +2994,7 @@ $_section-header-height: 22px;
 
 @media (hover: hover) and (pointer: fine) {
   .openbitfun-nav-panel__top-action-btn:hover,
-  .openbitfun-nav-panel__item:hover,
-  .openbitfun-nav-panel__footer-btn--icon:hover {
+  .openbitfun-nav-panel__item:hover {
     @include shell-surfaces.navigation-hover-feedback;
   }
 

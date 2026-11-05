@@ -99,6 +99,7 @@ import { getVirtualItemStableKey } from './virtualItemIdentity';
 import { useConversationTimeline } from '../../timeline/useConversationTimeline';
 import { FlowChatReaderProvider } from '../../timeline/readerState';
 import { findTimelineBlockIndex } from '../../timeline/document';
+import { localizeMarkdownMatch } from '../../timeline/markdownSectionSearch';
 import { useTimelineInteraction, type TimelineReaderInteraction } from '../../timeline/useTimelineInteraction';
 import { TimelineMutationBoundary } from '../../timeline/TimelineMutationBoundary';
 import { getNextVisibleVirtualItemIndexes, isAmbientToolRunContinuationAfter } from './flowChatRhythm';
@@ -121,7 +122,6 @@ const OPEN_REVEAL_MAX_FRAMES = 40;
  * top, which would otherwise make the edge fade flicker back on.
  */
 const FLOWCHAT_SCROLL_START_THRESHOLD_PX = 1;
-const virtualItemTurn = (item: VirtualItem) => item.turnId;
 
 function readableViewportBounds(scroller: HTMLElement, inputOverlayInsetPx: number) {
   const top = scroller.getBoundingClientRect().top;
@@ -550,16 +550,17 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   const readerInteractionRef = useRef<(kind: TimelineReaderInteraction) => void>(() => {});
   const interactionKeys = useTimelineInteraction(scrollerElementRef, reader, () => viewportOwner.currentOwner() === 'follow-output', undefined, kind => readerInteractionRef.current(kind));
   const displayedTailTurnId = virtualItems.at(-1)?.turnId;
+  const displayedTailStart = useMemo(() => virtualItems.findIndex(item => item.turnId === displayedTailTurnId),
+    [virtualItems, displayedTailTurnId]);
   const pinnedKeys = useMemo(() => {
     const keys = new Set(interactionKeys);
     if (submissionKey) keys.add(submissionKey);
-    // The last complete Turn owns the CSS trailing space. Keep that one Turn
-    // resident while older Turns virtualize above it.
-    if (endOrigin) virtualItems.forEach(item => {
-      if (item.turnId === displayedTailTurnId) keys.add(getVirtualItemStableKey(item));
-    });
+    // Keep the tail shell/footer resident, not every text/tool block in its
+    // Turn. Its unmounted prefix belongs inside the shell's CSS reservation.
+    const tail = virtualItems.at(-1);
+    if (endOrigin && tail) keys.add(getVirtualItemStableKey(tail));
     return keys;
-  }, [interactionKeys, submissionKey, endOrigin, virtualItems, displayedTailTurnId]);
+  }, [interactionKeys, submissionKey, endOrigin, virtualItems]);
   // A quiet stream re-renders this list on every flush; collator-sorting the
   // disclosure map is only worth paying when the map itself changed.
   const availableWidthPx = contentWidth === undefined
@@ -583,7 +584,6 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     scrollerRef: scrollerElementRef,
     headerRef: headerElementRef,
     getItemKey: getVirtualItemStableKey,
-    getItemGroupKey: endOrigin ? virtualItemTurn : undefined,
     estimateItemHeightPx: estimateVirtualMessageItemHeightWithContext,
     getKnownItemHeightPx: getKnownVirtualItemHeightPx,
     estimateContext: {
@@ -1222,6 +1222,8 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       historyWindow,
       anchorItemKey: anchorEntry?.key ?? null,
       anchorItemType: anchorEntry?.itemType ?? null,
+      anchorMarkdownStart: anchorEntry?.element.dataset.markdownSectionStart === undefined
+        ? undefined : Number(anchorEntry.element.dataset.markdownSectionStart),
       anchorTurnId,
       anchorOffsetPx: anchorEntry
         ? Math.round((anchorEntry.top - geometry.top) * 10) / 10
@@ -1250,6 +1252,17 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     const exactAnchorIndex = snapshot.anchorItemKey
       ? virtualItems.findIndex(item => getVirtualItemStableKey(item) === snapshot.anchorItemKey)
       : -1;
+    const sourceRow = virtualItems[exactAnchorIndex];
+    if (snapshot.anchorMarkdownStart === undefined && sourceRow?.timeline?.markdownSection?.start === 0
+      && sourceRow.type === 'model-round') {
+      // A live/legacy bookmark measured its offset in the whole source. Keep
+      // that coordinate system when reopening it as historical content.
+      const text = sourceRow.data.items.find(item => item.type === 'text');
+      if (text) {
+        reader.set('navigation:whole-text', `${sourceRow.turnId}:${text.id}`);
+        return false;
+      }
+    }
     const mustMaterializeExactAnchor = snapshot.anchorItemKey !== null
       && snapshot.anchorItemKey !== undefined
       && exactAnchorIndex >= 0
@@ -1287,20 +1300,22 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     viewportAnchor.captureAnchor();
     viewportAnchor.openSettleWindow('snapshot');
     return true;
-  }, [activeSessionId, viewportAnchor, viewportOwner, virtualItems]);
+  }, [activeSessionId, reader, viewportAnchor, viewportOwner, virtualItems]);
 
   const publishViewportSnapshot = useCallback((sample?: FlowChatViewportGeometry) => {
     const snapshot = captureViewportSnapshot(sample);
     if (snapshot) onViewportSnapshotRef.current?.(snapshot);
   }, [captureViewportSnapshot]);
+  const publishViewportSnapshotRef = useRef(publishViewportSnapshot);
+  publishViewportSnapshotRef.current = publishViewportSnapshot;
 
   const scheduleViewportSnapshot = useCallback(() => {
     if (viewportSnapshotFrameRef.current !== null) return;
     viewportSnapshotFrameRef.current = requestAnimationFrame(() => {
       viewportSnapshotFrameRef.current = null;
-      publishViewportSnapshot();
+      publishViewportSnapshotRef.current();
     });
-  }, [publishViewportSnapshot]);
+  }, []);
 
   useEffect(() => () => {
     if (visibleTurnUpdateFrameRef.current !== null) {
@@ -1329,11 +1344,13 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
    * was undone is often a placement made to a scroller that no longer exists.
    * The layout cleanup captures while the outgoing scroller still has geometry.
    */
-  useLayoutEffect(() => {
-    return () => {
-      publishViewportSnapshot();
-    };
-  }, [publishViewportSnapshot]);
+  useLayoutEffect(() => () => {
+    // A history-window change updates the snapshot callback. Its cleanup must
+    // not read geometry during React's mutation phase, when rows have been
+    // removed but their replacement padding has not yet been committed.
+    // Only leaving this session needs the final synchronous snapshot.
+    publishViewportSnapshotRef.current();
+  }, []);
 
   useLayoutEffect(() => {
     if (!shouldRestoreInitialSnapshot || !initialViewportSnapshot || isOpenViewportSettled) {
@@ -2110,7 +2127,27 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       if (!scroller) {
         return;
       }
-      const blockIndex = findTimelineBlockIndex(timelineItemsRef.current, target.virtualItemIndex, target.flowItemId);
+      const fragment = target.excerpt?.fragments[0];
+      const memberId = target.flowItemId ?? fragment?.flowItemId;
+      // Legacy excerpts use full-message rendered offsets. Keep their original
+      // coordinate space on explicit navigation instead of guessing a section.
+      if (fragment && memberId && fragment.markdownStart === undefined) {
+        const identity = `${fragment.turnId}:${memberId}`;
+        if (reader.get('navigation:whole-text', '') !== identity) {
+          reader.set('navigation:whole-text', identity); retry(); return;
+        }
+      }
+      let blockIndex = findTimelineBlockIndex(timelineItemsRef.current, target.virtualItemIndex, memberId, fragment?.markdownStart);
+      let occurrenceIndex = target.occurrenceIndex ?? 0;
+      if (!fragment && timelineItemsRef.current[blockIndex]?.timeline?.markdownSection) {
+        const match = { flowItemId: memberId, occurrenceIndex };
+        blockIndex = timelineItemsRef.current.findIndex(row => {
+          if (row.timeline?.sourceIndex !== target.virtualItemIndex || !row.timeline.memberIds.includes(memberId ?? '')) return false;
+          const local = localizeMarkdownMatch(row, target.query, match);
+          if (!local) return false;
+          occurrenceIndex = local.occurrenceIndex; return true;
+        });
+      }
       const targetBlock = timelineItemsRef.current[blockIndex]?.timeline;
       if (target.flowItemId && targetBlock?.kind === 'group-header') {
         const prefix = `group:${targetBlock.group!.groupId}:`;
@@ -2168,7 +2205,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         return;
       }
       const ranges = target.excerpt ? [] : findFlowChatSearchTextRanges(root, target.query);
-      const rangeIndex = Math.min(target.occurrenceIndex ?? 0, Math.max(0, ranges.length - 1));
+      const rangeIndex = Math.min(occurrenceIndex, Math.max(0, ranges.length - 1));
       const range = target.excerpt ? resolveExcerptRange(root, target.excerpt.fragments[0]) : ranges[rangeIndex] ?? null;
       if (range) revealContainedRange(range, wrapper);
       // Use the same first painted line as the passive current-line marker.
@@ -2486,13 +2523,25 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
 
   const renderedTurns = new Map<string, React.ReactNode[]>();
   const leadingTurnGaps = new Map<string, number>();
+  let windowPaddingTopPx = virtualizer.paddingTopPx;
+  const tailStartPx = endOrigin && displayedTailStart >= 0
+    ? virtualizer.getItemBounds(displayedTailStart)?.startPx : undefined;
   virtualizer.rows.forEach((row, rowIndex) => {
     const item = virtualItems[row.index];
     const nextItem = virtualItems[nextVisibleItemIndexes[row.index]];
     const nodes = renderedTurns.get(item.turnId) ?? [];
     renderedTurns.set(item.turnId, nodes);
-    if (rowIndex > 0 && row.startPx > virtualizer.rows[rowIndex - 1].endPx) {
-      const gap = row.startPx - virtualizer.rows[rowIndex - 1].endPx;
+    const gap = rowIndex === 0 ? windowPaddingTopPx
+      : Math.max(0, row.startPx - virtualizer.rows[rowIndex - 1].endPx);
+    if (nodes.length === 0 && item.turnId === displayedTailTurnId && tailStartPx !== undefined) {
+      // Partition a skipped interval at the Turn boundary. Putting its own
+      // prefix outside the tail would make CSS add a second viewport of blank
+      // space whenever only the footer or the final blocks are mounted.
+      const inside = Math.min(gap, Math.max(0, row.startPx - tailStartPx));
+      if (rowIndex === 0) windowPaddingTopPx -= inside;
+      else if (gap > inside) leadingTurnGaps.set(item.turnId, gap - inside);
+      if (inside > 0) nodes.push(<div key="tail-prefix" aria-hidden="true" style={{ height: inside }} />);
+    } else if (rowIndex > 0 && gap > 0) {
       if (nodes.length === 0) leadingTurnGaps.set(item.turnId, gap);
       else nodes.push(<div key={`gap:${row.key}`} aria-hidden="true" style={{ height: gap }} />);
     }
@@ -2578,7 +2627,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
           data-openbitfun-part="items"
           data-testid="flowchat-item-list"
           style={{
-            paddingTop: `${virtualizer.paddingTopPx}px`,
+            paddingTop: `${windowPaddingTopPx}px`,
           }}
         >
           {[...renderedTurns].map(([turnId, nodes]) => (

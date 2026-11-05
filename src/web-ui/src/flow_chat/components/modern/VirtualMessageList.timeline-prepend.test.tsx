@@ -28,7 +28,7 @@ vi.mock('./VirtualItemRenderer', () => ({
     item: VirtualItem; index: number; measureRef: (element: HTMLElement | null) => void;
   }) => <div ref={measureRef} className="virtual-item-wrapper"
     data-item-type={item.type} data-timeline-kind={item.timeline?.kind} data-turn-id={item.turnId} data-virtual-index={index}
-    data-virtual-item-key={getVirtualItemStableKey(item)} />,
+    data-virtual-item-key={getVirtualItemStableKey(item)} data-markdown-section-start={item.timeline?.markdownSection?.start} />,
 }));
 
 // Full list, virtualizer, viewport owners and follow controller. Only row
@@ -175,6 +175,47 @@ describe('completed history with the production timeline projection', () => {
     { page: 'older turn plus missing earlier blocks', partial: true, addsTurn: true },
     { page: 'missing earlier blocks within the loaded head', partial: true, addsTurn: false },
   ];
+  it('publishes the latest committed history window without a mutation-phase snapshot on paging', () => {
+    const onSnapshot = vi.fn();
+    const list = (startOrdinal: number) => <VirtualMessageList ref={listRef} latestTurnId="latest"
+      historyWindow={{ startOrdinal, endOrdinalExclusive: 80 }} onViewportSnapshot={onSnapshot} />;
+    act(() => root.render(list(79)));
+    for (let index = 0; index < 45; index++) tick();
+    onSnapshot.mockClear();
+    act(() => root.render(list(74)));
+    expect(onSnapshot).not.toHaveBeenCalled();
+    // A second commit before the scheduled frame must not publish old metadata.
+    act(() => root.render(list(68)));
+    expect(onSnapshot).not.toHaveBeenCalled();
+    tick();
+    expect(onSnapshot.mock.calls.at(-1)?.[0].historyWindow.startOrdinal).toBe(68);
+    onSnapshot.mockClear();
+    act(() => root.render(null));
+    expect(onSnapshot).toHaveBeenCalledTimes(1);
+    expect(onSnapshot.mock.calls[0][0].historyWindow.startOrdinal).toBe(68);
+  });
+  it('bounds DOM residency within a huge complete tail without moving its painted end on prepend', () => {
+    const tail = turn('latest', 180, 800);
+    state.items = tail;
+    render();
+    for (let i = 0; i < 45; i++) tick();
+    const scroller = host.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+    const last = host.querySelector<HTMLElement>('[data-virtual-item-key="block:latest:answer-latest-799"]')!;
+    const top = last.getBoundingClientRect().top;
+    expect(host.querySelector('[data-virtual-item-key="block:user-message:latest:user-latest"]')).toBeNull();
+    expect(host.querySelector<HTMLElement>('.virtual-message-list')!.dataset.openViewportSettled).toBe('true');
+    expect(host.querySelectorAll('.virtual-item-wrapper').length).toBeLessThan(40);
+    expect(top).toBeLessThan(600);
+    expect(last.getBoundingClientRect().bottom).toBeGreaterThan(0);
+    writes = [];
+    state.items = [...turn('older', 100, 800), ...tail];
+    render(); resize(); tick();
+    expect(host.querySelector('[data-virtual-item-key="block:latest:answer-latest-799"]')).toBe(last);
+    expect(last.getBoundingClientRect().top).toBeCloseTo(top, 1);
+    expect(scroller.scrollTop).toBe(0);
+    expect(writes).toEqual([]);
+    expect(host.querySelectorAll('.virtual-item-wrapper').length).toBeLessThan(40);
+  });
   it.each(['local', 'peer-history'].flatMap(surface => pages.flatMap(page =>
     [false, true].map(reading => ({ surface, ...page, reading })))),
   )('holds the painted row for $page on $surface, reading=$reading', ({ surface, partial, addsTurn, reading }) => {
@@ -374,6 +415,29 @@ describe('completed history with the production timeline projection', () => {
     expect(restored.anchorOffsetPx).toBeCloseTo(snapshot.anchorOffsetPx!, 1);
   });
 
+
+  it('restores whole-text legacy/live bookmark coordinates after history starts sectioning', () => {
+    state.items = turn('latest', 6000, 1);
+    const source = state.items[1] as Extract<VirtualItem, { type: 'model-round' }>;
+    source.data.items[0] = { ...source.data.items[0], isMarkdown: true,
+      content: 'A complete Markdown paragraph.\n\n'.repeat(700) } as typeof source.data.items[number];
+    render();
+    for (let frame = 0; frame < 45; frame++) tick();
+    expect(host.querySelector('[data-markdown-section-start]')).not.toBeNull();
+    const snapshot = JSON.parse(JSON.stringify({ sessionId: state.session!.sessionId,
+      presentationMode: 'tail', viewportMode: 'history-reading', historyWindow: null,
+      anchorTurnId: 'latest', anchorItemKey: 'block:latest:answer-latest-0',
+      anchorOffsetPx: -1200, scrollTopPx: 1244, isAtTail: false, capturedAtMs: 1 }));
+    act(() => listRef.current!.prepareItemNavigation());
+    for (let frame = 0; frame < 20; frame++) {
+      act(() => { listRef.current!.restoreViewportSnapshot(snapshot); });
+      resize(); tick();
+    }
+    expect(host.querySelector('[data-markdown-section-start]')).toBeNull();
+    const restored = listRef.current!.captureViewportSnapshot()!;
+    expect(restored.anchorItemKey).toBe(snapshot.anchorItemKey);
+    expect(restored.anchorOffsetPx).toBeCloseTo(-1200, 1);
+  });
 
   it('hands a long historical viewport to resumed output without remounting the visible tail', () => {
     state.items = [...Array.from({ length: 30 }, (_, i) => turn(`old-${i}`, 500)).flat(), ...turn('latest', 900)];

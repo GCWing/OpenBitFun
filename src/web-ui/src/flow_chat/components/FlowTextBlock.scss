@@ -35,6 +35,10 @@
     animation: none;
   }
 
+  > .markdown-renderer.flow-text-block__section {
+    margin-block-start: var(--openbitfun-control-flow-chat-paragraph-gap);
+  }
+
   &--runtime-status {
     display: flex;
     align-items: center;

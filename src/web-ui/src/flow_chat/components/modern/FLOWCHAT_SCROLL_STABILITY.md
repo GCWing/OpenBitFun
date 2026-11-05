@@ -62,6 +62,17 @@ redirection disabled, preserving transcript sibling structure. The intrusive
 staged diagnostic has been removed; the saving from stable guards still needs
 runtime confirmation using the read-only reveal probes.
 
+## Large output batches
+
+The follow target and viewport owner are unchanged. The follow write applies the
+same three-viewport animation limit as an explicit jump to latest. A batch that
+adds dozens of screens lands directly; easing through those screens repeatedly
+materialized intermediate Markdown windows before reaching the output. Ordinary
+line growth still eases, and a reader gesture still releases follow synchronously.
+The native burst fixture records tool startup separately from first-text arrival
+so editor warmup and tool-card initialization cannot be mistaken for Markdown
+parse time.
+
 ## Transcript Width
 
 WebKit omits the leading `stable both-edges` gutter when its scroller uses

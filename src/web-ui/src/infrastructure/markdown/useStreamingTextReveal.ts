@@ -106,17 +106,21 @@ export function useStreamingTextReveal(
     const api = view as (Window & HighlightAPI) | null;
     const registry = api?.CSS?.highlights;
     const Highlight = api?.Highlight;
+    const reduced = view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    // Settled history never creates arrival ranges. Do not walk/copy a whole
+    // document on each virtual remount, or when this browser cannot paint them.
+    if ((!streaming && arrivals.current.length === 0)
+      || !view || !registry || !Highlight || reduced || root.ownerDocument.hidden) {
+      stopRef.current();
+      arrivals.current = [];
+      previous.current = null;
+      return;
+    }
     const before = previous.current;
     // Do not traverse settled history on unrelated renderer updates.
     if (before?.source === source && arrivals.current.length === 0) return;
     const current = readRuns(root);
     previous.current = { source, text: current.text };
-    const reduced = view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (!view || !registry || !Highlight || reduced || root.ownerDocument.hidden) {
-      stopRef.current();
-      arrivals.current = [];
-      return;
-    }
     const appended = before && source.startsWith(before.source) && source.length > before.source.length;
     if (before && (!source.startsWith(before.source) || !current.text.startsWith(before.text))) arrivals.current = [];
     // Reinterpreting Markdown may replace earlier nodes. Never replay those

@@ -8,6 +8,8 @@ export interface FlowChatViewportSnapshot {
   /** Optional for snapshots produced before exact row identity was added. */
   anchorItemKey?: string | null;
   anchorItemType?: string | null;
+  /** Absent on legacy snapshots and whole/live text rows. */
+  anchorMarkdownStart?: number;
   anchorTurnId: string | null;
   anchorOffsetPx: number | null;
   scrollTopPx: number;

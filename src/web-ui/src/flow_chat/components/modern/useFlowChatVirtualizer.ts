@@ -98,8 +98,13 @@ export function timelineOverscanRange(start: number, end: number, count: number,
   let first = start, last = end;
   const budget = Math.max(200, viewportPx * 0.6);
   let above = 0, below = 0;
-  while (first > 0 && start - first < 16 && (above < budget || start - first < 2)) above += Math.max(1, heightAt(--first));
-  while (last < count - 1 && last - end < 16 && (below < budget || last - end < 2)) below += Math.max(1, heightAt(++last));
+  // A single large block can already cover several screens. A minimum item
+  // count defeats the pixel budget and parses whole extra Markdown sections.
+  // Native 1,800px wheel steps otherwise mount ~40 shell/edit rows at once,
+  // producing consecutive 50–80ms frames. Eight speculative leaves per edge
+  // bound that work while the entire measured visible range remains resident.
+  while (first > 0 && start - first < 8 && above < budget) above += Math.max(1, heightAt(--first));
+  while (last < count - 1 && last - end < 8 && below < budget) below += Math.max(1, heightAt(++last));
   return Array.from({ length: Math.max(0, last - first + 1) }, (_, index) => first + index);
 }
 
@@ -213,8 +218,6 @@ export interface UseFlowChatVirtualizerOptions<T> {
    */
   headerRef: RefObject<HTMLElement | null>;
   getItemKey: (item: T) => string;
-  /** Historical presentation mounts every block of an admitted Turn together. */
-  getItemGroupKey?: (item: T) => string;
   estimateItemHeightPx: (item: T, context?: VirtualItemHeightEstimateContext) => number;
   /** Exact size for rows whose content was collected into another stable row. */
   getKnownItemHeightPx?: (item: T) => number | undefined;
@@ -404,7 +407,6 @@ export function useFlowChatVirtualizer<T>({
   scrollerRef,
   headerRef,
   getItemKey,
-  getItemGroupKey,
   estimateItemHeightPx,
   getKnownItemHeightPx,
   estimateContext,
@@ -419,16 +421,6 @@ export function useFlowChatVirtualizer<T>({
   getViewportAnchorKey,
 }: UseFlowChatVirtualizerOptions<T>): FlowChatVirtualizer {
   const items = useMemo(() => endOrigin ? [...sourceItems].reverse() : sourceItems, [sourceItems, endOrigin]);
-  const groupIndexes = useMemo(() => {
-    const groups = new Map<string, number[]>();
-    if (getItemGroupKey) items.forEach((item, index) => {
-      const key = getItemGroupKey(item);
-      const indexes = groups.get(key);
-      if (indexes) indexes.push(index);
-      else groups.set(key, [index]);
-    });
-    return groups;
-  }, [items, getItemGroupKey]);
   const endOriginRef = useRef(endOrigin);
   endOriginRef.current = endOrigin;
   const itemsRef = useRef(items);
@@ -682,12 +674,9 @@ export function useFlowChatVirtualizer<T>({
       const indexes = new Set(retainedIndexes?.length ? retainedIndexes
         : timelineOverscanRange(range.startIndex, range.endIndex, range.count,
           scrollerRef.current?.clientHeight ?? 0, estimateSize));
-      if (pinnedKeys?.size) itemsRef.current.forEach((item, index) => {
-        if (pinnedKeys.has(getItemKeyRef.current(item))) indexes.add(index);
-      });
-      if (getItemGroupKey) {
-        const selectedGroups = new Set([...indexes].map(index => getItemGroupKey(items[index])));
-        for (const key of selectedGroups) for (const index of groupIndexes.get(key) ?? []) indexes.add(index);
+      if (pinnedKeys?.size) for (const key of pinnedKeys) {
+        const index = keyIndexes.get(key);
+        if (index !== undefined) indexes.add(index);
       }
       return [...indexes].sort((a, b) => a - b);
     },

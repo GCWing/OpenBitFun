@@ -55,6 +55,82 @@ or `OPENBITFUN_E2E_WEBDRIVER_PORT` for a free driver port. Optional
 additional overhead. Wheel actions exercise the real WebView layout, not OS
 trackpad inertia; local results do not establish remote or other-platform behavior.
 
+The same runner accepts `OPENBITFUN_SCROLL_SCENARIO=tool-heavy` with
+`OPENBITFUN_SCROLL_DENSE_GROUPS=400` for alternating shell/edit cards,
+`OPENBITFUN_SCROLL_SCENARIO=rich-text` with `OPENBITFUN_SCROLL_TEXT_CHARS=80000`
+for many paragraphs/fences/tables, and `OPENBITFUN_SCROLL_SCENARIO=code-block`
+for one indivisible long fence. `OPENBITFUN_SCROLL_TURNS` controls history size;
+`OPENBITFUN_SCROLL_FAST_DELTA=1800` forces giant-text boundary crossings that
+ordinary wheel distances can miss. Four repeated session switches check DOM
+residency; `OPENBITFUN_SCROLL_CYCLES` can extend that soak. The frame gates are
+P95 < 34 ms and maximum < 100 ms; `OPENBITFUN_SCROLL_FRAME_BUDGET_MS` explicitly
+records a different maximum for slower measurement hosts. Run benchmarks without
+concurrent builds/tests. Geometry coverage excludes intentional trailing space
+and does not prove compositor-only white/ghost pixels. macOS RSS reports the fixed
+set of newly created host/WebKit candidates, not a JS heap measurement. Sampling
+releases only disconnected WebDriver element handles (the embedded driver otherwise
+retains old React trees); it never clears product caches or forces garbage collection.
+
+Every frame report includes sample count, nearest-rank P50/P90/P95/P99, mean,
+maximum, counts/percent above 33.33/50/100 ms, and consecutive-stall episodes.
+`activeWheel` excludes the 24-frame idle settle from the scrolling denominator;
+`phase` retains the whole sample. Report ordinary latency and slow-frame frequency
+together instead of just maxima. Retain failed or externally CPU-contended runs
+with their reason; do not average them silently into an isolated benchmark.
+Verify the quantiles, threshold rates and idle-frame exclusion without launching
+Desktop using `node --test tests/e2e/scripts/flowchat-frame-metrics.test.mjs`.
+
+`OPENBITFUN_SCROLL_OPEN=1` measures 24 alternating real session clicks by default
+(`OPENBITFUN_SCROLL_OPEN_SAMPLES` overrides it). `opening-result.json` separates
+DOM attachment, text DOM, viewport placement, loading-shield release and two RAF
+presentation opportunities. It reports first UI entry and repeat-entry distributions;
+the first click is not necessarily cold storage because startup can prehydrate the
+selected session. The fixture also rejects the historical text-readiness timeout.
+
+Set `OPENBITFUN_SCROLL_STREAMING=1` to exercise the actual Agent runtime against
+an isolated loopback SSE model. It runs four local shell commands and edits four
+temporary files, streams a long Markdown response, checks reader takeover while
+output grows, returns to latest, and validates completion and real tool results.
+It uses no provider credentials. This is local runtime/WebView coverage, not a
+live SSH/relay/peer/dispatch test.
+
+`OPENBITFUN_STREAM_INITIAL_PARAGRAPHS` scales the initial text batch (80 by
+default; 250 and 800 are approximately 120K and 400K characters).
+`OPENBITFUN_STREAM_HOLD_PARAGRAPHS` extends the reader-hold interval while output
+continues. Tool startup and first-text arrival have separate samples; first text
+has the same P95/max frame gates as scrolling. Completion also verifies the
+first/last paragraphs in persisted turns and releases arrival highlight ranges.
+`frameDistributions` separates first arrival, sustained follow during 24 additional
+paragraphs, and active reader scrolling. These phases must not be conflated with
+the separate actual-tool startup sample.
+
+`OPENBITFUN_SCROLL_PAINT=1` runs a separate native pixel test on the rich-text
+fixture. It takes 128 immediate/settled screenshot pairs after alternating
+1,800px wheel steps. Stable DOM line coordinates must contain foreground glyphs
+and retain matching pixels after settling. Screenshots and `paint-result.json`
+are retained. Encoding is excluded from timing benchmarks. WKWebView snapshots
+are paint evidence at capture time, not a recording of every compositor frame
+or OS trackpad inertia.
+
+Memory diagnostics also report logical resource-budget bytes, active highlight
+ranges and weak references to detached transcript roots; they never force GC.
+`OPENBITFUN_SCROLL_MEMORY_CONTROL=1` uses the same short session and zero-distance
+wheel actions as a driver control. `OPENBITFUN_SCROLL_MEMORY_IN_PAGE=1` runs
+session clicks and synthetic scrolling in one native eval, removing repeated
+driver-script compilation from the lifecycle experiment. This second mode does
+not establish trusted-wheel behavior. Use `--mochaOpts.grep 'releases transcript DOM'`
+to isolate either experiment. `OPENBITFUN_SCROLL_IDLE_MS` adds a final idle sample;
+`OPENBITFUN_SCROLL_VMMAP=1` additionally captures macOS allocation summaries at
+cycles 8 and last (these reads can affect RSS residency). Use
+`OPENBITFUN_PERF_TRACE=1` to expose read-only resource-budget accounting.
+`OPENBITFUN_SCROLL_ANIMATION_DIAGNOSTICS=1` additionally tracks weak references
+to WAAPI animations in the single-eval experiment, grouped by owner, playback
+state and effect-target attachment. It does not keep animation/effect/DOM objects
+alive or force GC, and restores the patched `animate` method on exit. A cancelled
+animation wrapper and a released effect are different observations; report both.
+DOM growth assertions use cycles 8 onward because cold async syntax decoration
+can add nodes after the first sample. All cold samples remain in the report.
+
 For embedded WebDriver reveal/focus and shell scroll geometry, build Desktop
 and current frontend assets, then run:
 

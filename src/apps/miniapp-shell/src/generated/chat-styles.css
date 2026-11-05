@@ -2048,6 +2048,9 @@
 .flow-text-block.streaming .markdown-renderer {
   animation: none;
 }
+.flow-text-block > .markdown-renderer.flow-text-block__section {
+  margin-block-start: var(--openbitfun-control-flow-chat-paragraph-gap);
+}
 .flow-text-block--runtime-status {
   display: flex;
   align-items: center;

@@ -100,6 +100,8 @@ export interface ConversationExcerptContext extends BaseContext {
     end: number;
     prefix: string;
     suffix: string;
+    /** Optional raw Markdown section coordinate; absent in legacy excerpts. */
+    markdownStart?: number;
   }>;
   comment?: string;
 }

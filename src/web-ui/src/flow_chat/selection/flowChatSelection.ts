@@ -49,8 +49,11 @@ function sourceTextIndex(root: HTMLElement) {
 export function findExcerptSource(root: HTMLElement, fragment: ConversationExcerptContext['fragments'][number]): HTMLElement | null {
   const selector = fragment.flowItemId ? '[data-flow-item-id], [data-tool-card-id]' : '.user-message-item__content';
   const candidates = [...(root.matches(selector) ? [root] : []), ...root.querySelectorAll<HTMLElement>(selector)];
-  return candidates.find(node => node.closest('[data-turn-id]')?.getAttribute('data-turn-id') === fragment.turnId
-    && (!fragment.flowItemId || node.dataset.flowItemId === fragment.flowItemId || node.dataset.toolCardId === fragment.flowItemId)) ?? null;
+  const matching = candidates.filter(node => node.closest('[data-turn-id]')?.getAttribute('data-turn-id') === fragment.turnId
+    && (!fragment.flowItemId || node.dataset.flowItemId === fragment.flowItemId || node.dataset.toolCardId === fragment.flowItemId));
+  return matching.find(node => fragment.markdownStart === undefined ? node.dataset.sourceMarkdownStart === undefined
+    : Number(node.dataset.sourceMarkdownStart) === fragment.markdownStart)
+    ?? matching.find(node => node.dataset.sourceMarkdownStart === undefined) ?? null;
 }
 
 export interface CapturedFlowChatSelection {
@@ -106,6 +109,7 @@ export function captureFlowChatSelection(
       flowItemId: owner.dataset.flowItemId || owner.dataset.toolCardId,
       text: selected, start, end,
       prefix: text.slice(Math.max(0, start - 48), start), suffix: text.slice(end, end + 48),
+      ...(owner.dataset.sourceMarkdownStart !== undefined ? { markdownStart: Number(owner.dataset.sourceMarkdownStart) } : {}),
     });
   }
   if (!fragments.length) return null;
@@ -120,7 +124,13 @@ export function captureFlowChatSelection(
 export function resolveExcerptRange(root: HTMLElement, fragment: ConversationExcerptContext['fragments'][number]): Range | null {
   const { entries, text } = sourceTextIndex(root);
   let start = fragment.start;
-  if (text.slice(start, fragment.end) !== fragment.text
+  // A section-local offset is not a whole-message offset. Whole-source
+  // compatibility renderers may use an unambiguous context/text match, but
+  // must not silently select an earlier identical paragraph at that offset.
+  const sameCoordinates = fragment.markdownStart === undefined
+    || (root.dataset.sourceMarkdownStart !== undefined
+      && Number(root.dataset.sourceMarkdownStart) === fragment.markdownStart);
+  if (!sameCoordinates || text.slice(start, fragment.end) !== fragment.text
     || !text.slice(0, start).endsWith(fragment.prefix)
     || !text.slice(fragment.end).startsWith(fragment.suffix)) {
     const needle = fragment.prefix + fragment.text + fragment.suffix;

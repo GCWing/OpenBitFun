@@ -3,8 +3,20 @@ import {
   isItemFullyAboveViewport,
   virtualWindowPaddingPx,
   visibleRowRange,
+  timelineOverscanRange,
   type FlowChatVirtualRow,
 } from './useFlowChatVirtualizer';
+
+describe('pixel overscan residency', () => {
+  it('does not mount extra giant blocks after the nearby pixel window is covered', () => {
+    expect(timelineOverscanRange(10, 10, 30, 600, () => 3200)).toEqual([9, 10, 11]);
+    expect(timelineOverscanRange(0, 0, 30, 600, () => 3200)).toEqual([0, 1]);
+  });
+  it('still covers both nearby pixel windows for compact tools, with bounded dense rows', () => {
+    expect(timelineOverscanRange(10, 12, 30, 600, () => 90)).toEqual(Array.from({ length: 11 }, (_, i) => i + 6));
+    expect(timelineOverscanRange(30, 31, 100, 600, () => 1)).toHaveLength(18);
+  });
+});
 
 describe('isItemFullyAboveViewport', () => {
   it('does not compensate a row that is partly visible', () => {

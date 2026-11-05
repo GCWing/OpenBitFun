@@ -79,6 +79,15 @@ export class ResourceBudget {
 
 export const resourceBudget = new ResourceBudget();
 
+declare global {
+  var __OPENBITFUN_RESOURCE_BUDGET__: Pick<ResourceBudget, 'snapshot'> | undefined;
+}
+// Read-only logical accounting for native performance diagnostics. No cache
+// mutation, authoritative payloads, DOM references or forced collection API.
+if (import.meta.env.DEV || globalThis.__OPENBITFUN_PERF_TRACE_ENABLED__ === true) {
+  globalThis.__OPENBITFUN_RESOURCE_BUDGET__ = { snapshot: () => resourceBudget.snapshot() };
+}
+
 /** No stringify-sized temporary copy. Shared references are counted once per working set. */
 export function estimateRetainedBytes(value: unknown, seen = new Set<object>()): number {
   if (typeof value === 'string') return value.length * 2;
