@@ -8599,6 +8599,37 @@ impl SessionManager {
             .await
     }
 
+    async fn load_turn_token_usage(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+    ) -> OpenBitFunResult<Option<crate::service::session::DialogTurnTokenUsageData>> {
+        let Some(workspace_path) = self.effective_session_storage_path(session_id).await else {
+            return Ok(None);
+        };
+        let Some(turn_index) = self
+            .sessions
+            .get(session_id)
+            .and_then(|session| session.dialog_turn_ids.iter().position(|id| id == turn_id))
+        else {
+            return Ok(None);
+        };
+        let Some(turn) = self
+            .load_runtime_dialog_turn(&workspace_path, session_id, turn_index)
+            .await?
+            .filter(|turn| turn.turn_id == turn_id)
+        else {
+            return Ok(None);
+        };
+        Ok(super::turn_usage::load_turn_token_usage(
+            self.persistence_manager.path_manager(),
+            session_id,
+            &turn.turn_id,
+            turn.start_time,
+        )
+        .await)
+    }
+
     /// Complete a dialog turn in its history owner.
     pub async fn complete_dialog_turn(
         &self,
@@ -8651,6 +8682,8 @@ impl SessionManager {
             "turn_completed",
         )
         .await;
+
+        let token_usage = self.load_turn_token_usage(session_id, turn_id).await?;
 
         // Serialize Runtime completion against projected UI checkpoints. If a
         // checkpoint wins first, the generation journal below repairs it; if
@@ -8763,6 +8796,7 @@ impl SessionManager {
         turn.has_final_response = has_final_response;
         turn.duration_ms = Some(stats.duration_ms);
         turn.end_time = Some(completion_timestamp);
+        super::turn_usage::reconcile_turn_token_usage(&mut turn, token_usage);
 
         // Persist
         self.save_runtime_dialog_turn(&workspace_path, &turn)
@@ -9030,6 +9064,7 @@ impl SessionManager {
         finish_reason: Option<String>,
         has_final_response: Option<bool>,
     ) -> OpenBitFunResult<()> {
+        let token_usage = self.load_turn_token_usage(session_id, turn_id).await?;
         let _mutation_guard = self.acquire_session_mutation(session_id).await?;
         let workspace_path = self
             .effective_session_storage_path(session_id)
@@ -9123,6 +9158,7 @@ impl SessionManager {
         turn.has_final_response = has_final_response;
         turn.duration_ms = Some(stats.duration_ms);
         turn.end_time = Some(completion_timestamp);
+        super::turn_usage::reconcile_turn_token_usage(&mut turn, token_usage);
 
         // A recovered generation is Runtime-owned, so its context snapshot is
         // part of the completion commit. Persist it before the Completed Turn:
@@ -11555,6 +11591,170 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn completion_turn_usage_survives_missing_or_stale_client_and_reopen() {
+        use crate::service::token_usage::TokenUsageService;
+        for checkpointed in [false, true] {
+            let workspace = TestWorkspace::new();
+            let persistence = Arc::new(PersistenceManager::new(workspace.path_manager()).unwrap());
+            let manager = test_manager(persistence.clone());
+            let session = manager
+                .create_session(
+                    "Turn usage".into(),
+                    "Standard".into(),
+                    SessionConfig {
+                        workspace_path: Some(workspace.path().to_string_lossy().to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            let turn_id = manager
+                .start_dialog_turn(
+                    &session.session_id,
+                    "Standard".into(),
+                    "weather".into(),
+                    Some("turn-usage".into()),
+                    None,
+                    None,
+                )
+                .await
+                .unwrap();
+            if checkpointed {
+                let mut turn = persistence
+                    .load_dialog_turn(workspace.path(), &session.session_id, 0)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                // An older frontend saved only the first request before the
+                // final request completed. The completion must replace it.
+                turn.token_usage = Some(
+                    serde_json::from_value(json!({
+                        "input_tokens": 28928, "output_tokens": 97,
+                        "total_tokens": 29025, "timestamp": 1
+                    }))
+                    .unwrap(),
+                );
+                persistence
+                    .save_dialog_turn(workspace.path(), &turn)
+                    .await
+                    .unwrap();
+            }
+            let ledger = TokenUsageService::new(workspace.path_manager())
+                .await
+                .unwrap();
+            let details = |attempt: &str| {
+                Some(json!({"openbitfunModelRequest": {
+                    "version": 1, "roundId": attempt, "attemptId": attempt,
+                    "attemptIndex": 1, "startedAt": chrono::Utc::now(),
+                    "authentication": "api_key", "requestedModel": "model",
+                    "outcome": "completed", "usageKnown": true
+                }}))
+            };
+            let second_details = details("second");
+            for (sid, tid, input, output, detail, is_child) in [
+                (
+                    session.session_id.as_str(),
+                    turn_id.as_str(),
+                    28928,
+                    97,
+                    details("first"),
+                    false,
+                ),
+                (
+                    session.session_id.as_str(),
+                    turn_id.as_str(),
+                    42794,
+                    237,
+                    second_details.clone(),
+                    false,
+                ),
+                (
+                    session.session_id.as_str(),
+                    turn_id.as_str(),
+                    6000,
+                    600,
+                    None,
+                    false,
+                ),
+                // Subscriber replay of the same immutable attempt is deduped.
+                (
+                    session.session_id.as_str(),
+                    turn_id.as_str(),
+                    42794,
+                    237,
+                    second_details,
+                    false,
+                ),
+                (
+                    session.session_id.as_str(),
+                    "other-turn",
+                    9000,
+                    900,
+                    details("other"),
+                    false,
+                ),
+                (
+                    "child-session",
+                    turn_id.as_str(),
+                    8000,
+                    800,
+                    details("child"),
+                    true,
+                ),
+            ] {
+                ledger
+                    .record_usage(
+                        "config".into(),
+                        "model".into(),
+                        sid.into(),
+                        tid.into(),
+                        input,
+                        output,
+                        None,
+                        detail,
+                        is_child,
+                    )
+                    .await
+                    .unwrap();
+            }
+            for _ in 0..2 {
+                manager
+                    .complete_dialog_turn(
+                        &session.session_id,
+                        &turn_id,
+                        "Sunny".into(),
+                        &[],
+                        TurnStats {
+                            total_rounds: 2,
+                            total_tools: 1,
+                            total_tokens: 0,
+                            duration_ms: 4250,
+                        },
+                        Some("complete".into()),
+                        Some(true),
+                    )
+                    .await
+                    .unwrap();
+            }
+            // Read through a fresh persistence instance, with no live client
+            // or event journal available to fill in the missing final usage.
+            let reopened = PersistenceManager::new(workspace.path_manager()).unwrap();
+            let restored = reopened
+                .load_dialog_turn(workspace.path(), &session.session_id, 0)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(restored.status, TurnStatus::Completed);
+            let usage = restored.token_usage.unwrap();
+            assert_eq!(usage.input_tokens, 71722);
+            assert_eq!(usage.output_tokens, Some(334));
+            assert_eq!(usage.total_tokens, 72056);
+            assert_eq!(usage.cached_tokens, None);
+            assert!((usage.output_tokens.unwrap() as f64 / 4.25 - 78.588235).abs() < 0.00001);
+        }
+    }
+
+    #[tokio::test]
     async fn completion_replaces_a_projected_text_prefix_with_runtime_generation_content() {
         let workspace = TestWorkspace::new();
         let persistence_manager = Arc::new(
@@ -12575,7 +12775,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recovered_completion_appends_rounds_after_the_existing_history() {
+    async fn recovered_completion_appends_rounds_and_turn_usage_after_interruption() {
         let workspace = TestWorkspace::new();
         let persistence_manager = Arc::new(
             PersistenceManager::new(workspace.path_manager()).expect("persistence manager"),
@@ -12611,6 +12811,30 @@ mod tests {
             )
             .await
             .expect("turn should start");
+        let details = |attempt: &str| {
+            Some(json!({"openbitfunModelRequest": {
+                "version": 1, "roundId": attempt, "attemptId": attempt, "attemptIndex": 1,
+                "startedAt": chrono::Utc::now(), "authentication": "api_key",
+                "requestedModel": "model", "outcome": "completed", "usageKnown": true
+            }}))
+        };
+        let ledger = crate::service::token_usage::TokenUsageService::new(workspace.path_manager())
+            .await
+            .unwrap();
+        ledger
+            .record_usage(
+                "config".into(),
+                "model".into(),
+                session.session_id.clone(),
+                turn_id.clone(),
+                28928,
+                97,
+                None,
+                details("before"),
+                false,
+            )
+            .await
+            .unwrap();
         let mut persisted_turn = persistence_manager
             .load_dialog_turn(workspace.path(), &session.session_id, 0)
             .await
@@ -12655,6 +12879,20 @@ mod tests {
             .turn_settlement_result(&session.session_id, &turn_id)
             .is_none());
 
+        ledger
+            .record_usage(
+                "config".into(),
+                "model".into(),
+                session.session_id.clone(),
+                turn_id.clone(),
+                42794,
+                237,
+                None,
+                details("after"),
+                false,
+            )
+            .await
+            .unwrap();
         manager
             .complete_recovered_dialog_turn(
                 &session.session_id,
@@ -12681,6 +12919,13 @@ mod tests {
             .await
             .expect("turn should load")
             .expect("turn should exist");
+        assert_eq!(
+            completed
+                .token_usage
+                .as_ref()
+                .and_then(|usage| usage.output_tokens),
+            Some(334)
+        );
         assert_eq!(completed.model_rounds.len(), 2);
         assert_eq!(completed.model_rounds[0].round_index, 0);
         assert_eq!(completed.model_rounds[1].round_index, 1);

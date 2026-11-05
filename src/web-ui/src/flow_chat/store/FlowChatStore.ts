@@ -873,14 +873,14 @@ const ROUND_TIMING_KEYS = [
 ] as const;
 
 /**
- * Keep live `ModelRoundCompleted` timing that a settled record lacks.
+ * Keep live metrics that an older host's settled checkpoint lacks.
  *
  * Hosts that predate journal-carried round timing rebuild the last round of a
  * Turn without it (duration persisted as 0), because their completion write
  * usually lands before this client's checkpoint of that event. Adopting such a
  * record would erase the TTFT and output rate this window already measured.
  */
-function preserveLiveRoundTiming(current: DialogTurn, persisted: DialogTurn): DialogTurn {
+function preserveLiveTurnMetrics(current: DialogTurn, persisted: DialogTurn): DialogTurn {
   let changed = false;
   const modelRounds = persisted.modelRounds.map(persistedRound => {
     const currentRound = current.modelRounds.find(round => round.id === persistedRound.id);
@@ -904,7 +904,16 @@ function preserveLiveRoundTiming(current: DialogTurn, persisted: DialogTurn): Di
     return { ...persistedRound, ...patch };
   });
 
-  return changed ? { ...persisted, modelRounds } : persisted;
+  // Usage is cumulative within one Turn. Older hosts finish its content and
+  // timing while retaining a checkpoint from an earlier model request. Keep a
+  // more complete live aggregate intact; adding the two would double-count.
+  const tokenUsage = current.tokenUsage && (
+    !persisted.tokenUsage
+    || current.tokenUsage.totalTokens > persisted.tokenUsage.totalTokens
+  ) ? current.tokenUsage : persisted.tokenUsage;
+  return changed || tokenUsage !== persisted.tokenUsage
+    ? { ...persisted, modelRounds, tokenUsage }
+    : persisted;
 }
 
 /**
@@ -8876,7 +8885,7 @@ export class FlowChatStore {
           if (adopted === turns) {
             adopted = [...turns];
           }
-          adopted[index] = preserveLiveRoundTiming(adopted[index], snapshotTurn);
+          adopted[index] = preserveLiveTurnMetrics(adopted[index], snapshotTurn);
         }
         return adopted;
       };
@@ -8953,7 +8962,7 @@ export class FlowChatStore {
         ) {
           mergedTurns[existingIndex] = isRuntimeReplayTurn
             ? snapshotTurn
-            : preserveLiveRoundTiming(mergedTurns[existingIndex], snapshotTurn);
+            : preserveLiveTurnMetrics(mergedTurns[existingIndex], snapshotTurn);
           turnsChanged = true;
         }
       }
@@ -9139,7 +9148,7 @@ export class FlowChatStore {
         return prev;
       }
       const current = session.dialogTurns[turnIndex];
-      const reconciled = preserveLiveRoundTiming(
+      const reconciled = preserveLiveTurnMetrics(
         current,
         preserveClientDerivedDisplayItems(current, incoming),
       );
@@ -9674,7 +9683,7 @@ export class FlowChatStore {
           ) {
             return existing;
           }
-          return loaded;
+          return existing ? preserveLiveTurnMetrics(existing, loaded) : loaded;
         });
 
         const updatedSession = {

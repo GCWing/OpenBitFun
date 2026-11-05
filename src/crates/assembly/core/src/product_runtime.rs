@@ -163,6 +163,10 @@ fn merge_runtime_owned_turn_facts(
 ) -> DialogTurnData {
     let mut merged = projected.clone();
     merged.agent_type = persisted.agent_type.clone();
+    crate::agentic::session::turn_usage::reconcile_turn_token_usage(
+        &mut merged,
+        persisted.token_usage.clone(),
+    );
     // Round timing comes from the Runtime's accepted attempt. A projection
     // saved by a window that missed (or had not yet applied) that round's
     // `ModelRoundCompleted` must not erase it from the durable record.
@@ -3318,6 +3322,46 @@ mod tests {
             &completed,
             &terminal_prefix,
         ));
+    }
+
+    #[test]
+    fn projected_turn_saves_preserve_complete_turn_usage() {
+        let mut persisted = DialogTurnData::new(
+            "turn-1".into(),
+            0,
+            "session-1".into(),
+            UserMessageData {
+                id: "input".into(),
+                content: "hi".into(),
+                timestamp: 1,
+                metadata: None,
+            },
+        );
+        persisted.status = TurnStatus::Completed;
+        persisted.token_usage = Some(
+            serde_json::from_value(serde_json::json!({
+                "inputTokens": 71722, "outputTokens": 334, "totalTokens": 72056, "timestamp": 3
+            }))
+            .unwrap(),
+        );
+        let older = serde_json::from_value(serde_json::json!({
+            "input_tokens": 28928, "output_tokens": 97, "total_tokens": 29025, "timestamp": 4
+        }))
+        .unwrap();
+        for usage in [None, Some(older)] {
+            let mut projected = persisted.clone();
+            projected.token_usage = usage;
+            assert!(!projected_turn_save_would_overwrite_runtime_state(
+                &persisted, &projected
+            ));
+            let merged = merge_runtime_owned_turn_facts(&persisted, &projected);
+            assert_eq!(merged.token_usage, persisted.token_usage);
+            // A newer client may repair an older host's incomplete record too.
+            assert_eq!(
+                merge_runtime_owned_turn_facts(&projected, &persisted).token_usage,
+                persisted.token_usage
+            );
+        }
     }
 
     #[test]
