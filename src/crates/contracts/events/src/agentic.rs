@@ -534,6 +534,29 @@ pub enum ToolEventData {
         identity: ToolEventIdentity,
         params: String,
     },
+    /// Native OpenUI Lang source bytes emitted while a GenerativeUI call is
+    /// still being assembled. The event deliberately carries only the
+    /// decoded source delta; the provider's enclosing tool-call JSON is not
+    /// part of the rendering contract.
+    GenUIStream {
+        #[serde(flatten)]
+        identity: ToolEventIdentity,
+        message_id: String,
+        seq: u64,
+        format: String,
+        text: String,
+        reset: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        template: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        library_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        library_revision: Option<u64>,
+    },
     Queued {
         #[serde(flatten)]
         identity: ToolEventIdentity,
@@ -788,6 +811,7 @@ impl ToolEventData {
         match self {
             Self::EarlyDetected { identity }
             | Self::ParamsPartial { identity, .. }
+            | Self::GenUIStream { identity, .. }
             | Self::Queued { identity, .. }
             | Self::Waiting { identity, .. }
             | Self::Started { identity, .. }
@@ -827,6 +851,7 @@ impl ToolEventData {
 
             Self::EarlyDetected { .. }
             | Self::ParamsPartial { .. }
+            | Self::GenUIStream { .. }
             | Self::Queued { .. }
             | Self::Waiting { .. }
             | Self::Progress { .. }
@@ -1011,6 +1036,31 @@ mod tests {
 
         assert_eq!(json["duration_ms"], 120);
         assert_eq!(json["execution_ms"], 90);
+    }
+
+    #[test]
+    fn native_genui_stream_event_serializes_decoded_source_delta() {
+        let event = ToolEventData::GenUIStream {
+            identity: ToolEventIdentity::direct("tool-genui", "GenerativeUI"),
+            message_id: "tool-genui".to_string(),
+            seq: 3,
+            format: "openui-lang".to_string(),
+            text: "root = Text(\"Hello\")".to_string(),
+            reset: false,
+            app_id: Some("app-1".to_string()),
+            title: Some("Hello".to_string()),
+            template: Some("openbitfun.app".to_string()),
+            library_id: Some("openbitfun.composable.v1".to_string()),
+            library_revision: Some(2),
+        };
+
+        let json = serde_json::to_value(&event).expect("serialize genui stream event");
+        assert_eq!(json["event_type"], "GenUIStream");
+        assert_eq!(json["format"], "openui-lang");
+        assert_eq!(json["seq"], 3);
+        assert_eq!(json["text"], "root = Text(\"Hello\")");
+        assert_eq!(json["app_id"], "app-1");
+        assert_eq!(json["library_revision"], 2);
     }
 
     #[test]

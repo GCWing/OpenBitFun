@@ -61,6 +61,25 @@ describe('peer command refusal lifetime', () => {
 });
 
 describe('smart routing host capability', () => {
+  it('negotiates library setting reads and writes without falling back to local config', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: 'future.collection' }));
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc);
+    const requests = [
+      ['get_config', { request: { path: 'ai.generative_ui_library' } }],
+      ['get_configs', { request: { paths: ['ai.generative_ui_library'] } }],
+      ['set_config', { request: { path: 'ai.generative_ui_library', value: 'future.collection' } }],
+      ['reset_config', { request: { path: 'ai.generative_ui_library' } }],
+    ] as const;
+    for (const [command, args] of requests) await expect(adapter.request(command, args)).rejects.toThrow('gen_ui_libraries_v1');
+    expect(rpc).not.toHaveBeenCalled();
+    await expect(adapter.request('product_control_invoke', { request: { capabilityId: 'setting.tools.execution', optionId: 'genui-library', action: 'configure', value: 'future.collection' } })).rejects.toThrow('gen_ui_libraries_v1');
+    adapter.setHostCapabilities({ supportsGenUiLibrariesV1: true });
+    for (const [command, args] of requests) await adapter.request(command, args);
+    expect(rpc).toHaveBeenCalledTimes(requests.length);
+    adapter.setHostCapabilities({ supportsGenUiLibrariesV1: false });
+    await expect(adapter.request('get_config', requests[0][1])).rejects.toThrow('gen_ui_libraries_v1');
+    expect(rpc).toHaveBeenCalledTimes(requests.length);
+  });
   it('rejects unsupported routing reads and mutations before RPC', async () => {
     const rpc = vi.fn();
     const adapter = new PeerDeviceTransportAdapter('peer-1', rpc);

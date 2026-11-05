@@ -96,7 +96,11 @@
     "removeGlobalRule": "删除规则",
     "discardGlobalRules": "放弃更改",
     "saveGlobalRules": "保存规则",
-    "globalRulesEffects": { "allow": "允许", "ask": "询问", "deny": "拒绝" },
+    "globalRulesEffects": {
+      "allow": "允许",
+      "ask": "询问",
+      "deny": "拒绝"
+    },
     "modeDescription": "作为新会话的默认设置，可在输入框中临时切换。"
   },
   "toolPresentation": {
@@ -156,7 +160,11 @@
     "rulesSaveFailed": "保存静态项目规则失败",
     "rulesConflict": "规则文件已在外部变更，请取消本地修改并刷新后重试。",
     "cancel": "取消",
-    "effects": { "allow": "允许", "ask": "询问", "deny": "拒绝" }
+    "effects": {
+      "allow": "允许",
+      "ask": "询问",
+      "deny": "拒绝"
+    }
   },
   "deferredToolLoading": {
     "sectionTitle": "按需加载工具",
@@ -249,5 +257,25 @@
     "saveSuccess": "设置已保存",
     "saveFailed": "保存失败",
     "updateFailed": "设置失败"
+  },
+  "genui": {
+    "title": "生成式 UI",
+    "description": "选择新建生成式 UI 应用使用的组件库。已有应用继续使用保存的组件库和版本。",
+    "collection": "生成式 UI 配置",
+    "loading": "正在读取组件设置",
+    "retry": "重试",
+    "unknown": "当前版本不支持此组件集合，已保留原设置。请选择已安装的集合。",
+    "collections": {
+      "openui": "Open Intelligent UI：在 FlowChat 中流式显示 OpenUI Lang，并保留本地状态和动作。",
+      "openbitfun": "OpenBitFun：使用当前 OpenBitFun 组件库和桌面样式。"
+    },
+    "specification": "UI 规范",
+    "viewport": "目标视口",
+    "responsiveViewport": "响应当前宿主宽度",
+    "componentLibraries": "可用组件库",
+    "styleResources": "样式资源",
+    "hostShell": "宿主外壳",
+    "designRules": "设计规则",
+    "acceptance": "验收检查"
   }
 }

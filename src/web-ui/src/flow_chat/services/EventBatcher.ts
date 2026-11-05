@@ -291,6 +291,7 @@ export interface SubagentParentInfo {
 export type ToolEventType =
   | 'EarlyDetected'
   | 'ParamsPartial'
+  | 'GenUIStream'
   | 'Queued'
   | 'Waiting'
   | 'Started'
@@ -317,6 +318,19 @@ export type EarlyDetectedToolEvent = BaseToolEvent<'EarlyDetected'>;
 
 export interface ParamsPartialToolEvent extends BaseToolEvent<'ParamsPartial'> {
   params: string;
+}
+
+export interface GenUIStreamToolEvent extends BaseToolEvent<'GenUIStream'> {
+  message_id: string;
+  seq: number;
+  format: 'openui-lang';
+  text: string;
+  reset: boolean;
+  app_id?: string;
+  title?: string;
+  template?: string;
+  library_id?: string;
+  library_revision?: number;
 }
 
 export function normalizeParamsPartialFragment(params: unknown): string {
@@ -394,6 +408,7 @@ export interface CancelledToolEvent extends BaseToolEvent<'Cancelled'> {
 export type FlowToolEvent =
   | EarlyDetectedToolEvent
   | ParamsPartialToolEvent
+  | GenUIStreamToolEvent
   | QueuedToolEvent
   | WaitingToolEvent
   | StartedToolEvent
@@ -464,7 +479,7 @@ export function generateToolEventKey(data: ToolEventData): { key: string; strate
   const eventType = toolEvent.event_type;
   const attemptToken = resolveAttemptMergeToken(data);
 
-  const isolatedEvents: ToolEventType[] = ['EarlyDetected', 'Started', 'Completed', 'Failed', 'Cancelled', 'Rejected', 'ConfirmationNeeded'];
+  const isolatedEvents: ToolEventType[] = ['EarlyDetected', 'GenUIStream', 'Started', 'Completed', 'Failed', 'Cancelled', 'Rejected', 'ConfirmationNeeded'];
   if (isolatedEvents.includes(eventType)) {
     return null;
   }

@@ -234,6 +234,9 @@
     }
   ],
   "implementationOnlyCommands": {
+    "generativeUiOwner": [
+      "gen_ui_provider_call"
+    ],
     "publicMarketImageCache": [
       "market_image_load"
     ],
@@ -3461,205 +3464,6 @@
           "descriptionEn": "Stop the worker and delete an installed app by ID, only on an explicit deletion request."
         }
       ]
-    },
-    {
-      "id": "feature.canvas",
-      "kind": "feature",
-      "categoryId": "automation",
-      "titleZh": "Canvas 与交互产物",
-      "titleEn": "Canvas & interactive artifacts",
-      "summaryZh": "在会话旁展示和保存智能体生成的可视化、交互页面与结构化产物。",
-      "summaryEn": "Display and save visualizations, interactive pages, and structured artifacts generated beside a session.",
-      "keywordsZh": [
-        "Canvas",
-        "画布",
-        "可视化",
-        "交互产物",
-        "Artifact"
-      ],
-      "keywordsEn": [
-        "canvas",
-        "visualization",
-        "interactive artifact",
-        "artifact",
-        "preview"
-      ],
-      "highlightsZh": [
-        "在会话中打开交互内容",
-        "保留画布状态",
-        "在面板中查看运行错误"
-      ],
-      "highlightsEn": [
-        "Open interactive content from a session",
-        "Persist canvas state",
-        "Inspect runtime errors in the panel"
-      ],
-      "items": [
-        {
-          "id": "artifact-open",
-          "titleZh": "从会话工具结果加载并打开持久化 Canvas 产物",
-          "titleEn": "Load and open persistent Canvas artifacts from session tool results",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“从会话工具结果加载并打开持久化 Canvas 产物”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Load and open persistent Canvas artifacts from session tool results” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:load_canvas_artifact"
-          ]
-        },
-        {
-          "id": "html-react",
-          "titleZh": "渲染并持续编辑 HTML 或 React 交互界面、图表和可视化",
-          "titleEn": "Render and iteratively edit HTML or React interfaces, charts, and interactive visualizations",
-          "control": {
-            "kind": "delegate",
-            "tools": [
-              "CreateCanvas",
-              "ReadCanvas",
-              "PatchCanvas",
-              "UpdateCanvas"
-            ],
-            "workflowZh": [
-              "用 CreateCanvas 提交单文件 TSX，并仅从 openbitfun/canvas 导入允许的运行时组件",
-              "保留返回的 openbitfun-canvas 引用，先 ReadCanvas 获取当前版本，再用 PatchCanvas 做局部改动或 UpdateCanvas 完整更新"
-            ],
-            "workflowEn": [
-              "Use CreateCanvas with a single TSX file and import runtime components only from openbitfun/canvas",
-              "Keep the returned openbitfun-canvas reference, inspect it with ReadCanvas, then use PatchCanvas for focused changes or UpdateCanvas for a full update"
-            ]
-          },
-          "evidence": [
-            "command:report_canvas_runtime_ready",
-            "source:src/web-ui/src/tools/openbitfun-canvas/reactRuntime.ts#runtime: 'react'",
-            "source:src/web-ui/src/tools/openbitfun-canvas/OpenBitFunCanvasPanel.tsx#renderedHtml"
-          ]
-        },
-        {
-          "id": "inline-generative-ui",
-          "titleZh": "在会话中生成紧凑的 HTML/SVG 图表、说明器或交互组件",
-          "titleEn": "Generate compact HTML/SVG charts, explainers, or interactive widgets inline in a session",
-          "control": {
-            "kind": "delegate",
-            "tools": [
-              "GenerativeUI"
-            ],
-            "workflowZh": [
-              "仅在可视化或交互能明显帮助理解时使用 GenerativeUI，并输出紧凑、自包含且适配明暗外观的组件",
-              "需要持久编辑或独立产物时改用 Canvas；纯文本足够时不创建组件"
-            ],
-            "workflowEn": [
-              "Use GenerativeUI only when visualization or interaction materially improves understanding, producing a compact self-contained widget that supports light and dark appearances",
-              "Use Canvas for persistent editable artifacts, and skip widget generation when text is sufficient"
-            ]
-          },
-          "evidence": [
-            "source:src/crates/assembly/core/src/agentic/tools/implementations/generative_ui_tool.rs#GenerativeUI"
-          ]
-        },
-        {
-          "id": "state",
-          "titleZh": "在重新打开或刷新 Canvas 时加载和保存交互状态",
-          "titleEn": "Load and save interactive state when a Canvas is reopened or refreshed",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“在重新打开或刷新 Canvas 时加载和保存交互状态”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Load and save interactive state when a Canvas is reopened or refreshed” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:load_canvas_state",
-            "command:save_canvas_state"
-          ]
-        },
-        {
-          "id": "source-inspection",
-          "titleZh": "查看 Canvas 源码、编译版本和最后可用版本",
-          "titleEn": "Inspect Canvas source, compiled revisions, and the last known good revision",
-          "control": {
-            "kind": "delegate",
-            "tools": [
-              "ReadCanvas"
-            ],
-            "workflowZh": [
-              "用 ReadCanvas 按 artifact_reference 或 canvas_id 读取源码、状态、诊断与编译信息"
-            ],
-            "workflowEn": [
-              "Use ReadCanvas with artifact_reference or canvas_id to inspect source, status, diagnostics, and compiled information"
-            ]
-          },
-          "evidence": [
-            "source:src/web-ui/src/tools/openbitfun-canvas/OpenBitFunCanvasPanel.tsx#lastKnownGoodRevision"
-          ]
-        },
-        {
-          "id": "element-context",
-          "titleZh": "选择 Canvas 内的元素并把元素引用加入会话上下文",
-          "titleEn": "Select an element inside Canvas and add its reference to session context",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“选择 Canvas 内的元素并把元素引用加入会话上下文”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Select an element inside Canvas and add its reference to session context” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "source:src/web-ui/src/tools/openbitfun-canvas/OpenBitFunCanvasPanel.tsx#createCanvasElementContext"
-          ]
-        },
-        {
-          "id": "runtime-errors",
-          "titleZh": "捕获运行错误、上报诊断并请求智能体自动修复",
-          "titleEn": "Capture runtime errors, report diagnostics, and ask the agent to repair them",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“捕获运行错误、上报诊断并请求智能体自动修复”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Capture runtime errors, report diagnostics, and ask the agent to repair them” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:report_canvas_runtime_error",
-            "source:src/web-ui/src/tools/openbitfun-canvas/OpenBitFunCanvasPanel.tsx#canvas-runtime-auto-repair"
-          ]
-        },
-        {
-          "id": "export-html",
-          "titleZh": "把当前 Canvas 导出为可独立打开的 HTML 文件",
-          "titleEn": "Export the current Canvas as a standalone HTML file",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“把当前 Canvas 导出为可独立打开的 HTML 文件”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Export the current Canvas as a standalone HTML file” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "source:src/web-ui/src/tools/openbitfun-canvas/canvasHtmlExportService.ts#export async function exportCanvasHtml"
-          ]
-        }
-      ],
-      "stepsZh": [
-        "打开一个 AI 会话",
-        "让智能体创建可视化或交互工具",
-        "从工具结果打开 Canvas"
-      ],
-      "stepsEn": [
-        "Open an AI session",
-        "Ask the agent for a visualization or interactive tool",
-        "Open the Canvas from the tool result"
-      ],
-      "agentExamplesZh": [
-        "打开 AI 助手，我想做一个交互可视化",
-        "创建一个可交互的 Canvas"
-      ],
-      "agentExamplesEn": [
-        "Open the AI assistant; I want an interactive visualization",
-        "Create an interactive Canvas"
-      ],
-      "destination": {
-        "kind": "scene",
-        "sceneId": "session"
-      },
-      "operations": []
     },
     {
       "id": "feature.tasks-automation",
@@ -8375,6 +8179,28 @@
           "evidence": [
             "source:src/web-ui/src/locales/zh-CN/settings/models.json#toolArgumentJsonRepair.title"
           ]
+        },
+        {
+          "id": "genui-library",
+          "titleZh": "选择生成式 UI 组件库及关联 UI 规范并操作预览",
+          "titleEn": "Select a GenUI component library, its UI specification and preview",
+          "destination": {
+            "kind": "settings",
+            "pageId": "tools.execution",
+            "viewId": "advanced"
+          },
+          "control": {
+            "kind": "direct",
+            "operations": [],
+            "options": [
+              {
+                "id": "genui-library"
+              }
+            ]
+          },
+          "evidence": [
+            "source:src/web-ui/src/locales/zh-CN/settings/runtime.json#genui.title"
+          ]
         }
       ],
       "stepsZh": [
@@ -8472,6 +8298,13 @@
           "titleEn": "Tool-argument JSON repair",
           "descriptionZh": "允许在安全边界内修复模型生成的轻微 JSON 格式错误。",
           "descriptionEn": "Allow minor model-generated JSON formatting errors to be repaired within the safety boundary."
+        },
+        {
+          "id": "genui-library",
+          "titleZh": "生成式 UI 组件库及 UI 规范",
+          "titleEn": "GenUI component library and UI specification",
+          "descriptionZh": "选择后续生成使用的组件库及其关联的设计规则、资源、视口、宿主外壳和验收检查；已有应用保留自己的目标身份。",
+          "descriptionEn": "Choose the component library and its bound design rules, resources, viewport, host shell and acceptance checks. Existing apps retain their target identity."
         }
       ]
     },
@@ -10087,6 +9920,93 @@
           "descriptionEn": "Enable only when explicitly needed and after reviewing the privacy risk."
         }
       ]
+    },
+    {
+      "id": "feature.generative-ui",
+      "kind": "feature",
+      "categoryId": "automation",
+      "titleZh": "Generative UI 生成式界面",
+      "titleEn": "Generative UI",
+      "summaryZh": "由智能体按组件库及关联 UI 规范生成 OpenUI 组件应用或 HTML/CSS/SVG 自由文档，经目标视口实际渲染、宿主验收与需求复核后接受并保存。",
+      "summaryEn": "Generate OpenUI component apps or free HTML/CSS/SVG documents under a bound UI specification; accept and persist only after target-viewport rendering, host checks and requirement review.",
+      "keywordsZh": [
+        "Generative UI",
+        "生成式界面",
+        "交互应用",
+        "宿主组件",
+        "应用状态"
+      ],
+      "keywordsEn": [
+        "generative UI",
+        "interactive app",
+        "component contracts",
+        "application state",
+        "structured widget"
+      ],
+      "highlightsZh": [
+        "按组件库及其 UI 规范的设计规则、资源、视口和宿主外壳约束生成结果",
+        "组件路径使用 OpenUI 描述和可信 renderer；自由路径保留 HTML/CSS/SVG",
+        "支持生成、交互、保存和重开",
+        "可注册自定义宿主组件"
+      ],
+      "highlightsEn": [
+        "Constrain generated results with the selected library's UI rules, resources, viewport and host shell",
+        "Use OpenUI descriptions and trusted renderers for components; retain HTML/CSS/SVG for free documents",
+        "Support generation, interaction, save and reopen",
+        "Register custom host components"
+      ],
+      "items": [
+        {
+          "id": "app-generation",
+          "titleZh": "生成可交互的 GenUI 应用并由宿主渲染",
+          "titleEn": "Generate interactive GenUI applications rendered by the host",
+          "control": {
+            "kind": "delegate",
+            "tools": [
+              "GenerativeUI"
+            ],
+            "workflowZh": [
+              "按所选 UI 规范选择 OpenUI 组件描述或 HTML/CSS/SVG 自由文档；规范身份随候选固定。",
+              "宿主按所选 UI 规范渲染 OpenUI 描述或 HTML/CSS/SVG 自由文档，并支持本地交互。"
+            ],
+            "workflowEn": [
+              "Use OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification; pin that identity to the candidate.",
+              "Render OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification and support local interaction."
+            ]
+          },
+          "evidence": [
+            "source:src/crates/assembly/core/src/agentic/tools/implementations/generative_ui_tool.rs#GenerativeUI",
+            "source:src/web-ui/src/tools/generative-ui/GenUIApplication.tsx#GenUIApplication"
+          ]
+        }
+      ],
+      "stepsZh": [
+        "打开 AI 会话",
+        "让智能体生成一个 GenUI 应用",
+        "在宿主中完成交互并保存，随后重开应用"
+      ],
+      "stepsEn": [
+        "Open an AI session",
+        "Ask the agent to generate a GenUI application",
+        "Interact and save it in the host, then reopen the application"
+      ],
+      "agentExamplesZh": [
+        "生成一个可保存的记账应用",
+        "生成一个带预算设置和支出汇总的 dashboard 应用",
+        "生成一个阅读目录并支持收藏",
+        "生成一个带完成状态的日计划"
+      ],
+      "agentExamplesEn": [
+        "Generate a saveable accounting app",
+        "Generate a dashboard with budget settings and an expense summary",
+        "Generate a reading catalog with favorites",
+        "Generate a daily plan with completion state"
+      ],
+      "destination": {
+        "kind": "scene",
+        "sceneId": "session"
+      },
+      "operations": []
     }
   ],
   "productActionOwners": {
@@ -10125,6 +10045,9 @@
     "shell": "feature.terminal"
   },
   "implementationOwners": {
+    "generative_ui": {
+      "capabilityId": "feature.generative-ui"
+    },
     "commands": {
       "capabilityId": "feature.projects"
     },
@@ -10250,9 +10173,6 @@
     },
     "appearance": {
       "capabilityId": "feature.desktop-pet"
-    },
-    "canvas": {
-      "capabilityId": "feature.canvas"
     },
     "diff": {
       "capabilityId": "feature.files-editor"

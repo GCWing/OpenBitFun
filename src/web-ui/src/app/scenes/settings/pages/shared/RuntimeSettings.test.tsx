@@ -41,6 +41,7 @@ vi.mock('../../../../../infrastructure/config/components/GlobalPermissionRulesDi
 vi.mock('../ai/SessionTitleSection', () => ({ default: () => null }));
 vi.mock('../ai/DefaultHarnessSection', () => ({ default: () => <div>default-harness-config</div> }));
 vi.mock('../ai/ReviewCapacitySection', () => ({ default: () => null }));
+vi.mock('../ai/GenUILibrarySection', () => ({ default: () => null }));
 vi.mock('../ai/ToolJsonRepairSection', () => ({ default: () => null }));
 vi.mock('@openbitfun/ui', async (original) => ({
   ...await original<typeof import('@openbitfun/ui')>(),

@@ -48,9 +48,3 @@ Accepted settings: `id`, `mode`, and `vars`. Query accepted variable names with:
 ```powershell
 python scripts/openbitfun_appearance.py contract tokens widget
 ```
-
-## openbitfun-canvas
-
-Accepted settings: `id`, `mode`, `bg`, `panel`, `fg`, `muted`, `border`, `accent`, `success`, `warning`, `danger`, and `info`.
-
-Run package validation for the exact value constraints and required fields.

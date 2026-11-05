@@ -743,6 +743,7 @@ mod tests {
             dialog_turn_id: None,
             workspace: None,
             loaded_deferred_tool_specs: Vec::new(),
+            model_client: None,
             primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
             custom_data: HashMap::new(),
             computer_use_host: None,
@@ -1437,44 +1438,6 @@ mod tests {
                 .contains("already fully defined in the available tool list"),
             "unexpected assistant text: {result_for_assistant:?}"
         );
-    }
-
-    #[cfg(feature = "product-full")]
-    #[tokio::test]
-    async fn product_agentic_manifest_keeps_canvas_tools_opt_in() {
-        let policy = crate::agentic::agents::get_agent_registry()
-            .get_agent_tool_policy("Standard", None)
-            .await;
-        let manifest = resolve_product_resolved_tool_manifest(
-            &policy.allowed_tools,
-            &policy.exposure_overrides,
-            &tool_context(Some("Standard")),
-        )
-        .await;
-
-        assert!(!manifest
-            .allowed_tool_names
-            .contains(&"CreateCanvas".to_string()));
-        assert!(!manifest
-            .allowed_tool_names
-            .contains(&"PatchCanvas".to_string()));
-        assert!(manifest
-            .allowed_tool_names
-            .contains(&"ReviewPlatform".to_string()));
-        assert!(manifest
-            .allowed_tool_names
-            .contains(&"OpenBitFunControl".to_string()));
-        assert!(manifest
-            .deferred_tool_names
-            .contains(&"ReviewPlatform".to_string()));
-        assert!(!manifest
-            .tool_definitions
-            .iter()
-            .any(|tool| tool.name == "CreateCanvas"));
-        assert!(manifest
-            .tool_definitions
-            .iter()
-            .any(|tool| tool.name == "OpenBitFunControl"));
     }
 
     #[tokio::test]

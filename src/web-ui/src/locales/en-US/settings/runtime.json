@@ -96,7 +96,11 @@
     "removeGlobalRule": "Remove rule",
     "discardGlobalRules": "Discard changes",
     "saveGlobalRules": "Save rules",
-    "globalRulesEffects": { "allow": "Allow", "ask": "Ask", "deny": "Deny" },
+    "globalRulesEffects": {
+      "allow": "Allow",
+      "ask": "Ask",
+      "deny": "Deny"
+    },
     "modeDescription": "Used for new sessions and can be changed temporarily from the chat input."
   },
   "toolPresentation": {
@@ -156,7 +160,11 @@
     "rulesSaveFailed": "Failed to save static project rules",
     "rulesConflict": "The rules file changed outside OpenBitFun. Discard local edits and refresh before trying again.",
     "cancel": "Cancel",
-    "effects": { "allow": "Allow", "ask": "Ask", "deny": "Deny" }
+    "effects": {
+      "allow": "Allow",
+      "ask": "Ask",
+      "deny": "Deny"
+    }
   },
   "deferredToolLoading": {
     "sectionTitle": "Load tools as needed",
@@ -249,5 +257,25 @@
     "saveSuccess": "Settings saved",
     "saveFailed": "Save failed",
     "updateFailed": "Update failed"
+  },
+  "genui": {
+    "title": "Generative UI",
+    "description": "Choose the component library used by new Generative UI applications. Existing applications keep their saved library and revision.",
+    "collection": "Generative UI profile",
+    "loading": "Loading component settings",
+    "retry": "Retry",
+    "unknown": "This collection is unavailable. Its selection is preserved; choose an installed collection to continue.",
+    "collections": {
+      "openui": "Open Intelligent UI: streamed OpenUI Lang answers with local state and actions in FlowChat.",
+      "openbitfun": "OpenBitFun: the current OpenBitFun component library and desktop styling."
+    },
+    "specification": "UI specification",
+    "viewport": "Target viewport",
+    "responsiveViewport": "Responsive to available host width",
+    "componentLibraries": "Available component libraries",
+    "styleResources": "Style resources",
+    "hostShell": "Host shell",
+    "designRules": "Design rules",
+    "acceptance": "Acceptance checks"
   }
 }

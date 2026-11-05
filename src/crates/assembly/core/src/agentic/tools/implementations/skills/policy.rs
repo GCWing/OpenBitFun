@@ -74,13 +74,6 @@ mod tests {
             resolve_builtin_default_enabled("plan", "SwarmWorker"),
             Some(false)
         );
-        for mode_id in ["Standard", "Claw", "Creative", "Cowork", "DeepResearch"] {
-            assert_eq!(
-                resolve_builtin_default_enabled("openbitfun-canvas", mode_id),
-                Some(false),
-                "Canvas skills must stay opt-in for mode {mode_id}"
-            );
-        }
     }
 
     #[test]

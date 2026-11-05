@@ -441,6 +441,99 @@ describe('processToolEvent late Started event behavior', () => {
   });
 });
 
+describe('native GenUI stream events', () => {
+  afterEach(() => {
+    resetStore();
+  });
+
+  it('stores OpenUI source deltas independently of tool-call JSON', () => {
+    const session = createSessionWithTool({
+      id: 'genui-1',
+      type: 'tool',
+      toolName: 'GenerativeUI',
+      timestamp: 1000,
+      status: 'preparing',
+      isParamsStreaming: true,
+      toolCall: { id: 'genui-1', input: {} },
+    });
+    FlowChatStore.getInstance().setState(() => ({
+      sessions: new Map([['session-1', session]]),
+      activeSessionId: 'session-1',
+    }));
+
+    const context = makeToolContext();
+    processToolEvent(context, 'session-1', 'turn-1', 'round-1', {
+      event_type: 'GenUIStream',
+      tool_id: 'genui-1',
+      tool_name: 'GenerativeUI',
+      message_id: 'genui-1',
+      seq: 0,
+      format: 'openui-lang',
+      text: 'root = Text(',
+      reset: false,
+    });
+    processToolEvent(context, 'session-1', 'turn-1', 'round-1', {
+      event_type: 'GenUIStream',
+      tool_id: 'genui-1',
+      tool_name: 'GenerativeUI',
+      message_id: 'genui-1',
+      seq: 1,
+      format: 'openui-lang',
+      text: '"Hello")',
+      reset: false,
+    });
+
+    const tool = FlowChatStore.getInstance().findToolItem('session-1', 'turn-1', 'genui-1') as FlowToolItem;
+    expect(tool._genUIStream).toEqual({
+      messageId: 'genui-1',
+      format: 'openui-lang',
+      content: 'root = Text("Hello")',
+      nextSeq: 2,
+    });
+    expect(tool._paramsBuffer).toBeUndefined();
+  });
+
+  it('reorders future sequence numbers and ignores duplicates', () => {
+    const session = createSessionWithTool({
+      id: 'genui-order', type: 'tool', toolName: 'GenerativeUI', timestamp: 1000,
+      status: 'preparing', isParamsStreaming: true, toolCall: { id: 'genui-order', input: {} },
+    });
+    FlowChatStore.getInstance().setState(() => ({ sessions: new Map([['session-1', session]]), activeSessionId: 'session-1' }));
+    const context = makeToolContext();
+    const event = (seq: number, text: string, reset = false) => processToolEvent(context, 'session-1', 'turn-1', 'round-1', {
+      event_type: 'GenUIStream', tool_id: 'genui-order', tool_name: 'GenerativeUI', message_id: 'message-a', seq,
+      format: 'openui-lang', text, reset,
+    });
+    event(0, 'root = Text(');
+    event(2, 'three)');
+    expect((FlowChatStore.getInstance().findToolItem('session-1', 'turn-1', 'genui-order') as FlowToolItem)._genUIStream?.content).toBe('root = Text(');
+    event(1, '"two", ');
+    event(1, 'ignored duplicate');
+    expect((FlowChatStore.getInstance().findToolItem('session-1', 'turn-1', 'genui-order') as FlowToolItem)._genUIStream).toMatchObject({
+      content: 'root = Text("two", three)', nextSeq: 3,
+    });
+  });
+
+  it('requires reset before accepting a new message stream', () => {
+    const session = createSessionWithTool({
+      id: 'genui-reset', type: 'tool', toolName: 'GenerativeUI', timestamp: 1000,
+      status: 'preparing', isParamsStreaming: true, toolCall: { id: 'genui-reset', input: {} },
+    });
+    FlowChatStore.getInstance().setState(() => ({ sessions: new Map([['session-1', session]]), activeSessionId: 'session-1' }));
+    const context = makeToolContext();
+    const deliver = (message_id: string, seq: number, text: string, reset = false) => processToolEvent(context, 'session-1', 'turn-1', 'round-1', {
+      event_type: 'GenUIStream', tool_id: 'genui-reset', tool_name: 'GenerativeUI', message_id, seq,
+      format: 'openui-lang', text, reset,
+    });
+    deliver('old', 0, 'old');
+    deliver('new', 0, 'stale');
+    expect((FlowChatStore.getInstance().findToolItem('session-1', 'turn-1', 'genui-reset') as FlowToolItem)._genUIStream?.content).toBe('old');
+    deliver('new', 0, 'new', true);
+    deliver('old', 1, 'late old');
+    expect((FlowChatStore.getInstance().findToolItem('session-1', 'turn-1', 'genui-reset') as FlowToolItem)._genUIStream).toMatchObject({ messageId: 'new', content: 'new', nextSeq: 1 });
+  });
+});
+
 describe('deferred tool wire identity', () => {
   afterEach(() => {
     resetStore();

@@ -133,19 +133,7 @@ export class PanelController implements IdeController {
         };
 
       case 'generative-widget':
-        return {
-          ...baseDetail,
-          title: config.title || 'Widget Preview',
-          data: {
-            ...baseDetail.data,
-            widgetId: config.data?.widgetId,
-            title: config.title || config.data?.title,
-            widgetCode: config.data?.widgetCode,
-            width: config.data?.width,
-            height: config.data?.height,
-            isSvg: config.data?.isSvg,
-          },
-        };
+        return { ...baseDetail, title: config.title || 'Generative UI', data: { ...baseDetail.data, app: config.data?.app, appState: config.data?.appState, origin: config.data?.origin } };
 
       case 'code-editor':
       case 'file-viewer':

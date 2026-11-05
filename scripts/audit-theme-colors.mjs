@@ -108,6 +108,11 @@ const GENERATED_WIDGET_APPEARANCE_PAYLOAD_PATH = 'infrastructure/appearance/adap
 const REPORT_ROW_LIMIT = 100;
 const COLOR_DOMAIN_CONTRACT_BY_KEY = new Map(COLOR_DOMAIN_CONTRACTS.map(contract => [contract.key, contract]));
 const FALLBACK_VAR_CONTRACT_BY_KEY = new Map(FALLBACK_VAR_CONTRACTS.map(contract => [contract.key, contract]));
+const VENDORED_GENUI_EXCLUSIONS = [
+  'src/tools/generative-ui/components/openui',
+  'src/tools/generative-ui/components/openuiLibrary.tsx',
+  'src/tools/generative-ui/components/vendor',
+];
 const TOKEN_COMPATIBILITY_ALIAS_BY_KEY = new Map(
   TOKEN_COMPATIBILITY_ALIAS_CONTRACTS.map(contract => [contract.key, contract]),
 );
@@ -211,6 +216,16 @@ function parseArgs(argv) {
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+
+  // The checked-in OpenUI/Harmony resources are vendored renderer payloads;
+  // their upstream palette and fallback variables are audited by their own
+  // source boundary rather than Web UI app-token budgets. Apply this only to
+  // the repository's real Web UI root so fixture roots remain explicit.
+  if (path.resolve(options.root) === path.resolve(DEFAULT_ROOT)) {
+    for (const exclusion of VENDORED_GENUI_EXCLUSIONS) {
+      if (!options.excludePaths.includes(exclusion)) options.excludePaths.push(exclusion);
     }
   }
 

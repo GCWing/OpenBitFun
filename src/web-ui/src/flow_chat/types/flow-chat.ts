@@ -114,6 +114,27 @@ export interface FlowToolItem extends FlowItem {
   isParamsStreaming?: boolean;  // Params are streaming in.
   partialParams?: Record<string, any>;  // Partial params during streaming.
   _paramsBuffer?: string;  // Internal buffer for accumulated params.
+  /** Native OpenUI Lang stream, independent of tool-call JSON framing. */
+  _genUIStream?: {
+    messageId: string;
+    format: 'openui-lang';
+    content: string;
+    nextSeq: number;
+    appId?: string;
+    title?: string;
+    template?: string;
+    libraryId?: string;
+    libraryRevision?: number;
+    /** Buffered future deltas, keyed by sequence number. */
+    pending?: Record<string, {
+      text: string;
+      appId?: string;
+      title?: string;
+      template?: string;
+      libraryId?: string;
+      libraryRevision?: number;
+    }>;
+  };
 
   /**
    * Runtime re-attachment marker. This item was reconstructed from an

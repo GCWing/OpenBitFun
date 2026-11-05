@@ -2064,6 +2064,7 @@ impl RoundExecutor {
                 agent_type: context.agent_type.clone(),
                 workspace: context.workspace.clone(),
                 primary_model_facts: context.primary_model_facts.clone(),
+                model_client: Some(ai_client.clone()),
                 context_vars: context.context_vars.clone(),
                 subagent_parent_info,
                 permission_delegation,

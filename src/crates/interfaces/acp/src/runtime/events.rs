@@ -235,6 +235,9 @@ fn tool_call_update(tool_event: &ToolEventData) -> Option<ToolCallUpdate> {
                 fields.content(vec![text_content(format!("Input: {}", params))])
             }
         }
+        ToolEventData::GenUIStream { text, .. } => ToolCallUpdateFields::new()
+            .status(ToolCallStatus::Pending)
+            .content(vec![text_content(text.clone())]),
         ToolEventData::Queued { position, .. } => ToolCallUpdateFields::new()
             .status(ToolCallStatus::Pending)
             .content(vec![text_content(format!(

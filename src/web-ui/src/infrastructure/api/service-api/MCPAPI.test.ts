@@ -13,6 +13,15 @@ vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({
 describe('MCP JSON save acknowledgement', () => {
   beforeEach(() => { invokeMock.mockReset(); scopeMock.assertCurrent.mockReset(); });
 
+  it('passes GenUI cancellation to the MCP app transport without serializing the signal', async () => {
+    invokeMock.mockResolvedValue({ jsonrpc: '2.0', id: 'request-1', result: {} });
+    const controller = new AbortController();
+    await MCPAPI.sendMCPAppMessage({ serverId: 'docs', jsonrpc: '2.0', id: 'request-1', method: 'tools/call', signal: controller.signal });
+    expect(invokeMock).toHaveBeenCalledWith('send_mcp_app_message', {
+      request: { serverId: 'docs', jsonrpc: '2.0', id: 'request-1', method: 'tools/call' },
+    }, { signal: controller.signal });
+  });
+
   it('enables one imported server with CAS and preserves origin, secrets and unrelated settings', async () => {
     const config = { mcpServers: {
       imported: { enabled: false, autoStart: false, env: { TEST_KEY: 'private-value' }, _openbitfunImport: { sourceCandidateId: 'codex:mcp' }, futureOption: 3 },

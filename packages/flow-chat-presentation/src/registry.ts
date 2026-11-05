@@ -64,10 +64,6 @@ export const toolPresentationRegistry = {
   GenerativeUI: { owner: 'product', component: null },
   ComputerUse: { owner: 'product', component: null },
   OpenBitFunControl: { owner: 'product', component: null },
-  CreateCanvas: { owner: 'product', component: null },
-  ReadCanvas: { owner: 'product', component: null },
-  UpdateCanvas: { owner: 'product', component: null },
-  PatchCanvas: { owner: 'product', component: null },
 } as const satisfies Record<string, { owner: 'standard' | 'product'; component: FlowChatViewName | null }>;
 
 export type RegisteredToolName = keyof typeof toolPresentationRegistry;

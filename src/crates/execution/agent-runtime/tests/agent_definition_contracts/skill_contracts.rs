@@ -482,10 +482,6 @@ fn builtin_skill_catalog_and_mode_policy_are_runtime_owned() {
         builtin_skill_group_key("agent-browser"),
         Some("computer-use")
     );
-    assert_eq!(builtin_skill_group_key("agent-eval-canvas"), Some("canvas"));
-    assert_eq!(builtin_skill_group_key("openbitfun-canvas"), Some("canvas"));
-    assert_eq!(builtin_skill_group_key("pr-review-canvas"), Some("canvas"));
-    assert_eq!(builtin_skill_group_key("docs-canvas"), Some("canvas"));
     assert_eq!(builtin_skill_group_key("multitask"), Some("coordination"));
     assert_eq!(builtin_skill_group_key("plan"), Some("planning"));
     assert_eq!(builtin_skill_group_key("unknown-skill"), None);
@@ -593,28 +589,6 @@ fn builtin_skill_catalog_and_mode_policy_are_runtime_owned() {
             Some(expected),
             "unexpected plan default for {mode_id}"
         );
-    }
-    for skill in [
-        "agent-eval-canvas",
-        "docs-canvas",
-        "openbitfun-canvas",
-        "pr-review-canvas",
-    ] {
-        for mode_id in [
-            "Standard",
-            "Standard",
-            "Claw",
-            "Cowork",
-            "Creative",
-            "ComputerUse",
-            "DeepResearch",
-        ] {
-            assert_eq!(
-                resolve_builtin_default_enabled(skill, mode_id),
-                Some(false),
-                "Canvas skill {skill} must stay opt-in for mode {mode_id}"
-            );
-        }
     }
 }
 

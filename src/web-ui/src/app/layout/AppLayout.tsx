@@ -39,6 +39,7 @@ import { shortcutManager, parseStoredKeybindings } from '@/infrastructure/servic
 import { isMacOSDesktopRuntime } from '@/infrastructure/runtime';
 import { flowChatSessionConfigForWorkspace } from '../utils/projectSessionWorkspace';
 import { startSessionSceneLifecycle } from '../services/sessionSceneLifecycle';
+import { clearTransientGenerativeWidgetResources } from '@/shared/services/workbenchContentService';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import { AcpSessionNotifications } from './AcpSessionNotifications';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
@@ -74,6 +75,9 @@ interface WindowModeHint {
 
 const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
   useLayoutEffect(startSessionSceneLifecycle, []);
+  useLayoutEffect(() => {
+    clearTransientGenerativeWidgetResources();
+  }, []);
   const { t } = useI18n('components');
   const { t: tCommon } = useI18n('common');
   const currentAppearance = useAppearance().current;

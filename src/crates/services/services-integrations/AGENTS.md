@@ -5,6 +5,18 @@ Scope: this guide applies to `src/crates/services/services-integrations`.
 `openbitfun-services-integrations` owns reviewed integration contracts and runtime
 slices that are outside pure product logic but still platform-neutral.
 
+## GenUI durable state
+
+GenUI IO is gated by generative-ui. The caller supplies the session artifact
+directory; this service must not resolve the current controller. Preserve
+unknown record/state fields and corrupt records. Acceptance checks the base
+owner revision; isolated probes never mutate accepted user data.
+
+    cargo test --locked -p openbitfun-services-integrations --no-default-features --features generative-ui --lib generative_ui
+
+These tests prove local atomic IO, conflicts, retry/readback and data retention;
+they do not prove live SSH/Peer/relay behavior.
+
 ## Guardrails
 
 - Do not depend on `openbitfun-core`, app crates, desktop adapters, CLI UI, or web

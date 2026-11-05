@@ -41,7 +41,7 @@ function ProductNodeRenderer({ node: sourceNode, ctx, indexKey }: NodeComponentP
       const content = node.content ?? '';
       if (context.insideLink) return content;
       // Match the existing internal-link autolinker without reparsing the paragraph.
-      const parts = content.split(/((?:computer:\/\/|file:\/\/|openbitfun-canvas:\/\/)[^\s<>()]+)/g);
+      const parts = content.split(/((?:computer:\/\/|file:\/\/)[^\s<>()]+)/g);
       return parts.map((part, index) => index % 2
         ? element('a', { key: index, href: product.urlTransform(part, 'href') }, part)
         : part);

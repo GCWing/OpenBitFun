@@ -446,6 +446,7 @@ mod tests {
                 dialog_turn_id: None,
                 workspace: Some(workspace),
                 loaded_deferred_tool_specs: Vec::new(),
+                model_client: None,
                 primary_model_facts: Default::default(),
                 custom_data: Default::default(),
                 computer_use_host: None,

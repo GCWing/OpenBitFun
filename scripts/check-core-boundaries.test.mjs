@@ -1085,7 +1085,6 @@ test('contract and AI adapter tests keep reviewed feature and failure-domain top
       name: 'product_domain_contracts',
       path: 'tests/product_domain_contracts.rs',
       leaves: [
-        'tests/product_domain_contracts/canvas_contracts.rs',
         'tests/product_domain_contracts/tool_permission_contracts.rs',
       ],
       forbidRequiredFeatures: true,
@@ -1528,7 +1527,6 @@ test('Core product-full explicitly assembles service and tool capability owners'
     'tools-image-analysis',
     'tools-image-generation',
     'tools-miniapp',
-    'tools-canvas',
     'tools-agent-control',
   ]) {
     assert.ok(
@@ -2124,13 +2122,13 @@ test('App Server reviewed Core capability closure remains independently valid', 
   );
 });
 
-test('ACP Core capability closure rejects the Canvas product tool owner', () => {
+test('ACP Core capability closure rejects the unreviewed MiniApp tool owner', () => {
   const core = packageAt('openbitfun-core', 'src/crates/assembly/core/Cargo.toml');
   const acp = packageAt('openbitfun-acp', 'src/crates/interfaces/acp/Cargo.toml', [
     pathDependency('src/crates/assembly/core', {
       name: 'openbitfun-core',
       usesDefaultFeatures: false,
-      features: [...ACP_REVIEWED_CORE_FEATURES, 'tools-canvas'],
+      features: [...ACP_REVIEWED_CORE_FEATURES, 'tools-miniapp'],
     }),
   ]);
 
@@ -2140,7 +2138,7 @@ test('ACP Core capability closure rejects the Canvas product tool owner', () => 
   );
 
   assert.equal(violations.length, 1);
-  assert.match(violations[0].message, /must not include unreviewed feature tools-canvas/);
+  assert.match(violations[0].message, /must not include unreviewed feature tools-miniapp/);
 });
 
 test('ACP Core capability closure validation cannot be disabled by removing an owner', () => {
@@ -2219,7 +2217,7 @@ test('CLI openbitfun-core dev-dependency cannot widen the product capability clo
       name: 'openbitfun-core',
       kind: 'dev',
       usesDefaultFeatures: false,
-      features: ['test-support', 'tools-canvas'],
+      features: ['test-support', 'tools-miniapp'],
     }),
   ]);
 
@@ -2231,7 +2229,7 @@ test('CLI openbitfun-core dev-dependency cannot widen the product capability clo
   assert.equal(violations.length, 1);
   assert.match(
     violations[0].message,
-    /openbitfun-core dev-dependency may select only test-support, not \[test-support, tools-canvas\]/,
+    /openbitfun-core dev-dependency may select only test-support, not \[test-support, tools-miniapp\]/,
   );
 });
 

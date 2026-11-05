@@ -1,4 +1,4 @@
-import type { ModelRound, FlowToolItem, TokenUsage } from '../../types/flow-chat';
+import type { ModelRound, TokenUsage } from '../../types/flow-chat';
 import type { ModelRoundItemGroup } from './modelRoundItemGrouping';
 import { isModelRoundGroupingDisabled } from '../../grouping/roundGroups';
 
@@ -16,7 +16,6 @@ export interface ModelRoundItemProps {
   turnOutputDurationMs?: number;
   turnTtftMs?: number;
   turnTokenUsage?: TokenUsage;
-  canvasArtifactItems?: FlowToolItem[];
   expandedThinkingItemIds?: string[];
 }
 
@@ -68,7 +67,6 @@ export function areModelRoundItemPropsEqual(prev: ModelRoundItemProps, next: Mod
     prev.turnDurationMs === next.turnDurationMs &&
     prev.turnOutputDurationMs === next.turnOutputDurationMs &&
     prev.turnTtftMs === next.turnTtftMs &&
-    prev.turnTokenUsage === next.turnTokenUsage &&
-    prev.canvasArtifactItems === next.canvasArtifactItems
+    prev.turnTokenUsage === next.turnTokenUsage
   );
 }

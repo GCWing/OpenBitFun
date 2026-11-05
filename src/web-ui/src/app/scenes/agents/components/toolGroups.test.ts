@@ -28,9 +28,6 @@ const tools: GroupableTool[] = [
   { name: 'view_image', description: 'View an image', is_readonly: true },
   { name: 'AskUserQuestion', description: 'Ask the user a question', is_readonly: true },
   { name: 'GenerativeUI', description: 'Generate an interface', is_readonly: false },
-  { name: 'PatchCanvas', description: 'Patch a canvas', is_readonly: false },
-  { name: 'ReadCanvas', description: 'Read a canvas', is_readonly: true },
-  { name: 'UpdateCanvas', description: 'Update a canvas', is_readonly: false },
   { name: 'ComputerUse', description: 'Control a computer', is_readonly: false },
   { name: 'ControlHub', description: 'Use a control hub', is_readonly: false },
   { name: 'Playbook', description: 'Run a playbook', is_readonly: false },
@@ -59,19 +56,13 @@ describe('tool groups', () => {
       .toEqual(['AgentControl', 'AgentSendInput', 'AgentSpawn', 'AgentWait', 'ListModels', 'Skill']);
   });
 
-  it('groups image, canvas, and computer automation tools by their user-facing purpose', () => {
+  it('groups image, interactive UI, and computer automation tools by their user-facing purpose', () => {
     const groups = resolveToolGroups(tools, [], t as never);
 
     expect(groups.find((group) => group.id === 'builtin:image-understanding')?.tools.map((tool) => tool.name))
       .toEqual(['analyze_image', 'view_image']);
-    expect(groups.find((group) => group.id === 'builtin:interaction-canvas')?.tools.map((tool) => tool.name))
-      .toEqual([
-        'AskUserQuestion',
-        'GenerativeUI',
-        'PatchCanvas',
-        'ReadCanvas',
-        'UpdateCanvas',
-      ]);
+    expect(groups.find((group) => group.id === 'builtin:interactive-ui')?.tools.map((tool) => tool.name))
+      .toEqual(['AskUserQuestion', 'GenerativeUI']);
     expect(groups.find((group) => group.id === 'builtin:computer-automation')?.tools.map((tool) => tool.name))
       .toEqual(['ComputerUse', 'ControlHub', 'Playbook']);
   });

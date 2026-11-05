@@ -435,9 +435,13 @@ export class MCPAPI {
    */
   static async sendMCPAppMessage(request: {
     serverId: string;
+    signal?: AbortSignal;
     [key: string]: unknown;
   }): Promise<Record<string, unknown>> {
-    return api.invoke('send_mcp_app_message', { request });
+    const { signal, ...payload } = request;
+    return signal
+      ? api.invoke('send_mcp_app_message', { request: payload }, { signal })
+      : api.invoke('send_mcp_app_message', { request: payload });
   }
 
   static async submitMCPInteractionResponse(

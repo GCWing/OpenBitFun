@@ -88,6 +88,7 @@ vi.mock('./flow-chat-manager/PeerSessionRefreshModule', () => ({
 vi.mock('./flow-chat-manager', () => ({
   saveAllInProgressTurns: vi.fn(),
   immediateSaveDialogTurn: vi.fn(),
+  saveDialogTurnConfirmed: vi.fn(),
   createChatSession: vi.fn(),
   switchChatSession: (...args: unknown[]) => storeMocks.switchChatSession(...args),
   deleteChatSession: vi.fn(),

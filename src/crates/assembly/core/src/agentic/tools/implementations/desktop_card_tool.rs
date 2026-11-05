@@ -1431,6 +1431,7 @@ mod tests {
             dialog_turn_id: None,
             workspace: None,
             loaded_deferred_tool_specs: Vec::new(),
+            model_client: None,
             primary_model_facts: Default::default(),
             custom_data: HashMap::new(),
             computer_use_host: None,

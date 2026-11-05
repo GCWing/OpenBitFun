@@ -984,6 +984,19 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
         ),
         option(
             "setting.tools.execution",
+            "genui-library",
+            string_enum(
+                &crate::generative_ui::catalog()["profiles"]
+                    .as_object()
+                    .expect("GenUI profile catalog")
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+            ),
+            config("ai.generative_ui_library"),
+        ),
+        option(
+            "setting.tools.execution",
             "tool-json-repair",
             boolean(),
             config("ai.allow_tool_json_repair"),

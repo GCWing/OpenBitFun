@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "9b42d8bd570aa1f371e2ddfbb4c6d8384e97492e7987c774eef00c1f087db6dc",
-  "count": 205,
+  "catalogDigest": "17f5700a9faf966a376680ae8480c1ce1cf06d69caab971e88c33e1c96a1802a",
+  "count": 200,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
-    "unstructuredInteraction": 170,
+    "unstructuredInteraction": 165,
     "visualSelection": 26
   },
   "entries": [
@@ -1372,88 +1372,6 @@
         "command:miniapp_market_withdraw_submission",
         "command:miniapp_market_list_submissions",
         "command:miniapp_render_slide_page"
-      ]
-    },
-    {
-      "capabilityId": "feature.canvas",
-      "itemId": "artifact-open",
-      "titleZh": "从会话工具结果加载并打开持久化 Canvas 产物",
-      "titleEn": "Load and open persistent Canvas artifacts from session tool results",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“从会话工具结果加载并打开持久化 Canvas 产物”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Load and open persistent Canvas artifacts from session tool results” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      },
-      "evidence": [
-        "command:load_canvas_artifact"
-      ]
-    },
-    {
-      "capabilityId": "feature.canvas",
-      "itemId": "state",
-      "titleZh": "在重新打开或刷新 Canvas 时加载和保存交互状态",
-      "titleEn": "Load and save interactive state when a Canvas is reopened or refreshed",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“在重新打开或刷新 Canvas 时加载和保存交互状态”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Load and save interactive state when a Canvas is reopened or refreshed” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      },
-      "evidence": [
-        "command:load_canvas_state",
-        "command:save_canvas_state"
-      ]
-    },
-    {
-      "capabilityId": "feature.canvas",
-      "itemId": "element-context",
-      "titleZh": "选择 Canvas 内的元素并把元素引用加入会话上下文",
-      "titleEn": "Select an element inside Canvas and add its reference to session context",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“选择 Canvas 内的元素并把元素引用加入会话上下文”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Select an element inside Canvas and add its reference to session context” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      },
-      "evidence": [
-        "source:src/web-ui/src/tools/openbitfun-canvas/OpenBitFunCanvasPanel.tsx#createCanvasElementContext"
-      ]
-    },
-    {
-      "capabilityId": "feature.canvas",
-      "itemId": "runtime-errors",
-      "titleZh": "捕获运行错误、上报诊断并请求智能体自动修复",
-      "titleEn": "Capture runtime errors, report diagnostics, and ask the agent to repair them",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“捕获运行错误、上报诊断并请求智能体自动修复”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Capture runtime errors, report diagnostics, and ask the agent to repair them” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      },
-      "evidence": [
-        "command:report_canvas_runtime_error",
-        "source:src/web-ui/src/tools/openbitfun-canvas/OpenBitFunCanvasPanel.tsx#canvas-runtime-auto-repair"
-      ]
-    },
-    {
-      "capabilityId": "feature.canvas",
-      "itemId": "export-html",
-      "titleZh": "把当前 Canvas 导出为可独立打开的 HTML 文件",
-      "titleEn": "Export the current Canvas as a standalone HTML file",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“把当前 Canvas 导出为可独立打开的 HTML 文件”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Export the current Canvas as a standalone HTML file” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      },
-      "evidence": [
-        "source:src/web-ui/src/tools/openbitfun-canvas/canvasHtmlExportService.ts#export async function exportCanvasHtml"
       ]
     },
     {

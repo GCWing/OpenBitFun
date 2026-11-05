@@ -50,7 +50,6 @@ import type { TranscriptExportScope } from '../../utils/dialogTranscriptExport';
 import { buildTranscriptExportLabels } from '../../utils/transcriptExportLabels';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
-import { canvasArtifactReferenceFromToolItem } from '../../utils/canvasArtifactPresentation';
 import { areModelRoundItemPropsEqual, type ModelRoundItemProps } from './modelRoundItemMemo';
 import './ModelRoundItem.scss';
 
@@ -374,7 +373,6 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
     turnOutputDurationMs,
     turnTtftMs,
     turnTokenUsage,
-    canvasArtifactItems = [],
     expandedThinkingItemIds = [],
   }) => {
     const { t } = useTranslation('flow-chat');
@@ -472,16 +470,13 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
     const disableExploreGrouping = isModelRoundGroupingDisabled(round);
     const groupedItems = useMemo(() => {
       if (projectedGroups) return projectedGroups;
-      const visibleItems = isTurnComplete
-        ? sortedItems.filter(item => !canvasArtifactReferenceFromToolItem(item))
-        : sortedItems;
       return buildModelRoundItemGroups({
-        items: visibleItems,
+        items: sortedItems,
         isStreaming: round.isStreaming,
         disableExploreGrouping,
         isCollapsibleTool,
       });
-    }, [disableExploreGrouping, isTurnComplete, projectedGroups, round.isStreaming, sortedItems]);
+    }, [disableExploreGrouping, projectedGroups, round.isStreaming, sortedItems]);
 
     const groupSummary = useMemo(
       () => renderTraceEnabled ? summarizeModelRoundItemGroups(groupedItems) : null,
@@ -735,25 +730,6 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
           keyPrefix: activeAttempt ? `attempt:${activeAttempt.id}` : 'round',
           isFinalSection: isLastRound,
         })}
-
-        {canvasArtifactItems.length > 0 && (
-          <div
-            className="model-round-item__canvas-attachments"
-            data-openbitfun-product-component="model-round-item"
-            data-openbitfun-product-part="canvasAttachments"
-          >
-            {canvasArtifactItems.map((item, index) => (
-              <FlowItemRenderer
-                key={`canvas-attachment:${item.id}`}
-                item={item}
-                turnId={turnId}
-                roundId={round.id}
-                isLastItem={index === canvasArtifactItems.length - 1}
-                expandedThinkingItemIds={expandedThinkingItemIds}
-              />
-            ))}
-          </div>
-        )}
 
         {shouldReserveFooter && (
           <TurnFooter turnId={turnId} isLatestTurn={isLatestTurn} ready={shouldRevealFooter}>

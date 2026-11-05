@@ -279,7 +279,6 @@ describe('composeAppearancePackage', () => {
     expect(resolved.renderers?.xterm).toBeDefined();
     expect(resolved.renderers?.mermaid).toBeDefined();
     expect(resolved.renderers?.['generative-widget']).toBeDefined();
-    expect(resolved.renderers?.['openbitfun-canvas']).toBeDefined();
     expect(Object.keys(resolved.renderers?.['theme-tokens']?.settings.tokens ?? {})).toEqual(
       expect.arrayContaining(APPEARANCE_THEME_TOKEN_NAMES),
     );

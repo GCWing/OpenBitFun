@@ -377,6 +377,13 @@
             "drag-restore": "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens",
             "desktop-pinning": "Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards"
           }
+        },
+        "generative-ui": {
+          "title": "Generative UI",
+          "summary": "Generate interactive interfaces in a conversation using the selected component library.",
+          "items": {
+            "app-generation": "Generate an interactive GenUI application rendered by the host"
+          }
         }
       },
       "setting": {
@@ -540,7 +547,8 @@
               "computer-use-permissions": "Inspect and request accessibility and screen-recording permissions",
               "browser-auto-connect": "Choose whether OpenBitFun reconnects browser control at startup",
               "browser-setup": "Discover and choose a browser, configure default CDP, or restart it when needed",
-              "json-repair": "Choose whether malformed model-generated tool-argument JSON may be repaired within safety boundaries"
+              "json-repair": "Choose whether malformed model-generated tool-argument JSON may be repaired within safety boundaries",
+              "genui-library": "Choose the GenUI component library and try its preview"
             }
           },
           "desktop-control": {

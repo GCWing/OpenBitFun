@@ -357,23 +357,6 @@ def build_renderers(colors: Mapping[str, str], appearance_id: str) -> dict[str, 
                 "vars": widget_tokens,
             },
         },
-        "openbitfun-canvas": {
-            "version": 1,
-            "settings": {
-                "id": appearance_id,
-                "mode": "dark",
-                "bg": background,
-                "panel": elevated,
-                "fg": colors["text"],
-                "muted": colors["textMuted"],
-                "border": colors["textDisabled"],
-                "accent": accent,
-                "success": colors["success"],
-                "warning": colors["warning"],
-                "danger": colors["danger"],
-                "info": colors["info"],
-            },
-        },
     }
 
 

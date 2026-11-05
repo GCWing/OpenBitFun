@@ -1,0 +1,89 @@
+{
+  "ledger": {
+    "schemaVersion": 2,
+    "id": "ledger",
+    "title": "Ledger",
+    "template": "openbitfun.app",
+    "designSpec": {
+      "id": "openbitfun.desktop.v1",
+      "revision": 1
+    },
+    "source": {
+      "kind": "openui-lang",
+    "content": "root = Col([title, total])\ntitle = Title(\"Ledger\", \"lg\")\ntotal = Text($total + \"\", \"lg\", null, \"semibold\", false, false, true)"
+    },
+    "state": {
+      "total": {
+        "type": "number",
+        "default": 0
+      }
+    },
+    "libraryId": "openbitfun.composable.v1",
+    "libraryRevision": 2
+  },
+  "calculator": {
+    "schemaVersion": 2,
+    "id": "calculator",
+    "title": "Calculator",
+    "template": "openbitfun.app",
+    "designSpec": {
+      "id": "openbitfun.desktop.v1",
+      "revision": 1
+    },
+    "source": {
+      "kind": "openui-lang",
+      "content": "root = Col([title])\ntitle = Title(\"Calculator\", \"lg\")"
+    },
+    "state": {
+      "hours": {
+        "type": "number",
+        "default": 0
+      },
+      "enabled": {
+        "type": "boolean",
+        "default": false
+      }
+    },
+    "libraryId": "openbitfun.composable.v1",
+    "libraryRevision": 2
+  },
+  "picker": {
+    "schemaVersion": 2,
+    "id": "equipment-picker",
+    "title": "Equipment selection",
+    "template": "openbitfun.app",
+    "designSpec": {
+      "id": "openbitfun.desktop.v1",
+      "revision": 1
+    },
+    "source": {
+      "kind": "openui-lang",
+      "content": "root = Col([Title(\"Equipment selection\", \"lg\"), Text(\"Camera\")])"
+    },
+    "state": {
+      "query": {
+        "type": "string",
+        "default": ""
+      }
+    },
+    "libraryId": "openbitfun.composable.v1",
+    "libraryRevision": 2
+  },
+  "reference": {
+    "schemaVersion": 2,
+    "id": "reference",
+    "title": "Reference",
+    "template": "openbitfun.reference",
+    "designSpec": {
+      "id": "openbitfun.desktop.v1",
+      "revision": 1
+    },
+    "source": {
+      "kind": "openui-lang",
+      "content": "root = Col([title])\ntitle = Title(\"Reference\", \"lg\")"
+    },
+    "state": {},
+    "libraryId": "openbitfun.composable.readonly.v1",
+    "libraryRevision": 2
+  }
+}

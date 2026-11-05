@@ -2215,6 +2215,13 @@
   gap: var(--openbitfun-control-flow-chat-inline-gap);
 }
 
+.user-message-item__host-evidence {
+  margin: 0;
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-flow-meta-font-size);
+  line-height: var(--openbitfun-type-flow-meta-line-height);
+}
+
 .user-message-item__main-contents-bridge {
   display: contents;
 }

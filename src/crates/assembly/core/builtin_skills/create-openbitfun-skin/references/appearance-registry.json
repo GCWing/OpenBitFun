@@ -15708,8 +15708,7 @@
     "monaco",
     "xterm",
     "mermaid",
-    "generative-widget",
-    "openbitfun-canvas"
+    "generative-widget"
   ],
   "defaultForceableProperties": [
     "backgroundColor",

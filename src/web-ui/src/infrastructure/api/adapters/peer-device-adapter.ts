@@ -352,6 +352,7 @@ export interface PeerDeviceTransportHooks {
   supportsSshNoneAuthV1?: boolean;
   supportsSshPortScopedIdentityV1?: boolean;
   supportsWholeSessionCopyV1?: boolean;
+  supportsGenUiLibrariesV1?: boolean;
   supportsModelRoutingV1?: boolean;
   supportsModelPoolSelectionV1?: boolean;
   supportsBtwModelPoolSelectionV1?: boolean;
@@ -498,6 +499,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       | 'supportsSshNoneAuthV1'
       | 'supportsSshPortScopedIdentityV1'
       | 'supportsWholeSessionCopyV1'
+      | 'supportsGenUiLibrariesV1'
       | 'supportsModelRoutingV1'
       | 'supportsModelPoolSelectionV1'
       | 'supportsBtwModelPoolSelectionV1'
@@ -588,7 +590,17 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
         'whole_session_copy_v1_unsupported: The connected Peer host does not support whole-session copying',
       );
     }
-
+    const productRequest = params?.request;
+    if (action === 'product_control_invoke' && productRequest?.capabilityId === 'setting.tools.execution'
+      && productRequest?.optionId === 'genui-library' && this.hooks.supportsGenUiLibrariesV1 !== true) {
+      throw new Error('This peer does not advertise gen_ui_libraries_v1; component library settings are unsupported');
+    }
+    const configRequest = (params as { request?: { path?: string; paths?: string[] } } | undefined)?.request;
+    if (['get_config', 'get_configs', 'set_config', 'reset_config'].includes(action)
+      && (configRequest?.path === 'ai.generative_ui_library' || configRequest?.paths?.includes('ai.generative_ui_library'))
+      && this.hooks.supportsGenUiLibrariesV1 !== true) {
+      throw new Error('This peer does not advertise gen_ui_libraries_v1; component library settings are unsupported');
+    }
     if (
       action === 'rollback_session_to_turn' &&
       this.hooks.supportsTargetedSessionRollback !== true

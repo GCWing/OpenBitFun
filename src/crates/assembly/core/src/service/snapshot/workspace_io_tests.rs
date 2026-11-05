@@ -686,6 +686,7 @@ async fn wrapped_remote_write_and_delete_produce_recorded_history_without_a_remo
             identity.clone(),
         )),
         loaded_deferred_tool_specs: Vec::new(),
+        model_client: None,
         primary_model_facts: Default::default(),
         custom_data: HashMap::new(),
         computer_use_host: None,

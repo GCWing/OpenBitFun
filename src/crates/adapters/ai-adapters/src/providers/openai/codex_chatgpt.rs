@@ -216,6 +216,17 @@ fn try_build_request_body_with_context(
         }
     }
 
+    // Request-scoped output contracts must survive custom body merging on
+    // this Responses route too (including independent review calls).
+    if let Some(schema) = request_context.and_then(|context| context.output_schema.as_ref()) {
+        body["text"]["format"] = json!({
+            "type": "json_schema",
+            "name": "openbitfun_output",
+            "strict": true,
+            "schema": schema
+        });
+    }
+
     shared::log_request_body(
         TARGET,
         "Codex ChatGPT request body (excluding tools):",
@@ -287,6 +298,41 @@ pub(crate) async fn send_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn request_output_schema_survives_custom_body_without_leaking_to_next_request() {
+        let client = AIClient::new(
+            serde_json::from_value(json!({
+                "name": "test", "base_url": "https://chatgpt.com/backend-api/codex",
+                "request_url": "https://chatgpt.com/backend-api/codex/responses",
+                "api_key": "synthetic", "model": "gpt-5.5", "format": "responses",
+                "context_window": 128000, "inline_think_in_text": false, "skip_ssl_verify": false
+            }))
+            .unwrap(),
+        );
+        let schema = json!({"type":"object","properties":{"issues":{"type":"array","items":{"type":"string"}}},"required":["issues"],"additionalProperties":false});
+        let context = ModelRequestContext {
+            output_schema: Some(schema.clone()),
+            ..Default::default()
+        };
+        let custom = json!({"text":{"format":{"type":"text"},"verbosity":"low"}});
+        let body = try_build_request_body_with_context(
+            &client,
+            None,
+            vec![],
+            None,
+            Some(custom.clone()),
+            Some(&context),
+        )
+        .unwrap();
+        assert_eq!(body["text"]["format"]["schema"], schema);
+        assert_eq!(body["text"]["format"]["type"], "json_schema");
+        assert_eq!(body["text"]["format"]["strict"], true);
+        assert_eq!(body["text"]["verbosity"], "low");
+        let next =
+            try_build_request_body_with_context(&client, None, vec![], None, Some(custom), None)
+                .unwrap();
+        assert_eq!(next["text"]["format"]["type"], "text");
+    }
 
     #[test]
     fn ordinary_api_codex_endpoint_preserves_custom_body_and_does_not_gain_affinity() {

@@ -4286,6 +4286,7 @@ mod tests {
             attempt_index: None,
             agent_type: "agent".to_string(),
             workspace: None,
+            model_client: None,
             primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
             context_vars: HashMap::new(),
             subagent_parent_info: None,

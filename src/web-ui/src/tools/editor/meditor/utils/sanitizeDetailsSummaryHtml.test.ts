@@ -70,7 +70,7 @@ describe('details summary HTML security', () => {
   });
 
   it.each(['https://example.com/docs', 'mailto:dev@example.com', '#section', '../README.md',
-    '/workspace/README.md', 'file:///workspace/README.md', 'openbitfun-canvas:example', 'tab:example'])(
+    '/workspace/README.md', 'file:///workspace/README.md', 'tab:example'])(
     'preserves supported links: %s', (href) => {
       expect(preview(`<a href="${href}">Open</a>`).querySelector('a')?.getAttribute('href')).toBe(href);
     },
