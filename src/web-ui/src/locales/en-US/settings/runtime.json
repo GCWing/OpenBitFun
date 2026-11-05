@@ -54,6 +54,22 @@
         "eyeColor.lightGray": "Light gray",
         "eyeColor.custom": "Custom"
       },
+      "livingLine": {
+        "title": "LivingLine settings",
+        "reset": "Restore defaults",
+        "lineColor": "Line color",
+        "questionColor": "Question color",
+        "errorColor": "Error color",
+        "flowColor": "Flow color",
+        "lineWidth": "Line width",
+        "flowLength": "Flow length",
+        "flowWidth": "Flow width",
+        "flowBlur": "Flow blur",
+        "flowIntensity": "Flow intensity",
+        "lineGlowBlur": "Line glow blur",
+        "idlePeriodSeconds": "Idle period (seconds)",
+        "workingPeriodSeconds": "Working period (seconds)"
+      },
       "presets": {
         "blueGolden": {
           "name": "困困"

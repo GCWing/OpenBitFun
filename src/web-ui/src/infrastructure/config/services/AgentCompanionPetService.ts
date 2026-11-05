@@ -5,6 +5,7 @@ import { isTauriRuntime } from '@/infrastructure/runtime';
 import { createLogger } from '@/shared/utils/logger';
 import builtinPetMetadata from './agentCompanionBuiltinPetMetadata.json';
 import { getPetSpriteLayout } from './agentCompanionPetSprite';
+import { LIVING_LINE_PET } from './livingLinePetIdentity';
 
 const log = createLogger('AgentCompanionPetService');
 const BUILTIN_PET_BASE = '/agent-companion-pets';
@@ -230,6 +231,7 @@ const BUILTIN_PETS: AgentCompanionPetSelection[] = [
     spritesheetMimeType: 'image/webp',
   },
   GROK_LIVE_PET,
+  LIVING_LINE_PET,
 ];
 
 export interface AgentCompanionPetPackage extends AgentCompanionPetSelection {

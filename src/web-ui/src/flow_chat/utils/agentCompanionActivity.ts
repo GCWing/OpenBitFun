@@ -53,9 +53,13 @@ export interface AgentCompanionTaskStatus {
   deviceName?: string;
 }
 
+export type LivingLineActivityState = 'idle' | 'working' | 'question' | 'error';
+
 export interface AgentCompanionActivityPayload {
   mood: AgentCompanionMood;
   tasks: AgentCompanionTaskStatus[];
+  /** Persistent semantic state; independent of transient mood and bubble visibility. */
+  livingLineState?: LivingLineActivityState;
   sequence?: number;
   emittedAt?: number;
 }
@@ -63,6 +67,7 @@ export interface AgentCompanionActivityPayload {
 const EMPTY_ACTIVITY: AgentCompanionActivityPayload = {
   mood: 'rest',
   tasks: [],
+  livingLineState: 'idle',
 };
 
 const taskOrderBySessionId = new Map<string, number>();
@@ -355,6 +360,13 @@ function taskStableOrder(task: AgentCompanionTaskStatus): number {
   return ensureTaskOrder(task.sessionId);
 }
 
+export function deriveLivingLineState(tasks: readonly AgentCompanionTaskStatus[]): LivingLineActivityState {
+  if (tasks.some(task => task.state === 'error')) return 'error';
+  if (tasks.some(task => task.state === 'attention')) return 'question';
+  if (tasks.some(task => task.state === 'running' || task.state === 'waiting')) return 'working';
+  return 'idle';
+}
+
 function aggregateMood(tasks: AgentCompanionTaskStatus[]): AgentCompanionMood {
   if (tasks.some(task => task.mood === 'waiting')) {
     return 'waiting';
@@ -490,6 +502,7 @@ export function buildAgentCompanionActivity(): AgentCompanionActivityPayload {
   return {
     mood: aggregateMood(sortedTasks),
     tasks: sortedTasks,
+    livingLineState: deriveLivingLineState(tasks),
   };
 }
 

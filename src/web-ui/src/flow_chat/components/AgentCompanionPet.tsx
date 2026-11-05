@@ -27,6 +27,9 @@ import type { AgentCompanionMood } from '../utils/agentCompanionMood';
 import type { AgentCompanionPetSelection } from '@/infrastructure/config/services/AIExperienceConfigService';
 import { resolveAgentCompanionPet } from '@/infrastructure/config/services/AgentCompanionPetService';
 import { isGrokLivePet } from '@/infrastructure/config/services/grokLivePetIdentity';
+import { isLivingLinePet } from '@/infrastructure/config/services/livingLinePetIdentity';
+import { LivingLinePet } from './living-line/LivingLinePet';
+import type { LivingState } from './living-line/geometry';
 import { GrokLivePet } from './GrokLivePet';
 import { getPetAnimationFrameCount, getPetLookFrame, getPetSpriteFrameSize } from '@/infrastructure/config/services/agentCompanionPetSprite';
 import { createLogger } from '@/shared/utils/logger';
@@ -46,6 +49,7 @@ export interface AgentCompanionPetProps {
   action?: 'jumping' | 'waving' | 'failed' | null;
   needsAttention?: boolean;
   toolWaiting?: boolean;
+  livingLineState?: LivingState;
   dragDirection?: 'left' | 'right';
   onPetFrameSizeChange?: (size: { width: number; height: number } | null) => void;
 }
@@ -597,5 +601,10 @@ const SpriteAgentCompanionPet: React.FC<AgentCompanionPetProps> = ({
   );
 };
 
-export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = (props) =>
-  isGrokLivePet(props.pet) ? <GrokLivePet {...props} /> : <SpriteAgentCompanionPet {...props} />;
+export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = (props) => {
+  if (isLivingLinePet(props.pet)) {
+    const state = props.livingLineState ?? (props.mood === 'waiting' ? 'question' : props.mood === 'working' || props.mood === 'analyzing' ? 'working' : 'idle');
+    return <LivingLinePet state={state} mood={props.mood} className={props.className} onFrameSizeChange={props.onPetFrameSizeChange} />;
+  }
+  return isGrokLivePet(props.pet) ? <GrokLivePet {...props} /> : <SpriteAgentCompanionPet {...props} />;
+};

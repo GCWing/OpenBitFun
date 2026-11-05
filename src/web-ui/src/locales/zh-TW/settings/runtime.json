@@ -54,6 +54,22 @@
         "eyeColor.lightGray": "淺灰色",
         "eyeColor.custom": "自訂"
       },
+      "livingLine": {
+        "title": "LivingLine 設定",
+        "reset": "恢復預設",
+        "lineColor": "線條顏色",
+        "questionColor": "提問顏色",
+        "errorColor": "錯誤顏色",
+        "flowColor": "流動顏色",
+        "lineWidth": "線條寬度",
+        "flowLength": "流動長度",
+        "flowWidth": "流動寬度",
+        "flowBlur": "流動模糊",
+        "flowIntensity": "流動強度",
+        "lineGlowBlur": "線條發光模糊",
+        "idlePeriodSeconds": "閒置週期（秒）",
+        "workingPeriodSeconds": "工作週期（秒）"
+      },
       "presets": {
         "blueGolden": {
           "name": "困困"

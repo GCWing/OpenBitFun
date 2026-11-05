@@ -24,6 +24,7 @@ describe('AgentCompanionPetService built-in presets', () => {
     const pets = await listAgentCompanionPets();
     const blueGolden = pets.find(pet => pet.id === 'blue-golden');
     const openbitfun = pets.find(pet => pet.id === 'openbitfun');
+    const livingLine = pets.find(pet => pet.id === 'living-line');
 
     expect(DEFAULT_AGENT_COMPANION_PET).toMatchObject({
       id: 'bitblob',
@@ -54,6 +55,12 @@ describe('AgentCompanionPetService built-in presets', () => {
       displayName: 'OpenBitFun',
       packagePath: '/agent-companion-pets/openbitfun',
       spritesheetPath: '/agent-companion-pets/openbitfun/spritesheet.webp',
+    });
+    expect(livingLine).toMatchObject({
+      displayName: 'LivingLine',
+      packagePath: '/agent-companion-pets/living-line',
+      spritesheetPath: '/agent-companion-pets/living-line/preview.svg',
+      previewSrc: '/agent-companion-pets/living-line/preview.svg',
     });
     expect(invoke).not.toHaveBeenCalled();
   });

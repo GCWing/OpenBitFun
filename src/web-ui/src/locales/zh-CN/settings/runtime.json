@@ -54,6 +54,22 @@
         "eyeColor.lightGray": "浅灰色",
         "eyeColor.custom": "自定义"
       },
+      "livingLine": {
+        "title": "LivingLine 设置",
+        "reset": "恢复默认",
+        "lineColor": "线条颜色",
+        "questionColor": "提问颜色",
+        "errorColor": "错误颜色",
+        "flowColor": "流动颜色",
+        "lineWidth": "线条宽度",
+        "flowLength": "流动长度",
+        "flowWidth": "流动宽度",
+        "flowBlur": "流动模糊",
+        "flowIntensity": "流动强度",
+        "lineGlowBlur": "线条发光模糊",
+        "idlePeriodSeconds": "闲置周期（秒）",
+        "workingPeriodSeconds": "工作周期（秒）"
+      },
       "presets": {
         "blueGolden": {
           "name": "困困"

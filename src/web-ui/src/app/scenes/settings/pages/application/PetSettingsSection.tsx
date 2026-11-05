@@ -18,6 +18,8 @@ import {
 } from '@/infrastructure/config/services/AgentCompanionPetService';
 import { getPetSpriteLayout } from '@/infrastructure/config/services/agentCompanionPetSprite';
 import { isGrokLivePet } from '@/infrastructure/config/services/grokLivePetIdentity';
+import { isLivingLinePet } from '@/infrastructure/config/services/livingLinePetIdentity';
+import LivingLineSettingsSection from './LivingLineSettingsSection';
 import { DEFAULT_GROK_LIVE_SETTINGS, readGrokLiveSettings, saveGrokLiveSettings, subscribeGrokLiveSettings, type GrokLiveSettings } from '@/flow_chat/components/grok-live/grokLiveSettings';
 import { aiExperienceConfigService, type AIExperienceSettings } from '@/infrastructure/config/services/AIExperienceConfigService';
 import { confirmDanger } from '@/infrastructure/confirm-dialog';
@@ -41,11 +43,12 @@ const log = createLogger('PetSettingsSection');
 const IS_TAURI_DESKTOP = typeof window !== 'undefined' && '__TAURI__' in window;
 
 function getPetPreviewStyle(pet: AgentCompanionPetPackage): React.CSSProperties {
+  const vectorPet = isGrokLivePet(pet) || isLivingLinePet(pet);
   return {
-    imageRendering: isGrokLivePet(pet) || (pet.source === 'preset' && pet.id === 'bitblob') ? 'auto' : undefined,
+    imageRendering: vectorPet || (pet.source === 'preset' && pet.id === 'bitblob') ? 'auto' : undefined,
     '--openbitfun-pet-preview-src': `url("${pet.previewSrc}")`,
-    backgroundSize: isGrokLivePet(pet) ? 'contain' : `800% ${getPetSpriteLayout(pet.spriteVersionNumber).rows * 100}%`,
-    ...(isGrokLivePet(pet) ? { backgroundPosition: 'center', animation: 'none' } : {}),
+    backgroundSize: vectorPet ? 'contain' : `800% ${getPetSpriteLayout(pet.spriteVersionNumber).rows * 100}%`,
+    ...(vectorPet ? { backgroundPosition: 'center', animation: 'none' } : {}),
   } as React.CSSProperties;
 }
 
@@ -469,6 +472,7 @@ const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                 )}
               </>
             )}
+            {isLivingLinePet(selectedCompanionPetReference) && <LivingLineSettingsSection />}
           </ConfigPageSection>
         )}
       </ConfigPageSectionStack>
