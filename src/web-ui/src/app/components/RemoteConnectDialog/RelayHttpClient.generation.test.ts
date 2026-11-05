@@ -96,6 +96,7 @@ describe.each(['https://remote.openbitfun.com/v/1.0.2', 'http://192.168.1.9:9700
       ? Response.json({ device_id: 'desktop', public_key: toB64(peerPublicKey) })
       : Response.json({ encrypted_data: encrypted.data, nonce: encrypted.nonce }));
     vi.stubGlobal('fetch', fetch);
+    vi.spyOn(AccountRealtime.prototype, 'ready').mockResolvedValue();
     const rpc = vi.spyOn(AccountRealtime.prototype, 'call').mockResolvedValue({ encrypted_data: encrypted.data, nonce: encrypted.nonce });
     await expect(client.sendDeviceRpc('desktop', { cmd: 'cancel_task' })).rejects.toThrow(message);
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -106,11 +107,14 @@ describe.each(['https://remote.openbitfun.com/v/1.0.2', 'http://192.168.1.9:9700
   });
   it('does not post a command after the target changes during key lookup', async () => {
     const pending = deferred<Response>(); const fetch = vi.fn(() => pending.promise); vi.stubGlobal('fetch', fetch);
+    const ready = vi.spyOn(AccountRealtime.prototype, 'ready').mockResolvedValue();
     const client = new RelayHttpClient(relayUrl, identity()); client.setTargetDeviceId('desktop');
     const result = client.sendDeviceRpc('desktop', { cmd: 'cancel_task' });
     client.setTargetDeviceId('another');
     pending.resolve(Response.json({ device_id: 'desktop', public_key: toB64(peerPublicKey) }));
     await expect(result).rejects.toBeInstanceOf(AccountIdentityChangedError);
+    expect(ready).not.toHaveBeenCalled();
+    client.resetConnectionIdentity();
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it('stops transient directory retries when the account changes during backoff', async () => {

@@ -395,6 +395,9 @@ export class RelayHttpClient {
     const targetEpoch = this.controlTargetEpochValue;
     return this.withAccount(async (identity) => {
       const messageKey = await this.deviceMessageKey(identity, targetDeviceId);
+      if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
+        throw new AccountIdentityChangedError();
+      }
       const connection = this.realtime;
       if (!connection) throw new AccountIdentityChangedError();
       await connection.ready();
