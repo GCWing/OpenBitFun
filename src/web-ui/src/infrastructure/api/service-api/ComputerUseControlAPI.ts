@@ -120,7 +120,14 @@ const sharedScope = (snapshot: ComputerUseControlSnapshot) => ({ generation: sna
   target_revision: snapshot.target_revision ?? 0, authorization_revision: snapshot.sharing?.authorization_revision ?? 0 });
 
 export const computerUseControlAPI = {
-  status: () => api.invoke<ComputerUseControlSnapshot>('computer_use_control_status'),
+  status: (previous?: ComputerUseControlSnapshot) => {
+    const waitForChange = previous?.supported
+      && previous.capabilities?.includes('control-status-wait-v1') === true
+      && !['active', 'starting', 'awaiting_share'].includes(previous.state);
+    return api.invoke<ComputerUseControlSnapshot>('computer_use_control_status', waitForChange
+      ? { request: { generation: previous.generation, state: previous.state } }
+      : undefined);
+  },
   stop: (generation: number) => api.invoke<ComputerUseControlSnapshot>(
     'computer_use_control_stop', { request: { generation } },
   ),

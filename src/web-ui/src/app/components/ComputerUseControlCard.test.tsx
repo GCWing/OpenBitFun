@@ -209,6 +209,19 @@ it('stops asking a host that refuses device control', async () => {
   await act(async () => vi.advanceTimersByTime(5000));
   expect(mocks.status).toHaveBeenCalledOnce();
 });
+it('keeps one idle wait in flight and immediately presents a new host control generation', async () => {
+  const idle = { ...active('Window A'), state: 'idle', capabilities: ['control-status-wait-v1'] };
+  let resume!: (value: ComputerUseControlSnapshot) => void;
+  mocks.status.mockResolvedValueOnce(idle).mockReturnValueOnce(new Promise(resolve => { resume = resolve; }));
+  await act(async () => root.render(<ComputerUseControlCard />));
+  await act(async () => vi.advanceTimersByTime(1000));
+  expect(mocks.status).toHaveBeenLastCalledWith(idle);
+  await act(async () => vi.advanceTimersByTime(4000));
+  expect(mocks.status).toHaveBeenCalledTimes(2);
+  await act(async () => resume(active('New host window', 5)));
+  expect(container.textContent).toContain('New host window');
+  expect(container.textContent).toContain('computerControl.stop');
+});
 it('shows the preview by default and hides the card when control ends externally', async () => {
   mocks.status.mockResolvedValue(active('Window A'));
   mocks.preview.mockResolvedValue({ generation: 4, target: 'Window A', image_base64: 'AA==', mime_type: 'image/png',

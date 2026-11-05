@@ -1,8 +1,24 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { computerUseControlAPI, projectControlPointer, type ComputerUseControlPreview } from './ComputerUseControlAPI';
+import { computerUseControlAPI, projectControlPointer, type ComputerUseControlPreview, type ComputerUseControlSnapshot } from './ComputerUseControlAPI';
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('./ApiClient', () => ({ api: { invoke } }));
 beforeEach(() => invoke.mockReset());
+
+it('offers an idle status cursor only after the executing host advertises waiting support', async () => {
+  const snapshot = { supported: true, generation: 3, state: 'idle', capabilities: [] } as unknown as ComputerUseControlSnapshot;
+  await computerUseControlAPI.status();
+  await computerUseControlAPI.status(snapshot);
+  expect(invoke.mock.calls).toEqual([
+    ['computer_use_control_status', undefined], ['computer_use_control_status', undefined],
+  ]);
+  snapshot.capabilities.push('control-status-wait-v1');
+  await computerUseControlAPI.status(snapshot);
+  expect(invoke).toHaveBeenLastCalledWith('computer_use_control_status', { request: { generation: 3, state: 'idle' } });
+  for (const state of ['active', 'starting', 'awaiting_share']) {
+    await computerUseControlAPI.status({ ...snapshot, state });
+    expect(invoke).toHaveBeenLastCalledWith('computer_use_control_status', undefined);
+  }
+});
 
 it('sends the observed generation with stop and preview to the selected host transport', async () => {
   await computerUseControlAPI.stop(41);
