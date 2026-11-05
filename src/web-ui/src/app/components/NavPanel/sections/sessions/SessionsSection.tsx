@@ -1084,7 +1084,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
 
       const historyOpenIntentDispatch = dispatchHistoryOpenIntentForSession(session, 'pointerdown');
       if (historyOpenIntentDispatch !== 'none') {
-        flowChatManager.preloadHistoricalSessionForOpen(session.sessionId);
+        flowChatManager.prewarmHistoricalSession(session.sessionId);
       }
     },
     [activeSessionId, dispatchHistoryOpenIntentForSession, editingSessionId],

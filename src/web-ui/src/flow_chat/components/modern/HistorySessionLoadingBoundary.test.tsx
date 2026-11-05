@@ -99,16 +99,34 @@ describe('history loading presentation handoff', () => {
     expect(animations.length).toBeGreaterThan(0);
   });
 
-  it('goes straight to the transcript when the load ends before the skeleton shows', async () => {
-    vi.spyOn(performance, 'now').mockReturnValue(5_000);
+  it.each([0, 140, 199])('presents a settled %d ms load immediately without an animation delay', elapsed => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(5_000);
     render();
+    expect(element('.history-session-skeleton').style.animationDelay).toBe('200ms');
+    clock.mockReturnValue(5_000 + elapsed);
     render({ loading: false });
-    // No skeleton hand-over: one short fade of the content.
-    expect(phase()).toBe('revealing');
-    expect(animations).toHaveLength(1);
-    expect(animations[0].element.matches('.history-session-loading__content')).toBe(true);
-    await finish();
     expect(phase()).toBe('idle');
+    expect(animations).toHaveLength(0);
+    expect(element('.history-session-loading__content').style.opacity).toBe('');
+    element('button').click();
+    expect(action).toHaveBeenCalledOnce();
+  });
+
+  it('starts a fresh 200 ms indicator delay for a different session and for a repeated load', () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(5_000);
+    render();
+    const initial = element('.history-session-skeleton');
+    render({ identity: 'peer:session-b' });
+    expect(element('.history-session-skeleton')).not.toBe(initial);
+    expect(element('.history-session-skeleton').style.animationDelay).toBe('200ms');
+    render({ identity: 'peer:session-b', loading: false });
+    expect(phase()).toBe('idle');
+    clock.mockReturnValue(10_000);
+    render({ identity: 'peer:session-b' });
+    clock.mockReturnValue(10_199);
+    render({ identity: 'peer:session-b', loading: false });
+    expect(phase()).toBe('idle');
+    expect(animations).toHaveLength(0);
   });
 
   it('preserves legacy appearance packages while keeping the old spinner invisible', () => {

@@ -28,6 +28,7 @@ export interface FlowChatContext {
     promise: Promise<void>;
     includeInternal: boolean;
     deferFullHistoryUntilActive: boolean;
+    retainInactiveTail?: boolean;
     workspaceId: string;
   }>;
   /** In-flight backend context restore keyed by device surface and activation. */

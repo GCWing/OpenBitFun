@@ -4,8 +4,12 @@
 
 `HistorySessionLoadingBoundary` covers open intents, cold hydration and bookmark
 restoration with one content-independent composition: seven 24px lines, a rounded
-user bubble and a shared light field. It retains the loading surface until the
-existing initial-content gate and `data-open-viewport-settled` both release.
+user bubble and a shared light field. Session loading indicators appear after
+200 ms, including reduced-motion mode and new-session creation. A complete,
+settled read inside that interval becomes visible immediately. Warm session
+switches also display their settled content immediately. The boundary retains
+the loading surface until the existing initial-content gate and
+`data-open-viewport-settled` both release.
 Only then does it read the rendered window once to align the decorative lines
 horizontally. Their height stays fixed; the measured rows are never animated,
 re-keyed or scrolled by this boundary.
@@ -30,6 +34,12 @@ negotiates the same scope through the optional single-Turn snapshot protocol.
 The first presentation depends only on that Turn, never on filling an event page
 with older Turns. Bookmark restoration and explicit navigation still resolve
 their requested range before presentation.
+
+Local hover, pointer-down and workspace-switch prewarming retains the complete
+last Turn in an inactive session. Opening reuses that read, including while it is in flight.
+The speculative result can commit only while the session remains historical and
+its content, workspace and device activation still match. It leaves legacy
+full-history completion deferred until selection and visible presentation.
 
 After visible presentation, local/SSH views may warm the preceding range in the
 existing window cache without replacing the rendered tail. Peer views may read

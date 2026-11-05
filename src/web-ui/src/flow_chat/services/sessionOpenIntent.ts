@@ -5,6 +5,7 @@ import {
 } from './historySessionDiagnostics';
 
 export const HISTORY_SESSION_OPEN_INTENT_EVENT = 'flowchat:history-session-open-intent';
+export const SESSION_LOADING_DELAY_MS = 200;
 const RECENT_HISTORY_OPEN_INTENT_MS = 750;
 const HISTORY_SESSION_OPEN_TRANSITION_MAX_MS = 4_000;
 

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { FlowChatOpeningBoundary } from './FlowChatOpeningBoundary';
+import { SESSION_LOADING_DELAY_MS } from '../../services/sessionOpenIntent';
 import './HistorySessionLoadingBoundary.scss';
 
 interface Props {
@@ -18,13 +19,6 @@ type Phase = 'idle' | 'loading' | 'exiting' | 'revealing';
 // brief: decoration must not add nearly half a second to a complete read.
 const EXIT_DURATION = 80;
 const REVEAL_DURATION = 100;
-/**
- * A load shorter than this never showed its skeleton (it fades in after a
- * delay, see the stylesheet): the transcript just fades in, without the
- * skeleton hand-over, so a fast open is not made to wait on choreography.
- */
-const QUICK_LOAD_MS = 260;
-const QUICK_REVEAL_DURATION = 80;
 
 /** Presentation only. The existing viewport owner decides when the transcript is settled. */
 export function HistorySessionLoadingBoundary({
@@ -32,9 +26,6 @@ export function HistorySessionLoadingBoundary({
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const coverStartedAt = useRef<{ identity: string; at: number } | null>(null);
-  if (loading && coverStartedAt.current?.identity !== identity) {
-    coverStartedAt.current = { identity, at: performance.now() };
-  }
   const [state, setState] = useState<{ identity: string; phase: Phase }>({
     identity, phase: loading ? 'loading' : 'idle',
   });
@@ -43,6 +34,11 @@ export function HistorySessionLoadingBoundary({
   }
   const phase = state.identity === identity ? state.phase : loading ? 'loading' : 'idle';
   const covering = !disabled && (loading || phase !== 'idle');
+  if (covering && coverStartedAt.current?.identity !== identity) {
+    coverStartedAt.current = { identity, at: performance.now() };
+  } else if (!covering) {
+    coverStartedAt.current = null;
+  }
 
   useLayoutEffect(() => {
     onPresentationChange?.(identity, !covering);
@@ -113,13 +109,8 @@ export function HistorySessionLoadingBoundary({
       if (!skeleton) { settle(); return; }
       const shownFor = coverStartedAt.current?.identity === identity
         ? performance.now() - coverStartedAt.current.at : Infinity;
-      if (shownFor < QUICK_LOAD_MS) {
-        setPhase('revealing');
-        const quick = animate(content, [{ opacity: 0 }, { opacity: 1 }], {
-          duration: QUICK_REVEAL_DURATION, easing: 'ease-out', fill: 'forwards',
-        });
-        await quick.finished;
-        if (!cancelled) settle();
+      if (shownFor < SESSION_LOADING_DELAY_MS) {
+        settle();
         return;
       }
       const viewport = content.getBoundingClientRect();
@@ -171,7 +162,7 @@ export function HistorySessionLoadingBoundary({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity, loading, hasTranscript, disabled]);
 
-  const skeleton = <HistorySessionSkeleton />;
+  const skeleton = <HistorySessionSkeleton key={identity} />;
   const overlayProps = {
     className: 'history-session-loading__overlay',
     hidden: !loading && phase === 'revealing',
@@ -208,7 +199,8 @@ export function HistorySessionLoadingBoundary({
 /** The history loading skeleton, shared with presentations that precede a session (a device switch). */
 export function HistorySessionSkeleton() {
   return (
-    <div className="history-session-skeleton" aria-hidden="true" data-openbitfun-component="modern-flow-chat" data-openbitfun-part="historySkeleton">
+    <div className="history-session-skeleton" style={{ animationDelay: `${SESSION_LOADING_DELAY_MS}ms` }}
+      aria-hidden="true" data-openbitfun-component="modern-flow-chat" data-openbitfun-part="historySkeleton">
       <div className="history-session-skeleton__column">
         <div className="history-session-skeleton__user"><span /><span /></div>
         <div className="history-session-skeleton__group history-session-skeleton__group--first">
