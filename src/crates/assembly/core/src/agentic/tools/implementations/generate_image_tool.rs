@@ -267,7 +267,7 @@ impl Tool for GenerateImageTool {
                 "service_id": {"type": "string"},
                 "service": {"type": "string"},
                 "dialect": {"type": "string"},
-                "model": {"type": "string"},
+                "model": {"type": "string", "description": "Model ID requested from the image service."},
                 "mime_type": {"type": "string"},
                 "bytes": {"type": "integer", "minimum": 0, "description": "Byte length of the first generated image."},
                 "summary": {"type": "string"}
@@ -368,7 +368,7 @@ impl Tool for GenerateImageTool {
             "service_id": resolved.service.id,
             "service": resolved.service.name,
             "dialect": format!("{:?}", resolved.service.dialect),
-            "model": resolved.service.model_name,
+            "model": target.requested_model(),
             "mime_type": persisted[0].mime,
             "bytes": persisted[0].bytes,
             "summary": summary,

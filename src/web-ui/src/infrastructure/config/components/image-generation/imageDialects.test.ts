@@ -19,7 +19,7 @@ describe('image service authentication routing', () => {
     const result = withImageServiceAuth(legacyService, { type: 'subscription', provider: 'codex' });
     expect(result).toMatchObject({ id: 'saved-service', dialect: 'chatgpt_codex', model_name: '', params: { n: 1 } });
     expect(resolveImageEndpoint(result.base_url, result.request_url, result.dialect))
-      .toBe('https://chatgpt.com/backend-api/codex/responses');
+      .toBe('https://chatgpt.com/backend-api/codex/images/generations');
     expect(legacyService.request_url).toBe('https://api.openai.com/v1/images/generations');
   });
 
@@ -36,10 +36,23 @@ describe('image service authentication routing', () => {
     expect(resolveImageEndpoint(result.base_url, result.request_url, result.dialect)).toBe('https://api.openai.com/v1/images/generations');
   });
 
-  it('preserves custom API-key gateways and explicitly chosen subscription models', () => {
+  it('preserves custom API-key gateways and legacy subscription model slots', () => {
     expect(withImageServiceAuth(legacyService, { type: 'api_key' })).toEqual(legacyService);
     const auth = { type: 'subscription' as const, provider: 'codex' as const };
     const service = { ...withImageServiceAuth(legacyService, auth), model_name: 'account-model' };
     expect(withImageServiceAuth(service, auth).model_name).toBe('account-model');
+  });
+
+  it('resolves old subscription endpoints without rewriting serialized settings', () => {
+    const root = 'https://chatgpt.com/backend-api/codex';
+    const auth = { type: 'subscription' as const, provider: 'codex' as const };
+    const saved = JSON.parse(JSON.stringify({ ...withImageServiceAuth(legacyService, auth),
+      request_url: `${root}/responses`, model_name: 'gpt-6.1-sol' }));
+    const snapshot = JSON.stringify(saved);
+    expect(resolveImageEndpoint(saved.base_url, saved.request_url, saved.dialect)).toBe(`${root}/images/generations`);
+    expect(resolveImageEndpoint(`${root}/responses/`, undefined, 'chatgpt_codex')).toBe(`${root}/images/generations`);
+    expect(resolveImageEndpoint(`${root}/images/generations`, undefined, 'chatgpt_codex')).toBe(`${root}/images/generations`);
+    expect(JSON.stringify(saved)).toBe(snapshot);
+    expect(resolveImageEndpoint(root, `${root}/responses`, 'openai_images')).toBe(`${root}/responses`);
   });
 });

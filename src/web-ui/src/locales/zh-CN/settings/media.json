@@ -124,8 +124,8 @@
       "modelName": {
         "label": "图像模型 ID",
         "hint": "填服务商用于图像生成的确切模型 ID，不是对话模型。",
-        "subscriptionPlaceholder": "留空则使用账号可用的模型",
-        "subscriptionHint": "这里填的是驱动图像工具的对话模型，不是图像模型名；留空会按账号可用模型自动选择。"
+        "subscriptionPlaceholder": "使用内置图像模型",
+        "subscriptionHint": "订阅生图使用内置图像模型，无需配置对话模型。"
       },
       "name": {
         "label": "显示名称",

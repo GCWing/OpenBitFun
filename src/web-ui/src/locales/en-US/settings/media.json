@@ -124,8 +124,8 @@
       "modelName": {
         "label": "Image model id",
         "hint": "The exact model id the provider expects for image generation, not a chat model.",
-        "subscriptionPlaceholder": "Empty uses any model the account offers",
-        "subscriptionHint": "This is the chat model that drives the image tool, not an image model name. Leave it empty to pick one from the account's catalog automatically."
+        "subscriptionPlaceholder": "Uses the built-in image model",
+        "subscriptionHint": "Subscription image generation uses a built-in image model. No chat model is needed."
       },
       "name": {
         "label": "Display name",

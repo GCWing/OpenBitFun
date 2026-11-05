@@ -24,14 +24,10 @@ const REQUEST_TIMEOUT_SECS: u64 = 180;
 /// Guard against a provider streaming an unbounded body.
 const MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MIME: &str = "image/png";
-/// The Responses API has a separate image-tool model. Keep this independent
-/// from the subscription's top-level chat model, which is only responsible for
-/// orchestrating the tool call and revising the prompt.
-const DEFAULT_CODEX_IMAGE_MODEL: &str = "gpt-image-2.5-sunburst";
-/// `high` is supported by the current GPT Image models and older GPT Image
-/// models, so existing subscription configurations can opt into a quality
-/// setting without a persisted-config migration.
-const DEFAULT_CODEX_IMAGE_QUALITY: &str = "high";
+/// Model ID observed in Codex Desktop's standalone Images requests. Legacy
+/// service model names described a chat orchestrator and must not be reinterpreted
+/// as image model IDs.
+const DEFAULT_CODEX_IMAGE_MODEL: &str = "gpt-image-2";
 
 /// Substrings that mean the provider refused on safety grounds rather than
 /// failing. Reported separately so the UI can say "blocked" instead of "failed".
@@ -60,6 +56,16 @@ pub struct ImageGenerationTarget<'a> {
     pub custom_headers_mode: Option<&'a str>,
     pub skip_ssl_verify: bool,
     pub proxy: Option<ProxyConfig>,
+}
+
+impl ImageGenerationTarget<'_> {
+    /// Model ID sent to the image service, not an observed backend model.
+    pub fn requested_model(&self) -> &str {
+        match self.dialect {
+            ImageDialect::ChatgptCodex => DEFAULT_CODEX_IMAGE_MODEL,
+            _ => self.model,
+        }
+    }
 }
 
 /// One generation call. Unset fields fall back to the provider default.
@@ -180,10 +186,11 @@ pub(crate) fn endpoint(target: &ImageGenerationTarget<'_>) -> Result<String, Ima
         .map(str::trim)
         .filter(|url| !url.is_empty())
     {
-        return Ok(url.to_string());
+        return Ok(subscription_image_url(target.dialect, url));
     }
 
-    let base = target.base_url.trim().trim_end_matches('/');
+    let base_url = subscription_image_url(target.dialect, target.base_url.trim());
+    let base = base_url.trim_end_matches('/');
     if base.is_empty() {
         return Err(ImageGenerationError::config(
             "image service has no request url and no base url",
@@ -196,6 +203,17 @@ pub(crate) fn endpoint(target: &ImageGenerationTarget<'_>) -> Result<String, Ima
     } else {
         Ok(format!("{base}{path}"))
     }
+}
+
+/// Older subscription services and login resolvers may still name /responses.
+/// Translate that endpoint in memory without rewriting the saved configuration.
+fn subscription_image_url(dialect: ImageDialect, url: &str) -> String {
+    if dialect == ImageDialect::ChatgptCodex {
+        if let Some(root) = url.trim_end_matches('/').strip_suffix("/responses") {
+            return format!("{root}{}", dialect.endpoint_path());
+        }
+    }
+    url.to_string()
 }
 
 /// Rewrite a size expression to the requested separator.
@@ -279,47 +297,26 @@ fn build_body(target: &ImageGenerationTarget<'_>, request: &ImageGenerationReque
     match target.dialect {
         ImageDialect::OpenAiImages => openai_body(target, request),
         ImageDialect::DashScopeNative => dashscope_body(target, request),
-        ImageDialect::ChatgptCodex => chatgpt_codex_body(target.model, request),
+        ImageDialect::ChatgptCodex => chatgpt_codex_body(request),
     }
 }
 
-/// ChatGPT subscription body.
-///
-/// The image is not requested from an image endpoint: the model is asked to call
-/// its built-in `image_generation` tool, and the picture arrives as a Responses
-/// output item. `store: false` is required by the Codex backend, and `stream`
-/// is what produces the SSE events the caller parses.
-fn chatgpt_codex_body(model: &str, request: &ImageGenerationRequest) -> Value {
-    let mut tool = json!({
-        "type": "image_generation",
+/// Standalone Images JSON request, matching the Codex Desktop capture.
+/// Explicit service parameters still win over the observed auto defaults.
+/// The subscription endpoint generates one image; no chat model, tools, stream,
+/// store, or n fields are sent.
+fn chatgpt_codex_body(request: &ImageGenerationRequest) -> Value {
+    let mut body = json!({
         "model": DEFAULT_CODEX_IMAGE_MODEL,
-        "quality": request
-            .quality
-            .as_deref()
-            .unwrap_or(DEFAULT_CODEX_IMAGE_QUALITY),
+        "prompt": request.prompt,
+        "background": request.background.as_deref().unwrap_or("opaque"),
+        "quality": request.quality.as_deref().unwrap_or("auto"),
+        "size": request.size.as_deref().map(|size| normalize_size(size, 'x')).unwrap_or_else(|| "auto".to_string()),
     });
-    // The tool accepts the same knobs as the image API. Quality defaults to a
-    // high-quality setting above, while an explicit service setting wins.
-    if let Some(size) = request.size.as_deref() {
-        tool["size"] = json!(normalize_size(size, 'x'));
+    if let Some(output_format) = request.output_format.as_deref() {
+        body["output_format"] = json!(output_format);
     }
-    if let Some(quality) = request.quality.as_deref() {
-        tool["quality"] = json!(quality);
-    }
-    if let Some(background) = request.background.as_deref() {
-        tool["background"] = json!(background);
-    }
-
-    json!({
-        "model": model,
-        "stream": true,
-        "store": false,
-        "tools": [tool],
-        "input": [{
-            "role": "user",
-            "content": [{ "type": "input_text", "text": request.prompt }],
-        }],
-    })
+    body
 }
 
 /// Where a parsed image still has to come from.
@@ -403,139 +400,14 @@ fn parse_images(
     match dialect {
         ImageDialect::OpenAiImages => parse_openai_images(value),
         ImageDialect::DashScopeNative => parse_dashscope_images(value),
-        // Streamed by `parse_chatgpt_codex_stream`; reaching here means the JSON
-        // path was taken for a dialect that never answers with one document.
-        ImageDialect::ChatgptCodex => Err(ImageGenerationError::new(
-            ImageGenerationErrorKind::Provider,
-            "the ChatGPT subscription dialect streams its result and cannot be read as JSON",
-        )),
-    }
-}
-
-/// Reads the Responses SSE transcript and returns the image the model produced.
-///
-/// The backend emits progress events while the tool runs, so only the terminal
-/// `output_item.done` carries `result`. A response that completes without an
-/// image item means the model declined to call the tool, which is a different
-/// failure from an empty payload and is reported as such.
-fn parse_chatgpt_codex_stream(raw: &[u8]) -> Result<Vec<ImageSource>, ImageGenerationError> {
-    let text = String::from_utf8_lossy(raw);
-    let mut sources = Vec::new();
-    let mut failure: Option<(Option<String>, String)> = None;
-    let mut completed_without_image = false;
-
-    for line in text.lines() {
-        let Some(payload) = line.strip_prefix("data:") else {
-            continue;
-        };
-        let payload = payload.trim();
-        if payload.is_empty() || payload == "[DONE]" {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<Value>(payload) else {
-            continue;
-        };
-        match value
-            .get("type")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-        {
-            "response.output_item.done" => {
-                let item = value.get("item");
-                if item
-                    .and_then(|item| item.get("type"))
-                    .and_then(Value::as_str)
-                    != Some("image_generation_call")
-                {
-                    continue;
-                }
-                let Some(encoded) = item
-                    .and_then(|item| item.get("result"))
-                    .and_then(Value::as_str)
-                else {
-                    continue;
-                };
-                let bytes = BASE64_STANDARD.decode(encoded.trim()).map_err(|err| {
-                    ImageGenerationError::new(
-                        ImageGenerationErrorKind::Provider,
-                        format!("image payload is not valid base64: {err}"),
-                    )
-                })?;
-                let mime = sniff_mime(&bytes).unwrap_or(DEFAULT_MIME).to_string();
-                sources.push(ImageSource::Inline { bytes, mime });
-            }
-            "response.failed" => {
-                let error = value.pointer("/response/error");
-                failure = Some((
-                    error
-                        .and_then(|error| error.get("code"))
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
-                    error
-                        .and_then(|error| error.get("message"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("the model reported a failed response")
-                        .to_string(),
-                ));
-            }
-            "error" => {
-                let error = value.get("error");
-                failure = Some((
-                    error
-                        .and_then(|error| error.get("code"))
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
-                    error
-                        .and_then(|error| error.get("message"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("the provider streamed an error")
-                        .to_string(),
-                ));
-            }
-            "response.completed" => completed_without_image = true,
-            _ => {}
-        }
-    }
-
-    if let Some((code, message)) = failure {
-        return Err(ImageGenerationError::new(
-            codex_stream_error_kind(&message),
-            match code {
-                Some(code) => format!("provider failed the image request ({code}): {message}"),
-                None => format!("provider failed the image request: {message}"),
-            },
-        ));
-    }
-    if sources.is_empty() {
-        return Err(ImageGenerationError::empty_result(
-            if completed_without_image {
-                "the response completed without calling the image tool; pick a model that can generate images"
-            } else {
-                "the provider streamed no image result"
-            },
-        ));
-    }
-    Ok(sources)
-}
-
-/// Map a streamed error message onto the guidance class the UI renders.
-fn codex_stream_error_kind(message: &str) -> ImageGenerationErrorKind {
-    let lowered = message.to_ascii_lowercase();
-    if looks_like_content_filter(message) {
-        ImageGenerationErrorKind::ContentFiltered
-    } else if lowered.contains("rate limit") || lowered.contains("usage limit") {
-        ImageGenerationErrorKind::RateLimited
-    } else if lowered.contains("timed out") || lowered.contains("timeout") {
-        ImageGenerationErrorKind::Timeout
-    } else {
-        ImageGenerationErrorKind::Provider
+        ImageDialect::ChatgptCodex => parse_openai_images(value),
     }
 }
 
 /// Error body of a rejected subscription request.
 ///
 /// The Codex backend answers JSON (`{"detail": ...}` for request problems,
-/// `{"error": {...}}` for API errors) even though a successful call streams.
+/// `{"error": {...}}` for API errors), just like a successful Images JSON response.
 fn chatgpt_codex_error(status: reqwest::StatusCode, raw: &[u8]) -> ImageGenerationError {
     let value: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
     if let Some(detail) = value.get("detail").and_then(Value::as_str) {
@@ -554,71 +426,6 @@ fn chatgpt_codex_error(status: reqwest::StatusCode, raw: &[u8]) -> ImageGenerati
             String::from_utf8_lossy(&raw[..raw.len().min(200)])
         ),
     )
-}
-
-/// Ask the account's own catalog which model to drive the image tool with.
-async fn discover_chatgpt_codex_model(
-    client: &Client,
-    target: &ImageGenerationTarget<'_>,
-) -> Result<String, ImageGenerationError> {
-    let base = match target.request_url {
-        Some(request_url) => request_url
-            .trim_end_matches('/')
-            .trim_end_matches("/responses")
-            .to_string(),
-        None => target.base_url.trim_end_matches('/').to_string(),
-    };
-    let url = format!("{base}/models?client_version=1.0.0");
-
-    let mut builder = client
-        .get(&url)
-        .bearer_auth(target.api_key.trim())
-        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS));
-    if let Some(headers) = target.custom_headers {
-        for (key, value) in headers {
-            builder = builder.header(key.as_str(), value.as_str());
-        }
-    }
-    let response = builder.send().await.map_err(classify_transport)?;
-    let status = response.status();
-    let raw = response.bytes().await.map_err(classify_transport)?;
-    let value: Value = serde_json::from_slice(&raw).map_err(|err| {
-        ImageGenerationError::new(
-            classify_status(status),
-            format!("could not read the subscription model catalog: {err}"),
-        )
-    })?;
-    if !status.is_success() {
-        return Err(error_from_response(status, &value));
-    }
-
-    let model = value
-        .get("models")
-        .and_then(Value::as_array)
-        .and_then(|models| {
-            let mut entries: Vec<(u64, String)> = models
-                .iter()
-                .filter_map(|model| {
-                    let slug = model.get("slug").and_then(Value::as_str)?.trim();
-                    if slug.is_empty() {
-                        return None;
-                    }
-                    let priority = model
-                        .get("priority")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(10_000);
-                    Some((priority, slug.to_string()))
-                })
-                .collect();
-            entries.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-            entries.into_iter().next().map(|(_, slug)| slug)
-        });
-
-    model.ok_or_else(|| {
-        ImageGenerationError::config(
-            "the subscription login exposes no model to drive image generation; set a model name explicitly",
-        )
-    })
 }
 
 /// Extract a provider error from the shapes seen in the wild:
@@ -830,29 +637,28 @@ pub async fn generate(
     if request.prompt.trim().is_empty() {
         return Err(ImageGenerationError::config("prompt must not be empty"));
     }
-    // The subscription route asks a chat model to call its image tool, so the
-    // model is whatever the account's catalog offers. Discover it when the
-    // service left the field empty instead of guessing a slug.
-    let discover_model =
-        target.dialect == ImageDialect::ChatgptCodex && target.model.trim().is_empty();
-    if target.model.trim().is_empty() && !discover_model {
+    if target.dialect != ImageDialect::ChatgptCodex && target.model.trim().is_empty() {
         return Err(ImageGenerationError::config("model name must not be empty"));
+    }
+    if target.dialect == ImageDialect::ChatgptCodex {
+        if let Some(format) = request.output_format.as_deref() {
+            if !matches!(format, "png" | "jpeg" | "webp" | "gif") {
+                return Err(ImageGenerationError::config(
+                    "subscription image output_format must be png, jpeg, webp, or gif",
+                ));
+            }
+        }
     }
 
     let url = endpoint(target)?;
     let client =
         crate::client::http::create_http_client(target.proxy.clone(), target.skip_ssl_verify);
 
-    let model = if discover_model {
-        discover_chatgpt_codex_model(&client, target).await?
-    } else {
-        target.model.trim().to_string()
-    };
-    let body = if target.dialect == ImageDialect::ChatgptCodex {
-        chatgpt_codex_body(&model, &request)
-    } else {
-        build_body(target, &request)
-    };
+    let body = build_body(target, &request);
+    let model = body
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
 
     debug!(
         "Image generation request: dialect={:?} model={} url={}",
@@ -897,23 +703,8 @@ pub async fn generate(
         ));
     }
 
-    // The subscription route answers with an SSE transcript, not a JSON document.
-    if target.dialect == ImageDialect::ChatgptCodex {
-        if !status.is_success() {
-            return Err(chatgpt_codex_error(status, &raw));
-        }
-        let sources = parse_chatgpt_codex_stream(&raw)?;
-        let mut images = Vec::with_capacity(sources.len());
-        for source in sources {
-            match source {
-                ImageSource::Inline { bytes, mime } => images.push(GeneratedImage { bytes, mime }),
-                ImageSource::Remote(url) => {
-                    let (bytes, mime) = download_image(&client, &url).await?;
-                    images.push(GeneratedImage { bytes, mime });
-                }
-            }
-        }
-        return Ok(ImageGenerationResponse { images });
+    if target.dialect == ImageDialect::ChatgptCodex && !status.is_success() {
+        return Err(chatgpt_codex_error(status, &raw));
     }
 
     let value: Value = serde_json::from_slice(&raw).map_err(|err| {
@@ -1094,33 +885,49 @@ mod tests {
     }
 
     #[test]
-    fn codex_body_selects_explicit_high_quality_image_model() {
-        let body = chatgpt_codex_body(
-            "gpt-6-astra",
-            &ImageGenerationRequest {
-                prompt: "a red fox".to_string(),
-                ..ImageGenerationRequest::default()
-            },
+    fn codex_body_matches_the_desktop_images_capture() {
+        let body = chatgpt_codex_body(&ImageGenerationRequest {
+            prompt: "a red fox".to_string(),
+            ..ImageGenerationRequest::default()
+        });
+        assert_eq!(
+            body,
+            json!({
+                "model": "gpt-image-2", "prompt": "a red fox",
+                "background": "opaque", "quality": "auto", "size": "auto"
+            })
         );
-
-        assert_eq!(body["model"], "gpt-6-astra");
-        assert_eq!(body["tools"][0]["type"], "image_generation");
-        assert_eq!(body["tools"][0]["model"], "gpt-image-2.5-sunburst");
-        assert_eq!(body["tools"][0]["quality"], "high");
     }
 
     #[test]
-    fn codex_body_preserves_an_explicit_quality_override() {
-        let body = chatgpt_codex_body(
-            "gpt-6-astra",
-            &ImageGenerationRequest {
-                prompt: "a red fox".to_string(),
-                quality: Some("max".to_string()),
-                ..ImageGenerationRequest::default()
-            },
+    fn codex_body_preserves_explicit_image_parameters() {
+        let body = chatgpt_codex_body(&ImageGenerationRequest {
+            prompt: "a red fox".to_string(),
+            quality: Some("high".to_string()),
+            background: Some("transparent".to_string()),
+            size: Some("1024*1536".to_string()),
+            n: Some(10),
+            ..ImageGenerationRequest::default()
+        });
+        assert_eq!(
+            body,
+            json!({
+                "model": "gpt-image-2", "prompt": "a red fox",
+                "background": "transparent", "quality": "high", "size": "1024x1536"
+            })
         );
+    }
 
-        assert_eq!(body["tools"][0]["quality"], "max");
+    #[test]
+    fn codex_body_requests_gif_without_changing_the_image_model() {
+        let body = chatgpt_codex_body(&ImageGenerationRequest {
+            prompt: "a fox blinking in a seamless loop".to_string(),
+            output_format: Some("gif".to_string()),
+            ..ImageGenerationRequest::default()
+        });
+        assert_eq!(body["output_format"], "gif");
+        assert_eq!(body["model"], "gpt-image-2");
+        assert_eq!(body["size"], "auto");
     }
 
     #[test]
@@ -1296,34 +1103,97 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn subscription_catalog_sends_bearer_and_account_headers() {
-        use axum::{
-            http::{HeaderMap, StatusCode},
-            routing::get,
-            Json, Router,
-        };
+    async fn subscription_posts_images_json_without_discovering_a_chat_model() {
+        use axum::{http::HeaderMap, routing::post, Json, Router};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base_url = format!("http://{}", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
-            let app = Router::new().route("/models", get(|headers: HeaderMap| async move {
-                if headers.get("authorization").and_then(|value| value.to_str().ok()) != Some("Bearer sk-test")
-                    || headers.get("chatgpt-account-id").and_then(|value| value.to_str().ok()) != Some("test-account")
-                {
-                    return (StatusCode::UNAUTHORIZED, Json(json!({"error": {"message": "missing subscription authentication"}})));
-                }
-                (StatusCode::OK, Json(json!({"models": [{"slug": "account-model", "priority": 0}]})))
+            let app = Router::new().route("/images/generations", post(|headers: HeaderMap, Json(body): Json<Value>| async move {
+                assert_eq!(headers["authorization"], "Bearer sk-test");
+                assert_eq!(headers["chatgpt-account-id"], "test-account");
+                assert_eq!(headers["originator"], "openbitfun");
+                assert_eq!(body, json!({"model":"gpt-image-2", "prompt":"a red fox", "background":"opaque", "quality":"auto", "size":"auto"}));
+                Json(json!({"created":1793849136_u64,"background":"opaque","quality":"medium","size":"1254x1254",
+                    "data":[{"b64_json":"iVBORw0KGgo=", "generation_id":"test-generation"}],
+                    "usage":{"total_tokens":2494}}))
             }));
             axum::serve(listener, app).await.unwrap();
         });
-        let headers =
-            HashMap::from([("ChatGPT-Account-ID".to_string(), "test-account".to_string())]);
+        let headers = HashMap::from([
+            ("ChatGPT-Account-ID".to_string(), "test-account".to_string()),
+            ("originator".to_string(), "openbitfun".to_string()),
+        ]);
         let mut target = target(ImageDialect::ChatgptCodex, &base_url);
+        let legacy_url = format!("{base_url}/responses");
+        target.request_url = Some(&legacy_url);
+        target.model = "legacy-chat-model";
         target.custom_headers = Some(&headers);
-        openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
-        let client = Client::builder().no_proxy().build().unwrap();
-        let result = discover_chatgpt_codex_model(&client, &target).await;
+        let result = generate(
+            &target,
+            ImageGenerationRequest {
+                prompt: "a red fox".to_string(),
+                ..ImageGenerationRequest::default()
+            },
+        )
+        .await;
         server.abort();
-        assert_eq!(result.unwrap(), "account-model");
+        let response = result.unwrap();
+        assert_eq!(response.images.len(), 1);
+        assert_eq!(response.images[0].mime, "image/png");
+        assert_eq!(
+            response.images[0].bytes,
+            BASE64_STANDARD.decode("iVBORw0KGgo=").unwrap()
+        );
+    }
+
+    #[test]
+    fn subscription_legacy_endpoints_are_adapted_without_changing_api_key_routes() {
+        let root = "https://chatgpt.com/backend-api/codex";
+        let expected = format!("{root}/images/generations");
+        for base in [
+            root.to_string(),
+            format!("{root}/responses/"),
+            expected.clone(),
+        ] {
+            assert_eq!(
+                endpoint(&target(ImageDialect::ChatgptCodex, &base)).unwrap(),
+                expected
+            );
+        }
+        for old_model in ["", "gpt-6.1-sol", "gpt-6-astra", "gpt-image-2.6-sunburst"] {
+            let mut saved = target(ImageDialect::ChatgptCodex, root);
+            saved.model = old_model;
+            assert_eq!(saved.requested_model(), "gpt-image-2");
+            assert_eq!(
+                build_body(&saved, &ImageGenerationRequest::default())["model"],
+                "gpt-image-2"
+            );
+        }
+        let mut api = target(ImageDialect::OpenAiImages, root);
+        api.request_url = Some("https://gateway.example/responses");
+        assert_eq!(endpoint(&api).unwrap(), "https://gateway.example/responses");
+    }
+
+    #[test]
+    fn subscription_json_errors_and_empty_images_are_reported() {
+        let error = chatgpt_codex_error(
+            reqwest::StatusCode::UNAUTHORIZED,
+            br#"{"detail":"login expired"}"#,
+        );
+        assert_eq!(error.kind, ImageGenerationErrorKind::Auth);
+        assert!(error.message.contains("login expired"));
+        let error = chatgpt_codex_error(reqwest::StatusCode::BAD_REQUEST, br#"{"error":{"code":"content_policy_violation","message":"blocked by safety system"}}"#);
+        assert_eq!(error.kind, ImageGenerationErrorKind::ContentFiltered);
+        assert!(
+            parse_images(ImageDialect::ChatgptCodex, &json!({"data":[]}))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(parse_images(
+            ImageDialect::ChatgptCodex,
+            &json!({"data":[{"b64_json":"invalid-base64"}]})
+        )
+        .is_err());
     }
 
     #[cfg(feature = "subscription-auth")]
@@ -1337,37 +1207,66 @@ mod tests {
         )
         .await
         .expect("codex credential");
-        let model = std::env::var("PROBE_CODEX_MODEL").unwrap_or_default();
         let target = ImageGenerationTarget {
             dialect: ImageDialect::ChatgptCodex,
             base_url: credential.base_url.as_deref().unwrap_or_default(),
             request_url: credential.request_url.as_deref(),
-            model: &model,
+            model: "",
             api_key: &credential.api_key,
             custom_headers: Some(&credential.extra_headers),
             custom_headers_mode: None,
             skip_ssl_verify: false,
             proxy: None,
         };
+        println!(
+            "Testing subscription image generation: endpoint={} requested_model={}",
+            endpoint(&target).unwrap(),
+            DEFAULT_CODEX_IMAGE_MODEL
+        );
+        let output_format = std::env::var("PROBE_CODEX_IMAGE_OUTPUT_FORMAT").ok();
+        let prompt = std::env::var("PROBE_CODEX_IMAGE_PROMPT").unwrap_or_else(|_| "A cute minimalist mascot icon with a rounded-rectangle body, two small friendly oval eyes, and a short top antenna ending in a round joystick knob. Use a playful, harmonious color palette selected randomly for each generation, with no fixed colors. Centered composition, clean uncluttered background, polished product illustration.".to_string());
         let response = generate(
             &target,
             ImageGenerationRequest {
-                prompt: "A cute minimalist mascot icon with a rounded-rectangle body, two small friendly oval eyes, and a short top antenna ending in a round joystick knob. Use a playful, harmonious color palette selected randomly for each generation, with no fixed colors. Centered composition, clean uncluttered background, polished product illustration.".to_string(),
-                size: Some("1024x1024".to_string()),
-                n: Some(1),
+                prompt,
+                output_format: output_format.clone(),
                 ..ImageGenerationRequest::default()
             },
         )
         .await
         .expect("subscription image generation");
         assert!(!response.images.is_empty());
-        for image in response.images {
+        let output_dir =
+            std::env::var_os("PROBE_CODEX_IMAGE_OUTPUT_DIR").map(std::path::PathBuf::from);
+        if let Some(directory) = output_dir.as_ref() {
+            tokio::fs::create_dir_all(directory)
+                .await
+                .expect("image output directory");
+        }
+        for (index, image) in response.images.into_iter().enumerate() {
             assert!(sniff_mime(&image.bytes).is_some());
             println!(
-                "Generated image: mime={} bytes={}",
+                "Generated image: requested_model={} mime={} bytes={}",
+                DEFAULT_CODEX_IMAGE_MODEL,
                 image.mime,
                 image.bytes.len()
             );
+            if let Some(directory) = output_dir.as_ref() {
+                let extension = match image.mime.as_str() {
+                    "image/jpeg" => "jpg",
+                    "image/webp" => "webp",
+                    "image/gif" => "gif",
+                    _ => "png",
+                };
+                let path = directory.join(format!("codex-images-{}.{}", index + 1, extension));
+                tokio::fs::write(&path, &image.bytes)
+                    .await
+                    .expect("generated image file");
+                println!("Saved generated image: {}", path.display());
+            }
+            if output_format.as_deref() == Some("gif") {
+                assert_eq!(image.mime, "image/gif", "provider must return a real GIF");
+            }
         }
     }
 

@@ -256,6 +256,7 @@ For image-service selection and compatibility with saved subscription configurat
 
 ```bash
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-image-generation,subscription-auth --lib agentic::image_generation::tests
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-image-generation --lib agentic::tools::implementations::generate_image_tool::tests
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-image-generation --lib agentic::tools::product_runtime::materialization::tests::image_tools_follow_independent_compiled_owners
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-image-analysis --lib agentic::tools::product_runtime::materialization::tests::image_tools_follow_independent_compiled_owners
 ```
