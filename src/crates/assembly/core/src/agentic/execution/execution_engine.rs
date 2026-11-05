@@ -1812,7 +1812,7 @@ impl ExecutionEngine {
             "System prompt cache miss: session_id={}, scope_key={}",
             session_id, identity.scope_key
         );
-        let mut system_prompt = if let Some(policy_id) = prompt_policy_id {
+        let system_prompt = if let Some(policy_id) = prompt_policy_id {
             let context = prompt_context.ok_or_else(|| {
                 OpenBitFunError::Agent("Prompt build context is required".to_string())
             })?;

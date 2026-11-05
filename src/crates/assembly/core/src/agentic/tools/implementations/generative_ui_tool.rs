@@ -32,7 +32,7 @@ impl Tool for GenerativeUITool {
         "GenerativeUI"
     }
     async fn description(&self) -> OpenBitFunResult<String> {
-        let mut description =
+        let mut description: String =
             "Stream an OpenUI Lang answer using the selected component collection. The selected profile renders the source in FlowChat as it arrives, with local state and actions. The result is transient in the current answer. Never generate TSX, React source or a per-app compilation artifact. Keep the same app ID when revising an application. Preserve requested features and user state when repairing errors. Query and Mutation calls are allowed only through explicitly registered host providers; never invent a network or storage fallback.".into()
         ;
         if let Ok(profile) = Self::selected_profile().await {
