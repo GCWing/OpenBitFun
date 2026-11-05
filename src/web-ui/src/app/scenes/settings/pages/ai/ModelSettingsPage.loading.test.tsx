@@ -526,6 +526,52 @@ describe('ModelSettingsPage loading and provider actions', () => {
     expect(summary.querySelector(`button[aria-label="${copy('actions.deleteProvider')}: ${model.name}"]`)).not.toBeNull();
   });
 
+  it('counts both ZCode regions as one service and labels a signed-out slot instead of repeating the account', async () => {
+    const zcode = { provider: 'zcode' as const, connected: true, account: 'lppdgqoa@example.invalid',
+      display_label: 'ZCode', suggested_format: 'anthropic', suggested_base_url: 'https://example.test/v1',
+      suggested_model: 'fixture-model', api_offerings: [] };
+    const zcodeCn = { ...zcode, provider: 'zcode_cn' as const };
+    const namedSlot = 'zcode-account-3f2a1b9c-0000-4000-8000-000000000000';
+    vi.mocked(aiApi.listSubscriptionAccounts).mockResolvedValue([zcode, zcodeCn]);
+    // One signed-in account in the default slot plus a second slot of the same
+    // ZCode identity that is no longer signed in.
+    vi.spyOn(aiApi, 'listSubscriptionAccountInstances').mockResolvedValue([
+      { account_id: 'zcode', is_default: true, account: zcode, enabled: true },
+      { account_id: 'zcode_cn', is_default: true, account: zcodeCn, enabled: true },
+      { account_id: namedSlot, is_default: false, account: { ...zcode, connected: false }, enabled: true },
+    ]);
+    vi.spyOn(aiApi, 'getSubscriptionAccountQuota').mockImplementation(() => new Promise(() => {}));
+    const configured: AIModelConfig[] = [
+      { ...model, id: 'zcode-model', auth: { type: 'subscription', provider: 'zcode' } },
+      { ...model, id: 'zcode-cn-model', auth: { type: 'subscription', provider: 'zcode_cn' } },
+      { ...model, id: 'zcode-slot-model', auth: { type: 'subscription', provider: 'zcode', account_id: namedSlot } },
+    ];
+    const values: Record<string, unknown> = {
+      'ai.models': configured, 'ai.default_models': { primary: model.id },
+      'ai.proxy': { enabled: false, url: '', username: '', password: '' },
+      'ai.stream_idle_timeout_secs': 120, 'ai.stream_ttft_timeout_secs': 60,
+    };
+    vi.spyOn(configManager, 'hasCachedConfig').mockImplementation(path => path in values);
+    vi.spyOn(configManager, 'getCachedConfig').mockImplementation(<T,>(path: string) => values[path] as T);
+    await act(async () => root.render(<ModelSettingsPage />));
+    const summary = container.querySelector('[data-testid="settings-subscription-services"]')!;
+    const labels = [...summary.querySelectorAll<HTMLButtonElement>('.openbitfun-model-settings__source-pill')]
+      .map(capsule => capsule.textContent);
+    expect(labels).toHaveLength(3);
+    expect(labels[0]).toContain(copy('subscriptionAuth.regions.zai'));
+    expect(labels[1]).toContain(copy('subscriptionAuth.regions.bigmodel'));
+    // The third capsule is the same ZCode account in another slot: it has to
+    // state the slot and that it is signed out, or it reads as a duplicate.
+    expect(labels[2]).toContain(namedSlot.slice(-8));
+    expect(labels[2]).toContain(copy('subscriptionAuth.notSignedIn'));
+    expect(labels[2]).not.toBe(labels[0]);
+    // Both regions and both slots belong to one imported service.
+    const imported = String(i18nService.getI18nInstance().t('acquisition.importedSummary', {
+      ns: 'settings/models', providers: '1', models: '3',
+    }));
+    expect(summary.closest('.openbitfun-config-page-row')?.textContent).toContain(imported);
+  });
+
   it('filters the account browser by product, retains ZCode regions, and resets on device activation', async () => {
     const codex = { provider: 'codex' as const, connected: true, account: 'codex@example.invalid',
       display_label: 'Codex', suggested_format: 'openai', suggested_base_url: 'https://example.test/v1', suggested_model: 'fixture-model', api_offerings: [] };
@@ -810,8 +856,12 @@ describe('ModelSettingsPage loading and provider actions', () => {
     const dialog = document.querySelector<HTMLElement>('.openbitfun-model-settings__subscription-dialog')!;
     const action = (key: string) => [...dialog.querySelectorAll<HTMLButtonElement>('button')]
       .find(element => element.textContent === copy(key))!;
+    const reads = vi.mocked(aiApi.listSubscriptionAccounts).mock.calls.length;
     await act(async () => action('subscriptionAuth.login').click());
     expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('Authorization unavailable');
+    // A refused attempt still has to show what the host holds, so a stale
+    // placeholder slot can never sit beside a signed-in account.
+    expect(vi.mocked(aiApi.listSubscriptionAccounts).mock.calls.length).toBeGreaterThan(reads);
     await act(async () => action('subscriptionAuth.retryLogin').click());
     expect(start).toHaveBeenCalledTimes(2);
     expect(start.mock.calls[0][1]).not.toBe('hermes');

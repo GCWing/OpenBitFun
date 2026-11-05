@@ -46,7 +46,14 @@ describe('subscription service presentation', () => {
   });
 });
 
-import { managedSubscriptionAccounts, modelsUsingSubscriptionAccount } from './subscriptionServices';
+import {
+  countSubscriptionServices,
+  managedSubscriptionAccounts,
+  modelsUsingSubscriptionAccount,
+  subscriptionAccountBadge,
+  subscriptionAccountLabel,
+  subscriptionProductOf,
+} from './subscriptionServices';
 
 it('shows independent named slots even when the default is signed out and the emails match', () => {
   const defaults = [account('codex'), account('zcode_cn')];
@@ -77,4 +84,76 @@ it('logout impacts only the selected slot and pools which explicitly include it'
   ] as unknown as import('@/infrastructure/config/types').AIModelConfig[];
   expect(modelsUsingSubscriptionAccount(models, 'codex', 'slot-a').map(model => model.id)).toEqual(['one', 'pool']);
   expect(modelsUsingSubscriptionAccount(models, 'codex', 'codex').map(model => model.id)).toEqual(['default']);
+});
+
+import {
+  countSubscriptionServices,
+  subscriptionAccountBadge,
+  subscriptionAccountLabel,
+  subscriptionLoginPlaceholder,
+  subscriptionProductOf,
+  subscriptionRemovalKeys,
+} from './subscriptionServices';
+
+const zcodeAccount = (overrides: Partial<SubscriptionAccount> = {}): SubscriptionAccount => ({
+  ...account('zcode', true),
+  account: 'lppdgqoa@example.invalid',
+  ...overrides,
+});
+
+describe('subscription service counting and labels', () => {
+  it('counts both ZCode regions and every extra slot as one product', () => {
+    expect(subscriptionProductOf('zcode_cn')).toBe('zcode');
+    expect(subscriptionProductOf('codex')).toBe('codex');
+    expect(countSubscriptionServices(['zcode', 'zcode_cn'])).toBe(1);
+    expect(countSubscriptionServices(['zcode', 'zcode_cn', 'codex'])).toBe(2);
+    expect(countSubscriptionServices([])).toBe(0);
+  });
+
+  it('states why a slot cannot serve requests in the manager order', () => {
+    expect(subscriptionAccountBadge(zcodeAccount({ connected: false }), true)).toBe('notSignedIn');
+    expect(subscriptionAccountBadge(zcodeAccount({ connected: false, reauthentication_required: true }), true)).toBe('reauthenticationRequired');
+    expect(subscriptionAccountBadge(zcodeAccount({ connected: false, vault_unavailable: true }), true)).toBe('vaultUnavailable');
+    expect(subscriptionAccountBadge(zcodeAccount(), false)).toBe('disabled');
+    expect(subscriptionAccountBadge(zcodeAccount())).toBeNull();
+  });
+
+  it('separates a signed-in account from a signed-out slot of the same identity', () => {
+    const signedIn = zcodeAccount();
+    const signedOut = zcodeAccount({ connected: false });
+    const text = { region: 'Z.ai', identity: 'lppdgqoa@example.invalid', marker: '账号 · 3f2a1b9c', state: '未登录' };
+    expect(subscriptionAccountLabel(signedIn, 'zcode', { ...text, state: undefined }))
+      .toBe('Z.ai · lppdgqoa@example.invalid');
+    expect(subscriptionAccountLabel(signedOut, 'zcode-account-3f2a1b9c-0000-4000-8000-000000000000', text))
+      .toBe('Z.ai · lppdgqoa@example.invalid · 账号 · 3f2a1b9c · 未登录');
+    // Another product keeps its product name and gains neither region nor state.
+    expect(subscriptionAccountLabel(account('codex', true), 'codex', {
+      region: 'Z.ai', identity: 'shared@example.invalid', marker: 'marker', state: undefined,
+    })).toBe('shared@example.invalid');
+  });
+
+  it('keeps a login placeholder only while that authorization can still finish', () => {
+    const slot = 'zcode-account-3f2a1b9c-0000-4000-8000-000000000000';
+    expect(subscriptionLoginPlaceholder({ provider: 'zcode', status: 'pending' }, slot))
+      .toEqual({ provider: 'zcode', accountId: slot });
+    expect(subscriptionLoginPlaceholder({ provider: 'zcode', status: 'cancelling' }, slot))
+      .toEqual({ provider: 'zcode', accountId: slot });
+    // A failed attempt must not leave a "not signed in" twin of the real account.
+    expect(subscriptionLoginPlaceholder({ provider: 'zcode', status: 'failed' }, slot)).toBeNull();
+    expect(subscriptionLoginPlaceholder(null, slot)).toBeNull();
+    expect(subscriptionLoginPlaceholder({ provider: 'codex', status: 'pending' }, null))
+      .toEqual({ provider: 'codex', accountId: 'codex' });
+  });
+
+  it('confirms removal with copy that matches what the click will do', () => {
+    // A signed-in slot keeps its identity, so the copy must not claim removal.
+    expect(subscriptionRemovalKeys(false).title).toBe('subscriptionAuth.logoutConfirmTitle');
+    expect(subscriptionRemovalKeys(false).confirm).toBe('subscriptionAuth.confirmLogout');
+    // A slot that already lost its credential is forgotten: that is the only
+    // way to clear a leftover row, and the copy has to say so.
+    expect(subscriptionRemovalKeys(true).title).toBe('subscriptionAuth.forgetConfirmTitle');
+    expect(subscriptionRemovalKeys(true).consequence).toBe('subscriptionAuth.forgetConsequence');
+    expect(subscriptionRemovalKeys(true).confirm).toBe('subscriptionAuth.confirmForget');
+    expect(subscriptionRemovalKeys(true).success).toBe('subscriptionAuth.forgetSuccess');
+  });
 });
