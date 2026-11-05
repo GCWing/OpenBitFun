@@ -75,7 +75,7 @@ test('Desktop packaging selects the Web font profile from its target triple', ()
 });
 
 test('macOS capture bridge avoids unresolved availability compiler runtime helpers', () => {
-  const source = readFileSync(join(ROOT, 'src', 'apps', 'desktop', 'src', 'computer_use', 'macos_capture.m'), 'utf8');
+  const source = readFileSync(join(ROOT, 'src', 'crates', 'services', 'computer-use', 'src', 'computer_use', 'macos_capture.m'), 'utf8');
   assert.match(source, /static BOOL obf_os_at_least\(/);
   assert.doesNotMatch(source, /@available\(macOS/);
 });
