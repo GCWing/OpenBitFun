@@ -1,7 +1,7 @@
-import type { OpenUIError } from '@openuidev/lang-core';
+import type { GenUIRenderDiagnostic } from './genUIRenderDiagnostics';
 import type { GenerativeWidgetOrigin } from '@/flow_chat/utils/generativeWidgetProjection';
 import type { GenUIVerification } from './genUIVerification';
-import { isFatalGenUIError } from './genUIRenderDiagnostics';
+import { isRepairWorthyGenUIError } from './genUIRenderDiagnostics';
 import { requestGenUIRepair } from './genUIRepair';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
@@ -11,8 +11,8 @@ const STORAGE_KEY = 'openbitfun.genui.auto-repair.v1';
 type Entry = { attempts: number; errors: string[] };
 type State = Record<string, Entry>;
 
-function fatalErrorKey(errors: OpenUIError[]): string {
-  return JSON.stringify(errors.filter(isFatalGenUIError).map(({ source, code, message, statementId }) =>
+function repairErrorKey(errors: GenUIRenderDiagnostic[]): string {
+  return JSON.stringify(errors.filter(isRepairWorthyGenUIError).map(({ source, code, message, statementId }) =>
     ({ source, code, message, statementId })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
 }
 
@@ -30,7 +30,7 @@ function appIdentity(value: string): string {
 /** Only a just-finished, active rendering surface calls this; persisted claims
  * deduplicate multiple tabs and keep a failed error from retrying on reload. */
 export async function requestGenUIAutoRepair(origin: GenerativeWidgetOrigin, report: GenUIVerification): Promise<boolean> {
-  if (report.render !== 'failed' || !report.diagnostics?.some(isFatalGenUIError)) return false;
+  if (report.render === 'unverified' || !report.diagnostics?.some(isRepairWorthyGenUIError)) return false;
   if (getActiveSurfaceScope().surfaceId !== origin.surfaceId
     || flowChatStore.getState().activeSessionId !== origin.sessionId) return false;
   if (document.visibilityState === 'hidden') return false;
@@ -41,9 +41,9 @@ export async function requestGenUIAutoRepair(origin: GenerativeWidgetOrigin, rep
     : appIdentity(JSON.stringify([origin.sessionId, report.appId ?? origin.toolCallId]));
   const inheritedAttempts = Number.isSafeInteger(inherited?.attempt) ? inherited.attempt as number : 0;
   const scopeKey = appIdentity(JSON.stringify([origin.surfaceId, chainId]));
-  const fatalKey = fatalErrorKey(report.diagnostics);
-  if (fatalKey === '[]') return false;
-  const errorKey = appIdentity(JSON.stringify([report.definitionKey, fatalKey]));
+  const diagnosticKey = repairErrorKey(report.diagnostics);
+  if (diagnosticKey === '[]') return false;
+  const errorKey = appIdentity(JSON.stringify([report.definitionKey, diagnosticKey]));
   const send = async () => {
     const state = readState();
     const previous = state[scopeKey] ?? { attempts: 0, errors: [] };

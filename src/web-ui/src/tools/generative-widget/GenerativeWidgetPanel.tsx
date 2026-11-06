@@ -16,7 +16,7 @@ import type { GenUITargetEvent } from '@/tools/generative-ui/genUIAsyncCapabilit
 import { requiresGenUIAsyncProvider } from '@/tools/generative-ui/genUIAsyncSource';
 import type { GenUIVerification } from '@/tools/generative-ui/genUIVerification';
 import { requestGenUIAutoRepair } from '@/tools/generative-ui/genUIAutoRepair';
-import { isFatalGenUIError } from '@/tools/generative-ui/genUIRenderDiagnostics';
+import { isRepairWorthyGenUIError } from '@/tools/generative-ui/genUIRenderDiagnostics';
 import { genUIContentKey } from '@/tools/generative-ui/genUIState';
 import { requestGenUIRepair } from '@/tools/generative-ui/genUIRepair';
 import './GenerativeWidgetPanel.scss';
@@ -69,9 +69,9 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
   const requiresDelivery = false;
   const [verification, setVerification] = useState<GenUIVerification>();
   const originKey = JSON.stringify(origin);
-  const observedStreaming = useRef({ originKey, live: false });
-  if (observedStreaming.current.originKey !== originKey) {
-    observedStreaming.current = { originKey, live: false };
+  const observedGeneration = useRef({ originKey, live: false });
+  if (observedGeneration.current.originKey !== originKey) {
+    observedGeneration.current = { originKey, live: false };
   }
   const autoRepairKey = useRef('');
   const [repairPending, setRepairPending] = useState(false);
@@ -83,14 +83,21 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
     setRepairQueued(false);
     setRepairError('');
   }, [originKey]);
-  if (projection?.isStreaming && !projection.readOnly
+  const sourceTurn = projection?.origin ? flowChatStore.getState().sessions.get(projection.origin.sessionId)
+    ?.dialogTurns.find(turn => turn.id === projection.origin.turnId) : undefined;
+  // Deferred calls can be identified as GenUI only once their arguments close,
+  // after the tool has finished. Their owning turn is still live at that point;
+  // requiring this component to have seen streaming misses those generations.
+  const sourceTurnRunning = !sourceTurn?.recovery
+    && (sourceTurn?.status === 'processing' || sourceTurn?.status === 'finishing');
+  if ((projection?.isStreaming || sourceTurnRunning) && projection && !projection.readOnly
     && flowChatStore.getState().activeSessionId === origin?.sessionId
-    && document.visibilityState !== 'hidden') observedStreaming.current.live = true;
+    && document.visibilityState !== 'hidden') observedGeneration.current.live = true;
   const onVerification = (report: GenUIVerification) => {
     setVerification(report);
-    if (!projection?.origin || !projection.app || !observedStreaming.current.live || projection.isStreaming || projection.readOnly || projection.isFailed) return;
+    if (!projection?.origin || !projection.app || !observedGeneration.current.live || projection.isStreaming || projection.readOnly || projection.isFailed) return;
     const repairKey = `${report.definitionKey}:${JSON.stringify(report.diagnostics ?? [])}`;
-    if (report.definitionKey !== genUIContentKey(projection.app) || report.render !== 'failed' || !report.diagnostics?.some(isFatalGenUIError)
+    if (report.definitionKey !== genUIContentKey(projection.app) || report.render === 'unverified' || !report.diagnostics?.some(isRepairWorthyGenUIError)
       || autoRepairKey.current === repairKey) return;
     autoRepairKey.current = repairKey;
     setRepairPending(true);
@@ -120,8 +127,8 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
   const currentVerification = app && verification?.definitionKey === genUIContentKey(app) ? verification : undefined;
   const fatalRender = currentVerification?.render === 'failed';
   let repairControl: React.ReactNode = null;
-  if (fatalRender && currentVerification) {
-    const repairable = Boolean(projection?.origin && currentVerification.diagnostics?.some(isFatalGenUIError));
+  if (currentVerification?.diagnostics?.some(isRepairWorthyGenUIError)) {
+    const repairable = Boolean(projection?.origin && currentVerification.diagnostics?.some(isRepairWorthyGenUIError));
     if (repairable && !projection?.readOnly && !repairQueued && !repairPending) repairControl = <div className="openbitfun-generative-widget-panel__repair" data-openbitfun-component="generative-widget" data-openbitfun-part="repair" data-openbitfun-state="repairRequired">
       <button type="button" disabled={repairPending} onClick={() => {
         if (!projection?.origin) return;

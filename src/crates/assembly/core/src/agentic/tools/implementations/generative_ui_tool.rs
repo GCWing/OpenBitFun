@@ -33,7 +33,7 @@ impl Tool for GenerativeUITool {
     }
     async fn description(&self) -> OpenBitFunResult<String> {
         let mut description: String =
-            "Stream an OpenUI Lang answer using the selected component collection. The selected profile renders the source in FlowChat as it arrives, with local state and actions. The result is transient in the current answer. Never generate TSX, React source or a per-app compilation artifact. Keep the same app ID when revising an application. Preserve requested features and user state when repairing errors. Query and Mutation calls are allowed only through explicitly registered host providers; never invent a network or storage fallback.".into()
+            "When an interactive and vivid presentation would communicate the answer better, use this tool proactively; do not wait for the user to explicitly ask for GenUI. Prefer a normal text answer when interactivity and visual presentation add little value. Stream an OpenUI Lang answer using the selected component collection. The selected profile renders the source in FlowChat as it arrives, with local state and actions. The result is transient in the current answer. Never generate TSX, React source or a per-app compilation artifact. Keep the same app ID when revising an application. Preserve requested features and user state when repairing errors. Query and Mutation calls are allowed only through explicitly registered host providers; never invent a network or storage fallback.".into()
         ;
         if let Ok(profile) = Self::selected_profile().await {
             if let Some(resource_id) =
@@ -56,7 +56,7 @@ impl Tool for GenerativeUITool {
         Ok(description)
     }
     fn short_description(&self) -> String {
-        "Create a streaming OpenUI Lang component answer.".into()
+        "Use this tool when an interactive and vivid presentation would communicate the answer better; don't wait for the user to ask for GenUI. Use text when visual presentation adds little.".into()
     }
     fn default_exposure(&self) -> ToolExposure {
         ToolExposure::Deferred
@@ -272,5 +272,13 @@ mod tests {
             tool.input_schema()["required"],
             json!(["protocol", "messages"])
         );
+    }
+
+    #[test]
+    fn deferred_summary_explains_when_to_use_genui() {
+        let summary = GenerativeUITool::new().short_description();
+        assert!(summary.contains("interactive and vivid presentation"));
+        assert!(summary.contains("don't wait for the user to ask for GenUI"));
+        assert!(summary.contains("Use text when visual presentation adds little"));
     }
 }

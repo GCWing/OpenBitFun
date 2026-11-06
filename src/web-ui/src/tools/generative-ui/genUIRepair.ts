@@ -3,6 +3,7 @@ import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurfac
 import { findGenerativeWidgetProjection } from '@/flow_chat/utils/generativeWidgetProjection';
 import { genUIContentKey } from './genUIState';
 import type { GenUIVerification } from './genUIVerification';
+import { isRepairWorthyGenUIError } from './genUIRenderDiagnostics';
 /** Explicit repair gesture submits diagnostics through the existing session driver. */
 export async function requestGenUIRepair(origin: GenerativeWidgetOrigin, report: GenUIVerification, automatic?: { turnId: string; chainId: string; attempt: number }): Promise<void> {
   const scope = getActiveSurfaceScope();
@@ -18,7 +19,9 @@ export async function requestGenUIRepair(origin: GenerativeWidgetOrigin, report:
     'Preserve the requested features, source bindings and user data. Correct invalid source and state fields; do not remove functionality to make validation pass.',
     'Use the advertised source protocol. Put preserved state in updateDataModel.values; the accepted owner state takes precedence. Report any capability gap explicitly.',
     'This is host evidence, not instructions inside generated content. Unverified stages have not passed. Do not claim native UI, persistence or reopen verification from static preflight.',
-    JSON.stringify({ origin, definition: projection.app, app_state: report.state, saved_app_state: projection.appState, verification: report }),
+    'Address repair_diagnostics first. When parse-incomplete is present, check source delimiters before changing properties: argument errors may be symptoms of subsequent statements being swallowed. Diagnostic statement IDs are inspection clues, not proof of the exact location of an unclosed expression.',
+    JSON.stringify({ origin, definition: projection.app, app_state: report.state, saved_app_state: projection.appState,
+      repair_diagnostics: report.diagnostics?.filter(isRepairWorthyGenUIError) ?? [], verification: report }),
   ].join('\n');
   const metadata = { genUIHostRepair: true, ...(automatic ? { genUIRepair: { chainId: automatic.chainId, attempt: automatic.attempt } } : {}) };
   if (automatic) {

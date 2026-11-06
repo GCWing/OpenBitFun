@@ -117,6 +117,18 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('sessionToVirtualItems unified work grouping', () => {
+  it('omits host GenUI repair input rows while retaining repair output and stored diagnostics', () => {
+    const session = makeSession();
+    const turn = session.dialogTurns[0];
+    turn.userMessage = { ...turn.userMessage, content: 'Internal rendering diagnostics', metadata: { genUIHostRepair: true } };
+    turn.modelRounds = [makeRound({ items: [makeTextItem('repair-result', 'Repaired UI')] })];
+    const original = JSON.stringify(session);
+    const items = sessionToVirtualItems(session);
+    expect(items.some(item => item.type === 'user-message')).toBe(false);
+    expect(items.some(item => item.type === 'model-round' && item.data.items.some(value => value.id === 'repair-result'))).toBe(true);
+    expect(JSON.stringify(session)).toBe(original);
+    expect(sessionToVirtualItems({ ...session })).toEqual(items);
+  });
   it('projects quiet runs as stable execution receipts without losing raw output or catalog positions', () => {
     const session = makeSession();
     const turn = session.dialogTurns[0];
