@@ -485,7 +485,10 @@
 .explore-region {
   position: relative;
   overflow: hidden;
-  width: min(100%, 900px);
+  /* The transcript or embedded host owns the reading width. All group kinds,
+     including separately virtualized headers/members, fill that same column. */
+  min-width: 0;
+  width: 100%;
   margin: 0 auto;
   padding-block: 0;
 }
