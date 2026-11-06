@@ -1820,6 +1820,29 @@ impl CliAgentRuntimeClient {
         submission
     }
 
+    pub(crate) async fn message_queue(
+        &self,
+        request: Option<openbitfun_runtime_ports::DialogQueueRequest>,
+    ) -> Result<openbitfun_runtime_ports::DialogQueueSnapshot> {
+        let session_id = self.require_session_id().await?;
+        let request = request.unwrap_or(openbitfun_runtime_ports::DialogQueueRequest {
+            session_id: session_id.clone(),
+            queue_epoch: None,
+            action: openbitfun_runtime_ports::DialogQueueAction::List,
+        });
+        anyhow::ensure!(
+            request.session_id == session_id,
+            "Queue session changed; reopen /queue"
+        );
+        match &self.backend {
+            CliAgentRuntimeBackend::Embedded(runtime) => runtime.manage_dialog_queue(request)
+                .await.map_err(|error| anyhow::anyhow!(error.into_message())),
+            CliAgentRuntimeBackend::Shared(_) => anyhow::bail!(
+                "This Shared Runtime does not expose message queue management. Use the execution host's queue controls."
+            ),
+        }
+    }
+
     pub(crate) async fn steer_current_turn(
         &self,
         content: String,

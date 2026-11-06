@@ -81,6 +81,7 @@ pub(crate) enum PopupType {
     ForkSelector,
     TimelineSelector,
     PromptStashSelector,
+    MessageQueue,
     ExportDialog,
     SkillSelector,
     SubagentSelector,
@@ -250,6 +251,7 @@ pub(crate) struct ChatView {
     timeline_selector: TimelineSelectorState,
     lineage_inspection_label: Option<String>,
     prompt_stash_selector: PromptStashSelectorState,
+    message_queue: super::message_queue::MessageQueueState,
     export_dialog: ExportDialogState,
     /// Skill selector popup state
     skill_selector: SkillSelectorState,
@@ -382,6 +384,7 @@ impl ChatView {
             timeline_selector: TimelineSelectorState::new(),
             lineage_inspection_label: None,
             prompt_stash_selector: PromptStashSelectorState::new(),
+            message_queue: super::message_queue::MessageQueueState::new(),
             export_dialog: ExportDialogState::new(),
             skill_selector: SkillSelectorState::new(),
             subagent_selector: SubagentSelectorState::new(),

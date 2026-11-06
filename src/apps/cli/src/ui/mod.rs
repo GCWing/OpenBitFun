@@ -16,6 +16,7 @@ pub(crate) mod login_form;
 mod markdown;
 pub(crate) mod mcp_add_dialog;
 pub(crate) mod mcp_selector;
+pub(crate) mod message_queue;
 mod message_time;
 pub(crate) mod model_config_form;
 pub(crate) mod model_selector;

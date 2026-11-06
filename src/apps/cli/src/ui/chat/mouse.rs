@@ -34,6 +34,7 @@ impl ChatView {
         if self.fork_selector.is_visible()
             || self.timeline_selector.is_visible()
             || self.prompt_stash_selector.is_visible()
+            || self.message_queue_visible()
         {
             // These conversation-point dialogs are keyboard-driven. Do not let mouse gestures
             // mutate the transcript hidden underneath them.

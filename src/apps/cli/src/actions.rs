@@ -106,6 +106,7 @@ pub(crate) enum ActionHandler {
     PromptStash,
     PromptStashPop,
     PromptStashList,
+    MessageQueue,
     ToggleTimestamps,
     ToggleThinking,
     ToggleToolDetails,
@@ -174,6 +175,7 @@ impl ActionHandler {
                 | Self::PromptStash
                 | Self::PromptStashPop
                 | Self::PromptStashList
+                | Self::MessageQueue
                 | Self::ToggleTimestamps
                 | Self::ToggleThinking
                 | Self::ToggleToolDetails
@@ -744,6 +746,21 @@ static ACTION_SPECS: &[ActionSpec] = &[
         contexts: CHAT,
         availability: ActionAvailability::Idle,
         handler: ActionHandler::Editor,
+        default_bindings: &[],
+        fallback_bindings: &[],
+        shortcut_field: None,
+        palette: palette("Prompt", false),
+        shortcut_label: None,
+        slash_on_startup: false,
+    },
+    ActionSpec {
+        id: "message_queue",
+        name: "Queued messages",
+        aliases: &["/queue"],
+        description: "Inspect, reorder, send or remove queued messages",
+        contexts: CHAT,
+        availability: ActionAvailability::Always,
+        handler: ActionHandler::MessageQueue,
         default_bindings: &[],
         fallback_bindings: &[],
         shortcut_field: None,

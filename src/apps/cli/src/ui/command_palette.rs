@@ -56,6 +56,7 @@ const DEFAULT_ITEM_ORDER: &[&str] = &[
     "prompt_stash",
     "prompt_stash_pop",
     "prompt_stash_list",
+    "message_queue",
     "copy_transcript",
     "export_transcript",
     "toggle_auto_approve",
