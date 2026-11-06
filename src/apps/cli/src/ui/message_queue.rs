@@ -198,6 +198,7 @@ impl MessageQueueState {
                     .iter()
                     .enumerate()
                     .map(|(index, item)| {
+                        let selected = self.list.selected() == Some(index);
                         let preview = item
                             .display_content
                             .split_whitespace()
@@ -219,26 +220,24 @@ impl MessageQueueState {
                                 theme.style(StyleKind::Muted),
                             )),
                             Line::from(vec![
-                                Span::raw(if self.list.selected() == Some(index) {
-                                    "› "
-                                } else {
-                                    "  "
-                                }),
+                                Span::raw(if selected { "› " } else { "  " }),
                                 Span::raw(preview),
                                 Span::styled(
                                     format!("{suffix}{status}"),
-                                    theme.style(StyleKind::Muted),
+                                    if selected {
+                                        Style::default()
+                                    } else {
+                                        theme.style(StyleKind::Muted)
+                                    },
                                 ),
                             ])
-                            .style(
-                                if self.list.selected() == Some(index) {
-                                    Style::default()
-                                        .bg(theme.primary)
-                                        .fg(theme.selection_foreground())
-                                } else {
-                                    Style::default()
-                                },
-                            ),
+                            .style(if selected {
+                                Style::default()
+                                    .bg(theme.primary)
+                                    .fg(theme.selection_foreground())
+                            } else {
+                                Style::default()
+                            }),
                         ])
                     })
                     .collect::<Vec<_>>()
@@ -283,7 +282,7 @@ mod tests {
         let mut state = MessageQueueState::new();
         state.show();
         state.update(Ok(serde_json::from_value(serde_json::json!({"sessionId":"s","queueEpoch":"e","revision":7,"activeTurnId":"active","supportsReorder":true,"capacity":10,"used":2,"receipt":null,"items":[
-            {"turnId":"a","displayContent":"First","previewTruncated":false,"attachmentCount":0,"agentType":"Standard","createdAtMs":0,"status":"queued","reason":null,"targetTurnId":null,"steeringId":null},
+            {"turnId":"a","displayContent":"First","previewTruncated":false,"attachmentCount":1,"agentType":"Standard","createdAtMs":0,"status":"queued","reason":null,"targetTurnId":null,"steeringId":null},
             {"turnId":"b","displayContent":"Second","previewTruncated":false,"attachmentCount":0,"agentType":"Standard","createdAtMs":0,"status":"queued","reason":null,"targetTurnId":null,"steeringId":null}
         ]})).unwrap()));
         state
@@ -318,6 +317,11 @@ mod tests {
             let first = rows.iter().position(|r| r.contains("First")).unwrap();
             let second = rows.iter().position(|r| r.contains("Second")).unwrap();
             assert!(rows[first].contains("› First"));
+            let attachment_column = rows[first].chars().position(|c| c == '+').unwrap() as u16;
+            assert_eq!(
+                buffer[(attachment_column, first as u16)].fg,
+                Theme::dark().selection_foreground()
+            );
             assert!(rows[first - 1].contains('─'));
             assert!(rows[second - 1].contains('─'));
             assert!(!rows[second + 1].contains('─'));
