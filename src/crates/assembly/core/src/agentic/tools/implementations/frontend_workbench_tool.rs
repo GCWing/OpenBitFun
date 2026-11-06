@@ -6,7 +6,9 @@ use crate::agentic::tools::frontend_workbench_host::{
 };
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
-use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY;
+use openbitfun_agent_runtime::remote_file_delivery::{
+    TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY, TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+};
 use serde_json::{json, Value};
 
 pub struct FrontendWorkbenchTool;
@@ -32,11 +34,12 @@ fn creative_local_context(context: Option<&ToolUseContext>) -> bool {
 }
 
 fn is_remote_control_context(context: &ToolUseContext) -> bool {
-    context
-        .custom_data
-        .get(TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY)
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+    [
+        TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+        TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY,
+    ]
+    .iter()
+    .any(|key| context.custom_data.get(*key).and_then(Value::as_bool) == Some(true))
 }
 
 #[async_trait]
@@ -168,7 +171,7 @@ This tool is unavailable for remote workspaces, remote-control turns, and non-de
         }
         if is_remote_control_context(context) {
             return Err(OpenBitFunError::tool(
-                "FrontendWorkbench cannot run from a remote mobile or bot controller because the changed local desktop and its recovery controls are not visible there"
+                "FrontendWorkbench cannot run from a remote mobile or bot controller, or through Peer Device Mode, because the changed local desktop and its recovery controls are not visible there"
                     .to_string(),
             ));
         }
@@ -314,17 +317,26 @@ mod tests {
 
     #[tokio::test]
     async fn execution_rejects_remote_control_turns_even_for_a_local_workspace() {
-        let mut remote_control = context("Creative");
-        remote_control.custom_data.insert(
-            TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY.to_string(),
-            Value::Bool(true),
-        );
-
-        let error = FrontendWorkbenchTool::new()
-            .call_impl(&json!({"action": "status"}), &remote_control)
-            .await
-            .expect_err("remote-control Creative calls must fail");
-        assert!(error.to_string().contains("remote mobile or bot"));
+        assert!(creative_local_context(Some(&context("Creative"))));
+        for key in [
+            TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+            TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY,
+        ] {
+            let mut remote_control = context("Creative");
+            remote_control.custom_data.insert(key.into(), json!(true));
+            assert!(!creative_local_context(Some(&remote_control)));
+            for action in [
+                "prepare", "status", "inspect", "invoke", "apply", "rollback",
+            ] {
+                let error = FrontendWorkbenchTool::new()
+                    .call_impl(&json!({"action": action}), &remote_control)
+                    .await
+                    .expect_err("remote-control Creative calls must fail before host access");
+                assert!(error.to_string().contains("recovery controls"));
+            }
+            remote_control.custom_data.insert(key.into(), json!(false));
+            assert!(creative_local_context(Some(&remote_control)));
+        }
     }
 
     #[test]

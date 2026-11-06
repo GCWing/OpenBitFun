@@ -14,7 +14,9 @@ use crate::service::config::global::GlobalConfigManager;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
 use chrono::DateTime;
-use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY;
+use openbitfun_agent_runtime::remote_file_delivery::{
+    TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY, TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+};
 use serde_json::{json, Map, Value};
 
 pub const DESKTOP_CARDS_CONFIG_PATH: &str = "app.ai_experience.enable_desktop_cards";
@@ -216,11 +218,12 @@ impl Default for DesktopCardTool {
 }
 
 fn is_remote_control_context(context: &ToolUseContext) -> bool {
-    context
-        .custom_data
-        .get(TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY)
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+    [
+        TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+        TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY,
+    ]
+    .iter()
+    .any(|key| context.custom_data.get(*key).and_then(Value::as_bool) == Some(true))
 }
 
 fn now_ms() -> i64 {
@@ -888,7 +891,7 @@ Workflow for command sources:
 3. Bind template paths to the keys you saw in that output, then create the card.
 4. If the result reports a fetch error or unresolved paths, fix the command or the paths with update instead of creating another card. Reported stderr output alone is often harmless progress text; use it to explain missing values.
 
-Cards are shown only on this desktop. They are unavailable for remote mobile or bot control turns because that user cannot see them."#,
+Cards are shown only on this desktop. They are unavailable for remote mobile, bot, or Peer Device Mode control turns because that user cannot see them."#,
             icons = DESKTOP_CARD_ICONS.join(", "),
             chart_styles = chart_style_summary(),
             shell = desktop_card_command_shell_label(),
@@ -1114,7 +1117,7 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
     ) -> OpenBitFunResult<Vec<ToolResult>> {
         if is_remote_control_context(context) {
             return Err(OpenBitFunError::tool(
-                "DesktopCard cannot run from a remote mobile or bot controller because cards appear only on the host desktop, which that user cannot see. Tell the user in the reply instead, or schedule a Cron job for reminders."
+                "DesktopCard cannot run from a remote mobile or bot controller, or through Peer Device Mode, because cards appear only on the host desktop, which that user cannot see. Tell the user in the reply instead, or schedule a Cron job for reminders."
                     .to_string(),
             ));
         }
@@ -1949,21 +1952,97 @@ mod tests {
 
     #[tokio::test]
     async fn remote_control_turns_are_refused() {
-        let mut remote_control = context();
-        remote_control.custom_data.insert(
-            TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY.to_string(),
-            Value::Bool(true),
+        for key in [
+            TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+            TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY,
+        ] {
+            let mut remote_control = context();
+            remote_control
+                .custom_data
+                .insert(key.to_string(), Value::Bool(true));
+            assert!(
+                !DesktopCardTool::new()
+                    .is_available_in_context(Some(&remote_control))
+                    .await
+            );
+            for action in ["create", "show", "update", "list"] {
+                let error = DesktopCardTool::new()
+                    .call_impl(&json!({"action": action}), &remote_control)
+                    .await
+                    .unwrap_err();
+                assert!(error.to_string().contains("remote mobile or bot"));
+                assert!(error.to_string().contains("Peer Device Mode"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn local_turns_reach_the_host_after_a_peer_turn_is_refused() {
+        use crate::agentic::tools::desktop_card_host::set_desktop_card_handler;
+        use std::sync::{Arc, Mutex};
+
+        // The host registration is a process-wide OnceLock; do not leave a
+        // fake desktop host installed for unrelated catalog/runtime tests.
+        if std::env::var_os("OPENBITFUN_DESKTOP_CARD_ORIGIN_TEST_CHILD").is_none() {
+            let mut command = openbitfun_services_core::process_manager::create_tokio_command(
+                std::env::current_exe().unwrap(),
+            );
+            command
+                .args([
+                    "agentic::tools::implementations::desktop_card_tool::tests::local_turns_reach_the_host_after_a_peer_turn_is_refused",
+                    "--exact", "--nocapture",
+                ])
+                .env("OPENBITFUN_DESKTOP_CARD_ORIGIN_TEST_CHILD", "1")
+                .kill_on_drop(true);
+            let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
+            return;
+        }
+
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let received = requests.clone();
+        set_desktop_card_handler(Arc::new(move |request| {
+            received.lock().unwrap().push(request);
+            Box::pin(async { Ok(json!({"card": {"id": "card-local", "title": "Local"}})) })
+        }));
+
+        let create = json!({"action": "create", "card": {
+            "title": "Local", "template": {"kind": "note", "text": "Local note"}
+        }});
+        let show = json!({"action": "show", "cardId": "card-local"});
+        let tool = DesktopCardTool::new();
+        let mut peer = context();
+        peer.custom_data
+            .insert(TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY.into(), json!(true));
+        for input in [&create, &show] {
+            assert!(tool.call_impl(input, &peer).await.is_err());
+        }
+        assert!(requests.lock().unwrap().is_empty());
+
+        // Same session, next local turn: no source marker in legacy/local
+        // contexts. A previous remote turn must not taint the whole session.
+        let local = context();
+        for input in [&create, &show] {
+            tool.call_impl(input, &local).await.unwrap();
+        }
+        let requests = requests.lock().unwrap();
+        assert!(
+            matches!(&requests[0], DesktopCardHostRequest::Create { origin, .. }
+            if origin.session_id == local.session_id)
         );
         assert!(
-            !DesktopCardTool::new()
-                .is_available_in_context(Some(&remote_control))
-                .await
+            matches!(&requests[1], DesktopCardHostRequest::Show { card_id }
+            if card_id == "card-local")
         );
-        let error = DesktopCardTool::new()
-            .call_impl(&json!({"action": "list"}), &remote_control)
-            .await
-            .unwrap_err();
-        assert!(error.to_string().contains("remote mobile or bot"));
     }
 
     #[tokio::test]

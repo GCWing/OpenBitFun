@@ -48,6 +48,7 @@ impl SessionMessageTool {
     }
 
     fn forwarded_user_input_metadata(context: &ToolUseContext) -> serde_json::Map<String, Value> {
+        use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY;
         use openbitfun_agent_runtime::user_questions::USER_INPUT_AVAILABLE_CONTEXT_KEY;
 
         let mut metadata = serde_json::Map::new();
@@ -59,6 +60,15 @@ impl SessionMessageTool {
             if is_boolean_fact {
                 metadata.insert(USER_INPUT_AVAILABLE_CONTEXT_KEY.to_string(), value.clone());
             }
+        }
+        if let Some(value @ Value::Bool(_)) = context
+            .custom_data
+            .get(TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY)
+        {
+            metadata.insert(
+                TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY.to_string(),
+                value.clone(),
+            );
         }
         metadata
     }
@@ -939,6 +949,23 @@ mod tests {
         assert_eq!(
             SessionMessageTool::target_agent_type_from_resolution(Some(" ".to_string())),
             None
+        );
+    }
+
+    #[test]
+    fn desktop_cards_session_message_preserves_peer_origin() {
+        use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY;
+        let mut context = empty_context();
+        assert!(!SessionMessageTool::forwarded_user_input_metadata(&context)
+            .contains_key(TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY));
+        context.custom_data.insert(
+            TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY.into(),
+            Value::Bool(true),
+        );
+        assert_eq!(
+            SessionMessageTool::forwarded_user_input_metadata(&context)
+                [TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY],
+            true
         );
     }
 

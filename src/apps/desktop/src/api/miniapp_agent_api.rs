@@ -176,6 +176,10 @@ pub struct MiniAppAgentContextFile {
 #[serde(rename_all = "camelCase")]
 pub struct MiniAppAgentRunRequest {
     pub app_id: String,
+    /// Stamped by this host's Peer bridge, independently of client version.
+    /// Legacy and controller-local calls keep the local presentation context.
+    #[serde(default)]
+    pub peer_device_control: bool,
     /// Full user prompt for the agent turn. The MiniApp owns its own task
     /// protocol; the host only wraps it into a hidden agent session.
     pub prompt: String,
@@ -551,6 +555,11 @@ pub async fn miniapp_agent_run(
         request.enable_tools,
         market_strict,
     );
+    if request.peer_device_control {
+        submission_plan.metadata[
+            openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY
+        ] = serde_json::Value::Bool(true);
+    }
 
     let validated_existing_session =
         if let Some(existing_session_id) = submission_plan.requested_session_id.clone() {

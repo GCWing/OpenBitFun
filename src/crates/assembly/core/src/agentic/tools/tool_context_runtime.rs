@@ -42,7 +42,9 @@ use openbitfun_agent_runtime::checkpoint::{
 use openbitfun_agent_runtime::permission::{
     AUTO_APPROVE_ASK_CONTEXT_KEY, PERMISSION_MODE_CONTEXT_KEY,
 };
-use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY;
+use openbitfun_agent_runtime::remote_file_delivery::{
+    TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY, TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+};
 use openbitfun_agent_runtime::user_questions::{
     UserQuestionController, USER_INPUT_AVAILABLE_CONTEXT_KEY, USER_INPUT_MODEL_ROUND_CONTEXT_KEY,
     USER_INPUT_PARENT_CONTEXT_KEY,
@@ -342,7 +344,18 @@ pub(crate) fn build_tool_description_context(
     let mut custom_data = HashMap::new();
     let primary_model_facts = primary_model_facts.cloned().unwrap_or_default();
     for (key, value) in context_vars {
-        custom_data.insert(key.clone(), Value::String(value.clone()));
+        // Availability checks see the same origin booleans as execution.
+        // Other description context values retain their existing string shape.
+        let value = if matches!(
+            key.as_str(),
+            TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY | TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY
+        ) && matches!(value.as_str(), "true" | "false")
+        {
+            Value::Bool(value == "true")
+        } else {
+            Value::String(value.clone())
+        };
+        custom_data.insert(key.clone(), value);
     }
 
     ToolUseContext {
@@ -455,6 +468,7 @@ fn build_tool_context_custom_data(context: &ToolExecutionContext) -> HashMap<Str
     for key in [
         USER_INPUT_AVAILABLE_CONTEXT_KEY,
         AUTO_APPROVE_ASK_CONTEXT_KEY,
+        TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY,
     ] {
         let value = match context.context_vars.get(key).map(String::as_str) {
             Some("true") => Some(true),
@@ -1633,6 +1647,33 @@ mod context_builder_tests {
     use tool_runtime::context::PrimaryModelFacts;
 
     #[test]
+    fn desktop_cards_listing_context_preserves_control_origin_booleans() {
+        use openbitfun_agent_runtime::remote_file_delivery::{
+            TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY, TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+        };
+        for key in [
+            TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY,
+            TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+        ] {
+            for value in ["true", "false"] {
+                let context_vars = HashMap::from([(key.to_string(), value.to_string())]);
+                let context = build_tool_description_context(
+                    "Creative",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    &context_vars,
+                    &ToolRuntimeRestrictions::default(),
+                );
+                assert_eq!(context.custom_data[key].as_bool(), Some(value == "true"));
+            }
+        }
+    }
+
+    #[test]
     fn tool_description_context_preserves_manifest_custom_data_shape() {
         let context_vars = HashMap::new();
         let mut runtime_tool_restrictions = ToolRuntimeRestrictions::default();
@@ -1843,6 +1884,26 @@ mod task_context_tests {
                 "session_id": "restored-parent", "dialog_turn_id": null,
             })
         );
+    }
+
+    #[test]
+    fn desktop_cards_tool_context_keeps_turn_scoped_peer_origin() {
+        use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY;
+        for origin in [None, Some("true"), Some("false")] {
+            let mut task = task_with_context_vars();
+            if let Some(origin) = origin {
+                task.context
+                    .context_vars
+                    .insert(TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY.into(), origin.into());
+            }
+            let context = build_tool_use_context_for_task(&task, None, CancellationToken::new());
+            assert_eq!(
+                context
+                    .custom_data
+                    .get(TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY),
+                origin.map(|value| json!(value == "true")).as_ref(),
+            );
+        }
     }
 
     #[test]

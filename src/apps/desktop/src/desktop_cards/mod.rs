@@ -134,14 +134,6 @@ fn pending_countdown(card: &DesktopCardRecord) -> Option<i64> {
     }
 }
 
-fn ensure_local_display_surface() -> Result<(), String> {
-    if crate::api::peer_host_invoke::attached_controllers().is_empty() {
-        Ok(())
-    } else {
-        Err("This OpenBitFun host is being driven from another device through Peer Device Mode. Desktop cards would appear only on this host's screen, which that user cannot see.".to_string())
-    }
-}
-
 async fn due_notification_body(message: Option<&str>) -> String {
     if let Some(message) = message.filter(|message| !message.trim().is_empty()) {
         return message.to_string();
@@ -942,10 +934,12 @@ impl DesktopCards {
     }
 
     async fn handle_tool_request(&self, request: DesktopCardHostRequest) -> Result<Value, String> {
+        // DesktopCardTool checks the submitting turn's control surface before
+        // invoking this host. Attached peers are event subscribers, not proof
+        // that this particular request came from a remote user.
         let action = request.action();
         let result = match request {
             DesktopCardHostRequest::Create { draft, origin } => {
-                ensure_local_display_surface()?;
                 json!({ "card": self.create(draft, origin).await? })
             }
             DesktopCardHostRequest::Update { card_id, patch } => {
@@ -956,7 +950,6 @@ impl DesktopCards {
                 json!({ "card": self.get(&card_id).await?, "enabled": self.is_enabled() })
             }
             DesktopCardHostRequest::Show { card_id } => {
-                ensure_local_display_surface()?;
                 self.require_enabled()?;
                 json!({ "card": self.set_visible(&card_id, true).await? })
             }

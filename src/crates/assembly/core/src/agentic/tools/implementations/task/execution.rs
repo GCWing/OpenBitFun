@@ -78,11 +78,16 @@ fn forward_subagent_invocation_context(
     use openbitfun_agent_runtime::permission::{
         AUTO_APPROVE_ASK_CONTEXT_KEY, PERMISSION_MODE_CONTEXT_KEY,
     };
+    use openbitfun_agent_runtime::remote_file_delivery::{
+        TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY, TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+    };
     use openbitfun_agent_runtime::user_questions::USER_INPUT_AVAILABLE_CONTEXT_KEY;
 
     for key in [
         USER_INPUT_AVAILABLE_CONTEXT_KEY,
         AUTO_APPROVE_ASK_CONTEXT_KEY,
+        TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY,
+        TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
     ] {
         let Some(value) = context.custom_data.get(key) else {
             continue;
@@ -1474,6 +1479,26 @@ mod target_context_tests {
         .expect("target evidence should validate")
         .expect("target evidence should exist");
         assert!(evidence.allows_live_repository_context());
+    }
+
+    #[test]
+    fn desktop_cards_child_context_preserves_remote_origin() {
+        use openbitfun_agent_runtime::remote_file_delivery::{
+            TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY, TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+        };
+        for key in [
+            TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY,
+            TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+        ] {
+            let mut parent = parent_tool_context();
+            parent.custom_data.insert(key.into(), Value::Bool(true));
+            let mut child = HashMap::new();
+            forward_subagent_invocation_context(&parent, &mut child);
+            assert_eq!(child[key], "true");
+        }
+        let mut local_child = HashMap::new();
+        forward_subagent_invocation_context(&parent_tool_context(), &mut local_child);
+        assert!(!local_child.contains_key(TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY));
     }
 
     #[test]

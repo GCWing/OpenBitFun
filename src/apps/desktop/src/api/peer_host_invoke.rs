@@ -355,6 +355,22 @@ pub async fn dispatch(command: &str, args: Value) -> HostInvokeBridgeResult {
         PeerHostVerdict::Execute => {}
     }
 
+    // Direct tool calls have no dialog turn whose origin can reach
+    // ToolUseContext. Refuse tools that require the visible local desktop here.
+    let direct_tool = args
+        .get("request")
+        .unwrap_or(&args)
+        .get("toolName")
+        .and_then(Value::as_str);
+    if command == "execute_tool" && matches!(direct_tool, Some("DesktopCard" | "FrontendWorkbench"))
+    {
+        return HostInvokeBridgeResult {
+            ok: false,
+            value: None,
+            error: Some(format!("{} is unavailable through Peer Device Mode because it requires the visible local desktop.", direct_tool.unwrap())),
+        };
+    }
+
     if command == "product_control_invoke" {
         use openbitfun_product_domains::{
             product_control::{ProductControlAction, ProductControlRequest},
@@ -409,6 +425,7 @@ pub async fn dispatch(command: &str, args: Value) -> HostInvokeBridgeResult {
                 }
             }
         };
+    let args = with_peer_turn_origin(command, args);
     let response_scope =
         serde_json::json!({"path": args.get("request").unwrap_or(&args).get("path")});
     match bridge_via_webview(&app, command, args).await {
@@ -435,6 +452,38 @@ pub async fn dispatch(command: &str, args: Value) -> HostInvokeBridgeResult {
             error: Some(error),
         },
     }
+}
+
+/// Preserve the caller's payload while recording where this turn was
+/// submitted. This also covers older controllers that send no metadata.
+fn with_peer_turn_origin(command: &str, mut args: Value) -> Value {
+    use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY;
+
+    if !matches!(
+        command,
+        "start_dialog_turn" | "btw_ask_stream" | "miniapp_agent_run"
+    ) {
+        return args;
+    }
+    let request = if args.get("request").is_some() {
+        args.get_mut("request").expect("request exists")
+    } else {
+        &mut args
+    };
+    if let Some(request) = request.as_object_mut() {
+        if command == "miniapp_agent_run" {
+            request.insert("peerDeviceControl".to_string(), Value::Bool(true));
+            return args;
+        }
+        let metadata = request
+            .entry("userMessageMetadata")
+            .or_insert_with(|| serde_json::json!({}));
+        if !metadata.is_object() {
+            *metadata = serde_json::json!({ "raw_metadata": metadata.take() });
+        }
+        metadata[TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY] = Value::Bool(true);
+    }
+    args
 }
 
 async fn bridge_via_webview(
@@ -477,6 +526,119 @@ async fn bridge_via_webview(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn desktop_cards_direct_peer_calls_fail_before_the_native_bridge() {
+        let result = dispatch(
+            "execute_tool",
+            serde_json::json!({"request": {
+                "toolName": "DesktopCard", "input": {"action": "create"}
+            }}),
+        )
+        .await;
+        assert!(!result.ok);
+        assert!(result.error.unwrap().contains("Peer Device Mode"));
+    }
+
+    #[tokio::test]
+    async fn frontend_workbench_direct_peer_calls_fail_before_the_native_bridge() {
+        let request = serde_json::json!({
+            "toolName": "FrontendWorkbench", "input": {"action": "prepare"}
+        });
+        for args in [request.clone(), serde_json::json!({"request": request})] {
+            let result = dispatch("execute_tool", args).await;
+            assert!(!result.ok);
+            assert!(result.error.unwrap().contains("Peer Device Mode"));
+        }
+    }
+
+    #[test]
+    fn desktop_cards_miniapp_peer_origin_is_host_stamped() {
+        let original = serde_json::json!({"request": {
+            "appId": "builtin-app", "prompt": "Create a card"
+        }});
+        let local: super::super::miniapp_agent_api::MiniAppAgentRunRequest =
+            serde_json::from_value(original["request"].clone()).unwrap();
+        assert!(!local.peer_device_control);
+        let marked = with_peer_turn_origin("miniapp_agent_run", original);
+        let peer: super::super::miniapp_agent_api::MiniAppAgentRunRequest =
+            serde_json::from_value(marked["request"].clone()).unwrap();
+        assert!(peer.peer_device_control);
+        assert_eq!(peer.app_id, local.app_id);
+        assert_eq!(peer.prompt, local.prompt);
+    }
+
+    #[test]
+    fn desktop_cards_peer_origin_preserves_legacy_turn_payloads() {
+        use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY;
+        use serde_json::json;
+
+        for command in ["start_dialog_turn", "btw_ask_stream"] {
+            for metadata in [
+                None,
+                Some(Value::Null),
+                Some(json!("legacy metadata")),
+                Some(json!({
+                    "surface": "flow_chat",
+                    "requestId": "request-1",
+                    "peer_device_control": false
+                })),
+            ] {
+                let mut original = json!({"request": {
+                    "sessionId": "local-or-peer-session",
+                    "turnId": "turn-1",
+                    "userInput": "Create a card",
+                    "agentType": "Standard"
+                }});
+                if let Some(metadata) = metadata.clone() {
+                    original["request"]["userMessageMetadata"] = metadata;
+                }
+                let marked = with_peer_turn_origin(command, original.clone());
+                let marked_metadata = &marked["request"]["userMessageMetadata"];
+                assert_eq!(marked_metadata[TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY], true);
+                if command == "start_dialog_turn" {
+                    let decoded: super::super::agentic_api::StartDialogTurnRequest =
+                        serde_json::from_value(marked["request"].clone()).unwrap();
+                    assert_eq!(decoded.session_id, "local-or-peer-session");
+                    assert_eq!(
+                        decoded.user_message_metadata.as_ref(),
+                        Some(marked_metadata)
+                    );
+                }
+                match metadata {
+                    Some(Value::Object(_)) => {
+                        assert_eq!(marked_metadata["surface"], "flow_chat");
+                        assert_eq!(marked_metadata["requestId"], "request-1");
+                    }
+                    Some(Value::String(raw)) => assert_eq!(marked_metadata["raw_metadata"], raw),
+                    _ => {}
+                }
+                let mut restored = marked["request"].clone();
+                restored
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("userMessageMetadata");
+                let mut original_fields = original["request"].clone();
+                original_fields
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("userMessageMetadata");
+                assert_eq!(restored, original_fields);
+                // The marker is ordinary additive metadata and survives queue /
+                // transcript serialization without changing the request schema.
+                let round_trip: Value = serde_json::from_str(&marked.to_string()).unwrap();
+                assert_eq!(round_trip, marked);
+                assert_eq!(with_peer_turn_origin(command, marked.clone()), marked);
+            }
+        }
+
+        let read = json!({"request": {"sessionId": "session-1"}});
+        assert_eq!(with_peer_turn_origin("get_session", read.clone()), read);
+        assert_eq!(
+            with_peer_turn_origin("start_dialog_turn", Value::Null),
+            Value::Null
+        );
+    }
 
     fn control_state(controllers: &[&str], requests: &[&str]) -> PeerControlState {
         PeerControlState {

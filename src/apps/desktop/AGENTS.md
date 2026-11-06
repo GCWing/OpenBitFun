@@ -144,6 +144,10 @@ is `node tests/e2e/scripts/run-subscription-pool.mjs` (see its E2E guide).
 
 For desktop card stacking, native parenting rollback, and legacy record/request compatibility,
 run `cargo test --locked -p openbitfun-desktop --no-default-features --lib desktop_cards`.
+This also checks host-stamped Peer turn metadata for legacy controllers. Tool
+admission is turn-scoped: attached Peer controllers are observers and must not
+block local card creation or display. Run the Core guide's `desktop_card` tests
+for request-origin propagation; these fixtures do not establish live remote behavior.
 On a graphical Windows session with Explorer running, also run
 `cargo test --locked -p openbitfun-desktop --no-default-features --lib live_explorer_attachment_round_trip -- --ignored`.
 The native fixtures use hidden disposable windows; they do not establish WebView rendering,
@@ -153,6 +157,12 @@ global always-on-top, and hide/show. For Explorer restart (`taskkill /f /im expl
 start it again) a pinned card must reattach within about 30 s, or come back unpinned with the
 pin-failure notice; it must never stay "Shown" without a window. UI, hidden-card pinning, and old-host negotiation coverage:
 `pnpm --dir src/web-ui run test:run src/app/components/DesktopCard/DesktopCardWindow.test.tsx src/infrastructure/api/service-api/DesktopCardAPI.test.ts src/app/scenes/personal-overview/OverviewDesktopCardsSection.test.tsx src/app/scenes/settings/pages/application/DesktopCardsSettingsSection.test.tsx`.
+
+For frontend customization with background Peer subscribers, direct Peer tool
+refusal, revision recovery, and legacy state compatibility, run
+`cargo test --locked -p openbitfun-desktop --no-default-features --lib frontend_workbench`.
+The Core guide's `frontend_workbench` tests cover per-turn origin admission.
+These fixtures do not launch the native confirmation controls or a live Peer connection.
 
 For session storage directory access, run
 `cargo test -p openbitfun-desktop --lib api::session_storage_directory::tests`

@@ -348,9 +348,8 @@ impl FrontendWorkbenchManager {
         self: &Arc<Self>,
         request: FrontendWorkbenchHostRequest,
     ) -> Result<Value, String> {
-        ensure_local_confirmation_surface(
-            crate::api::peer_host_invoke::attached_controllers().len(),
-        )?;
+        // Core admits the invoking turn's origin. Peer event subscribers may
+        // remain attached while the user customizes the visible local desktop.
         match request.action.as_str() {
             "prepare" => self.prepare(),
             "status" => self.status(),
@@ -1231,16 +1230,6 @@ impl FrontendWorkbenchManager {
     }
 }
 
-fn ensure_local_confirmation_surface(attached_peer_controllers: usize) -> Result<(), String> {
-    if attached_peer_controllers > 0 {
-        return Err(
-            "FrontendWorkbench is unavailable while this OpenBitFun host is controlled through Peer Device Mode; run Creative mode on the visible local desktop instead"
-                .to_string(),
-        );
-    }
-    Ok(())
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrontendUpdateDecisionRequest {
@@ -2025,12 +2014,32 @@ mod tests {
         assert!(validate_revision_id("creative-38e14f63-30ad-4ad7-9e4e-5ad556450ba3").is_ok());
     }
 
-    #[test]
-    fn peer_control_requires_a_visible_local_confirmation_surface() {
-        assert!(ensure_local_confirmation_surface(0).is_ok());
-        let error = ensure_local_confirmation_surface(1)
-            .expect_err("peer-controlled frontend updates must fail loudly");
-        assert!(error.contains("Peer Device Mode"));
+    #[tokio::test]
+    async fn local_frontend_workbench_requests_ignore_background_peer_subscribers() {
+        struct AttachedController(String);
+        impl Drop for AttachedController {
+            fn drop(&mut self) {
+                crate::api::peer_host_invoke::detach_controller(&self.0);
+            }
+        }
+        let controller = AttachedController(format!("workbench-test-{}", Uuid::new_v4()));
+        crate::api::peer_host_invoke::attach_controller(controller.0.clone());
+        assert!(crate::api::peer_host_invoke::attached_controllers().contains(&controller.0));
+
+        let root = tempfile::tempdir().unwrap();
+        let manager = overlay_manager(root.path(), "installed product");
+        let result = manager
+            .handle_tool_request(FrontendWorkbenchHostRequest {
+                action: "prepare".into(),
+                draft_id: None,
+                command_id: None,
+                arguments: None,
+            })
+            .await
+            .expect("local customization remains available with Peer subscribers");
+        let draft = PathBuf::from(result["draftPath"].as_str().unwrap());
+        assert!(draft.join(overrides::CSS).is_file());
+        assert!(draft.join(overrides::JS).is_file());
     }
 
     #[test]
