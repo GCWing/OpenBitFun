@@ -24,6 +24,7 @@ import type {
   SessionCascadeRemoval,
   SessionCreationSeed,
   SessionDriver,
+  CompactSessionResult,
   SessionDriverNavigationStatusSource,
   SessionDriverOwnershipSource,
   StartTurnInput,
@@ -500,7 +501,7 @@ export const dispatchSessionDriver: SessionDriver = {
     return response.cancelled;
   },
 
-  async compactSession(context: FlowChatContext, sessionId: string): Promise<void> {
+  async compactSession(context: FlowChatContext, sessionId: string, turnId?: string): Promise<CompactSessionResult> {
     const session = context.flowChatStore.getState().sessions.get(sessionId);
     const jobId = session?.config.dispatchJobId;
     if (!jobId) {
@@ -522,7 +523,8 @@ export const dispatchSessionDriver: SessionDriver = {
       'compact',
       undefined,
       () =>
-        globalThis.crypto?.randomUUID?.()
+        turnId
+        ?? globalThis.crypto?.randomUUID?.()
         ?? `dispatch-compact-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     try {
@@ -541,6 +543,7 @@ export const dispatchSessionDriver: SessionDriver = {
       releaseSubmissionRetry(COMPACT_RETRY_SCOPE, sessionId, retry.id);
     }
     requestDispatchJobRefresh(jobId);
+    return { accepted: true, turnId: retry.id };
   },
 
   async runUsageReport(

@@ -78,7 +78,7 @@ import { installPeerSessionRefresh } from './flow-chat-manager/PeerSessionRefres
 import { installDispatchJobObserver } from '../session-drivers/dispatch/install';
 import { driverForSession } from '../session-drivers/registry';
 import { registerDriverSessionLookup } from '../session-drivers/resolve';
-import type { SendMessageOptions } from '../session-drivers/types';
+import type { CompactSessionResult, SendMessageOptions } from '../session-drivers/types';
 
 const log = createLogger('FlowChatManager');
 
@@ -873,11 +873,11 @@ export class FlowChatManager {
   }
 
   /** Manually compact a session's context through its driver. */
-  async compactSession(sessionId: string): Promise<void> {
+  async compactSession(sessionId: string, turnId?: string): Promise<CompactSessionResult> {
     const draft = this.context.flowChatStore.getState().sessions.get(sessionId);
     if (draft?.draft) await prepareSessionDraftForCommand(draft);
     const session = this.context.flowChatStore.getState().sessions.get(sessionId);
-    return driverForSession(sessionId, session).compactSession(this.context, sessionId);
+    return driverForSession(sessionId, session).compactSession(this.context, sessionId, turnId);
   }
 
   /** Produce the session usage report and show it, through its driver. */

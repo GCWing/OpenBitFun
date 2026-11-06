@@ -393,6 +393,9 @@ pub struct StartDialogTurnResponse {
 #[serde(rename_all = "camelCase")]
 pub struct CompactSessionRequest {
     pub session_id: String,
+    /// Stable caller id makes a retry after a lost response safe to correlate.
+    #[serde(default)]
+    pub turn_id: Option<String>,
     /// Owning workspace ID; `workspacePath` and SSH fields are an upgrade-only projection.
     #[serde(default)]
     pub workspace_id: Option<String>,
@@ -401,6 +404,14 @@ pub struct CompactSessionRequest {
     pub remote_connection_id: Option<String>,
     #[serde(default)]
     pub remote_ssh_host: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactSessionResponse {
+    pub success: bool,
+    pub message: String,
+    pub turn_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2695,7 +2706,7 @@ fn desktop_image_attachment(image: ImageContextData) -> AgentInputAttachment {
 pub async fn compact_session(
     coordinator: State<'_, Arc<ConversationCoordinator>>,
     request: CompactSessionRequest,
-) -> Result<StartDialogTurnResponse, String> {
+) -> Result<CompactSessionResponse, String> {
     let session_id = request.session_id.trim();
     if session_id.is_empty() {
         return Err("session_id is required".to_string());
@@ -2720,14 +2731,15 @@ pub async fn compact_session(
             .map_err(|e| format!("Failed to restore session before compacting: {}", e))?;
     }
 
-    coordinator
-        .compact_session_manually(session_id.to_string())
+    let turn_id = coordinator
+        .start_manual_compaction_detached(session_id.to_string(), request.turn_id)
         .await
         .map_err(|e| format!("Failed to compact session: {}", e))?;
 
-    Ok(StartDialogTurnResponse {
+    Ok(CompactSessionResponse {
         success: true,
-        message: "Session compaction started".to_string(),
+        message: "Session compaction accepted".to_string(),
+        turn_id,
     })
 }
 

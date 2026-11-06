@@ -87,7 +87,7 @@ import {
   sessionComposerStore,
   type PendingLargePasteMap,
 } from '../store/sessionComposerStore';
-import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceScope, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import { useAssistantBootstrap } from '@/app/hooks/useAssistantBootstrap';
 import {
   clearComposerForSubmission,
@@ -116,6 +116,11 @@ import { ThreadGoalDialogs } from './thread-goal/ThreadGoalDialogs';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
 import { FlowChatManager } from '@/flow_chat/services/FlowChatManager';
+import {
+  isManualCompactionPending,
+  markManualCompactionPending,
+  settleManualCompaction,
+} from '../services/manualCompactionState';
 import { interruptedTurnRecoveryGate } from '@/flow_chat/services/interruptedTurnRecoveryGate';
 import {
   getDeepReviewLaunchErrorMessage,
@@ -241,7 +246,11 @@ import {
 } from '../utils/tokenUsageDisplay';
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import type { SessionPermissionMode } from '@/infrastructure/api/service-api/AgentAPI';
-import { isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandError';
+import {
+  isOutcomeUnknownError,
+  isSessionInUseError,
+  isTauriCommandError,
+} from '@/infrastructure/api/errors/TauriCommandError';
 import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { isBtwParentBackedSession, isBtwSessionDraft } from '../utils/modelSelectionTarget';
@@ -311,6 +320,18 @@ import {
 } from '@openbitfun/ui/flow-chat';
 
 const log = createLogger('ChatInput');
+
+function manualCompactionTurnId(): string {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `manual-compact-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function isUncertainCompactionOutcome(error: unknown): boolean {
+  if (isSurfaceChangedError(error) || isOutcomeUnknownError(error)) return true;
+  if (isTauriCommandError(error) && error.isNetworkError()) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /timeout|network|connection|fetch|transport|aborted|surface changed/i.test(message);
+}
 
 export interface ChatInputProps {
   /** Conversation hosts use an in-flow composer without the workbench context bar. */
@@ -3830,6 +3851,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
+    if (isManualCompactionPending(effectiveTargetSessionId)) {
+      notificationService.info(t('chatInput.compactPending'));
+      return;
+    }
+
     if (derivedState?.isProcessing) {
       notificationService.warning(
         t('chatInput.compactBusy')
@@ -3845,17 +3871,30 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
+    const requestedTurnId = manualCompactionTurnId();
+    markManualCompactionPending(effectiveTargetSessionId, requestedTurnId);
     dispatchInput({ type: 'CLEAR_VALUE' });
     setQueuedInput(null);
     setSlashCommandState({ isActive: false, kind: 'all', query: '', selectedIndex: 0 });
 
     try {
-      await FlowChatManager.getInstance().compactSession(effectiveTargetSessionId);
+      const result = await FlowChatManager.getInstance().compactSession(
+        effectiveTargetSessionId,
+        requestedTurnId,
+      );
+      if (!result.accepted) {
+        throw new Error(t('chatInput.compactFailed'));
+      }
     } catch (error) {
       log.error('Failed to trigger /compact', {
         error,
         sessionId: effectiveTargetSessionId,
       });
+      if (isUncertainCompactionOutcome(error)) {
+        notificationService.info(t('chatInput.compactPending'));
+        return;
+      }
+      settleManualCompaction(effectiveTargetSessionId, requestedTurnId);
       dispatchInput({ type: 'SET_VALUE', payload: message });
       notificationService.error(
         error instanceof Error ? error.message : t('error.unknown'),

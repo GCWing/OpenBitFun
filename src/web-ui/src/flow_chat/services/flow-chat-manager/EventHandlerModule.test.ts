@@ -30,9 +30,14 @@ import { promptSuggestionKey, usePromptSuggestionStore } from '../../store/promp
 import { clearAgentCanvasForPeerSwitch, switchAgentCanvasScope, useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
+import {
+  isManualCompactionPending,
+  resetManualCompactionStateForTest,
+} from '../manualCompactionState';
 
 const {
   buildBuiltInBrowserTabOptions,
+  handleCompressionStarted,
   handleCompressionCompleted,
   handleTokenUsageUpdate,
 } = __test_only__;
@@ -2137,6 +2142,7 @@ describe('handleCompressionCompleted', () => {
   afterEach(() => {
     resetFlowChatStore();
     stateMachineManager.clear();
+    resetManualCompactionStateForTest();
   });
 
   it('writes the compacted token count into currentTokenUsage when applied', () => {
@@ -2165,6 +2171,28 @@ describe('handleCompressionCompleted', () => {
       turnId: 'turn-1',
       source: 'context_compression',
     });
+  });
+
+  it('settles a manual compaction whose turn was replayed after the surface switch', () => {
+    const context = createFlowChatContext();
+    handleCompressionStarted(context, {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      compressionId: 'compression-1',
+      trigger: 'manual',
+    });
+    expect(isManualCompactionPending('session-1')).toBe(true);
+
+    handleCompressionCompleted(context, {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      compressionId: 'compression-1',
+      applied: true,
+      tokensBefore: 90_000,
+      tokensAfter: 15_000,
+    });
+
+    expect(isManualCompactionPending('session-1')).toBe(false);
   });
 
   it('does not touch currentTokenUsage when the compression was not applied', () => {
