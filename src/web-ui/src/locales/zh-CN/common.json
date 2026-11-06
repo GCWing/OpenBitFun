@@ -1014,6 +1014,7 @@
   "accountLogin": {
     "deviceAlias": "设备别名",
     "deviceAliasPlaceholder": "可选显示名称（留空恢复技术名称）",
+    "reorderDevice": "调整 {{name}} 的顺序：拖动或使用上、下方向键",
     "editDeviceAlias": "编辑名称",
     "saveDeviceAlias": "保存名称",
     "deviceAliasUpdated": "设备名称已更新",

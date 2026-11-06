@@ -1,3 +1,4 @@
+import { sortAccountDevices, useDeviceOrderPreferences } from '@/app/navigation/deviceOrderPreferences';
 import { useDeviceDirectory, resolveDeviceName, isDeviceControllable, deviceClientVersion, refreshDeviceDirectory } from '@/infrastructure/account/deviceDirectory';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Button, Card, CardBody, CardHeader, Icon, IconButton, Input, ScrollArea, type IconSize } from '@openbitfun/ui';
@@ -103,6 +104,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   onManageDevices,
 }) => {
   useDeviceDirectory();
+  const deviceOrder = useDeviceOrderPreferences(state => state.order);
   const { t, formatNumber } = useI18n('common');
   const { warning, error: notifyError } = useNotification();
   const peerContext = usePeerDeviceModeOptional();
@@ -148,7 +150,9 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   }, [accountId, open, warning]);
 
   const availableTargets = switchTargets?.accountId === accountId ? switchTargets : null;
-  const carouselDeviceIds = availableTargets?.devices.map(device => device.device_id) ?? [];
+  const carouselDeviceIds = useMemo(() => availableTargets
+    ? sortAccountDevices(availableTargets.devices, availableTargets.localId, deviceOrder).map(device => device.device_id)
+    : [], [availableTargets, deviceOrder]);
   // Presence can lag behind a live control link; keep its disconnect entry reachable.
   if (availableTargets && activePeerId && !carouselDeviceIds.includes(activePeerId)) {
     carouselDeviceIds.unshift(activePeerId);

@@ -10,6 +10,7 @@ import {
 } from '../deviceInterconnectionOverview';
 import { getDeviceArtworkKind } from './deviceArtworkKind';
 import DeviceStatusControl from './DeviceStatusControl';
+import { useDeviceOrderPreferences } from '@/app/navigation/deviceOrderPreferences';
 import { useDeviceVisibilityPreferences } from '@/app/navigation/deviceVisibilityPreferences';
 
 const state = vi.hoisted(() => ({
@@ -172,6 +173,7 @@ function installMotionPreference(initial = false) {
 }
 
 async function renderBrowseableDevices() {
+  useDeviceOrderPreferences.setState({ order: ['local', 'peer-1', 'peer-2', 'peer-3'] });
   state.overview = overview({ peer: { deviceId: 'peer-1', deviceName: 'Current host' } });
   state.identity = { status: 'signed-in', me: { user: { accountId: 'acct' } } };
   state.getDeviceInfo.mockResolvedValue({ device_id: 'local', device_name: 'This computer' });
@@ -191,6 +193,7 @@ async function renderBrowseableDevices() {
 beforeEach(() => {
   vi.clearAllMocks();
   useDeviceVisibilityPreferences.setState({ hidden: {} });
+  useDeviceOrderPreferences.setState({ order: [] });
   state.disconnectDevice.mockReset().mockResolvedValue(undefined);
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   state.identity = { status: 'signed-out', me: null };
@@ -397,6 +400,7 @@ describe('device status card', () => {
   });
 
   it('opens on the current peer without sliding when the directory arrives, including after browsing and reopening', async () => {
+    useDeviceOrderPreferences.setState({ order: ['local', 'peer-1', 'peer-2'] });
     state.overview = overview({ peer: { deviceId: 'peer-1', deviceName: 'Current host' } });
     state.identity = { status: 'signed-in', me: { user: { accountId: 'acct' } } };
     state.getDeviceInfo.mockResolvedValue({ device_id: 'local', device_name: 'This computer' });
@@ -984,4 +988,17 @@ describe('device status card', () => {
     )).toBe(false);
     expect(state.switchToDevice).not.toHaveBeenCalled();
   });
+});
+
+
+it('updates preview ordering immediately from the controller preference without switching the displayed host', async () => {
+  const { next } = await renderBrowseableDevices();
+  expect(element('nav-device-status-name').textContent).toBe('Current host');
+  act(() => useDeviceOrderPreferences.getState().move('peer-3', 'peer-1', 'after', ['local', 'peer-1', 'peer-2', 'peer-3']));
+  expect(element('nav-device-status-name').textContent).toBe('Current host');
+  await act(async () => next.click());
+  expect(element('nav-device-status-name').textContent).toBe('Third host');
+  expect(element('nav-device-status-pagination').textContent).toBe('3 / 4');
+  expect(state.switchToDevice).not.toHaveBeenCalled();
+  expect(state.switchToLocal).not.toHaveBeenCalled();
 });
