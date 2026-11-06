@@ -1002,3 +1002,19 @@ it('updates preview ordering immediately from the controller preference without 
   expect(state.switchToDevice).not.toHaveBeenCalled();
   expect(state.switchToLocal).not.toHaveBeenCalled();
 });
+
+
+it('preserves a missing live peer in its saved position and removes it when the window leaves that peer', async () => {
+  useDeviceOrderPreferences.setState({ order: ['local', 'peer-1'] });
+  state.overview = overview({ peer: { deviceId: 'peer-1', deviceName: 'Current host' } });
+  state.identity = { status: 'signed-in', me: { user: { accountId: 'acct' } } };
+  state.getDeviceInfo.mockResolvedValue({ device_id: 'local', device_name: 'This computer' });
+  state.accountListDevices.mockResolvedValue([{ device_id: 'local', device_name: 'This computer', online: true }]);
+  await act(async () => { render(); });
+  expect(element('nav-device-status-name').textContent).toBe('Current host');
+  expect(element('nav-device-status-pagination').textContent).toBe('2 / 2');
+  state.overview = overview();
+  await act(async () => { render(); });
+  expect(document.querySelector('[data-testid="nav-device-status-pagination"]')).toBeNull();
+  expect(state.switchToDevice).not.toHaveBeenCalled();
+});
