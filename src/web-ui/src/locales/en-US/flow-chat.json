@@ -190,6 +190,7 @@
     "waitingForModelResponse": "Waiting for model response..."
   },
   "historyState": {
+    "emptyWindow": "No visible messages in this history window.",
     "loadingTitle": "Loading saved session",
     "loadingDescription": "Preparing the conversation history.",
     "failedTitle": "Session history did not load",

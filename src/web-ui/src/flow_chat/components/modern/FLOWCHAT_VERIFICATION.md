@@ -57,12 +57,13 @@ each missing what the other had.
 | `VirtualMessageList.session-boundary.test.tsx` | prepend compensation, consecutive paging with/without queued input, passive scroll suppression, navigation-target current Turn with gesture/follow/session handoff, search placement only outside the readable viewport, and real viewport-register acknowledgement before trajectory details/highlights commit for user/search/model/folded-tool/history targets |
 | `VirtualMessageList.resize.test.tsx` | first-frame node and screen-position retention during repeated CSS-only width previews, release, fractional row geometry, native clamping, both row/container observer orders and delayed scroll delivery; completed follow and reader-owned positions on local/simulated peer surfaces, not native or live-transport evidence |
 | `VirtualMessageList.history-prepend.test.tsx` | full list with real virtualization/follow/ownership: stable row identity and screen offset through short/long completed answers, consecutive/dense prepends, delayed measurement/native scroll and reader-chosen positions on local/simulated peer surfaces; supplied row/DOM geometry, not native or live-transport evidence |
-| `VirtualMessageList.timeline-prepend.test.tsx`, `FlowChatPrependSnapshot.test.tsx` | production timeline whole/compound/single-Turn pages; native bottom-origin continuity before observer delivery and zero passive scroll writes, stable hydration lifetime, fractional measurements, bounded long histories, chronological navigation, legacy whole-text and section bookmark coordinates, live handoff and reader-selected block retention; supplied DOM geometry on local/simulated Peer, not native paint or live transport evidence |
+| `VirtualMessageList.timeline-prepend.test.tsx`, `FlowChatPrependSnapshot.test.tsx` | production timeline whole/compound/single-Turn pages; native bottom-origin continuity before observer delivery and zero passive scroll writes, stable hydration lifetime, fractional measurements, bounded long histories, empty-projection navigation, chronological navigation, legacy whole-text and section bookmark coordinates, live handoff and reader-selected block retention; supplied DOM geometry on local/simulated Peer, not native paint or live transport evidence |
 | `flowChatScrollbarMask.test.ts`, `VirtualMessageList.session-boundary.test.tsx` | idle gutter masking with symmetric, one-sided and overlay scrollbars; overflow restoration and content/viewport resizing without scroll writes; supplied DOM geometry, not native rendering or live remote evidence |
 | `VirtualMessageList.edgeFade.test.ts`, `VirtualMessageList.session-boundary.test.tsx` | repeated scroll-away/back restores the opaque top edge even when an earlier native listener synchronously commits a virtual window; fractional/top-overscroll offsets, one follow notification per event, current gesture callbacks and old-session cleanup; DOM/CSS contracts, not native repaint or live remote evidence |
 | `FlowChatOpeningBoundary.test.tsx` | opening-only activation/scroll isolation, bidirectional focus skipping, programmatic focus return, and reveal cleanup; DOM contracts only |
 | `HistorySessionLoadingBoundary.test.tsx` | shared 200 ms indicator delay, immediate settled cold/warm opens, off-screen user-message independence, settled-viewport gating, atomic text/tools/code presentation, interaction blocking, session/device cancellation, failure/inactive/resume/reduced-motion handling and no streaming/remount replay; DOM/animation fixtures, not native paint or live remote evidence |
 | `ModernFlowChatContainer.history-state.test.tsx` | history presentation and the submission event |
+| `ModernFlowChatContainer.history-restore.test.tsx` | production container/loading boundary with controlled history IO: rollback with/without an intermediate hydration commit, empty history, retired legacy snapshots/bookmarks, cold host transfer, pending-read cancellation, navigation takeover, late success/failure, retry, deliberately empty internal projections with accessible earlier history, and Session switching on local/simulated Peer surfaces; no native layout or live transport claim |
 | `flowChatViewportOwnership.test.ts` | the priority order, preemption, expiry |
 | `useFlowChatVirtualizer.test.ts` | the offsets-and-positions boundary |
 | `useFlowChatVirtualizer.measurement.test.tsx` | `measureRenderedItems` against a real virtualizer, fractional normal-flow sizes and offscreen size reservations across reflow |
@@ -567,6 +568,14 @@ checks; mobile Remote Control uses its own message renderer.
    history: nothing should move.
 
 ### History paging
+
+For rollback, start with an older history range visible, roll back one Turn,
+then roll back to the first Turn. The view must reveal the surviving tail or
+empty Session, and switching away/back must not revive the removed bookmark.
+Repeat while a cold bookmark read is pending, with a second controller
+initiating the rewrite, and after a failed history read followed by Retry.
+These native and live Peer checks remain manual; the container fixture controls
+IO timing.
 
 1. On local and peer devices, open a long session whose last Turn is short.
    Only that Turn starts at the top, with blank space below; background history

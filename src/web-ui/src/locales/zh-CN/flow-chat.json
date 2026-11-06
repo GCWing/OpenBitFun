@@ -190,6 +190,7 @@
     "waitingForModelResponse": "等待模型响应..."
   },
   "historyState": {
+    "emptyWindow": "这段历史中没有可显示的消息。",
     "loadingTitle": "正在加载历史会话",
     "loadingDescription": "正在准备该会话的历史内容。",
     "failedTitle": "历史会话加载失败",

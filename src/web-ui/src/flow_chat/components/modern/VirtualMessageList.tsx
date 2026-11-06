@@ -2565,7 +2565,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         data-testid="flowchat-message-list-empty"
       >
         <div className="empty-state" data-openbitfun-component="virtual-message-list" data-openbitfun-part="empty">
-          <p data-openbitfun-component="virtual-message-list" data-openbitfun-part="emptyMessage">No messages yet</p>
+          <p data-openbitfun-component="virtual-message-list" data-openbitfun-part="emptyMessage">{t('historyState.emptyWindow')}</p>
         </div>
       </div>
     );
