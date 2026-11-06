@@ -13,6 +13,10 @@
     "subagents": {
       "title": "Subagents",
       "description": "Regular subagents and Swarm use separate concurrency limits"
+    },
+    "sideQuestions": {
+      "title": "Side questions",
+      "description": "Choose the model used by /btw side questions."
     }
   },
   "config": {
@@ -42,7 +46,9 @@
     "subagentModelSettings": "Go to the Agents page to set models for individual subagents",
     "subagentModelInherit": "Inherit parent session",
     "subagentDefaultModel": "Default subagent model",
-    "subagentDefaultModelDesc": "Used by subagents without an individual model override."
+    "subagentDefaultModelDesc": "Used by subagents without an individual model override.",
+    "btwModel": "Side question model",
+    "btwModelDesc": "Used by /btw side questions instead of the parent session model."
   },
   "filters": {
     "all": "All",

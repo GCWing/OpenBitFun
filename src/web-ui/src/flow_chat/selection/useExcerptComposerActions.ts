@@ -10,6 +10,7 @@ import { expandSessionAuxPane } from '@/app/scenes/session/sessionPanelLayout';
 import { flowChatStore } from '../store/FlowChatStore';
 import { sessionComposerStore } from '../store/sessionComposerStore';
 import { createBtwSessionPlaceholder } from '../services/BtwThreadService';
+import { readBtwModelSelection } from '@/infrastructure/config/services/modelSelections';
 import { openBtwSessionInAuxPane } from '../services/btwSessionPane';
 import { resolveSessionDriverId } from '../session-drivers/resolve';
 import { getSessionConversationCapability } from '../session-drivers/conversationCapability';
@@ -60,6 +61,7 @@ export function useExcerptComposerActions({ mainSessionId, targetSessionId, acti
             parentSessionId: mainSessionId, workspacePath: parent.workspacePath,
             childSessionName: request.excerpt.fragments[0].text.replace(/\s+/g, ' ').trim().slice(0, 48),
             parentDialogTurnId: request.excerpt.fragments[0].turnId,
+            defaultModelSelection: await readBtwModelSelection(),
           }).childSessionId;
         }
       }

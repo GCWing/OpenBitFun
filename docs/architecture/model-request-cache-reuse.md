@@ -111,7 +111,7 @@ Relevant code:
 - desktop adapter:
   `src/apps/desktop/src/api/btw_api.rs`
 - child-session creation:
-  `ConversationCoordinator::ensure_hidden_btw_session(...)` in
+  `ConversationCoordinator::ensure_btw_session(...)` in
   `src/crates/assembly/core/src/agentic/coordination/coordinator.rs`
 - side-question prompt wrapper:
   `src/crates/assembly/core/src/agentic/side_question.rs`
@@ -136,6 +136,16 @@ In other words, `/btw` now reuses both:
 - the parent session's prompt cache via `SessionManager::clone_prompt_cache(...)`
 - the parent session's full skill/agent listing baseline via
   `SessionManager::seed_forked_skill_agent_listing_baselines(...)`
+
+The model is the one inherited fact a user may override:
+`ai.agent_model_selections.btw` selects the model (or pool) the host gives a new
+side thread, so cheap side questions do not need the primary session model. It
+defaults to `inherit`, which is the exact behavior above and the meaning of every
+configuration written before the field existed. An explicit
+`initial_model_target` / `initial_model_selection` / `model_id` in the `/btw`
+request still wins, and the setting is only read when the host creates the child
+session, so follow-up side questions keep the model already chosen for that
+thread.
 
 ### `fork_context` subagents
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { effectiveModelSelections, readModelSelections, rememberModeSelection } from './modelSelections';
+import { effectiveModelSelections, readModelSelections, rememberBtwModelSelection, rememberModeSelection } from './modelSelections';
 import type { AgentModelDefaultsConfig } from '../types';
 const mocks = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), supports: vi.fn(() => true), scope: vi.fn(() => ({ surfaceId: 'local', assertCurrent: vi.fn() })) }));
 vi.mock('./ConfigManager', () => ({ configManager: { getOptionalConfig: mocks.get, setConfig: mocks.set } }));
@@ -45,5 +45,35 @@ describe('typed model preferences', () => {
     await rememberModeSelection({ kind: 'model', model_ref: 'b' });
     expect(mocks.set).toHaveBeenCalledWith('ai.agent_model_defaults.mode', 'b');
     await expect(rememberModeSelection({ kind: 'pool', pool_id: 'p' })).rejects.toThrow('model_pool_selection_v1');
+  });
+  it('defaults the side question model to inherit on records written before it existed', async () => {
+    const stored = {
+      mode: { kind: 'model', model_ref: 'primary' },
+      subagents: {
+        default: { kind: 'model', model_ref: 'fast' },
+        builtin: { ResearchSpecialist: { kind: 'inherit' } },
+        fork: { kind: 'inherit' },
+      },
+    };
+    mocks.get.mockResolvedValue(stored);
+    const selections = await readModelSelections();
+    expect(selections.btw).toEqual({ kind: 'inherit' });
+    expect(stored).not.toHaveProperty('btw');
+    await rememberBtwModelSelection({ kind: 'model', model_ref: 'economy' });
+    expect(mocks.set).toHaveBeenCalledWith('ai.agent_model_selections.btw', { kind: 'model', model_ref: 'economy' });
+  });
+  it('rejects a malformed side question selection instead of rewriting it', async () => {
+    mocks.get.mockResolvedValue({
+      mode: { kind: 'model', model_ref: 'primary' },
+      subagents: { default: { kind: 'inherit' }, builtin: {}, fork: { kind: 'inherit' } },
+      btw: { kind: 'pool', pool_id: '  ' },
+    });
+    await expect(readModelSelections()).rejects.toThrow('Invalid');
+  });
+  it('rejects the side question setting on hosts that cannot store it', async () => {
+    mocks.supports.mockReturnValue(false);
+    mocks.scope.mockReturnValue({ surfaceId: 'peer:old', assertCurrent: vi.fn() });
+    await expect(rememberBtwModelSelection({ kind: 'model', model_ref: 'economy' })).rejects.toThrow('side-question');
+    expect(mocks.set).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,10 @@
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { createLogger } from '@/shared/utils/logger';
 import type { AgentModelDefaultsConfig, AgentModelSelections, AgentModelTargetSelection, ModelTargetSelection, SubagentModelSelection } from '../types';
 import { configManager } from './ConfigManager';
 import { supportsModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
+
+const log = createLogger('ModelSelections');
 
 function isSelection(value: unknown, allowInherit: boolean): boolean {
   if (!value || typeof value !== 'object') return false;
@@ -16,11 +19,14 @@ export function effectiveModelSelections(config?: AgentModelDefaultsConfig | Age
     const value = config as AgentModelSelections;
     if (!value || !isSelection(value.mode, false) || !value.subagents
       || !isSelection(value.subagents.default, true) || !isSelection(value.subagents.fork, true)
+      || (value.btw !== undefined && !isSelection(value.btw, true))
       || !value.subagents.builtin || typeof value.subagents.builtin !== 'object' || Array.isArray(value.subagents.builtin)
       || !Object.values(value.subagents.builtin).every(choice => isSelection(choice, true))) {
       throw new Error('Invalid ai.agent_model_selections');
     }
-    return value;
+    // Records written before the side-question setting existed keep inheriting
+    // the parent session model.
+    return { ...value, btw: value.btw ?? { kind: 'inherit' } };
   }
   const defaults = config as AgentModelDefaultsConfig | undefined;
   const convert = (selection: SubagentModelSelection): AgentModelTargetSelection => selection.kind === 'inherit'
@@ -32,6 +38,8 @@ export function effectiveModelSelections(config?: AgentModelDefaultsConfig | Age
       builtin: Object.fromEntries(Object.entries(defaults?.subagents?.builtin ?? {}).map(([id, choice]) => [id, convert(choice)])),
       fork: convert(defaults?.subagents?.fork ?? { kind: 'inherit' }),
     },
+    // The legacy defaults record has no side-question field to migrate.
+    btw: { kind: 'inherit' },
   };
 }
 
@@ -58,4 +66,28 @@ export function rememberModeSelection(selection: ModelTargetSelection): Promise<
     return configManager.setConfig('ai.agent_model_defaults.mode', selection.model_ref);
   }
   return configManager.setConfig('ai.agent_model_selections.mode', selection);
+}
+
+/**
+ * Side questions may not inherit the parent session model. Legacy hosts and
+ * unavailable configuration degrade to inheritance rather than blocking `/btw`.
+ */
+export async function readBtwModelSelection(): Promise<AgentModelTargetSelection> {
+  try {
+    if (modelSelectionsConfigPath() !== 'ai.agent_model_selections') return { kind: 'inherit' };
+    return (await readModelSelections()).btw;
+  } catch (error) {
+    log.warn('Side question model selection is unavailable; inheriting the parent model', { error });
+    return { kind: 'inherit' };
+  }
+}
+
+export function rememberBtwModelSelection(selection: AgentModelTargetSelection): Promise<void> {
+  if (modelSelectionsConfigPath() !== 'ai.agent_model_selections') {
+    return Promise.reject(new Error('This host does not support a side-question model setting'));
+  }
+  if (selection.kind === 'pool' && !supportsModelPools()) {
+    return Promise.reject(new Error('This host does not support model_pool_selection_v1'));
+  }
+  return configManager.setConfig('ai.agent_model_selections.btw', selection);
 }
