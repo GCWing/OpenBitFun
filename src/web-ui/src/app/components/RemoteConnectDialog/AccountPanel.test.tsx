@@ -569,6 +569,10 @@ it('commits a drag only on drop and shares its local order with keyboard reorder
   act(() => handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
   expect(deviceOrderInPanel()).toEqual(['local', 'offline', 'peer']);
   expect(document.activeElement).toBe(handle);
+  act(() => handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })));
+  expect(deviceOrderInPanel()).toEqual(['offline', 'local', 'peer']);
+  expect(document.activeElement).toBe(handle);
+  act(() => handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
   act(() => dispatchDeviceDrag(row('offline'), 'dragstart'));
   act(() => dispatchDeviceDrag(row('peer'), 'dragover', 100));
   act(() => dispatchDeviceDrag(row('offline'), 'dragend'));

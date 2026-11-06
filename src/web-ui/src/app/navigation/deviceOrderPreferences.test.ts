@@ -27,9 +27,9 @@ it('round-trips order while preserving absent devices and ignoring invalid store
   preferences.setState({ order: [] });
   localStorage.setItem(storageKey, saved);
   await preferences.persist.rehydrate();
-  expect(preferences.getState().order).toEqual(['local', 'peer', 'offline']);
+  expect(preferences.getState().order).toEqual(['offline', 'local', 'peer']);
   expect(applyDeviceOrder(['new', 'offline', 'peer', 'local'], preferences.getState().order, id => id))
-    .toEqual(['local', 'peer', 'offline', 'new']);
+    .toEqual(['offline', 'local', 'peer', 'new']);
 });
 
 it('keeps identity-based order through renames, presence changes, and invalid drops', () => {

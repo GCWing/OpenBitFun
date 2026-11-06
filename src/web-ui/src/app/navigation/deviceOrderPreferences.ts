@@ -36,7 +36,7 @@ export const useDeviceOrderPreferences = create<DeviceOrderPreferences>()(persis
     order: [],
     move: (deviceId, targetId, placement, visibleIds) => set(state => {
       if (deviceId === targetId || !visibleIds.includes(deviceId) || !visibleIds.includes(targetId)) return state;
-      const combined = validIds([...visibleIds, ...state.order]).filter(id => id !== deviceId);
+      const combined = validIds([...state.order, ...visibleIds]).filter(id => id !== deviceId);
       combined.splice(combined.indexOf(targetId) + (placement === 'after' ? 1 : 0), 0, deviceId);
       return { order: combined };
     }),
