@@ -3,8 +3,8 @@
 //! array order).
 
 use crate::common::{
-    canonical_runs, parse_color, prefix, report_extra, report_list, runs_text, validate_runs,
-    Align, DocumentProperties, Extra, Run, TableCell, UnknownFields, VerticalAlign,
+    canonical_runs, parse_color, prefix, report_extra, report_list, runs_text, validate_language,
+    validate_runs, Align, DocumentProperties, Extra, Run, TableCell, UnknownFields, VerticalAlign,
 };
 use crate::error::{OfficeError, OfficeResult};
 use serde::{Deserialize, Serialize};
@@ -66,6 +66,9 @@ pub struct DeckTheme {
     /// Font for CJK text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub east_asia_font: Option<String>,
+    /// Default text language; runs/elements may override it. Omitted means auto.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
     /// Default text color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_color: Option<String>,
@@ -130,6 +133,8 @@ pub struct TextDefaults {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub align: Option<Align>,
 }
@@ -365,6 +370,8 @@ struct ParagraphFull {
     color: Option<String>,
     #[serde(default)]
     font: Option<String>,
+    #[serde(default)]
+    lang: Option<String>,
     #[serde(flatten)]
     extra: Extra,
 }
@@ -387,6 +394,9 @@ impl From<ParagraphInput> for Paragraph {
                     }
                     if run.font.is_none() {
                         run.font = full.font.clone();
+                    }
+                    if run.lang.is_none() {
+                        run.lang = full.lang.clone();
                     }
                 }
                 Paragraph {
@@ -441,6 +451,9 @@ impl UnknownFields for Paragraph {
 
 impl TextDefaults {
     fn validate(&self, path: &str) -> OfficeResult<()> {
+        if let Some(lang) = &self.lang {
+            validate_language(lang).map_err(|err| prefix(err, path, "lang"))?;
+        }
         if let Some(color) = &self.color {
             parse_color(color).map_err(|err| prefix(err, path, "color"))?;
         }
@@ -748,6 +761,9 @@ impl UnknownFields for PptxDocument {
 
 impl PptxDocument {
     pub fn validate_settings(&self) -> OfficeResult<()> {
+        if let Some(lang) = &self.theme.lang {
+            validate_language(lang).map_err(|err| prefix(err, "theme", "lang"))?;
+        }
         if let Some(color) = &self.theme.text_color {
             parse_color(color).map_err(|err| prefix(err, "theme", "text_color"))?;
         }

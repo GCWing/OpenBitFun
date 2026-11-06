@@ -309,6 +309,12 @@ impl Writer<'_> {
         } else if run.subscript == Some(true) {
             rpr.push_str("<w:vertAlign w:val=\"subscript\"/>");
         }
+        if let Some(lang) = &run.lang {
+            let lang = esc(lang);
+            rpr.push_str(&format!(
+                "<w:lang w:val=\"{lang}\" w:eastAsia=\"{lang}\" w:bidi=\"{lang}\"/>"
+            ));
+        }
         let mut out = String::from("<w:r>");
         if !rpr.is_empty() {
             out.push_str(&format!("<w:rPr>{rpr}</w:rPr>"));

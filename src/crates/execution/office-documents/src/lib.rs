@@ -15,6 +15,7 @@ pub mod docx;
 mod error;
 mod guide;
 pub mod image;
+mod operation_contract;
 mod package;
 pub mod pptx;
 pub mod xlsx;
@@ -22,6 +23,9 @@ mod xml;
 
 pub use error::{OfficeError, OfficeErrorKind, OfficeResult};
 pub use guide::guide;
+pub use operation_contract::{
+    operation_recovery_hint, operation_schema, validate_operation_headers,
+};
 
 use common::{merge_patch, operation_name, UnknownFields};
 use docx::DocxDocument;
@@ -349,6 +353,7 @@ impl OfficeDocument {
                 "a batch is limited to {MAX_OPERATIONS_PER_BATCH} operations; split it across calls"
             )));
         }
+        validate_operation_headers(self.format(), operations)?;
         let mut model = self.model.clone();
         let mut assets = self.assets.clone();
         let mut ctx = ApplyContext {
