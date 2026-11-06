@@ -15,7 +15,19 @@ const mocks = vi.hoisted(() => ({
   queueRemove: vi.fn(),
   queueSetStatus: vi.fn(),
   steerDialogTurn: vi.fn(),
+  items: [] as Array<Record<string, unknown>>,
 }));
+
+const queuedItem = {
+  id: 'queued-1',
+  sessionId: 'session-1',
+  content: 'steer this turn',
+  timestamp: 1,
+  status: 'queued',
+  retryCount: 0,
+  imageContexts: [{ id: 'image-1' }, { id: 'image-2' }, { id: 'image-3' }],
+  imageDisplayData: [{ id: 'image-1' }, { id: 'image-2' }, { id: 'image-3' }],
+};
 
 vi.mock('../services/hostDialogQueue', () => ({ hostQueueSupported: () => false }));
 vi.mock('./HostPendingQueuePanel', () => ({ HostPendingQueuePanel: () => null }));
@@ -59,18 +71,7 @@ vi.mock('../store/FlowChatStore', () => ({
 
 vi.mock('../services/flow-chat-manager/PendingQueueModule', () => ({
   pendingQueueManager: {
-    list: () => [
-      {
-        id: 'queued-1',
-        sessionId: 'session-1',
-        content: 'steer this turn',
-        timestamp: 1,
-        status: 'queued',
-        retryCount: 0,
-        imageContexts: [{ id: 'image-1' }, { id: 'image-2' }, { id: 'image-3' }],
-        imageDisplayData: [{ id: 'image-1' }, { id: 'image-2' }, { id: 'image-3' }],
-      },
-    ],
+    list: () => mocks.items,
     subscribe: () => () => undefined,
     setStatus: mocks.queueSetStatus,
     remove: mocks.queueRemove,
@@ -126,6 +127,7 @@ describe('PendingQueuePanel', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     mocks.drainPendingQueueForSession.mockResolvedValue(undefined);
+    mocks.items = [queuedItem];
   });
 
   afterEach(() => {
@@ -149,6 +151,7 @@ describe('PendingQueuePanel', () => {
 
     expect(title?.textContent).toBe('pendingQueue.title1');
     expect(attachmentBadge?.textContent).toBe('3');
+    expect(attachmentBadge?.getAttribute('role')).toBe('img');
     expect(attachmentBadge?.getAttribute('aria-label')).toBe('pendingQueue.attachmentCount');
   });
 
@@ -203,9 +206,16 @@ describe('PendingQueuePanel', () => {
     );
     expect(preview).not.toBeNull();
     expect(preview?.getAttribute('role')).toBeNull();
-    expect(preview?.getAttribute('tabindex')).toBeNull();
+    // A tab stop so the overflow tooltip can follow keyboard focus.
+    expect(preview?.tabIndex).toBe(0);
 
-    act(() => preview!.click());
+    act(() => {
+      preview!.focus();
+      preview!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      preview!.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+      preview!.click();
+    });
+    expect(document.activeElement).toBe(preview);
 
     expect(onRestoreToComposer).not.toHaveBeenCalled();
     expect(mocks.queueRemove).not.toHaveBeenCalled();
@@ -254,5 +264,63 @@ describe('PendingQueuePanel', () => {
 
     expect(onRestoreToComposer).toHaveBeenCalledTimes(1);
     expect(mocks.queueRemove).not.toHaveBeenCalled();
+  });
+
+  it('collapses the controlled list and keeps failed rows in a recovery list', async () => {
+    mocks.items = [
+      queuedItem,
+      { id: 'failed-1', sessionId: 'session-1', content: 'retry me', timestamp: 2, status: 'failed', retryCount: 1 },
+    ];
+    await act(async () => {
+      root.render(<PendingQueuePanel sessionId="session-1" onRestoreToComposer={() => true} />);
+    });
+
+    const toggle = container.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    const controlled = () => document.getElementById(toggle.getAttribute('aria-controls')!)!;
+    const count = () => container.querySelector('[data-openbitfun-part="totalCount"]')?.textContent;
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(controlled().hidden).toBe(false);
+    expect([...controlled().querySelectorAll('li')].map(row => row.textContent)).toEqual([
+      expect.stringContaining('steer this turn'), expect.stringContaining('retry me'),
+    ]);
+    expect(count()).toBe('2');
+
+    act(() => toggle.click());
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(controlled().hidden).toBe(true);
+    expect(controlled().querySelectorAll('li')).toHaveLength(0);
+    expect(count()).toBe('2');
+    const recovery = [...container.querySelectorAll('ul')].filter(list => list !== controlled());
+    expect(recovery).toHaveLength(1);
+    const rows = recovery[0].querySelectorAll('li');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('retry me');
+    expect(rows[0].textContent).toContain('pendingQueue.statusFailed');
+    expect(rows[0].querySelector('button[aria-label="pendingQueue.actions.delete"]')).not.toBeNull();
+    expect(container.textContent).not.toContain('steer this turn');
+
+    act(() => toggle.click());
+    expect(controlled().hidden).toBe(false);
+    expect(controlled().querySelectorAll('li')).toHaveLength(2);
+    expect(container.querySelectorAll('ul')).toHaveLength(1);
+  });
+
+  it('shows a retried item that is sending again as sending, not failed', async () => {
+    mocks.items = [
+      { id: 'retry-1', sessionId: 'session-1', content: 'second attempt', timestamp: 2, status: 'sending', retryCount: 1 },
+    ];
+    await act(async () => {
+      root.render(<PendingQueuePanel sessionId="session-1" onRestoreToComposer={() => true} />);
+    });
+
+    const row = container.querySelector('li')!;
+    expect(row.getAttribute('data-openbitfun-state')).toBe('sending');
+    expect(row.textContent).toContain('pendingQueue.statusQueuedSending');
+    expect(row.textContent).not.toContain('pendingQueue.statusFailed');
+    expect(row.querySelector('[data-openbitfun-tone="danger"]')).toBeNull();
+
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click());
+    expect(container.textContent).not.toContain('second attempt');
   });
 });

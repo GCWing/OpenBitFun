@@ -3840,14 +3840,15 @@
     "showAll": "Show all"
   },
   "pendingQueue": {
-    "title": "Wait for sending",
-    "label": "Wait for sending {{count}}",
+    "title": "Queued messages",
+    "label": "Queued messages {{count}}",
     "attachmentCount": "{{count}} image attachment(s)",
     "attachmentCount_one": "{{count}} image attachment",
     "attachmentCount_other": "{{count}} image attachments",
     "emptyPlaceholder": "(empty message)",
     "statusSending": "Steering…",
-    "statusFailed": "Send failed — edit / send now / delete to clear",
+    "statusQueuedSending": "Sending…",
+    "statusFailed": "Send failed",
     "actions": {
       "edit": "Edit",
       "sendNow": "Send now (steer)",

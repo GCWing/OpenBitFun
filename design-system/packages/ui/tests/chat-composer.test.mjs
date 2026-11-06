@@ -14,8 +14,10 @@ import {
   ChatComposerQueueItem,
   ChatComposerQueueItemActions,
   ChatComposerQueueItemContent,
+  ChatComposerQueueItemStatus,
   ChatComposerQueueList,
   ChatComposerQueueTitle,
+  ChatComposerQueueToggle,
   ChatComposerStartActions,
 } from "../dist/flow-chat.js";
 
@@ -136,6 +138,43 @@ test("ChatComposer exposes a neutral pending-message queue with per-message atta
   assert.ok(attachmentBadge);
   assert.match(attachmentBadge, /aria-label="3 image attachments"/);
   assert.match(markup, /aria-label="Send now"/);
+});
+
+test("ChatComposer queue exposes a disclosure toggle and toned per-message status", () => {
+  const markup = renderToStaticMarkup(
+    createElement(
+      ChatComposerQueue,
+      null,
+      createElement(
+        ChatComposerQueueHeader,
+        null,
+        createElement(
+          ChatComposerQueueToggle,
+          { "aria-controls": "queue-list", expanded: false },
+          createElement(ChatComposerQueueTitle, { count: 2 }, "Queued"),
+        ),
+      ),
+      createElement(
+        ChatComposerQueueList,
+        { hidden: true, id: "queue-list" },
+        createElement(
+          ChatComposerQueueItem,
+          { state: "failed" },
+          createElement(
+            ChatComposerQueueItemContent,
+            null,
+            "Message",
+            createElement(ChatComposerQueueItemStatus, { tone: "danger" }, "Send failed"),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  assert.match(markup, /<button[^>]*aria-expanded="false"[^>]*aria-controls="queue-list"|<button[^>]*aria-controls="queue-list"[^>]*aria-expanded="false"/);
+  assert.match(markup, /<ul[^>]*hidden=""[^>]*id="queue-list"|<ul[^>]*id="queue-list"[^>]*hidden=""/);
+  assert.match(markup, /data-openbitfun-part="status"[^>]*data-openbitfun-tone="danger"[^>]*>Send failed</);
+  assert.match(markup, /data-openbitfun-state="failed"/);
 });
 
 test("ChatComposer queue keeps four message rows visible before scrolling", async () => {

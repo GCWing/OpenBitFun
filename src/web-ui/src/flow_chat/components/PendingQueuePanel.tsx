@@ -17,9 +17,9 @@ import { getActiveSurfaceScope, isSurfaceChangedError, onSurfaceActivated } from
  *   deduped via `steeringId`.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ListEnd } from 'lucide-react';
+import { Paperclip } from 'lucide-react';
 import { OverflowText, Tooltip } from '@openbitfun/ui';
 import { stateMachineManager } from '../state-machine';
 import { FlowChatStore } from '../store/FlowChatStore';
@@ -41,8 +41,10 @@ import {
   ChatComposerQueueItem,
   ChatComposerQueueItemActions,
   ChatComposerQueueItemContent,
+  ChatComposerQueueItemStatus,
   ChatComposerQueueList,
   ChatComposerQueueTitle,
+  ChatComposerQueueToggle,
   type ChatComposerQueueItemState,
 } from '@openbitfun/ui/flow-chat';
 
@@ -54,6 +56,16 @@ interface PendingQueuePanelProps {
   onRestoreToComposer: (item: QueuedMessage) => boolean;
 }
 
+function isSendingQueuedMessage(item: QueuedMessage): boolean {
+  return item.status === 'sending' || item.status === 'sending_now';
+}
+
+/** A send in progress outranks a failure from an earlier attempt. */
+function isFailedQueuedMessage(item: QueuedMessage): boolean {
+  return !isSendingQueuedMessage(item)
+    && (item.status === 'failed' || (item.retryCount ?? 0) > 0);
+}
+
 function LegacyPendingQueuePanel({
   sessionId,
   className,
@@ -61,6 +73,8 @@ function LegacyPendingQueuePanel({
 }: PendingQueuePanelProps): JSX.Element | null {
   const { t } = useTranslation('flow-chat');
   const sendNowInFlightIdsRef = useRef(new Set<string>());
+  const listId = useId();
+  const [expanded, setExpanded] = useState(true);
   useSyncExternalStore(
     interruptedTurnRecoveryGate.subscribe,
     interruptedTurnRecoveryGate.getSnapshot,
@@ -75,6 +89,7 @@ function LegacyPendingQueuePanel({
     return isAcpFlowSession(FlowChatStore.getInstance().getState().sessions.get(sessionId));
   });
   useEffect(() => {
+    setExpanded(true);
     if (!sessionId) {
       setItems([]);
       return;
@@ -191,8 +206,125 @@ function LegacyPendingQueuePanel({
     return null;
   }
 
+  const renderItem = (item: QueuedMessage) => {
+    const isSendingNow = item.status === 'sending_now';
+    const isSending = isSendingQueuedMessage(item);
+    const isFailed = isFailedQueuedMessage(item);
+    const previewText = item.displayMessage ?? item.content;
+    const attachmentCount = getQueuedMessageAttachmentCount(item);
+    const itemState: ChatComposerQueueItemState = isSending
+      ? 'sending'
+      : isFailed
+        ? 'failed'
+        : 'default';
+    const itemClass = [
+      'openbitfun-pending-queue-panel__item',
+      isSending && 'openbitfun-pending-queue-panel__item--sending',
+      isFailed && 'openbitfun-pending-queue-panel__item--failed',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    return (
+      <ChatComposerQueueItem
+        className={itemClass}
+        data-openbitfun-product-component="pending-queue-panel"
+        data-openbitfun-product-part="item"
+        data-openbitfun-state={itemState === 'default' ? undefined : itemState}
+        key={item.id}
+        state={itemState}
+      >
+        <ChatComposerQueueItemContent
+          data-openbitfun-product-component="pending-queue-panel"
+          data-openbitfun-product-part="content"
+        >
+          {/* Focusable only so keyboard users can read a truncated preview;
+              it never starts editing. */}
+          <OverflowText
+            behavior="fade"
+            className="openbitfun-pending-queue-panel__preview"
+            data-openbitfun-product-component="pending-queue-panel"
+            data-openbitfun-product-part="preview"
+            data-overflow-trigger
+            tabIndex={0}
+          >
+            {previewText || t('pendingQueue.emptyPlaceholder')}
+          </OverflowText>
+          {isSending ? (
+            <ChatComposerQueueItemStatus
+              data-openbitfun-product-component="pending-queue-panel"
+              data-openbitfun-product-part="status"
+            >
+              {isSendingNow ? t('pendingQueue.statusSending') : t('pendingQueue.statusQueuedSending')}
+            </ChatComposerQueueItemStatus>
+          ) : isFailed ? (
+            <ChatComposerQueueItemStatus
+              data-openbitfun-product-component="pending-queue-panel"
+              data-openbitfun-product-part="status"
+              tone="danger"
+            >
+              {t('pendingQueue.statusFailed')}
+            </ChatComposerQueueItemStatus>
+          ) : null}
+        </ChatComposerQueueItemContent>
+
+        <ChatComposerQueueAttachmentBadge
+          count={attachmentCount}
+          icon={<Icon glyph={Paperclip} size="xs" />}
+          label={t('pendingQueue.attachmentCount', { count: attachmentCount })}
+        />
+
+        <ChatComposerQueueItemActions
+          data-openbitfun-product-component="pending-queue-panel"
+          data-openbitfun-product-part="actions"
+        >
+          <Tooltip content={t('pendingQueue.actions.edit')}>
+            <IconButton
+              aria-label={t('pendingQueue.actions.edit')}
+              data-openbitfun-product-component="pending-queue-panel"
+              data-openbitfun-product-part="action"
+              disabled={isSending}
+              icon={<Icon name="edit" />}
+              size="xs"
+              onClick={() => handleRestoreToComposer(item)}
+            />
+          </Tooltip>
+          <Tooltip content={t('pendingQueue.tooltip.sendNow')}>
+            <IconButton
+              aria-label={t('pendingQueue.actions.sendNow')}
+              data-openbitfun-product-component="pending-queue-panel"
+              data-openbitfun-product-part="action"
+              disabled={isSending || recoveryInFlight}
+              icon={<Icon name="arrow-up" />}
+              loading={isSendingNow}
+              size="xs"
+              onClick={() => {
+                void handleSendNow(item);
+              }}
+            />
+          </Tooltip>
+          <Tooltip content={t('pendingQueue.actions.delete')}>
+            <IconButton
+              aria-label={t('pendingQueue.actions.delete')}
+              data-openbitfun-product-component="pending-queue-panel"
+              data-openbitfun-product-part="action"
+              disabled={isSending}
+              icon={<Icon name="xmark" />}
+              size="xs"
+              onClick={() => handleDelete(item)}
+            />
+          </Tooltip>
+        </ChatComposerQueueItemActions>
+      </ChatComposerQueueItem>
+    );
+  };
+
+  // Collapsing hides the controlled list. Failed rows still need a decision,
+  // so they move to a recovery list outside the disclosure.
+  const recoveryItems = expanded ? [] : visibleItems.filter(isFailedQueuedMessage);
+
   return (
-    <ChatComposerQueue data-overflow-trigger
+    <ChatComposerQueue
       aria-label={t('pendingQueue.label', { count: visibleItems.length })}
       className={`openbitfun-pending-queue-panel ${className ?? ''}`.trim()}
       data-openbitfun-product-component="pending-queue-panel"
@@ -206,157 +338,36 @@ function LegacyPendingQueuePanel({
         data-openbitfun-product-component="pending-queue-panel"
         data-openbitfun-product-part="header"
       >
-        <Icon glyph={ListEnd} size="sm" aria-hidden="true" />
-        <ChatComposerQueueTitle
-          count={visibleItems.length}
-          data-openbitfun-product-component="pending-queue-panel"
-          data-openbitfun-product-part="title"
+        <ChatComposerQueueToggle
+          aria-controls={listId}
+          expanded={expanded}
+          onClick={() => setExpanded(value => !value)}
         >
-          {t('pendingQueue.title')}
-        </ChatComposerQueueTitle>
+          <ChatComposerQueueTitle
+            count={visibleItems.length}
+            data-openbitfun-product-component="pending-queue-panel"
+            data-openbitfun-product-part="title"
+          >
+            {t('pendingQueue.title')}
+          </ChatComposerQueueTitle>
+        </ChatComposerQueueToggle>
       </ChatComposerQueueHeader>
       <ChatComposerQueueList
         data-openbitfun-product-component="pending-queue-panel"
         data-openbitfun-product-part="list"
+        hidden={!expanded}
+        id={listId}
       >
-        {visibleItems.map(item => {
-          const isSendingNow = item.status === 'sending_now';
-          const isSending = item.status === 'sending' || isSendingNow;
-          const isFailed = item.status === 'failed' || (item.retryCount ?? 0) > 0;
-          const previewText = item.displayMessage ?? item.content;
-          const attachmentCount = getQueuedMessageAttachmentCount(item);
-          const itemState: ChatComposerQueueItemState = isSending
-            ? 'sending'
-            : isFailed
-              ? 'failed'
-              : 'default';
-          const itemClass = [
-            'openbitfun-pending-queue-panel__item',
-            isSending && 'openbitfun-pending-queue-panel__item--sending',
-            isFailed && 'openbitfun-pending-queue-panel__item--failed',
-          ]
-            .filter(Boolean)
-            .join(' ');
-
-          return (
-            <ChatComposerQueueItem
-              className={itemClass}
-              data-openbitfun-product-component="pending-queue-panel"
-              data-openbitfun-product-part="item"
-              data-openbitfun-state={itemState === 'default' ? undefined : itemState}
-              key={item.id}
-              state={itemState}
-            >
-              <ChatComposerQueueItemContent
-                className="openbitfun-pending-queue-panel__content"
-                data-openbitfun-product-component="pending-queue-panel"
-                data-openbitfun-product-part="content"
-              >
-                {isSendingNow ? (
-                  <>
-                    <div
-                      className="openbitfun-pending-queue-panel__preview"
-                      data-openbitfun-product-component="pending-queue-panel"
-                      data-openbitfun-product-part="preview"
-                      title={previewText}
-                    ><OverflowText behavior="marquee">
-                      {previewText || (
-                        <span className="openbitfun-pending-queue-panel__preview-empty">
-                          {t('pendingQueue.emptyPlaceholder')}
-                        </span>
-                      )}
-                    </OverflowText></div>
-                    <div
-                      className="openbitfun-pending-queue-panel__sending-label"
-                      data-openbitfun-product-component="pending-queue-panel"
-                      data-openbitfun-product-part="status"
-                    >
-                      {t('pendingQueue.statusSending')}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div
-                      className="openbitfun-pending-queue-panel__preview"
-                      data-openbitfun-product-component="pending-queue-panel"
-                      data-openbitfun-product-part="preview"
-                      title={previewText}
-                    ><OverflowText behavior="marquee">
-                      {previewText || (
-                        <span className="openbitfun-pending-queue-panel__preview-empty">
-                          {t('pendingQueue.emptyPlaceholder')}
-                        </span>
-                      )}
-                    </OverflowText></div>
-                    {isFailed && (
-                      <div
-                        className="openbitfun-pending-queue-panel__failed-label"
-                        data-openbitfun-product-component="pending-queue-panel"
-                        data-openbitfun-product-part="status"
-                      >
-                        {t('pendingQueue.statusFailed')}
-                      </div>
-                    )}
-                  </>
-                )}
-              </ChatComposerQueueItemContent>
-
-              {attachmentCount > 0 ? (
-                <ChatComposerQueueAttachmentBadge
-                  count={attachmentCount}
-                  label={t('pendingQueue.attachmentCount', { count: attachmentCount })}
-                />
-              ) : null}
-
-              <ChatComposerQueueItemActions
-                className="openbitfun-pending-queue-panel__actions"
-                data-openbitfun-product-component="pending-queue-panel"
-                data-openbitfun-product-part="actions"
-              >
-                <Tooltip content={t('pendingQueue.tooltip.sendNow')}>
-                  <IconButton
-                    aria-label={t('pendingQueue.actions.sendNow')}
-                    className="openbitfun-pending-queue-panel__btn"
-                    data-openbitfun-product-component="pending-queue-panel"
-                    data-openbitfun-product-part="action"
-                    disabled={isSending || recoveryInFlight}
-                    icon={<Icon name="arrow-up" size="lg" />}
-                    loading={isSendingNow}
-                    size="xs"
-                    onClick={() => {
-                      void handleSendNow(item);
-                    }}
-                  />
-                </Tooltip>
-                <Tooltip content={t('pendingQueue.actions.delete')}>
-                  <IconButton
-                    aria-label={t('pendingQueue.actions.delete')}
-                    className="openbitfun-pending-queue-panel__btn openbitfun-pending-queue-panel__btn--danger"
-                    data-openbitfun-product-component="pending-queue-panel"
-                    data-openbitfun-product-part="action"
-                    disabled={isSending}
-                    icon={<Icon name="delete" size="lg" />}
-                    size="xs"
-                    onClick={() => handleDelete(item)}
-                  />
-                </Tooltip>
-                <Tooltip content={t('pendingQueue.actions.edit')}>
-                  <IconButton
-                    aria-label={t('pendingQueue.actions.edit')}
-                    className="openbitfun-pending-queue-panel__btn"
-                    data-openbitfun-product-component="pending-queue-panel"
-                    data-openbitfun-product-part="action"
-                    disabled={isSending}
-                    icon={<Icon name="edit" size="lg" />}
-                    size="xs"
-                    onClick={() => handleRestoreToComposer(item)}
-                  />
-                </Tooltip>
-              </ChatComposerQueueItemActions>
-            </ChatComposerQueueItem>
-          );
-        })}
+        {expanded && visibleItems.map(renderItem)}
       </ChatComposerQueueList>
+      {recoveryItems.length > 0 && (
+        <ChatComposerQueueList
+          data-openbitfun-product-component="pending-queue-panel"
+          data-openbitfun-product-part="list"
+        >
+          {recoveryItems.map(renderItem)}
+        </ChatComposerQueueList>
+      )}
     </ChatComposerQueue>
   );
 }
@@ -371,7 +382,7 @@ export function PendingQueuePanel(props: PendingQueuePanelProps): JSX.Element | 
   const scope = getActiveSurfaceScope();
   const { t } = useTranslation('flow-chat');
   return <>
-    {supported && props.sessionId && pendingQueueManager.list(props.sessionId).length > 0 && <p>{t('hostQueue.legacy')}</p>}
+    {supported && props.sessionId && pendingQueueManager.list(props.sessionId).length > 0 && <p className="openbitfun-pending-queue-panel__legacy-note" data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status">{t('hostQueue.legacy')}</p>}
     {supported && props.sessionId && <HostPendingQueuePanel key={`${scope.surfaceId}:${scope.epoch}:${props.sessionId}`} queue={hostDialogQueue(props.sessionId)} onRestore={props.onRestoreToComposer} />}
     <LegacyPendingQueuePanel {...props} />
   </>;

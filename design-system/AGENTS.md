@@ -48,6 +48,14 @@ For shared icon rendering or geometry changes, use the focused package checks:
 pnpm --dir design-system run build:ui && node --test design-system/packages/ui/tests/icon.test.mjs design-system/packages/ui/tests/icon-slots.test.mjs
 ```
 
+For composer geometry and queue anatomy, disclosure and status presentation:
+
+```bash
+pnpm --dir design-system run build:ui && node --test design-system/packages/ui/tests/chat-composer.test.mjs
+```
+
+These package contracts do not establish native rendering or live remote behavior.
+
 Do not use browser automation or mock screenshots as visual proof. Design Lab is the manual authoring surface; source, build, HTTP, and package checks do not establish final visual fidelity.
 
 For SplitView geometry, drag cancellation, and cached resize bounds:

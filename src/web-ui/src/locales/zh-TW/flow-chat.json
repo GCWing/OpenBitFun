@@ -3840,14 +3840,15 @@
     "showAll": "顯示全部"
   },
   "pendingQueue": {
-    "title": "等待發送",
-    "label": "等待發送 {{count}}",
+    "title": "待傳送",
+    "label": "待傳送 {{count}}",
     "attachmentCount": "{{count}} 個圖片附件",
     "attachmentCount_one": "{{count}} 個圖片附件",
     "attachmentCount_other": "{{count}} 個圖片附件",
     "emptyPlaceholder": "（空訊息）",
     "statusSending": "正在引導…",
-    "statusFailed": "發送失敗 — 請編輯 / 立即發送 / 刪除以清除該項",
+    "statusQueuedSending": "傳送中…",
+    "statusFailed": "傳送失敗",
     "actions": {
       "edit": "編輯",
       "sendNow": "立即發送（引導）",
