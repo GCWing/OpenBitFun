@@ -14,8 +14,68 @@
 pub struct SystemProxy {
     /// Proxy URL with an explicit scheme, for example `http://127.0.0.1:7897`.
     pub url: String,
-    /// Hosts that must bypass the proxy, ready for `reqwest::NoProxy` syntax.
+    /// Comma-separated Windows bypass patterns, including `*` and `<local>`.
+    /// These are not reqwest `NoProxy` rules; use [`Self::bypasses_host`].
     pub no_proxy: Option<String>,
+}
+
+impl SystemProxy {
+    /// Match the URL host without resolving DNS. Windows wildcard patterns
+    /// cannot be passed to reqwest's suffix-only `NoProxy` matcher unchanged.
+    pub fn bypasses_host(&self, host: &str) -> bool {
+        let host = host.trim_start_matches('[').trim_end_matches(']');
+        if host.eq_ignore_ascii_case("localhost")
+            || host
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+        {
+            return true;
+        }
+
+        self.no_proxy.as_deref().is_some_and(|list| {
+            list.split(',').map(str::trim).any(|pattern| {
+                if pattern.eq_ignore_ascii_case("<local>") {
+                    // Windows defines <local> as a hostname without a dot,
+                    // not all addresses and not arbitrary private IP ranges.
+                    !host.contains('.') && !host.contains(':')
+                } else {
+                    !pattern.is_empty() && wildcard_matches(pattern, host)
+                }
+            })
+        })
+    }
+}
+
+/// Case-insensitive host matching with Windows `*` wildcards. Literal entries
+/// stay exact: `corp.example` must not also bypass `api.corp.example`.
+fn wildcard_matches(pattern: &str, host: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let host = host.as_bytes();
+    let (mut p, mut h) = (0, 0);
+    let mut star = None;
+    let mut retry = 0;
+
+    while h < host.len() {
+        if p < pattern.len() && pattern[p] == b'*' {
+            star = Some(p);
+            p += 1;
+            retry = h;
+        } else if p < pattern.len() && pattern[p].eq_ignore_ascii_case(&host[h]) {
+            p += 1;
+            h += 1;
+        } else if let Some(position) = star {
+            retry += 1;
+            h = retry;
+            p = position + 1;
+        } else {
+            return false;
+        }
+    }
+
+    while p < pattern.len() && pattern[p] == b'*' {
+        p += 1;
+    }
+    p == pattern.len()
 }
 
 /// Hosts that must never be sent through a system proxy.
@@ -83,29 +143,20 @@ fn with_scheme(value: &str) -> String {
     }
 }
 
-/// Convert a registry `ProxyOverride` value into `reqwest::NoProxy` syntax.
+/// Normalize a registry `ProxyOverride` list without changing its semantics.
 ///
 /// `<local>` means "bypass plain hostnames"; entries are separated by `;` and
-/// may use `*` wildcards, which reqwest understands.
+/// may use `*` wildcards. Keep `<local>` intact for the host matcher.
 #[cfg(any(windows, test))]
 fn parse_proxy_override(raw: &str) -> Option<String> {
     let mut entries: Vec<String> = Vec::new();
-    let mut bypass_plain_hostnames = false;
 
     for entry in raw.split(';') {
         let entry = entry.trim();
         if entry.is_empty() {
             continue;
         }
-        if entry.eq_ignore_ascii_case("<local>") {
-            bypass_plain_hostnames = true;
-            continue;
-        }
         entries.push(entry.to_string());
-    }
-
-    if bypass_plain_hostnames && !entries.iter().any(|entry| entry == "*") {
-        entries.push("*".to_string());
     }
 
     (!entries.is_empty()).then(|| entries.join(","))
@@ -194,7 +245,7 @@ mod windows_registry {
 
 #[cfg(test)]
 mod tests {
-    use super::{merged_no_proxy, parse_proxy_override, parse_proxy_server};
+    use super::{merged_no_proxy, parse_proxy_override, parse_proxy_server, SystemProxy};
 
     #[test]
     fn bare_host_and_port_gets_a_scheme() {
@@ -239,11 +290,11 @@ mod tests {
     }
 
     #[test]
-    fn override_list_translates_local_marker() {
-        assert_eq!(parse_proxy_override("<local>").as_deref(), Some("*"));
+    fn override_list_preserves_local_marker() {
+        assert_eq!(parse_proxy_override("<local>").as_deref(), Some("<local>"));
         assert_eq!(
             parse_proxy_override("<local>;*.corp.example").as_deref(),
-            Some("*.corp.example,*")
+            Some("<local>,*.corp.example")
         );
         assert_eq!(parse_proxy_override("  "), None);
     }
@@ -258,5 +309,72 @@ mod tests {
             merged_no_proxy(Some("*.corp".to_string())).as_deref(),
             Some("localhost,127.0.0.1,::1,*.corp")
         );
+    }
+
+    fn proxy_with_overrides(raw: &str) -> SystemProxy {
+        SystemProxy {
+            url: "http://127.0.0.1:7897".into(),
+            no_proxy: merged_no_proxy(parse_proxy_override(raw)),
+        }
+    }
+
+    #[test]
+    fn windows_wildcards_match_hosts_without_broadening_literal_entries() {
+        let proxy = proxy_with_overrides("*.corp.example;10.*;exact.internal;build-*-api.*");
+        for host in [
+            "model.corp.example",
+            "nested.model.CORP.EXAMPLE",
+            "10.23.45.67",
+            "EXACT.internal",
+            "build-one-api.internal",
+        ] {
+            assert!(proxy.bypasses_host(host), "should bypass {host}");
+        }
+        for host in [
+            "corp.example",
+            "model.corp.example.attacker.test",
+            "notcorp.example",
+            "110.23.45.67",
+            "child.exact.internal",
+            "build-one-web.internal",
+            "public.example",
+        ] {
+            assert!(!proxy.bypasses_host(host), "must proxy {host}");
+        }
+    }
+
+    #[test]
+    fn local_marker_only_bypasses_plain_hostnames() {
+        let proxy = proxy_with_overrides("<LoCaL>;*.corp.example");
+        for host in ["intranet", "model.corp.example"] {
+            assert!(proxy.bypasses_host(host));
+        }
+        for host in [
+            "public.example",
+            "other.internal",
+            "10.23.45.67",
+            "[fd00::1]",
+        ] {
+            assert!(!proxy.bypasses_host(host), "must proxy {host}");
+        }
+    }
+
+    #[test]
+    fn explicit_star_bypasses_all_hosts_but_empty_list_only_bypasses_loopback() {
+        let empty = proxy_with_overrides(" ;  ");
+        for host in [
+            "localhost",
+            "LOCALHOST",
+            "127.0.0.1",
+            "127.0.0.2",
+            "::1",
+            "[::1]",
+        ] {
+            assert!(empty.bypasses_host(host), "should bypass {host}");
+        }
+        for host in ["public.example", "intranet", "192.168.1.2", "[fd00::1]"] {
+            assert!(!empty.bypasses_host(host));
+            assert!(proxy_with_overrides("*").bypasses_host(host));
+        }
     }
 }
