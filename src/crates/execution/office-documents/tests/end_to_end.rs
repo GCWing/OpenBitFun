@@ -9,12 +9,9 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read, Write};
 
-fn tiny_png(width: u32, height: u32) -> Vec<u8> {
-    let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
-    bytes.extend_from_slice(&width.to_be_bytes());
-    bytes.extend_from_slice(&height.to_be_bytes());
-    bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
-    bytes
+// A complete PNG keeps exported samples suitable for real Office viewers.
+fn sample_png() -> Vec<u8> {
+    include_bytes!("fixtures/chart.png").to_vec()
 }
 
 fn entries(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
@@ -77,7 +74,7 @@ fn docx_built_incrementally_and_reopened() {
     .unwrap();
     doc.touch("2026-11-05T10:00:00Z");
     let mut images = ImageSources::new();
-    images.insert("/tmp/chart.png".to_string(), tiny_png(800, 400));
+    images.insert("/tmp/chart.png".to_string(), sample_png());
     let first = ops(json!([
         {"op": "set_properties", "title": "季度报告", "author": "Agent"},
         {"op": "insert_blocks", "markdown": "# 季度报告\n\n[TOC]\n\n## 概览\n\n收入增长 **23%**，详见 [官网](https://example.com)。\n\n- 第一点\n- 第二点\n  - 子项\n\n| 指标 | 数值 |\n|---|---:|\n| 收入 | 120 |\n\n![图表](/tmp/chart.png)"},
@@ -194,7 +191,8 @@ fn xlsx_rows_formulas_and_structure() {
             {"op": "set_column_widths", "sheet": "Sales", "widths": {"A": 16, "B:D": 12}},
             {"op": "freeze_panes", "sheet": "Sales", "rows": 1},
             {"op": "set_autofilter", "sheet": "Sales", "range": "A1:D3"},
-            {"op": "add_sheet", "name": "Summary", "rows": [["Total", "=Sales!D4"], ["Date", {"value": "2024-03-31", "type": "date"}]]}
+            {"op": "add_sheet", "name": "Summary", "rows": [["Total", "=Sales!D4"], ["Date", {"value": "2024-03-31", "type": "date"}]]},
+            {"op": "set_column_widths", "sheet": "Summary", "widths": {"A:B": 16}}
         ])),
         &ImageSources::new(),
     )
@@ -252,7 +250,7 @@ fn pptx_slides_with_notes_tables_and_images() {
     )
     .unwrap();
     let mut images = ImageSources::new();
-    images.insert("/tmp/hero.png".to_string(), tiny_png(1600, 900));
+    images.insert("/tmp/hero.png".to_string(), sample_png());
     deck.apply(
         &ops(json!([
             {"op": "insert_slides", "slides": [
