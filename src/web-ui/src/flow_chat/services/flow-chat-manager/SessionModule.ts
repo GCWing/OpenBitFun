@@ -294,7 +294,7 @@ async function hydrateHistoricalSession(
         ? i18nService.t('flow-chat:externalHistory.unsupported')
         : sourceHistory?.sourceStatus === 'unavailable' && !sourceHistory.contentVersion
           ? i18nService.t('flow-chat:externalHistory.unavailableWithoutCache')
-          : 'Failed to load session history, showing empty session';
+          : i18nService.t('flow-chat:historyState.failedTitle');
       notificationService.warning(message, {
         duration: 3000
       });
