@@ -43,6 +43,9 @@ export interface ChatComposerQueueItemProps
 export interface ChatComposerQueueItemContentProps
   extends HTMLAttributes<HTMLDivElement> {}
 
+export interface ChatComposerQueueItemMessageProps
+  extends HTMLAttributes<HTMLDivElement> {}
+
 export type ChatComposerQueueItemStatusTone = "neutral" | "warning" | "danger";
 
 export interface ChatComposerQueueItemStatusProps
@@ -182,6 +185,22 @@ export const ChatComposerQueueItemContent = forwardRef<
       className={classNames(styles.content, className)}
       data-openbitfun-component="chat-composer-queue"
       data-openbitfun-part="content"
+      ref={ref}
+    />
+  );
+});
+
+/** Natural-width preview and its attachments; status belongs below this line. */
+export const ChatComposerQueueItemMessage = forwardRef<
+  HTMLDivElement,
+  ChatComposerQueueItemMessageProps
+>(function ChatComposerQueueItemMessage({ className, ...props }, ref) {
+  return (
+    <div
+      {...props}
+      className={classNames(styles.message, className)}
+      data-openbitfun-component="chat-composer-queue"
+      data-openbitfun-part="message"
       ref={ref}
     />
   );

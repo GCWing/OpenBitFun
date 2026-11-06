@@ -3932,6 +3932,7 @@
     "cancel": "移出佇列",
     "refresh": "重新整理",
     "unknown": "尚未確認是否送達，請先檢查再重新傳送。",
+    "retry": "重試",
     "checkRetry": "檢查 / 重試",
     "copyDraft": "複製草稿到輸入框",
     "dismiss": "關閉本機提醒",

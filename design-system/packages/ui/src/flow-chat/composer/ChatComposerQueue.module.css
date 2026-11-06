@@ -1,5 +1,7 @@
 @layer openbitfun.components {
   .root {
+    --_queue-action-size: var(--openbitfun-control-chat-composer-control-height);
+    --_queue-primary-action-size: 8em;
     box-sizing: border-box;
     display: flex;
     min-inline-size: 0;
@@ -94,13 +96,18 @@
     display: none;
   }
 
+  /* Recovery descriptions need room below the message baseline. */
+  .list:has(.status) {
+    max-block-size: calc(var(--openbitfun-control-height-sm) * 6);
+  }
+
   .item {
     box-sizing: border-box;
     display: flex;
     flex: 0 0 auto;
     min-inline-size: 0;
     min-block-size: var(--openbitfun-control-height-sm);
-    align-items: center;
+    align-items: flex-start;
     gap: var(--openbitfun-space-2);
     padding-inline: var(--openbitfun-space-2) var(--openbitfun-space-1);
     border-radius: var(--openbitfun-radius-md);
@@ -115,6 +122,7 @@
   .leadingIcon {
     display: inline-flex;
     flex: 0 0 var(--openbitfun-space-5);
+    min-block-size: var(--openbitfun-control-height-sm);
     align-items: center;
     justify-content: center;
     color: var(--openbitfun-color-content-muted);
@@ -124,25 +132,34 @@
     display: flex;
     flex: 1 1 0;
     min-inline-size: 0;
+    min-block-size: var(--openbitfun-control-height-sm);
     flex-flow: row wrap;
     align-items: baseline;
     gap: 0 var(--openbitfun-space-2);
     color: var(--openbitfun-color-content-primary);
     font-size: var(--openbitfun-type-body-md-font-size);
     font-weight: var(--openbitfun-type-body-md-font-weight);
-    line-height: var(--openbitfun-type-body-sm-line-height);
+    line-height: var(--openbitfun-type-body-md-line-height);
   }
 
-  /* Message text takes the line; status facts follow it and wrap below only
-     when the row is too narrow to hold both. */
-  :where(.content) > * {
-    flex: 1 1 8em;
+  .message {
+    display: flex;
+    flex: 1 0 100%;
     min-inline-size: 0;
+    max-inline-size: 100%;
+    min-block-size: var(--openbitfun-control-height-sm);
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+  }
+
+  /* Shrink long text, but never stretch a short preview away from its badge. */
+  .message > :global([data-overflow-behavior]) {
+    flex: 0 1 auto;
   }
 
   /* A truncated preview may be a tab stop so keyboard users can read its
      full-text tooltip; it stays display-only. */
-  :where(.content) > :focus-visible {
+  :where(.content, .message) > :focus-visible {
     border-radius: var(--openbitfun-radius-xs);
     outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
     outline-offset: var(--openbitfun-focus-offset);
@@ -160,6 +177,7 @@
     font-size: var(--openbitfun-type-meta-font-size);
     line-height: var(--openbitfun-type-body-sm-line-height);
     overflow-wrap: anywhere;
+    padding-block-end: var(--openbitfun-space-1);
   }
 
   .status[data-openbitfun-tone="warning"] {
@@ -185,12 +203,26 @@
     display: inline-flex;
     flex: 0 0 auto;
     min-inline-size: 0;
+    inline-size: calc(var(--_queue-primary-action-size) + var(--_queue-action-size) * 2 + var(--openbitfun-space-1) * 2);
+    min-block-size: var(--openbitfun-control-height-sm);
     align-items: center;
+    justify-content: flex-end;
     gap: var(--openbitfun-space-1);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+  }
+
+  .actions [data-openbitfun-component="icon-button"] {
+    flex: 0 0 var(--_queue-action-size);
+    inline-size: var(--_queue-action-size);
+    block-size: var(--_queue-action-size);
+    min-inline-size: var(--_queue-action-size);
+    min-block-size: var(--_queue-action-size);
   }
 
   /* The tray stays quiet without making its controls disappear. */
   .actions [data-openbitfun-component="button"][data-openbitfun-variant="text"] {
+    flex: 1 1 0;
+    min-inline-size: 0;
     color: var(--openbitfun-color-content-secondary);
     padding-inline: var(--openbitfun-space-2);
   }
@@ -202,20 +234,19 @@
   }
 
   @container composer-queue (max-width: 22rem) {
+    .actions {
+      --_queue-primary-action-size: var(--_queue-action-size);
+    }
     .actions [data-openbitfun-component="button"] [data-openbitfun-part="label"] {
       display: none;
     }
   }
 
   @media (pointer: coarse) {
-    .actions [data-openbitfun-component="button"] {
-      min-block-size: var(--openbitfun-control-height-sm);
+    .root {
+      --_queue-action-size: var(--openbitfun-control-height-sm);
     }
-
-    .actions [data-openbitfun-component="icon-button"] {
-      inline-size: var(--openbitfun-control-height-sm);
-      block-size: var(--openbitfun-control-height-sm);
-      min-inline-size: var(--openbitfun-control-height-sm);
+    .actions [data-openbitfun-component="button"] {
       min-block-size: var(--openbitfun-control-height-sm);
     }
   }

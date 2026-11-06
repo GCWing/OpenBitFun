@@ -3932,6 +3932,7 @@
     "cancel": "Remove from queue",
     "refresh": "Refresh",
     "unknown": "Delivery is unconfirmed. Check before sending again.",
+    "retry": "Retry",
     "checkRetry": "Check / retry",
     "copyDraft": "Copy draft to composer",
     "dismiss": "Dismiss local reminder",

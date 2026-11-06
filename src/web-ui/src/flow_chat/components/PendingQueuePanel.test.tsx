@@ -147,6 +147,9 @@ describe('PendingQueuePanel', () => {
     const attachmentBadge = container.querySelector('[data-openbitfun-part="attachmentCount"]');
 
     expect(attachmentBadge?.textContent).toBe('3');
+    const messageLine = attachmentBadge?.closest('[data-openbitfun-part="message"]');
+    expect(messageLine?.querySelector('[data-openbitfun-product-part="preview"]')?.textContent).toBe('steer this turn');
+    expect(attachmentBadge?.previousElementSibling?.getAttribute('data-openbitfun-product-part')).toBe('preview');
     expect(attachmentBadge?.getAttribute('role')).toBe('img');
     expect(attachmentBadge?.getAttribute('aria-label')).toBe('pendingQueue.attachmentCount');
     await selectQueueMenuAction(container, 'collapse');
@@ -325,6 +328,7 @@ describe('PendingQueuePanel', () => {
     const row = container.querySelector('li')!;
     expect(row.getAttribute('data-openbitfun-state')).toBe('sending');
     expect(row.textContent).toContain('pendingQueue.statusQueuedSending');
+    expect(row.querySelector('[data-openbitfun-part="message"] [data-openbitfun-part="status"]')).toBeNull();
     expect(row.textContent).not.toContain('pendingQueue.statusFailed');
     expect(row.querySelector('[data-openbitfun-tone="danger"]')).toBeNull();
     expect(row.querySelector<HTMLButtonElement>('[aria-label="pendingQueue.actions.sendNow"]')?.disabled).toBe(true);

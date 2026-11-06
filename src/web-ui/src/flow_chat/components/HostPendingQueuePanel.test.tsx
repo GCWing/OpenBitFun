@@ -67,7 +67,7 @@ it.each([false, true])('keeps a normal send hidden and shows recovery only on fa
 it('keeps four queued messages compact, exposes actions, and toggles help independently', async () => {
   const requests: string[] = [];
   let items = Array.from({ length: 4 }, (_, index) => ({ turnId: String(index), displayContent: String(index + 1),
-    status: 'queued' as const, previewTruncated: false, attachmentCount: 0, agentType: 'Standard',
+    status: 'queued' as const, previewTruncated: false, attachmentCount: index === 0 ? 2 : 0, agentType: 'Standard',
     createdAtMs: 1, reason: null, targetTurnId: null, steeringId: null }));
   const queue = new HostDialogQueue('scope', 'session', async request => {
     requests.push(request.action);
@@ -81,6 +81,9 @@ it('keeps four queued messages compact, exposes actions, and toggles help indepe
   try {
     await act(async () => root.render(<HostPendingQueuePanel queue={queue} onRestore={() => true} />));
     expect(container.querySelectorAll('li')).toHaveLength(4);
+    const badge = container.querySelector('[data-openbitfun-part="attachmentCount"]')!;
+    expect(badge.closest('[data-openbitfun-part="message"]')?.querySelector('[data-openbitfun-product-part="preview"]')?.textContent).toBe('1');
+    expect(badge.previousElementSibling?.getAttribute('data-openbitfun-product-part')).toBe('preview');
     expect(container.textContent).not.toContain('hostQueue.memoryNotice');
     expect(container.textContent).not.toContain('hostQueue.queued');
     expect(container.querySelectorAll('[aria-label="hostQueue.sendNow"]')).toHaveLength(4);
@@ -177,7 +180,8 @@ it('collapses the controlled list and keeps blocked and unconfirmed rows in a re
       expect.stringContaining('hostQueue.blocked'), expect.stringContaining('hostQueue.unknown'),
     ]);
     expect(rows[0].querySelector('[aria-label="hostQueue.cancel"]')).not.toBeNull();
-    expect(rows[1].querySelector('[aria-label="hostQueue.checkRetry"]')).not.toBeNull();
+    expect(rows[1].querySelector('[aria-label="hostQueue.checkRetry"]')?.textContent).toContain('hostQueue.retry');
+    expect(rows[1].querySelector('[data-openbitfun-part="message"] [data-openbitfun-part="status"]')).toBeNull();
     expect(container.textContent).not.toContain('message a');
     await act(async () => rows[0].querySelector<HTMLButtonElement>('[aria-label="pendingQueue.actions.more"]')!.click());
     expect(document.querySelector('[role="menu"]:not([aria-hidden="true"]) [data-menu-id="collapse"]')).toBeNull();

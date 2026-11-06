@@ -43,6 +43,7 @@ import {
   ChatComposerQueueItem,
   ChatComposerQueueItemActions,
   ChatComposerQueueItemContent,
+  ChatComposerQueueItemMessage,
   ChatComposerQueueItemStatus,
   ChatComposerQueueList,
   ChatComposerQueueTitle,
@@ -241,18 +242,25 @@ function LegacyPendingQueuePanel({
           data-openbitfun-product-component="pending-queue-panel"
           data-openbitfun-product-part="content"
         >
-          {/* Focusable only so keyboard users can read a truncated preview;
-              it never starts editing. */}
-          <OverflowText
-            behavior="fade"
-            className="openbitfun-pending-queue-panel__preview"
-            data-openbitfun-product-component="pending-queue-panel"
-            data-openbitfun-product-part="preview"
-            data-overflow-trigger
-            tabIndex={0}
-          >
-            {previewText || t('pendingQueue.emptyPlaceholder')}
-          </OverflowText>
+          <ChatComposerQueueItemMessage>
+            {/* Focusable only so keyboard users can read a truncated preview;
+                it never starts editing. */}
+            <OverflowText
+              behavior="fade"
+              className="openbitfun-pending-queue-panel__preview"
+              data-openbitfun-product-component="pending-queue-panel"
+              data-openbitfun-product-part="preview"
+              data-overflow-trigger
+              tabIndex={0}
+            >
+              {previewText || t('pendingQueue.emptyPlaceholder')}
+            </OverflowText>
+            <ChatComposerQueueAttachmentBadge
+              count={attachmentCount}
+              icon={<Icon glyph={Paperclip} size="sm" />}
+              label={t('pendingQueue.attachmentCount', { count: attachmentCount })}
+            />
+          </ChatComposerQueueItemMessage>
           {isSending ? (
             <ChatComposerQueueItemStatus
               data-openbitfun-product-component="pending-queue-panel"
@@ -270,12 +278,6 @@ function LegacyPendingQueuePanel({
             </ChatComposerQueueItemStatus>
           ) : null}
         </ChatComposerQueueItemContent>
-
-        <ChatComposerQueueAttachmentBadge
-          count={attachmentCount}
-          icon={<Icon glyph={Paperclip} size="xs" />}
-          label={t('pendingQueue.attachmentCount', { count: attachmentCount })}
-        />
 
         <ChatComposerQueueItemActions
           data-openbitfun-product-component="pending-queue-panel"

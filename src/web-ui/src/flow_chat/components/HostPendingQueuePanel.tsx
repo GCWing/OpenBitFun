@@ -11,13 +11,13 @@ import { hostQueuePresentation, observePresentedHostQueue } from '../services/ho
 import { HostDialogQueue, type QueueOutboxRecord, type QueueItem } from '../../../../shared/dialog-queue/HostDialogQueue';
 import {
   ChatComposerQueue, ChatComposerQueueHeader, ChatComposerQueueTitle, ChatComposerQueueToggle,
-  ChatComposerQueueList, ChatComposerQueueItem, ChatComposerQueueItemContent, ChatComposerQueueItemActions,
+  ChatComposerQueueList, ChatComposerQueueItem, ChatComposerQueueItemContent, ChatComposerQueueItemMessage, ChatComposerQueueItemActions,
   ChatComposerQueueItemStatus, ChatComposerQueueAttachmentBadge,
 } from '@openbitfun/ui/flow-chat';
 
 function QueueAction({ label, icon, disabled, onClick }: { label: string; icon: ReactNode; disabled: boolean; onClick: () => void }) {
   return <Tooltip content={label}>
-    <IconButton data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="action" size="xs" aria-label={label} icon={icon} disabled={disabled} onClick={onClick} />
+    <IconButton data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="action" size="xs" variant="annotation" aria-label={label} icon={icon} disabled={disabled} onClick={onClick} />
   </Tooltip>;
 }
 
@@ -73,14 +73,16 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
     return <ChatComposerQueueItem data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="item" key={item.turnId}
       leadingIcon={<Icon glyph={ListEnd} size="sm" />} state={blocked ? 'failed' : steering ? 'sending' : 'default'}>
       <ChatComposerQueueItemContent data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="content">
-        {renderPreview(item.displayContent || t('pendingQueue.emptyPlaceholder'))}
+        <ChatComposerQueueItemMessage>
+          {renderPreview(item.displayContent || t('pendingQueue.emptyPlaceholder'))}
+          <ChatComposerQueueAttachmentBadge count={item.attachmentCount} icon={<Icon glyph={Paperclip} size="sm" />}
+            label={t('hostQueue.attachments', { count: item.attachmentCount })} />
+        </ChatComposerQueueItemMessage>
         {(blocked || steering) && <ChatComposerQueueItemStatus data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" tone={blocked ? 'warning' : 'neutral'}>
           {blocked ? t('hostQueue.blocked') : t('hostQueue.steeringPending')}
         </ChatComposerQueueItemStatus>}
         {item.reason && <ChatComposerQueueItemStatus data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" tone={blocked ? 'warning' : 'neutral'}>{item.reason}</ChatComposerQueueItemStatus>}
       </ChatComposerQueueItemContent>
-      <ChatComposerQueueAttachmentBadge count={item.attachmentCount} icon={<Icon glyph={Paperclip} size="xs" />}
-        label={t('hostQueue.attachments', { count: item.attachmentCount })} />
       <ChatComposerQueueItemActions data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="actions">
         <PendingQueueMessageActions sendLabel={t('hostQueue.sendNow')} sendDisabled={locked || steering}
           onSend={() => void run(() => queue.act(item, 'promote'))}
@@ -99,14 +101,20 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
     const message = record.request.action === 'submit' ? record.request.message : null;
     return <ChatComposerQueueItem data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="item" key={record.key} leadingIcon={<Icon glyph={ListEnd} size="sm" />} state="failed">
       <ChatComposerQueueItemContent data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="content">
-        {message && renderPreview(message.displayContent ?? message.content)}
+        {message && <ChatComposerQueueItemMessage>{renderPreview(message.displayContent ?? message.content)}</ChatComposerQueueItemMessage>}
         <ChatComposerQueueItemStatus data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" tone="warning">{t('hostQueue.unknown')}</ChatComposerQueueItemStatus>
       </ChatComposerQueueItemContent>
       <ChatComposerQueueItemActions data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="actions">
-        {record.restoreIntent && message
-          ? <QueueAction label={t('hostQueue.edit')} icon={<Icon name="edit" />} disabled={busy} onClick={() => void run(() => restoreDraft(record))} />
-          : <QueueAction label={t('hostQueue.checkRetry')} icon={<Icon glyph={RotateCw} />} disabled={busy} onClick={() => void run(() => queue.retry(record))} />}
-        {message && <QueueAction label={t('hostQueue.copyDraft')} icon={<Icon name="duplicate" />} disabled={busy} onClick={() => {
+        <Tooltip content={t(record.restoreIntent && message ? 'hostQueue.edit' : 'hostQueue.checkRetry')}>
+          <Button data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="action"
+            variant="text" size="xs" labelBehavior="static" disabled={busy}
+            aria-label={t(record.restoreIntent && message ? 'hostQueue.edit' : 'hostQueue.checkRetry')}
+            leadingIcon={record.restoreIntent && message ? <Icon name="edit" size="sm" /> : <Icon glyph={RotateCw} size="sm" />}
+            onClick={() => void run(() => record.restoreIntent && message ? restoreDraft(record) : queue.retry(record))}>
+            {t(record.restoreIntent && message ? 'hostQueue.edit' : 'hostQueue.retry')}
+          </Button>
+        </Tooltip>
+        {message && <QueueAction label={t('hostQueue.copyDraft')} icon={<Icon name="duplicate" size="sm" />} disabled={busy} onClick={() => {
           const cache = record.draft as Partial<QueuedMessage> | undefined;
           // Copy locally even after an owner restart. Keep the unresolved
           // receipt: copying is neither a cancellation nor a resend.
@@ -116,7 +124,7 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
             status: 'queued', retryCount: cache?.retryCount ?? 0,
             userMessageMetadata: message.metadata });
         }} />}
-        <QueueAction label={t('hostQueue.dismiss')} icon={<Icon name="xmark" />} disabled={busy} onClick={() => void run(() => queue.dismiss(record))} />
+        <QueueAction label={t('hostQueue.dismiss')} icon={<Icon name="xmark" size="sm" />} disabled={busy} onClick={() => void run(() => queue.dismiss(record))} />
       </ChatComposerQueueItemActions>
     </ChatComposerQueueItem>;
   };
