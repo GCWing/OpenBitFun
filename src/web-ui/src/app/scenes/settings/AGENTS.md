@@ -47,7 +47,7 @@ Follow the parent guide for `check:web`, i18n, and Appearance registration check
 For the controller-local web link preference, persistence and explicit browser actions:
 
 ```bash
-pnpm --dir src/web-ui run test:run src/infrastructure/config/services/browserLinkPreference.test.ts src/infrastructure/markdown/MarkdownRenderer.test.tsx src/infrastructure/api/service-api/SystemAPI.test.ts src/app/scenes/settings/settingsRegistry.test.ts src/infrastructure/config/components/common/SettingsControlSizing.test.ts
+pnpm --dir src/web-ui run test:run src/infrastructure/config/services/browserLinkPreference.test.ts src/infrastructure/markdown/MarkdownRenderer.test.tsx src/infrastructure/api/service-api/SystemAPI.test.ts src/app/scenes/settings/settingsRegistry.test.ts src/app/scenes/settings/pages/shared/RuntimeSettings.test.tsx src/infrastructure/config/components/common/SettingsControlSizing.test.ts
 ```
 
 The link preference remains editable independently of host control status. These
