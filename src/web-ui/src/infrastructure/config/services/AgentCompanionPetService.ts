@@ -25,6 +25,7 @@ export const DEFAULT_AGENT_COMPANION_PET: AgentCompanionPetSelection = {
 
 /** Cache: absolute file path → blob URL (prevents re-reading the same file). */
 const blobUrlCache = new Map<string, string>();
+const blobLoads = new Map<string, { promise: Promise<string>; released: boolean }>();
 
 /**
  * Reads a user pet spritesheet through the host. The host confines the read to
@@ -43,11 +44,20 @@ async function readSpritesheetBuffer(absolutePath: string): Promise<ArrayBuffer>
 async function readFileAsBlobUrl(absolutePath: string, mimeType: string): Promise<string> {
   const cached = blobUrlCache.get(absolutePath);
   if (cached) return cached;
+  const pending = blobLoads.get(absolutePath);
+  if (pending) return pending.promise;
 
-  const buffer = await readSpritesheetBuffer(absolutePath);
-  const url = URL.createObjectURL(new Blob([buffer], { type: mimeType }));
-  blobUrlCache.set(absolutePath, url);
-  return url;
+  const load = { promise: Promise.resolve(''), released: false };
+  load.promise = readSpritesheetBuffer(absolutePath).then(buffer => {
+    if (load.released) throw new Error('Pet spritesheet was released while loading');
+    const url = URL.createObjectURL(new Blob([buffer], { type: mimeType }));
+    blobUrlCache.set(absolutePath, url);
+    return url;
+  }).finally(() => {
+    if (blobLoads.get(absolutePath) === load) blobLoads.delete(absolutePath);
+  });
+  blobLoads.set(absolutePath, load);
+  return load.promise;
 }
 
 /**
@@ -60,7 +70,7 @@ export function releaseAgentCompanionPetPreviewBlobs(
   const dir = packagePath.replace(/[/\\]+$/, '');
   const normPrefix = `${dir.replace(/\\/g, '/')}/`;
   const toRevoke = new Set<string>();
-  for (const key of blobUrlCache.keys()) {
+  for (const key of new Set([...blobUrlCache.keys(), ...blobLoads.keys()])) {
     const k = key.replace(/\\/g, '/');
     const d = dir.replace(/\\/g, '/');
     if (k === d || k.startsWith(normPrefix)) {
@@ -71,6 +81,9 @@ export function releaseAgentCompanionPetPreviewBlobs(
     toRevoke.add(spritesheetAbsolutePath);
   }
   for (const key of toRevoke) {
+    const load = blobLoads.get(key);
+    if (load) load.released = true;
+    blobLoads.delete(key);
     const url = blobUrlCache.get(key);
     if (url) URL.revokeObjectURL(url);
     blobUrlCache.delete(key);

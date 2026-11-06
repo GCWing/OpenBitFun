@@ -16,6 +16,7 @@ describe('navigation resize interaction', () => {
   let preferenceChanged: () => void;
   let committed: ReturnType<typeof vi.fn>;
   let collapse: ReturnType<typeof vi.fn>;
+  let resizeStateChanged: ReturnType<typeof vi.fn>;
   let captured: Set<number>;
 
   function Harness({ collapsed = false }: { collapsed?: boolean }) {
@@ -27,6 +28,7 @@ describe('navigation resize interaction', () => {
       areaRef, dividerRef, gripRef, width, minWidth: 216, maxWidth: 480,
       collapseThreshold: 64, collapsed,
       onWidthChange: value => { committed(value); setWidth(value); }, onCollapse: collapse,
+      onResizeStateChange: resizeStateChanged,
     });
     return <>
       <div data-testid="area" ref={areaRef} style={{ '--nav-width': `${width}px` } as React.CSSProperties} />
@@ -72,7 +74,7 @@ describe('navigation resize interaction', () => {
 
   beforeEach(() => {
     frames = new Map(); nextFrame = 0; now = 0; reducedMotion = false;
-    committed = vi.fn(); collapse = vi.fn(); captured = new Set();
+    committed = vi.fn(); collapse = vi.fn(); resizeStateChanged = vi.fn(); captured = new Set();
     vi.spyOn(performance, 'now').mockImplementation(() => now);
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       frames.set(++nextFrame, callback); return nextFrame;
@@ -106,7 +108,9 @@ describe('navigation resize interaction', () => {
     expect(divider().style.getPropertyValue('--nav-width')).toBe('370px');
     expect(shape().centerX).toBeGreaterThan(24);
     expect(committed).not.toHaveBeenCalled();
+    expect(resizeStateChanged.mock.calls).toEqual([[true]]);
     pointer('pointerup', 382);
+    expect(resizeStateChanged.mock.calls).toEqual([[true], [false]]);
     expect(committed).toHaveBeenCalledExactlyOnceWith(382);
     expect(divider().getAttribute('data-resize-feedback')).toBe('settling');
     paint(100);
@@ -246,6 +250,7 @@ describe('navigation resize interaction', () => {
       expect(document.body.classList.contains('openbitfun-is-resizing-nav')).toBe(false);
       expect(document.body.classList.contains('openbitfun-is-dragging-nav-collapse')).toBe(false);
       expect(captured.size).toBe(0);
+      expect(resizeStateChanged.mock.calls).toEqual([[true], [false]]);
       expect(frames.size).toBe(0);
       pointer('pointerup', 400);
       expect(committed).not.toHaveBeenCalled();

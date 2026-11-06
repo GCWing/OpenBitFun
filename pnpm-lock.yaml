@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@xterm/xterm@6.1.0-beta.141':
+    hash: 8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23
+    path: patches/@xterm__xterm@6.1.0-beta.141.patch
   mdast-util-gfm-autolink-literal@2.0.1:
     hash: 23ece47d024ddb26beb830db75c7075ea8820bc730565a8e59895957253e5707
     path: patches/mdast-util-gfm-autolink-literal@2.0.1.patch
@@ -227,10 +230,10 @@ importers:
         version: link:../../design-system/packages/ui
       '@xterm/addon-fit':
         specifier: ^0.12.0-beta.103
-        version: 0.12.0-beta.141(@xterm/xterm@6.1.0-beta.141)
+        version: 0.12.0-beta.141(@xterm/xterm@6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23))
       '@xterm/xterm':
         specifier: ^6.1.0-beta.101
-        version: 6.1.0-beta.141
+        version: 6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23)
     devDependencies:
       '@types/react':
         specifier: ^18.3.0
@@ -325,10 +328,10 @@ importers:
         version: link:../../design-system/packages/ui
       '@xterm/addon-fit':
         specifier: 0.12.0-beta.141
-        version: 0.12.0-beta.141(@xterm/xterm@6.1.0-beta.141)
+        version: 0.12.0-beta.141(@xterm/xterm@6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23))
       '@xterm/xterm':
         specifier: 6.1.0-beta.141
-        version: 6.1.0-beta.141
+        version: 6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23)
       katex:
         specifier: ^0.16.25
         version: 0.16.28
@@ -510,19 +513,19 @@ importers:
         version: 3.20.4
       '@xterm/addon-fit':
         specifier: ^0.12.0-beta.103
-        version: 0.12.0-beta.141(@xterm/xterm@6.1.0-beta.141)
+        version: 0.12.0-beta.141(@xterm/xterm@6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23))
       '@xterm/addon-web-links':
         specifier: ^0.13.0-beta.103
-        version: 0.13.0-beta.141(@xterm/xterm@6.1.0-beta.141)
+        version: 0.13.0-beta.141(@xterm/xterm@6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23))
       '@xterm/addon-webgl':
         specifier: ^0.20.0-beta.100
-        version: 0.20.0-beta.140(@xterm/xterm@6.1.0-beta.141)
+        version: 0.20.0-beta.140(@xterm/xterm@6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23))
       '@xterm/headless':
         specifier: 6.1.0-beta.141
         version: 6.1.0-beta.141
       '@xterm/xterm':
         specifier: ^6.1.0-beta.101
-        version: 6.1.0-beta.141
+        version: 6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23)
       decode-named-character-reference:
         specifier: 1.3.0
         version: 1.3.0
@@ -8443,21 +8446,21 @@ snapshots:
     dependencies:
       '@wdio/logger': 9.18.0
 
-  '@xterm/addon-fit@0.12.0-beta.141(@xterm/xterm@6.1.0-beta.141)':
+  '@xterm/addon-fit@0.12.0-beta.141(@xterm/xterm@6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.141
+      '@xterm/xterm': 6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23)
 
-  '@xterm/addon-web-links@0.13.0-beta.141(@xterm/xterm@6.1.0-beta.141)':
+  '@xterm/addon-web-links@0.13.0-beta.141(@xterm/xterm@6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.141
+      '@xterm/xterm': 6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23)
 
-  '@xterm/addon-webgl@0.20.0-beta.140(@xterm/xterm@6.1.0-beta.141)':
+  '@xterm/addon-webgl@0.20.0-beta.140(@xterm/xterm@6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.141
+      '@xterm/xterm': 6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23)
 
   '@xterm/headless@6.1.0-beta.141': {}
 
-  '@xterm/xterm@6.1.0-beta.141': {}
+  '@xterm/xterm@6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23)': {}
 
   '@zip.js/zip.js@2.8.23': {}
 

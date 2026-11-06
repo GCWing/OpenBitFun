@@ -22,11 +22,16 @@ $chevron-box-slack: 5px;
   isolation: isolate;
   // The material and content clip themselves; the elevation layer stays outside.
   overflow: visible;
-  // Keep ancestor opacity at 1 so the glass layer can sample the page backdrop.
+  // Keep entrance opacity at 1 so the glass layer can sample the page backdrop.
   animation-name: global-search-surface-enter;
 
   &[data-state='exiting'] {
-    animation-name: global-search-surface-exit;
+    // Finish fading before Dialog releases its retained exit surface.
+    animation: global-search-surface-exit var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-exit) both;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation-duration: 1ms;
+    }
   }
 
   // The results viewport absorbs short windows and longer result sets.
@@ -46,8 +51,9 @@ $chevron-box-slack: 5px;
 }
 
 @keyframes global-search-surface-exit {
-  from { transform: none; }
-  to { transform: translateY(var(--openbitfun-motion-distance-sm)) scale(0.98); }
+  // Keep the query and results at their open size throughout dismissal.
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 .global-search-dialog__material {

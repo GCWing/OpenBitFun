@@ -194,4 +194,57 @@ describe('user pet spritesheet reads', () => {
     await expect(resolveAgentCompanionPetSrc(otherPet)).resolves.toBe('blob:pet-spritesheet');
     expect(invoke).toHaveBeenCalledTimes(1);
   });
+
+  it('coalesces concurrent reads without orphaning a blob URL', async () => {
+    const { resolveAgentCompanionPetSrc, releaseAgentCompanionPetPreviewBlobs } = await import('./AgentCompanionPetService');
+    releaseAgentCompanionPetPreviewBlobs(userPet.packagePath);
+    let finish!: (buffer: ArrayBuffer) => void;
+    invoke.mockReturnValueOnce(new Promise<ArrayBuffer>(resolve => { finish = resolve; }));
+    const first = resolveAgentCompanionPetSrc(userPet);
+    const second = resolveAgentCompanionPetSrc(userPet);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    finish(new Uint8Array([1, 2, 3]).buffer);
+    await expect(Promise.all([first, second])).resolves.toEqual(['blob:pet-spritesheet', 'blob:pet-spritesheet']);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    releaseAgentCompanionPetPreviewBlobs(userPet.packagePath);
+    expect(URL.revokeObjectURL).toHaveBeenLastCalledWith('blob:pet-spritesheet');
+  });
+
+  it('does not repopulate a released package from an in-flight read and allows retry', async () => {
+    const { resolveAgentCompanionPetSrc, releaseAgentCompanionPetPreviewBlobs } = await import('./AgentCompanionPetService');
+    releaseAgentCompanionPetPreviewBlobs(userPet.packagePath);
+    let finish!: (buffer: ArrayBuffer) => void;
+    invoke.mockReturnValueOnce(new Promise<ArrayBuffer>(resolve => { finish = resolve; }));
+    const pending = resolveAgentCompanionPetSrc(userPet);
+    const rejected = expect(pending).rejects.toThrow('released while loading');
+    releaseAgentCompanionPetPreviewBlobs(userPet.packagePath);
+    finish(new Uint8Array([1]).buffer);
+    await rejected;
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    invoke.mockRejectedValueOnce(new Error('offline'));
+    await expect(resolveAgentCompanionPetSrc(userPet)).rejects.toThrow('offline');
+    invoke.mockResolvedValueOnce(new Uint8Array([2]));
+    await expect(resolveAgentCompanionPetSrc(userPet)).resolves.toBe('blob:pet-spritesheet');
+    releaseAgentCompanionPetPreviewBlobs(userPet.packagePath);
+  });
+
+  it('keeps a replacement load when the released older read finishes later', async () => {
+    const { resolveAgentCompanionPetSrc, releaseAgentCompanionPetPreviewBlobs } = await import('./AgentCompanionPetService');
+    releaseAgentCompanionPetPreviewBlobs(userPet.packagePath);
+    let finishOld!: (buffer: ArrayBuffer) => void;
+    let finishNew!: (buffer: ArrayBuffer) => void;
+    invoke.mockReturnValueOnce(new Promise<ArrayBuffer>(resolve => { finishOld = resolve; }));
+    const old = expect(resolveAgentCompanionPetSrc(userPet)).rejects.toThrow('released while loading');
+    releaseAgentCompanionPetPreviewBlobs(userPet.packagePath);
+    invoke.mockReturnValueOnce(new Promise<ArrayBuffer>(resolve => { finishNew = resolve; }));
+    const replacement = resolveAgentCompanionPetSrc(userPet);
+    finishOld(new Uint8Array([1]).buffer);
+    await old;
+    const concurrent = resolveAgentCompanionPetSrc(userPet);
+    expect(invoke).toHaveBeenCalledTimes(2);
+    finishNew(new Uint8Array([2]).buffer);
+    await expect(Promise.all([replacement, concurrent])).resolves.toEqual(['blob:pet-spritesheet', 'blob:pet-spritesheet']);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    releaseAgentCompanionPetPreviewBlobs(userPet.packagePath);
+  });
 });

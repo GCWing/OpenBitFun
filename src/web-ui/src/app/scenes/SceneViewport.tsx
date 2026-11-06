@@ -108,7 +108,7 @@ interface SceneTransition {
 
 interface SceneReadyBoundaryProps {
   sceneId: SceneTabId;
-  onReady: (sceneId: SceneTabId) => void;
+  onReady: (sceneId: SceneTabId) => () => void;
   children: React.ReactNode;
 }
 
@@ -123,7 +123,7 @@ const SceneReadyBoundary: React.FC<SceneReadyBoundaryProps> = ({
   children,
 }) => {
   useLayoutEffect(() => {
-    onReady(sceneId);
+    return onReady(sceneId);
   }, [onReady, sceneId]);
 
   return <>{children}</>;
@@ -279,9 +279,12 @@ function useSceneTransition(activeRenderedSceneId: RenderedSceneId | null,
   const previousActiveTabIdRef = useRef<RenderedSceneId | null>(activeRenderedSceneId);
 
   const markSceneReady = useCallback((sceneId: SceneTabId) => {
-    if (readySceneIdsRef.current.has(sceneId)) return;
-    readySceneIdsRef.current.add(sceneId);
-    setReadyVersion(version => version + 1);
+    if (!readySceneIdsRef.current.has(sceneId)) {
+      readySceneIdsRef.current.add(sceneId);
+      setReadyVersion(version => version + 1);
+    }
+    // Readiness belongs to the mounted tree, not a tab id that may be reopened.
+    return () => { readySceneIdsRef.current.delete(sceneId); };
   }, []);
 
   // Derive the outgoing id during render as well as from state. Pointer
@@ -405,7 +408,7 @@ function renderScene(
     case 'assistant':
       return <AssistantScene />;
     case 'todos':
-      return <TodosScene />;
+      return <TodosScene isActive={isActive} />;
     case 'insights':
       return <InsightsScene />;
     case 'shell':

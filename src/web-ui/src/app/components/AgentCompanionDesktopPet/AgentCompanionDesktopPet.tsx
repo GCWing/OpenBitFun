@@ -682,18 +682,22 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       }
     };
 
-    const intervalId = window.setInterval(() => {
-      // Pause the IPC poll while the pet window is not visible.
-      if (document.visibilityState === 'hidden') {
-        return;
-      }
+    let intervalId: number | undefined;
+    const syncPointerPolling = () => {
+      window.clearInterval(intervalId);
+      intervalId = undefined;
+      if (document.visibilityState === 'hidden') return;
+      // Keep the same visible hover latency, and refresh immediately on return.
       void pollPointerHover();
-    }, POINTER_HOVER_POLL_INTERVAL_MS);
-    void pollPointerHover();
+      intervalId = window.setInterval(() => { void pollPointerHover(); }, POINTER_HOVER_POLL_INTERVAL_MS);
+    };
+    document.addEventListener('visibilitychange', syncPointerPolling);
+    syncPointerPolling();
 
     return () => {
       disposed = true;
       window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', syncPointerPolling);
       window.removeEventListener('resize', invalidateRectCache);
       removeWindowMovedListener?.();
       removeScaleChangedListener?.();

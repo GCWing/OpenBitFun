@@ -333,13 +333,16 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
       setApps(refreshed);
       setRunningWorkerIds(running);
       setMarketOrigins(origins);
-      await fetchCatalog(undefined, false);
     } catch (error) {
       if (!surfaceScope.isCurrent()) return;
       log.error('Failed to refresh MiniApp library', error);
+      return;
     } finally {
       if (surfaceScope.isCurrent()) setLoading(false);
     }
+    // Installed entries are ready independently of the network catalog. Keep
+    // refreshing marketplace metadata without extending the local loading state.
+    await fetchCatalog(undefined, false);
   }, [fetchCatalog, setApps, setLoading, setMarketOrigins, setRunningWorkerIds, surfaceScope]);
 
   useGallerySceneAutoRefresh({

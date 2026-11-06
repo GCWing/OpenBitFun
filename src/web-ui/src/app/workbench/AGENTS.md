@@ -41,3 +41,13 @@ pnpm --dir src/web-ui run test:run src/app/scenes/session/AuxPaneEmptyState.test
 ```
 
 These fixtures verify routing and ownership; verify native presentation separately.
+
+For independent document find routing and platform/user shortcut bindings:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/workbench/ContentResourceView.shortcuts.test.tsx src/infrastructure/services/ShortcutManager.test.ts src/app/browserShortcutPolicy.test.ts
+```
+
+Independent resources register editor find while active and focused, even when
+no session canvas is mounted. The command delegates to the focused edit target;
+document buffers and native browser-shortcut suppression retain their owners.

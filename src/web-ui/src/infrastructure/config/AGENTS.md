@@ -16,6 +16,16 @@ Follow `src/web-ui/AGENTS.md` for shared frontend rules.
 
 ## Focused verification
 
+For pet spritesheet loading, concurrent read coalescing, deletion during a read,
+retry and legacy v1/v2 package compatibility:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/config/services/AgentCompanionPetService.test.ts src/infrastructure/config/services/AgentCompanionPetCompatibility.test.ts src/infrastructure/config/services/agentCompanionPetSprite.test.ts
+```
+
+These host/URL fixtures prove resource ownership and payload compatibility, not
+live peer filesystem access or native image decoding.
+
 For logging preference changes and sensitive-data redaction before startup reads finish:
 
 ```bash

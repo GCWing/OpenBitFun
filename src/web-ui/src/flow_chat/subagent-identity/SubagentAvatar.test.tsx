@@ -3,7 +3,7 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { subagentMotionClips } from '@openbitfun/ui/brand';
+import { subagentMotionClips, useSubagentAvatarMotion } from '@openbitfun/ui/brand';
 import { SubagentAvatar } from './SubagentAvatar';
 import { resolveSubagentAvatarPresentation } from './avatarResolver';
 import { getSubagentAvatarDefinition } from './catalog';
@@ -168,5 +168,43 @@ describe('SubagentAvatar', () => {
     } finally {
       window.matchMedia = original;
     }
+  });
+
+  it('retains standalone artwork across scene hiding while releasing animation handles', () => {
+    const cancels: ReturnType<typeof vi.fn>[] = [];
+    const animate = vi.fn(() => {
+      const cancel = vi.fn(); cancels.push(cancel);
+      return { cancel, play: vi.fn(), pause: vi.fn(), finished: new Promise(() => {}), playState: 'running' };
+    });
+    Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: animate });
+    vi.stubGlobal('IntersectionObserver', undefined);
+    vi.stubGlobal('ResizeObserver', undefined);
+    function Standalone({ enabled }: { enabled: boolean }) {
+      const ref = React.useRef<HTMLSpanElement | null>(null);
+      useSubagentAvatarMotion(ref, 'running', enabled, 'standalone-lifecycle', 'layers');
+      return <span ref={node => {
+        ref.current = node;
+        const svg = node?.querySelector('svg');
+        if (svg) {
+          Object.defineProperty(svg, 'viewBox', { configurable: true, value: { baseVal: { x: 0, y: 0, width: 100, height: 100 } } });
+          Object.defineProperty(svg, 'preserveAspectRatio', { configurable: true, value: { baseVal: { align: 6, meetOrSlice: 1 } } });
+        }
+      }}><span data-subagent-motion-art><svg><rect /><path /><circle /><g><ellipse /></g></svg></span></span>;
+    }
+    act(() => root.render(<Standalone enabled />));
+    const body = container.querySelector('[data-motion-part="body"]');
+    expect(body).not.toBeNull();
+    const running = [...cancels];
+    act(() => root.render(<Standalone enabled={false} />));
+    expect(running.every(cancel => cancel.mock.calls.length > 0)).toBe(true);
+    expect(container.querySelector('[data-motion-part="body"]')).toBe(body);
+    const dormantCount = animate.mock.calls.length;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(animate).toHaveBeenCalledTimes(dormantCount);
+    act(() => root.render(<Standalone enabled />));
+    expect(container.querySelector('[data-motion-part="body"]')).toBe(body);
+    expect(animate.mock.calls.length).toBeGreaterThan(dormantCount);
+    act(() => root.render(null));
+    expect(cancels.every(cancel => cancel.mock.calls.length > 0)).toBe(true);
   });
 });

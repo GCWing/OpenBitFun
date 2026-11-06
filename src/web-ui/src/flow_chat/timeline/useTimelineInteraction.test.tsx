@@ -91,3 +91,55 @@ it('retains focused response controls without takeover, while disclosure and tra
     act(() => { window.getSelection()?.removeAllRanges(); root.unmount(); }); host.remove();
   }
 });
+
+it('retains crossing ranges and releases selection leases when cleared or moved outside', () => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), reader = new FlowChatReaderState(), take = vi.fn();
+  function View() {
+    const scrollerRef = useRef<HTMLDivElement>(null);
+    const pinned = useTimelineInteraction(scrollerRef, reader, () => true, undefined, take);
+    return <>
+      <p data-before>Outside before</p>
+      <div ref={scrollerRef} data-scroller data-pinned={[...pinned].join(',')}>
+        <div className="virtual-item-wrapper" data-virtual-item-key="first"><p>First row</p></div>
+        <div className="virtual-item-wrapper" data-virtual-item-key="second"><p>Second row</p></div>
+      </div>
+      <p data-after>Outside after</p>
+    </>;
+  }
+  try {
+    act(() => root.render(<View />));
+    const scroller = host.querySelector('[data-scroller]')!;
+    Object.defineProperties(scroller, { clientHeight: { value: 800 }, clientWidth: { value: 600 } });
+    const selection = window.getSelection()!;
+    const select = (range: Range | null) => act(() => {
+      selection.removeAllRanges();
+      if (range) selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+    });
+    const outside = document.createRange(); outside.selectNodeContents(host.querySelector('[data-before]')!);
+    select(outside);
+    expect(take).not.toHaveBeenCalled();
+    expect(scroller.getAttribute('data-pinned')).toBe('');
+
+    const crossing = document.createRange();
+    crossing.setStart(host.querySelector('[data-before]')!.firstChild!, 1);
+    crossing.setEnd(host.querySelector('[data-after]')!.firstChild!, 5);
+    select(crossing);
+    expect(scroller.getAttribute('data-pinned')).toBe('first,second');
+    expect(take).not.toHaveBeenCalled(); // Preserve the existing anchor-inside takeover rule.
+    select(null);
+    expect(scroller.getAttribute('data-pinned')).toBe('');
+    select(outside);
+
+    const inside = document.createRange(); inside.selectNodeContents(scroller.querySelector('p')!);
+    select(inside);
+    expect(scroller.getAttribute('data-pinned')).toBe('first');
+    expect(take).toHaveBeenLastCalledWith('selection');
+    select(outside);
+    expect(scroller.getAttribute('data-pinned')).toBe('');
+  } finally {
+    act(() => { window.getSelection()?.removeAllRanges(); root.unmount(); }); host.remove();
+  }
+});

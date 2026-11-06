@@ -387,23 +387,37 @@ export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = ({
 
     return () => {
       cancelled = true;
+      image.onload = null;
+      image.onerror = null;
     };
   }, [layout, nativePetdexSize, onPetFrameSizeChange, pet, petSrc, petdexMaxHeight, petdexMaxWidth, petdexScale]);
 
   const [transitioning, setTransitioning] = useState(false);
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState !== 'hidden');
+  useEffect(() => {
+    const update = () => setPageVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
+  const animatePanda = !pet && !reducedMotion && pageVisible;
   const prevMoodRef = useRef<AgentCompanionPetMood>(mood);
   useEffect(() => {
+    if (!animatePanda) {
+      prevMoodRef.current = mood;
+      setTransitioning(false);
+      return;
+    }
     if (prevMoodRef.current === mood) return;
     prevMoodRef.current = mood;
     setTransitioning(true);
     const t = window.setTimeout(() => setTransitioning(false), 320);
     return () => window.clearTimeout(t);
-  }, [mood]);
+  }, [animatePanda, mood]);
 
   const [idleAction, setIdleAction] = useState<IdleAction | null>(null);
   const idleActionRef = useRef<IdleAction | null>(null);
   useEffect(() => {
-    if (mood !== 'rest') {
+    if (!animatePanda || mood !== 'rest') {
       setIdleAction(null);
       idleActionRef.current = null;
       return;
@@ -436,7 +450,7 @@ export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = ({
       window.clearTimeout(nextTimer);
       window.clearTimeout(clearTimer);
     };
-  }, [mood]);
+  }, [animatePanda, mood]);
 
   const stageClasses = [
     'openbitfun-agent-companion-pet__stage',
@@ -506,8 +520,11 @@ export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = ({
             backgroundSize: `${layout.columns * 100}% ${layout.rows * 100}%`,
             backgroundPositionY: `${row / (layout.rows - 1) * 100}%`,
             ...(spriteAction ? { animationDuration: '1.2s', animationName: 'openbitfun-petdex-walk' } : {}),
+            animationPlayState: pageVisible ? undefined : 'paused',
             ...(lookFrame ? {
-              animation: 'none',
+              // Clearing the animation shorthand also clears animationName in
+              // WebKit, even when React considers that longhand unchanged.
+              animationName: 'none',
               backgroundPositionX: `${lookFrame.column / (layout.columns - 1) * 100}%`,
             } : {}),
           } as React.CSSProperties}

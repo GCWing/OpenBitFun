@@ -24,6 +24,7 @@ import {
   readActiveTypographyTokenPx,
 } from '@/infrastructure/design-system/typographyRuntime';
 import { fontPreferenceService } from '@/infrastructure/font-preference';
+import { attachTerminalDiagnostics } from '../services/terminalDiagnostics';
 import '@xterm/xterm/css/xterm.css';
 import './Terminal.scss';
 
@@ -437,12 +438,20 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
       return;
     }
 
-    pendingFitAfterSuspendRef.current = false;
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
+      // A second drag can begin before this resume frame. Keep the pending fit
+      // until it can run; flushing while suspended discards the PTY resize.
+      if (resizeSuspendedRef.current) return;
+      pendingFitAfterSuspendRef.current = false;
       resizeDebouncerRef.current?.flush();
       fitRef.current(true);
+      // The local resize can precede its deferred PTY update. If suspension
+      // interrupted that update, an equal-size fit alone does not retry it.
+      const terminal = terminalRef.current;
+      if (terminal) doBackendResize(terminal.cols, terminal.rows);
     });
-  }, [resizeSuspended]);
+    return () => cancelAnimationFrame(frame);
+  }, [resizeSuspended, doBackendResize]);
 
   useImperativeHandle(ref, () => ({
     write: (data: string) => {
@@ -547,6 +556,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
     terminal.loadAddon(webLinksAddon);
 
     terminal.open(container);
+    const releaseDiagnostics = attachTerminalDiagnostics(container, terminal);
 
     const xtermViewport = container.querySelector<HTMLElement>('.xterm-viewport');
     if (xtermViewport) {
@@ -830,6 +840,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
     intersectionObserverRef.current = intersectionObserver;
 
     return () => {
+      releaseDiagnostics();
       dataDisposable.dispose();
       binaryDisposable.dispose();
       titleDisposable.dispose();

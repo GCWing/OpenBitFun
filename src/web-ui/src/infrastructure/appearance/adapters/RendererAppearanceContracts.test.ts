@@ -108,6 +108,49 @@ describe('renderer appearance contracts', () => {
     expect(receivedTheme?.colors['editor.foreground']).toBe('#333333');
     expect(receivedTheme?.colors['editor.selectionBackground']).toBe('#101a2724');
   });
+
+  it('reuses the runtime theme for new views while applying same-id appearance updates', async () => {
+    const settings = builtinAppearancePackages.find(pkg => pkg.id === 'openbitfun-light')!.renderers!.monaco!.settings;
+    const nextSettings = { ...builtinAppearancePackages.find(pkg => pkg.id === 'openbitfun-dark')!.renderers!.monaco!.settings,
+      id: settings.id };
+    const editor = { updateOptions: vi.fn() };
+    const defineTheme = vi.fn(), setTheme = vi.fn();
+    const monaco = { editor: { defineTheme, setTheme, getEditors: () => [editor] } } as unknown as typeof Monaco;
+    const context = { revision: 1, appearanceId: 'openbitfun-light', mode: 'light' as const, globals: {}, assets: {} };
+    const adapter = new MonacoAppearanceAdapter();
+    await adapter.apply(settings, undefined, context);
+    for (let view = 0; view < 4; view++) expect(adapter.attachMonaco(monaco)).toBe(settings.id);
+    expect(defineTheme).toHaveBeenCalledOnce();
+    expect(setTheme).toHaveBeenCalledOnce();
+    expect(editor.updateOptions).toHaveBeenCalledOnce();
+
+    await adapter.apply(nextSettings, settings, { ...context, revision: 2 });
+    expect(defineTheme).toHaveBeenCalledTimes(2);
+    const { id: themeId, ...projectedSettings } = projectMonacoAppearanceSettings(nextSettings);
+    expect(defineTheme).toHaveBeenLastCalledWith(themeId, projectedSettings);
+    expect(editor.updateOptions).toHaveBeenCalledTimes(2);
+    expect(adapter.attachMonaco(monaco)).toBe(settings.id);
+    expect(defineTheme).toHaveBeenCalledTimes(2);
+  });
+
+  it('applies the current theme to a replacement runtime and retries a failed attachment', async () => {
+    const settings = builtinAppearancePackages.find(pkg => pkg.id === 'openbitfun-light')!.renderers!.monaco!.settings;
+    const adapter = new MonacoAppearanceAdapter();
+    await adapter.apply(settings, undefined, {
+      revision: 1, appearanceId: 'openbitfun-light', mode: 'light', globals: {}, assets: {},
+    });
+    const first = { editor: { defineTheme: vi.fn(), setTheme: vi.fn(), getEditors: () => [] } };
+    adapter.attachMonaco(first as unknown as typeof Monaco);
+    const next = { editor: { defineTheme: vi.fn().mockImplementationOnce(() => { throw new Error('Unavailable runtime'); }),
+      setTheme: vi.fn(), getEditors: () => [] } };
+    expect(() => adapter.attachMonaco(next as unknown as typeof Monaco)).toThrow('Unavailable runtime');
+    expect(adapter.attachMonaco(next as unknown as typeof Monaco)).toBe(settings.id);
+    expect(next.editor.defineTheme).toHaveBeenCalledTimes(2);
+    expect(next.editor.setTheme).toHaveBeenCalledOnce();
+    adapter.attachMonaco(next as unknown as typeof Monaco);
+    expect(next.editor.defineTheme).toHaveBeenCalledTimes(2);
+    expect(first.editor.defineTheme).toHaveBeenCalledOnce();
+  });
 });
 
 const monacoAppearanceAdapterForValidation = new MonacoAppearanceAdapter();

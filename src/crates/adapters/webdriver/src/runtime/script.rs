@@ -57,22 +57,22 @@ pub(crate) fn build_bridge_eval_script(
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn build_native_eval_script(
-    script: &str,
-    args: &[Value],
-    async_mode: bool,
-    frame_context: &Value,
-) -> String {
-    let script_json = serde_json::to_string(script).unwrap_or_else(|_| "\"\"".into());
-    let args_json = serde_json::to_string(args).unwrap_or_else(|_| "[]".into());
-    let async_json = if async_mode { "true" } else { "false" };
-    let frame_context_json = serde_json::to_string(frame_context).unwrap_or_else(|_| "[]".into());
-
-    format!(
-        r#"
+pub(crate) fn native_eval_script() -> &'static str {
+    // Keep the wrapper source identical across calls. WebKit receives the user
+    // script and data as native arguments, so changing a value does not compile
+    // another copy of the entire bridge. User functions still execute afresh.
+    static SCRIPT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SCRIPT.get_or_init(|| {
+        format!(
+            r#"
 return (async () => {{
   {helper}
-  const response = await window.__openbitfunWd.execute({script}, {args}, {async_mode}, {frame_context});
+  const response = await window.__openbitfunWd.execute(
+    openbitfunScript,
+    JSON.parse(openbitfunArguments),
+    openbitfunAsync === "true",
+    JSON.parse(openbitfunFrameContext)
+  );
   return JSON.stringify({{
     requestId: "__native__",
     ok: response.ok,
@@ -81,12 +81,9 @@ return (async () => {{
   }});
 }})();
 "#,
-        helper = bridge_helper_script(),
-        script = script_json,
-        args = args_json,
-        async_mode = async_json,
-        frame_context = frame_context_json
-    )
+            helper = bridge_helper_script()
+        )
+    })
 }
 
 fn bridge_helper_script() -> String {
