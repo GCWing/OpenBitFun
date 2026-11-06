@@ -425,6 +425,7 @@ export default function GenUIOpenUIDocument({
   // Errors and parse metadata arrive in separate effects. Coalesce both before
   // publishing, and discard pending evidence when the source/library changes.
   const diagnosticFrame = useMemo(() => ({
+    sourceContent: source.content, library: openUILibrary, isStreaming,
     errors: [] as OpenUIError[], meta: undefined as ParseResult['meta'] | undefined,
     parsed: false, pending: false, lastKey: undefined as string | undefined,
   }), [source.content, openUILibrary, isStreaming]);
@@ -441,14 +442,14 @@ export default function GenUIOpenUIDocument({
     diagnosticFrame.pending = true;
     queueMicrotask(() => {
       diagnosticFrame.pending = false;
-      if (currentDiagnosticFrame.current !== diagnosticFrame || (!isStreaming && !diagnosticFrame.parsed)) return;
-      const merged = isStreaming ? [] : mergeGenUIRenderDiagnostics(diagnosticFrame.meta, diagnosticFrame.errors);
+      if (currentDiagnosticFrame.current !== diagnosticFrame || (!diagnosticFrame.isStreaming && !diagnosticFrame.parsed)) return;
+      const merged = diagnosticFrame.isStreaming ? [] : mergeGenUIRenderDiagnostics(diagnosticFrame.meta, diagnosticFrame.errors);
       const key = JSON.stringify(merged);
       if (key === diagnosticFrame.lastKey) return;
       diagnosticFrame.lastKey = key;
       onErrorRef.current?.(merged);
     });
-  }, [diagnosticFrame, isStreaming]);
+  }, [diagnosticFrame]);
   const handleError = useCallback((errors: OpenUIError[]) => {
     diagnosticFrame.errors = errors;
     publishDiagnostics();
