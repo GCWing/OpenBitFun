@@ -24,7 +24,6 @@ export function DeviceVisibilityButton({ surfaceId, name, compact = false, disab
       icon={<Icon glyph={visible ? Eye : EyeOff} size={compact ? 'xs' : 'md'} />}
       aria-label={label}
       aria-pressed={visible}
-      title={label}
       disabled={disabled}
       data-testid="device-sidebar-visibility"
       data-device-surface={surfaceId}
