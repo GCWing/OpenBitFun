@@ -153,6 +153,7 @@ internal fun ComposerBar(
     placeholder: String,
     onDraftChange: (String) -> Unit,
     promptSuggestion: String? = null,
+    queueAttached: Boolean = false,
     onRemoveImage: (String) -> Unit,
     onAttach: () -> Unit,
     onVoice: () -> Unit,
@@ -232,7 +233,7 @@ internal fun ComposerBar(
             .padding(
                 start = MobileDesignGeometry.ConversationOverlaySideInset,
                 end = MobileDesignGeometry.ConversationOverlaySideInset,
-                top = 8.dp,
+                top = if (queueAttached) 0.dp else 8.dp,
                 bottom = 14.dp,
             )
             .testTag(COMPOSER_TEST_TAG),

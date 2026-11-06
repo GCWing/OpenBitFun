@@ -3151,6 +3151,54 @@
     {
       "name": "commands_skills_refusedBody",
       "value": "桌面端有响应，但拒绝了请求。下方是桌面端的原文；请检查会话后重试。"
+    },
+    {
+      "name": "queue_title",
+      "value": "待发送 · %1$s"
+    },
+    {
+      "name": "queue_reorder",
+      "value": "拖动排序"
+    },
+    {
+      "name": "queue_moveUp",
+      "value": "上移"
+    },
+    {
+      "name": "queue_moveDown",
+      "value": "下移"
+    },
+    {
+      "name": "queue_refresh",
+      "value": "刷新"
+    },
+    {
+      "name": "queue_refreshRequired",
+      "value": "队列状态已变化或未能确认，请刷新后再操作。"
+    },
+    {
+      "name": "queue_attachments",
+      "value": "%1$s 个附件"
+    },
+    {
+      "name": "queue_waiting",
+      "value": "等待执行端处理"
+    },
+    {
+      "name": "queue_sendNow",
+      "value": "立即发送"
+    },
+    {
+      "name": "queue_more",
+      "value": "消息操作"
+    },
+    {
+      "name": "queue_remove",
+      "value": "从队列移除"
+    },
+    {
+      "name": "queue_unsupported",
+      "value": "升级执行端后可调整消息顺序。"
     }
   ]
 }

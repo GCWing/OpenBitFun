@@ -1,3 +1,4 @@
+import { MessageQueueAction, MessageQueueState } from '../../model/MessageQueue';
 import { InteractionMailboxAction, InteractionMailboxState } from '../../model/InteractionMailbox';
 import { HostCatalogChange, HostCatalogObserver } from '../../services/HostCatalogObserver';
 import { WorkspaceToolsViewModel } from '../viewmodel/WorkspaceToolsViewModel';
@@ -527,6 +528,9 @@ export abstract class AppRootRuntimeComposition {
             this.isRemoteConversationContext(sessionId) &&
             this.remoteConnectionController.ensureAvailable();
         },
+        onQueue: (state: MessageQueueState): void => {
+          if (!state.sessionId || this.remotePageState.activeSession.sessionId === state.sessionId) this.remotePageState.messageQueue = state;
+        },
         onMailbox: (state: InteractionMailboxState): void => {
           if (!state.sessionId || this.remotePageState.activeSession.sessionId === state.sessionId) {
             this.remotePageState.interactionMailbox = state;
@@ -832,6 +836,7 @@ export abstract class AppRootRuntimeComposition {
     );
   readonly conversationIntentDispatcher: ConversationIntentDispatcher =
     new ConversationIntentDispatcher({
+      queue: async (action: MessageQueueAction): Promise<void> => { await this.remoteChatPollingLifecycleController.dispatchQueue(action); },
       mailbox: async (action: InteractionMailboxAction): Promise<void> => { await this.remoteChatPollingLifecycleController.dispatchMailbox(action); },
       openSidebar: (): void => this.openAppSidebar(),
       back: (): void => this.exitActiveChat(),

@@ -62,6 +62,7 @@ const COMPOSER_MODEL_DEFAULTS_DIVIDER_MARGIN_TOP: number = 4;
 
 @ComponentV2
 export struct ComposerBar {
+  @Param queueAttached: boolean = false;
   @Param presentation: ComposerPresentation = ComposerPresentation.Compact;
   @Param capabilities: ChatComposerCapabilities = REMOTE_CHAT_COMPOSER_CAPABILITIES;
   @Param inputId: string = 'conversation-composer-input';
@@ -177,7 +178,7 @@ export struct ComposerBar {
         ? 24 : MobileDesignGeometry.conversationOverlaySideInset,
       right: this.presentation === ComposerPresentation.Floating
         ? 24 : MobileDesignGeometry.conversationOverlaySideInset,
-      top: 8,
+      top: this.queueAttached ? 0 : 8,
       bottom: this.presentation === ComposerPresentation.Floating ? 16 : 12
     })
     .backgroundColor(TRANSPARENT)

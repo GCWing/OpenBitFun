@@ -485,4 +485,16 @@
     <string name="model_fast_fallback">未配置快速模型，使用主力模型</string>
     <string name="model_role_primary">主力</string>
     <string name="model_role_fast">快速</string>
+    <string name="queue_title">待发送 · %1$d</string>
+    <string name="queue_reorder">长按拖动排序</string>
+    <string name="queue_move_up">上移</string>
+    <string name="queue_move_down">下移</string>
+    <string name="queue_refresh">刷新</string>
+    <string name="queue_refresh_required">队列状态已变化或未能确认，请刷新后再操作。</string>
+    <string name="queue_attachments">%1$d 个附件</string>
+    <string name="queue_waiting">等待执行端处理</string>
+    <string name="queue_send_now">立即发送</string>
+    <string name="queue_more">消息操作</string>
+    <string name="queue_remove">从队列移除</string>
+    <string name="queue_unsupported">升级执行端后可调整消息顺序。</string>
 </resources>

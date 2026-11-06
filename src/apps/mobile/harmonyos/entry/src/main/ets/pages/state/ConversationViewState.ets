@@ -1,3 +1,4 @@
+import { MessageQueueState } from '../../model/MessageQueue';
 import { InteractionMailboxState } from '../../model/InteractionMailbox';
 import { ObservableChatTimelineItem } from '../../model/ChatTimelineModels';
 import {
@@ -28,6 +29,7 @@ import { RollbackEntryFacts } from '../policy/RollbackPresentationPolicy';
 
 /** Immutable presentation state consumed by ConversationView. */
 export class ConversationViewState {
+  messageQueue: MessageQueueState = new MessageQueueState();
   interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   activeSession: ConversationUiSession = ConversationViewState.emptySession();
   surface: ChatSurface = ChatSurface.General;
@@ -117,6 +119,7 @@ export class ConversationViewState {
     state.downloadedFilePath = remote.downloadedFilePath;
     state.fileDownloadStatus = remote.fileDownloadStatus;
     state.interactionMailbox = remote.interactionMailbox;
+    state.messageQueue = remote.messageQueue;
     state.commandPalette = CommandPalettePresentation.project(
       remote.commandPalette,
       state.activeSession.sessionId.length > 0,

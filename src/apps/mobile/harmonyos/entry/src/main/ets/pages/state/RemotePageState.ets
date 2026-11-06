@@ -1,3 +1,4 @@
+import { MessageQueueState } from '../../model/MessageQueue';
 import { TimeFormat } from '../../services/TimeFormat';
 import { InteractionMailboxState } from '../../model/InteractionMailbox';
 import { WorkspaceToolsState } from './WorkspaceToolsState';
@@ -24,6 +25,7 @@ import { CommandPaletteState } from './CommandPaletteState';
  */
 @ObservedV2
 export class RemotePageState {
+  @Trace messageQueue: MessageQueueState = new MessageQueueState();
   @Trace interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   readonly workspaceTools: WorkspaceToolsState = new WorkspaceToolsState();
   /**
@@ -288,6 +290,7 @@ export class RemotePageState {
     if (this.conversation.activeSession.sessionId !== session.sessionId) {
       this.sessionContextRevision += 1;
       this.interactionMailbox = new InteractionMailboxState();
+    this.messageQueue = new MessageQueueState();
       this.clearRollbackNotice();
       this.clearRollbackOutcome();
       // A skill catalog, a usage report and a lit goal chip all belong to the
@@ -303,6 +306,7 @@ export class RemotePageState {
     this.clearRollbackNotice();
     this.clearRollbackOutcome();
     this.interactionMailbox = new InteractionMailboxState();
+    this.messageQueue = new MessageQueueState();
     this.commandPalette.reset();
     this.conversation.clearActiveSession();
     this.isLoadingConversation = false;
@@ -494,6 +498,7 @@ export class RemotePageState {
   resetConversationContext(): void {
     this.sessionContextRevision += 1;
     this.interactionMailbox = new InteractionMailboxState();
+    this.messageQueue = new MessageQueueState();
     this.commandPalette.reset();
     this.conversation.reset();
     this.hasMoreSessions = false;

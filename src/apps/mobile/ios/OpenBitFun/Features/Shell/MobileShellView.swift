@@ -398,6 +398,7 @@ struct MobileShellView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
+                MessageQueuePanel(model: model)
                 ComposerBar(model: model)
             }
             // The fade covers the whole layer, not just a strip above it: the

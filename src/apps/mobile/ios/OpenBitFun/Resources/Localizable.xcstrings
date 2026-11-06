@@ -3,8 +3,18 @@
   "strings": {
     "填入输入框": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Use suggestion" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "填入输入框" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use suggestion"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填入输入框"
+          }
+        }
       }
     },
     "旧版设备：显示最近访问的工作区": {
@@ -8315,6 +8325,166 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fast"
+          }
+        }
+      }
+    },
+    "待发送 · %d": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Queued messages · %d"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待发送 · %d"
+          }
+        }
+      }
+    },
+    "拖动排序": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag to reorder"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拖动排序"
+          }
+        }
+      }
+    },
+    "上移": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move up"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上移"
+          }
+        }
+      }
+    },
+    "下移": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move down"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下移"
+          }
+        }
+      }
+    },
+    "队列状态已变化或未能确认，请刷新后再操作。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Queue status changed or could not be confirmed. Refresh before another action."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "队列状态已变化或未能确认，请刷新后再操作。"
+          }
+        }
+      }
+    },
+    "等待执行端处理": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for the execution host"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待执行端处理"
+          }
+        }
+      }
+    },
+    "立即发送": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send now"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即发送"
+          }
+        }
+      }
+    },
+    "从队列移除": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from queue"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从队列移除"
+          }
+        }
+      }
+    },
+    "消息操作": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message actions"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消息操作"
+          }
+        }
+      }
+    },
+    "升级执行端后可调整消息顺序。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update the execution host to reorder messages."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升级执行端后可调整消息顺序。"
           }
         }
       }

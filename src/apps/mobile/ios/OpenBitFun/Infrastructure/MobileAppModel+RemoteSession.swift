@@ -1000,6 +1000,11 @@ extension MobileAppModel {
         )
     }
 
+    func refreshMessageQueue() { coreAdapter?.refreshMessageQueue() }
+    func moveQueuedMessage(_ id: String, before: String?) { coreAdapter?.moveQueuedMessage(id, before: before) }
+    func cancelQueuedMessage(_ id: String) { coreAdapter?.cancelQueuedMessage(id) }
+    func promoteQueuedMessage(_ id: String) { coreAdapter?.promoteQueuedMessage(id) }
+
     func apply(remoteState state: RemoteSessionUiState, targetKey: String, epoch: UInt64) {
         guard !localActionPreview, !accountLoginPreview, !remoteCreatePreview else { return }
         guard RemoteAuthorityGate.callbackMatchesAuthority(
@@ -1020,6 +1025,7 @@ extension MobileAppModel {
                 return
             }
             permissionMailbox = nil
+            messageQueue = nil
             remoteOpenedSessionID = nil
             remoteInitialSessionReady = false
             if let failed = state as? RemoteSessionUiStateFailed {
@@ -1062,6 +1068,7 @@ extension MobileAppModel {
         ) else { return }
         setPublishedIfChanged(\.remoteOpenedSessionID, to: ready.timeline?.sessionId)
         permissionMailbox = ready.permissionMailbox
+        messageQueue = ready.messageQueue
         completionNotifier.observe(state, target: "\(targetKey):\(epoch)")
         remoteLastAppliedAuthority = RemoteAuthorityGate.updatedScope(
             targetKey: targetKey,

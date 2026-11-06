@@ -164,6 +164,10 @@ public class RemoteSessionStore internal constructor(
     private var modelCatalogDirty = false
     private var permissionRefresh: Job? = null
     private val timelineStore = ChatTimelineStore()
+    private val messageQueue = MessageQueueStore(scope, transport) { queue ->
+        val ready = _state.value as? RemoteSessionUiState.Ready
+        if (ready != null && ready.selectedSessionId == queue.sessionId) _state.value = ready.copy(messageQueue = queue)
+    }
     private val permissionMailbox = PermissionMailboxStore(scope, transport) { mailbox ->
         val ready = _state.value as? RemoteSessionUiState.Ready
         if (ready != null) _state.value = ready.copy(permissionMailbox = mailbox)
@@ -216,6 +220,10 @@ public class RemoteSessionStore internal constructor(
     public fun dispatch(intent: RemoteSessionIntent) {
         val current = _state.value as? RemoteSessionUiState.Ready
         when (intent) {
+            RemoteSessionIntent.RefreshMessageQueue -> messageQueue.invalidate()
+            is RemoteSessionIntent.MoveQueuedMessage -> messageQueue.move(intent.id, intent.beforeId)
+            is RemoteSessionIntent.CancelQueuedMessage -> messageQueue.act(intent.id, "cancel")
+            is RemoteSessionIntent.PromoteQueuedMessage -> messageQueue.act(intent.id, "promote")
             is RemoteSessionIntent.StartQuestionInteraction -> permissionMailbox.startQuestion(intent.toolId)
             is RemoteSessionIntent.RespondPermission -> permissionMailbox.respond(intent.requestId, intent.approve, intent.updatedInput)
             RemoteSessionIntent.RefreshPermissionMailbox -> permissionMailbox.invalidate()
@@ -632,6 +640,7 @@ public class RemoteSessionStore internal constructor(
         (_state.value as? RemoteSessionUiState.Ready)?.let { _state.value = it.copy(promptSuggestion = null) }
         catalogSubscription?.cancel(); catalogRefresh?.cancel()
         permissionMailbox.select(null)
+        messageQueue.select(null, false)
         setForeground(false)
         activeCreateGeneration?.let { generation ->
             val requestId = (_createOperation.value as? CreateSessionOperationState.InFlight)?.requestId
@@ -799,6 +808,7 @@ public class RemoteSessionStore internal constructor(
 
     private fun recordHostCapabilities(capabilities: List<String>) {
         hostCapabilities = capabilities
+        messageQueue.select((_state.value as? RemoteSessionUiState.Ready)?.selectedSessionId, "dialog_queue_v1" in capabilities)
         hostCapabilitiesKnown = true
     }
 
@@ -1095,6 +1105,7 @@ public class RemoteSessionStore internal constructor(
     private fun subscribeSessionUpdates(sessionId: String): CompletableDeferred<Unit> {
         val initialHistory = CompletableDeferred<Unit>()
         permissionMailbox.select(sessionId)
+        messageQueue.select(sessionId, "dialog_queue_v1" in hostCapabilities)
         sessionUpdates?.cancel()
         transcriptWrite?.cancel()
         forgetWrittenTranscript()
@@ -2205,6 +2216,7 @@ public class RemoteSessionStore internal constructor(
     /** Relay replay proves log availability, not that the controlled host is online.
      * Keep foreground host probes for idle open conversations as well as lists. */
     private fun setForeground(active: Boolean) {
+        messageQueue.setForeground(active)
         if (active && healthWork?.isActive == true) return
         val generation = ++healthGeneration
         healthWork?.cancel()

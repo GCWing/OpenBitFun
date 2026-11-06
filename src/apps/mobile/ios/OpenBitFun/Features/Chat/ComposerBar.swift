@@ -120,7 +120,7 @@ struct ComposerBar: View {
         )
         .shadow(color: OpenBitFunTheme.shadowSubtle, radius: 10, y: 2)
         .padding(.horizontal, MobileDesignGeometry.conversationOverlaySideInset)
-        .padding(.top, 8)
+        .padding(.top, model.surface == .remote && model.messageQueue?.sessionId == model.selectedSessionID && (!(model.messageQueue?.items.isEmpty ?? true) || model.messageQueue?.failure != nil) ? 0 : 8)
         .padding(.bottom, 14)
         .animation(.easeOut(duration: 0.22), value: expanded)
         .animation(.easeOut(duration: 0.18), value: model.composerImages.count)

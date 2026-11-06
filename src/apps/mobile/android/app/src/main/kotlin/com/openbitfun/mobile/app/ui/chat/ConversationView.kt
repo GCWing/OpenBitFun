@@ -354,7 +354,10 @@ internal fun ConversationView(
                         Text(stringResource(R.string.chat_attachment_recovery_failed))
                     }
                 }
+                val queueMatchesSession = state.messageQueue.sessionId == state.selectedSessionId
+                if (queueMatchesSession) MessageQueuePanel(state.messageQueue, onIntent)
                 ComposerBar(
+                    queueAttached = queueMatchesSession && (state.messageQueue.items.isNotEmpty() || state.messageQueue.failure != null),
                     draft = draft,
                     images = images,
                     // An empty session id would send nowhere, so it reads as busy.

@@ -296,7 +296,18 @@ public sealed interface RemoteSessionUiState {
         public val historyLoadState: HistoryLoadState,
         /** Host hint for the latest completed turn; never persisted with the transcript. */
         public val promptSuggestion: String?,
+        public val messageQueue: MessageQueueUiState,
     ) : RemoteSessionUiState {
+        public constructor(
+            sessions: List<RemoteSession>, selectedSessionId: String?, timeline: ChatTimelineState?, busy: Boolean,
+            permissionMode: SessionPermissionMode?, permissionModeFailure: PermissionModeFailure?, query: String,
+            agentFilter: SessionAgentFilter, hasMore: Boolean, hasMoreMessages: Boolean,
+            modelCatalog: RemoteModelCatalog?, modelCatalogFailure: ModelCatalogFailure?, draft: String,
+            revision: Long, lastSentMessage: SentChatMessage?, permissionMailbox: PermissionMailboxUiState,
+            historyLoadState: HistoryLoadState, promptSuggestion: String?,
+        ) : this(sessions, selectedSessionId, timeline, busy, permissionMode, permissionModeFailure, query,
+            agentFilter, hasMore, hasMoreMessages, modelCatalog, modelCatalogFailure, draft, revision,
+            lastSentMessage, permissionMailbox, historyLoadState, promptSuggestion, MessageQueueUiState())
         /** Preserve the existing Swift initializer when adding the optional host hint. */
         public constructor(
             sessions: List<RemoteSession>, selectedSessionId: String?, timeline: ChatTimelineState?, busy: Boolean,
@@ -409,6 +420,10 @@ public sealed interface RemoteSessionUiState {
 }
 
 public sealed interface RemoteSessionIntent {
+    public data object RefreshMessageQueue : RemoteSessionIntent
+    public data class MoveQueuedMessage(public val id: String, public val beforeId: String?) : RemoteSessionIntent
+    public data class CancelQueuedMessage(public val id: String) : RemoteSessionIntent
+    public data class PromoteQueuedMessage(public val id: String) : RemoteSessionIntent
     public data class StartQuestionInteraction(public val toolId: String) : RemoteSessionIntent
     public data class RespondPermission(public val requestId: String, public val approve: Boolean, public val updatedInput: String?) : RemoteSessionIntent
     public data object RefreshPermissionMailbox : RemoteSessionIntent
