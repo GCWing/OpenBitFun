@@ -20,10 +20,18 @@ export function mountHostQueueFixture({ count = 1, expanded = true } = {}) {
   const calls: string[] = [];
   let items = Array.from({ length: count }, (_, index) => ({ turnId: `queued-${index}`, displayContent: index === 0 ? '接着检查错误处理和测试覆盖' : `排队消息 ${index + 1}：分析当前项目的实现，检查可能的问题。`, previewTruncated: false,
     attachmentCount: 0, agentType: 'Standard', createdAtMs: 1, status: 'queued' as const, reason: null, targetTurnId: null, steeringId: null }));
+  let revision = 1;
   const queue = new HostDialogQueue('ui-fixture', 'session', async request => {
     calls.push(request.action);
+    if (request.action === 'reorder') {
+      if (request.expectedRevision !== revision) throw new Error('queue_conflict: queue changed');
+      const item = items.find(item => item.turnId === request.turnId)!;
+      items = items.filter(value => value !== item);
+      items.splice(request.beforeTurnId === null ? items.length : items.findIndex(value => value.turnId === request.beforeTurnId), 0, item);
+    }
     if (request.action === 'cancel' || request.action === 'promote') items = items.filter(item => item.turnId !== request.turnId);
-    return { sessionId: 'session', queueEpoch: 'epoch', revision: calls.length, activeTurnId: 'active',
+    if (request.action !== 'list' && request.action !== 'get') revision++;
+    return { sessionId: 'session', queueEpoch: 'epoch', supportsReorder: true, revision, activeTurnId: 'active',
       items, capacity: 20, used: items.length, receipt: null };
   });
   const noop = () => {};
@@ -48,5 +56,5 @@ export function mountHostQueueFixture({ count = 1, expanded = true } = {}) {
   </div></I18nProvider></ThemeProvider>;
   }
   root.render(<Fixture />);
-  return { calls, dispose: () => root.unmount() };
+  return { calls, queue, dispose: () => root.unmount() };
 }

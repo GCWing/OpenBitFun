@@ -1040,3 +1040,12 @@ Checkbox, Select, Combobox, MultiSelect, NumberInput, SearchField and Textarea
 consume those references through intervening wrappers. A control's explicit name
 or own label takes precedence; descriptions are combined. Give each child in a
 composite field its own name. Nested `Field` controls retain their own labels.
+
+`ChatComposerQueue` has no outer border. Each row starts with an inset hairline;
+the final row has no bottom hairline and meets the composer without an extra
+gap. `ChatComposerQueueItem.leadingControl` accepts an accessible interactive
+control; `leadingIcon` remains decorative. `useQueueReorder` supplies pointer
+capture, keyboard moves, edge scrolling and cancellation when the authoritative
+revision changes. Pass only reorderable IDs and keep the actual order in the
+product owner until its mutation succeeds. Disabled or legacy hosts must expose
+a clear reason in their product surface.

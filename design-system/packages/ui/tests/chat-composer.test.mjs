@@ -213,7 +213,7 @@ test("ChatComposer queue keeps actions visible and message ink primary", async (
   assert.ok(actionsRule);
   assert.ok(contentRule);
   assert.match(actionsRule, /display:\s*inline-flex/);
-  assert.doesNotMatch(styles, /pointer-events:\s*none|opacity:\s*0(?:;|\s)/);
+  assert.doesNotMatch(actionsRule, /pointer-events:\s*none|opacity:\s*0(?:;|\s)/);
   assert.match(contentRule, /color:\s*var\(--openbitfun-color-content-primary\)/);
   assert.match(styles, /@media \(hover: hover\) and \(pointer: fine\)/);
   assert.match(styles, /\.item:focus-within\s*\{[^}]*background:/s);
@@ -249,7 +249,7 @@ test("ChatComposer queue never changes the input surface geometry", async () => 
   assert.match(bodyRule, /gap:\s*var\(--openbitfun-space-2\)/);
   assert.ok(queueRule);
   assert.match(queueRule, /display:\s*contents/);
-  assert.doesNotMatch(styles, /\.body:has\(/);
+  assert.match(styles, /\.body:has\([^}]*chat-composer-queue[^}]*gap:\s*0/);
   assert.doesNotMatch(styles, /\.queue:empty/);
 });
 

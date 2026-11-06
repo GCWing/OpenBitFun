@@ -189,3 +189,16 @@ describe('PendingQueueModule', () => {
     )).toBe(true);
   });
 });
+
+
+it('persists reordered payloads and refuses to move a queue during an active send', () => {
+  const sessionId = testSession();
+  const first = pendingQueueManager.enqueue({ sessionId, content: 'first' });
+  const second = pendingQueueManager.enqueue({ sessionId, content: 'second', turnId: 'stable-turn' });
+  expect(pendingQueueManager.reorder(sessionId, second.id, first.id)).toBe(true);
+  const key = `openbitfun.flowChat.pendingQueue.v1.${encodeURIComponent(JSON.stringify([LOCAL_SURFACE_ID, sessionId]))}`;
+  expect(JSON.parse(window.localStorage.getItem(key)!).map((item: { content: string }) => item.content)).toEqual(['second', 'first']);
+  expect(JSON.parse(window.localStorage.getItem(key)!)[0].turnId).toBe('stable-turn');
+  pendingQueueManager.setStatus(sessionId, second.id, 'sending');
+  expect(pendingQueueManager.reorder(sessionId, first.id, second.id)).toBe(false);
+});

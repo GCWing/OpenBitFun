@@ -92,6 +92,11 @@ the phone, or leaving the session does not stop host-side dispatch.
   still render steering inline within the active turn. The turn-scoped SDK
   steering API used by CLI/Dispatch retains its inline contract; this handoff
   belongs to host queue promotion.
+- **Reorder** uses the drag handle, Up/Down while the handle is focused, or
+  Move up/down in **More**. The host confirms the new execution order before
+  the list changes. A concurrent update cancels a drag and asks you to retry
+  against the refreshed list. Older queue hosts without `supportsReorder`
+  retain Send now and Remove, with a clear sorting-unavailable message.
 - **Remove from queue** only removes an unstarted message. It never stops the
   active turn. An operation that lost a race with dispatch is rejected.
 - A failed turn or unconsumed steering retains the message as blocked on the
