@@ -1101,6 +1101,7 @@
     "compactAction": "Compact session",
     "compactNoSession": "No active session for /compact",
     "compactBusy": "Wait until the session is idle before using /compact.",
+    "compactPending": "Compaction is still running. Wait for it to finish before trying /compact again.",
     "compactUsage": "Use /compact without extra arguments.",
     "compactFailed": "Session compaction failed",
     "usageAction": "Session usage",

@@ -1101,6 +1101,7 @@
     "compactAction": "壓縮會話",
     "compactNoSession": "目前沒有可用於 /compact 的會話",
     "compactBusy": "請等待目前會話空閒後再使用 /compact。",
+    "compactPending": "會話壓縮仍在進行中，請等待完成後再使用 /compact。",
     "compactUsage": "請直接使用 /compact，不要附加額外參數。",
     "compactFailed": "會話壓縮失敗",
     "goalAction": "會話目標",

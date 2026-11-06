@@ -244,11 +244,18 @@ export type PermissionRequestEvent =
 
 export interface CompactSessionRequest {
   sessionId: string;
+  turnId?: string;
   /** Workspace identity; authoritative when present. Paths below are IO projections. */
   workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
+}
+
+export interface CompactSessionResponse {
+  success: boolean;
+  message: string;
+  turnId?: string;
 }
 
  
@@ -861,9 +868,9 @@ export class AgentAPI {
     }
   }
 
-  async compactSession(request: CompactSessionRequest): Promise<{ success: boolean; message: string }> {
+  async compactSession(request: CompactSessionRequest): Promise<CompactSessionResponse> {
     try {
-      return await api.invoke<{ success: boolean; message: string }>('compact_session', { request });
+      return await api.invoke<CompactSessionResponse>('compact_session', { request });
     } catch (error) {
       throw createTauriCommandError('compact_session', error, request);
     }

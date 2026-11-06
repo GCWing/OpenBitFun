@@ -6501,6 +6501,23 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .map(|_task| ())
     }
 
+    /// Start a manual compaction and return once the maintenance turn has been
+    /// admitted. The compaction model request and context commit continue in
+    /// the detached task; callers observe completion through the normal
+    /// DialogTurn/ContextCompression events.
+    pub async fn start_manual_compaction_detached(
+        &self,
+        session_id: String,
+        requested_turn_id: Option<String>,
+    ) -> OpenBitFunResult<String> {
+        let task = self
+            .start_manual_compaction_task(session_id, requested_turn_id)
+            .await?;
+        let turn_id = task.turn_id.clone();
+        drop(task.completion);
+        Ok(turn_id)
+    }
+
     pub(crate) async fn prepare_input_images(
         &self,
         session_id: &str,

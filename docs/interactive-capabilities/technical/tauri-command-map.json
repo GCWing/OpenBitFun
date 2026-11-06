@@ -1313,7 +1313,7 @@
       "visibility": "documented",
       "rustPath": "api::agentic_api::compact_session",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
-      "signature": "fn compact_session( coordinator: State<'_, Arc<ConversationCoordinator>>, request: CompactSessionRequest, ) -> Result<StartDialogTurnResponse, String>",
+      "signature": "fn compact_session( coordinator: State<'_, Arc<ConversationCoordinator>>, request: CompactSessionRequest, ) -> Result<CompactSessionResponse, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
