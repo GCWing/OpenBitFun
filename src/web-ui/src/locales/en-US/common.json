@@ -1014,7 +1014,6 @@
   "accountLogin": {
     "deviceAlias": "Device alias",
     "deviceAliasPlaceholder": "Optional display name (empty restores technical name)",
-    "reorderDevice": "Reorder {{name}}: drag or use the Up and Down arrow keys",
     "editDeviceAlias": "Edit name",
     "saveDeviceAlias": "Save name",
     "deviceAliasUpdated": "Device name updated",

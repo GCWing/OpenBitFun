@@ -861,7 +861,7 @@ export const AccountPanel: React.FC = () => {
                       {t('accountLogin.loadingDevices')}
                     </div>
                   )}
-                  {sortedDevices.map((d, deviceIndex) => {
+                  {sortedDevices.map((d) => {
                   const isLocal = localDeviceId === d.device_id;
                   const incompatible = isLocal ? false : !isDeviceControllable(d);
                   const incompatibleVersion = deviceClientVersion(d);
@@ -895,7 +895,7 @@ export const AccountPanel: React.FC = () => {
                     data-drop-position={dropTarget?.id === d.device_id ? dropTarget.placement : undefined}
                     draggable={editingDeviceId === null && sortedDevices.length > 1}
                     onDragStart={event => {
-                      if ((event.target as HTMLElement).closest('button:not(.account-panel__device-drag-handle), input')) {
+                      if ((event.target as HTMLElement).closest('button, input')) {
                         event.preventDefault(); return;
                       }
                       draggingDevice.current = d.device_id;
@@ -921,20 +921,9 @@ export const AccountPanel: React.FC = () => {
                     }}
                     onDragEnd={clearDeviceDrag}
                     className={`account-panel__device-card ${d.online ? '' : 'offline'} ${isLocal ? 'current' : ''}`}>
-                    <button
-                      type="button"
-                      className="account-panel__device-drag-handle"
-                      aria-label={t('accountLogin.reorderDevice', { name: displayName })}
-                      title={t('accountLogin.reorderDevice', { name: displayName })}
-                      disabled={editingDeviceId !== null || sortedDevices.length < 2}
-                      onKeyDown={event => {
-                        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-                        event.preventDefault(); event.stopPropagation();
-                        const up = event.key === 'ArrowUp';
-                        const target = sortedDevices[deviceIndex + (up ? -1 : 1)];
-                        if (target) moveDevice(d.device_id, target.device_id, up ? 'before' : 'after');
-                      }}
-                    ><GripVertical size={14} aria-hidden="true" /></button>
+                    <span className="account-panel__device-drag-handle" aria-hidden="true">
+                      <GripVertical size={14} />
+                    </span>
                     <div className="account-panel__device-summary">
                       <span className="account-panel__device-glyph" aria-hidden="true">
                         <DeviceSystemGlyph device={systemFacts} size={18} />

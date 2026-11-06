@@ -547,7 +547,7 @@ function dispatchDeviceDrag(element: Element, type: string, clientY = 0) {
   element.dispatchEvent(event);
 }
 
-it('commits a drag only on drop and shares its local order with keyboard reordering', async () => {
+it('commits a drag only on drop without row activation, key bindings or helper tooltips', async () => {
   mocks.accountListDevices.mockResolvedValue([
     { device_id: 'local', device_name: 'My computer', online: true },
     { device_id: 'peer', device_name: 'Peer', online: true },
@@ -564,19 +564,15 @@ it('commits a drag only on drop and shares its local order with keyboard reorder
   act(() => dispatchDeviceDrag(row('local'), 'drop', 21));
   expect(deviceOrderInPanel()).toEqual(['offline', 'local', 'peer']);
   expect(useDeviceOrderPreferences.getState().order).toEqual(['offline', 'local', 'peer']);
-  const handle = row('offline').querySelector<HTMLButtonElement>('.account-panel__device-drag-handle')!;
-  handle.focus();
+  const handle = row('offline').querySelector<HTMLElement>('.account-panel__device-drag-handle')!;
+  expect(handle.tagName).toBe('SPAN');
+  expect(handle.hasAttribute('title')).toBe(false);
   act(() => handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
-  expect(deviceOrderInPanel()).toEqual(['local', 'offline', 'peer']);
-  expect(document.activeElement).toBe(handle);
-  act(() => handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })));
   expect(deviceOrderInPanel()).toEqual(['offline', 'local', 'peer']);
-  expect(document.activeElement).toBe(handle);
-  act(() => handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
   act(() => dispatchDeviceDrag(row('offline'), 'dragstart'));
   act(() => dispatchDeviceDrag(row('peer'), 'dragover', 100));
   act(() => dispatchDeviceDrag(row('offline'), 'dragend'));
-  expect(deviceOrderInPanel()).toEqual(['local', 'offline', 'peer']);
+  expect(deviceOrderInPanel()).toEqual(['offline', 'local', 'peer']);
   expect(container.querySelector('[data-drop-position]')).toBeNull();
   expect(mocks.switchToDevice).not.toHaveBeenCalled();
   expect(mocks.switchToLocal).not.toHaveBeenCalled();

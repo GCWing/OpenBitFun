@@ -422,7 +422,7 @@ pnpm --dir src/web-ui run test:run src/app/components/NavPanel/components/Device
 ```
 
 These DOM/store and transport fixtures cover interrupted motion, reduced motion,
-legacy preference loading, drag/keyboard ordering, visibility across device activation, and local theme
+legacy preference loading, drag ordering, visibility across device activation, and local theme
 reads/writes during simulated Peer switches. They do not establish native
 WebView frame rate or live SSH, Remote Control, Peer Device or Detached Dispatch behavior.
 

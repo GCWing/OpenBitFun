@@ -174,9 +174,9 @@
     cursor: grab;
 
     &:active { cursor: grabbing; }
-    &:focus-visible { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
-    &:disabled { opacity: 0.4; cursor: default; }
   }
+
+  &__device-card[draggable='false'] &__device-drag-handle { opacity: 0.4; cursor: default; }
 
   &__device-summary {
     display: flex;
