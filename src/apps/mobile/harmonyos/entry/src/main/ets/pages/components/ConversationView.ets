@@ -1,3 +1,5 @@
+import { MessageQueuePanel } from './MessageQueuePanel';
+import { MessageQueueAction } from '../../model/MessageQueue';
 import { InteractionMailboxPanel } from './InteractionMailboxPanel';
 import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
@@ -654,7 +656,11 @@ export struct ConversationView {
           this.applyRollbackEvent({ type: SessionRollbackEventType.CloseStaging });
         }
       })
+      if (this.surface === ChatSurface.Remote && this.state.messageQueue.sessionId === this.state.activeSession.sessionId) {
+        MessageQueuePanel({ state: this.state.messageQueue, onAction: (action: MessageQueueAction): void => { this.onIntent(ConversationIntents.queue(action)); } })
+      }
       ComposerBar({
+      queueAttached: this.surface === ChatSurface.Remote && this.state.messageQueue.sessionId === this.state.activeSession.sessionId && (this.state.messageQueue.items.length > 0 || this.state.messageQueue.failure.length > 0),
       presentation: this.composerPresentation,
       capabilities: this.composerCapabilities,
       inputId: this.composerInputId,

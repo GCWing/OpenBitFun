@@ -16,6 +16,10 @@ interface PendingQueueMessageActionsProps {
   removeLabel: string;
   removeDisabled: boolean;
   onRemove: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  moveUpDisabled?: boolean;
+  moveDownDisabled?: boolean;
   onCollapse?: () => void;
   onAbout?: () => void;
 }
@@ -23,7 +27,7 @@ interface PendingQueueMessageActionsProps {
 export function PendingQueueMessageActions({
   sendLabel, sendTooltip, sendAriaLabel, sendDisabled, sending, onSend,
   editLabel, editDisabled, onEdit, removeLabel, removeDisabled, onRemove,
-  onCollapse, onAbout,
+  onCollapse, onAbout, onMoveUp, onMoveDown, moveUpDisabled, moveDownDisabled,
 }: PendingQueueMessageActionsProps) {
   const { t } = useI18n('flow-chat');
   const [open, setOpen] = useState(false);
@@ -53,6 +57,8 @@ export function PendingQueueMessageActions({
     <MenuPopover id={menuId} aria-label={moreLabel} anchorRef={anchorRef} open={open} onClose={() => setOpen(false)}
       placement="top" inlineSize="content" items={[
         { id: 'edit', label: editLabel, icon: <Icon name="edit" size="sm" />, disabled: editDisabled, onSelect: onEdit },
+        ...(onMoveUp ? [{ id: 'move-up', label: t('pendingQueue.moveUp'), icon: <Icon name="chevron-up" size="sm" />, disabled: moveUpDisabled, onSelect: onMoveUp }] : []),
+        ...(onMoveDown ? [{ id: 'move-down', label: t('pendingQueue.moveDown'), icon: <Icon name="chevron-down" size="sm" />, disabled: moveDownDisabled, onSelect: onMoveDown }] : []),
         ...(onCollapse ? [{ id: 'collapse', label: t('pendingQueue.actions.collapse'), icon: <Icon name="chevron-up" size="sm" />, onSelect: onCollapse }] : []),
         ...(onAbout ? [{ id: 'about', label: t('hostQueue.about'), icon: <Icon name="info" size="sm" />, onSelect: onAbout }] : []),
       ]} />

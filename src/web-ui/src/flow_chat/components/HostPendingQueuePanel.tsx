@@ -3,8 +3,9 @@ import type { QueuedMessage } from '../types/flow-chat';
 import { useEffect, useId, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { Button, Icon, IconButton, OverflowText, Tooltip } from '@openbitfun/ui';
-import { ListEnd, Paperclip, RotateCw } from 'lucide-react';
+import { GripVertical, ListEnd, Paperclip, RotateCw } from 'lucide-react';
 import './HostPendingQueuePanel.scss';
+import { useQueueReorder } from '@openbitfun/ui/flow-chat';
 import { PendingQueueMessageActions } from './PendingQueueMessageActions';
 import { usePendingQueueDisclosure } from './usePendingQueueDisclosure';
 import { hostQueuePresentation, observePresentedHostQueue } from '../services/hostQueuePresentation';
@@ -62,7 +63,11 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
     await queue.dismiss(saved);
   };
   const items = (view.snapshot?.items ?? []).filter(item => item.status === 'blocked' || !projected.has(item.turnId));
-  const visibleError = error || (view.error?.includes('Session is not loaded') ? null : view.error);
+  const reorderIds = items.filter(item => item.status === 'queued').map(item => item.turnId);
+  const reorder = useQueueReorder(reorderIds, !busy && !view.error && view.snapshot?.supportsReorder === true,
+    `${view.snapshot?.queueEpoch}:${view.snapshot?.revision}`, (id, before) => void run(() => queue.reorder(id, before)));
+  const rawError = error || (view.error?.includes('Session is not loaded') ? null : view.error);
+  const visibleError = rawError?.includes('queue_conflict:') ? t('pendingQueue.orderChanged') : rawError;
   if (!items.length && !view.pending.length && !visibleError) return null;
   const locked = busy || !!view.error;
   const renderPreview = (text: string) => <OverflowText data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="preview"
@@ -70,7 +75,9 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
   const renderItem = (item: QueueItem) => {
     const steering = item.status === 'steering_pending';
     const blocked = item.status === 'blocked';
-    return <ChatComposerQueueItem data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="item" key={item.turnId}
+    return <ChatComposerQueueItem data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="item" key={item.turnId} {...reorder.rowProps(item.turnId)}
+      leadingControl={item.status === 'queued' && view.snapshot?.supportsReorder ? <IconButton variant="annotation" size="xs"
+        aria-label={t('pendingQueue.reorder')} title={t('pendingQueue.reorder')} icon={<Icon glyph={GripVertical} size="sm" />} {...reorder.handleProps(item.turnId)} /> : undefined}
       leadingIcon={<Icon glyph={ListEnd} size="sm" />} state={blocked ? 'failed' : steering ? 'sending' : 'default'}>
       <ChatComposerQueueItemContent data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="content">
         <ChatComposerQueueItemMessage>
@@ -93,6 +100,10 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
           })}
           removeLabel={t('hostQueue.cancel')} removeDisabled={locked || steering}
           onRemove={() => void run(() => queue.act(item, 'cancel'))}
+          onMoveUp={view.snapshot?.supportsReorder && item.status === 'queued' ? () => void run(() => queue.reorder(item.turnId, reorderIds[reorderIds.indexOf(item.turnId) - 1])) : undefined}
+          onMoveDown={view.snapshot?.supportsReorder && item.status === 'queued' ? () => void run(() => queue.reorder(item.turnId, reorderIds[reorderIds.indexOf(item.turnId) + 2] ?? null)) : undefined}
+          moveUpDisabled={locked || reorderIds.indexOf(item.turnId) <= 0}
+          moveDownDisabled={locked || reorderIds.indexOf(item.turnId) === reorderIds.length - 1}
           onCollapse={expanded ? toggle : undefined} onAbout={() => setShowHelp(value => !value)} />
       </ChatComposerQueueItemActions>
     </ChatComposerQueueItem>;
@@ -141,7 +152,7 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
       <Tooltip content={t('hostQueue.about')}><IconButton size="xs" variant="annotation" aria-label={t('hostQueue.about')} aria-expanded={showHelp}
         icon={<Icon name="info" />} onClick={() => setShowHelp(value => !value)} /></Tooltip>
     </ChatComposerQueueHeader>}
-    {showHelp && <p data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" className="host-pending-queue__note">{t('hostQueue.memoryNotice')}</p>}
+    {showHelp && <p data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" className="host-pending-queue__note">{t('hostQueue.memoryNotice')}{!view.snapshot?.supportsReorder && ` ${t('pendingQueue.reorderUnsupported')}`}</p>}
     {visibleError && <div data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" role="alert" className="host-pending-queue__error">
       <span className="host-pending-queue__error-text">{visibleError}</span>
       <Button size="xs" variant="text" disabled={busy} onClick={() => void run(() => queue.refresh())}>{t('hostQueue.refresh')}</Button>

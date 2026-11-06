@@ -1,3 +1,5 @@
+import { MessageQueueStore } from './MessageQueueStore';
+import { MessageQueueAction, MessageQueueState } from '../model/MessageQueue';
 import { InteractionMailboxStore } from './InteractionMailboxStore';
 import { InteractionMailboxAction, InteractionMailboxState } from '../model/InteractionMailbox';
 import { DurableSessionReducer } from './DurableSessionReducer';
@@ -42,6 +44,7 @@ export interface ChatSessionSnapshot {
 
 export interface ChatSessionControllerCallbacks {
   onSnapshot: (snapshot: ChatSessionSnapshot) => void;
+  onQueue?: (state: MessageQueueState) => void;
   onMailbox?: (state: InteractionMailboxState) => void;
   onError: (error: Object) => void;
   canPoll: (sessionId: string) => boolean;
@@ -70,6 +73,7 @@ export class ChatSessionController {
   private cursor: ChatSessionCursor = { pollVersion: 0, knownMessageCount: 0, knownModelCatalogVersion: 0 };
   private stream?: HostSessionStream;
   private reducer: DurableSessionReducer = new DurableSessionReducer();
+  private messageQueue: MessageQueueStore;
   private mailbox: InteractionMailboxStore;
   private subagents: SubagentStreamCoordinator;
   private generation: number = 0;
@@ -87,6 +91,7 @@ export class ChatSessionController {
   constructor(sessionManager: RemoteSessionManager, callbacks: ChatSessionControllerCallbacks,
     options?: ChatSessionControllerOptions) {
     this.sessionManager = sessionManager; this.callbacks = callbacks;
+    this.messageQueue = new MessageQueueStore(sessionManager, (state: MessageQueueState): void => { this.callbacks.onQueue?.(state); }, callbacks.canPoll);
     this.mailbox = new InteractionMailboxStore(sessionManager, (state: InteractionMailboxState): void => { this.callbacks.onMailbox?.(state); });
     // A delegation tool's child sessions are streams of their own; they are read
     // while this session is open and their records land in the branch of the
@@ -101,7 +106,7 @@ export class ChatSessionController {
       this.stream.wake(); return;
     }
     this.stop(); this.sessionId = sessionId; this.cursor = cursor;
-    this.reducer = new DurableSessionReducer(); this.mailbox.select(sessionId); this.stopped = false; this.caughtUp = false;
+    this.reducer = new DurableSessionReducer(); this.mailbox.select(sessionId); this.messageQueue.select(sessionId); this.stopped = false; this.caughtUp = false;
     this.sessionState = 'idle'; this.completedTurnId = ''; this.hasMoreMessages = false;
     this.historyLoading = false; this.historyReplaying = false; this.historyFailed = false;
     this.pendingModelCatalog = undefined;
@@ -162,7 +167,7 @@ export class ChatSessionController {
     }
   }
   stop(_clearActiveTurn: boolean = true): void {
-    this.generation++; this.stopped = true; this.mailbox.select(''); this.stream?.close(); this.stream = undefined;
+    this.generation++; this.stopped = true; this.mailbox.select(''); this.messageQueue.select(''); this.stream?.close(); this.stream = undefined;
     this.subagents.endSession();
   }
   loadOlder(): void { this.stream?.loadOlder(); }
@@ -175,6 +180,7 @@ export class ChatSessionController {
   }
   setKnownMessageCount(count: number): void { this.cursor.knownMessageCount = count; }
   clearActiveTurn(): void { /* Runtime message/state events own turn lifetime. */ }
+  async dispatchQueue(action: MessageQueueAction): Promise<void> { if (!this.stopped) await this.messageQueue.dispatch(action); }
   async dispatchMailbox(action: InteractionMailboxAction): Promise<void> {
     if (!this.stopped && action.sessionId === this.sessionId) await this.mailbox.dispatch(action);
   }

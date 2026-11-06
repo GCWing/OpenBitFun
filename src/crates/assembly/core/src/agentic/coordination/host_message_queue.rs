@@ -337,6 +337,7 @@ impl DialogScheduler {
             revision: s.revision,
             active_turn_id,
             items,
+            supports_reorder: Some(true),
             capacity: self.queues.max_depth(),
             used: self.queues.depth(session) + held,
             receipt: receipt_id
@@ -532,6 +533,11 @@ impl DialogScheduler {
                 turn_id,
                 operation_id,
             }
+            | DialogQueueAction::Reorder {
+                turn_id,
+                operation_id,
+                ..
+            }
             | DialogQueueAction::Promote {
                 turn_id,
                 operation_id,
@@ -569,6 +575,67 @@ impl DialogScheduler {
                     "too_late: message is no longer available for this queue operation",
                 ));
             }
+        }
+        if let DialogQueueAction::Reorder {
+            before_turn_id,
+            expected_revision,
+            ..
+        } = &action
+        {
+            let snapshot = self.queue_snapshot(session, None);
+            if snapshot.revision != *expected_revision {
+                return Err(error(
+                    "queue_conflict: queue changed; refresh before reordering",
+                ));
+            }
+            let mut order: Vec<_> = snapshot
+                .items
+                .iter()
+                .filter(|item| item.status == DialogQueueStatus::Queued)
+                .map(|item| item.turn_id.clone())
+                .collect();
+            let Some(from) = order.iter().position(|turn| turn == &id) else {
+                return Err(error("too_late: only queued messages can be reordered"));
+            };
+            if before_turn_id.as_ref() == Some(&id) {
+                return Err(error(
+                    "queue_conflict: a message cannot be moved before itself",
+                ));
+            }
+            order.remove(from);
+            let to = if let Some(before) = before_turn_id {
+                order
+                    .iter()
+                    .position(|turn| turn == before)
+                    .ok_or_else(|| error("queue_conflict: destination is no longer queued"))?
+            } else {
+                order.len()
+            };
+            order.insert(to, id.clone());
+            if !self
+                .queues
+                .reorder_subset(session, &order, |turn| turn.turn_id.as_deref())
+            {
+                return Err(error("queue_conflict: dispatch queue changed"));
+            }
+            // Match the actual dispatch order while preserving fixed steering,
+            // blocked and terminal receipt slots. Never resubmit accepted work.
+            let mut state = self.queue_state();
+            let s = state.sessions.get_mut(session).unwrap();
+            let positions: Vec<_> = s
+                .order
+                .iter()
+                .enumerate()
+                .filter(|(_, turn)| order.contains(turn))
+                .map(|(index, _)| index)
+                .collect();
+            for (position, turn) in positions.into_iter().zip(order) {
+                s.order[position] = turn;
+            }
+            s.operations.insert(operation, (digest, id.clone()));
+            s.revision += 1;
+            drop(state);
+            return Ok(self.queue_snapshot(session, Some(&id)));
         }
         let mut interrupted_turn_to_abandon = None;
         if let DialogQueueAction::Promote {

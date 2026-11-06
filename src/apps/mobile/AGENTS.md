@@ -123,3 +123,14 @@ its existing native host and invokes the same generator without native wrappers.
 Run `node --test src/apps/mobile/miniapps/*.test.cjs src/apps/mobile/harmonyos/miniapps/*.test.cjs`
 from the repository root after bundle/bridge changes. Storage keys remain scoped
 to an allowlisted app; retain unreadable records and surface the error.
+
+For host-queue negotiation, stale replies, disconnect retention and mutation
+conflicts, run from `shared/`:
+
+```bash
+./gradlew :core-feature:jvmTest --tests '*MessageQueueStoreTest*'
+```
+
+These simulated-host tests do not establish live Relay, SSH, Peer Device or
+Detached Dispatch behavior. Queue ordering belongs to the execution host;
+native views submit intents and never optimistically replace its order.

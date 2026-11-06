@@ -319,6 +319,11 @@ final class MobileCoreAdapter {
         )
     }
 
+    func refreshMessageQueue() { remoteSession?.dispatch(intent: RemoteSessionIntentRefreshMessageQueue.shared) }
+    func moveQueuedMessage(_ id: String, before: String?) { remoteSession?.dispatch(intent: RemoteSessionIntentMoveQueuedMessage(id: id, beforeId: before)) }
+    func cancelQueuedMessage(_ id: String) { remoteSession?.dispatch(intent: RemoteSessionIntentCancelQueuedMessage(id: id)) }
+    func promoteQueuedMessage(_ id: String) { remoteSession?.dispatch(intent: RemoteSessionIntentPromoteQueuedMessage(id: id)) }
+
     func renameRemoteSession(sessionID: String, title: String) {
         remoteSession?.dispatch(
             intent: RemoteSessionIntentRenameSession(sessionId: sessionID, title: title)

@@ -346,6 +346,20 @@ impl ChatMode {
             return Ok(None);
         }
 
+        if chat_view.message_queue_visible() {
+            match chat_view.message_queue_handle_key(key) {
+                crate::ui::message_queue::QueueAction::Close => self.navigate_back(chat_view),
+                crate::ui::message_queue::QueueAction::Refresh => {
+                    self.refresh_message_queue(chat_view, rt_handle, None)
+                }
+                crate::ui::message_queue::QueueAction::Request(request) => {
+                    self.refresh_message_queue(chat_view, rt_handle, Some(request))
+                }
+                crate::ui::message_queue::QueueAction::None => {}
+            }
+            return Ok(None);
+        }
+
         if chat_view.prompt_stash_selector_visible() {
             match chat_view.prompt_stash_selector_handle_key(key) {
                 PromptStashAction::Select(id) => {

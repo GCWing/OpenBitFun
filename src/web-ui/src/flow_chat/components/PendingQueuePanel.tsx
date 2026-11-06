@@ -19,8 +19,8 @@ import { getActiveSurfaceScope, isSurfaceChangedError, onSurfaceActivated } from
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ListEnd, Paperclip } from 'lucide-react';
-import { OverflowText } from '@openbitfun/ui';
+import { GripVertical, ListEnd, Paperclip } from 'lucide-react';
+import { IconButton, OverflowText } from '@openbitfun/ui';
 import { stateMachineManager } from '../state-machine';
 import { FlowChatStore } from '../store/FlowChatStore';
 import { pendingQueueManager } from '../services/flow-chat-manager/PendingQueueModule';
@@ -33,6 +33,7 @@ import type { QueuedMessage, SteeringImage } from '../types/flow-chat';
 import { isAcpFlowSession } from '../utils/acpSession';
 import { getQueuedMessageAttachmentCount } from '../utils/pendingQueuePresentation';
 import './PendingQueuePanel.scss';
+import { useQueueReorder } from '@openbitfun/ui/flow-chat';
 import { PendingQueueMessageActions } from './PendingQueueMessageActions';
 import { usePendingQueueDisclosure } from './usePendingQueueDisclosure';
 import { Icon } from '@openbitfun/ui';
@@ -87,6 +88,12 @@ function LegacyPendingQueuePanel({
   const [items, setItems] = useState<QueuedMessage[]>(() =>
     sessionId ? pendingQueueManager.list(sessionId) : [],
   );
+  const reorderIds = items.map(item => item.id);
+  const reorderEnabled = !recoveryInFlight && !items.some(isSendingQueuedMessage);
+  const move = (id: string, before: string | null) => {
+    if (sessionId) pendingQueueManager.reorder(sessionId, id, before);
+  };
+  const reorder = useQueueReorder(reorderIds, reorderEnabled, sessionId ?? '', move);
   const [isAcpSession, setIsAcpSession] = useState<boolean>(() => {
     if (!sessionId) return false;
     return isAcpFlowSession(FlowChatStore.getInstance().getState().sessions.get(sessionId));
@@ -235,6 +242,9 @@ function LegacyPendingQueuePanel({
         data-openbitfun-product-part="item"
         data-openbitfun-state={itemState === 'default' ? undefined : itemState}
         key={item.id}
+        {...reorder.rowProps(item.id)}
+        leadingControl={<IconButton variant="annotation" size="xs"
+          aria-label={t('pendingQueue.reorder')} title={t('pendingQueue.reorder')} icon={<Icon glyph={GripVertical} size="sm" />} {...reorder.handleProps(item.id)} />}
         state={itemState}
         leadingIcon={<Icon glyph={ListEnd} size="sm" />}
       >
@@ -284,6 +294,10 @@ function LegacyPendingQueuePanel({
           data-openbitfun-product-part="actions"
         >
           <PendingQueueMessageActions
+            onMoveUp={() => move(item.id, reorderIds[reorderIds.indexOf(item.id) - 1])}
+            onMoveDown={() => move(item.id, reorderIds[reorderIds.indexOf(item.id) + 2] ?? null)}
+            moveUpDisabled={!reorderEnabled || reorderIds.indexOf(item.id) <= 0}
+            moveDownDisabled={!reorderEnabled || reorderIds.indexOf(item.id) === reorderIds.length - 1}
             sendLabel={t('pendingQueue.actions.sendNowLabel')}
             sendAriaLabel={t('pendingQueue.actions.sendNow')}
             sendTooltip={t('pendingQueue.tooltip.sendNow')}

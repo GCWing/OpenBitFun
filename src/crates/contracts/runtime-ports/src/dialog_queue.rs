@@ -34,6 +34,14 @@ pub enum DialogQueueAction {
         turn_id: String,
         operation_id: String,
     },
+    /// Move a queued message before another queued message (None means last).
+    /// Clients must negotiate supportsReorder from a fresh snapshot first.
+    Reorder {
+        turn_id: String,
+        before_turn_id: Option<String>,
+        operation_id: String,
+        expected_revision: u64,
+    },
     Promote {
         turn_id: String,
         operation_id: String,
@@ -107,6 +115,9 @@ pub struct DialogQueueSnapshot {
     pub revision: u64,
     pub active_turn_id: Option<String>,
     pub items: Vec<DialogQueueItem>,
+    /// Absent on hosts predating reorder; never infer support from version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_reorder: Option<bool>,
     pub capacity: usize,
     pub used: usize,
     /// Present for submission queries and mutations; terminal receipts remain queryable.
@@ -116,6 +127,19 @@ pub struct DialogQueueSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_snapshot_and_reorder_negotiation_round_trip() {
+        let legacy = serde_json::json!({"sessionId":"session", "queueEpoch":"owner", "revision":2,
+            "activeTurnId":null, "items":[], "capacity":10, "used":0, "receipt":null});
+        let snapshot: DialogQueueSnapshot = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(snapshot.supports_reorder, None);
+        assert_eq!(serde_json::to_value(snapshot).unwrap(), legacy);
+        let input = serde_json::json!({"sessionId":"session", "queueEpoch":"owner", "action":"reorder",
+            "turnId":"last", "beforeTurnId":"first", "operationId":"move", "expectedRevision":2});
+        let request: DialogQueueRequest = serde_json::from_value(input.clone()).unwrap();
+        assert_eq!(serde_json::to_value(request).unwrap(), input);
+    }
 
     #[test]
     fn queue_request_wire_defaults_and_extensions_are_compatible() {

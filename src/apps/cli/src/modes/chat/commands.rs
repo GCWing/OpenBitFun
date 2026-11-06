@@ -1189,6 +1189,14 @@ impl ChatMode {
             ActionHandler::PromptStash => self.stash_current_prompt(chat_view),
             ActionHandler::PromptStashPop => self.pop_prompt_stash(chat_view),
             ActionHandler::PromptStashList => self.show_prompt_stash(chat_view),
+            ActionHandler::MessageQueue => {
+                if self.pending_message_queue.is_some() {
+                    chat_view.set_status(Some("A queue request is still pending".into()));
+                    return Ok(None);
+                }
+                chat_view.show_message_queue();
+                self.refresh_message_queue(chat_view, rt_handle, None);
+            }
             ActionHandler::ToggleTimestamps => {
                 let visible = chat_view.toggle_timestamps();
                 self.persist_presentation_preference(

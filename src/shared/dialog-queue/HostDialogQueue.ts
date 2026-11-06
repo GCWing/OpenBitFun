@@ -19,10 +19,11 @@ export interface QueueItem {
 }
 export interface QueueSnapshot {
   sessionId: string; queueEpoch: string; revision: number; activeTurnId: string | null;
-  items: QueueItem[]; capacity: number; used: number; receipt: QueueItem | null;
+  items: QueueItem[]; supportsReorder?: boolean; capacity: number; used: number; receipt: QueueItem | null;
 }
 export type QueueAction = { action: 'list' } | { action: 'get'; turnId: string }
   | { action: 'submit'; message: QueueMessage }
+  | { action: 'reorder'; turnId: string; beforeTurnId: string | null; operationId: string; expectedRevision: number }
   | { action: 'cancel'; turnId: string; operationId: string }
   | { action: 'promote'; turnId: string; operationId: string; expectedActiveTurnId: string | null };
 export type QueueRequest = QueueAction & { sessionId: string; queueEpoch?: string };
@@ -203,6 +204,19 @@ export class HostDialogQueue {
         : { sessionId: this.sessionId, queueEpoch: snapshot.queueEpoch, action, turnId: item.turnId, operationId,
           expectedActiveTurnId: snapshot.activeTurnId };
       return this.transmit({ scope: this.scope, key: JSON.stringify([this.scope, operationId]), request });
+    });
+  }
+  reorder(turnId: string, beforeTurnId: string | null, expected = this.view.snapshot): Promise<QueueSnapshot> {
+    return this.serialize(async () => {
+      if (!expected?.supportsReorder) throw new Error('queue_reorder_unsupported: update the execution host to reorder messages');
+      if (this.view.error || expected.queueEpoch !== this.view.snapshot?.queueEpoch) {
+        throw new Error('queue_conflict: refresh the host queue before reordering');
+      }
+      const operationId = newId();
+      return this.transmit({ scope: this.scope, key: JSON.stringify([this.scope, operationId]), request: {
+        sessionId: this.sessionId, queueEpoch: expected.queueEpoch, action: 'reorder',
+        turnId, beforeTurnId, operationId, expectedRevision: expected.revision,
+      } });
     });
   }
   retry(record: QueueOutboxRecord): Promise<QueueSnapshot> {

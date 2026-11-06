@@ -232,3 +232,12 @@ Native provider and OS fixture checks belong to
 [`services/computer-use`](../../crates/services/computer-use/AGENTS.md). CLI owns
 the main-thread run-loop adapter and provider injection, including Shared TUI's
 executing host. Dispatch, ACP and the stdio server do not infer a GUI provider.
+
+For `/queue` keyboard mutations, legacy capability gates and compact rendering:
+
+```bash
+cargo test --locked -p openbitfun-cli --bin openbitfun ui::message_queue::tests
+```
+
+The selector uses the typed runtime port through `CliAgentRuntimeClient`.
+Shared TUI reports unsupported until its IPC contract negotiates queue support.

@@ -1,8 +1,10 @@
+import { MessageQueueAction } from '../../model/MessageQueue';
 import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { ConversationUiQuestionAnswer } from '../state/ConversationUiModels';
 import { FilePreviewRequest } from '../../model/FilePreviewTarget';
 
 export enum ConversationIntentType {
+  MessageQueue = 'message_queue',
   Mailbox = 'mailbox',
   OpenSidebar = 'open_sidebar',
   Back = 'back',
@@ -145,6 +147,7 @@ export class ConversationIntent {
   rollbackRequest?: SessionRollbackRequest;
   readonly copyScope: MessageCopyScope;
   readonly commandPaletteRequest?: CommandPaletteRequest;
+  queueAction?: MessageQueueAction;
   mailboxAction?: InteractionMailboxAction;
 
   constructor(
@@ -171,6 +174,9 @@ export class ConversationIntent {
 }
 
 export class ConversationIntents {
+  static queue(action: MessageQueueAction): ConversationIntent {
+    const intent = new ConversationIntent(ConversationIntentType.MessageQueue); intent.queueAction = action; return intent;
+  }
   static mailbox(action: InteractionMailboxAction): ConversationIntent {
     const intent = new ConversationIntent(ConversationIntentType.Mailbox);
     intent.mailboxAction = action;

@@ -111,6 +111,7 @@ impl ChatView {
             .render(frame, chunks[1], &self.theme);
         self.render_fork_selector(frame, chunks[1]);
         self.render_timeline_selector(frame, chunks[1]);
+        self.message_queue.render(frame, chunks[1], &self.theme);
         self.prompt_stash_selector
             .render(frame, chunks[1], &self.theme);
         self.export_dialog.render(frame, size, &self.theme);

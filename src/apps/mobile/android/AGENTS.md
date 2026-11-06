@@ -68,3 +68,13 @@ Run instrumented Gradle tests on a dedicated test emulator, not an authenticated
 manual-acceptance device. The test runner can uninstall the target application
 after the suite and remove its local account state. Use `adb install -r` for
 manual acceptance updates to preserve that state.
+
+For queue menus, touch targets, drag completion and cancellation on host revision:
+
+```bash
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.openbitfun.mobile.app.MessageQueuePanelTest
+```
+
+The isolated `message-queue` design-preview scenario uses the production panel
+with simulated host replies. Review compact/wide widths and light/dark themes;
+this does not establish live remote dispatch behavior.

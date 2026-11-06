@@ -618,6 +618,9 @@ impl ChatMode {
             if self.poll_workspace_reference_search(&mut chat_view) {
                 needs_redraw = true;
             }
+            if self.poll_message_queue(&mut chat_view, &rt_handle) {
+                needs_redraw = true;
+            }
             if self.poll_workspace_diff(&mut chat_view) {
                 needs_redraw = true;
             }

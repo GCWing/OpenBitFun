@@ -3865,7 +3865,12 @@
     "errors": {
       "composerNotEmpty": "請先發送或清空目前輸入與附件，再編輯這則等待發送的訊息",
       "sendNowFailed": "立即發送失敗，請稍後重試"
-    }
+    },
+    "reorder": "拖曳排序，也可使用上下方向鍵",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "orderChanged": "佇列已變更，請重新整理後再調整順序。",
+    "reorderUnsupported": "升級執行端後可調整排隊訊息的順序。"
   },
   "steering": {
     "title": "立即引導",

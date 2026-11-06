@@ -202,3 +202,12 @@ node --test src/apps/mobile/harmonyos/tools/tests/workspace-editor.test.cjs
 
 The Chrome renderer test does not replace Harmony device-level keyboard and
 sheet-layout checks.
+
+For queue capability negotiation, session isolation and mutation/read races:
+
+```bash
+node --test tools/tests/message-queue.test.cjs
+```
+
+The fixture uses the production queue store with a simulated host. Native drag
+presentation and live remote dispatch need separate device verification.

@@ -1,3 +1,4 @@
+import { MessageQueueRequest, MessageQueueResponse, MessageQueueSnapshot } from '../model/MessageQueue';
 import { WorkspaceCatalog, projectWorkspaceCatalog } from './WorkspaceCatalog';
 import { RuntimeFileLocation } from '../model/RemoteModels';
 import { HostSessionCallbacks, HostSessionStream, REMOTE_CAPABILITY_HOST_STREAM_V1 } from './HostSessionStream';
@@ -111,6 +112,14 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
    * caller can tell a host that answered from a connection that did not: only the
    * first may be described to the user as the host's own decision.
    */
+  supportsMessageQueue(): boolean { return this.hostCapabilities.includes('dialog_queue_v1'); }
+  async manageMessageQueue(request: MessageQueueRequest): Promise<MessageQueueSnapshot> {
+    if (!this.supportsMessageQueue()) throw new Error('Host message queue is unsupported');
+    const response = await this.send<MessageQueueResponse>({ cmd: 'dialog_queue', request: request });
+    if (response.resp === 'error' || !response.snapshot) throw new Error(response.message || 'Queue request failed');
+    return response.snapshot;
+  }
+
   async hostInvoke<T>(command: string, args: Object): Promise<T> {
     const response = await this.send<HostInvokeResponse<T>>({ cmd: 'host_invoke', command: command, args: args });
     if (!response.ok) throw new HostInvokeRefusal(command, response.error || '');

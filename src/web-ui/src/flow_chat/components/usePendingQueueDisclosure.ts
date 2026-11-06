@@ -11,7 +11,9 @@ export function usePendingQueueDisclosure() {
     if (!restoreFocus.current) return;
     restoreFocus.current = false;
     if (expanded) {
-      listRef.current?.querySelector<HTMLElement>('[tabindex="0"], button:not(:disabled)')?.focus();
+      const list = listRef.current;
+      (list?.querySelector<HTMLElement>('[data-openbitfun-product-part="preview"][tabindex="0"]')
+        ?? list?.querySelector<HTMLElement>('button:not(:disabled), [tabindex="0"]'))?.focus();
     } else {
       toggleRef.current?.focus();
     }

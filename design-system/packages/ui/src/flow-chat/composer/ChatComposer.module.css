@@ -32,6 +32,10 @@
     gap: var(--openbitfun-space-2);
   }
 
+  .body:has(> .queue > :global([data-openbitfun-component="chat-composer-queue"])) {
+    gap: 0;
+  }
+
   .queue {
     /* The wrapper exists when a queue component later renders `null`. Keeping
        it out of the box tree makes both that transition and the no-queue path

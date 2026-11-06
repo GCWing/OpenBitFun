@@ -1,4 +1,5 @@
 mod external_editor;
+mod message_queue;
 mod prompt_stash;
 /// Chat mode implementation
 ///
@@ -347,6 +348,13 @@ struct PendingWorkspaceReferenceSearch {
         tokio::task::JoinHandle<std::result::Result<AgentWorkspaceReferenceSearchResult, String>>,
 }
 
+struct PendingMessageQueue {
+    generation: u64,
+    handle: tokio::task::JoinHandle<
+        std::result::Result<openbitfun_runtime_ports::DialogQueueSnapshot, String>,
+    >,
+}
+
 struct PendingWorkspaceDiff {
     handle: tokio::task::JoinHandle<std::result::Result<WorkspaceDiffSnapshot, String>>,
 }
@@ -512,6 +520,8 @@ pub(crate) struct ChatMode {
     /// the Runtime owner updates or deletes Session state.
     pending_session_operation: Option<PendingSessionOperation>,
     pending_workspace_diff: Option<PendingWorkspaceDiff>,
+    pending_message_queue: Option<PendingMessageQueue>,
+    next_message_queue_refresh: Instant,
     pending_local_effect: Option<PendingLocalEffect>,
     pending_workspace_reference_search: Option<PendingWorkspaceReferenceSearch>,
     /// One lineage read in flight. Runtime I/O never blocks the TUI
@@ -598,6 +608,8 @@ impl ChatMode {
             pending_mcp_tasks: Vec::new(),
             pending_session_operation: None,
             pending_workspace_diff: None,
+            pending_message_queue: None,
+            next_message_queue_refresh: Instant::now(),
             pending_local_effect: None,
             pending_workspace_reference_search: None,
             pending_lineage_operation: None,

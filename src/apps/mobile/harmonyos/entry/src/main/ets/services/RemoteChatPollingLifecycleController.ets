@@ -1,3 +1,4 @@
+import { MessageQueueAction } from '../model/MessageQueue';
 import { InteractionMailboxAction } from '../model/InteractionMailbox';
 import { ChatMessage } from '../model/RemoteModels';
 import {
@@ -42,6 +43,7 @@ export class RemoteChatPollingLifecycleController {
     this.controller.stop();
   }
 
+  async dispatchQueue(action: MessageQueueAction): Promise<void> { await this.controller.dispatchQueue(action); }
   async dispatchMailbox(action: InteractionMailboxAction): Promise<void> { await this.controller.dispatchMailbox(action); }
 
   async refreshModelCatalog(): Promise<void> { await this.controller.refreshModelCatalog(); }

@@ -1,4 +1,40 @@
 impl ChatView {
+    pub(crate) fn show_message_queue(&mut self) {
+        self.message_queue.show();
+        self.popup_stack.push(PopupType::MessageQueue);
+    }
+    pub(crate) fn message_queue_generation(&self) -> u64 {
+        self.message_queue.generation
+    }
+    pub(crate) fn message_queue_can_auto_refresh(&self) -> bool {
+        self.message_queue.can_auto_refresh()
+    }
+    pub(crate) fn message_queue_loading(&mut self) {
+        self.message_queue.loading();
+    }
+    pub(crate) fn message_queue_visible(&self) -> bool {
+        self.message_queue.visible
+    }
+    pub(crate) fn hide_message_queue(&mut self) {
+        self.message_queue.visible = false;
+        self.message_queue.generation = self.message_queue.generation.wrapping_add(1);
+    }
+    pub(crate) fn reshow_message_queue(&mut self) {
+        self.message_queue.visible = true;
+    }
+    pub(crate) fn update_message_queue(
+        &mut self,
+        result: Result<openbitfun_runtime_ports::DialogQueueSnapshot, String>,
+    ) {
+        self.message_queue.update(result);
+    }
+    pub(crate) fn message_queue_handle_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+    ) -> super::message_queue::QueueAction {
+        self.message_queue.handle_key(key)
+    }
+
     pub(crate) fn show_prompt_command_shell_review(
         &mut self,
         plan: openbitfun_product_domains::external_sources::PromptCommandShellReviewPlan,

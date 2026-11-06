@@ -3151,6 +3151,54 @@
     {
       "name": "commands_skills_refusedBody",
       "value": "The connected desktop answered, and its answer was a refusal. The desktop text below is what it said; check the session and try again."
+    },
+    {
+      "name": "queue_title",
+      "value": "Queued messages · %1$s"
+    },
+    {
+      "name": "queue_reorder",
+      "value": "Drag to reorder"
+    },
+    {
+      "name": "queue_moveUp",
+      "value": "Move up"
+    },
+    {
+      "name": "queue_moveDown",
+      "value": "Move down"
+    },
+    {
+      "name": "queue_refresh",
+      "value": "Refresh"
+    },
+    {
+      "name": "queue_refreshRequired",
+      "value": "Queue status changed or could not be confirmed. Refresh before another action."
+    },
+    {
+      "name": "queue_attachments",
+      "value": "%1$s attachments"
+    },
+    {
+      "name": "queue_waiting",
+      "value": "Waiting for the execution host"
+    },
+    {
+      "name": "queue_sendNow",
+      "value": "Send now"
+    },
+    {
+      "name": "queue_more",
+      "value": "Message actions"
+    },
+    {
+      "name": "queue_remove",
+      "value": "Remove from queue"
+    },
+    {
+      "name": "queue_unsupported",
+      "value": "Update the execution host to reorder messages."
     }
   ]
 }

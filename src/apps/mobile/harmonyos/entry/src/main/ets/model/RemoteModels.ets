@@ -1,3 +1,4 @@
+import { MessageQueueRequest } from './MessageQueue';
 export interface RuntimeFileLocation { path: string; remoteConnectionId?: string; }
 
 
@@ -129,6 +130,7 @@ export interface SavedRuntimeConnection { id: string; name: string; host: string
 export interface SavedRuntimeConnectionsResponse extends CommandStatusResponse { ok: boolean; value?: SavedRuntimeConnection[]; error?: string; }
 
 export interface RemoteCommand {
+  request?: MessageQueueRequest;
   workspace_id?: string;
   remote_ssh_host?: string;
   command?: string;

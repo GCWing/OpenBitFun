@@ -3865,7 +3865,12 @@
     "errors": {
       "composerNotEmpty": "请先发送或清空当前输入和附件，再编辑这条等待发送的消息",
       "sendNowFailed": "立即发送失败，请稍后重试"
-    }
+    },
+    "reorder": "拖动排序，也可使用上下方向键",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "orderChanged": "队列已变化，请刷新后重新调整顺序。",
+    "reorderUnsupported": "升级执行端后可调整排队消息的顺序。"
   },
   "steering": {
     "title": "立即引导",

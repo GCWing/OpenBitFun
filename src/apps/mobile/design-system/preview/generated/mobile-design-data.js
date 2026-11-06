@@ -1313,6 +1313,33 @@ export const mobileComponents = {
         "content_on_action"
       ],
       "platformNotes": "Reference: desktop ChatInputApprovalBand and @openbitfun/ui raised Card, neutral resource Card, fill reject Button and primary allow Button. Preserve desktop 12-unit card radius/padding and 8-unit gaps, with 36-unit mobile actions. Resource content scrolls within the band; actions do not stretch across the card. JSON editing remains a quiet, collapsed mobile-web capability. status_warning ports desktop amber.550 for the short shield glyph: neither success/danger nor the blue file-link accent communicates pending approval."
+    },
+    "message_queue": {
+      "purpose": "Manage the execution host’s pending messages without leaving the composer.",
+      "anatomy": [
+        "count_disclosure",
+        "drag_handle",
+        "preview_and_attachments",
+        "send_now",
+        "actions_menu",
+        "inset_separator"
+      ],
+      "states": [
+        "queued",
+        "blocked",
+        "steering_pending",
+        "reordering",
+        "offline",
+        "legacy_host"
+      ],
+      "tokens": [
+        "content_gutter",
+        "control_touch_size",
+        "ink",
+        "muted",
+        "line"
+      ],
+      "platformNotes": "No enclosing border. Each 48pt row starts with a hairline inset by 8pt on both sides. The last row has no bottom separator and touches the composer without an extra gap. Attachments follow text. Native drag handles and accessible Move up/Move down actions commit through the host queue revision; incoming host changes cancel the gesture. Never present a local-only order as execution order."
     }
   }
 };

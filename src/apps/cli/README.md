@@ -94,6 +94,7 @@ equivalent exists:
 | --- | --- |
 | `/sessions` | Browse and restore sessions. |
 | `/new` or `/clear` | Start a new session. |
+| `/queue` | Manage the current session’s pending messages on the embedded runtime. |
 | `/timeline` | Navigate persisted user messages without changing the session. |
 | `/fork` | Fork the full session or fork immediately before a selected prompt. |
 | `/goal <objective>` | Start a persistent goal through the shared runtime; while working, steer the active turn toward it. |
@@ -116,6 +117,18 @@ selected child Session's active execution subtree.
 `/editor` does not install or guess an editor. For GUI editors,
 configure a command that waits until the file is closed; missing commands,
 non-zero exits, and empty editor output leave the current draft unchanged.
+
+### Pending messages
+
+`/queue` displays the execution host's pending messages. Use Up/Down to select,
+Shift+Up/Down to reorder, Enter to send now, Delete to remove, and `r` to refresh.
+The visible list refreshes every two seconds and changes only after the host confirms the operation. Failed requests
+retain the visible list and require a refresh before another mutation. Sending
+now hands off after the current atomic action; removing a pending message does
+not cancel the active turn.
+
+Shared TUI currently reports queue management as unsupported. Queue controls do
+not change normal running-turn input or Detached Dispatch behavior.
 
 ### Long-running goals
 

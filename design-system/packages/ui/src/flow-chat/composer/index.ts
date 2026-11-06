@@ -35,3 +35,5 @@ export {
   type ChatComposerQueueTitleProps,
   type ChatComposerQueueToggleProps,
 } from "./ChatComposerQueue";
+
+export { useQueueReorder } from './useQueueReorder';
