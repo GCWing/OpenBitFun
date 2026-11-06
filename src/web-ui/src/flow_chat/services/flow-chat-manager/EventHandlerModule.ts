@@ -260,6 +260,15 @@ function logDroppedDataEvent(
   turnId: string | null,
   details: Record<string, unknown>
 ): void {
+  if (details.reason === 'missing_state_machine') {
+    const knownSession = FlowChatStore.getInstance().getState().sessions.get(sessionId);
+    if (!knownSession) {
+      // Unregistered background sessions (e.g., MemoryPhase2 or internal subagents)
+      // have no UI transcript or state machine. Silently ignore their data events
+      // instead of spamming webview.log and scheduling repair timers every chunk.
+      return;
+    }
+  }
   requestRuntimeProjectionRepair(sessionId);
   log.debug('Dropped agentic data event', {
     eventName,

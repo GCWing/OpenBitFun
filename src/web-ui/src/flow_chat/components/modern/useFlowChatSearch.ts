@@ -8,7 +8,7 @@
 
 import { useState, useMemo, useCallback } from 'react';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
-import { buildInlineFlowGroupData, getProjectedModelRoundGroups } from '../../grouping/roundGroups';
+import { getCachedInlineFlowGroupData, getProjectedModelRoundGroups } from '../../grouping/roundGroups';
 
 interface SearchableFlowItem {
   id?: string;
@@ -46,6 +46,7 @@ export interface UseFlowChatSearchReturn {
 
 interface SearchableSource {
   content: string;
+  foldedContent: string;
   flowItemId?: string;
   expandableIds?: readonly string[];
 }
@@ -63,53 +64,62 @@ function flowItemSearchSources(
       ...(outerExpandableId ? [outerExpandableId] : []),
       ...(item.type === 'thinking' && item.id ? [item.id] : []),
     ];
+    const content = item.content ?? '';
 
     return [{
-      content: item.content ?? '',
+      content,
+      foldedContent: content.toLowerCase(),
       flowItemId: item.id,
       expandableIds: expandableIds.length > 0 ? expandableIds : undefined,
     }];
   });
 }
 
+const virtualItemSearchSourcesCache = new WeakMap<VirtualItem, SearchableSource[]>();
+
 function getVirtualItemSearchSources(item: VirtualItem): SearchableSource[] {
+  const cached = virtualItemSearchSourcesCache.get(item);
+  if (cached) return cached;
+  let sources: SearchableSource[];
   if (item.type === 'background-run') {
-    return [{ content: item.turn.userMessage.content }, ...flowItemSearchSources(item.turn.modelRounds.flatMap(round => round.items))];
-  }
-  if (item.type === 'user-message' || item.type === 'user-steering-message') {
-    return [{ content: item.data?.content ?? '' }];
-  }
-  if (item.type === 'model-round') {
-    return getProjectedModelRoundGroups(item).flatMap(group => group.type !== 'critical'
-      ? flowItemSearchSources(group.items, buildInlineFlowGroupData(item.data.id, group).groupId)
+    const userContent = item.turn.userMessage.content;
+    sources = [
+      { content: userContent, foldedContent: userContent.toLowerCase() },
+      ...flowItemSearchSources(item.turn.modelRounds.flatMap(round => round.items)),
+    ];
+  } else if (item.type === 'user-message' || item.type === 'user-steering-message') {
+    const content = item.data?.content ?? '';
+    sources = [{ content, foldedContent: content.toLowerCase() }];
+  } else if (item.type === 'model-round') {
+    sources = getProjectedModelRoundGroups(item).flatMap((group, index) => group.type !== 'critical'
+      ? flowItemSearchSources(group.items, getCachedInlineFlowGroupData(item.data, index, group).groupId)
       : flowItemSearchSources([group.item]));
+  } else if (item.type === 'explore-group') {
+    sources = flowItemSearchSources(item.data.allItems, item.data.groupId);
+  } else if (item.type === 'turn-completion-notice') {
+    const content = item.data.reasonCode;
+    sources = [{ content, foldedContent: content.toLowerCase() }];
+  } else if (item.type === 'turn-failure-notice') {
+    const content = [
+      item.data.error,
+      item.data.errorDetail?.provider,
+      item.data.errorDetail?.providerCode,
+      item.data.errorDetail?.providerMessage,
+      item.data.errorDetail?.requestId,
+    ].filter(Boolean).join(' ');
+    sources = [{ content, foldedContent: content.toLowerCase() }];
+  } else {
+    sources = [];
   }
-  if (item.type === 'explore-group') {
-    return flowItemSearchSources(item.data.allItems, item.data.groupId);
-  }
-  if (item.type === 'turn-completion-notice') {
-    return [{ content: item.data.reasonCode }];
-  }
-  if (item.type === 'turn-failure-notice') {
-    return [{
-      content: [
-        item.data.error,
-        item.data.errorDetail?.provider,
-        item.data.errorDetail?.providerCode,
-        item.data.errorDetail?.providerMessage,
-        item.data.errorDetail?.requestId,
-      ].filter(Boolean).join(' '),
-    }];
-  }
-  return [];
+  virtualItemSearchSourcesCache.set(item, sources);
+  return sources;
 }
 
-function countQueryOccurrences(content: string, foldedQuery: string): number {
-  const haystack = content.toLowerCase();
+function countFoldedQueryOccurrences(foldedContent: string, foldedQuery: string): number {
   let count = 0;
   let from = 0;
   for (;;) {
-    const index = haystack.indexOf(foldedQuery, from);
+    const index = foldedContent.indexOf(foldedQuery, from);
     if (index < 0) {
       return count;
     }
@@ -118,20 +128,36 @@ function countQueryOccurrences(content: string, foldedQuery: string): number {
   }
 }
 
+const emptySearchMatches: SearchMatch[] = [];
+const perItemSearchMatchCache = new WeakMap<VirtualItem, {
+  query: string;
+  virtualItemIndex: number;
+  matches: readonly SearchMatch[];
+}>();
+
 export function buildFlowChatSearchMatches(
   virtualItems: readonly VirtualItem[],
   searchQuery: string,
 ): SearchMatch[] {
   const trimmed = searchQuery.trim();
-  if (!trimmed) return [];
+  if (!trimmed) return emptySearchMatches;
   const query = trimmed.toLowerCase();
   const matches: SearchMatch[] = [];
 
-  virtualItems.forEach((item, virtualItemIndex) => {
+  for (let virtualItemIndex = 0; virtualItemIndex < virtualItems.length; virtualItemIndex += 1) {
+    const item = virtualItems[virtualItemIndex];
+    const cached = perItemSearchMatchCache.get(item);
+    if (cached && cached.query === query && cached.virtualItemIndex === virtualItemIndex) {
+      for (let i = 0; i < cached.matches.length; i += 1) {
+        matches.push(cached.matches[i]);
+      }
+      continue;
+    }
+    const itemMatches: SearchMatch[] = [];
     for (const source of getVirtualItemSearchSources(item)) {
-      const occurrenceCount = countQueryOccurrences(source.content, query);
+      const occurrenceCount = countFoldedQueryOccurrences(source.foldedContent, query);
       for (let occurrenceIndex = 0; occurrenceIndex < occurrenceCount; occurrenceIndex += 1) {
-        matches.push({
+        itemMatches.push({
           virtualItemIndex,
           turnId: item.turnId,
           type: item.type,
@@ -141,7 +167,11 @@ export function buildFlowChatSearchMatches(
         });
       }
     }
-  });
+    perItemSearchMatchCache.set(item, { query, virtualItemIndex, matches: itemMatches });
+    for (let i = 0; i < itemMatches.length; i += 1) {
+      matches.push(itemMatches[i]);
+    }
+  }
 
   return matches;
 }

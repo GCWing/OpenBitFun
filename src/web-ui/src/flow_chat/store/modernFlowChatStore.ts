@@ -12,7 +12,7 @@ import { flowChatStore } from './FlowChatStore';
 import { getTurnCompletionNotice } from '../utils/turnCompletionNotice';
 import { createAbsoluteSessionTurnIndexResolver } from '../utils/flowChatTurnOrdinal';
 import { getTurnOutputDurationMs, getTurnTtftMs } from '../utils/turnUsageMetrics';
-import { projectAdjacentFlowGroups } from '../grouping/groupProjection';
+import { projectAdjacentFlowGroups, canStartFreshFlowGroupRunAt } from '../grouping/groupProjection';
 import { hasModelRoundNarrative } from '../grouping/roundGroups';
 import { isSuppressedBackgroundTurn } from '../utils/backgroundDelivery';
 
@@ -119,6 +119,269 @@ let cachedTurnItems = new WeakMap<
   DialogTurn,
   { items: VirtualItem[]; hasNewerDialogTurn: boolean; absoluteTurnIndex: number; backgroundCollapsed?: boolean }
 >();
+interface CachedTurnPrefixProjection {
+  turnId: string;
+  isTurnComplete: boolean;
+  turnStartedAt: number;
+  turnEndedAt: number | undefined;
+  turnOutputDurationMs: number | undefined;
+  turnTtftMs: number | undefined;
+  turnTokenUsage: DialogTurn['tokenUsage'];
+  rawItems: VirtualItem[];
+  projectedItems: VirtualItem[];
+}
+
+const previousTurnItemsById = new Map<string, VirtualItem[]>();
+const previousTurnModelRoundsById = new Map<string, readonly ModelRound[]>();
+const currentTurnModelRoundsById = new Map<string, readonly ModelRound[]>();
+const cachedTurnPrefixById = new Map<string, CachedTurnPrefixProjection>();
+
+function sameStringList(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function sameFlowGroupData(
+  a: import('../grouping/types').FlowGroupData | undefined,
+  b: import('../grouping/types').FlowGroupData | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (
+    a.groupId !== b.groupId ||
+    a.category !== b.category ||
+    a.isGroupStreaming !== b.isGroupStreaming ||
+    a.phase !== b.phase ||
+    a.needsAttention !== b.needsAttention ||
+    a.isLastGroupInTurn !== b.isLastGroupInTurn ||
+    a.wasCutByCritical !== b.wasCutByCritical ||
+    a.allItems.length !== b.allItems.length ||
+    a.rounds.length !== b.rounds.length ||
+    !sameStringList(a.sourceGroupIds, b.sourceGroupIds)
+  ) {
+    return false;
+  }
+  for (let i = 0; i < a.allItems.length; i += 1) {
+    if (a.allItems[i] !== b.allItems[i]) return false;
+  }
+  for (let i = 0; i < a.rounds.length; i += 1) {
+    if (a.rounds[i] !== b.rounds[i]) return false;
+  }
+  return true;
+}
+
+function sameProjectedGroups(
+  a: readonly import('../grouping/types').ModelRoundItemGroup[] | undefined,
+  b: readonly import('../grouping/types').ModelRoundItemGroup[] | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const ga = a[i];
+    const gb = b[i];
+    if (ga === gb) continue;
+    if (ga.type !== gb.type) return false;
+    if (ga.type === 'critical' && gb.type === 'critical') {
+      if (ga.item !== gb.item) return false;
+      continue;
+    }
+    if (ga.type !== 'critical' && gb.type !== 'critical') {
+      if (
+        ga.isLast !== gb.isLast ||
+        ga.items.length !== gb.items.length ||
+        !sameFlowGroupData(ga.projection, gb.projection)
+      ) {
+        return false;
+      }
+      for (let j = 0; j < ga.items.length; j += 1) {
+        if (ga.items[j] !== gb.items[j]) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function canReuseVirtualItem(prev: VirtualItem, next: VirtualItem): boolean {
+  if (prev === next) return true;
+  if (prev.type !== next.type || prev.turnId !== next.turnId) return false;
+  switch (next.type) {
+    case 'user-message': {
+      const p = prev as typeof next;
+      const prevRounds = previousTurnModelRoundsById.get(next.turnId);
+      const currRounds = currentTurnModelRoundsById.get(next.turnId);
+      const firstRoundSame = prevRounds?.[0] !== undefined && prevRounds[0] === currRounds?.[0];
+      return (
+        firstRoundSame &&
+        p.data === next.data &&
+        p.absoluteTurnIndex === next.absoluteTurnIndex &&
+        p.turnStatus === next.turnStatus &&
+        p.submissionPhase === next.submissionPhase &&
+        p.submissionError === next.submissionError &&
+        p.hostQueueStatus === next.hostQueueStatus &&
+        p.hostQueueAttachmentCount === next.hostQueueAttachmentCount
+      );
+    }
+    case 'user-steering-message': {
+      const p = prev as typeof next;
+      return (
+        p.steeringId === next.steeringId &&
+        p.steeringStatus === next.steeringStatus &&
+        p.data.id === next.data.id &&
+        p.data.content === next.data.content &&
+        p.data.timestamp === next.data.timestamp
+      );
+    }
+    case 'model-round': {
+      const p = prev as typeof next;
+      return (
+        p.data === next.data &&
+        p.isLastRound === next.isLastRound &&
+        p.isTurnComplete === next.isTurnComplete &&
+        p.turnStartedAt === next.turnStartedAt &&
+        p.turnEndedAt === next.turnEndedAt &&
+        p.turnDurationMs === next.turnDurationMs &&
+        p.turnOutputDurationMs === next.turnOutputDurationMs &&
+        p.turnTtftMs === next.turnTtftMs &&
+        p.turnTokenUsage === next.turnTokenUsage &&
+        sameStringList(p.layoutHints?.expandedThinkingItemIds, next.layoutHints?.expandedThinkingItemIds) &&
+        sameProjectedGroups(p.projectedGroups, next.projectedGroups)
+      );
+    }
+    default:
+      return false;
+  }
+}
+
+function reconcileProjectedGroupsInPlace(
+  prevGroups: readonly import('../grouping/types').ModelRoundItemGroup[] | undefined,
+  nextGroups: import('../grouping/types').ModelRoundItemGroup[] | undefined,
+): import('../grouping/types').ModelRoundItemGroup[] | undefined {
+  if (!prevGroups || !nextGroups) return nextGroups;
+  let allSame = prevGroups.length === nextGroups.length;
+  const minLen = Math.min(prevGroups.length, nextGroups.length);
+  for (let i = 0; i < minLen; i += 1) {
+    const pg = prevGroups[i];
+    const ng = nextGroups[i];
+    if (pg === ng) continue;
+    if (pg.type === ng.type) {
+      if (pg.type === 'critical' && ng.type === 'critical') {
+        if (pg.item === ng.item) {
+          nextGroups[i] = pg;
+          continue;
+        }
+      } else if (pg.type !== 'critical' && ng.type !== 'critical') {
+        if (sameFlowGroupData(pg.projection, ng.projection)) {
+          ng.projection = pg.projection;
+        }
+        if (
+          pg.isLast === ng.isLast &&
+          pg.items.length === ng.items.length &&
+          pg.projection === ng.projection &&
+          pg.items.every((item, idx) => item === ng.items[idx])
+        ) {
+          nextGroups[i] = pg;
+          continue;
+        }
+      }
+    }
+    allSame = false;
+  }
+  return allSame ? (prevGroups as import('../grouping/types').ModelRoundItemGroup[]) : nextGroups;
+}
+
+function reconcileTurnVirtualItems(turnId: string, nextItems: VirtualItem[]): VirtualItem[] {
+  const prevItems = previousTurnItemsById.get(turnId);
+  if (!prevItems || prevItems.length === 0) {
+    previousTurnItemsById.set(turnId, nextItems);
+    return nextItems;
+  }
+  for (let i = 0; i < nextItems.length; i += 1) {
+    const candidate = prevItems[i];
+    if (candidate && canReuseVirtualItem(candidate, nextItems[i])) {
+      nextItems[i] = candidate;
+    } else if (nextItems[i].type === 'model-round' && candidate?.type === 'model-round') {
+      const prevRound = candidate;
+      const nextRound = nextItems[i] as typeof prevRound;
+      nextRound.projectedGroups = reconcileProjectedGroupsInPlace(
+        prevRound.projectedGroups,
+        nextRound.projectedGroups,
+      );
+    }
+  }
+  previousTurnItemsById.set(turnId, nextItems);
+  return nextItems;
+}
+
+function projectTurnItemsWithPrefixCache(
+  turn: DialogTurn,
+  rawTurnItems: VirtualItem[],
+  isTurnComplete: boolean,
+  turnOutputDurationMs: number | undefined,
+  turnTtftMs: number | undefined,
+): VirtualItem[] {
+  const prev = cachedTurnPrefixById.get(turn.id);
+  let reuseCount = 0;
+
+  if (
+    prev &&
+    prev.isTurnComplete === isTurnComplete &&
+    prev.turnStartedAt === turn.startTime &&
+    prev.turnEndedAt === turn.endTime &&
+    prev.turnOutputDurationMs === turnOutputDurationMs &&
+    prev.turnTtftMs === turnTtftMs &&
+    prev.turnTokenUsage === turn.tokenUsage &&
+    prev.rawItems.length === prev.projectedItems.length
+  ) {
+    const limit = Math.min(prev.rawItems.length, rawTurnItems.length) - 1;
+    let commonLen = 0;
+    while (
+      commonLen < limit &&
+      ((commonLen === 0 &&
+        prev.rawItems[0]?.type === 'user-message' &&
+        rawTurnItems[0]?.type === 'user-message' &&
+        prev.rawItems[0].data === rawTurnItems[0].data &&
+        prev.rawItems[0].turnStatus === rawTurnItems[0].turnStatus &&
+        prev.rawItems[0].absoluteTurnIndex === rawTurnItems[0].absoluteTurnIndex) ||
+        canReuseVirtualItem(prev.rawItems[commonLen], rawTurnItems[commonLen]))
+    ) {
+      commonLen += 1;
+    }
+    for (let k = commonLen - 1; k >= 2; k -= 1) {
+      if (canStartFreshFlowGroupRunAt(rawTurnItems[k - 1], rawTurnItems[k])) {
+        reuseCount = k;
+        break;
+      }
+    }
+  }
+
+  currentTurnModelRoundsById.set(turn.id, turn.modelRounds);
+  const projectedTurnItems = reuseCount > 1 && prev
+    ? [
+        prev.projectedItems[0],
+        ...prev.projectedItems.slice(1, reuseCount),
+        ...projectAdjacentFlowGroups(rawTurnItems.slice(reuseCount), { isTurnComplete }),
+      ]
+    : projectAdjacentFlowGroups(rawTurnItems, { isTurnComplete });
+
+  const reconciled = reconcileTurnVirtualItems(turn.id, projectedTurnItems);
+  previousTurnModelRoundsById.set(turn.id, turn.modelRounds);
+  cachedTurnPrefixById.set(turn.id, {
+    turnId: turn.id,
+    isTurnComplete,
+    turnStartedAt: turn.startTime,
+    turnEndedAt: turn.endTime,
+    turnOutputDurationMs,
+    turnTtftMs,
+    turnTokenUsage: turn.tokenUsage,
+    rawItems: rawTurnItems,
+    projectedItems: reconciled,
+  });
+  return reconciled;
+}
 
 /**
  * Convert Session to virtualized render items
@@ -139,6 +402,10 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
       cachedTotalTurnCount = undefined;
       cachedVirtualItems = [];
       cachedTurnItems = new WeakMap();
+      previousTurnItemsById.clear();
+      previousTurnModelRoundsById.clear();
+      currentTurnModelRoundsById.clear();
+      cachedTurnPrefixById.clear();
     }
     return cachedVirtualItems;
   }
@@ -151,6 +418,12 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
     cachedTotalTurnCount === session.totalTurnCount && cachedNeedsUserAttention === session.needsUserAttention
   ) {
     return cachedVirtualItems;
+  }
+  if (cachedSession?.sessionId !== session.sessionId) {
+    previousTurnItemsById.clear();
+    previousTurnModelRoundsById.clear();
+    currentTurnModelRoundsById.clear();
+    cachedTurnPrefixById.clear();
   }
   
   cachedSession = session;
@@ -338,12 +611,18 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
       });
     }
 
-    const projectedTurnItems = projectAdjacentFlowGroups(items.slice(turnItemStart), { isTurnComplete });
+    const projectedTurnItems = projectTurnItemsWithPrefixCache(
+      turn,
+      items.slice(turnItemStart),
+      isTurnComplete,
+      turnOutputDurationMs,
+      turnTtftMs,
+    );
     items.splice(turnItemStart, items.length - turnItemStart, ...projectedTurnItems);
 
     if (isStableTurnProjection(turn)) {
       cachedTurnItems.set(turn, {
-        items: items.slice(turnItemStart),
+        items: projectedTurnItems,
         hasNewerDialogTurn,
         absoluteTurnIndex,
       });
@@ -412,6 +691,10 @@ export const createModernFlowChatStore = (initialSession?: Session | null) => cr
       cachedTotalTurnCount = undefined;
       cachedVirtualItems = [];
       cachedTurnItems = new WeakMap();
+      previousTurnItemsById.clear();
+      previousTurnModelRoundsById.clear();
+      currentTurnModelRoundsById.clear();
+      cachedTurnPrefixById.clear();
       cachedNeedsUserAttention = undefined;
 
       set((state) => ({

@@ -42,6 +42,25 @@ function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLEle
 
   const requestRender = useCallback((sync: boolean) => {
     if (!mounted.current || (!sync && requested.current)) return;
+    if (commits.current < MAX_SYNCHRONOUS_VIRTUALIZER_COMMITS) {
+      pending.current = false;
+      requested.current = true;
+      commits.current += 1;
+      if (frame.current === null) {
+        frame.current = requestAnimationFrame(() => {
+          frame.current = null;
+          commits.current = 0;
+          if (!mounted.current || !pending.current) return;
+          pending.current = false;
+          requested.current = true;
+          commits.current = 1;
+          rerender();
+        });
+      }
+      if (sync) flushSync(rerender);
+      else rerender();
+      return;
+    }
     pending.current = true;
     if (frame.current === null) {
       frame.current = requestAnimationFrame(() => {
@@ -56,12 +75,6 @@ function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLEle
         rerender();
       });
     }
-    if (commits.current >= MAX_SYNCHRONOUS_VIRTUALIZER_COMMITS) return;
-    pending.current = false;
-    requested.current = true;
-    commits.current += 1;
-    if (sync) flushSync(rerender);
-    else rerender();
   }, []);
 
   instance.setOptions({
@@ -756,7 +769,8 @@ export function useFlowChatVirtualizer<T>({
       const key = keys[index] ?? getItemKeyRef.current(item);
       const knownHeight = getKnownItemHeightPx(item);
       if (knownHeight !== undefined) next.set(key, knownHeight);
-      if (knownHeight === undefined && !previous.has(key)) continue;
+      const prevHeight = previous.get(key);
+      if (knownHeight === prevHeight) continue;
 
       // A mounted row has real geometry. An unmounted row must have its old
       // key-based measurement replaced now; otherwise virtual padding keeps
@@ -814,15 +828,18 @@ export function useFlowChatVirtualizer<T>({
     measuredOriginRef.current = endOrigin;
     // Stable DOM rows keep their chronological index while an origin handoff
     // changes the library index. ResizeObserver must see the new mapping too.
-    const mountedRows = [...(scroller?.querySelectorAll<HTMLElement>('[data-virtual-index]') ?? [])]
-      .filter(element => element.closest('[data-flowchat-virtual-viewport]') === scroller);
-    for (const element of mountedRows) {
-      element.setAttribute('data-flowchat-measure-index', String(toVirtualIndex(Number(element.getAttribute('data-virtual-index')))));
+    const attached = originChanged
+      ? [...(scroller?.querySelectorAll<HTMLElement>('[data-virtual-index]') ?? [])]
+          .filter(element => element.closest('[data-flowchat-virtual-viewport]') === scroller)
+      : [...attachingRowsRef.current].filter(element => element.isConnected);
+    if (originChanged) {
+      for (const element of attached) {
+        element.setAttribute('data-flowchat-measure-index', String(toVirtualIndex(Number(element.getAttribute('data-virtual-index')))));
+      }
     }
-    const attached = originChanged ? mountedRows : [...attachingRowsRef.current].filter(element => element.isConnected);
     attachingRowsRef.current.clear();
-    virtualizer.measureElement(null);
     if (!attached.length || isViewportSuspendedRef.current()) return;
+    virtualizer.measureElement(null);
     // Read before any viewport shift or size-cache notification can write.
     measurementBatchRef.current = new Map(attached.map(element => [element, measureRowHeight(element)]));
     try {

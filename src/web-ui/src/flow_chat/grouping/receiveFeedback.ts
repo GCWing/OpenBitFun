@@ -10,21 +10,48 @@ interface FeedbackSnapshot {
   groupedMembers: ReadonlySet<string>;
 }
 
-const memberKey = (turnId: string, itemId: string) => JSON.stringify([turnId, itemId]);
+const memberKey = (turnId: string, itemId: string) => `${turnId}\u0000${itemId}`;
+
+const itemFeedbackKeysCache = new WeakMap<VirtualItem, {
+  activeKeys: readonly string[];
+  groupedKeys: readonly string[];
+}>();
+
+function getItemFeedbackKeys(item: VirtualItem) {
+  let cached = itemFeedbackKeysCache.get(item);
+  if (cached) return cached;
+  const groupedKeys: string[] = [];
+  for (const group of getVirtualItemFlowGroups(item)) {
+    for (const member of group.allItems) {
+      groupedKeys.push(memberKey(item.turnId, member.id));
+    }
+  }
+  const activeKeys: string[] = [];
+  if (item.type === 'model-round' && !item.isTurnComplete) {
+    for (const member of getModelRoundActiveItems(item.data)) {
+      if (
+        member.type === 'tool' &&
+        ((member as FlowToolItem).isParamsStreaming ||
+          ['pending', 'queued', 'preparing', 'running', 'streaming', 'pending_confirmation'].includes(member.status))
+      ) {
+        activeKeys.push(memberKey(item.turnId, member.id));
+      }
+    }
+  }
+  cached = { activeKeys, groupedKeys };
+  itemFeedbackKeysCache.set(item, cached);
+  return cached;
+}
 
 export function captureFlowGroupFeedbackSnapshot(items: readonly VirtualItem[], scope: string | undefined): FeedbackSnapshot {
   const activeMembers = new Set<string>();
   const groupedMembers = new Set<string>();
   for (const item of items) {
-    for (const group of getVirtualItemFlowGroups(item)) {
-      group.allItems.forEach(member => groupedMembers.add(memberKey(item.turnId, member.id)));
-    }
-    if (item.type !== 'model-round' || item.isTurnComplete) continue;
-    for (const member of getModelRoundActiveItems(item.data)) {
-      if (member.type === 'tool' && ((member as FlowToolItem).isParamsStreaming
-        || ['pending', 'queued', 'preparing', 'running', 'streaming', 'pending_confirmation'].includes(member.status))) {
-        activeMembers.add(memberKey(item.turnId, member.id));
-      }
+    if (item.type === 'model-round' && item.isTurnComplete) continue;
+    const { activeKeys, groupedKeys } = getItemFeedbackKeys(item);
+    for (let i = 0; i < activeKeys.length; i += 1) activeMembers.add(activeKeys[i]);
+    if (activeKeys.length > 0 || groupedKeys.length > 0) {
+      for (let i = 0; i < groupedKeys.length; i += 1) groupedMembers.add(groupedKeys[i]);
     }
   }
   return { scope, activeMembers, groupedMembers };
@@ -33,7 +60,7 @@ export function captureFlowGroupFeedbackSnapshot(items: readonly VirtualItem[], 
 /** Legacy collection feedback; live windows already show arrivals without a pulse. */
 export function collectFlowGroupReceiveFeedback(previous: FeedbackSnapshot | undefined, items: readonly VirtualItem[], scope: string | undefined): ReadonlyMap<string, FlowGroupReceiveFeedback> {
   const receipts = new Map<string, FlowGroupReceiveFeedback>();
-  if (!previous || previous.scope !== scope) return receipts;
+  if (!previous || previous.scope !== scope || previous.activeMembers.size === 0) return receipts;
   for (const item of items) {
     for (const group of getVirtualItemFlowGroups(item)) {
       if (group.phase !== undefined) continue;

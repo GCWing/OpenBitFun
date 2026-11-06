@@ -1303,14 +1303,15 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   }, [activeSessionId, reader, viewportAnchor, viewportOwner, virtualItems]);
 
   const publishViewportSnapshot = useCallback((sample?: FlowChatViewportGeometry) => {
+    if (!onViewportSnapshotRef.current) return;
     const snapshot = captureViewportSnapshot(sample);
-    if (snapshot) onViewportSnapshotRef.current?.(snapshot);
+    if (snapshot) onViewportSnapshotRef.current(snapshot);
   }, [captureViewportSnapshot]);
   const publishViewportSnapshotRef = useRef(publishViewportSnapshot);
   publishViewportSnapshotRef.current = publishViewportSnapshot;
 
   const scheduleViewportSnapshot = useCallback(() => {
-    if (viewportSnapshotFrameRef.current !== null) return;
+    if (!onViewportSnapshotRef.current || viewportSnapshotFrameRef.current !== null) return;
     viewportSnapshotFrameRef.current = requestAnimationFrame(() => {
       viewportSnapshotFrameRef.current = null;
       publishViewportSnapshotRef.current();
@@ -1605,20 +1606,21 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       } = nativeScrollCallbacksRef.current;
       // Share this event's read phase. It cannot outlive the event: commits,
       // ResizeObserver and explicit navigation must measure their own layout.
-      const geometry = readFlowChatViewportGeometry(scrollerElement);
       const position = viewportOwner.readReaderScrollPosition();
       const previous = readerScrollPositionRef.current;
       readerScrollPositionRef.current = position;
       const owner = viewportOwner.currentOwner();
       const delta = previous === null ? 0 : position - previous;
       const direction = delta < -0.5 ? 'before' : delta > 0.5 ? 'after' : undefined;
+      let geometrySample: FlowChatViewportGeometry | undefined;
+      const getGeometry = () => (geometrySample ??= readFlowChatViewportGeometry(scrollerElement));
       // Synchronous corrections are removed by the register. Smooth owned
       // navigation/follow scrolls are excluded here; unowned momentum counts.
       if (direction && (owner === null || owner === 'user-gesture')) {
-        captureLeadingExtent(readFlowChatScrollTop(scrollerElement), true, geometry);
+        captureLeadingExtent(readFlowChatScrollTop(scrollerElement), true, getGeometry());
         historyPager.readerIntent(direction);
       }
-      if (owner === 'one-shot-navigation') captureLeadingExtent(readFlowChatScrollTop(scrollerElement), true, geometry);
+      if (owner === 'one-shot-navigation') captureLeadingExtent(readFlowChatScrollTop(scrollerElement), true, getGeometry());
       /*
        * A scroll under a scrollbar press is the one case where a plain scroll
        * event does carry intent — the press is what qualifies it. Left
@@ -1638,9 +1640,14 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
        * Re-anchor to wherever the user has arrived, and only there. The rule
        * for "was this scroll the user's" lives with the anchor.
        */
-      viewportAnchor.captureAnchorForScroll(readFlowChatScrollTop(scrollerElement) === geometry.scrollTop ? geometry : undefined);
+      viewportAnchor.captureAnchorForScroll(
+        geometrySample && readFlowChatScrollTop(scrollerElement) === geometrySample.scrollTop ? geometrySample : undefined,
+      );
       scheduleVisibleTurnInfoUpdate();
-      publishViewportSnapshot(readFlowChatScrollTop(scrollerElement) === geometry.scrollTop ? geometry : undefined);
+      if (onViewportSnapshotRef.current) {
+        const sample = getGeometry();
+        publishViewportSnapshot(readFlowChatScrollTop(scrollerElement) === sample.scrollTop ? sample : undefined);
+      }
       /*
        * Paging is a question about where the reader is, so a scroll is its
        * primary input. Through a ref: this listener must not be torn down and
