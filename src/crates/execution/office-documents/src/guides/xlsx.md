@@ -2,6 +2,8 @@
 
 A workbook is a list of **sheets**; each sheet holds sparse cells addressed A1-style. Add data in chunks (`append_rows` is the natural way to page a large table across calls), then format. `read` without `sheet` lists the sheets; with `sheet` it pages over rows (`offset`/`limit`, default 100 rows) or reads an A1 `range`.
 
+Range reads also honor `offset`/`limit` (at most 500 rows per call); pass the same range and the returned `next_offset` to continue. `detail: "full"` preserves complete cell text; outline reads shorten long text.
+
 ## Cell values
 
 Rows are arrays of cell values:

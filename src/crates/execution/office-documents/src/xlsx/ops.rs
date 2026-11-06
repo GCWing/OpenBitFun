@@ -288,6 +288,15 @@ pub(crate) fn apply(
                 .or_else(|| input.rows.as_ref().map(|rows| rows.len() as u32))
                 .unwrap_or(1)
                 .max(1);
+            if input
+                .rows
+                .as_ref()
+                .is_some_and(|rows| rows.len() > count as usize)
+            {
+                return Err(OfficeError::invalid(
+                    "insert_rows: `rows` cannot contain more rows than `count`",
+                ));
+            }
             check_index(input.row, MAX_ROWS, "row")?;
             shift_sheet(book, index, Axis::Row, input.row, count as i64)?;
             if let Some(rows) = &input.rows {
@@ -877,20 +886,34 @@ fn date_serial(text: &str) -> Option<(f64, bool)> {
     {
         return None;
     }
-    let days = days_from_civil(year, month, day) - days_from_civil(1899, 12, 30);
+    let leap_year = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_month = match month {
+        2 if leap_year => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    if day > days_in_month {
+        return None;
+    }
+    // Excel reserves serial 60 for its fictitious 1900-02-29. Real dates
+    // before March 1900 must not include that extra day.
+    let days = days_from_civil(year, month, day) - days_from_civil(1899, 12, 31)
+        + i64::from((year, month) >= (1900, 3));
     let mut fraction = 0.0;
     if let Some(time) = time {
         let mut pieces = time.trim_end_matches('Z').split(':');
-        let hours: f64 = pieces.next()?.parse().ok()?;
-        let minutes: f64 = pieces.next().unwrap_or("0").parse().ok()?;
+        let hours: u32 = pieces.next()?.parse().ok()?;
+        let minutes: u32 = pieces.next()?.parse().ok()?;
         let seconds: f64 = pieces.next().unwrap_or("0").parse().ok()?;
-        if !(0.0..24.0).contains(&hours)
-            || !(0.0..60.0).contains(&minutes)
-            || !(0.0..61.0).contains(&seconds)
+        if pieces.next().is_some()
+            || hours >= 24
+            || minutes >= 60
+            || !(0.0..60.0).contains(&seconds)
         {
             return None;
         }
-        fraction = (hours * 3600.0 + minutes * 60.0 + seconds) / 86400.0;
+        fraction = (hours as f64 * 3600.0 + minutes as f64 * 60.0 + seconds) / 86400.0;
     }
     Some((days as f64 + fraction, time.is_some()))
 }
@@ -1021,12 +1044,29 @@ mod tests {
 
     #[test]
     fn date_serials_match_excel() {
+        assert_eq!(date_serial("1900-01-01"), Some((1.0, false)));
+        assert_eq!(date_serial("1900-02-28"), Some((59.0, false)));
         assert_eq!(date_serial("1900-03-01"), Some((61.0, false)));
         assert_eq!(date_serial("2024-01-01"), Some((45292.0, false)));
         let (serial, has_time) = date_serial("2024-01-01 12:00").unwrap();
         assert!(has_time);
         assert!((serial - 45292.5).abs() < 1e-9);
         assert_eq!(date_serial("2024-13-01"), None);
+    }
+
+    #[test]
+    fn rejects_impossible_dates_and_malformed_times() {
+        for date in [
+            "1900-02-29",
+            "2023-02-29",
+            "2024-04-31",
+            "2024-01-01 12:00:00:01",
+            "2024-01-01 12:00:60",
+            "2024-01-01 1.5:00",
+        ] {
+            assert_eq!(date_serial(date), None, "{date}");
+        }
+        assert_eq!(date_serial("2024-02-29"), Some((45351.0, false)));
     }
 
     #[test]

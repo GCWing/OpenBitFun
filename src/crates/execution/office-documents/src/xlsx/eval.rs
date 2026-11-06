@@ -821,22 +821,12 @@ pub(crate) fn text(value: &Computed) -> String {
 }
 
 pub(crate) fn format_number(value: f64) -> String {
-    if value.fract() == 0.0 && value.abs() < 1e15 {
-        return format!("{}", value as i64);
-    }
-    let formatted = format!("{:.15}", value);
-    let trimmed = formatted.trim_end_matches('0').trim_end_matches('.');
-    // Keep at most 15 significant digits like Excel.
-    let significant: usize = trimmed.chars().filter(char::is_ascii_digit).count();
-    if significant > 15 {
-        let decimals = 15usize.saturating_sub(value.abs().log10().floor().max(0.0) as usize + 1);
-        let rounded = format!("{:.*}", decimals, value);
-        return rounded
-            .trim_end_matches('0')
-            .trim_end_matches('.')
-            .to_string();
-    }
-    trimmed.to_string()
+    // Round to 15 significant digits without trimming integer zeroes or
+    // rounding small nonzero values to zero with fixed decimal precision.
+    format!("{value:.14e}")
+        .parse::<f64>()
+        .unwrap_or(value)
+        .to_string()
 }
 
 fn compare(left: &Computed, right: &Computed) -> std::cmp::Ordering {
@@ -959,5 +949,12 @@ mod tests {
         assert_eq!(format_number(3.0), "3");
         assert_eq!(format_number(0.1 + 0.2), "0.3");
         assert_eq!(format_number(-2.5), "-2.5");
+        for value in [1e15, -1e15, 1.2e20, 1e-20, -1.23456789e-12] {
+            assert_eq!(format_number(value).parse::<f64>().unwrap(), value);
+        }
+        assert_eq!(
+            eval(&[("A1", json!("=1000000000000000&\" units\""))], "A1"),
+            Some(Computed::Text("1000000000000000 units".to_string()))
+        );
     }
 }

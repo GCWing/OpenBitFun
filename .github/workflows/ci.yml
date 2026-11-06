@@ -330,6 +330,9 @@ jobs:
         if: runner.os != 'Linux'
         run: cargo test --locked -p openbitfun-core --lib
 
+      - name: Run portable Office document engine tests
+        run: cargo test --locked -p openbitfun-office-documents
+
       - name: Run full core library tests on Linux
         if: runner.os == 'Linux'
         run: cargo test --locked -p openbitfun-core --features product-full --lib

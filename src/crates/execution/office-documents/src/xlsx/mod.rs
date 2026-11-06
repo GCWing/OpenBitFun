@@ -37,24 +37,26 @@ pub(crate) fn read(book: &XlsxDocument, request: &ReadRequest) -> OfficeResult<V
     let Some(used) = used else {
         return Ok(json!({ "sheet": sheet.name, "used_range": null, "rows": [], "total_rows": 0 }));
     };
-    let window = match &request.range {
+    let requested = match &request.range {
         Some(range) => parse_range(range)?,
-        None => {
-            let total_rows = (used.end.row - used.start.row + 1) as usize;
-            let (offset, limit) = request.window(total_rows, 100);
-            let first = used.start.row + offset as u32;
-            let last = (first as u64 + limit as u64 - 1).min(used.end.row as u64) as u32;
-            CellRange {
-                start: CellRef::new(first, used.start.col),
-                end: CellRef::new(last.max(first), used.end.col),
-            }
-        }
+        None => used,
+    };
+    let total_rows = (requested.end.row - requested.start.row + 1) as usize;
+    let (offset, limit) = request.window(total_rows, 100);
+    let row_count = limit.min(total_rows - offset);
+    let first = requested.start.row + offset as u32;
+    let window = CellRange {
+        start: CellRef::new(first, requested.start.col),
+        end: CellRef::new(
+            first + row_count.saturating_sub(1) as u32,
+            requested.end.col,
+        ),
     };
     let last_col = window.end.col.min(window.start.col + MAX_READ_COLUMNS - 1);
     let columns: Vec<String> = (window.start.col..=last_col).map(column_letters).collect();
     let mut rows = Vec::new();
     let mut styles = serde_json::Map::new();
-    for row in window.start.row..=window.end.row.min(used.end.row.max(window.start.row)) {
+    for row in first..first + row_count as u32 {
         let mut values = Vec::new();
         let mut any = false;
         for col in window.start.col..=last_col {
@@ -76,7 +78,9 @@ pub(crate) fn read(book: &XlsxDocument, request: &ReadRequest) -> OfficeResult<V
                             }
                             None => json!({ "formula": format!("={formula}"), "value": null }),
                         },
-                        (None, Value::String(text)) => json!(preview(text, 200)),
+                        (None, Value::String(text)) if request.detail == Detail::Outline => {
+                            json!(preview(text, 200))
+                        }
                         (None, other) => other.clone(),
                     }
                 }
@@ -92,7 +96,10 @@ pub(crate) fn read(book: &XlsxDocument, request: &ReadRequest) -> OfficeResult<V
     let mut view = json!({
         "sheet": sheet.name,
         "used_range": used.to_string(),
-        "window": CellRange { start: window.start, end: CellRef::new(window.end.row, last_col) }.to_string(),
+        "window": (row_count > 0).then(|| CellRange { start: window.start, end: CellRef::new(window.end.row, last_col) }.to_string()),
+        "offset": offset,
+        "limit": limit,
+        "total_rows": total_rows,
         "columns": columns,
         "rows": rows,
         "merges": sheet.merges,
@@ -103,9 +110,8 @@ pub(crate) fn read(book: &XlsxDocument, request: &ReadRequest) -> OfficeResult<V
     if window.end.col > last_col {
         view["columns_truncated"] = json!(true);
     }
-    if request.range.is_none() && window.end.row < used.end.row {
-        let offset = (window.end.row - used.start.row + 1) as usize;
-        view["next_offset"] = json!(offset);
+    if offset + row_count < total_rows {
+        view["next_offset"] = json!(offset + row_count);
     }
     if request.detail == Detail::Full {
         view["styles"] = Value::Object(styles);

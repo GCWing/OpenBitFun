@@ -316,6 +316,56 @@ fn pptx_slides_with_notes_tables_and_images() {
 }
 
 #[test]
+fn xlsx_range_reads_are_paged_and_full_text_is_lossless() {
+    let mut book = OfficeDocument::new(OfficeFormat::Xlsx, None).unwrap();
+    let long_text = "long cell text ".repeat(40);
+    let rows: Vec<Value> = (0..600).map(|_| json!([long_text])).collect();
+    book.apply(
+        &[json!({"op": "add_sheet", "name": "Data", "rows": rows})],
+        &ImageSources::new(),
+    )
+    .unwrap();
+    let request = ReadRequest {
+        sheet: Some("Data".to_string()),
+        range: Some("A1:A600".to_string()),
+        detail: Detail::Full,
+        limit: Some(2),
+        ..ReadRequest::default()
+    };
+    let page = book.read(&request).unwrap();
+    assert_eq!(page["rows"].as_array().unwrap().len(), 2);
+    assert_eq!(page["rows"][0]["cells"][0], json!(long_text));
+    assert_eq!(page["next_offset"], json!(2));
+    let last = book
+        .read(&ReadRequest {
+            offset: Some(599),
+            ..request
+        })
+        .unwrap();
+    assert_eq!(last["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(last["rows"][0]["row"], json!(600));
+    assert!(last.get("next_offset").is_none());
+}
+
+#[test]
+fn xlsx_insert_rows_cannot_overwrite_existing_rows() {
+    let mut book = OfficeDocument::new(OfficeFormat::Xlsx, None).unwrap();
+    book.apply(
+        &[json!({"op": "add_sheet", "name": "Data", "rows": [["keep"]]})],
+        &ImageSources::new(),
+    )
+    .unwrap();
+    let before = book.to_bytes().unwrap();
+    assert!(book
+        .apply(
+            &[json!({"op": "insert_rows", "row": 1, "count": 1, "rows": [["new"], ["overwrite"]]})],
+            &ImageSources::new()
+        )
+        .is_err());
+    assert_eq!(book.to_bytes().unwrap(), before);
+}
+
+#[test]
 fn external_changes_are_detected() {
     let mut doc = OfficeDocument::new(OfficeFormat::Docx, None).unwrap();
     doc.apply(
