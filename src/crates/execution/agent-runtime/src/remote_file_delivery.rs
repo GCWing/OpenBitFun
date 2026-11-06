@@ -3,6 +3,12 @@ use std::path::Path;
 
 pub const TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY: &str = "remote_file_delivery_channel";
 
+/// The submitting desktop UI is on a peer device, not on the execution host.
+/// Hosts stamp this per-turn metadata at the Peer HostInvoke boundary. It must
+/// not be inferred from attached controllers, which may only observe a local
+/// turn. Kept separate from mobile/bot file delivery semantics.
+pub const TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY: &str = "peer_device_control";
+
 pub fn needs_computer_links_for_source(source: DialogTriggerSource) -> bool {
     matches!(
         source,

@@ -195,6 +195,17 @@ Narrower local guides already exist for some subtrees:
 
 ## Verification
 
+For desktop card admission, per-turn Peer origin, recovery context and subagent
+propagation:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib -- desktop_card
+```
+
+These tests use a stub card host and simulated remote contexts; they do not
+exercise native card windows or live Peer/mobile/SSH connections. The Desktop
+guide owns the HostInvoke compatibility and native host checks.
+
 For opt-in category/system-prompt previews and session-storage isolation:
 
 ```bash

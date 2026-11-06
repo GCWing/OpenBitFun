@@ -144,6 +144,10 @@ is `node tests/e2e/scripts/run-subscription-pool.mjs` (see its E2E guide).
 
 For desktop card stacking, native parenting rollback, and legacy record/request compatibility,
 run `cargo test --locked -p openbitfun-desktop --no-default-features --lib desktop_cards`.
+This also checks host-stamped Peer turn metadata for legacy controllers. Tool
+admission is turn-scoped: attached Peer controllers are observers and must not
+block local card creation or display. Run the Core guide's `desktop_card` tests
+for request-origin propagation; these fixtures do not establish live remote behavior.
 On a graphical Windows session with Explorer running, also run
 `cargo test --locked -p openbitfun-desktop --no-default-features --lib live_explorer_attachment_round_trip -- --ignored`.
 The native fixtures use hidden disposable windows; they do not establish WebView rendering,

@@ -42,7 +42,9 @@ use openbitfun_agent_runtime::checkpoint::{
 use openbitfun_agent_runtime::permission::{
     AUTO_APPROVE_ASK_CONTEXT_KEY, PERMISSION_MODE_CONTEXT_KEY,
 };
-use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY;
+use openbitfun_agent_runtime::remote_file_delivery::{
+    TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY, TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
+};
 use openbitfun_agent_runtime::user_questions::{
     UserQuestionController, USER_INPUT_AVAILABLE_CONTEXT_KEY, USER_INPUT_MODEL_ROUND_CONTEXT_KEY,
     USER_INPUT_PARENT_CONTEXT_KEY,
@@ -455,6 +457,7 @@ fn build_tool_context_custom_data(context: &ToolExecutionContext) -> HashMap<Str
     for key in [
         USER_INPUT_AVAILABLE_CONTEXT_KEY,
         AUTO_APPROVE_ASK_CONTEXT_KEY,
+        TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY,
     ] {
         let value = match context.context_vars.get(key).map(String::as_str) {
             Some("true") => Some(true),
@@ -1843,6 +1846,26 @@ mod task_context_tests {
                 "session_id": "restored-parent", "dialog_turn_id": null,
             })
         );
+    }
+
+    #[test]
+    fn desktop_cards_tool_context_keeps_turn_scoped_peer_origin() {
+        use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY;
+        for origin in [None, Some("true"), Some("false")] {
+            let mut task = task_with_context_vars();
+            if let Some(origin) = origin {
+                task.context
+                    .context_vars
+                    .insert(TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY.into(), origin.into());
+            }
+            let context = build_tool_use_context_for_task(&task, None, CancellationToken::new());
+            assert_eq!(
+                context
+                    .custom_data
+                    .get(TOOL_CONTEXT_PEER_DEVICE_CONTROL_KEY),
+                origin.map(|value| json!(value == "true")).as_ref(),
+            );
+        }
     }
 
     #[test]
