@@ -3,6 +3,7 @@ name = "openbitfun-office-documents"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+license = "MIT AND Apache-2.0"
 description = "Portable OOXML (docx, xlsx, pptx) document models, incremental edit operations, and package writers"
 
 [lib]

@@ -4,6 +4,8 @@
 //! `openbitfun-office-documents`; this tool resolves paths, loads referenced
 //! images, and moves bytes through the session's workspace file system so it
 //! works the same for local and remote workspaces.
+//! GenOffice reference attribution and licenses are kept beside the engine
+//! in `src/crates/execution/office-documents/README.md`.
 
 use crate::agentic::tools::file_permissions::file_permission_intents;
 use crate::agentic::tools::framework::{

@@ -1,5 +1,9 @@
 //! Portable OOXML document engine for agent tools.
 //!
+//! Agent-facing formats were developed with reference to GenOffice
+//! (Copyright 2026 Mainfunc, Inc.; Apache-2.0). See this crate's README.md,
+//! LICENSE-GENOFFICE.txt, and NOTICE-GENOFFICE.txt for sources and attribution.
+//!
 //! A document is an editable JSON model (Word blocks, workbook sheets, or a
 //! slide deck of positioned elements). Operations edit the model atomically,
 //! and the whole package is re-rendered from it. The model travels inside the
