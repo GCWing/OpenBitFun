@@ -36,6 +36,7 @@ export class MonacoAppearanceAdapter implements AppearanceRendererAdapter<'monac
   private settings: MonacoAppearanceSettings | null = null;
   private revision = 0;
   private currentThemeId: string | null = null;
+  private applied: { monaco: MonacoModule; settings: MonacoAppearanceSettings; revision: number } | null = null;
   private listeners = new Set<MonacoAppearanceListener>();
 
   validate(settings: unknown): string[] {
@@ -120,7 +121,11 @@ export class MonacoAppearanceAdapter implements AppearanceRendererAdapter<'monac
   attachMonaco(monaco: MonacoModule): string {
     this.monaco = monaco;
     const settings = this.requireSettings();
-    this.applyToMonaco(monaco, settings, this.revision);
+    // A new view shares the runtime's existing theme. Re-defining it also
+    // invalidates the stylesheet/token colors of every retained editor.
+    if (this.applied?.monaco !== monaco || this.applied.settings !== settings || this.applied.revision !== this.revision) {
+      this.applyToMonaco(monaco, settings, this.revision);
+    }
     return settings.id;
   }
 
@@ -155,6 +160,7 @@ export class MonacoAppearanceAdapter implements AppearanceRendererAdapter<'monac
       }
     });
     this.currentThemeId = settings.id;
+    this.applied = { monaco, settings, revision };
     if (previousThemeId !== settings.id) {
       const event = { previousThemeId, currentThemeId: settings.id, revision };
       this.listeners.forEach(listener => listener(event));

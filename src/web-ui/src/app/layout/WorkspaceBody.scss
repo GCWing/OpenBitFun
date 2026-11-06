@@ -56,6 +56,10 @@ $_resize-target-width: 12px;
   height: 100%;
   overflow: visible;
 
+  // The width is consumed here, not by the navigation contents. Keep each
+  // pointer update from invalidating the inherited style of every nav item.
+  > * { --nav-width: initial; }
+
   // The shared material stays visible through every navigation mode.
   > .openbitfun-nav-bar,
   > .openbitfun-nav-panel,
@@ -284,9 +288,14 @@ $_resize-target-width: 12px;
   min-width: 0;
 }
 
-.openbitfun-is-dragging-nav-collapse,
-.openbitfun-is-dragging-nav-collapse * {
-  cursor: ew-resize !important;
+// Pointer capture still owns the gesture. A transparent cursor surface avoids
+// changing the cursor style of every mounted element at pointer down/up.
+body.openbitfun-is-dragging-nav-collapse::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: var(--openbitfun-layer-fullscreen);
+  cursor: ew-resize;
 }
 
 @media (prefers-reduced-motion: reduce) {

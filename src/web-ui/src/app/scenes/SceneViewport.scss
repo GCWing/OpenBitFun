@@ -88,8 +88,11 @@
 
     &:not(.openbitfun-scene-viewport__scene--visible) {
       // Descendants can override inherited visibility. Hide the entire subtree
-      // immediately while keeping its mounted state and layout measurements.
+      // while retaining its DOM/state. Skip inactive layout work during pane
+      // resizing; revealing the scene restores rendering before its next paint.
+      // Visible incoming/outgoing scenes retain their existing crossfade.
       opacity: 0;
+      content-visibility: hidden;
       transition: none;
     }
   }

@@ -64,19 +64,17 @@ import {
   type TodoOccurrence,
 } from './todoOccurrences';
 import { buildWorkspaceOptions, formatDateTime } from './todoPresentation';
+import { useTodoClock } from './useTodoClock';
 import './TodosScene.scss';
 
 const log = createLogger('TodosScene');
-
-/** Keeps countdowns honest without re-rendering more than once a minute. */
-const CLOCK_TICK_MS = 30_000;
 
 function startOfCurrentMonthMs(nowMs: number): number {
   const now = new Date(nowMs);
   return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 }
 
-const TodosScene: React.FC = () => {
+const TodosScene: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
   const { t, formatDate } = useI18n(['scenes/todos', 'common', 'shared']);
   const instanceIdRef = useRef(`todos-scene-${Math.random().toString(36).slice(2)}`);
 
@@ -84,7 +82,7 @@ const TodosScene: React.FC = () => {
 
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [saving, setSaving] = useState(false);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const nowMs = useTodoClock(isActive);
   const [monthAnchorMs, setMonthAnchorMs] = useState(() => startOfCurrentMonthMs(Date.now()));
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
 
@@ -147,11 +145,6 @@ const TodosScene: React.FC = () => {
     }
     return workspaceOptions[0]?.value ?? '';
   }, [currentWorkspace, primaryAssistantWorkspaceId, workspaceOptions]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), CLOCK_TICK_MS);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const loadJobs = useCallback(async () => {
     try {

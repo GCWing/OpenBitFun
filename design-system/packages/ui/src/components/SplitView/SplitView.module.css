@@ -103,6 +103,14 @@
   }
 
   .surface { position: relative; }
+  /* Only layout chrome consumes the changing size in split mode. Stop the
+     private value at content boundaries so each drag frame does not invalidate
+     every descendant's inherited style. Overlay docks deliberately inherit it
+     through their arbitrary host wrappers to keep the composer beside content. */
+  .pane[data-pane-layout="split"] > *,
+  .headerColumns > * {
+    --_split-view-right-size: initial;
+  }
   .surface[data-split-active="false"] { visibility: hidden; opacity: 0; pointer-events: none; }
   .root[data-layout="overlay"][data-mode="split"] .secondary { z-index: 2; }
   .primary { grid-area: primary; }

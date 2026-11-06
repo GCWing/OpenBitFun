@@ -157,6 +157,28 @@ pnpm --dir src/web-ui run test:run src/app/layout/useNavResize.test.tsx src/app/
 These local DOM fixtures cover gesture state and spring settling, not native
 WebView rendering or live remote scenarios.
 
+For transcript focus/selection residency, disclosure takeover, crossing ranges,
+and clearing or moving a selection outside the transcript:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/timeline/useTimelineInteraction.test.tsx
+```
+
+These DOM fixtures cover interaction leases. Native row recycling checks live
+in `tests/e2e/AGENTS.md`; neither establishes system clipboard or remote behavior.
+
+For scene-tab reveal coordinates, resize delivery, pointer/keyboard motion,
+edge-control width changes and manual-scroll ownership:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/components/SceneBar/useSceneTabNavigation.test.tsx src/app/components/SceneBar/SceneBar.test.tsx
+```
+
+TabGroup items sit inside positioned drag wrappers; their `offsetLeft` is not a
+scroll-strip coordinate. Preserve reveal across edge-control layout changes, and
+release automatic reveal when the user wheels or pages the strip. These fixtures
+use supplied geometry; native overflow coverage is in `tests/e2e/AGENTS.md`.
+
 For project creation entry points, work-location/environment selection, and local / SSH / WSL / Docker routing:
 
 ```bash
@@ -428,6 +450,12 @@ pnpm --dir src/web-ui run test:run src/flow_chat/components/ChatInputWorkspaceSt
 These local DOM/store fixtures include simulated SSH report data, Peer surface switches,
 and the dispatch report source; they do not establish live remote behavior or visual fidelity.
 
+For compact composer width measurement and pane-resize suspension, run
+`pnpm --dir src/web-ui run test:run src/flow_chat/components/compactComposerInputWidth.test.ts src/app/scenes/session/ChatPane.composer-layout.test.tsx`.
+Compact measurement may read the live compact track; expanded or unusable geometry
+must retain the compact-layout probe. The native two-width geometry comparison is
+documented in `tests/e2e/AGENTS.md`; DOM fixtures do not establish wrapping fidelity.
+
 For canvas split tab placement, layout transitions, and lower-pane tab actions:
 
 ```bash
@@ -464,3 +492,30 @@ pnpm --dir src/web-ui run test:run src/infrastructure/workspace-icons/workspaceI
 ```
 
 These fixtures exercise DOM behavior and simulated device switching, not live remote hosts.
+
+For retained scene visibility, Todos display-clock suspension and immediate return
+catch-up (including midnight and document visibility), run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/SceneViewport.test.tsx src/app/scenes/todos/useTodoClock.test.tsx src/app/scenes/personal-overview/usePersonalOverview.test.tsx
+```
+
+These local DOM fixtures do not establish native rendering or live remote behavior.
+The Todos display clock must not gate job subscriptions or scheduler execution.
+For scene-readiness-only changes, run the SceneViewport test file alone. Readiness
+must follow the committed tree: a closed or Suspense-hidden tree cannot leave a
+ready id that reveals a newly suspended reopening. Native non-editor close/reopen
+coverage is in `run-scene-tabs.mjs`; its normal loading path does not replace the
+deliberately suspended DOM regression.
+
+For companion sprite look/action restoration, SVG timer ownership, reduced
+motion, hidden-window suspension and immediate hover polling recovery:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/components/AgentCompanionPet.test.tsx src/app/components/AgentCompanionDesktopPet/AgentCompanionDesktopPet.test.tsx
+```
+
+These DOM fixtures do not establish native CSS shorthand/longhand behavior or
+live remote delivery. The native resource/cadence runner and its attribution
+limits are documented in `tests/e2e/AGENTS.md`. Resource-loading compatibility
+tests belong to `src/infrastructure/config/AGENTS.md`.

@@ -186,6 +186,7 @@ const OverlaySurface = forwardRef<HTMLDivElement, OverlaySurfaceProps>(function 
       >
         <DialogContext.Provider value={context}>
           <div
+            data-motion="presence"
             {...surfaceProps}
             {...inertProps(!open)}
             aria-describedby={ariaDescribedBy ?? (hasDescription ? descriptionId : undefined)}

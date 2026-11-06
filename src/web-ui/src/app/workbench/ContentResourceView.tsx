@@ -9,8 +9,10 @@ import { confirmDialogChoice } from '@/infrastructure/confirm-dialog';
 import { useI18n } from '@/infrastructure/i18n';
 import { useSceneStore } from '../stores/sceneStore';
 import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
+import { useShortcut } from '@/infrastructure/hooks/useShortcut';
 import { useTabCloseShortcut } from '../hooks/useTabCloseShortcut';
 import { useWorkbenchResize } from './workbenchResize';
+import { activeEditTargetService } from '@/tools/editor/services/ActiveEditTargetService';
 
 export default function ContentResourceView({ resourceId, isActive }: { resourceId: string; isActive: boolean }) {
   const { measurementSuspended } = useWorkbenchResize();
@@ -44,6 +46,9 @@ export default function ContentResourceView({ resourceId, isActive }: { resource
   useTabCloseShortcut('workbench-content',
     () => useSceneStore.getState().closeScene(`content:${resourceId}`),
     { enabled: isActive && focused, priority: 20, description: 'keyboard.shortcuts.tab.close' });
+  useShortcut('editor.findInFile', { key: 'f', ctrl: true, scope: 'editor', allowInInput: true },
+    () => activeEditTargetService.openMonacoFind(),
+    { enabled: isActive && focused, priority: 20, description: 'keyboard.shortcuts.editor.findInFile' });
   if (!resource || !document) return null;
   return (
     <EditorDocumentContext.Provider value={document}>

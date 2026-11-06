@@ -59,6 +59,7 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
   const activeSceneId = useSceneStore(selectActiveSceneId);
   const isNavCollapsed = state.layout.leftPanelCollapsed;
   const [navWidth, setNavWidth] = useState(NAV_DEFAULT_WIDTH);
+  const [navResizing, setNavResizing] = useState(false);
   const navAreaRef = useRef<HTMLDivElement>(null);
   const navDividerRef = useRef<HTMLDivElement>(null);
   const navGripRef = useRef<SVGPathElement>(null);
@@ -73,6 +74,7 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
     collapsed: isNavCollapsed,
     onWidthChange: setNavWidth,
     onCollapse: toggleLeftPanel,
+    onResizeStateChange: setNavResizing,
   });
 
   return (
@@ -149,6 +151,7 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
           <SceneChromeProvider activeSceneId={activeSceneId}>
             <div data-openbitfun-creation-slot="scene-header" />
             <WorkbenchLayout
+              navigationResizing={navResizing}
               workspacePath={currentWorkspace?.rootPath}
               onMinimize={onMinimize}
               onMaximize={onMaximize}

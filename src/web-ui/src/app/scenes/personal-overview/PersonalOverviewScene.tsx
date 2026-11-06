@@ -100,7 +100,7 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
       : null
   );
   const avatarRef = useRef<HTMLSpanElement>(null);
-  useSubagentAvatarMotion(avatarRef, 'running', isActive, 'personal-overview');
+  useSubagentAvatarMotion(avatarRef, 'running', isActive, 'personal-overview', 'layers');
   const summary = useMemo(() => usage.status === 'ready'
     ? summarizeOverviewUsage(usage.data.stats, resolvedTimeZone, usage.data.now)
     : null, [usage, resolvedTimeZone]);

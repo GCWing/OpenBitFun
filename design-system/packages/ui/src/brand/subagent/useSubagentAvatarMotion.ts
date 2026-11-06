@@ -1,20 +1,26 @@
 import { useEffect, useRef, type RefObject } from 'react';
-import { createSubagentMotionPlayer, type SubagentMotionPlayer } from './subagentMotionPlayer';
+import { createSubagentMotionPlayer, type SubagentMotionPlayer, type SubagentMotionRenderMode } from './subagentMotionPlayer';
 import { pressHoldClip, pressReleaseClip, subagentMotionClips } from './subagentMotion';
 
 const isWorking = (status: string) => status === 'running' || status === 'finishing';
 
 /** Animate authored avatar parts, never the measured card or its text. */
-export function useSubagentAvatarMotion(ref: RefObject<HTMLElement>, status: string, enabled: boolean, identity?: string) {
+export function useSubagentAvatarMotion(ref: RefObject<HTMLElement>, status: string, enabled: boolean, identity?: string, renderMode: SubagentMotionRenderMode = "svg") {
   const playerRef = useRef<SubagentMotionPlayer>();
   const statusRef = useRef(status);
   const previousStatus = useRef(status);
+  const enabledRef = useRef(enabled);
+  const synchronizeEnabled = useRef<() => void>();
   statusRef.current = status;
+  enabledRef.current = enabled;
+  // Standalone layered artwork stays mounted while its scene is retained.
+  // Ordinary SVG callers may replace their artwork when motion is disabled.
+  const attach = enabled || renderMode === 'layers';
 
   useEffect(() => {
     const host = ref.current;
     const view = host?.ownerDocument.defaultView;
-    if (!enabled || !host || !view || typeof host.animate !== 'function') return;
+    if (!attach || !host || !view || typeof host.animate !== 'function') return;
     previousStatus.current = statusRef.current;
     const document = host.ownerDocument;
     const reduced = view.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -22,25 +28,38 @@ export function useSubagentAvatarMotion(ref: RefObject<HTMLElement>, status: str
     let visible = typeof IntersectionObserver === 'undefined';
     let pressing = false;
     let hovering = false;
+    let player: SubagentMotionPlayer | undefined;
+    let lastEnabled = enabledRef.current;
     const rest = () => {
       if (pressing) return;
       if (isWorking(statusRef.current)) {
-        player.play(subagentMotionClips.working, { notify: false });
+        player?.play(subagentMotionClips.working, { notify: false });
         return;
       }
       if (hovering) {
-        player.play(subagentMotionClips.hoverBlink, { notify: false });
+        player?.play(subagentMotionClips.hoverBlink, { notify: false });
         return;
       }
-      player.play(subagentMotionClips.settle, { notify: false });
+      player?.play(subagentMotionClips.settle, { notify: false });
     };
-    const player = createSubagentMotionPlayer(host, rest, '[data-subagent-motion-art] svg');
-    playerRef.current = player;
-    const active = () => visible && !document.hidden && !reduced?.matches && !forced?.matches;
+    const active = () => enabledRef.current && visible && !document.hidden && !reduced?.matches && !forced?.matches;
     const sync = () => {
       // Offscreen avatars release their animation handles instead of accumulating paused loops.
-      player.setReduced(!active());
-      if (active()) rest();
+      if (!active()) { player?.setReduced(true); return; }
+      // Delay the first rig until its artwork is visible and measurable.
+      if (!player) {
+        player = createSubagentMotionPlayer(host, rest, '[data-subagent-motion-art] svg', renderMode);
+        playerRef.current = player;
+      }
+      player.setReduced(false);
+      rest();
+    };
+    synchronizeEnabled.current = () => {
+      if (lastEnabled === enabledRef.current) return;
+      lastEnabled = enabledRef.current;
+      previousStatus.current = statusRef.current;
+      if (!lastEnabled) { pressing = false; hovering = false; }
+      sync();
     };
     const observer = typeof IntersectionObserver === 'undefined' ? undefined : new IntersectionObserver(entries => {
       visible = entries.some(entry => entry.isIntersecting);
@@ -56,8 +75,8 @@ export function useSubagentAvatarMotion(ref: RefObject<HTMLElement>, status: str
       // Pointer and focus changes must not replace or restart a working loop.
       if (active() && !pressing && !isWorking(statusRef.current)) rest();
     };
-    const press = () => { if (active()) { pressing = true; player.play(pressHoldClip, { notify: false }); } };
-    const release = () => { if (pressing) { pressing = false; if (active()) player.play({ ...pressReleaseClip, duration: 300 }); } };
+    const press = () => { if (active()) { pressing = true; player?.play(pressHoldClip, { notify: false }); } };
+    const release = () => { if (pressing) { pressing = false; if (active()) player?.play({ ...pressReleaseClip, duration: 300 }); } };
     const leave = () => {
       hovering = false;
       if (pressing) release();
@@ -65,7 +84,7 @@ export function useSubagentAvatarMotion(ref: RefObject<HTMLElement>, status: str
     };
     const click = () => {
       pressing = false;
-      if (active()) player.play({ ...subagentMotionClips.nod, duration: 260 });
+      if (active()) player?.play({ ...subagentMotionClips.nod, duration: 260 });
     };
     const keyDown = (event: KeyboardEvent) => { if (!event.repeat && (event.key === ' ' || event.key === 'Enter')) press(); };
     trigger?.addEventListener('pointerenter', hover);
@@ -94,10 +113,13 @@ export function useSubagentAvatarMotion(ref: RefObject<HTMLElement>, status: str
       trigger?.removeEventListener('keyup', release);
       trigger?.removeEventListener('blur', leave);
       view.removeEventListener('pointerup', release);
-      player.dispose();
+      player?.dispose();
       playerRef.current = undefined;
+      synchronizeEnabled.current = undefined;
     };
-  }, [enabled, identity, ref]);
+  }, [attach, identity, ref, renderMode]);
+
+  useEffect(() => { synchronizeEnabled.current?.(); }, [enabled]);
 
   useEffect(() => {
     const before = previousStatus.current;

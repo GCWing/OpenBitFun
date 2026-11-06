@@ -4,10 +4,21 @@ import { join } from 'node:path';
 import { writeFileSync } from 'node:fs';
 
 /** Loopback model only. Desktop still owns actual tools, events and persistence. */
-export async function createFlowChatStreamFixture(workspace: string) {
+export async function createFlowChatStreamFixture(workspace: string, options: {
+  initialParagraphs?: number; maxParagraphs?: number; intervalMs?: number; responseDelayMs?: number;
+} = {}) {
+  const initialParagraphs = options.initialParagraphs ?? Number(process.env.OPENBITFUN_STREAM_INITIAL_PARAGRAPHS || 80);
+  const maxParagraphs = options.maxParagraphs ?? Infinity;
+  const intervalMs = options.intervalMs ?? 90;
+  const responseDelayMs = options.responseDelayMs ?? 0;
+  if (!Number.isInteger(initialParagraphs) || initialParagraphs < 0
+    || (maxParagraphs !== Infinity && (!Number.isInteger(maxParagraphs) || maxParagraphs < initialParagraphs))
+    || !Number.isInteger(intervalMs) || intervalMs <= 0
+    || !Number.isInteger(responseDelayMs) || responseDelayMs < 0) throw new Error('Invalid stream fixture workload');
   const errors: string[] = [];
   const results: unknown[] = [];
   let emitted = 0;
+  let disconnected = false;
   let stream: ServerResponse | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let beginOutput: (() => void) | undefined;
@@ -30,6 +41,11 @@ export async function createFlowChatStreamFixture(workspace: string) {
       const body = JSON.parse(Buffer.concat(chunks).toString());
       const blocks = (body.messages ?? []).flatMap((message: { content: unknown }) => Array.isArray(message.content) ? message.content : []);
       const toolResults = blocks.filter((block: { type: string; tool_use_id?: string }) => block.type === 'tool_result' && block.tool_use_id?.startsWith('flowchat-perf-'));
+      if (responseDelayMs > 0) await new Promise<void>(resolve => {
+        const timeout = setTimeout(resolve, responseDelayMs);
+        res.once('close', () => { clearTimeout(timeout); resolve(); });
+      });
+      if (res.destroyed) return;
       start(res);
       if (!toolResults.length) {
         const names = new Set((body.tools ?? []).map((tool: { name: string }) => tool.name));
@@ -48,17 +64,20 @@ export async function createFlowChatStreamFixture(workspace: string) {
       const unique = new Map(toolResults.map((result: { tool_use_id: string }) => [result.tool_use_id, result]));
       results.splice(0, results.length, ...unique.values());
       stream = res;
+      disconnected = false;
       event(res, { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } });
       const emit = () => {
+        if (emitted >= maxParagraphs) return;
         const text = `\n\nStream paragraph ${emitted++}: ${'Readable text with **emphasis** and scrolling continuity. '.repeat(8)}`
           + (emitted % 8 === 0 ? '\n\n```typescript\nexport const streamed = true;\n```\n' : '');
         event(res, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } });
+        if (emitted >= maxParagraphs) { clearInterval(timer); timer = undefined; }
       };
       beginOutput = () => {
-        for (let index = 0; index < Number(process.env.OPENBITFUN_STREAM_INITIAL_PARAGRAPHS || 80); index++) emit();
-        timer = setInterval(emit, 90);
+        for (let index = 0; index < initialParagraphs; index++) emit();
+        if (emitted < maxParagraphs) timer = setInterval(emit, intervalMs);
       };
-      res.on('close', () => { clearInterval(timer); timer = undefined; });
+      res.on('close', () => { disconnected = true; clearInterval(timer); timer = undefined; });
     } catch (error) { errors.push(String(error)); res.end(); }
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -67,6 +86,7 @@ export async function createFlowChatStreamFixture(workspace: string) {
   return {
     url: `http://127.0.0.1:${address.port}`, errors, results,
     get emitted() { return emitted; },
+    get disconnected() { return disconnected; },
     get textReady() { return Boolean(beginOutput); },
     begin() { beginOutput?.(); beginOutput = undefined; },
     finish() {

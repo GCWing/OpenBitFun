@@ -25,6 +25,7 @@ const sceneHarness = vi.hoisted(() => {
     agentsReady,
     agentsAreReady: () => agentsAreReady,
     resolveAgents: () => resolveAgents?.(),
+    settingsSuspension: null as Promise<void> | null,
   };
 });
 
@@ -50,16 +51,21 @@ vi.mock('./session/SessionScene', () => ({
 }));
 
 vi.mock('./settings/SettingsScene', () => ({
-  default: ({ isActive }: { isActive?: boolean }) => (
-    <div
+  default: ({ isActive }: { isActive?: boolean }) => {
+    if (sceneHarness.settingsSuspension) throw sceneHarness.settingsSuspension;
+    return <div
       data-testid="settings-scene-content"
       data-scene-prop-active={isActive ? 'true' : 'false'}
-    />
-  ),
+    />;
+  },
 }));
 
 vi.mock('./assistant/AssistantScene', () => ({
   default: () => <div data-testid="assistant-scene-content" />,
+}));
+
+vi.mock('./todos/TodosScene', () => ({
+  default: ({ isActive }: { isActive: boolean }) => <div data-testid="todos-clock-owner" data-active={String(isActive)} />,
 }));
 
 vi.mock('./welcome/WelcomeScene', () => ({
@@ -89,6 +95,7 @@ describe('SceneViewport transitions', () => {
   let root: Root;
 
   beforeEach(() => {
+    sceneHarness.settingsSuspension = null;
     sessionPaneLayoutStore.setState(sessionPaneLayoutStore.getInitialState());
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => (
@@ -176,6 +183,21 @@ describe('SceneViewport transitions', () => {
     expect(visibleScenes().map(scene => scene.getAttribute('data-scene-id'))).toEqual(['settings']);
   });
 
+  it('keeps a visible secondary Todos clock active even while another pane is focused', async () => {
+    sessionPaneLayoutStore.getState().showContent();
+    sceneHarness.state = {
+      openTabs: [{ id: 'session', lastUsed: 1 }, { id: 'todos', lastUsed: 2, pane: 'secondary' }],
+      activeTabId: 'session', navigationMotion: 'instant', navigationSequence: 1,
+      paneSelections: { primary: sceneSelection('session'), secondary: sceneSelection('todos') },
+    };
+    await act(async () => root.render(<SceneViewport paned />));
+    const owner = container.querySelector('[data-testid="todos-clock-owner"]');
+    expect(owner?.getAttribute('data-active')).toBe('true');
+    act(() => sessionPaneLayoutStore.getState().hideContent());
+    expect(container.querySelector('[data-testid="todos-clock-owner"]')).toBe(owner);
+    expect(owner?.getAttribute('data-active')).toBe('false');
+  });
+
   it('keeps one scene visible while a lazy pointer target becomes ready', async () => {
     act(() => root.render(<SceneViewport />));
     expect(visibleScenes().map(scene => scene.getAttribute('data-scene-id'))).toEqual(['session']);
@@ -244,6 +266,24 @@ describe('SceneViewport transitions', () => {
     expect(container.querySelector('[data-scene-id="agents"]')?.hasAttribute('hidden')).toBe(false);
   });
 
+  it('waits for a closed scene to become ready again before revealing its new tree', async () => {
+    sceneHarness.state.openTabs.push({ id: 'settings', lastUsed: 1 });
+    act(() => root.render(<SceneViewport />));
+    sceneHarness.state.openTabs = [{ id: 'session', lastUsed: 0 }];
+    act(() => root.render(<SceneViewport />));
+    let resolveSettings!: () => void;
+    sceneHarness.settingsSuspension = new Promise(resolve => { resolveSettings = resolve; });
+    sceneHarness.state = { openTabs: [{ id: 'session', lastUsed: 0 }, { id: 'settings', lastUsed: 1 }],
+      activeTabId: 'settings', navigationMotion: 'pointer', navigationSequence: 1 };
+    await act(async () => { root.render(<SceneViewport />); await Promise.resolve(); });
+    expect(visibleScenes().map(scene => scene.getAttribute('data-scene-id'))).toEqual(['session']);
+    expect(container.querySelector('[data-scene-id="settings"]')?.getAttribute('data-pane-motion-phase')).toBe('holding');
+    await act(async () => {
+      sceneHarness.settingsSuspension = null; resolveSettings(); await Promise.resolve();
+    });
+    expect(visibleScenes().map(scene => scene.getAttribute('data-scene-id')).sort()).toEqual(['session', 'settings']);
+  });
+
   it('keeps an inactive open MiniApp scene mounted and hidden', async () => {
     sceneHarness.state = {
       openTabs: [
@@ -301,4 +341,5 @@ describe('SceneViewport transitions', () => {
     expect(container.querySelector('[data-testid="settings-scene-content"]')).toBe(settingsContent);
     expect(settingsContent?.getAttribute('data-scene-prop-active')).toBe('true');
   });
+
 });

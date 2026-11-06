@@ -23,7 +23,7 @@ use std::thread;
 #[cfg(windows)]
 use log::debug;
 use log::{error, warn};
-use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
+use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, ExitStatus, PtySize};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::config::ShellConfig;
@@ -38,8 +38,9 @@ mod shutdown {
     pub(super) const DATA_FLUSH_TIMEOUT_MS: u64 = 250;
     /// Maximum time to wait for the managed child to report termination.
     pub(super) const EXIT_CONFIRM_TIMEOUT_MS: u64 = 5_000;
-    /// Poll interval while confirming termination after a kill request.
-    pub(super) const EXIT_CONFIRM_POLL_MS: u64 = 10;
+    /// Match portable-pty's Unix Child::kill grace before escalating SIGHUP.
+    #[cfg(unix)]
+    pub(super) const HANGUP_GRACE_MS: u64 = 200;
 }
 
 /// Resize constants for Windows ConPTY
@@ -200,17 +201,30 @@ impl PtyController {
 
     /// Shutdown the process
     pub async fn shutdown(&self, immediate: bool) -> TerminalResult<()> {
+        if !self.is_running() {
+            return Ok(());
+        }
         let (completion, completed) = oneshot::channel();
-        self.command_tx
+        let sent = self
+            .command_tx
             .send(InternalCommand::Shutdown {
                 immediate,
                 completion,
             })
-            .await
-            .map_err(|_| TerminalError::ProcessNotRunning)?;
-        completed
-            .await
-            .map_err(|_| TerminalError::ProcessNotRunning)?
+            .await;
+        if sent.is_err() {
+            return if self.is_running() {
+                Err(TerminalError::ProcessNotRunning)
+            } else {
+                Ok(())
+            };
+        }
+        match completed.await {
+            Ok(result) => result,
+            // Natural exit can win the race with an already queued close.
+            Err(_) if !self.is_running() => Ok(()),
+            Err(_) => Err(TerminalError::ProcessNotRunning),
+        }
     }
 
     /// Check if process is still running
@@ -391,6 +405,7 @@ pub fn spawn_pty(
     let mut child = pty_pair.slave.spawn_command(cmd)?;
 
     let pid = child.process_id().unwrap_or(0);
+    let mut killer = child.clone_killer();
 
     // Create channels for communication
     let (command_tx, mut command_rx) = mpsc::channel::<InternalCommand>(256);
@@ -417,6 +432,7 @@ pub fn spawn_pty(
     // Clone for read thread
     let has_exited_read = has_exited.clone();
     let event_tx_read = event_tx.clone();
+    let (read_done_tx, mut read_done_rx) = oneshot::channel();
 
     // Start the read thread (native thread, not tokio)
     thread::spawn(move || {
@@ -456,6 +472,14 @@ pub fn spawn_pty(
                 }
             }
         }
+        let _ = read_done_tx.send(());
+    });
+
+    // Reap natural exits even while no commands arrive. A blocking waiter
+    // sleeps in the OS; it adds no per-terminal polling timer or idle wakeups.
+    let (exit_tx, mut exit_rx) = oneshot::channel();
+    thread::spawn(move || {
+        let _ = exit_tx.send(child.wait());
     });
 
     // Send ready event
@@ -482,7 +506,21 @@ pub fn spawn_pty(
         #[cfg(windows)]
         let mut delayed_resize_triggered = false;
 
-        while let Some(cmd) = command_rx.recv().await {
+        loop {
+            let cmd = tokio::select! {
+                biased;
+                exited = receive_child_exit(&mut exit_rx) => {
+                    match exited {
+                        Ok(exit_code) => publish_child_exit(exit_code, &has_exited_cmd, &event_tx, &mut read_done_rx).await,
+                        Err(error) => error!("Failed to observe PTY process exit: {}", error),
+                    }
+                    break;
+                }
+                command = command_rx.recv() => match command {
+                    Some(command) => command,
+                    None => break,
+                }
+            };
             match cmd {
                 InternalCommand::Write(data) => {
                     if let Ok(mut writer_guard) = writer.lock() {
@@ -587,15 +625,28 @@ pub fn spawn_pty(
                 InternalCommand::Shutdown {
                     immediate,
                     completion,
-                } => match confirm_child_shutdown(child.as_mut(), immediate).await {
+                } => match confirm_child_shutdown(killer.as_mut(), pid, &mut exit_rx, immediate)
+                    .await
+                {
                     Ok(exit_code) => {
-                        has_exited_cmd.store(true, Ordering::Relaxed);
-                        let _ = event_tx.try_send(PtyEvent::Exit { exit_code });
+                        publish_child_exit(
+                            exit_code,
+                            &has_exited_cmd,
+                            &event_tx,
+                            &mut read_done_rx,
+                        )
+                        .await;
                         let _ = completion.send(Ok(()));
                         break;
                     }
                     Err(error) => {
+                        let can_still_wait = matches!(error, TerminalError::Timeout(_));
                         let _ = completion.send(Err(error));
+                        if !can_still_wait {
+                            // The exit result was consumed (or its sender
+                            // failed); never poll that one-shot receiver again.
+                            break;
+                        }
                     }
                 },
             }
@@ -660,47 +711,92 @@ fn is_tauri_host_env(key: &OsStr) -> bool {
         || key.starts_with("TAURI_ANDROID_PACKAGE_NAME_")
 }
 
+type ChildExitReceiver = oneshot::Receiver<std::io::Result<ExitStatus>>;
+
+async fn receive_child_exit(exited: &mut ChildExitReceiver) -> TerminalResult<Option<u32>> {
+    let status = exited
+        .await
+        .map_err(|_| TerminalError::ProcessNotRunning)??;
+    Ok(Some(status.exit_code()))
+}
+
+async fn publish_child_exit(
+    exit_code: Option<u32>,
+    has_exited: &AtomicBool,
+    events: &mpsc::Sender<PtyEvent>,
+    read_done: &mut oneshot::Receiver<()>,
+) {
+    // Normally EOF immediately follows child exit. Retain the existing bounded
+    // drain for a descendant that still holds a slave descriptor open.
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_millis(shutdown::DATA_FLUSH_TIMEOUT_MS),
+        read_done,
+    )
+    .await;
+    has_exited.store(true, Ordering::Relaxed);
+    // Exit is a lifecycle event: a temporarily full output queue must not drop it.
+    let _ = events.send(PtyEvent::Exit { exit_code }).await;
+}
+
 async fn confirm_child_shutdown(
-    child: &mut (dyn Child + Send),
+    killer: &mut (dyn ChildKiller + Send + Sync),
+    _pid: u32,
+    exited: &mut ChildExitReceiver,
     immediate: bool,
 ) -> TerminalResult<Option<u32>> {
     if !immediate {
-        tokio::time::sleep(tokio::time::Duration::from_millis(
-            shutdown::DATA_FLUSH_TIMEOUT_MS,
-        ))
-        .await;
-    }
-
-    match child.try_wait() {
-        Ok(Some(status)) => return Ok(Some(status.exit_code())),
-        Ok(None) => {}
-        Err(error) => return Err(TerminalError::Io(error)),
-    }
-
-    let kill_error = child.kill().err().map(|error| error.to_string());
-    let deadline = tokio::time::Instant::now()
-        + tokio::time::Duration::from_millis(shutdown::EXIT_CONFIRM_TIMEOUT_MS);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return Ok(Some(status.exit_code())),
-            Ok(None) if tokio::time::Instant::now() < deadline => {
-                tokio::time::sleep(tokio::time::Duration::from_millis(
-                    shutdown::EXIT_CONFIRM_POLL_MS,
-                ))
-                .await;
-            }
-            Ok(None) => {
-                let detail = kill_error
-                    .as_deref()
-                    .map(|error| format!("; kill request failed: {error}"))
-                    .unwrap_or_default();
-                return Err(TerminalError::Timeout(format!(
-                    "PTY process did not exit after shutdown request{detail}"
-                )));
-            }
-            Err(error) => return Err(TerminalError::Io(error)),
+        if let Ok(result) = tokio::time::timeout(
+            std::time::Duration::from_millis(shutdown::DATA_FLUSH_TIMEOUT_MS),
+            receive_child_exit(exited),
+        )
+        .await
+        {
+            return result;
         }
     }
+
+    match exited.try_recv() {
+        Ok(status) => return Ok(Some(status?.exit_code())),
+        Err(oneshot::error::TryRecvError::Empty) => {}
+        Err(oneshot::error::TryRecvError::Closed) => return Err(TerminalError::ProcessNotRunning),
+    }
+
+    let kill_error = killer.kill().err().map(|error| error.to_string());
+    #[cfg(unix)]
+    {
+        // clone_killer sends only SIGHUP on Unix. Preserve Child::kill's
+        // escalation for shells that ignore it, while the waiter owns reaping.
+        if let Ok(result) = tokio::time::timeout(
+            std::time::Duration::from_millis(shutdown::HANGUP_GRACE_MS),
+            receive_child_exit(exited),
+        )
+        .await
+        {
+            return result;
+        }
+        if let Ok(pid) = i32::try_from(_pid) {
+            if pid > 0 {
+                // SAFETY: signal only the child PID returned by portable-pty.
+                unsafe {
+                    libc::kill(pid, libc::SIGKILL);
+                }
+            }
+        }
+    }
+    tokio::time::timeout(
+        std::time::Duration::from_millis(shutdown::EXIT_CONFIRM_TIMEOUT_MS),
+        receive_child_exit(exited),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        let detail = kill_error
+            .as_deref()
+            .map(|error| format!("; kill request failed: {error}"))
+            .unwrap_or_default();
+        Err(TerminalError::Timeout(format!(
+            "PTY process did not exit after shutdown request{detail}"
+        )))
+    })
 }
 
 // ============================================================================
@@ -770,5 +866,138 @@ mod tests {
         assert!(!spawned.controller.is_running());
         assert!(std::iter::from_fn(|| spawned.events.try_recv())
             .any(|event| matches!(event, PtyEvent::Exit { .. })));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn natural_exit_is_reaped_and_reports_final_output_without_a_close_request() {
+        let (executable, args, shell_type) = if cfg!(windows) {
+            (
+                "cmd.exe",
+                vec!["/d", "/c", "echo terminal-final-output & exit /b 7"],
+                ShellType::Cmd,
+            )
+        } else {
+            (
+                "/bin/sh",
+                vec!["-c", "printf 'terminal-final-output\\n'; exit 7"],
+                ShellType::Sh,
+            )
+        };
+        let mut spawned = spawn_pty(
+            2,
+            &ShellConfig {
+                executable: executable.into(),
+                args: args.into_iter().map(str::to_string).collect(),
+                ..ShellConfig::default()
+            },
+            shell_type,
+            80,
+            24,
+        )
+        .expect("spawn naturally exiting PTY");
+        let mut output = Vec::new();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while let Some(event) = spawned.events.recv().await {
+                match event {
+                    PtyEvent::Data(data) => output.extend(data),
+                    PtyEvent::Exit { exit_code } => return exit_code,
+                    _ => {}
+                }
+            }
+            panic!("PTY event stream ended without an exit status");
+        })
+        .await;
+        if result.is_err() {
+            spawned
+                .controller
+                .shutdown(true)
+                .await
+                .expect("clean up failed fixture");
+        }
+        assert_eq!(result.expect("natural exit notification"), Some(7));
+        assert!(String::from_utf8_lossy(&output).contains("terminal-final-output"));
+        assert!(!spawned.controller.is_running());
+        spawned
+            .controller
+            .shutdown(true)
+            .await
+            .expect("close already exited PTY");
+        assert!(!std::iter::from_fn(|| spawned.events.try_recv())
+            .any(|event| matches!(event, PtyEvent::Exit { .. })));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn shutdown_still_terminates_a_shell_ignoring_hangup() {
+        let mut spawned = spawn_pty(
+            3,
+            &ShellConfig {
+                executable: "/bin/sh".into(),
+                args: vec![
+                    "-c".into(),
+                    "trap '' HUP; printf 'hangup-ignored\\n'; read value".into(),
+                ],
+                ..ShellConfig::default()
+            },
+            ShellType::Sh,
+            80,
+            24,
+        )
+        .expect("spawn hangup-ignoring PTY");
+        let mut output = Vec::new();
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while !String::from_utf8_lossy(&output).contains("hangup-ignored") {
+                if let Some(PtyEvent::Data(data)) = spawned.events.recv().await {
+                    output.extend(data);
+                }
+            }
+        })
+        .await
+        .expect("shell installed hangup handler");
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            spawned.controller.shutdown(true),
+        )
+        .await
+        .expect("shutdown deadline")
+        .expect("confirmed shutdown");
+        assert!(!spawned.controller.is_running());
+        let exits: Vec<_> = std::iter::from_fn(|| spawned.events.try_recv())
+            .filter_map(|event| match event {
+                PtyEvent::Exit { exit_code } => Some(exit_code),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(exits.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn closed_output_does_not_report_exit_before_the_child_finishes() {
+        let mut spawned = spawn_pty(
+            4,
+            &ShellConfig {
+                executable: "/bin/sh".into(),
+                args: vec!["-c".into(), "exec 0<&- 1>&- 2>&-; sleep 0.2; exit 9".into()],
+                ..ShellConfig::default()
+            },
+            ShellType::Sh,
+            80,
+            24,
+        )
+        .expect("spawn early-EOF PTY");
+        let started = std::time::Instant::now();
+        let exit_code = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                if let Some(PtyEvent::Exit { exit_code }) = spawned.events.recv().await {
+                    break exit_code;
+                }
+            }
+        })
+        .await
+        .expect("child exit notification");
+        assert_eq!(exit_code, Some(9));
+        assert!(started.elapsed() >= std::time::Duration::from_millis(150));
+        assert!(!spawned.controller.is_running());
     }
 }

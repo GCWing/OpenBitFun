@@ -332,6 +332,21 @@ verdict, both raw deltas, and whether a gesture was live.
 
 ## The Follow Eases Its Write, Never Its Target
 
+The current time-based follower retains the requested fractional position only
+across its own accepted frame writes whose native readback is still current.
+WebKit can quantize `scrollTop`: easing anew from the rounded position lost
+every subpixel step and left an idle frame loop two pixels short of its target.
+Continuing from the accepted request preserves the existing ease rather than
+changing its duration, endpoint or snap threshold. The viewport and virtualizer
+still receive actual native readback. A refused write, foreign displacement,
+new explicit entry or suspension discards this fractional travel; it never
+advances through a higher-priority reader/navigation claim.
+
+The quantized-coordinate tests cover top/bottom origins at 16 ms and 5 ms frame
+intervals, final convergence, monotonic travel and refusal followed by resumption.
+Native cancellation and streaming performance evidence belongs in the workload
+baseline; supplied-geometry tests do not establish rendering or remote behavior.
+
 The follow target moves when the transcript reflows, and Markdown reflows a
 line at a time. A loop that assigns the target outright therefore spends 24px
 on one frame out of seven and nothing on the other six, which is what a reader

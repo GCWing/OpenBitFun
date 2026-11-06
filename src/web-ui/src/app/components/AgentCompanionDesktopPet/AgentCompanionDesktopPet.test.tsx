@@ -565,6 +565,28 @@ describe('AgentCompanionDesktopPet', () => {
     expect(bubbleShell!.classList).not.toContain('openbitfun-agent-companion-window__bubble-shell--hovered');
   });
 
+  it('removes the hidden pointer interval and refreshes immediately when visible', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    const clear = vi.spyOn(window, 'clearInterval');
+    const schedule = vi.spyOn(window, 'setInterval');
+    try {
+      cursorPositionMock.mockClear();
+      await act(async () => {
+        visibility.mockReturnValue('hidden');
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      expect(clear).toHaveBeenCalled();
+      expect(schedule).not.toHaveBeenCalled();
+      expect(cursorPositionMock).not.toHaveBeenCalled();
+      await act(async () => {
+        visibility.mockReturnValue('visible');
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      expect(cursorPositionMock).toHaveBeenCalledTimes(1);
+      expect(schedule).toHaveBeenCalledWith(expect.any(Function), 120);
+    } finally { visibility.mockRestore(); clear.mockRestore(); schedule.mockRestore(); }
+  });
+
   it('sends the composer message on Enter', () => {
     pushActivity({ mood: 'working', tasks: [task()], sequence: 1, emittedAt: 1 });
 

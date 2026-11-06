@@ -51,6 +51,48 @@ function sprite() {
 }
 
 describe('pet sprite renderer', () => {
+  it('restores BitBlob atlas-only animation after look tracking expires', async () => {
+    const bitblob = { ...pet, id: 'bitblob' };
+    await act(async () => root.render(<AgentCompanionPet pet={bitblob} mood="rest" lookDirection={4} />));
+    await act(async () => root.render(<AgentCompanionPet pet={bitblob} mood="rest" lookDirection={null} />));
+    expect(sprite().style.animationName).toBe('openbitfun-petdex-walk');
+  });
+
+  it('does not schedule SVG micro-actions or transition timers for sprites', async () => {
+    vi.useFakeTimers();
+    await act(async () => root.render(<AgentCompanionPet pet={pet} mood="rest" />));
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => root.render(<AgentCompanionPet pet={pet} mood="working" />));
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('suspends SVG micro-actions under reduced motion and resumes them when allowed', async () => {
+    vi.useFakeTimers();
+    await act(async () => root.render(<AgentCompanionPet mood="rest" />));
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => { media.matches = true; reduceMotion(); });
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => { media.matches = false; reduceMotion(); });
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it('pauses hidden sprites, resumes them, and releases timers when switching away from SVG', async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    try {
+      visibility.mockReturnValue('visible');
+      await act(async () => root.render(<AgentCompanionPet mood="rest" />));
+      expect(vi.getTimerCount()).toBe(1);
+      act(() => { visibility.mockReturnValue('hidden'); document.dispatchEvent(new Event('visibilitychange')); });
+      expect(vi.getTimerCount()).toBe(0);
+      await act(async () => root.render(<AgentCompanionPet pet={pet} mood="rest" />));
+      expect(sprite().style.animationPlayState).toBe('paused');
+      act(() => { visibility.mockReturnValue('visible'); document.dispatchEvent(new Event('visibilitychange')); });
+      expect(sprite().style.animationPlayState).toBe('');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { visibility.mockRestore(); }
+  });
+
   it('keeps built-in BitBlob motion in the atlas across session states', async () => {
     const bitblob = { ...pet, id: 'bitblob' };
     for (const mood of ['rest', 'hover', 'working', 'waiting', 'analyzing', 'dragging'] as const) {
@@ -62,7 +104,7 @@ describe('pet sprite renderer', () => {
     expect(sprite().dataset.petAction).toBe('jumping');
     expect(sprite().style.animationDuration).toBe('1.2s');
     await act(async () => root.render(<AgentCompanionPet pet={bitblob} mood="rest" lookDirection={4} />));
-    expect(sprite().style.animation).toBe('none');
+    expect(sprite().style.animationName).toBe('none');
     // A user pet with the same id must retain its own/default presentation.
     await act(async () => root.render(<AgentCompanionPet pet={{ ...bitblob, source: 'user' }} mood="working" />));
     expect(sprite().style.animationName).toBe('');
@@ -89,7 +131,7 @@ describe('pet sprite renderer', () => {
       await act(async () => root.render(<AgentCompanionPet pet={selection} mood="rest" action={action} lookDirection={12} />));
       expect(parseFloat(sprite().style.backgroundPositionY)).toBeCloseTo(row / (version === 1 ? 8 : 10) * 100);
       expect(sprite().style.getPropertyValue('--openbitfun-petdex-frames')).toBe(String(frames));
-      expect(sprite().style.animation).not.toBe('none');
+      expect(sprite().style.animationName).not.toBe('none');
     }
     await act(async () => root.render(<AgentCompanionPet pet={selection} mood="dragging" action="failed" />));
     expect(sprite().dataset.petAction).toBeUndefined();
@@ -106,7 +148,7 @@ describe('pet sprite renderer', () => {
     expect(sprite().style.backgroundSize).toBe('800% 1100%');
     expect(sprite().style.backgroundPositionY).toBe('20%');
     expect(sprite().style.getPropertyValue('--openbitfun-petdex-frames')).toBe('8');
-    expect(sprite().style.animation).not.toBe('none');
+    expect(sprite().style.animationName).not.toBe('none');
   });
 
   it('scales an oversized native cell down into the max box, keeping its aspect ratio', async () => {
@@ -133,13 +175,13 @@ describe('pet sprite renderer', () => {
     await act(async () => root.render(<AgentCompanionPet pet={pet} mood="rest" lookDirection={12} />));
     expect(sprite().style.backgroundPositionY).toBe('100%');
     expect(parseFloat(sprite().style.backgroundPositionX)).toBeCloseTo(4 / 7 * 100);
-    expect(sprite().style.animation).toBe('none');
+    expect(sprite().style.animationName).toBe('none');
     await act(async () => root.render(<AgentCompanionPet pet={pet} mood="hover" lookDirection={12} />));
     expect(sprite().style.backgroundPositionY).toBe('0%');
-    expect(sprite().style.animation).not.toBe('none');
+    expect(sprite().style.animationName).not.toBe('none');
     await act(async () => root.render(<AgentCompanionPet pet={pet} mood="working" lookDirection={12} />));
     expect(sprite().style.backgroundPositionY).toBe('70%');
-    expect(sprite().style.animation).not.toBe('none');
+    expect(sprite().style.animationName).not.toBe('none');
     await act(async () => root.render(<AgentCompanionPet pet={pet} mood="rest" lookDirection={12} />));
     act(() => { media.matches = true; reduceMotion(); });
     expect(sprite().style.backgroundPositionY).toBe('0%');
@@ -163,6 +205,6 @@ describe('pet sprite renderer', () => {
     await act(async () => root.render(<AgentCompanionPet pet={{ ...pet, spriteVersionNumber: undefined }} mood="analyzing" lookDirection={12} />));
     expect(sprite().style.backgroundSize).toBe('800% 900%');
     expect(sprite().style.backgroundPositionY).toBe('100%');
-    expect(sprite().style.animation).not.toBe('none');
+    expect(sprite().style.animationName).not.toBe('none');
   });
 });

@@ -41,6 +41,7 @@ mod imp {
         timeout_ms: u64,
     ) -> Result<String, WebDriverErrorResponse> {
         let (tx, rx) = oneshot::channel();
+        let runtime = tokio::runtime::Handle::current();
 
         // SAFETY: Tauri runs this callback on the main thread with a live
         // platform webview, so the pointer is valid for the call and
@@ -53,18 +54,34 @@ mod imp {
 
             let tx = Arc::new(std::sync::Mutex::new(Some(tx)));
             let block = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
-                let response = if !error.is_null() {
+                let Some(sender) = tx.lock().ok().and_then(|mut guard| guard.take()) else {
+                    return;
+                };
+                if sender.is_closed() {
+                    return;
+                }
+
+                let tiff = if !error.is_null() {
                     let error_ref = &*error;
                     Err(error_ref.localizedDescription().to_string())
                 } else if image.is_null() {
                     Err("No image returned".to_string())
                 } else {
-                    image_to_png_base64(&*image)
+                    // NSImage belongs to this callback's main thread. Only owned
+                    // bytes cross threads; bitmap decoding and PNG compression
+                    // must not block native window/presentation updates.
+                    (&*image)
+                        .TIFFRepresentation()
+                        .map(|data| data.to_vec())
+                        .ok_or_else(|| "Failed to get TIFF representation".to_string())
                 };
 
-                if let Ok(mut guard) = tx.lock() {
-                    if let Some(sender) = guard.take() {
-                        let _ = sender.send(response);
+                match tiff {
+                    Ok(tiff) => {
+                        let _encoding = spawn_png_response(&runtime, tiff, sender);
+                    }
+                    Err(error) => {
+                        let _ = sender.send(Err(error));
                     }
                 }
             });
@@ -183,9 +200,24 @@ mod imp {
         }
     }
 
-    unsafe fn image_to_png_base64(image: &NSImage) -> Result<String, String> {
-        let tiff_data: Option<objc2::rc::Retained<NSData>> = image.TIFFRepresentation();
-        let tiff_data = tiff_data.ok_or("Failed to get TIFF representation")?;
+    fn spawn_png_response(
+        runtime: &tokio::runtime::Handle,
+        tiff: Vec<u8>,
+        sender: oneshot::Sender<Result<String, String>>,
+    ) -> tokio::task::JoinHandle<()> {
+        runtime.spawn_blocking(move || {
+            if sender.is_closed() {
+                return;
+            }
+            // Blocking-pool threads do not have an AppKit event-loop pool.
+            let response = objc2::rc::autoreleasepool(|_| tiff_to_png_base64(tiff));
+            let _ = sender.send(response);
+        })
+    }
+
+    fn tiff_to_png_base64(tiff: Vec<u8>) -> Result<String, String> {
+        let tiff_data = NSData::with_bytes(&tiff);
+        drop(tiff);
 
         let bitmap_rep = NSBitmapImageRep::imageRepWithData(&tiff_data)
             .ok_or("Failed to create bitmap image rep")?;
@@ -200,6 +232,93 @@ mod imp {
         .ok_or("Failed to convert image to PNG")?;
 
         Ok(BASE64_STANDARD.encode(png_data.to_vec()))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn screenshot_fixture() -> (Vec<u8>, image::RgbaImage) {
+            let pixels = image::RgbaImage::from_fn(19, 13, |x, y| {
+                let alpha = [0, 85, 170, 255][(x % 4) as usize];
+                if alpha == 0 {
+                    image::Rgba([0, 0, 0, 0])
+                } else {
+                    image::Rgba([(x * 13) as u8, (y * 19) as u8, ((x + y) * 7) as u8, alpha])
+                }
+            });
+            let mut png = std::io::Cursor::new(Vec::new());
+            pixels.write_to(&mut png, image::ImageFormat::Png).unwrap();
+            let tiff = objc2::rc::autoreleasepool(|_| {
+                let data = NSData::with_bytes(png.get_ref());
+                let bitmap = NSBitmapImageRep::imageRepWithData(&data).unwrap();
+                bitmap.TIFFRepresentation().unwrap().to_vec()
+            });
+            (tiff, pixels)
+        }
+
+        #[test]
+        fn background_png_preserves_dimensions_pixels_and_transparency() {
+            let (tiff, expected) = screenshot_fixture();
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+            runtime.block_on(async {
+                let (tx, rx) = oneshot::channel();
+                let encoding = spawn_png_response(runtime.handle(), tiff, tx);
+                let encoded = await_base64_response(rx, 5000, "Screenshot").await.unwrap();
+                encoding.await.unwrap();
+                let png = BASE64_STANDARD.decode(encoded).unwrap();
+                assert_eq!(image::guess_format(&png).unwrap(), image::ImageFormat::Png);
+                let actual = image::load_from_memory(&png).unwrap().to_rgba8();
+                assert_eq!(actual.dimensions(), expected.dimensions());
+                assert_eq!(actual.as_raw(), expected.as_raw());
+            });
+        }
+
+        #[test]
+        fn background_png_reports_decode_failure() {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+            runtime.block_on(async {
+                let (tx, rx) = oneshot::channel();
+                let encoding = spawn_png_response(runtime.handle(), vec![0, 1, 2, 3], tx);
+                let error = await_base64_response(rx, 5000, "Screenshot")
+                    .await
+                    .unwrap_err();
+                encoding.await.unwrap();
+                assert_eq!(error.error, "unknown error");
+                assert_eq!(error.message, "Failed to create bitmap image rep");
+            });
+        }
+
+        #[test]
+        fn screenshot_timeout_includes_queued_encoding() {
+            let (tiff, _) = screenshot_fixture();
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .max_blocking_threads(1)
+                .enable_time()
+                .build()
+                .unwrap();
+            let (release, wait) = std::sync::mpsc::channel();
+            let blocker = runtime.spawn_blocking(move || {
+                let _ = wait.recv_timeout(Duration::from_secs(5));
+            });
+            runtime.block_on(async {
+                let (tx, rx) = oneshot::channel();
+                let encoding = spawn_png_response(runtime.handle(), tiff, tx);
+                let response = await_base64_response(rx, 10, "Screenshot").await;
+                let _ = release.send(());
+                blocker.await.unwrap();
+                encoding.await.unwrap();
+                let error = response.unwrap_err();
+                assert_eq!(error.error, "timeout");
+                assert_eq!(error.message, "Screenshot timed out after 10ms");
+            });
+        }
     }
 }
 

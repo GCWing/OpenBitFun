@@ -8,17 +8,19 @@ import styles from './SplitView.module.css';
 
 export type SplitViewMode = 'split' | 'primary' | 'secondary';
 const SplitViewModeContext = createContext<SplitViewMode>('split');
+const SplitViewLayoutContext = createContext<'split' | 'overlay'>('split');
 
 /** Stable sibling hosts can change panes without reparenting their React tree. */
 export function SplitViewSurface({ pane, active = true, className, children, ...props }:
   HTMLAttributes<HTMLDivElement> & { pane: 'primary' | 'secondary'; active?: boolean }) {
   const mode = useContext(SplitViewModeContext);
+  const layout = useContext(SplitViewLayoutContext);
   const hidden = mode !== 'split' && mode !== pane;
   return <div {...props} tabIndex={-1}
     className={classNames(styles.pane, styles[pane], styles.surface, className)}
     hidden={hidden} aria-hidden={hidden || !active}
     {...inertProps(Boolean(hidden || !active))}
-    data-split-surface={pane} data-split-active={!hidden && active}>
+    data-split-surface={pane} data-split-active={!hidden && active} data-pane-layout={layout}>
     {children}
   </div>;
 }
@@ -178,7 +180,7 @@ export function SplitView({
   };
 
   return (
-    <SplitViewModeContext.Provider value={mode}><div
+    <SplitViewLayoutContext.Provider value={layout}><SplitViewModeContext.Provider value={mode}><div
       {...rest}
       ref={rootRef}
       className={classNames(styles.root, className)}
@@ -204,7 +206,7 @@ export function SplitView({
         ? header({ columnClassName: styles.headerColumns! }) : header}</div>}
       <div {...primaryPaneProps} ref={primaryRef} id={primaryId} tabIndex={-1}
         className={classNames(styles.pane, styles.primary, primaryPaneProps?.className)}
-        data-openbitfun-component="split-view" data-openbitfun-part="primary" hidden={mode === 'secondary'}>
+        data-openbitfun-component="split-view" data-openbitfun-part="primary" data-pane-layout={layout} hidden={mode === 'secondary'}>
         {primary}
       </div>
       <div ref={dividerRef} className={styles.divider} data-openbitfun-component="split-view" data-openbitfun-part="divider" hidden={mode !== 'split'}>
@@ -258,10 +260,10 @@ export function SplitView({
       </div>
       <div {...secondaryPaneProps} ref={secondaryRef} id={secondaryId} tabIndex={-1}
         className={classNames(styles.pane, styles.secondary, secondaryPaneProps?.className)}
-        data-openbitfun-component="split-view" data-openbitfun-part="secondary" hidden={mode === 'primary'}>
+        data-openbitfun-component="split-view" data-openbitfun-part="secondary" data-pane-layout={layout} hidden={mode === 'primary'}>
         {secondary}
       </div>
       {surfaces}
-    </div></SplitViewModeContext.Provider>
+    </div></SplitViewModeContext.Provider></SplitViewLayoutContext.Provider>
   );
 }

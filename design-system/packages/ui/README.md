@@ -18,6 +18,26 @@ export function Example() {
 
 The package owns component anatomy, behavior, accessibility, and stable variants. It does not own theme selection persistence, product state, routes, locale resources, or platform APIs.
 
+## Subagent artwork motion
+
+The opt-in `@openbitfun/ui/brand` entry exports `useSubagentAvatarMotion` and
+`createSubagentMotionPlayer`. Their default `svg` rendering preserves existing
+avatar behavior. A standalone artwork surface may explicitly select `layers`
+(the hook's fifth argument, or the player's fourth argument) after native
+performance and rendering verification. The SVG must fill its sole parent
+surface, with the authored `xMidYMid meet` viewBox and no additional SVG offset.
+
+`layers` keeps the outer SVG as the layout and accessibility placeholder, moves
+its authored shapes into SVG leaves in HTML transform layers, and maps SVG units
+into the surface with a ResizeObserver. The HTML layers remain outside SVG:
+`foreignObject` geometry can appear correct while WebKit draws its accelerated
+contents at the wrong position or scale. Keyframes and playback controls are
+shared with the default renderer. Unmeasurable artwork keeps the SVG renderer;
+disposal cancels animation, disconnects sizing observation and restores markup.
+Keep this choice local to measured large artwork; do not promote every small
+avatar without measuring its memory and rendering cost. Verify actual native
+screenshots as well as transform matrices when changing either renderer.
+
 ## Loading indicators
 
 Use `Spinner` for the shared loading indicator. Its default `logo` presentation
@@ -39,6 +59,9 @@ The host supplies localized accessible text. Omit `aria-label` when adjacent
 copy already describes the activity. `active={false}` shows a still mark.
 Playback pauses offscreen or when the document is hidden and respects reduced
 motion. `LoadingState` composes the same indicator with optional support copy.
+`FlowChatRuntimeStatus` keeps its fixed slot mounted when hidden, but stops its
+indicator after the content's actual exit transitions finish or are cancelled.
+A reversed exit keeps the existing playback; a fully hidden slot owns no loop.
 The legacy `variant="matrix"` value resolves to `logo` for existing callers;
 `variant="bars"` selects the bar presentation. The legacy matrix layout tokens
 continue to define the established size allocations.

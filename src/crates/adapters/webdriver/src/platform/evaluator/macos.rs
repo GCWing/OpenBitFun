@@ -5,7 +5,7 @@ use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::MainThreadMarker;
-use objc2_foundation::{NSDictionary, NSError, NSString};
+use objc2_foundation::{ns_string, NSDictionary, NSError, NSString};
 use objc2_web_kit::{WKContentWorld, WKWebView};
 use serde_json::Value;
 use tokio::sync::oneshot;
@@ -22,7 +22,9 @@ pub(super) async fn evaluate_script<R: tauri::Runtime>(
     async_mode: bool,
     frame_context: &Value,
 ) -> Result<Value, WebDriverErrorResponse> {
-    let wrapped = script::build_native_eval_script(script, args, async_mode, frame_context);
+    let user_script = script.to_owned();
+    let args_json = serde_json::to_string(args).unwrap_or_else(|_| "[]".into());
+    let frame_context_json = serde_json::to_string(frame_context).unwrap_or_else(|_| "[]".into());
     let (sender, receiver) = oneshot::channel::<Result<String, String>>();
 
     // SAFETY: Tauri runs this callback on the main thread with a live platform
@@ -31,9 +33,26 @@ pub(super) async fn evaluate_script<R: tauri::Runtime>(
     // macOS that webview is always WKWebView-backed, making the cast sound.
     let result = webview.with_webview(move |platform_webview| unsafe {
         let wk_webview: &WKWebView = &*platform_webview.inner().cast();
-        let ns_script = NSString::from_str(&wrapped);
+        let ns_script = NSString::from_str(script::native_eval_script());
         let mtm = MainThreadMarker::new_unchecked();
-        let empty_dict: Retained<NSDictionary<NSString, AnyObject>> = NSDictionary::new();
+        let arguments: Retained<NSDictionary<NSString, AnyObject>> = NSDictionary::from_slices(
+            &[
+                ns_string!("openbitfunScript"),
+                ns_string!("openbitfunArguments"),
+                ns_string!("openbitfunAsync"),
+                ns_string!("openbitfunFrameContext"),
+            ],
+            &[
+                &NSString::from_str(&user_script),
+                &NSString::from_str(&args_json),
+                if async_mode {
+                    ns_string!("true")
+                } else {
+                    ns_string!("false")
+                },
+                &NSString::from_str(&frame_context_json),
+            ],
+        );
         let content_world = WKContentWorld::pageWorld(mtm);
 
         let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
@@ -56,7 +75,7 @@ pub(super) async fn evaluate_script<R: tauri::Runtime>(
 
         wk_webview.callAsyncJavaScript_arguments_inFrame_inContentWorld_completionHandler(
             &ns_script,
-            Some(&empty_dict),
+            Some(&arguments),
             None,
             &content_world,
             Some(&block),

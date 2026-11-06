@@ -12,6 +12,7 @@ interface NavResizeOptions {
   collapsed: boolean;
   onWidthChange: (width: number) => void;
   onCollapse: () => void;
+  onResizeStateChange?: (resizing: boolean) => void;
 }
 
 const REST_LENGTH = 32;
@@ -38,7 +39,7 @@ function advance(spring: Spring, target: number, dt: number, active: boolean) {
 /** The pane tracks directly; the grip stretches and bows in the pull direction. */
 export function useNavResize({
   areaRef, dividerRef, gripRef, width, minWidth, maxWidth, collapseThreshold,
-  collapsed, onWidthChange, onCollapse,
+  collapsed, onWidthChange, onCollapse, onResizeStateChange,
 }: NavResizeOptions) {
   const dragRef = useRef<((commit: boolean) => void) | null>(null);
   const animationRef = useRef<number | null>(null);
@@ -165,6 +166,7 @@ export function useNavResize({
       if (divider.hasPointerCapture?.(pointerId)) divider.releasePointerCapture(pointerId);
       document.body.style.userSelect = previousUserSelect;
       document.body.classList.remove('openbitfun-is-dragging-nav-collapse', 'openbitfun-is-resizing-nav');
+      onResizeStateChange?.(false);
       if (commit) {
         onWidthChange(latestWidth);
         pullVelocity.current = 0;
@@ -213,6 +215,7 @@ export function useNavResize({
     }
     dragRef.current = finish;
     divider.setPointerCapture?.(pointerId);
+    onResizeStateChange?.(true);
     divider.setAttribute('data-resize-feedback', 'dragging');
     document.body.style.userSelect = 'none';
     document.body.classList.add('openbitfun-is-dragging-nav-collapse', 'openbitfun-is-resizing-nav');
@@ -224,7 +227,7 @@ export function useNavResize({
     window.addEventListener('resize', cancel);
     divider.addEventListener('lostpointercapture', lostCapture);
     animateFeedback();
-  }, [animateFeedback, areaRef, collapsed, collapseThreshold, maxWidth, minWidth, onCollapse, onWidthChange, resetFeedback, width]);
+  }, [animateFeedback, areaRef, collapsed, collapseThreshold, maxWidth, minWidth, onCollapse, onWidthChange, onResizeStateChange, resetFeedback, width]);
 
   const onKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     if (dragRef.current || collapsed) return;

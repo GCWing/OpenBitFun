@@ -328,6 +328,7 @@ const SettingsNav: React.FC = () => {
                       aria-selected={active}
                       aria-busy={pendingPageId === row.destination.pageId || undefined}
                       leading={<Icon glyph={row.icon} size="sm" />}
+                      metadata={pendingPageId === row.destination.pageId ? <Spinner size="sm" /> : dirtyMarker(row.destination.pageId)}
                       selected={active}
                       data-openbitfun-component="settings-nav"
                       data-openbitfun-part="searchResult"
@@ -352,7 +353,6 @@ const SettingsNav: React.FC = () => {
                           {highlightFirstMatch(row.description, searchQuery)}
                         </OverflowText>
                       </span>
-                      {pendingPageId === row.destination.pageId ? <Spinner size="sm" /> : dirtyMarker(row.destination.pageId)}
                     </NavigationPanelItem>
                   );
                 })}
@@ -389,6 +389,7 @@ const SettingsNav: React.FC = () => {
                     data-openbitfun-state={activePageId === page.id ? 'active' : undefined}
                     className="openbitfun-settings-nav__item"
                     leading={<Icon glyph={page.icon} size="sm" />}
+                    metadata={pendingPageId === page.id ? <Spinner size="sm" /> : dirtyMarker(page.id)}
                     selected={activePageId === page.id}
                     aria-busy={pendingPageId === page.id || undefined}
                     onClick={() => activate({ pageId: page.id })}
@@ -396,7 +397,6 @@ const SettingsNav: React.FC = () => {
                     onFocus={() => preload(page.id)}
                   >
                     <OverflowText className="openbitfun-settings-nav__item-label">{t(page.labelKey)}</OverflowText>
-                    {pendingPageId === page.id ? <Spinner size="sm" /> : dirtyMarker(page.id)}
                   </NavigationPanelItem>
                 ))}
               </div>

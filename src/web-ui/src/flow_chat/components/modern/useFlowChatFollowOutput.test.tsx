@@ -12,6 +12,7 @@ import { FlowChatReaderState } from '../../timeline/readerState';
 import { useTimelineInteraction } from '../../timeline/useTimelineInteraction';
 import { useFlowChatFollowOutput } from './useFlowChatFollowOutput';
 import { useFlowChatViewportOwner, type FlowChatViewportOwnerApi } from './useFlowChatViewportOwner';
+import { readFlowChatScrollTop } from './flowChatScrollCoordinates';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 type Controller = ReturnType<typeof useFlowChatFollowOutput>;
@@ -31,6 +32,7 @@ describe('desktop follow ownership and lifecycle (supplied geometry, not visual 
     const ref = React.useRef<HTMLElement | null>(scroller);
     owner = useFlowChatViewportOwner(ref);
     controller = useFlowChatFollowOutput({
+      nativeEndOrigin: scroller.dataset.flowchatScrollOrigin === 'end',
       activeSessionId: props.session, virtualItemCount: props.count,
       isViewportActive: props.active, isViewportSuspended: () => props.suspended,
       isStreaming: props.streaming, startAtTailOnMount: props.startAtTail,
@@ -262,6 +264,53 @@ describe('desktop follow ownership and lifecycle (supplied geometry, not visual 
     Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 2000 });
     normalTarget = 1200; signal(); settle();
     expect(scroller.scrollTop).toBe(1200); expect(frames.size).toBe(0);
+  });
+  it.each([16, 5].flatMap(interval => [1, 0.8].flatMap(quantum => ['start', 'end'].map(origin => ({ interval, quantum, origin })))))
+  ('finishes quantized follow without losing the ease ($origin origin, $quantum px, $interval ms)', ({ interval, quantum, origin }) => {
+    props.startAtTail = false;
+    scroller.dataset.flowchatScrollOrigin = origin;
+    let actual = origin === 'end' ? -80 : 920;
+    Object.defineProperty(scroller, 'scrollTop', { configurable: true,
+      get: () => actual,
+      set: value => { actual = Math.floor(value / quantum) * quantum; },
+    });
+    render();
+    act(() => controller.enterFollowOutput('jump-to-latest'));
+    expect(readFlowChatScrollTop(scroller)).toBe(920);
+    tick(interval);
+    expect(readFlowChatScrollTop(scroller)).toBeGreaterThan(920);
+    expect(readFlowChatScrollTop(scroller)).toBeLessThan(1000);
+    let previous = readFlowChatScrollTop(scroller);
+    for (let elapsed = interval; elapsed < 1000 && frames.size; elapsed += interval) {
+      tick(interval);
+      const position = readFlowChatScrollTop(scroller);
+      expect(position).toBeGreaterThanOrEqual(previous);
+      expect(position).toBeLessThanOrEqual(1000);
+      previous = position;
+    }
+    expect(readFlowChatScrollTop(scroller)).toBe(1000);
+    expect(frames.size).toBe(0);
+    expect(controller.isFollowingOutputNow()).toBe(true);
+    expect(readbacks.at(-1)).toBe(1000);
+  });
+  it('does not accumulate unapplied travel while a higher-priority writer refuses follow', () => {
+    let actual = 0;
+    Object.defineProperty(scroller, 'scrollTop', { configurable: true,
+      get: () => actual, set: value => { actual = Math.floor(value); },
+    });
+    render(); settle();
+    normalTarget = 1002; signal(); tick();
+    expect(scroller.scrollTop).toBe(1000);
+    act(() => owner.claim('one-shot-navigation', { holdForMs: 2000 }));
+    const published = readbacks.length;
+    for (let elapsed = 0; elapsed < 500; elapsed += 16) tick();
+    expect(scroller.scrollTop).toBe(1000);
+    expect(readbacks.length).toBe(published);
+    act(() => owner.release('one-shot-navigation'));
+    tick(); expect(scroller.scrollTop).toBe(1000);
+    settle(); expect(scroller.scrollTop).toBe(1002); expect(frames.size).toBe(0);
+    depart(); scroller.scrollTop = 900; normalTarget = 1200; signal(); settle();
+    expect(scroller.scrollTop).toBe(900); expect(frames.size).toBe(0);
   });
   it.each(['complete', 'stop', 'error'])('keeps a short reply top-aligned on %s and explicit bottom navigation', () => {
     render(); submit(); output = true; normalTarget = 1200; props.streaming = false; render(); settle();

@@ -1,5 +1,6 @@
 import { useDeviceDirectory, resolveDeviceNameFrom } from '@/infrastructure/account/deviceDirectory';
 import { ChatInputAttachments } from './ChatInputAttachments';
+import { readCompactComposerInputWidth } from './compactComposerInputWidth';
 import { useExcerptComposerActions } from '../selection/useExcerptComposerActions';
 import { isConversationExcerpt, formatConversationExcerpt } from '@/shared/utils/conversationExcerpt';
 import { withConversationExcerpts } from '../utils/composerPresentation';
@@ -921,6 +922,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return null;
     }
 
+    // A compact composer already has the track we want. Cloning it here adds
+    // DOM/style invalidation and a second layout on every session attachment.
+    const compactWidth = readCompactComposerInputWidth(containerEl);
+    if (compactWidth !== null) return compactWidth;
+
     const clone = containerEl.cloneNode(true) as HTMLElement;
     clone.style.position = 'fixed';
     clone.style.left = '-100000px';
@@ -1129,8 +1135,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
 
     let rafId: number | null = null;
-    // Only width feeds the capsule measurement, and re-measuring clones the whole
-    // composer into the document (two forced layouts). The box height animates on
+    // Only width feeds the capsule measurement. Expanded composers still need
+    // a compact clone (two forced layouts). The box height animates on
     // every capsule ↔ multi-line flip, so reacting to height would run that clone
     // once per frame of the transition — exactly while the user is typing at the
     // wrap boundary. Ignore entries whose width is unchanged.

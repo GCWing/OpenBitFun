@@ -59,6 +59,7 @@ export function useFlowChatFollowOutput(options: Options) {
   const layoutRevision = useRef<string>();
   const frame = useRef<number | null>(null);
   const lastFrameAt = useRef<number | null>(null);
+  const lastFrameWrite = useRef<{ requested: number; actual: number } | null>(null);
   const downward = useRef<{ position: number } | null>(null);
   const initialized = useRef(false);
   const session = useRef(options.activeSessionId);
@@ -75,6 +76,7 @@ export function useFlowChatFollowOutput(options: Options) {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
     frame.current = null;
     lastFrameAt.current = null;
+    lastFrameWrite.current = null;
   }, []);
   const available = useCallback(() => {
     const o = current.current;
@@ -120,6 +122,11 @@ export function useFlowChatFollowOutput(options: Options) {
     // entry, or leave an idle RAF chasing it until the next token arrives.
     const reachableTarget = o.nativeEndOrigin ? o.readLayoutTarget()
       : Math.min(target.current, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
+    // Native scroll offsets can quantize each write. Keep the unpainted fraction
+    // of our accepted travel, or a subpixel step repeats forever near the tail.
+    // A foreign placement/clamp or a refused write starts from actual geometry.
+    const animationFrom = lastFrameAt.current !== null && lastFrameWrite.current?.actual === from
+      ? lastFrameWrite.current.requested : from;
     const elapsed = lastFrameAt.current === null ? 16 : Math.min(64, now - lastFrameAt.current);
     lastFrameAt.current = now;
     const opening = o.isOpeningViewport();
@@ -128,14 +135,17 @@ export function useFlowChatFollowOutput(options: Options) {
     // Apply the same distance policy as an explicit jump to latest.
     const behavior = resolveAnimatedJumpBehavior({ fromPx: from, targetPx: reachableTarget, clientHeight: scroller.clientHeight });
     const candidate = opening || getMotionAwareScrollBehavior(behavior) === 'auto'
-      ? reachableTarget : easeFollowOffset(from, reachableTarget, elapsed);
+      ? reachableTarget : easeFollowOffset(animationFrom, reachableTarget, elapsed);
     const next = Math.abs(candidate - reachableTarget) <= EPSILON ? reachableTarget : candidate;
-    if (Math.abs(reachableTarget - from) > EPSILON) {
+    if (from !== reachableTarget) {
+      const requested = Math.abs(reachableTarget - from) > EPSILON ? next : reachableTarget;
       // Refusal leaves the target intact. A short live gesture can outlast the
       // reader's deliberate arrival at bottom; it still outranks every write.
-      if (o.viewportOwner.write({ owner: 'follow-output', topPx: next })) o.onViewportOffset?.(readFlowChatScrollTop(scroller));
-    } else if (from !== reachableTarget) {
-      if (o.viewportOwner.write({ owner: 'follow-output', topPx: reachableTarget })) o.onViewportOffset?.(readFlowChatScrollTop(scroller));
+      if (o.viewportOwner.write({ owner: 'follow-output', topPx: requested })) {
+        const actual = readFlowChatScrollTop(scroller);
+        lastFrameWrite.current = { requested, actual };
+        o.onViewportOffset?.(actual);
+      } else lastFrameWrite.current = null;
     }
     if (Math.abs(readFlowChatScrollTop(scroller) - reachableTarget) > EPSILON) wake();
     else lastFrameAt.current = null;
@@ -145,6 +155,7 @@ export function useFlowChatFollowOutput(options: Options) {
     if (!available()) return;
     const o = current.current;
     discardPending();
+    lastFrameWrite.current = null;
     downward.current = null;
     submittedTurn.current = null;
     o.cancelNavigation();

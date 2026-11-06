@@ -29,6 +29,13 @@ node scripts/check-core-boundaries.mjs
 
 For documentation-only changes, run `git diff --check`.
 
+For natural PTY exit, output draining, confirmed shutdown and Unix hangup
+escalation, run `cargo test -p terminal-core --lib pty::process::tests` and
+`cargo check -p terminal-core`. These local child-process tests do not establish
+live SSH, Peer, relay, dispatch or other-platform behavior. The native terminal
+workload in `tests/e2e/AGENTS.md` additionally checks UI input, native process
+reaping and retained terminal buffers after exit.
+
 For Windows App Execution Alias termination, install Python Install Manager and
 run this opt-in regression with its working alias (not the Store redirector):
 
