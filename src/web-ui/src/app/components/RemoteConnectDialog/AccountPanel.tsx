@@ -9,6 +9,8 @@ import {
 } from '@/infrastructure/confirm-dialog';
 import { LogOut, Pencil, Check, X, House } from 'lucide-react';
 import { DeviceSystemGlyph } from '../NavPanel/components/DeviceSystemGlyph';
+import { DeviceVisibilityButton } from '../NavPanel/components/DeviceVisibilityButton';
+import { LOCAL_SURFACE_ID, surfaceIdForDevice } from '@/infrastructure/peer-device/deviceSurface';
 import { reportedHostKind } from '../NavPanel/deviceInterconnectionOverview';
 import { remoteConnectAPI, deviceDisplayName, deviceMetadataLabel } from '@/infrastructure/api/service-api/RemoteConnectAPI';
 import type {
@@ -1029,6 +1031,14 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                         delete beside it rendered two competing icon clusters. */}
                     {editingDeviceId !== d.device_id && (
                       <span className="account-panel__device-actions">
+                        {!['mobile', 'watch'].includes(d.device_kind?.trim().toLowerCase() ?? '') && (
+                          <DeviceVisibilityButton
+                            surfaceId={isLocal ? LOCAL_SURFACE_ID : surfaceIdForDevice(d.device_id)}
+                            name={displayName}
+                            compact
+                            disabled={!localDeviceId}
+                          />
+                        )}
                         <IconButton
                           className="account-panel__device-action"
                           aria-label={t('accountLogin.editDeviceAlias')}

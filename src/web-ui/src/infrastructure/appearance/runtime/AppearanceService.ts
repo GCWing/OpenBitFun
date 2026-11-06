@@ -1,4 +1,4 @@
-import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
+import { appearanceSelectionPersistence } from '@/infrastructure/api/adapters/appearance-selection-adapter';
 import { createLogger } from '@/shared/utils/logger';
 import {
   builtinAppearanceCatalog,
@@ -30,7 +30,6 @@ import {
 import type { AppearanceRuntime } from './AppearanceRuntime';
 
 const log = createLogger('AppearanceService');
-const APPEARANCE_SELECTION_CONFIG_PATH = 'appearance.selection';
 const MAX_SEEN_SYNC_EVENTS = 256;
 
 interface AppearanceSource {
@@ -436,7 +435,7 @@ export class AppearanceService {
     this.setSnapshot({ ...this.snapshot, appearances: await this.loadCatalog() });
     const bootstrap = consumeBootstrapAppearance();
     const configuredSelection = bootstrap.selection
-      ?? await configAPI.getConfig(APPEARANCE_SELECTION_CONFIG_PATH, { skipRetryOnNotFound: true });
+      ?? await appearanceSelectionPersistence.read();
     const selected = typeof configuredSelection === 'string' && configuredSelection.trim()
       ? configuredSelection.trim()
       : SYSTEM_APPEARANCE_ID;
@@ -501,7 +500,7 @@ export class AppearanceService {
       runtimeApplied = true;
       if (options.persist) {
         persistenceAttempted = true;
-        await configAPI.setConfig(APPEARANCE_SELECTION_CONFIG_PATH, selected);
+        await appearanceSelectionPersistence.write(selected);
         this.persistedSelectionId = selected;
       }
       this.activeSource = resolved;
@@ -521,7 +520,7 @@ export class AppearanceService {
       const compensationErrors: string[] = [];
       if (persistenceAttempted && previousPersistedSelectionId !== null) {
         try {
-          await configAPI.setConfig(APPEARANCE_SELECTION_CONFIG_PATH, previousPersistedSelectionId);
+          await appearanceSelectionPersistence.write(previousPersistedSelectionId);
           this.persistedSelectionId = previousPersistedSelectionId;
         } catch (rollbackError) {
           compensationErrors.push(`selection rollback failed: ${errorMessage(rollbackError)}`);
@@ -663,10 +662,7 @@ export class AppearanceService {
   }
 
   private async reconcileExternalState(): Promise<void> {
-    const configuredSelection = await configAPI.getConfig(
-      APPEARANCE_SELECTION_CONFIG_PATH,
-      { skipRetryOnNotFound: true },
-    );
+    const configuredSelection = await appearanceSelectionPersistence.read();
     const selected = typeof configuredSelection === 'string' && configuredSelection.trim()
       ? configuredSelection.trim()
       : SYSTEM_APPEARANCE_ID;

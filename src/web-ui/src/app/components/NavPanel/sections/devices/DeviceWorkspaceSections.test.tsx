@@ -26,6 +26,8 @@ vi.mock('@/flow_chat/services/backgroundSurfaceSeeding', () => ({ installBackgro
 
 import { beginDeviceOpen, endDeviceOpen } from '@/infrastructure/peer-device/deviceOpenIntent';
 import DeviceWorkspaceSections from './DeviceWorkspaceSections';
+import { useDeviceVisibilityPreferences } from '@/app/navigation/deviceVisibilityPreferences';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -40,6 +42,8 @@ describe('DeviceWorkspaceSections hand-over', () => {
   const body = (surfaceId: string) => host.querySelector(`[data-device-surface="${surfaceId}"] .openbitfun-nav-panel__device-body > *`)?.getAttribute('data-testid');
 
   beforeEach(() => {
+    useDeviceVisibilityPreferences.setState({ hidden: {} });
+    activateSurface('local');
     host = document.createElement('div');
     document.body.append(host);
     root = createRoot(host);
@@ -86,5 +90,50 @@ describe('DeviceWorkspaceSections hand-over', () => {
     slots.value = [slot('local', false), slot('peer-b', true)];
     render();
     expect(order()).toEqual(['local', 'peer-b']);
+  });
+
+  it('hides the rendered peer without drawing its live list under the remaining local device', () => {
+    slots.value = [slot('local', false), slot('peer-b', true)];
+    render();
+    act(() => useDeviceVisibilityPreferences.getState().setVisible('peer-b', false));
+    expect(body('peer-b')).toBeUndefined();
+    expect(body('local')).toBe('background-list');
+    expect(host.querySelector('[data-testid="live-list"]')).toBeNull();
+    act(() => useDeviceVisibilityPreferences.getState().setVisible('peer-b', true));
+    expect(body('peer-b')).toBe('live-list');
+  });
+
+  it('shows only a remaining peer catalog when the local device is hidden', () => {
+    slots.value = [slot('local', true), slot('peer-b', false)];
+    render();
+    act(() => useDeviceVisibilityPreferences.getState().setVisible('local', false));
+    expect(body('local')).toBeUndefined();
+    expect(body('peer-b')).toBe('background-list');
+    expect(host.querySelector('[data-testid="live-list"]')).toBeNull();
+  });
+
+  it('keeps all devices hidden across surface activation until explicitly shown', () => {
+    slots.value = [slot('local', true), slot('peer-b', false)];
+    render();
+    act(() => {
+      useDeviceVisibilityPreferences.getState().setVisible('local', false);
+      useDeviceVisibilityPreferences.getState().setVisible('peer-b', false);
+    });
+    expect(host.textContent).toBe('');
+    expect(host.children).toHaveLength(0);
+    slots.value = [slot('local', false), slot('peer-b', true)];
+    act(() => activateSurface('peer-b'));
+    render();
+    expect(host.children).toHaveLength(0);
+    act(() => useDeviceVisibilityPreferences.getState().setVisible('peer-b', true));
+    expect(body('peer-b')).toBe('live-list');
+  });
+
+  it('does not reveal a hidden single local device through the plain-list fallback', () => {
+    slots.value = [slot('local', true)];
+    render();
+    expect(host.querySelector('[data-testid="live-list"]')).not.toBeNull();
+    act(() => useDeviceVisibilityPreferences.getState().setVisible('local', false));
+    expect(host.children).toHaveLength(0);
   });
 });

@@ -398,6 +398,17 @@ pnpm --dir src/web-ui run test:run src/app/components/panels/content-canvas/edit
 
 These local DOM/store fixtures do not establish native rendering or live remote behavior.
 
+For device preview motion, linked sidebar visibility controls, and controller-owned theme selection:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/components/NavPanel/components/DeviceStatusControl.test.tsx src/app/components/NavPanel/sections/devices/DeviceWorkspaceSections.test.tsx src/app/components/RemoteConnectDialog/AccountPanel.test.tsx src/app/navigation/deviceVisibilityPreferences.test.ts src/infrastructure/appearance/runtime/AppearanceService.test.ts
+```
+
+These DOM/store and transport fixtures cover interrupted motion, reduced motion,
+legacy preference loading, visibility across device activation, and local theme
+reads/writes during simulated Peer switches. They do not establish native
+WebView frame rate or live SSH, Remote Control, Peer Device or Detached Dispatch behavior.
+
 For workspace icon editing, host capability gates, persistence requests and device-switch fences:
 
 ```bash

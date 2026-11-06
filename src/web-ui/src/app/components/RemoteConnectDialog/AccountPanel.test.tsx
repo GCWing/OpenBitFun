@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AccountPanel } from './AccountPanel';
 import { useUpdateInstallStore } from '@/infrastructure/update/updateInstallStore';
+import { useDeviceVisibilityPreferences } from '@/app/navigation/deviceVisibilityPreferences';
 const mocks = vi.hoisted(() => ({
   identity: { resolved: true, status: 'signed-in', me: { user: { githubId: 42, login: 'alice' } } } as { resolved: boolean; status: string; me: { user: { githubId: number; login: string } } | null },
   reopenSignIn: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({
   },
 }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: mocks.t, formatRelativeTime: () => '' }) }));
+vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({ useI18n: () => ({ t: mocks.t }) }));
 vi.mock('@/infrastructure/peer-device/peerDeviceContextState', () => ({
   usePeerDeviceMode: () => ({
     peerMode: mocks.peerMode,
@@ -53,6 +55,7 @@ let root: Root;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.resetAllMocks();
+  useDeviceVisibilityPreferences.setState({ hidden: {} });
   mocks.identity = { resolved: true, status: 'signed-in', me: { user: { githubId: 42, login: 'alice' } } };
   mocks.peerMode = { active: false };
   mocks.getDeviceInfo.mockResolvedValueOnce({ device_id: 'local', device_name: 'My computer' })
@@ -80,6 +83,41 @@ it('keeps initialization alive when the local device ID arrives', async () => {
   expect(container.textContent).toContain('My computer');
   expect(container.textContent).not.toContain('accountLogin.loadingDevices');
   expect(mocks.accountListDevices).toHaveBeenCalledTimes(1);
+});
+
+it('shares sidebar visibility with the preview card, including offline devices, without switching hosts', async () => {
+  mocks.accountListDevices.mockResolvedValue([
+    { device_id: 'local', device_name: 'My computer', online: true },
+    { device_id: 'peer-a', device_name: 'Offline host', online: false },
+  ]);
+  // This is the same preference written by the preview card's eye button.
+  useDeviceVisibilityPreferences.getState().setVisible('peer-a', false);
+  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  const row = Array.from(container.querySelectorAll('.account-panel__device-card'))
+    .find(element => element.textContent?.includes('Offline host'))!;
+  const toggle = row.querySelector<HTMLButtonElement>('[aria-label="nav.devices.showInSidebar"]')!;
+  expect(toggle).not.toBeNull();
+  expect(toggle.disabled).toBe(false);
+  await act(async () => toggle.click());
+  expect(useDeviceVisibilityPreferences.getState().hidden['peer-a']).toBe(false);
+  expect(row.querySelector('[aria-label="nav.devices.hideInSidebar"]')).not.toBeNull();
+  await act(async () => useDeviceVisibilityPreferences.getState().setVisible('peer-a', false));
+  expect(row.querySelector('[aria-label="nav.devices.showInSidebar"]')).not.toBeNull();
+  expect(mocks.switchToDevice).not.toHaveBeenCalled();
+  expect(mocks.switchToLocal).not.toHaveBeenCalled();
+});
+
+it('waits for local identity before saving a visibility choice under the canonical local key', async () => {
+  let resolveIdentity!: (device: { device_id: string; device_name: string }) => void;
+  mocks.getDeviceInfo.mockReset().mockReturnValue(new Promise(resolve => { resolveIdentity = resolve; }));
+  mocks.accountListDevices.mockResolvedValue([{ device_id: 'actual-local-id', device_name: 'My computer', online: true }]);
+  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  const toggle = container.querySelector<HTMLButtonElement>('[aria-label="nav.devices.hideInSidebar"]')!;
+  expect(toggle.disabled).toBe(true);
+  await act(async () => resolveIdentity({ device_id: 'actual-local-id', device_name: 'My computer' }));
+  expect(toggle.disabled).toBe(false);
+  await act(async () => toggle.click());
+  expect(useDeviceVisibilityPreferences.getState().hidden).toEqual({ local: true });
 });
 
 it('loads the device snapshot and retains it across a normal rerender', async () => {

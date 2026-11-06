@@ -65,6 +65,8 @@
   },
   "nav": {
     "devices": {
+      "hideInSidebar": "在側邊欄隱藏 {{name}}",
+      "showInSidebar": "在側邊欄顯示 {{name}}",
       "thisDevice": "本機",
       "current": "目前視窗正在顯示",
       "expand": "展開 {{name}}",

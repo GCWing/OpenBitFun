@@ -333,6 +333,20 @@ notification metadata.
     without querying the host. Overview requests and panel state belong to
     the surface activation even when two devices share a workspace ID/path.
 
+21. **Appearance belongs to the controller window.** Theme selection reads,
+    saves, rollback and focus/visibility reconciliation use
+    `appearance-selection-adapter`, including while a peer is rendered. Desktop
+    keeps the existing local `appearance.selection` config shape; packages and
+    cross-window appearance events also remain local. The generic ConfigAPI
+    still targets the selected product host. Do not route all config commands
+    locally to implement a presentation preference.
+
+    Sidebar device visibility is also a controller preference. The preview
+    card and account device list share `deviceVisibilityPreferences`; an absent
+    choice means visible. Hiding a device removes its sidebar section without
+    switching, disconnecting, deleting its data or stopping its work. Activating
+    a hidden device does not override that choice.
+
 ### Workspace HTML resources
 
 The controller keeps HTML preview HTTP listeners and native browser views local.
