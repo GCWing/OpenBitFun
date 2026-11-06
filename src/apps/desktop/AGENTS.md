@@ -158,6 +158,12 @@ start it again) a pinned card must reattach within about 30 s, or come back unpi
 pin-failure notice; it must never stay "Shown" without a window. UI, hidden-card pinning, and old-host negotiation coverage:
 `pnpm --dir src/web-ui run test:run src/app/components/DesktopCard/DesktopCardWindow.test.tsx src/infrastructure/api/service-api/DesktopCardAPI.test.ts src/app/scenes/personal-overview/OverviewDesktopCardsSection.test.tsx src/app/scenes/settings/pages/application/DesktopCardsSettingsSection.test.tsx`.
 
+For frontend customization with background Peer subscribers, direct Peer tool
+refusal, revision recovery, and legacy state compatibility, run
+`cargo test --locked -p openbitfun-desktop --no-default-features --lib frontend_workbench`.
+The Core guide's `frontend_workbench` tests cover per-turn origin admission.
+These fixtures do not launch the native confirmation controls or a live Peer connection.
+
 For session storage directory access, run
 `cargo test -p openbitfun-desktop --lib api::session_storage_directory::tests`
 for session storage directory resolution (these tests do not launch a file manager),

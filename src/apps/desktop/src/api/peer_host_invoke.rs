@@ -356,19 +356,18 @@ pub async fn dispatch(command: &str, args: Value) -> HostInvokeBridgeResult {
     }
 
     // Direct tool calls have no dialog turn whose origin can reach
-    // ToolUseContext. Apply the same desktop-card restriction at this boundary.
-    if command == "execute_tool"
-        && args
-            .get("request")
-            .unwrap_or(&args)
-            .get("toolName")
-            .and_then(Value::as_str)
-            == Some("DesktopCard")
+    // ToolUseContext. Refuse tools that require the visible local desktop here.
+    let direct_tool = args
+        .get("request")
+        .unwrap_or(&args)
+        .get("toolName")
+        .and_then(Value::as_str);
+    if command == "execute_tool" && matches!(direct_tool, Some("DesktopCard" | "FrontendWorkbench"))
     {
         return HostInvokeBridgeResult {
             ok: false,
             value: None,
-            error: Some("DesktopCard is unavailable through Peer Device Mode because cards appear only on the execution host's desktop.".to_string()),
+            error: Some(format!("{} is unavailable through Peer Device Mode because it requires the visible local desktop.", direct_tool.unwrap())),
         };
     }
 
@@ -539,6 +538,18 @@ mod tests {
         .await;
         assert!(!result.ok);
         assert!(result.error.unwrap().contains("Peer Device Mode"));
+    }
+
+    #[tokio::test]
+    async fn frontend_workbench_direct_peer_calls_fail_before_the_native_bridge() {
+        let request = serde_json::json!({
+            "toolName": "FrontendWorkbench", "input": {"action": "prepare"}
+        });
+        for args in [request.clone(), serde_json::json!({"request": request})] {
+            let result = dispatch("execute_tool", args).await;
+            assert!(!result.ok);
+            assert!(result.error.unwrap().contains("Peer Device Mode"));
+        }
     }
 
     #[test]
