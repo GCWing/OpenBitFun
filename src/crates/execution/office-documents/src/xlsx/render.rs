@@ -69,9 +69,18 @@ pub(crate) fn render(
             &part,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml",
         );
+        let drawing =
+            super::chart_render::render(book, sheet, number, &computed, &mut parts, &mut types)?;
         parts.add_xml(
             part,
-            worksheet_xml(sheet, index, &computed, &mut styles, &mut strings),
+            worksheet_xml(
+                sheet,
+                index,
+                &computed,
+                &mut styles,
+                &mut strings,
+                drawing.as_deref(),
+            ),
         );
     }
     rels.add(REL_STYLES, "styles.xml");
@@ -130,6 +139,7 @@ fn worksheet_xml(
     computed: &HashMap<(usize, CellRef), Computed>,
     styles: &mut StyleRegistry,
     strings: &mut SharedStrings,
+    drawing: Option<&str>,
 ) -> String {
     let selected = sheet_index == 0;
     let mut xml = format!("{XML_HEADER}<worksheet xmlns=\"{NS_MAIN}\" xmlns:r=\"{NS_REL}\">");
@@ -245,7 +255,11 @@ fn worksheet_xml(
         }
         xml.push_str("</mergeCells>");
     }
-    xml.push_str("<pageMargins left=\"0.7\" right=\"0.7\" top=\"0.75\" bottom=\"0.75\" header=\"0.3\" footer=\"0.3\"/></worksheet>");
+    xml.push_str("<pageMargins left=\"0.7\" right=\"0.7\" top=\"0.75\" bottom=\"0.75\" header=\"0.3\" footer=\"0.3\"/>");
+    if let Some(id) = drawing {
+        xml.push_str(&format!("<drawing r:id=\"{id}\"/>"));
+    }
+    xml.push_str("</worksheet>");
     xml
 }
 

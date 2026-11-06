@@ -1,6 +1,7 @@
 //! Word documents (`.docx`).
 
 mod markdown;
+mod math;
 pub(crate) mod model;
 pub(crate) mod ops;
 pub(crate) mod render;

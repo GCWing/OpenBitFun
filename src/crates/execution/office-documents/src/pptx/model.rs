@@ -418,6 +418,11 @@ impl From<ParagraphInput> for Paragraph {
 impl Paragraph {
     fn validate(&self, path: &str) -> OfficeResult<()> {
         validate_runs(&self.runs, path)?;
+        if self.runs.iter().any(|run| run.math.is_some()) {
+            return Err(OfficeError::invalid(format!(
+                "{path}: native math runs are currently supported only in DOCX"
+            )));
+        }
         if let Some(value) = self.line_spacing_pct {
             if !(50.0..=300.0).contains(&value) {
                 return Err(OfficeError::invalid(format!(
@@ -644,6 +649,11 @@ impl Element {
                 for (row_index, row) in e.rows.iter().enumerate() {
                     for (cell_index, cell) in row.iter().enumerate() {
                         cell.validate(&format!("{path}.rows[{row_index}][{cell_index}]"))?;
+                        if cell.runs.iter().any(|run| run.math.is_some()) {
+                            return Err(OfficeError::invalid(format!(
+                                "{path}: native math runs are currently supported only in DOCX"
+                            )));
+                        }
                     }
                 }
                 for (name, color) in [

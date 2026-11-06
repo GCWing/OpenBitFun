@@ -4,7 +4,8 @@ use super::markdown::markdown_to_blocks;
 use super::model::{Block, DocxDocument, DocxStyles, HeaderFooter, PageSetup};
 use crate::common::{
     existing_span, insertion_index, merge_patch, move_span, parse_operation, report_extra,
-    report_list, unknown_operation, Align, DocumentProperties, Extra, UnknownFields,
+    report_list, runs_text, unknown_operation, Align, DocumentProperties, Extra, Run,
+    UnknownFields,
 };
 use crate::error::{OfficeError, OfficeResult};
 use crate::ApplyContext;
@@ -80,6 +81,8 @@ struct ReplaceText {
     replace: String,
     #[serde(default = "default_true")]
     match_case: bool,
+    #[serde(default)]
+    include_headers_footers: bool,
     #[serde(flatten)]
     extra: Extra,
 }
@@ -196,18 +199,43 @@ pub(crate) fn apply(
             }
             let mut replaced = 0;
             for block in &mut doc.blocks {
-                for run in block.runs_mut() {
-                    let (text, count) =
-                        replace_all(&run.text, &input.find, &input.replace, input.match_case);
-                    if count > 0 {
-                        run.text = text;
-                        replaced += count;
+                for runs in block.run_groups_mut() {
+                    for text_runs in runs.split_mut(|run| run.math.is_some()) {
+                        replaced +=
+                            replace_runs(text_runs, &input.find, &input.replace, input.match_case);
                     }
+                }
+                let mut texts = Vec::new();
+                match block {
+                    Block::Code(block) => texts.push(&mut block.text),
+                    Block::Table(block) => texts.extend(block.caption.as_mut()),
+                    Block::Image(block) => texts.extend(block.caption.as_mut()),
+                    Block::Toc(block) => texts.extend(block.title.as_mut()),
+                    _ => {}
+                }
+                for text in texts {
+                    let (updated, count) =
+                        replace_all(text, &input.find, &input.replace, input.match_case);
+                    *text = updated;
+                    replaced += count;
+                }
+            }
+            if input.include_headers_footers {
+                for text in doc
+                    .header
+                    .iter_mut()
+                    .chain(doc.footer.iter_mut())
+                    .map(|part| &mut part.text)
+                {
+                    let (updated, count) =
+                        replace_all(text, &input.find, &input.replace, input.match_case);
+                    *text = updated;
+                    replaced += count;
                 }
             }
             if replaced == 0 {
                 ctx.warn(format!(
-                    "replace_text found no match for `{}` (a match split across differently formatted runs is not found)",
+                    "replace_text found no match for `{}`; read the target text before retrying",
                     input.find
                 ));
             } else {
@@ -358,6 +386,76 @@ fn prepare_blocks(content: BlockContent, ctx: &mut ApplyContext) -> OfficeResult
     Ok(blocks)
 }
 
+/// Byte ranges in the original string, including when Unicode lowercase
+/// expands a character. Only complete original characters can match.
+fn matching_ranges(text: &str, find: &str, match_case: bool) -> Vec<(usize, usize)> {
+    if find.is_empty() {
+        return Vec::new();
+    }
+    if match_case {
+        return text
+            .match_indices(find)
+            .map(|(start, value)| (start, start + value.len()))
+            .collect();
+    }
+    let mut lower = String::new();
+    let mut boundaries = Vec::new();
+    for (offset, character) in text.char_indices() {
+        boundaries.push((lower.len(), offset));
+        lower.extend(character.to_lowercase());
+    }
+    boundaries.push((lower.len(), text.len()));
+    let needle = find.to_lowercase();
+    lower
+        .match_indices(&needle)
+        .filter_map(|(start, matched)| {
+            let from = boundaries
+                .binary_search_by_key(&start, |(lower, _)| *lower)
+                .ok()?;
+            let to = boundaries
+                .binary_search_by_key(&(start + matched.len()), |(lower, _)| *lower)
+                .ok()?;
+            Some((boundaries[from].1, boundaries[to].1))
+        })
+        .collect()
+}
+
+/// Replacements inherit the formatting/link of their first matched character;
+/// untouched prefixes and suffixes retain their own run formatting.
+fn replace_runs(runs: &mut [Run], find: &str, replace: &str, match_case: bool) -> usize {
+    let text = runs_text(runs);
+    let matches = matching_ranges(&text, find, match_case);
+    let mut match_index = 0;
+    let mut run_start = 0;
+    for run in runs {
+        let run_end = run_start + run.text.len();
+        let mut cursor = run_start;
+        let mut updated = String::new();
+        while let Some(&(start, end)) = matches.get(match_index) {
+            if start >= run_end {
+                break;
+            }
+            if end <= run_start {
+                match_index += 1;
+                continue;
+            }
+            if start >= run_start {
+                updated.push_str(&text[cursor..start]);
+                updated.push_str(replace);
+            }
+            cursor = end.min(run_end);
+            if end > run_end {
+                break;
+            }
+            match_index += 1;
+        }
+        updated.push_str(&text[cursor..run_end]);
+        run.text = updated;
+        run_start = run_end;
+    }
+    matches.len()
+}
+
 /// Replaces every occurrence, returning the new text and the match count.
 pub(crate) fn replace_all(
     text: &str,
@@ -365,34 +463,22 @@ pub(crate) fn replace_all(
     replace: &str,
     match_case: bool,
 ) -> (String, usize) {
-    if match_case {
-        let count = text.matches(find).count();
-        return (text.replace(find, replace), count);
-    }
-    let lower_text = text.to_lowercase();
-    let lower_find = find.to_lowercase();
-    // Lowercasing can change byte lengths; fall back to exact matching then.
-    if lower_text.len() != text.len() || lower_find.len() != find.len() {
-        let count = text.matches(find).count();
-        return (text.replace(find, replace), count);
-    }
+    let matches = matching_ranges(text, find, match_case);
     let mut out = String::with_capacity(text.len());
-    let mut count = 0;
     let mut cursor = 0;
-    while let Some(position) = lower_text[cursor..].find(&lower_find) {
-        let start = cursor + position;
+    for &(start, end) in &matches {
         out.push_str(&text[cursor..start]);
         out.push_str(replace);
-        cursor = start + find.len();
-        count += 1;
+        cursor = end;
     }
     out.push_str(&text[cursor..]);
-    (out, count)
+    (out, matches.len())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::replace_all;
+    use super::{replace_all, replace_runs};
+    use crate::common::Run;
 
     #[test]
     fn replaces_case_insensitively() {
@@ -404,5 +490,34 @@ mod tests {
             replace_all("Foo foo", "foo", "bar", true),
             ("Foo bar".to_string(), 1)
         );
+        assert_eq!(
+            replace_all("İstanbul İSTANBUL", "İstanbul", "City", false),
+            ("City City".to_string(), 2)
+        );
+        // Lowercasing changes byte lengths; matching must not slice at offsets
+        // from the lowercased string or silently fall back to case-sensitive.
+        assert_eq!(
+            replace_all("Kelvin kelvin", "KELVIN", "K", false),
+            ("K K".to_string(), 2)
+        );
+    }
+
+    #[test]
+    fn replaces_multiple_spans_across_runs_and_preserves_unmatched_styles() {
+        let mut runs = vec![
+            Run::plain(""),
+            Run::plain("前ab"),
+            Run::plain("c中a"),
+            Run::plain("bc后"),
+        ];
+        runs[1].bold = Some(true);
+        runs[2].italic = Some(true);
+        assert_eq!(replace_runs(&mut runs, "abc", "X", true), 2);
+        assert_eq!(
+            runs.iter().map(|run| run.text.as_str()).collect::<Vec<_>>(),
+            ["", "前X", "中X", "后"]
+        );
+        assert_eq!(runs[1].bold, Some(true));
+        assert_eq!(runs[2].italic, Some(true));
     }
 }

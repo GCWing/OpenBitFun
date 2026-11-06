@@ -19,13 +19,21 @@ Every block is an object with `type`. Text fields take either `text` (plain stri
 | `quote` | `text`/`runs` |
 | `page_break` | — |
 | `horizontal_rule` | — |
-| `toc` | `title`, `levels` (default 3). Lists the headings; Word refreshes page numbers on open |
+| `toc` | `title`, `levels` (default 3). Lists headings; Word computes page numbers. Refresh the field after pagination if needed |
 
-**Run** fields: `text`, `bold`, `italic`, `underline`, `strike`, `code`, `superscript`, `subscript`, `color` (`#RRGGBB`), `highlight` (`#RRGGBB`), `size_pt`, `font`, `lang` (optional BCP 47 language, e.g. `zh-CN`), `link` (http/https/mailto URL).
+**Run** fields: `text`, `math` (`inline` or `display`, treats `text` as LaTeX math), `bold`, `italic`, `underline`, `strike`, `code`, `superscript`, `subscript`, `color` (`#RRGGBB`), `highlight` (`#RRGGBB`), `size_pt`, `font`, `lang` (optional BCP 47 language, e.g. `zh-CN`), `link` (http/https/mailto URL).
 
 ### Markdown
 
-`insert_blocks` and `replace_blocks` accept `markdown` instead of `blocks`. Supported: headings, paragraphs with `**bold**` / `*italic*` / `~~strike~~` / `` `code` `` / `[links](https://…)`, bullet / numbered / nested / task lists, GFM tables (with column alignment), fenced code, block quotes, `---` rules, images `![alt](/abs/path.png)`, `[TOC]` on its own line, and `<!-- pagebreak -->`.
+`insert_blocks` and `replace_blocks` accept `markdown` instead of `blocks`. Supported: headings, paragraphs with `**bold**` / `*italic*` / `~~strike~~` / `` `code` `` / `[links](https://…)`, bullet / numbered / nested / task lists, GFM tables (with column alignment), fenced code, block quotes, `---` rules, images `![alt](/abs/path.png)`, `[TOC]` on its own line, and `<!-- pagebreak -->`. Math uses `$...$` inline and `$$...$$` on its own line for display.
+
+### Papers and equations
+
+Use heading levels, `[TOC]`, paragraph spacing/indents, page breaks, tables/captions, and page fields for papers. Agent-readable `.tex` content can be expressed with these blocks and Markdown; the tool does not compile an entire TeX document or execute its macros/files. Citation markers and bibliography entries can be authored as ordinary text; automatic citation databases, cross-reference numbering and footnotes are not supported. Do not claim journal-template compliance without checking its actual requirements.
+
+LaTeX math is written as native editable Word equations. Supported structures include fractions, roots, subscripts/superscripts, sums, integrals, Greek symbols, accents and rectangular matrices. Explicit input: `{"type":"paragraph","runs":[{"text":"E=mc^2","math":"display"}]}`. A display equation must be the only run in its paragraph or cell. Math text has no dollar delimiters in explicit runs; JSON backslashes must be escaped (`"\\frac{1}{2}"`). Code blocks retain literal TeX.
+
+Unsupported syntax/structures fail the whole batch with an actionable error; simplify that expression or explicitly show its source as code if that satisfies the user. No TeX/Office installation or external conversion is needed. `read` retains the original math source; `replace_blocks` edits equations in place. `replace_text` skips equations and never matches across them. Legacy readers retain the math fields and can show the stored source text.
 
 ## Operations
 
@@ -35,9 +43,9 @@ Every block is an object with `type`. Text fields take either `text` (plain stri
 | `replace_blocks` | `index`, `count` (default 1), `blocks` or `markdown` | replaces `count` blocks with the new ones (any number) |
 | `delete_blocks` | `index`, `count` (default 1) | removes blocks |
 | `move_blocks` | `index`, `count` (default 1), `to` | moves blocks; `to` is the position in the list after they are removed |
-| `replace_text` | `find`, `replace`, `match_case` (default true) | replaces inside every run (text split across differently formatted runs is not matched) |
+| `replace_text` | `find`, `replace`, `match_case` (default true), `include_headers_footers` (default false) | replaces body text, including text split across formatted runs; replacement inherits the first matched run’s format. Matches never cross paragraphs, list items or table cells. `include_headers_footers: true` also updates header/footer text |
 | `set_page_setup` | `size` (`a4` `letter` `legal` `a3` `a5`), `orientation` (`portrait` `landscape`), `margins_cm` `{top,bottom,left,right}` | partial update |
-| `set_styles` | `font`, `east_asia_font`, `font_size_pt`, `heading_font`, `heading_color`, `text_color`, `line_spacing`, `paragraph_space_after_pt`, `table_header_fill` | partial update of document-wide styles |
+| `set_styles` | `lang` (BCP 47, optional), `font`, `east_asia_font`, `font_size_pt`, `heading_font`, `heading_color`, `text_color`, `line_spacing`, `paragraph_space_after_pt`, `table_header_fill` | partial update of document-wide styles |
 | `set_header_footer` | `header`, `footer`: a string, `{text, align}`, or `null` to remove. `{PAGE}` and `{NUMPAGES}` become page fields | |
 | `set_properties` | `title`, `subject`, `author`, `keywords`, `description`, `category` | document metadata |
 
@@ -47,13 +55,13 @@ Prefer `replace_blocks` for content corrections instead of insert/delete/move se
 
 ## Settings at create
 
-`settings` may carry `page`, `styles`, `header`, `footer`, `properties` (same fields as above). Use the style defaults unless document requirements call for specific fonts; `styles.east_asia_font` sets the East Asian font. Font availability and substitution depend on the viewing environment, which may differ from the generation environment.
+`settings` may carry `page`, `styles`, `header`, `footer`, `properties` (same fields as above). CJK run languages follow their text unless overridden by run `lang` or `styles.lang`. Use the style defaults unless document requirements call for specific fonts; `styles.east_asia_font` sets the East Asian font. Font availability and substitution depend on the viewing environment, which may differ from the generation environment.
 
 ## Example
 
 ```json
 {"action": "create", "file_path": "/abs/report.docx",
- "settings": {"styles": {"east_asia_font": "Microsoft YaHei"}},
+ "settings": {"styles": {"font_size_pt": 11}},
  "operations": [
    {"op": "set_properties", "title": "Q3 Report"},
    {"op": "insert_blocks", "markdown": "# Q3 Report\n\n[TOC]\n\n## Summary\n\nRevenue grew **23%**."},

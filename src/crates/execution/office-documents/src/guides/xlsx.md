@@ -15,7 +15,9 @@ Rows are arrays of cell values:
 - `null` → leave that cell unchanged (skip)
 - object → `{"value": …, "formula": "…", "type": "text" | "number" | "boolean" | "date", "style": {…}}`. `type: "text"` keeps a leading `=` literal; `type: "date"` turns `"2024-03-31"` or `"2024-03-31 09:30"` into a real date with a date format.
 
-Formula results are computed and cached for arithmetic, comparisons, `&`, cell and range references (including other sheets), and SUM, AVERAGE, MIN, MAX, COUNT, COUNTA, PRODUCT, ROUND, ROUNDUP, ROUNDDOWN, ABS, IF, IFERROR, AND, OR, NOT, CONCAT(ENATE), LEN, UPPER, LOWER, TRIM, so `read` and simple viewers show values. Other functions (VLOOKUP, SUMIF, FILTER, …) are stored without a cached value; Excel, WPS and LibreOffice compute every formula when the file opens, and the tool lists the uncached cells. Write numbers as numbers (not `"1,200"`) so formulas and number formats work.
+Formula results are computed and cached for arithmetic, comparisons, `&`, cell and range references (including other sheets), and SUM, AVERAGE, MIN, MAX, COUNT, COUNTA, PRODUCT, ROUND, ROUNDUP, ROUNDDOWN, ABS, IF, IFERROR, AND, OR, NOT, CONCAT(ENATE), LEN, UPPER, LOWER, TRIM, so `read` and simple viewers show values. Other functions are stored without a cached value and listed in warnings. The target spreadsheet application must support and recalculate them; this is not a request to install or run an external converter. Write numbers as numbers (not `"1,200"`) so formulas and number formats work.
+
+A style-only cell object preserves its existing value/formula. Use `{"value": null}` or `clear_range` to clear content; a bare `null` skips it.
 
 ## Styles
 
@@ -44,11 +46,24 @@ Formula results are computed and cached for arithmetic, comparisons, `&`, cell a
 | `freeze_panes` | `sheet`, `rows`, `columns` (0, 0 removes) | |
 | `set_autofilter` | `sheet`, `range` (`null` removes) | |
 | `set_sheet` | `sheet`, `tab_color` | |
+| `add_chart` | `sheet`, `chart` | append a native editable chart |
+| `replace_chart` | `sheet`, `index`, `chart` | replace the 0-based chart at `index` |
+| `delete_chart` | `sheet`, `index` | remove a chart |
 | `set_properties` | `title`, `subject`, `author`, `keywords`, `description`, `category` | |
 
 Operations run in order and each sees the previous result: after `insert_rows`, later operations in the same batch address the shifted grid. A batch is atomic.
 
 Prefer `set_cells`/`format_range` for corrections instead of deleting/recreating sheets or rows. After failure, correct the named field/range; read the current sheet if uncertain. Do not repeat unchanged failed input or replay successful batches.
+
+## Native charts
+
+`chart` takes `type` (`column`, `bar`, `line`, `pie`), `anchor` (top-left cell, e.g. `F2`), optional `title`, `width_px`/`height_px` (default 640/360), `legend` (default true), and `series`. Each series takes optional `name`/`color` and two references: `categories: {sheet?, range}` and `values: {sheet?, range}`. An omitted source sheet means the chart’s sheet. References must be equally sized single rows/columns, up to 32000 points; a pie chart takes one series. Values should be numeric, categories labels; blank/non-numeric values are gaps. Unknown formula results have no cached chart points until recalculation.
+
+```json
+{"op":"add_chart","sheet":"Sales","chart":{"type":"column","anchor":"F2","title":"Revenue","series":[{"name":"Total","categories":{"range":"A2:A3"},"values":{"range":"D2:D3"}}]}}
+```
+
+`read` lists chart counts and returns configurations with the selected sheet. Range references and caches are rebuilt after edits; references follow sheet renames and row/column shifts. Deleting a source marks it `#REF!` and returns a warning; repair it with `replace_chart`. Charts remain editable in Office. Pivot charts, combination charts and conditional formatting are not currently supported; do not invent operations or claim those features were generated.
 
 ## Example
 

@@ -5,7 +5,7 @@ use super::model::{
     Block, CodeBlock, EmptyBlock, HeadingBlock, ImageBlock, ListBlock, ListItem, ParagraphBlock,
     QuoteBlock, TableBlock, TocBlock,
 };
-use crate::common::{Align, Extra, Run, TableCell};
+use crate::common::{Align, Extra, MathMode, Run, TableCell};
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 #[derive(Default, Clone)]
@@ -35,7 +35,10 @@ fn push_run(runs: &mut Vec<Run>, run: Run) {
     if run.text.is_empty() {
         return;
     }
-    if let Some(last) = runs.last_mut() {
+    if let Some(last) = runs
+        .last_mut()
+        .filter(|last| last.math.is_none() && run.math.is_none())
+    {
         let mut probe = last.clone();
         probe.text = run.text.clone();
         if probe == run {
@@ -73,8 +76,10 @@ struct TableFrame {
 /// Parses Markdown into blocks. Image references are returned as image
 /// blocks whose `src` the caller resolves.
 pub fn markdown_to_blocks(markdown: &str) -> Vec<Block> {
-    let options =
-        Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
+    let options = Options::ENABLE_TABLES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_MATH;
     let parser = Parser::new_ext(markdown, options);
 
     let mut blocks: Vec<Block> = Vec::new();
@@ -363,8 +368,34 @@ pub fn markdown_to_blocks(markdown: &str) -> Vec<Block> {
             },
             Event::Text(text) => push_run(&mut runs, inline.run(&text, false)),
             Event::Code(text) => push_run(&mut runs, inline.run(&text, true)),
-            Event::InlineMath(text) | Event::DisplayMath(text) => {
-                push_run(&mut runs, inline.run(&text, false))
+            Event::InlineMath(text) => {
+                let mut run = inline.run(&text, false);
+                run.math = Some(MathMode::Inline);
+                push_run(&mut runs, run);
+            }
+            Event::DisplayMath(text) => {
+                let mut run = inline.run(&text, false);
+                // A display equation occupies its own paragraph. Inside lists
+                // or tables it remains inline in the owning text container.
+                if stack.iter().any(|container| {
+                    matches!(
+                        container,
+                        Container::List(_)
+                            | Container::Table(_)
+                            | Container::Heading(_)
+                            | Container::Quote { .. }
+                    )
+                }) {
+                    run.math = Some(MathMode::Inline);
+                    push_run(&mut runs, run);
+                } else {
+                    flush_paragraph(&mut blocks, &mut stack, &mut runs);
+                    run.math = Some(MathMode::Display);
+                    blocks.push(Block::Paragraph(ParagraphBlock {
+                        runs: vec![run],
+                        ..Default::default()
+                    }));
+                }
             }
             Event::SoftBreak => push_run(&mut runs, inline.run(" ", false)),
             Event::HardBreak => push_run(&mut runs, inline.run("\n", false)),

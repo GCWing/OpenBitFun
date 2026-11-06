@@ -4797,6 +4797,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8863b587001c1b9a8a4e36008cebc6b3612cb1226fe2de94858e06092687b608"
 
 [[package]]
+name = "math-core"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "366819bd33e32c670b4bfcfa4df435095b6a6a67ef459b6b82de90ecb844c1d4"
+dependencies = [
+ "math-core-renderer-internal",
+ "memchr",
+ "phf 0.13.1",
+ "rustc-hash 2.1.3",
+ "static_assertions",
+ "strum 0.28.0",
+ "strum_macros 0.28.0",
+]
+
+[[package]]
+name = "math-core-renderer-internal"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97b035992b263a6ec499b9bacfedc2e2c9c390381fc9c36c1fbe6d84c20d68da"
+dependencies = [
+ "bitflags 2.11.1",
+ "dtoa",
+ "stable-arena",
+ "static_assertions",
+ "strum 0.28.0",
+ "strum_macros 0.28.0",
+]
+
+[[package]]
 name = "md-5"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6387,6 +6416,7 @@ name = "openbitfun-office-documents"
 version = "1.0.9"
 dependencies = [
  "base64 0.22.1",
+ "math-core",
  "pulldown-cmark",
  "roxmltree",
  "serde",
@@ -9794,6 +9824,12 @@ dependencies = [
  "subtle",
  "zeroize",
 ]
+
+[[package]]
+name = "stable-arena"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a6572b16faf73db61fab0b1d848ce108e20d026dc20dcb043a3f83c73ad1c09"
 
 [[package]]
 name = "stable_deref_trait"

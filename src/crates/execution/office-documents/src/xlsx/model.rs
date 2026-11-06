@@ -26,6 +26,8 @@ pub struct XlsxDocument {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Sheet {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub charts: Vec<super::charts::Chart>,
     #[serde(default, with = "cell_map")]
     pub cells: BTreeMap<CellRef, Cell>,
     /// Column widths in characters, keyed by one-based column number.
@@ -277,6 +279,19 @@ impl XlsxDocument {
     pub fn warnings(&self) -> Vec<String> {
         let mut warnings = Vec::new();
         for sheet in &self.sheets {
+            for (index, chart) in sheet.charts.iter().enumerate() {
+                for series in &chart.series {
+                    for source in [&series.categories, &series.values] {
+                        if source.range.contains("#REF!")
+                            || self
+                                .sheet_index(source.sheet.as_deref().unwrap_or(&sheet.name))
+                                .is_none()
+                        {
+                            warnings.push(format!("sheet `{}` chart {index}: source range is unavailable; replace_chart with valid references or delete_chart", sheet.name));
+                        }
+                    }
+                }
+            }
             let mut missing: Vec<String> = Vec::new();
             for (cell, value) in &sheet.cells {
                 let Some(formula) = &value.formula else {
@@ -329,7 +344,7 @@ impl XlsxDocument {
         if !uncached.is_empty() {
             let sample: Vec<&str> = uncached.iter().take(5).map(String::as_str).collect();
             warnings.push(format!(
-                "{} formula cell(s) ({}{}) use functions or references the local evaluator does not compute; they show values once Excel, WPS, or LibreOffice opens the file",
+                "{} formula cell(s) ({}{}) have no cached value because the local evaluator does not support them. The formulas are preserved for the target spreadsheet application to recalculate; verify function support there. This is not a file-generation failure or a request to install a converter",
                 uncached.len(),
                 sample.join(", "),
                 if uncached.len() > sample.len() { ", …" } else { "" }

@@ -11,7 +11,7 @@ use crate::package::{add_common_parts, ContentTypes, Parts, Relationships};
 use crate::xml::{esc, needs_preserve, XML_HEADER};
 use std::collections::BTreeMap;
 
-const NS: &str = "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"";
+const NS: &str = "xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"";
 const REL_STYLES: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 const REL_SETTINGS: &str =
@@ -40,6 +40,7 @@ struct Writer<'a> {
     lists: Vec<(u32, bool, u32)>,
     drawing_id: u32,
     has_toc: bool,
+    equations: BTreeMap<(String, bool), String>,
 }
 
 pub(crate) fn render(
@@ -48,6 +49,17 @@ pub(crate) fn render(
     created: Option<&str>,
     modified: Option<&str>,
 ) -> OfficeResult<Parts> {
+    let mut equations = BTreeMap::new();
+    for block in &doc.blocks {
+        for run in block.run_groups().into_iter().flatten() {
+            if let Some(mode) = run.math {
+                let key = (run.text.clone(), mode == crate::common::MathMode::Display);
+                if !equations.contains_key(&key) {
+                    equations.insert(key, super::math::render(&run.text, mode)?);
+                }
+            }
+        }
+    }
     let mut writer = Writer {
         doc,
         assets,
@@ -58,6 +70,7 @@ pub(crate) fn render(
         lists: Vec::new(),
         drawing_id: 0,
         has_toc: false,
+        equations,
     };
     writer.rels.add(REL_STYLES, "styles.xml");
     writer.rels.add(REL_SETTINGS, "settings.xml");
@@ -246,6 +259,10 @@ impl Writer<'_> {
     }
 
     fn run(&mut self, run: &Run, defaults: Option<&RunDefaults>) -> String {
+        if let Some(mode) = run.math {
+            return self.equations[&(run.text.clone(), mode == crate::common::MathMode::Display)]
+                .clone();
+        }
         let link = run.link.as_ref().map(|target| {
             self.link_rels
                 .entry(target.clone())
@@ -262,8 +279,13 @@ impl Writer<'_> {
             .or_else(|| (run.code == Some(true)).then_some("Consolas"));
         if let Some(font) = font {
             let font = esc(font);
+            let east_asia = if run.font.is_some() {
+                format!(" w:eastAsia=\"{font}\"")
+            } else {
+                String::new()
+            };
             rpr.push_str(&format!(
-                "<w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\" w:eastAsia=\"{font}\" w:cs=\"{font}\"/>"
+                "<w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\"{east_asia} w:cs=\"{font}\"/>"
             ));
         }
         let bold = run.bold.or(defaults.and_then(|d| d.bold));
@@ -309,7 +331,12 @@ impl Writer<'_> {
         } else if run.subscript == Some(true) {
             rpr.push_str("<w:vertAlign w:val=\"subscript\"/>");
         }
-        if let Some(lang) = &run.lang {
+        if let Some(lang) = run
+            .lang
+            .as_deref()
+            .or(self.doc.styles.lang.as_deref())
+            .or_else(|| crate::common::inferred_cjk_language(&run.text))
+        {
             let lang = esc(lang);
             rpr.push_str(&format!(
                 "<w:lang w:val=\"{lang}\" w:eastAsia=\"{lang}\" w:bidi=\"{lang}\"/>"
@@ -765,13 +792,21 @@ fn styles_xml(doc: &DocxDocument) -> String {
         .unwrap_or_default();
     let line = (styles.line_spacing * 240.0).round() as i64;
     let after = pt_twips(styles.paragraph_space_after_pt);
+    let language = styles
+        .lang
+        .as_deref()
+        .map(|lang| {
+            let lang = esc(lang);
+            format!("<w:lang w:val=\"{lang}\" w:eastAsia=\"{lang}\" w:bidi=\"{lang}\"/>")
+        })
+        .unwrap_or_default();
 
     let mut out = String::from(XML_HEADER);
     out.push_str(
         "<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
     );
     out.push_str(&format!(
-        "<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\" w:cs=\"{font}\"{east_asia}/>{text_color}<w:sz w:val=\"{body_size}\"/><w:szCs w:val=\"{body_size}\"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after=\"{after}\" w:line=\"{line}\" w:lineRule=\"auto\"/></w:pPr></w:pPrDefault></w:docDefaults>"
+        "<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\" w:cs=\"{font}\"{east_asia}/>{text_color}<w:sz w:val=\"{body_size}\"/><w:szCs w:val=\"{body_size}\"/>{language}</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after=\"{after}\" w:line=\"{line}\" w:lineRule=\"auto\"/></w:pPr></w:pPrDefault></w:docDefaults>"
     ));
     out.push_str("<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/></w:style>");
     out.push_str("<w:style w:type=\"character\" w:default=\"1\" w:styleId=\"DefaultParagraphFont\"><w:name w:val=\"Default Paragraph Font\"/><w:uiPriority w:val=\"1\"/><w:semiHidden/><w:unhideWhenUsed/></w:style>");

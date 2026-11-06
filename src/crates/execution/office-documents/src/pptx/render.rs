@@ -746,18 +746,9 @@ fn notes_master_xml() -> String {
 /// the XML is valid UTF-8. Han-only text defaults to Chinese; explicit `lang`
 /// handles Traditional Chinese and Japanese/Korean text containing only Han.
 fn text_language<'a>(text: &str, explicit: Option<&'a str>) -> &'a str {
-    if let Some(lang) = explicit {
-        return lang;
-    }
-    if text.chars().any(|c| matches!(c as u32, 0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF66..=0xFF9D | 0x1B000..=0x1B16F)) {
-        "ja-JP"
-    } else if text.chars().any(|c| matches!(c as u32, 0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF | 0xFFA0..=0xFFDC)) {
-        "ko-KR"
-    } else if text.chars().any(|c| matches!(c as u32, 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x2FA1F | 0x30000..=0x323AF)) {
-        "zh-CN"
-    } else {
-        "en-US"
-    }
+    explicit
+        .or_else(|| crate::common::inferred_cjk_language(text))
+        .unwrap_or("en-US")
 }
 
 fn notes_xml(notes: &str, default_lang: Option<&str>) -> String {

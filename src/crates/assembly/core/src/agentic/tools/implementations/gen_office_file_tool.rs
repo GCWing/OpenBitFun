@@ -265,7 +265,7 @@ impl GenOfficeFileTool {
             format.as_str(),
             document.revision()
         );
-        text.push_str("\nFile written; visual rendering was not performed by this tool.");
+        text.push_str("\nGeneration complete. Use read to verify changed content and references. Visual rendering is optional and was not performed; do not probe/install/repair an Office package or build a renderer to complete this tool workflow.");
         if format == OfficeFormat::Pptx {
             text.push_str(" Layout warnings are geometric/text-size estimates.");
         }
@@ -300,11 +300,11 @@ Actions:
 Each operation is {op, ...fields}. Operations run in array order against the result of earlier operations. Block/slide/element indexes are 0-based and shift after insert/delete; move `to` is the position after removing the source. A failed batch writes nothing. Use the error's field/index guidance, read the target if uncertain, and send corrected input; do not repeat an unchanged failed call or replay a successful batch.
 
 Common edits:
-- DOCX: insert_blocks {markdown} to append; replace_blocks {index, count?, markdown} to replace.
-- XLSX: add_sheet {name, rows}; append_rows {sheet, rows}; set_cells {sheet, start, rows}; format_range {sheet, range, style}.
+- DOCX: insert_blocks {markdown} to append; replace_blocks {index, count?, markdown} to replace. Markdown math becomes editable Word equations; read the guide for paper and formula inputs.
+- XLSX: add_sheet {name, rows}; set_cells {sheet, start, rows}; format_range {sheet, range, style}; add_chart {sheet, chart} for native column/bar/line/pie charts; replace_chart {sheet, index, chart} / delete_chart {sheet, index}.
 - PPTX: insert_slides {slides} to append; replace_slide {index, slide} to replace one complete slide; update_slide {index, update_elements:[{index, ...changed fields}]} for element patches (no nested op); update_slide {index, elements} to replace all elements while keeping slide metadata. Use set_theme for deck defaults. Canvas: 1280×720 px, or 960×720 for 4:3.
 
-PPTX warnings estimate text overflow and off-canvas geometry; read/audit is not visual rendering. If visual verification is needed, use an available renderer and report what was actually checked. An unavailable preview renderer does not prevent file generation. For CJK text, choose an east_asia_font available on the target viewer; language is inferred unless lang is supplied in the guide's supported locations.
+Completion for ALL formats: finish edits, inspect warnings, then read back changed content and references. This is structural verification, not visual rendering; PPTX layout warnings are estimates. External rendering is optional, not a generation dependency. Do not automatically probe/install/repair LibreOffice/soffice or other Office packages, or build a substitute renderer. When visual inspection is required, use a known available viewer on the file-owning machine; otherwise deliver and state the unverified scope. Never infer compatibility with one viewer from another. Choose fonts for the target environment; DOCX/PPTX language can be overridden with lang.
 
 Images accept absolute workspace paths or data URLs (PNG/JPEG/GIF/BMP); download web images first. Reuse embedded asset names from read. Only files created by this tool are editable. External modifications are preserved by refusing edits; discard_external_changes:true explicitly rebuilds from the last embedded model and drops those modifications."#
             .to_string()
@@ -1021,6 +1021,115 @@ mod tests {
             );
             assert_eq!(element["size_pt"], 30.0);
             assert_eq!(read["view"]["slides"][0]["notes"], "Keep notes");
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn all_formats_complete_through_workspace_io_without_an_office_installation() {
+        for remote in [false, true] {
+            let fs = Arc::new(MemoryFs::default());
+            let context = context(fs.clone(), remote);
+            let tool = GenOfficeFileTool::new();
+            for (format, initial, edit, bad) in [
+                (
+                    "docx",
+                    json!([
+                        {"op":"insert_blocks","blocks":[{"type":"paragraph","runs":[{"text":"旧","bold":true},{"text":"项目"}]}]},
+                        {"op":"insert_blocks","markdown":"论文公式 $E=mc^2$"}
+                    ]),
+                    json!([
+                        {"op":"replace_text","find":"旧项目","replace":"新产品"}
+                    ]),
+                    json!({"op":"replace_blocks","index":99,"markdown":"invalid"}),
+                ),
+                (
+                    "xlsx",
+                    json!([
+                        {"op":"add_sheet","name":"数据","rows":[["项目","数量"],["中文",10],["日本語",20]]},
+                        {"op":"add_chart","chart":{"type":"column","anchor":"D1","series":[{"categories":{"range":"A2:A3"},"values":{"range":"B2:B3"}}]}}
+                    ]),
+                    json!([
+                        {"op":"set_cells","start":"B2","rows":[[{"style":{"bold":true}}]]},
+                        {"op":"rename_sheet","name":"新产品"}
+                    ]),
+                    json!({"op":"add_chart","chart":{"type":"column","anchor":"D1","series":[{"categories":{"range":"A1:A3"},"values":{"range":"B1:B2"}}]}}),
+                ),
+                (
+                    "pptx",
+                    json!([
+                        {"op":"insert_slides","slides":[{"title":"旧项目","elements":[]}]}
+                    ]),
+                    json!([
+                        {"op":"replace_slide","index":0,"slide":{"title":"新产品","elements":[]}}
+                    ]),
+                    json!({"op":"delete_slides","index":99}),
+                ),
+            ] {
+                let path = format!("/remote/workspace/out/workflow.{format}");
+                let guide = data(
+                    tool.call_impl(&json!({"action":"guide","format":format}), &context)
+                        .await
+                        .unwrap(),
+                );
+                let guide = guide["guide"].as_str().unwrap();
+                assert!(guide.contains("default completion path"));
+                assert!(guide.contains("Do not automatically probe, install or repair"));
+                for (action, operations) in [("create", initial), ("edit", edit)] {
+                    let results = tool
+                        .call_impl(
+                            &json!({"action":action,"file_path":path,"operations":operations}),
+                            &context,
+                        )
+                        .await
+                        .unwrap();
+                    match &results[0] {
+                        ToolResult::Result {
+                            data,
+                            result_for_assistant: Some(text),
+                            ..
+                        } => {
+                            assert_eq!(data["visual_rendered"], false);
+                            assert!(text.contains("Generation complete"));
+                            assert!(text.contains("Use read"));
+                        }
+                        other => panic!("missing completion evidence: {other:?}"),
+                    }
+                }
+                let saved = fs.files.lock().unwrap()[&path].clone();
+                let failure = tool
+                    .call_impl(
+                        &json!({"action":"edit","file_path":path,"operations":[bad]}),
+                        &context,
+                    )
+                    .await
+                    .unwrap_err();
+                assert!(failure.to_string().contains("Nothing was written"));
+                assert_eq!(fs.files.lock().unwrap()[&path], saved);
+                let mut input = json!({"action":"read","file_path":path,"detail":"full"});
+                if format == "xlsx" {
+                    input["sheet"] = json!("新产品");
+                }
+                let read = data(tool.call_impl(&input, &context).await.unwrap());
+                assert!(read["view"].to_string().contains("新产品"));
+                if format == "docx" {
+                    assert_eq!(read["view"]["blocks"][0]["runs"][0]["bold"], true);
+                    assert_eq!(read["view"]["blocks"][1]["runs"][1]["math"], "inline");
+                    assert_eq!(read["view"]["blocks"][1]["runs"][1]["text"], "E=mc^2");
+                    let invalid = tool.call_impl(
+                        &json!({"action":"edit","file_path":path,"operations":[{"op":"insert_blocks","markdown":r"$\unknownCommand{x}$"}]}),
+                        &context,
+                    ).await.unwrap_err();
+                    assert!(invalid.to_string().contains("Nothing was written"));
+                    assert_eq!(fs.files.lock().unwrap()[&path], saved);
+                } else if format == "xlsx" {
+                    assert_eq!(read["view"]["rows"][1]["cells"][1], 10);
+                    assert_eq!(
+                        read["view"]["charts"][0]["series"][0]["values"]["sheet"],
+                        "新产品"
+                    );
+                }
+            }
         }
     }
 }
