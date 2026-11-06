@@ -246,6 +246,10 @@ import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFla
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { isBtwSessionDraft } from '../utils/modelSelectionTarget';
 import { hasSessionStarted, isSessionBindingLocked } from '../utils/sessionLifecycle';
+import {
+  canTreatMissingPermissionModeAsDefault,
+  isSessionNotFoundError,
+} from '../utils/sessionPermissionMode';
 import { prepareSessionDraftForCommand } from '../services/sessionDraftService';
 import { useSessionWorkspaceSelection } from '../hooks/useSessionWorkspaceSelection';
 import { SubagentAvatar, resolveSubagentNameKey } from '../subagent-identity';
@@ -717,6 +721,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const effectiveTargetSession = effectiveTargetSessionId
     ? flowChatState.sessions.get(effectiveTargetSessionId)
     : undefined;
+  const hasEffectiveTargetSession = effectiveTargetSession !== undefined;
   const peer = usePeerDeviceModeOptional();
   const isBtwDraftTarget = isBtwSessionDraft(effectiveTargetSession);
   const btwDraftSettingsInherited = isBtwDraftTarget && Boolean(peer?.peerMode.active)
@@ -2595,6 +2600,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       setActiveTurnPermissionMode(null);
       return undefined;
     }
+    if (!hasEffectiveTargetSession) {
+      setSessionPermissionMode(null);
+      setSessionPermissionModeUnread(false);
+      return undefined;
+    }
     if (effectiveTargetSession?.draft) {
       setSessionPermissionMode(effectiveTargetSession.draft.permissionMode ?? null);
       setSessionPermissionModeUnread(false);
@@ -2625,6 +2635,28 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         }
       } catch (error) {
         log.warn('Failed to read session permission mode', error);
+        if (
+          permissionModeRequestGenerationRef.current === generation
+          && isSessionNotFoundError(error)
+          && canTreatMissingPermissionModeAsDefault(
+            hasEffectiveTargetSession
+              ? {
+                  dialogTurns: effectiveTargetSession?.dialogTurns ?? [],
+                  historyState: effectiveTargetSession?.historyState,
+                  isHistorical: effectiveTargetSession?.isHistorical,
+                  persistedTurnCount: effectiveTargetSession?.persistedTurnCount,
+                }
+              : undefined,
+          )
+        ) {
+          // A newly reserved empty Session is intentionally host-less until
+          // its first message. Keep the default mode without reporting a
+          // failed read; later materialization reruns this effect.
+          setSessionPermissionMode(null);
+          setSessionPermissionModeUnread(false);
+          permissionModeUnreadNotifiedRef.current = null;
+          return;
+        }
         // Falling back to the global default is the safe read: it never shows a
         // wider mode than the session actually runs with. Report the fallback
         // once per Session so it cannot pass for that Session's own selection.
@@ -2649,6 +2681,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     sessionOwningId,
     sessionOwningPath,
     effectiveTargetSession?.workspacePath,
+    effectiveTargetSession?.dialogTurns,
+    effectiveTargetSession?.historyState,
+    effectiveTargetSession?.isHistorical,
+    effectiveTargetSession?.persistedTurnCount,
     effectiveTargetSession?.remoteConnectionId,
     effectiveTargetSession?.remoteSshHost,
     effectiveTargetSession?.parentSessionId,
@@ -2658,6 +2694,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     isBtwDraftTarget,
     isAcpTargetSession,
     t,
+    hasEffectiveTargetSession,
   ]);
 
   const applySessionPermissionMode = useCallback(async (
