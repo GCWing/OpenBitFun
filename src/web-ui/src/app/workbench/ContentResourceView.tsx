@@ -9,7 +9,7 @@ import { confirmDialogChoice } from '@/infrastructure/confirm-dialog';
 import { useI18n } from '@/infrastructure/i18n';
 import { useSceneStore } from '../stores/sceneStore';
 import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
-import { useShortcut } from '@/infrastructure/hooks/useShortcut';
+import { useTabCloseShortcut } from '../hooks/useTabCloseShortcut';
 import { useWorkbenchResize } from './workbenchResize';
 
 export default function ContentResourceView({ resourceId, isActive }: { resourceId: string; isActive: boolean }) {
@@ -41,7 +41,7 @@ export default function ContentResourceView({ resourceId, isActive }: { resource
     await document.save();
     return !useContentResourceStore.getState().resources[resourceId]?.isDirty;
   }), [document, resourceId, t]);
-  useShortcut('tab.close', { key: 'w', ctrl: true, scope: 'workbench-content', allowInInput: true },
+  useTabCloseShortcut('workbench-content',
     () => useSceneStore.getState().closeScene(`content:${resourceId}`),
     { enabled: isActive && focused, priority: 20, description: 'keyboard.shortcuts.tab.close' });
   if (!resource || !document) return null;

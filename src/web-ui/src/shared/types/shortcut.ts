@@ -33,4 +33,6 @@ export interface ShortcutConfig {
    * element is focused. Defaults to false.
    */
   allowInInput?: boolean;
+  /** Also handle nested panel scopes, such as a terminal inside this canvas. */
+  inheritInChildScopes?: boolean;
 }

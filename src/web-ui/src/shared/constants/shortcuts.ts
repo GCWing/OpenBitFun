@@ -30,6 +30,11 @@ function mod(
 // navigation and layout operations that must always be reachable.
 
 export const APP_SHORTCUTS: ShortcutDef[] = [
+  {
+    id: 'tab.close',
+    config: mod('W', { scope: 'app', allowInInput: true }),
+    descriptionKey: 'keyboard.shortcuts.tab.close',
+  },
   // Panel layout
   {
     id: 'panel.toggleLeft',
@@ -114,11 +119,6 @@ export const CANVAS_SHORTCUTS: ShortcutDef[] = [
     descriptionKey: 'keyboard.shortcuts.canvas.maximize',
   },
   // Tab management
-  {
-    id: 'tab.close',
-    config: mod('W', { scope: 'canvas', allowInInput: true }),
-    descriptionKey: 'keyboard.shortcuts.tab.close',
-  },
   {
     id: 'tab.reopenClosed',
     config: mod('T', { shift: true, scope: 'canvas', allowInInput: true }),

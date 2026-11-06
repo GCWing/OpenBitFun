@@ -43,6 +43,16 @@ pnpm --dir src/web-ui run test:run src/infrastructure/config/components/common/S
 ```
 
 Follow the parent guide for `check:web`, i18n, and Appearance registration checks.
+
+For keyboard shortcut recording, command suppression, IME and capture lifetime:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/application/KeyboardShortcutsSection.test.tsx src/app/scenes/settings/pages/application/KeyboardShortcutsSection.presentation.test.ts src/infrastructure/services/ShortcutManager.test.ts
+```
+
+These DOM fixtures simulate Windows/macOS modifiers and retained settings sections;
+they do not establish native keyboard delivery or live remote behavior.
+
 For the independent Appearance conversation-width setting and shared drag preference:
 
 ```bash

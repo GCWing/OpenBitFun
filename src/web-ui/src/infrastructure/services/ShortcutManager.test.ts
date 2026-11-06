@@ -101,6 +101,50 @@ describe('ShortcutManager platform primary modifier', () => {
     expect(side).not.toHaveBeenCalled();
   });
 
+  it('inherits only opted-in commands through terminal scope and preserves the terminal event otherwise', () => {
+    setPlatform('Win32');
+    const close = vi.fn(), escape = vi.fn(), main = vi.fn();
+    shortcutManager.register('tab.close', { key: 'w', ctrl: true, scope: 'app', allowInInput: true }, main);
+    shortcutManager.register('tab.close', { key: 'w', ctrl: true, scope: 'canvas', allowInInput: true, inheritInChildScopes: true }, close);
+    shortcutManager.register('canvas.escape', { key: 'Escape', scope: 'canvas', allowInInput: true }, escape);
+    const canvas = document.createElement('div');
+    canvas.dataset.shortcutScope = 'canvas';
+    const terminal = document.createElement('textarea');
+    terminal.dataset.shortcutScope = 'terminal';
+    canvas.append(terminal);
+    document.body.append(canvas);
+    terminal.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', ctrlKey: true, bubbles: true, cancelable: true }));
+    const escapeEvent = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    terminal.dispatchEvent(escapeEvent);
+    expect(close).toHaveBeenCalledOnce();
+    expect(main).not.toHaveBeenCalled();
+    expect(escape).not.toHaveBeenCalled();
+    expect(escapeEvent.defaultPrevented).toBe(false);
+  });
+
+  it('keeps separately owned handlers through override changes and another owner unmounting', () => {
+    setPlatform('Win32');
+    const right = document.createElement('div'), bottom = document.createElement('div');
+    right.dataset.shortcutScope = bottom.dataset.shortcutScope = 'canvas';
+    document.body.append(right, bottom);
+    const onRight = vi.fn(), onBottom = vi.fn();
+    const config = { key: 'w', ctrl: true, scope: 'canvas' as const };
+    shortcutManager.register('tab.close', config, onRight, { owner: Symbol(), when: event => right.contains(event.target as Node) });
+    const removeBottom = shortcutManager.register('tab.close', config, onBottom, { owner: Symbol(), when: event => bottom.contains(event.target as Node) });
+    shortcutManager.loadUserOverrides({ 'tab.close': { key: 'q', alt: true } });
+    const press = (element: HTMLElement) => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'q', altKey: true, bubbles: true, cancelable: true }));
+    press(right); press(bottom);
+    expect(onRight).toHaveBeenCalledOnce();
+    expect(onBottom).toHaveBeenCalledOnce();
+    removeBottom();
+    press(right); press(bottom);
+    expect(onRight).toHaveBeenCalledTimes(2);
+    expect(onBottom).toHaveBeenCalledOnce();
+    expect(shortcutManager.unregister('tab.close')).toBe(true);
+    press(right);
+    expect(onRight).toHaveBeenCalledTimes(2);
+  });
+
   afterEach(() => {
     shortcutManager.clear();
     vi.restoreAllMocks();
