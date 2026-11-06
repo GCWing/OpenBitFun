@@ -44,6 +44,16 @@ pnpm --dir src/web-ui run test:run src/infrastructure/config/components/common/S
 
 Follow the parent guide for `check:web`, i18n, and Appearance registration checks.
 
+For the controller-local web link preference, persistence and explicit browser actions:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/config/services/browserLinkPreference.test.ts src/infrastructure/markdown/MarkdownRenderer.test.tsx src/infrastructure/api/service-api/SystemAPI.test.ts src/app/scenes/settings/settingsRegistry.test.ts src/app/scenes/settings/pages/shared/RuntimeSettings.test.tsx src/infrastructure/config/components/common/SettingsControlSizing.test.ts
+```
+
+The link preference remains editable independently of host control status. These
+storage/DOM fixtures cover cross-window preference updates, remote workspace metadata and simulated Peer switches;
+they do not establish native browser opening, live remote scenarios, or visual fidelity.
+
 For keyboard shortcut recording, command suppression, IME and capture lifetime:
 
 ```bash

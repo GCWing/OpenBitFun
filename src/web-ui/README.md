@@ -24,6 +24,21 @@ Numbered tab selection, reopening a closed tab and layout shortcuts also stay
 with their owning canvas. Recording a new binding in Settings captures the key
 without executing the existing command.
 
+## Opening web links
+
+In **Settings → Tools → Browser & desktop control → Web links**, choose whether
+conversation links open in the **Built-in browser** or the **System default
+browser**. The choice applies immediately and is saved on this device, including
+while viewing remote workspaces or switching peers. Existing installs keep the
+built-in default until you change it.
+In a Web deployment, the external option opens a new tab in the current browser.
+Changes also synchronize to other open pages sharing this device's local storage.
+
+Right-click a link to choose either browser for that click. Modifier-clicks
+continue to open the external browser; supported PR/MR links keep their review
+panel behavior. This preference does not change the browser used by agent
+browser control, or the separate mobile/IM and headless dispatch surfaces.
+
 ## Creating a project
 
 The sidebar's add button opens two clickable cards without footer actions.

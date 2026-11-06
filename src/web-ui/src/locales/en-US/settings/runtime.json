@@ -196,6 +196,14 @@
       "generic": "Full desktop control is not available on this system."
     }
   },
+  "browserLinks": {
+    "sectionTitle": "Web links",
+    "defaultTarget": "Open links by default in",
+    "description": "Choose the browser for web links clicked in conversations. Applies only to this device; the context menu still lets you choose for each link.",
+    "builtin": "Built-in browser",
+    "external": "System default browser",
+    "browserTab": "Current browser (new tab)"
+  },
   "browserControl": {
     "sectionTitle": "Browser control",
     "sectionDescription": "Allow agents to inspect and interact with browser pages after connecting",

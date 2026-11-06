@@ -6,6 +6,8 @@ const copyTextToClipboardMock = vi.hoisted(() => vi.fn());
 const controllerInvoke = vi.hoisted(() => vi.fn());
 const localVersion = vi.hoisted(() => vi.fn());
 const openUrlMock = vi.hoisted(() => vi.fn());
+const isTauriRuntimeMock = vi.hoisted(() => vi.fn(() => true));
+vi.mock('@/infrastructure/runtime', () => ({ isTauriRuntime: isTauriRuntimeMock }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: openUrlMock }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: controllerInvoke }));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: localVersion }));
@@ -30,6 +32,7 @@ describe('SystemAPI', () => {
     controllerInvoke.mockReset();
     localVersion.mockReset();
     openUrlMock.mockReset();
+    isTauriRuntimeMock.mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -44,6 +47,31 @@ describe('SystemAPI', () => {
     expect(invokeMock).not.toHaveBeenCalled();
     expect(controllerInvoke).not.toHaveBeenCalled();
   });
+
+  it('opens web-client links synchronously in a controller tab without desktop or peer calls', async () => {
+    isTauriRuntimeMock.mockReturnValue(false);
+    const open = vi.fn();
+    vi.stubGlobal('window', { open });
+    const url = 'https://example.com/docs';
+    const opened = systemAPI.openExternal(url);
+    expect(open).toHaveBeenCalledExactlyOnceWith(url, '_blank', 'noopener,noreferrer');
+    await opened;
+    expect(openUrlMock).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(controllerInvoke).not.toHaveBeenCalled();
+  });
+
+  it.each(['javascript:alert(1)', 'data:text/html,test', 'file:///private/file', '/relative-path'])(
+    'rejects unsupported web-client URL %s', async url => {
+      isTauriRuntimeMock.mockReturnValue(false);
+      const open = vi.fn();
+      vi.stubGlobal('window', { open });
+      await expect(systemAPI.openExternal(url)).rejects.toThrow('Failed to open external URL');
+      expect(open).not.toHaveBeenCalled();
+      expect(openUrlMock).not.toHaveBeenCalled();
+      expect(invokeMock).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([true, false])('allows explicit update checks with DEV=%s', async development => {
     vi.stubEnv('DEV', development);
