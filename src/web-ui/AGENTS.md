@@ -112,6 +112,20 @@ deliberate layout transitions or animate virtualized content. Rely on CI for
 full lint, build, and broad test coverage unless the local change specifically
 needs it.
 
+For capability catalog entries and their localized global-search labels:
+
+```bash
+pnpm run capabilities:generate && pnpm run capabilities:check && pnpm run capabilities:test
+pnpm run website:test
+pnpm --dir src/web-ui run test:run src/app/global-search/providers/interactiveCapabilitySearchProvider.test.ts
+pnpm run i18n:audit
+```
+
+Every new catalog item also needs a label under `search.capabilities` in each
+locale's `scenes/capabilities.json`; the catalog generator does not write these
+resources. The shared search acceptance corpus exercises both the Playbook and
+Web UI, including the matched sub-capability.
+
 For Agent creation, hidden internal IDs, editing, and surface-switch draft fences:
 
 ```bash

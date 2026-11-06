@@ -43,6 +43,7 @@
             "model-mode-permissions": "為工作階段選擇模型、工作模式、記憶模式與權限模式",
             "creative-frontend-authoring": "讓創造模式擴展客戶端界面與運行時能力",
             "image-generation": "透過已設定的預設圖像模型生成圖片",
+            "office-document-generation": "使用 GenOfficeFile 建立並編輯 Word、Excel 和 PowerPoint 檔案",
             "turn-control": "開始、引導、打斷、取消或恢復一次智能體運行",
             "permission-mailbox": "查看並逐個或批量回答等待中的權限請求",
             "history-search": "分頁加載、搜索和回填歷史消息與工作階段內容",
