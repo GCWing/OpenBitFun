@@ -222,6 +222,9 @@ For skill discovery response compatibility and timeouts, use
 `cargo test -p openbitfun-desktop --lib api::skill_api::tests`.
 For companion pet manifest versions and package metadata, use
 `cargo test -p openbitfun-desktop --lib api::commands::pet_package_tests`.
+For companion window rendering, use
+`cargo test --locked -p openbitfun-desktop --lib agent_companion_surface`.
+The macOS fixture checks alpha through Core Graphics without opening a window.
 For content-search routing and remote fallback protection, use
 `cargo test --locked -p openbitfun-desktop --lib api::search_api::tests`.
 For controller-local peer download staging, atomic replacement, and failed transfer cleanup,

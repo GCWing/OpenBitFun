@@ -1,0 +1,43 @@
+.browser-offscreen-surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.browser-offscreen-frame {
+  position: relative;
+  overflow: hidden;
+  pointer-events: auto;
+
+  > canvas {
+    display: block;
+  }
+}
+
+.browser-offscreen-popup {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+
+  > canvas {
+    display: block;
+  }
+}
+
+.browser-offscreen-keyboard {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  resize: none;
+  opacity: 0;
+  pointer-events: none;
+}

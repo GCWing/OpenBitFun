@@ -1,10 +1,7 @@
 use std::sync::Arc;
-use std::sync::OnceLock;
 
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::AppHandle;
-use tauri::Listener;
 use tauri::Manager;
 
 use crate::platform;
@@ -14,13 +11,8 @@ use crate::server::AppState;
 pub(crate) mod api;
 pub(crate) mod script;
 
-const BRIDGE_EVENT: &str = "openbitfun_webdriver_result";
-static BRIDGE_STATE: OnceLock<Arc<AppState>> = OnceLock::new();
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct BridgeResponse {
-    #[serde(rename = "requestId")]
-    pub(crate) request_id: String,
     pub(crate) ok: bool,
     pub(crate) value: Option<Value>,
     pub(crate) error: Option<BridgeError>,
@@ -30,48 +22,6 @@ pub(crate) struct BridgeResponse {
 pub(crate) struct BridgeError {
     pub(crate) message: Option<String>,
     pub(crate) stack: Option<String>,
-}
-
-pub(crate) fn register_listener(app: AppHandle, state: Arc<AppState>) {
-    let _ = BRIDGE_STATE.set(state.clone());
-    app.listen_any(BRIDGE_EVENT, move |event| {
-        let Ok(payload) = serde_json::from_str::<BridgeResponse>(event.payload()) else {
-            return;
-        };
-        log::debug!(
-            "Embedded WebDriver bridge received event payload: request_id={}, ok={}",
-            payload.request_id,
-            payload.ok
-        );
-        dispatch_bridge_response(&state, payload);
-    });
-}
-
-pub(crate) fn handle_invoke_payload(payload: Value) -> Result<(), String> {
-    let state = BRIDGE_STATE
-        .get()
-        .ok_or_else(|| "Embedded WebDriver bridge state is not initialized".to_string())?;
-    let payload = serde_json::from_value::<BridgeResponse>(payload)
-        .map_err(|error| format!("Invalid bridge payload: {error}"))?;
-    log::debug!(
-        "Embedded WebDriver bridge received invoke payload: request_id={}, ok={}",
-        payload.request_id,
-        payload.ok
-    );
-    dispatch_bridge_response(state, payload);
-    Ok(())
-}
-
-fn dispatch_bridge_response(state: &Arc<AppState>, payload: BridgeResponse) {
-    let maybe_sender = state
-        .pending_requests
-        .lock()
-        .ok()
-        .and_then(|mut pending| pending.remove(&payload.request_id));
-
-    if let Some(sender) = maybe_sender {
-        let _ = sender.send(payload);
-    }
 }
 
 pub(crate) async fn run_script(
@@ -96,7 +46,6 @@ pub(crate) async fn run_script(
     let frame_context = script::serialize_frame_context(&session.frame_context);
 
     platform::evaluator::evaluate_script(
-        state,
         webview,
         timeout_ms,
         script_source,

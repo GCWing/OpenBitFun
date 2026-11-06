@@ -42,6 +42,7 @@ function parseArgs(argv) {
     longTurns: 80,
     shortTurns: 1,
     assistantChars: 2_000,
+    richMarkdown: false,
     toolResultChars: 12_000,
     toolItems: 2,
     denseGroups: 160,
@@ -90,6 +91,9 @@ function parseArgs(argv) {
         break;
       case '--assistant-chars':
         options.assistantChars = Number(next());
+        break;
+      case '--rich-markdown':
+        options.richMarkdown = true;
         break;
       case '--tool-result-chars':
         options.toolResultChars = Number(next());
@@ -141,8 +145,8 @@ function parseArgs(argv) {
   if (!options.sessionPrefix.trim()) {
     throw new Error('--session-prefix cannot be empty');
   }
-  if (!['explore-only', 'mixed-visible', 'dense-visible', 'user-only-latest'].includes(options.scenario)) {
-    throw new Error('--scenario must be one of: explore-only, mixed-visible, dense-visible, user-only-latest');
+  if (!['explore-only', 'mixed-visible', 'dense-visible', 'tool-heavy', 'user-only-latest'].includes(options.scenario)) {
+    throw new Error('--scenario must be one of: explore-only, mixed-visible, dense-visible, tool-heavy, user-only-latest');
   }
   return options;
 }
@@ -159,13 +163,14 @@ Options:
   --long-turns <n>          Turn count for the selected long session. Default: 80
   --short-turns <n>         Turn count for other sessions. Default: 1
   --assistant-chars <n>     Assistant text chars per turn. Default: 2000
+  --rich-markdown           Repeat formatted blocks, tables and fences instead of plain filler.
   --tool-result-chars <n>   Raw tool result chars per tool item. Default: 12000
   --tool-items <n>          Tool item count per turn. Default: 2
   --dense-groups <n>        Groups in the latest dense-visible turn. Default: 160
   --last-active-at-base <n> Epoch-ms lastActiveAt for session index 0. Default: Date.now()
   --last-active-step-ms <n> lastActiveAt decrement per session index. Default: 1000
   --session-prefix <text>   Session id prefix. Default: perf-long-session
-  --scenario <name>         Fixture shape: mixed-visible, dense-visible, explore-only, or user-only-latest. Default: mixed-visible
+  --scenario <name>         Fixture shape: mixed-visible, dense-visible, tool-heavy, explore-only, or user-only-latest. Default: mixed-visible
   --openbitfun-home <path>      OpenBitFun home root. Default: OPENBITFUN_E2E_HOME or isolated tests/e2e/.openbitfun/runtime/home; OPENBITFUN_HOME is used only with OPENBITFUN_E2E_USE_REAL_PROFILE=1
   --openbitfun-user-root <path> OpenBitFun user config root for seeding active workspace. Default: OPENBITFUN_E2E_USER_ROOT or isolated tests/e2e/.openbitfun/runtime/user-root; skipped for real profile unless provided
   --cleanup                 Remove generated sessions for the prefix.
@@ -210,7 +215,7 @@ function repeatedText(chars, label) {
   return `${label} ${'x'.repeat(chars - label.length - 1)}`;
 }
 
-function repeatedMarkdown(chars, turnIndex) {
+function repeatedMarkdown(chars, turnIndex, richMarkdown = false) {
   const seed = [
     `Synthetic assistant response ${turnIndex}`,
     '',
@@ -233,7 +238,7 @@ function repeatedMarkdown(chars, turnIndex) {
     return seed.slice(0, chars);
   }
 
-  const paragraph = `Visible markdown paragraph for turn ${turnIndex}. `;
+  const paragraph = richMarkdown ? `\n\n${seed}\n` : `Visible markdown paragraph for turn ${turnIndex}. `;
   let content = seed;
   while (content.length < chars) {
     content += paragraph;
@@ -305,21 +310,30 @@ function makeState(workspacePath) {
   };
 }
 
-function makeToolItems({ turnId, turnIndex, timestamp, toolResultChars, toolItems }) {
+function makeToolItems({ turnId, turnIndex, timestamp, toolResultChars, toolItems, scenario }) {
   return Array.from({ length: toolItems }, (_, toolIndex) => {
     const toolId = `${turnId}-tool-${toolIndex}`;
+    const toolName = scenario === 'tool-heavy' ? (toolIndex % 2 === 0 ? 'ExecCommand' : 'Edit') : 'Read';
+    const lines = Math.max(1, Math.ceil(toolResultChars / 70));
+    const filePath = `/workspace/perf-fixture-${turnIndex}-${toolIndex}.${toolName === 'Edit' ? 'ts' : 'txt'}`;
+    const input = toolName === 'ExecCommand' ? { cmd: `pnpm test --filter fixture-${turnIndex}-${toolIndex}`, yield_time_ms: 1000 }
+      : toolName === 'Edit' ? { file_path: filePath,
+        old_string: Array.from({ length: lines }, (_, index) => `export const fixture${index} = "before-${turnIndex}";`).join('\n'),
+        new_string: Array.from({ length: lines }, (_, index) => `export const fixture${index} = "after-${turnIndex}";`).join('\n'),
+      } : { filePath };
     return {
       id: toolId,
-      toolName: 'Read',
+      toolName,
       toolCall: {
         id: toolId,
-        input: {
-          filePath: `/workspace/perf-fixture-${turnIndex}-${toolIndex}.txt`,
-        },
+        input,
       },
       toolResult: {
         result: {
-          output: repeatedText(toolResultChars, `raw result ${turnIndex}.${toolIndex}`),
+          output: toolName === 'ExecCommand'
+            ? Array.from({ length: lines }, (_, index) => `PASS fixture-${turnIndex}-${toolIndex}/${index}: shell output, elapsed 12ms`).join('\n')
+            : repeatedText(toolResultChars, `raw result ${turnIndex}.${toolIndex}`),
+          ...(toolName === 'ExecCommand' ? { exit_code: 0, wall_time_seconds: 0.012 } : {}),
           fixture: true,
         },
         success: true,
@@ -343,10 +357,10 @@ function makeToolItems({ turnId, turnIndex, timestamp, toolResultChars, toolItem
   });
 }
 
-function makeTextItem({ turnId, turnIndex, timestamp, assistantChars, orderIndex }) {
+function makeTextItem({ turnId, turnIndex, timestamp, assistantChars, orderIndex, richMarkdown }) {
   return {
     id: `${turnId}-text-0`,
-    content: repeatedMarkdown(assistantChars, turnIndex),
+    content: repeatedMarkdown(assistantChars, turnIndex, richMarkdown),
     isStreaming: false,
     timestamp: timestamp + 20,
     isMarkdown: true,
@@ -469,9 +483,10 @@ function makeTurn({
   toolItems,
   scenario,
   denseGroups,
+  richMarkdown,
 }) {
   const turnId = `${sessionId}-turn-${String(turnIndex).padStart(4, '0')}`;
-  const toolItemsData = makeToolItems({ turnId, turnIndex, timestamp, toolResultChars, toolItems });
+  const toolItemsData = makeToolItems({ turnId, turnIndex, timestamp, toolResultChars, toolItems, scenario });
   const isLatestTurn = turnIndex === totalTurns - 1;
   const modelRounds = scenario === 'user-only-latest' && isLatestTurn
     ? []
@@ -492,7 +507,7 @@ function makeTurn({
         roundIndex: 0,
         timestamp: timestamp + 1,
         textItems: [
-          makeTextItem({ turnId, turnIndex, timestamp, assistantChars, orderIndex: toolItems }),
+          makeTextItem({ turnId, turnIndex, timestamp, assistantChars, orderIndex: toolItems, richMarkdown }),
         ],
         toolItems: toolItemsData,
         thinkingItems: [],
@@ -528,7 +543,7 @@ function makeTurn({
         roundIndex: 1,
         timestamp: timestamp + 20,
         textItems: [
-          makeTextItem({ turnId, turnIndex, timestamp, assistantChars, orderIndex: 0 }),
+          makeTextItem({ turnId, turnIndex, timestamp, assistantChars, orderIndex: 0, richMarkdown }),
         ],
         toolItems: [],
         thinkingItems: [],
@@ -761,6 +776,7 @@ async function generate(options) {
           totalTurns: turnCount,
           timestamp: createdAt + turnIndex * 1_000,
           assistantChars: options.assistantChars,
+          richMarkdown: options.richMarkdown,
           toolResultChars: options.toolResultChars,
           toolItems: options.toolItems,
           scenario: options.scenario,
@@ -787,6 +803,7 @@ async function generate(options) {
     scenario: options.scenario,
     longTurns: options.longTurns,
     assistantChars: options.assistantChars,
+    richMarkdown: options.richMarkdown,
     toolResultChars: options.toolResultChars,
     toolItems: options.toolItems,
     denseGroups: options.denseGroups,

@@ -81,27 +81,6 @@ commands, use the nearest local guide. The full script registry remains in
 
 ## Global rules
 
-### Check for existing bug fixes before editing
-
-OpenBitFun currently releases roughly once a week, so a user report may describe
-a released version whose bug is already fixed on `main` or being addressed in an
-open PR. **Before changing code for a bug, check both:**
-
-- **Latest `main`:** refresh the upstream `main` ref without disturbing local
-  work, then inspect the relevant implementation, tests, and commit history.
-  Check the reported version and reproduction conditions when available; base
-  the conclusion on code and behavior, not commit titles alone.
-- **Open PRs, including drafts:** search by symptoms and affected modules, then
-  inspect relevant diffs to establish whether they cover the same root cause
-  and scenario. A similar title alone does not establish coverage.
-
-If `main` already contains the fix, report the supporting commit/code and whether
-it is released; do not implement it again. If an open PR covers it, link that PR
-and build on or coordinate with the existing work; limit new changes to verified
-gaps. Record the check result before starting a new fix. If upstream code or PRs
-cannot be checked, state that limitation explicitly instead of claiming that no
-fix exists.
-
 ### Process artifacts
 
 - Do not add or update files under `docs/superpowers/**`. Keep temporary

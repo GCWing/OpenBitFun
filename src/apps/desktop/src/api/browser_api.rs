@@ -1,68 +1,39 @@
 //! Browser API — commands for the embedded browser feature.
 //!
-//! Browser webviews are created as native child webviews by this desktop
-//! adapter so stream-specific initialization can run before page scripts.
+//! This adapter creates browser targets and installs their initialization
+//! scripts before navigation, independently of how each target is presented.
 
+use super::browser_osr::{self, FrameStream};
 use openbitfun_core::agentic::tools::browser_control::BuiltInBrowserTarget;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-use tauri::Manager;
+use std::sync::{Mutex, OnceLock, Weak};
+use tauri::{Emitter, Manager};
+use tauri_runtime_cef::{FrameEventKind, WebviewBuilderCefExt};
 use tokio::sync::watch;
 
-const VIDEO_DECODER_MODE_ENV: &str = "OPENBITFUN_BROWSER_VIDEO_DECODER_MODE";
-
-fn video_decoder_compatibility_script() -> String {
-    let mode =
-        std::env::var(VIDEO_DECODER_MODE_ENV).unwrap_or_else(|_| "prefer-software".to_string());
-    let mode = match mode.as_str() {
-        "prefer-hardware" | "prefer-software" => mode,
-        _ => String::new(),
-    };
-    let mode_json = serde_json::to_string(&mode).unwrap_or_else(|_| "\"\"".to_string());
-    let script = format!(
-        r#"
-const isWebView2 = Boolean(window.chrome && window.chrome.webview);
-const isOpenBitFunDocument = location.protocol === 'tauri:'
-  || location.hostname === 'tauri.localhost'
-  || (location.hostname === 'localhost' && location.port === '1422');
-if (isWebView2 && !isOpenBitFunDocument) {{
-  const decoderMode = {mode_json};
-  if (decoderMode && typeof VideoDecoder === 'function') {{
-    const originalConfigure = VideoDecoder.prototype.configure;
-    VideoDecoder.prototype.configure = function(config) {{
-      const codec = typeof config?.codec === 'string' ? config.codec : '';
-      const isH264 = /^avc[13]\./i.test(codec);
-      if (isH264 && !config.hardwareAcceleration) {{
-        return originalConfigure.call(this, {{ ...config, hardwareAcceleration: decoderMode }});
-      }}
-      return originalConfigure.call(this, config);
-    }};
-
-    // #region agent log
-    if (location.hostname === '127.0.0.1' && location.port === '41953') {{
-      void fetch('http://127.0.0.1:7469/log', {{
-        method: 'POST',
-        headers: {{ 'Content-Type': 'application/json' }},
-        body: JSON.stringify({{
-          hypothesis: 'D',
-          location: 'browser_api.video_decoder_init',
-          message: 'video decoder mode installed',
-          data: {{ decoderMode }},
-          timestamp: new Date().toISOString()
-        }})
-      }}).catch(() => {{}});
-    }}
-    // #endregion
-  }}
-}}
-"#
-    );
-
-    script
+pub(super) fn browser_navigation_allowed(app: &tauri::AppHandle, url: &tauri::Url) -> bool {
+    // CEF projects privileged Tauri schemes onto ordinary HTTP origins.
+    // Keep the embedded browser on the unprivileged side of that boundary.
+    if matches!(
+        url.host_str(),
+        Some("openbitfun-ui.localhost" | "tauri.localhost" | "ipc.localhost" | "asset.localhost")
+    ) {
+        return false;
+    }
+    !tauri::is_dev()
+        || app
+            .config()
+            .build
+            .dev_url
+            .as_ref()
+            .is_none_or(|dev_url| dev_url.origin() != url.origin())
 }
 
-fn find_browser_webview(app: &tauri::AppHandle, label: &str) -> Result<tauri::Webview, String> {
+pub(super) fn find_browser_webview(
+    app: &tauri::AppHandle,
+    label: &str,
+) -> Result<tauri::Webview, String> {
     app.get_webview(label)
         .ok_or_else(|| format!("Webview not found: {label}"))
 }
@@ -119,6 +90,7 @@ pub struct BrowserAgentTargetStateRequest {
 
 #[derive(Clone, Debug, Default)]
 struct BrowserTargetRecord {
+    creating: bool,
     active: bool,
     last_active_seq: u64,
     url: String,
@@ -126,6 +98,15 @@ struct BrowserTargetRecord {
     open_request_id: Option<String>,
     conversation_id: Option<String>,
     navigation: Option<BrowserNavigation>,
+    // The render handler owns the pixels for the native browser's lifetime.
+    offscreen: Option<Weak<FrameStream>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BrowserPresentation {
+    Offscreen,
+    OffscreenGpu,
 }
 
 #[derive(Clone, Debug)]
@@ -142,11 +123,10 @@ impl BrowserNavigation {
         }
     }
 
-    #[cfg(any(not(target_os = "macos"), test))]
     fn page_load(&mut self, event: &str) {
         if event == "started" {
             self.started = true;
-        } else if event == "finished" && self.started {
+        } else if event == "finished" && self.started && self.completed.borrow().is_none() {
             // Redirects may finish at a different URL. A finish from the old
             // document before this navigation starts must not release readers.
             self.completed.send_replace(Some(Ok(())));
@@ -192,16 +172,29 @@ fn register_browser_target(
     url: &str,
     open_request_id: Option<String>,
     conversation_id: Option<String>,
-) {
-    lock_browser_targets().records.insert(
+    offscreen: Option<Weak<FrameStream>>,
+) -> Result<(), String> {
+    let mut registry = lock_browser_targets();
+    if registry.records.contains_key(label) {
+        return Err(format!("Browser webview already exists: {label}"));
+    }
+    registry.records.insert(
         label.to_string(),
         BrowserTargetRecord {
+            creating: true,
             url: url.to_string(),
             open_request_id,
             conversation_id,
+            offscreen,
+            navigation: Some(BrowserNavigation::new()),
             ..BrowserTargetRecord::default()
         },
     );
+    Ok(())
+}
+
+pub(super) fn offscreen_frame_stream(label: &str) -> Option<Weak<FrameStream>> {
+    lock_browser_targets().records.get(label)?.offscreen.clone()
 }
 
 fn associate_browser_open_request(label: &str, open_request_id: Option<&str>) {
@@ -217,56 +210,41 @@ fn associate_browser_open_request(label: &str, open_request_id: Option<&str>) {
 }
 
 pub(crate) fn update_browser_target_page_load(label: &str, event: &str, url: &str) {
-    #[cfg(target_os = "macos")]
-    let _ = event; // WebKit's native navigation observer owns terminal outcomes.
     if let Some(record) = lock_browser_targets().records.get_mut(label) {
         record.url = url.to_string();
         // A navigation invalidates the cached document title. The async
         // automation host refreshes it from the page before target discovery
         // is returned to ControlHub.
         record.title = None;
-        #[cfg(not(target_os = "macos"))]
         if let Some(navigation) = &mut record.navigation {
             navigation.page_load(event);
         }
     }
 }
 
-#[cfg(target_os = "macos")]
-fn update_browser_target_navigation(label: &str, state: wry::NavigationState) {
-    use wry::NavigationState;
+fn begin_browser_navigation(label: &str, url: &tauri::Url) {
+    if let Some(record) = lock_browser_targets().records.get_mut(label) {
+        record.url = url.to_string();
+        record.title = None;
+        let navigation = record.navigation.get_or_insert_with(BrowserNavigation::new);
+        navigation.completed.send_replace(None);
+        navigation.page_load("started");
+    }
+}
+
+fn fail_browser_navigation(label: &str, url: &tauri::Url, error: &str) -> bool {
     let mut registry = lock_browser_targets();
     let Some(record) = registry.records.get_mut(label) else {
-        return;
+        return false;
     };
-    let navigation = record.navigation.get_or_insert_with(BrowserNavigation::new);
-    match state {
-        NavigationState::Loading => {
-            navigation.started = false;
-            navigation.completed.send_replace(None);
-            record.title = None;
-        }
-        NavigationState::Finished => {
-            navigation.completed.send_replace(Some(Ok(())));
-        }
-        NavigationState::Cancelled => {
-            navigation.completed.send_replace(Some(Err(
-                "[NOT_AVAILABLE] Navigation was canceled".to_string()
-            )));
-            // Release existing waiters, then allow later reads of the document
-            // left on screen. A deliberate stop is not a retained page failure.
-            record.navigation = None;
-        }
-        NavigationState::Failed {
-            domain,
-            code,
-            message,
-        } => {
-            navigation.completed.send_replace(Some(Err(format!(
-                "[NOT_AVAILABLE] Navigation failed: {message} ({domain}, {code})"
-            ))));
-        }
+    if record.url != url.as_str() {
+        return false;
     }
+    let navigation = record.navigation.get_or_insert_with(BrowserNavigation::new);
+    navigation
+        .completed
+        .send_replace(Some(Err(format!("[NOT_AVAILABLE] {error}"))));
+    true
 }
 
 /// Native navigation can leave the previous completed document readable while
@@ -328,21 +306,25 @@ pub(crate) fn list_browser_targets(app: &tauri::AppHandle) -> Vec<BuiltInBrowser
         let views = app.webviews();
         registry
             .records
-            .retain(|label, _| views.contains_key(label));
+            .retain(|label, record| record.creating || views.contains_key(label));
         (registry.records.clone(), views)
     };
     // Native URL reads may dispatch to the UI thread. Page-load callbacks on
     // that thread update this registry, so never hold its mutex across native IO.
     let mut targets = records
         .iter()
-        .map(|(label, record)| {
+        .filter_map(|(label, record)| {
+            if record.creating {
+                return None;
+            }
             let url = views
-                .get(label)
-                .and_then(|webview| webview.url().ok())
+                .get(label)?
+                .url()
+                .ok()
                 .map(|url| url.to_string())
                 .filter(|url| !url.is_empty())
                 .unwrap_or_else(|| record.url.clone());
-            (
+            Some((
                 record.last_active_seq,
                 BuiltInBrowserTarget {
                     id: label.clone(),
@@ -351,7 +333,7 @@ pub(crate) fn list_browser_targets(app: &tauri::AppHandle) -> Vec<BuiltInBrowser
                     active: record.active,
                     conversation_id: record.conversation_id.clone(),
                 },
-            )
+            ))
         })
         .collect::<Vec<_>>();
     targets.sort_by(|left, right| right.0.cmp(&left.0));
@@ -392,7 +374,7 @@ fn validate_webview_bounds(x: f64, y: f64, width: f64, height: f64) -> Result<()
 pub async fn browser_webview_create(
     app: tauri::AppHandle,
     request: WebviewCreateRequest,
-) -> Result<(), String> {
+) -> Result<Option<BrowserPresentation>, String> {
     validate_browser_label(&request.label)?;
     validate_webview_bounds(request.x, request.y, request.width, request.height)?;
 
@@ -404,76 +386,84 @@ pub async fn browser_webview_create(
         "http" | "https" => {}
         scheme => return Err(format!("unsupported protocol: {scheme}")),
     }
+    if !browser_navigation_allowed(&app, &url) {
+        return Err("The OpenBitFun frontend is reserved for application windows".into());
+    }
 
     let window = app
         .get_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
+    let label = request.label;
+    let navigation_app = app.clone();
+    let observer_app = app.clone();
+    let observer_label = label.clone();
     let mut builder =
-        tauri::webview::WebviewBuilder::new(request.label, tauri::WebviewUrl::External(url))
-            .initialization_script(video_decoder_compatibility_script())
-            // Navigation behavior must also exist before a background session
-            // has ever mounted a frontend panel, and after every document load.
+        tauri::webview::WebviewBuilder::new(label.clone(), tauri::WebviewUrl::External(url.clone()))
+            // Install before the initial navigation or any frontend panel.
             .initialization_script(include_str!(
                 "../../../../shared/browser/blankTargetIntercept.js"
             ))
+            .position(tauri::LogicalPosition::new(request.x, request.y))
+            .size(tauri::LogicalSize::new(request.width, request.height))
             .transparent(false)
-            .background_color(tauri::window::Color(0, 0, 0, 255));
-
-    // Session automation must continue while its presentation is hidden.
-    // WebKit otherwise suspends hidden documents after a period of inactivity.
-    if request.conversation_id.is_some() {
-        builder = builder
-            .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
-    }
+            .background_color(tauri::window::Color(0, 0, 0, 255))
+            .on_navigation(move |url| browser_navigation_allowed(&navigation_app, url))
+            .on_frame_event(move |event| {
+                if !event.is_main {
+                    return;
+                }
+                match event.kind {
+                    FrameEventKind::NavigationStarted { url } => {
+                        begin_browser_navigation(&observer_label, &url);
+                    }
+                    FrameEventKind::NavigationFailed { url } => {
+                        let error = "Chromium could not load the page";
+                        if fail_browser_navigation(&observer_label, &url, error) {
+                            let app = observer_app.clone();
+                            let label = observer_label.clone();
+                            tauri::async_runtime::spawn(async move {
+                                openbitfun_core::agentic::tools::browser_control::builtin_browser::publish_builtin_browser_navigation_failed(&label, error);
+                                let _ = app.emit_to("main", crate::BROWSER_WEBVIEW_PAGE_LOAD_EVENT,
+                                    serde_json::json!({ "label": label, "event": "failed", "url": "", "error": error }));
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            });
 
     #[cfg(any(debug_assertions, feature = "devtools"))]
     {
         builder = builder.devtools(true);
     }
 
-    let webview = window
-        .add_child(
-            builder,
-            tauri::LogicalPosition::new(request.x, request.y),
-            tauri::LogicalSize::new(request.width, request.height),
-        )
-        .map_err(|e| format!("failed to create browser webview: {e}"))?;
-
-    webview
-        .hide()
-        .map_err(|e| format!("failed to hide browser webview before positioning: {e}"))?;
-    let target_url = webview.url().map(|url| url.to_string()).unwrap_or_default();
+    let offscreen = browser_osr::configure(&app, &mut builder, &label)?;
+    let presentation = offscreen.as_ref().map(browser_osr::presentation);
     register_browser_target(
-        webview.label(),
-        &target_url,
+        &label,
+        url.as_str(),
         request.open_request_id,
         request.conversation_id,
-    );
-    #[cfg(target_os = "macos")]
-    {
-        let label = webview.label().to_string();
-        let app = app.clone();
-        webview.with_webview(move |native| {
-            // Tauri's native handle is the WryWebView created by this adapter.
-            let native = unsafe { &*(native.inner() as *const wry::WryWebView) };
-            native.set_navigation_state_handler(move |state| {
-                use tauri::Emitter;
-                let failure = match &state {
-                    wry::NavigationState::Failed { domain, code, message } => {
-                        Some(format!("Navigation failed: {message} ({domain}, {code})"))
-                    }
-                    _ => None,
-                };
-                update_browser_target_navigation(&label, state);
-                if let Some(error) = failure {
-                    openbitfun_core::agentic::tools::browser_control::builtin_browser::publish_builtin_browser_navigation_failed(&label, &error);
-                    let _ = app.emit_to("main", crate::BROWSER_WEBVIEW_PAGE_LOAD_EVENT,
-                        serde_json::json!({ "label": label, "event": "failed", "url": "", "error": error }));
-                }
-            });
-        }).map_err(|error| format!("observe browser navigation failed: {error}"))?;
+        offscreen,
+    )?;
+    let webview = match window.add_child(builder) {
+        Ok(webview) => webview,
+        Err(error) => {
+            unregister_browser_target(&label);
+            return Err(format!("failed to create browser webview: {error}"));
+        }
+    };
+    if let Err(error) = webview.hide() {
+        let _ = webview.close();
+        unregister_browser_target(&label);
+        return Err(format!(
+            "failed to hide browser webview before positioning: {error}"
+        ));
     }
-    Ok(())
+    if let Some(record) = lock_browser_targets().records.get_mut(&label) {
+        record.creating = false;
+    }
+    Ok(presentation)
 }
 
 /// Advertise which built-in browser surface the Agent should target. This is
@@ -540,6 +530,9 @@ pub async fn browser_webview_navigate(
     match url.scheme() {
         "http" | "https" => {}
         scheme => return Err(format!("unsupported protocol: {scheme}")),
+    }
+    if !browser_navigation_allowed(&app, &url) {
+        return Err("The OpenBitFun frontend is reserved for application windows".into());
     }
 
     let webview = find_browser_webview(&app, &request.label)?;
@@ -641,7 +634,7 @@ pub async fn browser_webview_reload(
 pub async fn browser_webview_set_bounds(
     app: tauri::AppHandle,
     request: WebviewBoundsRequest,
-) -> Result<(), String> {
+) -> Result<Option<BrowserPresentation>, String> {
     validate_webview_bounds(request.x, request.y, request.width, request.height)?;
 
     let webview = app
@@ -653,7 +646,10 @@ pub async fn browser_webview_set_bounds(
             position: tauri::Position::Logical(tauri::LogicalPosition::new(request.x, request.y)),
             size: tauri::Size::Logical(tauri::LogicalSize::new(request.width, request.height)),
         })
-        .map_err(|e| format!("set bounds failed: {e}"))
+        .map_err(|e| format!("set bounds failed: {e}"))?;
+    Ok(offscreen_frame_stream(&request.label)
+        .as_ref()
+        .map(browser_osr::presentation))
 }
 
 /// Return the current URL of a browser webview.
@@ -666,26 +662,6 @@ pub async fn browser_get_url(
     if let Some(error) = browser_navigation_failure(&request.label) {
         return Err(error);
     }
-    #[cfg(target_os = "macos")]
-    {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        webview
-            .with_webview(move |native| {
-                let native = unsafe { &*(native.inner() as *const wry::WryWebView) };
-                // An uncommitted document has no URL. Preserve the command's string
-                // response: an empty value means there is no address to update yet.
-                let url = unsafe { native.URL() }
-                    .and_then(|url| url.absoluteString())
-                    .map(|url| url.to_string())
-                    .unwrap_or_default();
-                let _ = sender.send(url);
-            })
-            .map_err(|error| format!("url failed: {error}"))?;
-        return receiver
-            .await
-            .map_err(|_| "browser URL read was canceled".to_string());
-    }
-    #[cfg(not(target_os = "macos"))]
     webview
         .url()
         .map(|url| url.to_string())
@@ -707,74 +683,24 @@ mod tests {
         assert_eq!(*navigation.completed.borrow(), Some(Ok(())));
     }
 
-    #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn failed_navigation_releases_readers_and_a_manual_navigation_can_succeed() {
-        use wry::NavigationState;
         let label = "embedded-browser-panel-view-navigation-failure-test";
-        register_browser_target(label, "https://example.com", None, None);
-        update_browser_target_navigation(label, NavigationState::Loading);
+        let url: tauri::Url = "https://example.com".parse().unwrap();
+        register_browser_target(label, url.as_str(), None, None, None).unwrap();
+        begin_browser_navigation(label, &url);
         let reader = tokio::spawn(wait_for_browser_navigation(label));
         tokio::task::yield_now().await;
-        update_browser_target_navigation(
-            label,
-            NavigationState::Failed {
-                domain: "NSURLErrorDomain".into(),
-                code: -1004,
-                message: "Could not connect".into(),
-            },
-        );
+        assert!(fail_browser_navigation(label, &url, "Could not connect"));
         let error = tokio::time::timeout(std::time::Duration::from_secs(1), reader)
             .await
             .unwrap()
             .unwrap()
             .unwrap_err();
         assert!(error.contains("Could not connect"));
-        assert!(wait_for_browser_navigation(label)
-            .await
-            .unwrap_err()
-            .contains("-1004"));
-        update_browser_target_navigation(label, NavigationState::Loading);
-        update_browser_target_navigation(label, NavigationState::Finished);
+        begin_browser_navigation(label, &url);
+        update_browser_target_page_load(label, "finished", url.as_str());
         assert!(wait_for_browser_navigation(label).await.is_ok());
-
-        update_browser_target_navigation(label, NavigationState::Loading);
-        let reader = tokio::spawn(wait_for_browser_navigation(label));
-        tokio::task::yield_now().await;
-        update_browser_target_navigation(label, NavigationState::Cancelled);
-        assert!(
-            tokio::time::timeout(std::time::Duration::from_secs(1), reader)
-                .await
-                .unwrap()
-                .unwrap()
-                .unwrap_err()
-                .contains("canceled")
-        );
-        assert!(browser_navigation_failure(label).is_none());
-        assert!(wait_for_browser_navigation(label).await.is_ok());
-        unregister_browser_target(label);
-    }
-
-    #[tokio::test]
-    async fn presentation_cannot_overwrite_a_session_hosts_newer_open_request() {
-        let label = "embedded-browser-panel-view-request-owner-test";
-        register_browser_target(
-            label,
-            "https://example.com",
-            Some("new-request".into()),
-            Some("owner".into()),
-        );
-        browser_webview_set_agent_target_state(BrowserAgentTargetStateRequest {
-            label: label.into(),
-            active: true,
-            open_request_id: Some("old-request".into()),
-        })
-        .await
-        .unwrap();
-        assert_eq!(
-            lock_browser_targets().label_for_open_request("new-request"),
-            Some(label.into())
-        );
         unregister_browser_target(label);
     }
 

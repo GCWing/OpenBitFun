@@ -227,6 +227,8 @@ describe('isPeerLocalOnlyCommand', () => {
     expect(isPeerLocalOnlyCommand('browser_webview_capture_preview')).toBe(true);
     expect(isPeerLocalOnlyCommand('browser_webview_eval')).toBe(true);
     expect(isPeerLocalOnlyCommand('browser_webview_navigate')).toBe(true);
+    expect(isPeerLocalOnlyCommand('browser_webview_osr_frame')).toBe(true);
+    expect(isPeerLocalOnlyCommand('browser_webview_osr_input')).toBe(true);
     expect(isPeerLocalOnlyCommand('browser_webview_reload')).toBe(true);
     expect(isPeerLocalOnlyCommand('browser_webview_set_bounds')).toBe(true);
     expect(isPeerLocalOnlyCommand('debug_devtools_available')).toBe(true);

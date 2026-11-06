@@ -1,13 +1,10 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use tauri::AppHandle;
 use tauri::Manager;
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::RwLock;
 
-use crate::runtime::BridgeResponse;
 use crate::webdriver::SessionManager;
 
 pub mod handlers;
@@ -19,8 +16,6 @@ pub struct AppState {
     pub preferred_label: String,
     port: u16,
     pub sessions: RwLock<SessionManager>,
-    pub(crate) pending_requests: Mutex<HashMap<String, oneshot::Sender<BridgeResponse>>>,
-    request_counter: AtomicU64,
 }
 
 impl AppState {
@@ -30,17 +25,7 @@ impl AppState {
             preferred_label,
             port,
             sessions: RwLock::new(SessionManager::new()),
-            pending_requests: Mutex::new(HashMap::new()),
-            request_counter: AtomicU64::new(1),
         }
-    }
-
-    pub fn next_request_id(&self) -> String {
-        format!(
-            "req-{}-{}",
-            self.request_counter.fetch_add(1, Ordering::SeqCst),
-            std::process::id()
-        )
     }
 
     pub fn initial_window_label(&self) -> Option<String> {

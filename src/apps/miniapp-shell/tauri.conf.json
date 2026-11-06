@@ -1,5 +1,5 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
+  "$schema": "https://schema.tauri.app/config/3.0.0-alpha.5",
   "productName": "OpenBitFun MiniApp",
   "identifier": "com.openbitfun.miniapp-shell",
   "build": { "frontendDist": "bootstrap" },

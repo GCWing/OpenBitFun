@@ -1,5 +1,5 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
+  "$schema": "https://schema.tauri.app/config/3.0.0-alpha.5",
   "productName": "OpenBitFun Data Tools",
   "version": "0.2.0",
   "mainBinaryName": "openbitfun-data-tools",

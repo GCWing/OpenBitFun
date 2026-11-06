@@ -1,10 +1,12 @@
 import React, { useCallback } from 'react';
 import { OverflowText, Icon, IconButton, Input } from '@openbitfun/ui';
-import { AlertTriangle, LoaderCircle } from 'lucide-react';
+import { AlertTriangle, LoaderCircle, MousePointer2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { createLogger } from '@/shared/utils/logger';
 import { useSceneStore } from '@/app/stores/sceneStore';
+import { useBrowserInspector } from './useBrowserInspector';
 import { useEmbeddedBrowserWebview } from './useEmbeddedBrowserWebview';
+import { BrowserOffscreenSurface } from './BrowserOffscreenSurface';
 import { BrowserPreview } from './BrowserPreview';
 import './BrowserScene.scss';
 
@@ -22,10 +24,12 @@ const BrowserScene: React.FC = () => {
     log,
   });
 
+  const { isInspectorActive, handleInspector, stopInspector } = useBrowserInspector(browser, isActive);
   const handleSubmit = useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    stopInspector();
     void browser.loadUrl(browser.inputValue);
-  }, [browser]);
+  }, [browser, stopInspector]);
 
   return (
     <div
@@ -45,7 +49,7 @@ const BrowserScene: React.FC = () => {
         <IconButton
           type="button"
           size="sm"
-          onClick={browser.goBack}
+          onClick={() => { stopInspector(); browser.goBack(); }}
           aria-label={t('nav.back')}
           icon={<Icon name="chevron-left" size="lg" />}
           data-testid="browser-back-button"
@@ -53,7 +57,7 @@ const BrowserScene: React.FC = () => {
         <IconButton
           type="button"
           size="sm"
-          onClick={browser.goForward}
+          onClick={() => { stopInspector(); browser.goForward(); }}
           aria-label={t('nav.forward')}
           icon={<Icon name="chevron-right" size="lg" />}
           data-testid="browser-forward-button"
@@ -61,7 +65,10 @@ const BrowserScene: React.FC = () => {
         <IconButton
           type="button"
           size="sm"
-          onClick={browser.isLoading ? browser.stopLoading : browser.reload}
+          onClick={() => {
+            stopInspector();
+            (browser.isLoading ? browser.stopLoading : browser.reload)();
+          }}
           aria-label={browser.isLoading ? t('browserView.stopLoading') : t('actions.refresh')}
           icon={<Icon name={browser.isLoading ? 'xmark' : 'refresh'} size="lg" />}
           data-testid="browser-refresh-button"
@@ -80,6 +87,16 @@ const BrowserScene: React.FC = () => {
             data-testid="browser-url-input"
           />
         </div>
+        {browser.isTauri && (
+          <IconButton
+            type="button"
+            size="sm"
+            onClick={() => void handleInspector()}
+            aria-label={isInspectorActive ? t('browserView.stopElementSelection') : t('browserView.startElementSelection')}
+            aria-pressed={isInspectorActive}
+            icon={<MousePointer2 />}
+          />
+        )}
       </form>
 
       {browser.error ? (
@@ -103,13 +120,24 @@ const BrowserScene: React.FC = () => {
             className="browser-scene__webview-host"
             data-webview-label={browser.webviewLabel}
           >
-            {!browser.previewUrl && (
+            {!browser.previewUrl && !browser.offscreenLabel && (
               <div className="browser-scene__webview-placeholder">
                 <Icon name="browser" size="lg" />
                 <OverflowText data-testid="browser-current-url">{browser.currentUrl}</OverflowText>
               </div>
             )}
-            <BrowserPreview src={browser.previewUrl} bounds={browser.previewBounds} />
+            {browser.offscreenLabel ? (
+              <BrowserOffscreenSurface
+                key={browser.offscreenLabel}
+                label={browser.offscreenLabel}
+                sharedTexture={browser.offscreenGpu}
+                title={browser.currentUrl}
+                active={isActive && browser.offscreenVisible}
+                inspecting={isInspectorActive}
+                onCancelInspection={stopInspector}
+                onError={browser.reportPresentationError}
+              />
+            ) : <BrowserPreview src={browser.previewUrl} bounds={browser.previewBounds} />}
           </div>
         )}
       </div>

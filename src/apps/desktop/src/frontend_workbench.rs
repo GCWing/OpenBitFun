@@ -19,7 +19,8 @@ use tokio::sync::Notify;
 use uuid::Uuid;
 
 pub const FRONTEND_PROTOCOL_SCHEME: &str = "openbitfun-ui";
-pub const FRONTEND_URL: &str = "openbitfun-ui://localhost/index.html";
+const FRONTEND_ORIGIN: &str = "http://openbitfun-ui.localhost";
+const FRONTEND_URL: &str = "http://openbitfun-ui.localhost/index.html";
 const CONFIRM_WINDOW_LABEL: &str = "frontend-update-confirm";
 const CONFIRM_TIMEOUT: Duration = Duration::from_secs(15);
 const CANDIDATE_READY_TIMEOUT: Duration = Duration::from_secs(15);
@@ -896,9 +897,7 @@ impl FrontendWorkbenchManager {
     }
 
     /// Returns the confirmed frontend URL used for release startup. Revision
-    /// identity is carried as a cache-busting query (rather than a custom
-    /// protocol host) because Windows maps every custom scheme to the fixed
-    /// `<scheme>.localhost` origin.
+    /// identity is a cache-busting query on Chromium's fixed local protocol origin.
     pub fn active_frontend_url(&self) -> WebviewUrl {
         self.state
             .lock()
@@ -1333,7 +1332,7 @@ pub fn custom_frontend_url(path: &str) -> WebviewUrl {
     } else {
         path.trim_start_matches('/').to_string()
     };
-    let url = format!("{FRONTEND_PROTOCOL_SCHEME}://localhost/{suffix}")
+    let url = format!("{FRONTEND_ORIGIN}/{suffix}")
         .parse::<Url>()
         .expect("static frontend custom-protocol URL must parse");
     WebviewUrl::CustomProtocol(url)
@@ -1442,9 +1441,8 @@ fn same_main_navigation_target(left: &Url, right: &Url) -> bool {
 
 fn main_navigation_key(url: &Url) -> String {
     let is_native_custom_protocol = url.scheme() == FRONTEND_PROTOCOL_SCHEME;
-    let is_windows_custom_protocol = matches!(url.scheme(), "http" | "https")
-        && url.host_str() == Some("openbitfun-ui.localhost");
-    if is_native_custom_protocol || is_windows_custom_protocol {
+    let is_projected_custom_protocol = url.origin().ascii_serialization() == FRONTEND_ORIGIN;
+    if is_native_custom_protocol || is_projected_custom_protocol {
         let mut key = format!("{FRONTEND_PROTOCOL_SCHEME}://localhost{}", url.path());
         if let Some(query) = url.query() {
             key.push('?');
@@ -2385,15 +2383,15 @@ mod tests {
     }
 
     #[test]
-    fn custom_frontend_navigation_matches_the_windows_protocol_projection() {
+    fn custom_frontend_navigation_recognizes_the_legacy_protocol_url() {
         let native = "openbitfun-ui://localhost/index.html?openbitfunFrontendRevision=creative-1&openbitfunFrontendTransaction=tx"
             .parse::<Url>()
             .expect("native URL");
-        let windows = "http://openbitfun-ui.localhost/index.html?openbitfunFrontendRevision=creative-1&openbitfunFrontendTransaction=tx"
+        let chromium = "http://openbitfun-ui.localhost/index.html?openbitfunFrontendRevision=creative-1&openbitfunFrontendTransaction=tx"
             .parse::<Url>()
-            .expect("Windows URL");
+            .expect("Chromium URL");
 
-        assert!(same_main_navigation_target(&native, &windows));
+        assert!(same_main_navigation_target(&native, &chromium));
     }
 
     #[test]
@@ -2421,7 +2419,7 @@ mod tests {
         let WebviewUrl::CustomProtocol(url) = url else {
             panic!("confirmation window must use the immutable host protocol");
         };
-        assert_eq!(url.scheme(), FRONTEND_PROTOCOL_SCHEME);
+        assert_eq!(url.origin().ascii_serialization(), FRONTEND_ORIGIN);
         assert_eq!(url.path(), "/frontend-update-confirm.html");
         assert_eq!(
             url.query(),

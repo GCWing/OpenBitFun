@@ -135,7 +135,7 @@ OpenBitFun 仍在演进，我们希望继续探索三个方向：
 **数据迁移提醒：** OpenBitFun 1.0.0 与 0.2.x 旧版数据不互通。需要迁移旧版数据时，请使用
 [OpenBitFun 数据工具](src/apps/data-tools/README.zh-CN.md)，当前支持 0.2.17～0.2.19 正式版。
 
-从源码运行需准备 [Node.js](https://nodejs.org/) 22.12+、[pnpm](https://pnpm.io/) 10.15.0、[Rust 工具链](https://rustup.rs/)和 [Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/)。克隆本仓库后运行：
+从源码运行需准备 [Node.js](https://nodejs.org/) 22.12+、[pnpm](https://pnpm.io/) 10.15.0、[Rust 工具链](https://rustup.rs/)和 [Tauri 前置依赖](https://v3.tauri.app/develop/cef/#prerequisites)。克隆本仓库后运行：
 
 ```bash
 pnpm install

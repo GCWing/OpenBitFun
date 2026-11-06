@@ -681,6 +681,40 @@ can be distinguished from a client lifecycle problem.
 
 ## Development startup
 
+The main Desktop app uses Tauri 3.0 Alpha with the bundled Chromium Embedded
+Framework. Install Rust 1.95 or newer. On macOS and Windows, put CMake and Ninja
+on `PATH` for the native CEF build. On Linux, install GTK 4 development headers
+for Desktop and the Tauri WebKitGTK prerequisites for the lightweight MiniApp
+Shell. Cargo downloads the matching Chromium distribution on the first build.
+
+On macOS, both development commands launch a bundled app so CEF can find its
+renderer and GPU helpers. A standalone Cargo executable is useful for compile
+checks. Run the app from the bundle. The development bundle uses the ICNS icon,
+and the release bundle continues to use the native icon catalog.
+
+Chromium uses its own browser profile. The first launch starts with fresh
+browser storage, such as embedded site sign-ins and frontend-only preferences.
+OpenBitFun's Rust-owned settings, workspaces and sessions continue to use the
+existing product data directories. The main window uses the theme's opaque
+surface because windowed CEF cannot composite the native sidebar material.
+
+The embedded browser uses CEF offscreen rendering by default on macOS, Windows,
+and Linux. The browser panel clips its last frame at the previous viewport size
+until Chromium repaints, so divider resizing does not stretch the page's text.
+The same canvas handles webpage dropdowns, pointer input, keyboard input and IME.
+The element picker draws a box around the actual element and sends the selection
+to chat. Set `OPENBITFUN_BROWSER_OSR=0` before launching to use windowed browser
+views for troubleshooting.
+
+On macOS, `OPENBITFUN_BROWSER_OSR=gpu` selects the Chromium shared-texture
+presentation when the app bundle contains the
+[patched CEF framework](cef-patches/README.md).
+
+For desktop acceptance, drag the divider over a page with small text, open
+a workbench menu over the page, and check that the menu receives clicks. Hover
+and pick an element after a resize, then check its context in chat. Also try
+typing, composing text, and selecting an option from a webpage dropdown.
+
 Run `pnpm run desktop:dev` from the repository root. The launcher prepares
 Flashgrep and the locked Sherpa speech libraries before compiling Desktop.
 Sherpa libraries or archives are reused from the current target cache or the

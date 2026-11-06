@@ -50,16 +50,6 @@ pub(super) fn script() -> &'static str {
       }
     };
 
-    const run = async (requestId, script, args, asyncMode, frameContext) => {
-      const response = await execute(script, args, asyncMode, frameContext);
-      await emitResult({
-        requestId,
-        ok: response.ok,
-        value: response.value,
-        error: response.error
-      });
-    };
-
     const takeLogs = () => {
       const logs = ensureLogs().slice();
       ensureLogs().length = 0;
@@ -96,7 +86,6 @@ pub(super) fn script() -> &'static str {
       closeAlert,
       takeLogs,
       execute,
-      run
     };
 "####
 }

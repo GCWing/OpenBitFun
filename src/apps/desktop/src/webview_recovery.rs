@@ -1,33 +1,16 @@
-#[cfg(any(target_os = "windows", test))]
 use serde::{Deserialize, Serialize};
-#[cfg(any(target_os = "windows", test))]
 use std::time::Duration;
 
-#[cfg(any(target_os = "windows", test))]
 const RENDERER_FAILURE_WINDOW: Duration = Duration::from_secs(10 * 60);
-#[cfg(any(target_os = "windows", test))]
 const RESTART_FAILURE_WINDOW: Duration = Duration::from_secs(10 * 60);
 
-#[cfg(any(target_os = "windows", test))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FailureKind {
-    BrowserExited,
-    RendererExited,
-    RendererUnresponsive,
-    FrameRendererExited,
-    Other,
-}
-
-#[cfg(any(target_os = "windows", test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RecoveryAction {
     Reload,
     Restart,
     Block,
-    Observe,
 }
 
-#[cfg(any(target_os = "windows", test))]
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct RecoveryHistory {
@@ -35,30 +18,18 @@ struct RecoveryHistory {
     restart_attempts_ms: Vec<u64>,
 }
 
-#[cfg(any(target_os = "windows", test))]
-fn decide_recovery(
-    history: &mut RecoveryHistory,
-    failure: FailureKind,
-    now_ms: u64,
-) -> RecoveryAction {
-    match failure {
-        FailureKind::BrowserExited => restart_or_block(history, now_ms),
-        FailureKind::RendererExited | FailureKind::RendererUnresponsive => {
-            let should_reload = history.last_renderer_failure_ms.is_none_or(|previous| {
-                now_ms.saturating_sub(previous) > RENDERER_FAILURE_WINDOW.as_millis() as u64
-            });
-            history.last_renderer_failure_ms = Some(now_ms);
-            if should_reload {
-                RecoveryAction::Reload
-            } else {
-                restart_or_block(history, now_ms)
-            }
-        }
-        FailureKind::FrameRendererExited | FailureKind::Other => RecoveryAction::Observe,
+fn decide_recovery(history: &mut RecoveryHistory, now_ms: u64) -> RecoveryAction {
+    let should_reload = history.last_renderer_failure_ms.is_none_or(|previous| {
+        now_ms.saturating_sub(previous) > RENDERER_FAILURE_WINDOW.as_millis() as u64
+    });
+    history.last_renderer_failure_ms = Some(now_ms);
+    if should_reload {
+        RecoveryAction::Reload
+    } else {
+        restart_or_block(history, now_ms)
     }
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn restart_or_block(history: &mut RecoveryHistory, now_ms: u64) -> RecoveryAction {
     let window_ms = RESTART_FAILURE_WINDOW.as_millis() as u64;
     history
@@ -72,15 +43,10 @@ fn restart_or_block(history: &mut RecoveryHistory, now_ms: u64) -> RecoveryActio
     }
 }
 
-#[cfg(any(target_os = "windows", test))]
-fn restart_after_failed_reload(history: &mut RecoveryHistory, now_ms: u64) -> RecoveryAction {
-    restart_or_block(history, now_ms)
-}
-
-#[cfg(target_os = "windows")]
-mod windows {
-    use super::{decide_recovery, FailureKind, RecoveryAction, RecoveryHistory};
+mod cef {
+    use super::{decide_recovery, RecoveryAction, RecoveryHistory};
     use std::fs;
+    use std::io::Write;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Mutex, OnceLock};
@@ -89,14 +55,6 @@ mod windows {
     use tauri_plugin_dialog::{
         DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
     };
-    use webview2_com::Microsoft::Web::WebView2::Win32::{
-        COREWEBVIEW2_PROCESS_FAILED_KIND, COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED,
-        COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED,
-        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED,
-        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE,
-    };
-    use webview2_com::ProcessFailedEventHandler;
-
     const RECOVERY_STATE_FILE: &str = "webview-recovery.json";
     const DUPLICATE_EVENT_GUARD: Duration = Duration::from_secs(2);
 
@@ -108,12 +66,16 @@ mod windows {
         state_path: PathBuf,
     }
 
-    pub(super) fn install(window: &tauri::WebviewWindow) {
-        let app = window.app_handle().clone();
-        let state_path = match app.path().app_data_dir() {
+    pub(super) fn initialize(app: &tauri::AppHandle) {
+        let directory = if std::env::var_os("OPENBITFUN_USER_ROOT").is_some() {
+            Ok(openbitfun_core::infrastructure::get_path_manager_arc().user_data_dir())
+        } else {
+            app.path().app_data_dir()
+        };
+        let state_path = match directory {
             Ok(directory) => directory.join(RECOVERY_STATE_FILE),
             Err(error) => {
-                log::warn!("Failed to resolve WebView recovery state path: {}", error);
+                log::warn!("Failed to resolve WebView recovery state path: {error}");
                 return;
             }
         };
@@ -122,53 +84,11 @@ mod windows {
             state_path,
         });
         prune_expired_restart_attempts(context);
-
-        let app_for_handler = app.clone();
-        if let Err(error) = window.with_webview(move |platform_webview| unsafe {
-            let webview = match platform_webview.controller().CoreWebView2() {
-                Ok(webview) => webview,
-                Err(error) => {
-                    log::warn!("Failed to access WebView2 for process recovery: {}", error);
-                    return;
-                }
-            };
-            let handler = ProcessFailedEventHandler::create(Box::new(move |_sender, args| {
-                let Some(args) = args else {
-                    log::warn!("WebView2 process failure did not include event arguments");
-                    return Ok(());
-                };
-                let mut native_kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
-                args.ProcessFailedKind(&mut native_kind)?;
-                handle_failure(
-                    &app_for_handler,
-                    map_failure_kind(native_kind),
-                    native_kind.0,
-                );
-                Ok(())
-            }));
-            let mut token = 0i64;
-            if let Err(error) = webview.add_ProcessFailed(&handler, &mut token) {
-                log::warn!(
-                    "Failed to register WebView2 process recovery handler: {}",
-                    error
-                );
-            } else {
-                log::info!("Registered WebView2 process recovery handler");
-            }
-        }) {
-            log::warn!(
-                "Failed to schedule WebView2 process recovery registration: {}",
-                error
-            );
-        }
     }
 
-    fn handle_failure(app: &tauri::AppHandle, failure: FailureKind, native_kind: i32) {
+    pub(super) fn handle_failure(app: &tauri::AppHandle) {
         if RECOVERY_IN_PROGRESS.swap(true, Ordering::SeqCst) {
-            log::warn!(
-                "Ignored duplicate WebView2 process failure while recovery is active: kind={}",
-                native_kind
-            );
+            log::warn!("Ignored duplicate Chromium renderer failure while recovery is active");
             return;
         }
 
@@ -186,18 +106,14 @@ mod windows {
                     return;
                 }
             };
-            let action = decide_recovery(&mut history, failure, now_ms);
+            let action = decide_recovery(&mut history, now_ms);
             if let Err(error) = save_history(&context.state_path, &history) {
                 log::warn!("Failed to persist WebView recovery history: {}", error);
             }
             action
         };
 
-        log::warn!(
-            "WebView2 process failure detected: kind={}, action={:?}",
-            native_kind,
-            action
-        );
+        log::warn!("Chromium renderer failed: action={action:?}");
         match action {
             RecoveryAction::Reload => {
                 let reload_result = app
@@ -205,7 +121,7 @@ mod windows {
                     .ok_or_else(|| "main window not found".to_string())
                     .and_then(|window| window.reload().map_err(|error| error.to_string()));
                 if let Err(error) = reload_result {
-                    log::warn!("WebView2 recovery reload failed: {}", error);
+                    log::warn!("Chromium recovery reload failed: {}", error);
                     handle_failed_reload(app, now_ms);
                     return;
                 }
@@ -216,7 +132,6 @@ mod windows {
             }
             RecoveryAction::Restart => request_automatic_restart(app),
             RecoveryAction::Block => show_escape_dialog(app.clone()),
-            RecoveryAction::Observe => RECOVERY_IN_PROGRESS.store(false, Ordering::SeqCst),
         }
     }
 
@@ -234,7 +149,7 @@ mod windows {
                     return;
                 }
             };
-            let action = super::restart_after_failed_reload(&mut history, now_ms);
+            let action = super::restart_or_block(&mut history, now_ms);
             if let Err(error) = save_history(&context.state_path, &history) {
                 log::warn!("Failed to persist WebView recovery history: {}", error);
             }
@@ -248,12 +163,12 @@ mod windows {
     }
 
     fn request_automatic_restart(app: &tauri::AppHandle) {
-        log::warn!("Requesting controlled application restart for WebView2 recovery");
+        log::warn!("Requesting controlled application restart for Chromium recovery");
         request_controlled_restart(app, "webview_recovery_restart");
     }
 
     fn show_escape_dialog(app: tauri::AppHandle) {
-        log::error!("Automatic WebView2 recovery budget exhausted; requesting user action");
+        log::error!("Automatic Chromium recovery budget exhausted; requesting user action");
         app.dialog()
             .message(
                 "OpenBitFun's display stopped responding and automatic recovery was paused to avoid a restart loop. Restart OpenBitFun now?",
@@ -295,20 +210,6 @@ mod windows {
         });
     }
 
-    fn map_failure_kind(kind: COREWEBVIEW2_PROCESS_FAILED_KIND) -> FailureKind {
-        if kind == COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED {
-            FailureKind::BrowserExited
-        } else if kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED {
-            FailureKind::RendererExited
-        } else if kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE {
-            FailureKind::RendererUnresponsive
-        } else if kind == COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED {
-            FailureKind::FrameRendererExited
-        } else {
-            FailureKind::Other
-        }
-    }
-
     fn current_time_ms() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -328,13 +229,12 @@ mod windows {
             return Err("recovery state path has no parent".to_string());
         };
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        let temporary_path = path.with_extension("json.tmp");
-        let bytes = serde_json::to_vec(history).map_err(|error| error.to_string())?;
-        fs::write(&temporary_path, bytes).map_err(|error| error.to_string())?;
-        if path.exists() {
-            fs::remove_file(path).map_err(|error| error.to_string())?;
-        }
-        fs::rename(&temporary_path, path).map_err(|error| error.to_string())
+        let mut file =
+            tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
+        serde_json::to_writer(file.as_file_mut(), history).map_err(|error| error.to_string())?;
+        file.flush().map_err(|error| error.to_string())?;
+        file.persist(path).map_err(|error| error.to_string())?;
+        Ok(())
     }
 
     #[test]
@@ -373,12 +273,21 @@ mod windows {
     }
 }
 
-pub(crate) fn install(window: &tauri::WebviewWindow) {
-    #[cfg(target_os = "windows")]
-    windows::install(window);
-
-    #[cfg(not(target_os = "windows"))]
-    let _ = window;
+pub(crate) fn observe(
+    app: &tauri::AppHandle,
+) -> impl Fn(tauri_runtime_cef::FrameEvent) + Send + Sync + 'static {
+    cef::initialize(app);
+    let app = app.clone();
+    move |event| {
+        if matches!(
+            event.kind,
+            tauri_runtime_cef::FrameEventKind::RendererTerminated
+        ) && !crate::desktop_exit_in_progress()
+        {
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || cef::handle_failure(&app));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -391,26 +300,16 @@ mod tests {
     fn first_main_renderer_failure_reloads() {
         let mut history = RecoveryHistory::default();
 
-        assert_eq!(
-            decide_recovery(&mut history, FailureKind::RendererExited, 0),
-            RecoveryAction::Reload
-        );
+        assert_eq!(decide_recovery(&mut history, 0), RecoveryAction::Reload);
     }
 
     #[test]
     fn repeated_main_renderer_failure_within_window_restarts() {
         let mut history = RecoveryHistory::default();
-        assert_eq!(
-            decide_recovery(&mut history, FailureKind::RendererExited, 0),
-            RecoveryAction::Reload
-        );
+        assert_eq!(decide_recovery(&mut history, 0), RecoveryAction::Reload);
 
         assert_eq!(
-            decide_recovery(
-                &mut history,
-                FailureKind::RendererUnresponsive,
-                5 * MINUTE_MS,
-            ),
+            decide_recovery(&mut history, 5 * MINUTE_MS,),
             RecoveryAction::Restart
         );
     }
@@ -418,45 +317,21 @@ mod tests {
     #[test]
     fn renderer_failure_after_window_gets_a_new_reload_attempt() {
         let mut history = RecoveryHistory::default();
+        assert_eq!(decide_recovery(&mut history, 0), RecoveryAction::Reload);
+
         assert_eq!(
-            decide_recovery(&mut history, FailureKind::RendererExited, 0),
+            decide_recovery(&mut history, RENDERER_FAILURE_WINDOW.as_millis() as u64 + 1,),
             RecoveryAction::Reload
-        );
-
-        assert_eq!(
-            decide_recovery(
-                &mut history,
-                FailureKind::RendererExited,
-                RENDERER_FAILURE_WINDOW.as_millis() as u64 + 1,
-            ),
-            RecoveryAction::Reload
-        );
-    }
-
-    #[test]
-    fn browser_exit_restarts_without_attempting_reload() {
-        let mut history = RecoveryHistory::default();
-
-        assert_eq!(
-            decide_recovery(&mut history, FailureKind::BrowserExited, 0),
-            RecoveryAction::Restart
         );
     }
 
     #[test]
     fn second_automatic_restart_within_window_is_blocked() {
         let mut history = RecoveryHistory::default();
-        assert_eq!(
-            decide_recovery(&mut history, FailureKind::BrowserExited, 0),
-            RecoveryAction::Restart
-        );
+        assert_eq!(restart_or_block(&mut history, 0), RecoveryAction::Restart);
 
         assert_eq!(
-            decide_recovery(
-                &mut history,
-                FailureKind::BrowserExited,
-                RESTART_FAILURE_WINDOW.as_millis() as u64 - 1,
-            ),
+            restart_or_block(&mut history, RESTART_FAILURE_WINDOW.as_millis() as u64 - 1),
             RecoveryAction::Block
         );
     }
@@ -464,17 +339,10 @@ mod tests {
     #[test]
     fn automatic_restart_budget_recovers_after_window() {
         let mut history = RecoveryHistory::default();
-        assert_eq!(
-            decide_recovery(&mut history, FailureKind::BrowserExited, 0),
-            RecoveryAction::Restart
-        );
+        assert_eq!(restart_or_block(&mut history, 0), RecoveryAction::Restart);
 
         assert_eq!(
-            decide_recovery(
-                &mut history,
-                FailureKind::BrowserExited,
-                RESTART_FAILURE_WINDOW.as_millis() as u64 + 1,
-            ),
+            restart_or_block(&mut history, RESTART_FAILURE_WINDOW.as_millis() as u64 + 1),
             RecoveryAction::Restart
         );
     }
@@ -482,26 +350,11 @@ mod tests {
     #[test]
     fn failed_reload_respects_existing_restart_budget() {
         let mut history = RecoveryHistory::default();
-        assert_eq!(
-            decide_recovery(&mut history, FailureKind::BrowserExited, 0),
-            RecoveryAction::Restart
-        );
+        assert_eq!(restart_or_block(&mut history, 0), RecoveryAction::Restart);
 
         assert_eq!(
-            restart_after_failed_reload(&mut history, MINUTE_MS),
+            restart_or_block(&mut history, MINUTE_MS),
             RecoveryAction::Block
         );
-    }
-
-    #[test]
-    fn subordinate_process_failures_are_observed_without_disruption() {
-        let mut history = RecoveryHistory::default();
-
-        for failure in [FailureKind::FrameRendererExited, FailureKind::Other] {
-            assert_eq!(
-                decide_recovery(&mut history, failure, 0),
-                RecoveryAction::Observe
-            );
-        }
     }
 }

@@ -17,3 +17,10 @@ WebView: verify native minimized state, capture counts, child document visibilit
 and animation progress while minimized and after restoration. Check that inactive
 or occluded panels remain hidden after restoring the window. Report the tested OS
 and build profile; local fixtures do not establish remote-scenario behavior.
+
+Desktop offscreen browsers paint through a DOM canvas. Keep frame polling
+tied to panel and host visibility, and let DOM hit testing handle workbench
+overlays. Preserve the CSS size of the last painted frame during divider
+resizing and clip it while the browser reflows. Run the browser scene suite above and
+`cargo test --locked -p openbitfun-desktop --lib browser_osr` for frame and input
+geometry. The desktop README has the manual acceptance steps.

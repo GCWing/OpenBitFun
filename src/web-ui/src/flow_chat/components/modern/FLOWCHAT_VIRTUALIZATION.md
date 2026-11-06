@@ -2,6 +2,49 @@
 
 ## Historical scrolling and measurement
 
+The overscan budget is measured from the viewport edges, including the part of
+a tall visible row already outside the viewport. Expanding from the row's edges
+instead mounted additional whole Markdown answers thousands of pixels away.
+The buffer uses measured sizes where available, reserves two viewport heights
+on each side for native compositor travel, and bounds each side to 32 extra
+rows (with two neighboring rows retained for navigation). Pinned interaction
+rows retain their existing residency contract.
+
+Pixel coverage is recomputed on native offset delivery even while the visible
+row indexes remain unchanged, and on measurement commits. Equal index arrays
+retain identity; a native scroll within the same measured window does not
+recommit React. Measurement updates and viewport-owner callbacks remain
+synchronous, including delayed scroll-end readback and smooth-aim cancellation.
+These rules apply to the shared desktop/web view; they introduce no host calls,
+history format changes, or new viewport writers.
+
+Long-animation-frame attribution in the CEF fixture identified repeated forced
+style/layout work during row mounting and the following visible-Turn scan.
+The shared scrollbar policy now uses pseudo-element paint on Chromium/WebKit
+instead of changing inherited `scrollbar-color` throughout transcript subtrees.
+The standard-color fallback remains for other engines. Row content and native
+scroll input are preserved; no fade, motion filter, screenshot overlay, or
+offscreen raster cache masks missing content.
+
+The 2026-11-05 macOS CEF comparison used the same packaged host and isolated
+300-Turn fixtures before/after this change. Each phase dispatched 72 wheel
+actions at 24ms intervals. With 12,000-character rich Markdown answers, fast-up
+p95/max frame intervals fell from 65.8/366.6ms to 17.6/33.3ms; fling-up fell
+from 50.9/166.3ms to 17.7/33.5ms. With 3,600 alternating shell/file-edit tools,
+fling-up fell from 50.0/66.6ms to 17.7/34.3ms and partially uncovered frames
+fell from 13 to zero. Both final seven-phase runs had zero uncovered frames
+and reversals over 4px, with at most 9 rich-text or 33 tool-heavy rows mounted.
+These are instrumented samples on this host, not a universal frame-time bound.
+
+In a separate 32-cycle tool-heavy scroll/session run, the settled long view
+returned to 15 mounted rows and 2,024 document elements after warm-up. Sampled
+used JS heap ranged from 91.6 to 186.1MiB, with natural-GC low points around
+92–103MiB; no forced GC or retained offscreen DOM was introduced. The debug
+desktop's summed process RSS was still about 1.9–2.2GiB (including shared pages,
+other CEF renderers and native runtime overhead). That is not a private-memory
+budget or evidence that the whole desktop has low memory usage. The short run
+establishes bounded transcript residency, not absence of every possible leak.
+
 Manual scrolling keeps the host's native wheel/touch behavior. Perceived
 smoothness depends on stable content coordinates as well as frame time; adding
 an easing loop to a height correction would expose the correction as motion.

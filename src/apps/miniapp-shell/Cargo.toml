@@ -16,6 +16,7 @@ openbitfun-services-core = { path = "../../crates/services/services-core", featu
 # Tauri's dev mode otherwise replaces each macOS bundle's Dock icon with the
 # compile-time OpenBitFun icon when the native event loop becomes ready.
 tauri = { workspace = true, features = ["custom-protocol"] }
+tauri-runtime-wry = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-notification = { workspace = true }

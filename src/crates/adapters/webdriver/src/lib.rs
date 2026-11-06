@@ -8,7 +8,6 @@ pub mod webdriver;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
-use serde_json::Value;
 use tauri::AppHandle;
 
 use server::AppState;
@@ -22,11 +21,7 @@ static SHARED_STATE: OnceLock<Arc<AppState>> = OnceLock::new();
 
 fn shared_state(app: AppHandle, preferred_label: String, port: u16) -> Arc<AppState> {
     SHARED_STATE
-        .get_or_init(|| {
-            let state = Arc::new(AppState::new(app.clone(), preferred_label, port));
-            runtime::register_listener(app, state.clone());
-            state
-        })
+        .get_or_init(|| Arc::new(AppState::new(app, preferred_label, port)))
         .clone()
 }
 
@@ -54,8 +49,4 @@ pub fn maybe_start(app: AppHandle) {
         .unwrap_or_else(|_| DEFAULT_WEBDRIVER_LABEL.into());
     let state = shared_state(app, preferred_label, port);
     server::start(state);
-}
-
-pub fn handle_bridge_result(payload: Value) -> Result<(), String> {
-    runtime::handle_invoke_payload(payload)
 }

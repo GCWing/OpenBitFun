@@ -41,6 +41,8 @@ type BrowserWebviewHandle = {
   show: () => Promise<void>;
 };
 
+type BrowserPresentation = 'offscreen' | 'offscreenGpu' | null;
+
 type WebviewBounds = {
   left: number;
   top: number;
@@ -125,8 +127,8 @@ async function reloadWebview(label: string): Promise<void> {
   await api.invoke('browser_webview_reload', { request: { label } });
 }
 
-async function setWebviewBounds(label: string, bounds: WebviewBounds): Promise<void> {
-  await api.invoke('browser_webview_set_bounds', {
+async function setWebviewBounds(label: string, bounds: WebviewBounds): Promise<BrowserPresentation> {
+  return api.invoke<BrowserPresentation>('browser_webview_set_bounds', {
     request: {
       label,
       x: bounds.left,
@@ -153,9 +155,9 @@ async function createBrowserWebview(
   bounds: WebviewBounds,
   openRequestId?: string,
   conversationId?: string,
-): Promise<BrowserWebviewHandle> {
+): Promise<{ handle: BrowserWebviewHandle; presentation: BrowserPresentation }> {
   const { Webview } = await import('@tauri-apps/api/webview');
-  await api.invoke('browser_webview_create', {
+  const presentation = await api.invoke<BrowserPresentation>('browser_webview_create', {
     request: {
       label,
       url,
@@ -171,7 +173,7 @@ async function createBrowserWebview(
   if (!handle) {
     throw new Error(`Webview not found after creation: ${label}`);
   }
-  return handle;
+  return { handle, presentation };
 }
 
 export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOptions) {
@@ -196,6 +198,10 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
   const toolbarSuspendedRef = useRef(false);
   const nativeVisibleRef = useRef(false);
   const hostVisibleRef = useRef(false);
+  const offscreenLabelRef = useRef('');
+  const [offscreenLabel, setOffscreenLabel] = useState('');
+  const [offscreenGpu, setOffscreenGpu] = useState(false);
+  const [offscreenVisible, setOffscreenVisible] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewBounds, setPreviewBounds] = useState<BrowserViewportBounds | null>(null);
   const preview = useMemo(() => new BrowserPreviewCache({
@@ -208,9 +214,11 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     const reconcile = createNativeWebviewVisibility(target => {
       const viewport = viewportRef.current;
       if (!mountedRef.current || (targetId && !presentationRef.current?.isCurrent())
-        || !hostVisibleRef.current || !activeRef.current || toolbarSuspendedRef.current
+        || !hostVisibleRef.current || !activeRef.current
         || target !== webviewRef.current || !viewport?.isConnected) return false;
       const rect = viewport.getBoundingClientRect();
+      if (webviewRef.current?.label === offscreenLabelRef.current) return rect.width > 1 && rect.height > 1;
+      if (toolbarSuspendedRef.current) return false;
       // Keep the last valid geometry during transient layout swaps, but still
       // check overlays against it rather than bypassing the visibility decision.
       const last = lastBoundsRef.current;
@@ -225,12 +233,23 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     }, (target, visible) => {
       if (target !== webviewRef.current) return;
       nativeVisibleRef.current = visible;
-      preview.setVisible(visible && hostVisibleRef.current);
+      const presented = visible && hostVisibleRef.current;
+      if (webviewRef.current?.label === offscreenLabelRef.current) setOffscreenVisible(presented);
+      else preview.setVisible(presented);
     });
-    return (target: BrowserWebviewHandle, focus = false) => targetId
-      ? presentationRef.current?.run(() => reconcile(target, focus)) ?? Promise.resolve()
-      : reconcile(target, focus);
+    return (target: BrowserWebviewHandle, focus = false) => {
+      const update = () => reconcile(target, focus && target.label !== offscreenLabelRef.current);
+      return targetId ? presentationRef.current?.run(update) ?? Promise.resolve() : update();
+    };
   }, [preview, targetId]);
+
+  const applyPresentation = useCallback((label: string, presentation: BrowserPresentation) => {
+    if (!presentation || offscreenLabelRef.current === label) return;
+    offscreenLabelRef.current = label;
+    setOffscreenLabel(label);
+    setOffscreenGpu(presentation === 'offscreenGpu');
+    preview.setVisible(false);
+  }, [preview]);
 
   const updateAgentTargetState = useCallback((label: string) => {
     const update = () => setAgentTargetState(label, mountedRef.current && activeRef.current, openRequestId);
@@ -273,11 +292,21 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
   }, [clearPageLoadWatchdog]);
 
   const readViewportBounds = useCallback((): WebviewBounds | null => {
-    if (!viewportRef.current) return null;
+    const viewport = viewportRef.current;
+    if (!viewport) return null;
 
-    const rect = viewportRef.current.getBoundingClientRect();
+    const offscreen = Boolean(offscreenLabelRef.current);
+    if (offscreen) {
+      const { clientWidth: width, clientHeight: height } = viewport;
+      if (width > 1 && height > 1) return { left: 0, top: 0, width, height };
+    }
+    const rect = viewport.getBoundingClientRect();
     if (rect.width <= 1 || rect.height <= 1) return null;
 
+    if (offscreen) {
+      // The canvas follows DOM transforms while CEF lays out in CSS pixels.
+      return { left: 0, top: 0, width: Math.round(rect.width), height: Math.round(rect.height) };
+    }
     return alignBrowserViewport(rect, window.devicePixelRatio);
   }, []);
 
@@ -294,7 +323,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     throw new Error('Browser viewport did not become visible before webview creation');
   }, [readViewportBounds]);
 
-  const syncWebviewBounds = useCallback(async (handle?: BrowserWebviewHandle | null) => {
+  const syncWebviewBounds = useCallback(async (handle?: BrowserWebviewHandle | null, resizingOffscreen = false) => {
     const target = handle ?? webviewRef.current;
     if (!isTauri || !target || !viewportRef.current || !mountedRef.current
       || (targetId && !presentationRef.current?.isCurrent())) return;
@@ -306,27 +335,31 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     }
 
     const previous = lastBoundsRef.current;
-    const boundsChanged =
-      !previous ||
-      previous.left !== nextBounds.left || previous.top !== nextBounds.top ||
-      previous.width !== nextBounds.width || previous.height !== nextBounds.height;
+    const offscreen = target.label === offscreenLabelRef.current;
+    const sizeChanged = !previous || previous.width !== nextBounds.width || previous.height !== nextBounds.height;
+    const boundsChanged = sizeChanged || (!offscreen && previous
+      && (previous.left !== nextBounds.left || previous.top !== nextBounds.top));
 
     if (boundsChanged) {
-      if (!previous || previous.width !== nextBounds.width || previous.height !== nextBounds.height) {
-        preview.invalidate();
-      }
-      if (targetId) {
-        await presentationRef.current?.run(async () => {
-          if (mountedRef.current) await setWebviewBounds(target.label, nextBounds);
-        });
-      } else {
-        await setWebviewBounds(target.label, nextBounds);
-      }
-      if (!mountedRef.current || (targetId && !presentationRef.current?.isCurrent())) return;
+      if (!offscreen && sizeChanged) preview.invalidate();
+      const applyBounds = async () => {
+        if (!mountedRef.current) return;
+        const presentation = await setWebviewBounds(target.label, nextBounds);
+        if (mountedRef.current && target === webviewRef.current
+          && (!targetId || presentationRef.current?.isCurrent())) {
+          applyPresentation(target.label, presentation);
+        }
+      };
+      if (targetId) await presentationRef.current?.run(applyBounds);
+      else await applyBounds();
+      if (!mountedRef.current || target !== webviewRef.current
+        || (targetId && !presentationRef.current?.isCurrent())) return;
       lastBoundsRef.current = nextBounds;
-      if (!previous || previous.width !== nextBounds.width || previous.height !== nextBounds.height) {
-        preview.invalidate();
-      }
+      if (!offscreen && sizeChanged) preview.invalidate();
+    }
+    if (target.label === offscreenLabelRef.current) {
+      if (!resizingOffscreen || !nativeVisibleRef.current) await visibility(target);
+      return;
     }
     // The image is positioned relative to the host, but uses the applied native
     // rectangle rather than stretching to the host's fractional CSS dimensions.
@@ -338,7 +371,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     setPreviewBounds(current => current && current.left === relative.left && current.top === relative.top
       && current.width === relative.width && current.height === relative.height ? current : relative);
     await visibility(target);
-  }, [isTauri, preview, readViewportBounds, targetId, visibility]);
+  }, [applyPresentation, isTauri, preview, readViewportBounds, targetId, visibility]);
 
   const closeWebview = useCallback(async (handle?: BrowserWebviewHandle | null) => {
     const target = handle ?? webviewRef.current;
@@ -359,6 +392,10 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
         webviewRef.current = null;
         webviewLabelRef.current = '';
         setWebviewLabel('');
+        offscreenLabelRef.current = '';
+        setOffscreenGpu(false);
+        setOffscreenLabel('');
+        setOffscreenVisible(false);
         lastBoundsRef.current = null;
         pageLoadUnlistenRef.current?.();
         pageLoadUnlistenRef.current = null;
@@ -450,12 +487,13 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
       try {
         // Fast or cached pages can finish before the creation command returns.
         await startPageLoadListener(label);
-        const handle = await createBrowserWebview(label, url, initialBounds, openRequestId);
+        const { handle, presentation } = await createBrowserWebview(label, url, initialBounds, openRequestId);
         if (!mountedRef.current) {
           await handle.close();
           throw new Error('Browser surface disposed during webview creation');
         }
         webviewRef.current = handle;
+        applyPresentation(handle.label, presentation);
         preview.setTarget(label);
         lastBoundsRef.current = initialBounds;
         await injectBrowserPageScripts(label);
@@ -478,7 +516,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     }
 
     throw lastError;
-  }, [closeWebview, labelPrefix, log, openRequestId, preview, startPageLoadListener, waitForViewportBounds]);
+  }, [applyPresentation, closeWebview, labelPrefix, log, openRequestId, preview, startPageLoadListener, waitForViewportBounds]);
 
   const navigateExistingWebview = useCallback(async (url: string): Promise<boolean> => {
     const label = webviewLabelRef.current;
@@ -576,8 +614,9 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
           if (!handle && !openRequestId && conversationId) {
             // Serialize first creation across rapid unmount/remount. A new
             // panel waits for an in-flight creation and attaches the same page.
-            handle = await createBrowserWebview(targetId, currentUrlRef.current,
+            const created = await createBrowserWebview(targetId, currentUrlRef.current,
               { left: -10000, top: -10000, width: 1024, height: 768 }, undefined, conversationId);
+            handle = created.handle;
           }
         });
         if (!mountedRef.current || !presentation.isCurrent()) return;
@@ -623,18 +662,39 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
   useEffect(() => {
     if (!isTauri) return;
 
-    const observer = new ResizeObserver(() => {
-      if (isVisible) queueSync();
-    });
-
-    if (viewportRef.current) observer.observe(viewportRef.current);
+    let stopped = false;
+    let resizing = false;
+    let resizePending = false;
+    const syncOffscreen = async () => {
+      resizing = true;
+      while (resizePending && !stopped) {
+        resizePending = false;
+        try {
+          await syncWebviewBounds(undefined, true);
+        } catch (error) {
+          log.warn('Sync offscreen browser viewport failed', error);
+        }
+      }
+      resizing = false;
+    };
 
     const handleResize = () => {
-      if (isVisible) queueSync();
+      if (!isVisible || stopped) return;
+      if (!offscreenLabelRef.current) {
+        queueSync();
+        return;
+      }
+      // ResizeObserver already runs after layout. Send that size now and
+      // remeasure once if multiple sizes arrive while CEF is busy.
+      resizePending = true;
+      if (!resizing) void syncOffscreen();
     };
+    const observer = new ResizeObserver(handleResize);
+    if (viewportRef.current) observer.observe(viewportRef.current);
     window.addEventListener('resize', handleResize);
 
     return () => {
+      stopped = true;
       observer.disconnect();
       window.removeEventListener('resize', handleResize);
       if (resizeTimerRef.current !== null) {
@@ -642,7 +702,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
         resizeTimerRef.current = null;
       }
     };
-  }, [isTauri, isVisible, queueSync]);
+  }, [isTauri, isVisible, log, queueSync, syncWebviewBounds]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -650,10 +710,16 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     const stopObservingWindow = observeCurrentWindowVisibility(visible => {
       hostVisibleRef.current = visible;
       // Stop scheduling immediately; native hide may wait for a pending show.
-      if (!visible) preview.setVisible(false);
+      if (!visible) {
+        preview.setVisible(false);
+        setOffscreenVisible(false);
+      }
       const handle = webviewRef.current;
       if (handle) void visibility(handle).then(() => {
-        preview.setVisible(hostVisibleRef.current && nativeVisibleRef.current);
+        if (!mountedRef.current || handle !== webviewRef.current) return;
+        const presented = hostVisibleRef.current && nativeVisibleRef.current;
+        if (handle.label === offscreenLabelRef.current) setOffscreenVisible(presented);
+        else preview.setVisible(presented);
       }).catch(syncError => {
         log.warn('Update browser webview host visibility failed', syncError);
       });
@@ -688,7 +754,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
   }, [clearPageLoadWatchdog, closeWebview, log, preview, targetId, visibility]);
 
   useEffect(() => {
-    if (!isTauri || !isVisible) return;
+    if (!isTauri || !isVisible || offscreenLabel) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
     const update = () => {
@@ -697,7 +763,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
       });
     };
     return observeNativeWebviewOcclusion(viewport, update);
-  }, [isTauri, isVisible, log, syncVisibility]);
+  }, [isTauri, isVisible, log, offscreenLabel, syncVisibility]);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -764,6 +830,10 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
   const getWebviewLabel = useCallback(() => webviewLabelRef.current, []);
   const getCurrentUrl = useCallback(() => currentUrlRef.current, []);
   const hasWebview = useCallback(() => webviewRef.current !== null, []);
+  const reportPresentationError = useCallback((presentationError: unknown) => {
+    log.warn('Offscreen browser presentation failed', presentationError);
+    setError(formatUnknownError(presentationError));
+  }, [log]);
 
   return useMemo(() => ({
     currentUrl,
@@ -778,9 +848,13 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     isLoading,
     isTauri,
     loadUrl,
+    offscreenLabel,
+    offscreenGpu,
+    offscreenVisible,
     previewUrl,
     previewBounds,
     reload,
+    reportPresentationError,
     setInputValue,
     stopLoading,
     viewportRef,
@@ -798,9 +872,13 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     isLoading,
     isTauri,
     loadUrl,
+    offscreenLabel,
+    offscreenGpu,
+    offscreenVisible,
     previewUrl,
     previewBounds,
     reload,
+    reportPresentationError,
     stopLoading,
     viewportRef,
     webviewLabel,

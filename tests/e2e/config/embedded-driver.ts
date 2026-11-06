@@ -73,10 +73,9 @@ function executableCandidates(buildType: E2eBuildType): string[] {
   const binaryName = `openbitfun-desktop${suffix}`;
 
   if (process.platform === 'darwin') {
-    return [
-      path.join(root, 'target', buildType, binaryName),
-      path.join(root, 'target', buildType, 'OpenBitFun.app', 'Contents', 'MacOS', 'OpenBitFun'),
-    ];
+    return [path.join(
+      root, 'target', buildType, 'bundle', 'macos', 'OpenBitFun.app', 'Contents', 'MacOS', binaryName,
+    )];
   }
 
   return [path.join(root, 'target', buildType, binaryName)];

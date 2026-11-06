@@ -223,6 +223,11 @@ visible native thumbs, and forced colors retains system accessibility colors.
 Tracks stay transparent. Only color changes, so hover never changes viewport
 width, overflow, or scrollbar gutters.
 
+Chromium and WebKit use scrollbar pseudo-elements for that paint change.
+The standard `scrollbar-color` fallback is restricted to engines without those
+pseudo-elements: it inherits, so applying hover-dependent colors to every
+descendant otherwise restyles large transcript/code subtrees during scrolling.
+
 `ScrollArea` keeps `scrollbarVisibility="auto"` as the default. `always` keeps
 the thumb visible and reserves a scrolling track; `hidden` deliberately hides
 the native scrollbar while preserving scrolling. `Menu`, `Listbox`, and

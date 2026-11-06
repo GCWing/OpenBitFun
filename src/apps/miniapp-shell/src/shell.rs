@@ -456,6 +456,7 @@ pub(crate) async fn run(path: PathBuf) {
         tauri::image::Image::new_owned(icon.into_raw(), width, height)
     }));
     let result = tauri::Builder::default()
+        .runtime(tauri_runtime_wry::Wry::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())

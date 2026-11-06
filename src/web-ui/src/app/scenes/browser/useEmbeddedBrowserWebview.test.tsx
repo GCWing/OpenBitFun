@@ -622,3 +622,58 @@ it('keeps the decoded preview beneath a popup without waiting for the next captu
   await act(async () => browser.loadUrl('https://example.com/new-page'));
   expect(browser.previewUrl).toBeNull();
 });
+
+it('leaves a retained offscreen browser visible under overlays and moves it with the DOM', async () => {
+  mocks.invoke.mockImplementation(async command => command === 'browser_webview_set_bounds'
+    ? 'offscreen' : command === 'browser_get_url' ? 'https://example.com' : undefined);
+  await act(async () => root.render(<Harness active targetId={mocks.view.label} />));
+
+  expect(browser.offscreenLabel).toBe(mocks.view.label);
+  expect(browser.offscreenVisible).toBe(true);
+  expect(mocks.view.show).toHaveBeenCalledOnce();
+  expect(mocks.view.setFocus).not.toHaveBeenCalled();
+  mocks.invoke.mockClear();
+  await mutate(() => {
+    document.body.append(overlay());
+    window.dispatchEvent(new Event('toolbar-mode-activating'));
+    viewportBounds = new DOMRect(30, 40, 200, 200);
+    window.dispatchEvent(new Event('resize'));
+  });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 180)); });
+  expect(mocks.view.hide).not.toHaveBeenCalled();
+  expect(browser.offscreenVisible).toBe(true);
+  expect(mocks.invoke.mock.calls.some(([command]) => command === 'browser_webview_set_bounds'
+    || command === 'browser_webview_capture_preview')).toBe(false);
+
+  let finishResize: () => void = () => {};
+  const firstResize = new Promise<void>(resolve => { finishResize = resolve; });
+  const resizedWidths: number[] = [];
+  mocks.invoke.mockImplementation(async (command, args) => {
+    if (command !== 'browser_webview_set_bounds') return undefined;
+    const { request } = args as { request: { width: number } };
+    resizedWidths.push(request.width);
+    if (resizedWidths.length === 1) await firstResize;
+    return 'offscreen';
+  });
+  await mutate(() => {
+    viewportBounds = new DOMRect(30, 40, 240, 200);
+    window.dispatchEvent(new Event('resize'));
+  });
+  expect(resizedWidths).toEqual([240]);
+  await mutate(() => {
+    for (const width of [250, 270]) {
+      viewportBounds = new DOMRect(30, 40, width, 200);
+      window.dispatchEvent(new Event('resize'));
+    }
+  });
+  expect(resizedWidths).toEqual([240]);
+  await act(async () => finishResize());
+  expect(resizedWidths).toEqual([240, 270]);
+
+  await mutate(() => {
+    mocks.hostVisible = false;
+    for (const listener of mocks.hostListeners) listener(false);
+  });
+  expect(browser.offscreenVisible).toBe(false);
+  expect(mocks.view.hide).toHaveBeenCalledOnce();
+});

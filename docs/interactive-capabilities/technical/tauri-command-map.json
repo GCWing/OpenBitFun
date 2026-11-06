@@ -2,12 +2,12 @@
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
   "catalogDigest": "9b42d8bd570aa1f371e2ddfbb4c6d8384e97492e7987c774eef00c1f087db6dc",
-  "commandCount": 709,
+  "commandCount": 711,
   "coverage": {
-    "commandCount": 709,
+    "commandCount": 711,
     "documentedCommandCount": 649,
-    "implementationCommandCount": 60,
-    "implementationDigest": "5047b674e890f899e65baf9235e9df4bd912fa28f44eb10a656e079a1b89974d"
+    "implementationCommandCount": 62,
+    "implementationDigest": "a9a5b1aa0fe9564d1e162dd03754324e10d4ceecbcb59a7ef401154860fb07f6"
   },
   "commands": [
     {
@@ -817,7 +817,7 @@
       "visibility": "documented",
       "rustPath": "api::browser_api::browser_webview_create",
       "sourceFile": "src/apps/desktop/src/api/browser_api.rs",
-      "signature": "fn browser_webview_create( app: tauri::AppHandle, request: WebviewCreateRequest, ) -> Result<(), String>",
+      "signature": "fn browser_webview_create( app: tauri::AppHandle, request: WebviewCreateRequest, ) -> Result<Option<BrowserPresentation>, String>",
       "remoteWorkspacePolicy": "LocalOnly"
     },
     {
@@ -850,6 +850,34 @@
       "rustPath": "api::browser_api::browser_webview_navigate",
       "sourceFile": "src/apps/desktop/src/api/browser_api.rs",
       "signature": "fn browser_webview_navigate( app: tauri::AppHandle, request: WebviewNavigateRequest, ) -> Result<(), String>",
+      "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
+      "id": "browser_webview_osr_frame",
+      "moduleId": "browser_osr",
+      "capabilityId": "feature.browser",
+      "capabilityIds": [
+        "feature.browser"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::browser_osr::browser_webview_osr_frame",
+      "sourceFile": "src/apps/desktop/src/api/browser_osr.rs",
+      "signature": "fn browser_webview_osr_frame( caller: tauri::Webview, request: OsrFrameRequest, ) -> Result<Response, String>",
+      "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
+      "id": "browser_webview_osr_input",
+      "moduleId": "browser_osr",
+      "capabilityId": "feature.browser",
+      "capabilityIds": [
+        "feature.browser"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::browser_osr::browser_webview_osr_input",
+      "sourceFile": "src/apps/desktop/src/api/browser_osr.rs",
+      "signature": "fn browser_webview_osr_input( app: tauri::AppHandle, caller: tauri::Webview, request: OsrInputRequest, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LocalOnly"
     },
     {
@@ -897,7 +925,7 @@
       "visibility": "documented",
       "rustPath": "api::browser_api::browser_webview_set_bounds",
       "sourceFile": "src/apps/desktop/src/api/browser_api.rs",
-      "signature": "fn browser_webview_set_bounds( app: tauri::AppHandle, request: WebviewBoundsRequest, ) -> Result<(), String>",
+      "signature": "fn browser_webview_set_bounds( app: tauri::AppHandle, request: WebviewBoundsRequest, ) -> Result<Option<BrowserPresentation>, String>",
       "remoteWorkspacePolicy": "LocalOnly"
     },
     {

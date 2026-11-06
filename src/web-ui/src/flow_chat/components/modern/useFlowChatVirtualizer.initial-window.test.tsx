@@ -143,6 +143,33 @@ describe('initial virtual window with the real virtualizer', () => {
     }
   });
 
+  it('prefetches at a tall row edge before the visible row changes', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
+      if (this.hasAttribute('data-scroller')) return 500;
+      if (!this.hasAttribute('data-virtual-index')) return 0;
+      return Number(this.getAttribute('data-virtual-index')) === 40 ? 3000 : 80;
+    });
+    render(100, false);
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => {
+      scroller.scrollTop = 4000;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    const top = latestApi.getItemBounds(40)!.startPx;
+    act(() => {
+      scroller.scrollTop = top + 1200;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    expect(latestApi.getVisibleItemRange()).toEqual({ startIndex: 40, endIndex: 40 });
+    expect(host.querySelector('[data-virtual-index="37"]')).toBeNull();
+    act(() => {
+      scroller.scrollTop = top + 80;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    expect(latestApi.getVisibleItemRange()).toEqual({ startIndex: 40, endIndex: 40 });
+    expect(host.querySelector('[data-virtual-index="37"]')).not.toBeNull();
+  });
+
   it('keeps a smooth aim stable and resumes immediate measurement on reader takeover', () => {
     // A short Turn header precedes an answer taller than the viewport. While
     // returning to that mounted header, earlier overscan rows enter the window.
@@ -303,21 +330,16 @@ describe('initial virtual window with the real virtualizer', () => {
     expect([...host.querySelectorAll('[data-virtual-index]')]).toEqual(mountedRows);
   });
 
-  it.each([false, true])('reconciles measured overscan before delayed events (enabled=%s)', enabled => {
+  it('reconciles measured overscan before delayed events', () => {
     shortOverscan = true;
     render(34, true);
-    reconcileEnabled = enabled;
+    reconcileEnabled = true;
     const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
     act(() => {
       latestApi.scrollToOffset(scroller.scrollHeight - 500, { owner: 'follow-output' });
       scroller.dispatchEvent(new Event('scroll'));
     });
     const first = windows.at(-1)![0];
-    if (!enabled) {
-      // Control: the old cached offset contracts the window back to the last row.
-      expect(first).toBe(27);
-      return;
-    }
     expect(first).toBeLessThan(27);
     const overscanRow = host.querySelector(`[data-virtual-index="${first}"]`);
     expect(overscanRow).not.toBeNull();

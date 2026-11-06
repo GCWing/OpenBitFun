@@ -142,6 +142,8 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("browser_webview_create",                                     LocalOnly,   ControllerLocal,  REFUSED),
     op("browser_webview_eval",                                       LocalOnly,   ControllerLocal,  REFUSED),
     op("browser_webview_navigate",                                   LocalOnly,   ControllerLocal,  REFUSED),
+    op("browser_webview_osr_frame",                                  LocalOnly,   ControllerLocal,  REFUSED),
+    op("browser_webview_osr_input",                                  LocalOnly,   ControllerLocal,  REFUSED),
     op("browser_webview_reload",                                     LocalOnly,   ControllerLocal,  REFUSED),
     op("browser_webview_set_agent_target_state",                     LocalOnly,   ControllerLocal,  REFUSED),
     op("browser_webview_set_bounds",                                 LocalOnly,   ControllerLocal,  REFUSED),

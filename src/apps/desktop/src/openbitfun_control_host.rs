@@ -173,7 +173,7 @@ async fn current_option_value(
             option_id,
         } => match desktop_provider_option(provider_id, option_id) {
             Some(DesktopProviderOption::LaunchAtLogin) => app
-                .autolaunch()
+                .autostart()
                 .is_enabled()
                 .map(Value::Bool)
                 .map_err(|error| error.to_string()),
@@ -838,11 +838,9 @@ async fn configure_desktop_provider_option(
     match option {
         DesktopProviderOption::LaunchAtLogin => {
             if enabled {
-                app.autolaunch().enable().map_err(|error| error.to_string())
+                app.autostart().enable().map_err(|error| error.to_string())
             } else {
-                app.autolaunch()
-                    .disable()
-                    .map_err(|error| error.to_string())
+                app.autostart().disable().map_err(|error| error.to_string())
             }
         }
         DesktopProviderOption::PreventSleep => {

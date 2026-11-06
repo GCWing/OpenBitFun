@@ -25,6 +25,7 @@ impl std::error::Error for RunError {}
 
 pub fn run() -> Result<(), RunError> {
     tauri::Builder::default()
+        .runtime(tauri_runtime_wry::Wry::default())
         .setup(|app| {
             let settings = app.path().app_config_dir()?.join("locations.json");
             let coordinator = DataToolsCoordinator::bootstrap(settings)?;

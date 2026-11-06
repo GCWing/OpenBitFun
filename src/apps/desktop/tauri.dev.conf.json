@@ -1,8 +1,9 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
+  "$schema": "https://schema.tauri.app/config/3.0.0-alpha.5",
   "productName": "OpenBitFun",
   "identifier": "com.openbitfun.desktop.dev",
   "build": {
+    "beforeBundleCommand": null,
     "beforeDevCommand": "pnpm run dev:web",
     "devUrl": "http://localhost:1422",
     "beforeBuildCommand": "pnpm run frontend:build-all",
@@ -11,6 +12,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": [
+      "icons/openbitfun-app-icon.icns",
+      "icons/openbitfun-app-icon.ico",
+      "icons/openbitfun-app-icon.png"
+    ],
+    "externalBin": ["gen/miniapp-shell/openbitfun-miniapp-shell"],
     "resources": {
       "../../mobile-web/dist": "mobile-web/dist",
       "../extension-host/dist/extension-host.js": "resources/ext-host/extension-host.js",
@@ -18,6 +25,9 @@
       "../../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
       "../../crates/services/services-integrations/assets/models-dev.LICENSE.txt": "third-party/models.dev/LICENSE.txt",
       "../../crates/services/services-integrations/assets/models-dev.provenance.json": "third-party/models.dev/provenance.json"
+    },
+    "macOS": {
+      "signingIdentity": "-"
     },
     "linux": {
       "deb": {
@@ -29,7 +39,8 @@
           "gstreamer1.0-plugins-good",
           "xdg-desktop-portal",
           "libwebkit2gtk-4.1-0",
-          "libgtk-3-0"
+          "libgtk-3-0",
+          "libgtk-4-1"
         ],
         "files": {
           "/usr/share/icons/hicolor/16x16/apps/openbitfun-desktop.png": "icons/hicolor/16x16/apps/openbitfun-desktop.png",
@@ -53,7 +64,6 @@
     "security": {
       "csp": null
     },
-    "macOSPrivateApi": true,
     "withGlobalTauri": true
   }
 }

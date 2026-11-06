@@ -99,10 +99,10 @@
         }
         root.setAttribute('data-contrast', 'standard');
         root.setAttribute('data-density', 'compact');
-        // The shell owns the window frame background when the desktop bootstrap
-        // advertises a client-side frame; painting it here would cover the
-        // transparent corners.
-        var bg = root.getAttribute('data-openbitfun-native-frame') === 'client'
+        var isPetWindow = new URLSearchParams(window.location.search).get('openbitfunWindow') === 'agent-companion';
+        if (isPetWindow) root.classList.add('openbitfun-pet-preload-root');
+        // Preserve alpha for the pet and the rounded corners of client-side frames.
+        var bg = isPetWindow || root.getAttribute('data-openbitfun-native-frame') === 'client'
           ? 'transparent'
           : (root.style.backgroundColor || 'var(--openbitfun-color-surface-chrome)');
         root.style.backgroundColor = bg;
@@ -384,6 +384,10 @@
           animation: none;
           transition: none;
         }
+      }
+
+      .openbitfun-pet-preload-root #openbitfun-startup-overlay {
+        display: none;
       }
 
       .openbitfun-pet-preload-body,

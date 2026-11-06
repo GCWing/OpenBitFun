@@ -1,33 +1,22 @@
 /**
  * BrowserPanel — embeds a browser into the AuxPane right panel.
  *
- * Uses a Tauri native Webview overlay positioned over the panel's DOM element.
- * The webview is kept attached to the main window and reused across navigations
- * so video/WebRTC surfaces are not repeatedly torn down or reparented.
+ * Presents a retained Tauri browser as a native child or an offscreen canvas.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback } from 'react';
 import { OverflowText, Icon, IconButton, Input } from '@openbitfun/ui';
 import { AlertTriangle, LoaderCircle, MousePointer2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { createLogger } from '@/shared/utils/logger';
-import { useContextStore } from '@/shared/context-system';
-import type { WebElementContext } from '@/shared/types/context';
-import { createInspectorScript, CANCEL_INSPECTOR_SCRIPT } from './browserInspectorScript';
+import { useBrowserInspector } from './useBrowserInspector';
 import { useEmbeddedBrowserWebview } from './useEmbeddedBrowserWebview';
 import { BrowserPreview } from './BrowserPreview';
+import { BrowserOffscreenSurface } from './BrowserOffscreenSurface';
 import './BrowserPanel.scss';
 
 const log = createLogger('BrowserPanel');
 const DEFAULT_URL = 'https://openbitfun.com/';
-
-interface InspectorElementData {
-  tagName: string;
-  path: string;
-  attributes: Record<string, string>;
-  textContent: string;
-  outerHTML: string;
-}
 
 export interface BrowserPanelProps {
   /** Whether this panel is the active tab in the EditorGroup */
@@ -43,10 +32,6 @@ export interface BrowserPanelProps {
 
 const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openRequestId, targetId, conversationId }) => {
   const { t } = useTranslation('common');
-  const addContext = useContextStore((s) => s.addContext);
-  const inspectorUnlistenRef = useRef<(() => void) | null>(null);
-  const [isInspectorActive, setIsInspectorActive] = useState(false);
-
   const browser = useEmbeddedBrowserWebview({
     defaultUrl: DEFAULT_URL,
     initialUrl,
@@ -61,12 +46,8 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openR
   const {
     currentUrl,
     error,
-    evalInWebview,
-    getCurrentUrl,
-    getWebviewLabel,
     goBack,
     goForward,
-    hasWebview,
     inputValue,
     isLoading,
     isTauri,
@@ -78,91 +59,12 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openR
     webviewLabel,
   } = browser;
 
-  const stopInspector = useCallback(() => {
-    if (getWebviewLabel()) {
-      void evalInWebview(CANCEL_INSPECTOR_SCRIPT).catch(() => {});
-    }
-    inspectorUnlistenRef.current?.();
-    inspectorUnlistenRef.current = null;
-    setIsInspectorActive(false);
-  }, [evalInWebview, getWebviewLabel]);
-
-  const loadPanelUrl = useCallback(async (rawUrl: string) => {
-    stopInspector();
-    await loadUrl(rawUrl);
-  }, [loadUrl, stopInspector]);
-
-  useEffect(() => () => {
-    stopInspector();
-  }, [stopInspector]);
-
+  const { isInspectorActive, handleInspector, stopInspector } = useBrowserInspector(browser, isActive);
   const handleSubmit = useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void loadPanelUrl(inputValue);
-  }, [inputValue, loadPanelUrl]);
-
-  const handleInspector = useCallback(async () => {
-    if (!isTauri || !hasWebview()) return;
-
-    if (isInspectorActive) {
-      stopInspector();
-      return;
-    }
-
-    const label = getWebviewLabel();
-    if (!label) return;
-
-    try {
-      const { listen } = await import('@tauri-apps/api/event');
-
-      const eventSelected = `browser-inspector-element-selected-${label}`;
-      const eventCancelled = `browser-inspector-cancelled-${label}`;
-
-      const unlistenSelected = await listen<InspectorElementData>(
-        eventSelected,
-        (event) => {
-          const data = event.payload;
-          const context: WebElementContext = {
-            id: `web-element-${Date.now()}`,
-            type: 'web-element',
-            timestamp: Date.now(),
-            tagName: data.tagName,
-            path: data.path,
-            attributes: data.attributes,
-            textContent: data.textContent,
-            outerHTML: data.outerHTML,
-            sourceUrl: getCurrentUrl(),
-          };
-
-          addContext(context);
-          window.dispatchEvent(
-            new CustomEvent('insert-context-tag', { detail: { context } }),
-          );
-        },
-      );
-
-      const unlistenCancelled = await listen(
-        eventCancelled,
-        () => {
-          unlistenSelected();
-          unlistenCancelled();
-          inspectorUnlistenRef.current = null;
-          setIsInspectorActive(false);
-        },
-      );
-
-      inspectorUnlistenRef.current = () => {
-        unlistenSelected();
-        unlistenCancelled();
-      };
-
-      await evalInWebview(createInspectorScript(label));
-      setIsInspectorActive(true);
-    } catch (inspectorError) {
-      log.error('Start inspector failed', inspectorError);
-      setIsInspectorActive(false);
-    }
-  }, [addContext, evalInWebview, getCurrentUrl, getWebviewLabel, hasWebview, isInspectorActive, isTauri, stopInspector]);
+    stopInspector();
+    void loadUrl(inputValue);
+  }, [inputValue, loadUrl, stopInspector]);
 
   return (
     <div data-openbitfun-component="browser-panel" data-openbitfun-part="root" data-openbitfun-state={isLoading ? 'loading' : ''} className="browser-panel" data-testid="browser-panel">
@@ -170,7 +72,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openR
         <IconButton
           type="button"
           size="sm"
-          onClick={goBack}
+          onClick={() => { stopInspector(); goBack(); }}
           aria-label={t('nav.back')}
           icon={<Icon name="chevron-left" size="lg" />}
           data-testid="browser-back-button"
@@ -178,7 +80,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openR
         <IconButton
           type="button"
           size="sm"
-          onClick={goForward}
+          onClick={() => { stopInspector(); goForward(); }}
           aria-label={t('nav.forward')}
           icon={<Icon name="chevron-right" size="lg" />}
           data-testid="browser-forward-button"
@@ -186,7 +88,10 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openR
         <IconButton
           type="button"
           size="sm"
-          onClick={isLoading ? stopLoading : reload}
+          onClick={() => {
+            stopInspector();
+            (isLoading ? stopLoading : reload)();
+          }}
           aria-label={isLoading ? t('browserView.stopLoading') : t('actions.refresh')}
           icon={<Icon name={isLoading ? 'xmark' : 'refresh'} size="lg" />}
           data-testid="browser-refresh-button"
@@ -243,13 +148,24 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openR
             className="browser-panel__webview-host"
             data-webview-label={webviewLabel}
           >
-            {!browser.previewUrl && (
+            {!browser.previewUrl && !browser.offscreenLabel && (
               <div data-openbitfun-component="browser-panel" data-openbitfun-part="placeholder" className="browser-panel__webview-placeholder">
                 <Icon name="browser" size="lg" />
                 <OverflowText data-testid="browser-current-url">{currentUrl}</OverflowText>
               </div>
             )}
-            <BrowserPreview src={browser.previewUrl} bounds={browser.previewBounds} />
+            {browser.offscreenLabel ? (
+              <BrowserOffscreenSurface
+                key={browser.offscreenLabel}
+                label={browser.offscreenLabel}
+                sharedTexture={browser.offscreenGpu}
+                title={currentUrl}
+                active={isActive && browser.offscreenVisible}
+                inspecting={isInspectorActive}
+                onCancelInspection={stopInspector}
+                onError={browser.reportPresentationError}
+              />
+            ) : <BrowserPreview src={browser.previewUrl} bounds={browser.previewBounds} />}
           </div>
         )}
       </div>

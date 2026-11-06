@@ -34,7 +34,18 @@ retain their component-owned lifetime. Native presentation calls share a per-tar
 queue across remounts so stale cleanup cannot hide the new presentation. WebKit's
 background suspension is disabled for session-owned pages on supported systems.
 
-All show/hide/focus paths go through `nativeWebviewVisibility`.
+Desktop browser panels and the browser scene default to CEF offscreen
+presentation. Each canvas keeps the logical size of the frame it displays and
+is clipped by the panel while Chromium reflows. Bounds updates start after DOM
+layout and coalesce to the latest size while one request is in flight. The
+surface accepts intermediate CEF frames at their original sizes and pulls the
+next frame as soon as the previous one arrives. The frame protocol sends changed regions and
+composites browser dropdowns into the same surface. Workbench overlays receive
+input through ordinary DOM hit testing. The browser picker draws element boxes
+inside the page with resolved workbench colors so the boxes move and clip with
+the content.
+
+The windowed fallback uses `nativeWebviewVisibility` for show, hide and focus.
 DOM floating surfaces declare `data-openbitfun-native-webview-occlusion`; their
 overlapping bounds suppress native visibility without destroying the page.
 Visible browser surfaces share one DOM observer. It tracks inserted/removed

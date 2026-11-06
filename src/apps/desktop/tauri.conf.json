@@ -1,5 +1,5 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
+  "$schema": "https://schema.tauri.app/config/3.0.0-alpha.5",
   "productName": "OpenBitFun",
   "identifier": "com.openbitfun.desktop",
   "build": {
@@ -57,6 +57,8 @@
           "libgcc-s1",
           "libgdk-pixbuf-2.0-0",
           "libglib2.0-0",
+          "libgtk-4-1",
+          "libwebkit2gtk-4.1-0",
           "libjavascriptcoregtk-4.1-0",
           "liblept5",
           "liblzma5",
@@ -89,7 +91,6 @@
     "security": {
       "csp": null
     },
-    "macOSPrivateApi": true,
     "withGlobalTauri": true
   },
   "plugins": {

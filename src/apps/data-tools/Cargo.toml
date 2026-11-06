@@ -25,6 +25,7 @@ openbitfun-product-domains = { path = "../../crates/contracts/product-domains", 
 serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { workspace = true }
+tauri-runtime-wry = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

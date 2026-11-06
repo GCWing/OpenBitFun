@@ -87,15 +87,34 @@ then run the focused command documented in `tests/e2e/AGENTS.md`:
 pnpm --dir tests/e2e exec wdio run ./config/wdio.flowchat-scroll-native.ts
 ```
 
-The isolated packaged-app fixture opens an 80-Turn transcript, drives slow and
+The isolated packaged-app fixture opens a 300-Turn transcript, drives slow and
 fast wheel actions in both directions, and records per-frame continuity,
-rectangle reads, DOM scans and mounted rows. Reversals over 4px, empty frames,
+rectangle reads, DOM scans, long-animation-frame attribution and mounted rows.
+It also checks partially uncovered transcript pixels, excluding the intentional
+footer reservation. Reversals over 4px, empty/partially uncovered frames,
 post-gesture drift, lost session reading position, lost draft text and failed
 search navigation are assertions. Frame intervals are diagnostic measurements,
-not hard timing gates on shared machines. JSON evidence and a screenshot remain
+not hard timing gates on shared machines by default. `OPENBITFUN_SCROLL_PERF=1`
+enables p95 <35ms and maximum <50ms gates for an otherwise idle test machine.
+JSON evidence and a screenshot remain
 in the printed temporary directory. `OPENBITFUN_SCROLL_DIAGNOSTICS=1` additionally
 captures per-frame row geometry and scroll-write stacks; use it for attribution,
 not timing comparisons.
+
+`OPENBITFUN_SCROLL_RICH_MARKDOWN=1 OPENBITFUN_SCROLL_ASSISTANT_CHARS=12000`
+repeats formatted tables and fences instead of plain filler.
+`OPENBITFUN_SCROLL_SCENARIO=tool-heavy OPENBITFUN_SCROLL_TOOL_ITEMS=12` creates
+3,600 alternating Shell/Edit records with multiline output and file revisions,
+and additionally exercises output/diff expansion and recycling. Set
+`OPENBITFUN_SCROLL_MEMORY_CYCLES=32` to sample JS heap, DOM residency and the
+test application's process-tree RSS across repeated scroll/session cycles.
+Tool recycling and memory cycles dispatch wheels in the transcript's right
+gutter, outside nested terminal/diff scrollers and the left trajectory rail,
+and assert actual transcript travel. Recycling also asserts the original
+expanded cards unmount and return with their disclosure state preserved.
+RSS includes shared pages and debug/runtime overhead; it is not private heap.
+`OPENBITFUN_SCROLL_VISUAL=1` captures screenshots during each scroll phase in a
+separate run; its capture overhead excludes that run from timing comparisons.
 
 The embedded driver dispatches wheel input and updates the native WebView's
 scroll offset. It does not reproduce OS trackpad inertia. This fixture does not

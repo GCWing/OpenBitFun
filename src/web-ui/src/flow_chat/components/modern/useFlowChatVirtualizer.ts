@@ -33,6 +33,7 @@ import {
   measureElement as measureTanStackElement,
   Virtualizer,
   type Rect,
+  type Range,
   type VirtualizerOptions,
 } from '@tanstack/react-virtual';
 import type { FlowChatViewportOwner } from './flowChatViewportOwnership';
@@ -56,6 +57,7 @@ function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLEle
   const commits = useRef(0);
   const requested = useRef(false);
   const pending = useRef(false);
+  const renderedItems = useRef(instance.getVirtualItems());
   // Descendant layout effects can publish measurements before our own layout
   // effect runs. A request from the previous render cannot cover those writes.
   requested.current = false;
@@ -90,6 +92,9 @@ function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLEle
       // Reconcile against the updated cache before asking React to select a
       // window. Deferring this callback would replay stale scroll ownership.
       options.onChange?.(virtualizer, sync);
+      // Moving inside the resident pixel window changes no rendered geometry.
+      // Native scroll/anchor listeners still run; React need not recommit it.
+      if (sync && virtualizer.getVirtualItems() === renderedItems.current) return;
       requestRender(sync);
     },
   });
@@ -109,17 +114,20 @@ function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLEle
   useLayoutEffect(() => {
     instance._willUpdate();
   });
+  renderedItems.current = instance.getVirtualItems();
   return instance;
 }
 
 /** A nearby pixel window, bounded in leaves so dense groups mount incrementally. */
 export function timelineOverscanRange(start: number, end: number, count: number, viewportPx: number,
-  heightAt: (index: number) => number): number[] {
+  heightAt: (index: number) => number, covered: { above: number; below: number } = { above: 0, below: 0 }): number[] {
   let first = start, last = end;
-  const budget = Math.max(200, viewportPx * 0.6);
-  let above = 0, below = 0;
-  while (first > 0 && start - first < 16 && (above < budget || start - first < 2)) above += Math.max(1, heightAt(--first));
-  while (last < count - 1 && last - end < 16 && (below < budget || last - end < 2)) below += Math.max(1, heightAt(++last));
+  // Native compositor scrolling can advance more than a viewport before its
+  // next main-thread event. Keep two screens of measured coverage ready.
+  const budget = Math.max(200, viewportPx * 2);
+  let above = covered.above, below = covered.below;
+  while (first > 0 && start - first < 32 && (above < budget || start - first < 2)) above += Math.max(1, heightAt(--first));
+  while (last < count - 1 && last - end < 32 && (below < budget || last - end < 2)) below += Math.max(1, heightAt(++last));
   return Array.from({ length: Math.max(0, last - first + 1) }, (_, index) => first + index);
 }
 
@@ -566,6 +574,36 @@ export function useFlowChatVirtualizer<T>({
 
   const attachingRowsRef = useRef(new Set<HTMLElement>());
   const measurementBatchRef = useRef<Map<Element, number> | null>(null);
+  const instanceRef = useRef<Virtualizer<HTMLElement, HTMLElement> | null>(null);
+  const residentIndexesRef = useRef<number[]>([]);
+  const rangeExtractor = useCallback((range: Range) => {
+    const instance = instanceRef.current;
+    const measurements = instance
+      ? (instance as unknown as MeasuringVirtualizer).getMeasurements() : [];
+    const viewportPx = instance?.scrollRect?.height ?? scrollerRef.current?.clientHeight ?? 0;
+    const offset = instance?.scrollOffset ?? 0;
+    // A tall answer already covers several screens outside the viewport. Count
+    // that coverage before mounting another entire answer on either side.
+    // Measured sizes, not stale estimates, own the remaining pixel buffer.
+    const indexes = new Set(timelineOverscanRange(range.startIndex, range.endIndex, range.count,
+      viewportPx, index => {
+        const row = measurements[index];
+        return row ? row.end - row.start : estimateSize(index);
+      }, {
+        above: Math.max(0, offset - (measurements[range.startIndex]?.start ?? offset)),
+        below: Math.max(0, (measurements[range.endIndex]?.end ?? offset + viewportPx) - offset - viewportPx),
+      }));
+    if (pinnedKeys?.size) itemKeysRef.current.forEach((key, index) => {
+      if (pinnedKeys.has(key)) indexes.add(index);
+    });
+    const next = [...indexes].sort((a, b) => a - b);
+    const previous = residentIndexesRef.current;
+    if (next.length === previous.length && next.every((index, position) => index === previous[position])) return previous;
+    residentIndexesRef.current = next;
+    return next;
+  }, [estimateSize, pinnedKeys, scrollerRef]);
+  const rangeExtractorRef = useRef(rangeExtractor);
+  rangeExtractorRef.current = rangeExtractor;
 
   const virtualizer = useMeasuredVirtualizer({
     // A live-tail open previously mounted rows 0..13 before moving to 22..33;
@@ -605,7 +643,13 @@ export function useFlowChatVirtualizer<T>({
           synchronized = false;
           viewportOffsetEstablishedRef.current = true;
         }
+        const previousRows = instance.getVirtualItems();
+        // The core memo keys ranges by visible row indexes. Inside a tall row
+        // those stay unchanged as its edge approaches the viewport. Re-evaluate
+        // our pixel buffer on native travel, then notify only if its rows changed.
+        instance.setOptions({ ...instance.options, rangeExtractor: range => rangeExtractorRef.current(range) });
         callback(offset, isScrolling);
+        if (instance.getVirtualItems() !== previousRows) instance.options.onChange?.(instance, isScrolling);
       });
       return () => {
         cleanup?.();
@@ -639,14 +683,9 @@ export function useFlowChatVirtualizer<T>({
     // Items carry their own index attribute already; measuring reads it back.
     indexAttribute: 'data-virtual-index',
     overscan: 0,
-    rangeExtractor: range => {
-      const indexes = new Set(timelineOverscanRange(range.startIndex, range.endIndex, range.count,
-        scrollerRef.current?.clientHeight ?? 0, estimateSize));
-      if (pinnedKeys?.size) itemsRef.current.forEach((item, index) => {
-        if (pinnedKeys.has(getItemKeyRef.current(item))) indexes.add(index);
-      });
-      return [...indexes].sort((a, b) => a - b);
-    },
+    // Measurements can change buffer coverage without changing visible indexes.
+    // Refresh extraction on commits too; equal index arrays retain their identity.
+    rangeExtractor: range => rangeExtractorRef.current(range),
     scrollMargin: contentStartPx,
     scrollPaddingStart: scrollPaddingStartPx,
     /*
@@ -665,6 +704,7 @@ export function useFlowChatVirtualizer<T>({
       });
     },
   });
+  instanceRef.current = virtualizer;
   // An instance field rather than an option, so it is assigned here — before
   // any measurement callback can reach `resizeItem`.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta) => {

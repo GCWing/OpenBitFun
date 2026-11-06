@@ -11,6 +11,8 @@ use objc2::{rc::Retained, runtime::ProtocolObject, MainThreadMarker};
 use objc2_app_kit::{NSWindow, NSWindowDidEndLiveResizeNotification, NSWindowOrderingMode};
 use objc2_foundation::{NSNotification, NSNotificationCenter, NSObjectProtocol};
 use tauri::{Emitter, Listener, Manager};
+use tauri_runtime_cef::cef::{ImplBrowser, ImplBrowserHost};
+use tauri_runtime_cef::WebviewCefExt;
 
 const BACKDROP_EVENT: &str = "window://scene-backdrop";
 
@@ -55,14 +57,25 @@ fn remove_observer() {
 pub(crate) fn install(target: &tauri::WebviewWindow) -> Result<(), String> {
     let _mtm = MainThreadMarker::new().ok_or("Resize observation requires the main thread")?;
     remove_observer();
-    // On the main thread Tauri executes with_webview synchronously. Complete
+    // On the main thread CEF supplies its native view synchronously. Complete
     // native setup before disabling its queued proportional resize owner, and
     // keep Tauri calls outside the callback to avoid re-entering its view lock.
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     target
-        .with_webview(move |platform| {
-            // SAFETY: Tauri supplies the live WKWebView on the AppKit main thread.
-            let view = unsafe { &*platform.inner().cast::<objc2_app_kit::NSView>() };
+        .with_cef_webview(move |native| {
+            let Some(host) = native.browser().host() else {
+                let _ = sender.send(Err("CEF browser host is unavailable"));
+                return;
+            };
+            // SAFETY: On macOS the live browser host returns its NSView on this thread.
+            let Some(view) = (unsafe {
+                host.window_handle()
+                    .cast::<objc2_app_kit::NSView>()
+                    .as_ref()
+            }) else {
+                let _ = sender.send(Err("CEF browser view is unavailable"));
+                return;
+            };
             let result = geometry::follow_parent_bounds(view);
             if result.is_ok() {
                 // Behind the frontend, above OS material; no input interception.

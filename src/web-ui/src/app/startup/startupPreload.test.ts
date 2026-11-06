@@ -233,6 +233,7 @@ describe('startup preload shell', () => {
       },
     });
 
+    expect(dom.window.document.documentElement.style.backgroundColor).toBe('transparent');
     expect(dom.window.document.body.classList.contains('openbitfun-pet-preload-body')).toBe(true);
     expect(dom.window.document.getElementById('openbitfun-startup-overlay')).toBeNull();
     expect(dom.window.document.querySelector('.openbitfun-pet-preload__sprite')).not.toBeNull();

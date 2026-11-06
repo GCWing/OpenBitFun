@@ -45,10 +45,18 @@ assets, then run:
 pnpm --dir tests/e2e exec wdio run ./config/wdio.flowchat-scroll-native.ts
 ```
 
-This creates an isolated 80-Turn session, copies the completed packaged frontend,
-and checks slow/fast bidirectional scrolling, reading-position restoration,
-draft preservation and search navigation. The printed temporary directory keeps
-`result.json`, per-phase frame data and screenshots. Set
+This creates an isolated 300-Turn session, copies the completed packaged frontend,
+and checks slow/fast/fling bidirectional scrolling, partial viewport gaps,
+reading-position restoration, draft preservation and search navigation. Set
+`OPENBITFUN_SCROLL_SCENARIO=tool-heavy OPENBITFUN_SCROLL_TOOL_ITEMS=12` for
+3,600 alternating shell/file-edit tools, including disclosure and recycling checks.
+Use `OPENBITFUN_SCROLL_RICH_MARKDOWN=1 OPENBITFUN_SCROLL_ASSISTANT_CHARS=12000`
+for long tables/code blocks, `OPENBITFUN_SCROLL_MEMORY_CYCLES=8` for repeated
+scroll/session cycles with JS heap, DOM and process RSS samples, and
+`OPENBITFUN_SCROLL_PERF=1` for p95 <35ms / max <50ms frame gates on an idle host.
+The printed temporary directory keeps `result.json`, per-phase frame data and
+screenshots. `OPENBITFUN_SCROLL_VISUAL=1` captures moving frames in a separate
+run; those timings are not comparable to the performance run. Set
 `OPENBITFUN_E2E_FRONTEND_DIR` to a completed build with `frontend-revision.json`,
 or `OPENBITFUN_E2E_WEBDRIVER_PORT` for a free driver port. Optional
 `OPENBITFUN_SCROLL_DIAGNOSTICS=1` records row geometry and write stacks with
@@ -89,6 +97,22 @@ Inspect its `result.json`; local native coverage does not prove remote behavior.
 Full visibility coverage needs an unlocked desktop. For a locked/headless display,
 `OPENBITFUN_E2E_BACKGROUND_ONLY=1` runs background execution and panel binding;
 the report explicitly excludes foreground native visibility in that mode.
+
+For the CEF offscreen browser divider, build Desktop and Web UI, then run
+`node tests/e2e/scripts/run-browser-osr-resize.mjs` on an unlocked desktop.
+The fixture snapshots the completed frontend and opens a loopback
+page in a real session panel, and drives the divider with WebDriver-dispatched
+pointer events. It records intermediate widths, CPU frame request counts, pixel
+payload sizes, and resize latency in `result.json`. A screenshot check holds one
+paint response to verify the page backdrop during a pending resize. Additional
+screenshots and input checks cover a workbench dialog above the browser and the
+element picker from hover and selection through the context tag in chat. On macOS,
+the fixture snapshots the complete CEF `.app` bundle. Other platforms use the
+completed executable with its staged CEF resources. The same
+`OPENBITFUN_E2E_FRONTEND_DIR` and `OPENBITFUN_E2E_DESKTOP_BINARY` overrides apply.
+Set `OPENBITFUN_E2E_BROWSER_GPU=1` with a
+[patched macOS CEF bundle](../../src/apps/desktop/cef-patches/README.md) to
+require the shared-texture surface and zero CPU frame requests and pixel bytes.
 
 Markdown editor browser interaction tests (no desktop binary required):
 

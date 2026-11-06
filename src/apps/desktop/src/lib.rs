@@ -20,6 +20,7 @@
 //! itself suggests, costs nothing at runtime, and is re-checked whenever this
 //! attribute is touched.
 
+mod agent_companion_surface;
 pub mod api;
 pub mod appearance;
 mod builtin_browser_host;
@@ -39,9 +40,40 @@ mod macos_window_resize;
 mod miniapp_desktop;
 mod miniapp_web_host;
 
+fn desktop_resource_dir(app: &tauri::AppHandle) -> tauri::Result<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        // Tauri mirrors remapped development resources beside the executable.
+        // CEF runs inside a signed bundle even in dev, where its resources are
+        // already available under Contents/Resources.
+        if let Ok(executable) = std::env::current_exe() {
+            let contents = executable
+                .parent()
+                .filter(|parent| parent.ends_with("Contents/MacOS"))
+                .and_then(std::path::Path::parent);
+            if let Some(contents) = contents {
+                return Ok(contents.join("Resources"));
+            }
+        }
+    }
+    app.path().resource_dir()
+}
+
 // Keep one macro expansion: on macOS it emits a process-wide Info.plist symbol.
-fn desktop_context() -> tauri::Context<tauri::Wry> {
-    tauri::generate_context!()
+fn desktop_context() -> tauri::Context {
+    let mut context = tauri::generate_context!();
+    if cfg!(debug_assertions) {
+        // The preview reuses a compiled binary and selects its Vite port at
+        // launch. Update Tauri's trusted development origin with the window URL.
+        let port = std::env::var("OPENBITFUN_DEV_PORT")
+            .ok()
+            .and_then(|port| port.parse::<u16>().ok())
+            .filter(|port| *port != 0);
+        if let (Some(port), Some(url)) = (port, context.config_mut().build.dev_url.as_mut()) {
+            let _ = url.set_port(Some(port));
+        }
+    }
+    context
 }
 mod openbitfun_control_host;
 pub mod runtime;
@@ -420,8 +452,9 @@ pub(crate) fn restore_main_window_state(window: &tauri::WebviewWindow) -> bool {
 
 #[tauri::command]
 async fn webdriver_bridge_result(request: WebdriverBridgeResultRequest) -> Result<(), String> {
-    log::debug!("webdriver_bridge_result command invoked");
-    openbitfun_webdriver::handle_bridge_result(request.payload)
+    // Retain the command name for older frontend revisions.
+    let _ = request.payload;
+    Err("The Chromium runtime returns WebDriver results directly".into())
 }
 
 #[tauri::command]
@@ -755,11 +788,27 @@ pub async fn run() {
         &path_manager.user_data_dir(),
     ));
 
-    let mut builder = tauri::Builder::default();
+    // Conversation-owned browser views must keep processing while hidden.
+    let mut cef = tauri_runtime_cef::Cef::default()
+        .command_line_arg("disable-background-timer-throttling", None::<String>)
+        .with_settings(|settings| settings.windowless_rendering_enabled = 1)
+        .on_window_event(agent_companion_surface::on_window_event);
+    if std::env::var_os("OPENBITFUN_USER_ROOT").is_some() {
+        cef = cef.root_cache_path(path_manager.user_data_dir().join("chromium"));
+    }
+    let mut builder = tauri::Builder::default().runtime(cef);
     let frontend_protocol_manager = Arc::clone(&frontend_workbench);
     builder = builder.register_uri_scheme_protocol(
         frontend_workbench::FRONTEND_PROTOCOL_SCHEME,
-        move |_context, request| frontend_protocol_manager.protocol_response(request),
+        move |context, request| {
+            if api::browser_api::validate_browser_label(context.webview_label()).is_ok() {
+                return tauri::http::Response::builder()
+                    .status(tauri::http::StatusCode::FORBIDDEN)
+                    .body(Vec::new())
+                    .expect("static frontend protocol response");
+            }
+            frontend_protocol_manager.protocol_response(request)
+        },
     );
 
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -844,6 +893,7 @@ pub async fn run() {
             }
         })
         .setup(move |app| {
+            log::info!("Desktop Chromium version: {}", app.webview_version()?);
             let setup_started = Instant::now();
             startup_trace.record_phase("tauri_setup_start", "native_setup");
             #[cfg(target_os = "macos")]
@@ -883,8 +933,8 @@ pub async fn run() {
                     .is_file()
                     .then_some(development_dist)
             } else {
-                app.path()
-                    .resolve("frontend/dist", tauri::path::BaseDirectory::Resource)
+                desktop_resource_dir(app.handle())
+                    .map(|path| path.join("frontend/dist"))
                     .ok()
                     .filter(|path| path.join("index.html").is_file())
             };
@@ -970,19 +1020,7 @@ pub async fn run() {
                 let flashgrep_path = startup_flashgrep_path.clone().or_else(|| {
                     let binary_names =
                         openbitfun_core::service::search::workspace_search_daemon_binary_names();
-                    for binary_name in binary_names {
-                        let primary = format!("flashgrep/{}", binary_name);
-                        if let Ok(path) = app
-                            .path()
-                            .resolve(&primary, tauri::path::BaseDirectory::Resource)
-                        {
-                            if path.exists() {
-                                return Some(path);
-                            }
-                        }
-                    }
-
-                    if let Ok(resource_dir) = app.path().resource_dir() {
+                    if let Ok(resource_dir) = desktop_resource_dir(app.handle()) {
                         for binary_name in binary_names {
                             for candidate in [
                                 resource_dir.join("flashgrep").join(binary_name),
@@ -1026,10 +1064,8 @@ pub async fn run() {
                 let candidates = ["mobile-web/dist", "mobile-web", "dist"];
                 let mut found = false;
                 for candidate in &candidates {
-                    if let Ok(p) = app
-                        .path()
-                        .resolve(candidate, tauri::path::BaseDirectory::Resource)
-                    {
+                    if let Ok(resource_dir) = desktop_resource_dir(app.handle()) {
+                        let p = resource_dir.join(candidate);
                         if p.join("index.html").exists() {
                             log::info!("Found bundled mobile-web at: {}", p.display());
                             api::remote_connect_api::set_mobile_web_resource_path(p);
@@ -1040,7 +1076,7 @@ pub async fn run() {
                 }
                 if !found {
                     // Last resort: scan the resource root for any index.html
-                    if let Ok(res_dir) = app.path().resource_dir() {
+                    if let Ok(res_dir) = desktop_resource_dir(app.handle()) {
                         for sub in &["mobile-web/dist", "mobile-web", "dist", ""] {
                             let p = if sub.is_empty() {
                                 res_dir.clone()
@@ -2009,6 +2045,8 @@ pub async fn run() {
             api::browser_api::browser_webview_reload,
             api::browser_api::browser_webview_set_bounds,
             api::browser_api::browser_webview_capture_preview,
+            api::browser_osr::browser_webview_osr_frame,
+            api::browser_osr::browser_webview_osr_input,
             api::browser_api::browser_webview_set_agent_target_state,
             api::browser_api::browser_get_url,
             api::html_preview_api::html_preview_create,

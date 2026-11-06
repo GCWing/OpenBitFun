@@ -37,8 +37,7 @@ const run = cargoArgs => new Promise((resolveExit, reject) => {
 });
 
 try {
-  const [workspace, lock, fixture] = await Promise.all([
-    readFile(join(root, 'Cargo.toml'), 'utf8'),
+  const [lock, fixture] = await Promise.all([
     readFile(join(root, 'Cargo.lock'), 'utf8'),
     readFile(join(root, 'scripts/fixtures/windows-window-material.rs'), 'utf8'),
   ]);
@@ -48,12 +47,6 @@ try {
     if (!found) throw new Error(`Missing locked dependency: ${name} ${prefix}`);
     return found[2];
   };
-  const runtimePatches = ['tauri-runtime', 'tauri-runtime-wry', 'tauri-utils'].map(name => {
-    const escapedName = name.replaceAll('-', '\\-');
-    const entry = workspace.match(new RegExp(`^${escapedName} = \\{ git = "([^"\\n]+)", rev = "([^"\\n]+)" \\}`, 'm'));
-    if (!entry) throw new Error(`Missing production Tauri patch: ${name}`);
-    return `${name} = { git = ${JSON.stringify(entry[1])}, rev = ${JSON.stringify(entry[2])} }`;
-  });
   await mkdir(join(directory, 'src'));
   await mkdir(join(directory, 'assets'));
   await writeFile(join(directory, 'Cargo.toml'), `[package]
@@ -63,19 +56,14 @@ edition = "2021"
 [workspace]
 [dependencies]
 tauri = { version = "=${version('tauri')}", features = ["unstable"] }
+tauri-runtime-cef = "=${version('tauri-runtime-cef')}"
 tempfile = "=${version('tempfile')}"
-windows-version = "=${version('windows-version')}"
-webview2-com = "=${version('webview2-com')}"
 windows = { version = "=${version('windows', '0.61.')}", features = [
   "Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi",
   "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"
 ] }
 [build-dependencies]
 tauri-build = "=${version('tauri-build')}"
-[patch.crates-io]
-tao = { path = ${source('third_party/tao')} }
-wry = { path = ${source('third_party/wry')} }
-${runtimePatches.join('\n')}
 [profile.dev]
 debug = 0
 incremental = false

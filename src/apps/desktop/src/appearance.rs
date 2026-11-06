@@ -9,10 +9,11 @@ use openbitfun_core::infrastructure::try_get_path_manager_arc;
 use openbitfun_core::service::config::types::GlobalConfig;
 use tauri::webview::PageLoadEvent;
 use tauri::{Manager, WebviewUrl};
+use tauri_runtime_cef::WebviewWindowBuilderCefExt;
 
 use crate::startup_trace::DesktopStartupTrace;
 
-const AGENT_COMPANION_WINDOW_LABEL: &str = "agent-companion-pet";
+pub(crate) const AGENT_COMPANION_WINDOW_LABEL: &str = "agent-companion-pet";
 const AGENT_COMPANION_WINDOW_MIN_SIZE: f64 = 96.0;
 const AGENT_COMPANION_WINDOW_MAX_WIDTH: f64 = 360.0;
 const AGENT_COMPANION_WINDOW_MAX_HEIGHT: f64 = 240.0;
@@ -346,7 +347,7 @@ impl AppearanceConfig {
         } else {
             ""
         };
-        let transparent_page_background = native_sidebar_material || cfg!(target_os = "linux");
+        let transparent_page_background = native_sidebar_material;
         let startup_trace_id_json = serde_json::to_string(startup_trace_id)
             .unwrap_or_else(|_| "\"desktop-unknown\"".to_string());
         let bootstrap_log_level_json = serde_json::to_string(crate::logging::level_to_str(
@@ -552,12 +553,11 @@ pub fn create_main_window(
     let (startup_page_ready, mut startup_page_ready_rx) = tokio::sync::watch::channel(false);
     let bootstrap_config = AppearanceConfig::load_startup_bootstrap_config();
     let appearance = bootstrap_config.appearance.clone();
-    let native_sidebar_material = crate::window_material::native_sidebar_material_available();
     let init_script = appearance.generate_init_script(
         startup_trace_id,
         &bootstrap_config,
         workspace_startup_state.as_ref(),
-        native_sidebar_material,
+        false, // A windowed CEF view is opaque.
     );
     startup_trace.record_step(
         "native_step_end",
@@ -617,11 +617,17 @@ pub fn create_main_window(
         .resizable(true)
         .fullscreen(false)
         .visible(false)
-        .accept_first_mouse(true)
         .initialization_script(&init_script)
+        .on_frame_event(crate::webview_recovery::observe(app_handle))
         .on_page_load({
             let startup_trace_id = startup_trace_id.to_string();
             move |_window, payload| {
+                // CEF uses a data document while installing the real page's
+                // initialization scripts. Wait for the actual startup document.
+                if payload.url().scheme() == "data" {
+                    return;
+                }
+
                 #[cfg(target_os = "macos")]
                 if matches!(payload.event(), PageLoadEvent::Started) {
                     crate::macos_window_chrome::reset_renderer(_window.app_handle());
@@ -648,46 +654,19 @@ pub fn create_main_window(
             }
         });
 
-    builder = crate::window_material::configure_main_window(
-        builder,
-        native_sidebar_material,
-        appearance.to_tauri_color(),
-    );
-
-    // The Linux window is transparent because the shell draws the frame radius
-    // itself: WebKitGTK keeps the GTK frame square on Wayland.
-    #[cfg(target_os = "linux")]
-    {
-        builder = builder
-            .transparent(true)
-            .background_color(tauri::window::Color(0, 0, 0, 0));
-    }
+    builder = crate::window_material::configure_main_window(builder, appearance.to_tauri_color());
 
     #[cfg(debug_assertions)]
     if !use_development_frontend() {
-        // Product-path isolation alone does not isolate WKWebView storage.
-        // Default to a private store. Windows persistence tests explicitly opt
-        // into a directory under the already validated isolated product root.
-        let persistent_test_store = cfg!(target_os = "windows")
-            && std::env::var("OPENBITFUN_E2E_PERSISTENT_WEBVIEW").as_deref() == Ok("1");
-        #[cfg(target_os = "windows")]
-        if persistent_test_store {
-            builder = builder.data_directory(
-                openbitfun_core::infrastructure::get_path_manager_arc()
-                    .user_data_dir()
-                    .join("e2e-webview"),
-            );
-        }
+        // Native fixtures use a private Chromium store unless they explicitly
+        // exercise persistence under their guarded product-data directory.
+        let persistent_test_store =
+            std::env::var("OPENBITFUN_E2E_PERSISTENT_WEBVIEW").as_deref() == Ok("1");
         builder = builder.incognito(!persistent_test_store);
     }
 
-    // On Windows, Tauri's native file-drop handler replaces WebView2's OLE drop
-    // target and disables every HTML5 drag/drop interaction in the page. Keep
-    // the browser handler there. The frontend keeps dropped File wrappers alive
-    // briefly while the Desktop host resolves their original paths through
-    // WebView2, without copying file contents. The reviewed Wry macOS adapter
-    // delegates non-file drags to WebKit; its native file handler and WebKitGTK's
-    // remain enabled to supply original paths. See third_party/wry/OPENBITFUN-PATCH.md.
+    // On Windows, the chat drop target and Chromium's HTML drag/drop share
+    // the frontend. Original File paths are resolved through Chromium CDP.
     #[cfg(target_os = "windows")]
     {
         builder = builder.disable_drag_drop_handler();
@@ -701,8 +680,7 @@ pub fn create_main_window(
         builder.on_navigation(move |url| navigation_workbench.should_allow_main_navigation(url));
 
     // The Linux frontend renders window controls and drag regions, so GTK's
-    // header bar would add a second title bar. tao keeps a hidden CSD header on
-    // Wayland so the compositor does not paint server-side decorations instead.
+    // header bar would add a second title bar.
     #[cfg(target_os = "linux")]
     {
         builder = builder.decorations(false);
@@ -724,7 +702,6 @@ pub fn create_main_window(
                 error!("Failed to install main WebView geometry protection: {error}");
             }
             let reapply_maximized = crate::restore_main_window_state(&window);
-            crate::webview_recovery::install(&window);
             startup_trace.record_elapsed_step("native_window", "webview_build", build_started_at);
             debug!(
                 "Main window creation step completed: step=build url_kind={} duration_ms={} total_duration_ms={}",
@@ -1132,7 +1109,6 @@ pub async fn show_agent_companion_desktop_pet(app: tauri::AppHandle) -> Result<(
         .skip_taskbar(true)
         .shadow(false)
         .visible(false)
-        .accept_first_mouse(true)
         .background_color(tauri::window::Color(0, 0, 0, 0))
         .on_page_load({
             move |_window, payload| {
@@ -1149,6 +1125,7 @@ pub async fn show_agent_companion_desktop_pet(app: tauri::AppHandle) -> Result<(
             }
         });
 
+    crate::agent_companion_surface::configure(&mut builder)?;
     builder = builder.disable_drag_drop_handler();
 
     // Wayland compositors drop GTK's keep-above request, so the only stacking

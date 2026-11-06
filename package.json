@@ -113,7 +113,7 @@
     "preview": "pnpm --dir src/web-ui preview",
     "desktop:dev": "node scripts/dev.cjs desktop",
     "desktop:preview:debug": "node scripts/dev.cjs desktop-preview",
-    "desktop:dev:raw": "pnpm run prepare:miniapp-shell && cross-env-shell CI=true \"cd src/apps/desktop && tauri dev\"",
+    "desktop:dev:raw": "pnpm run prepare:miniapp-shell && cross-env-shell CI=true \"cd src/apps/desktop && tauri dev --config tauri.dev.conf.json\"",
     "prepare:miniapp-shell": "node scripts/prepare-miniapp-shell.mjs",
     "target:gc": "node scripts/cargo-target-gc.mjs",
     "product:check": "node scripts/product-customization/cli.mjs check",
@@ -176,7 +176,7 @@
   },
   "devDependencies": {
     "@noble/hashes": "^2.0.1",
-    "@tauri-apps/cli": "2.11.4",
+    "@tauri-apps/cli": "3.0.0-alpha.5",
     "@vitejs/plugin-react": "^4.6.0",
     "copyfiles": "^2.4.1",
     "cross-env": "^10.1.0",

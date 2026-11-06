@@ -23,6 +23,8 @@ pub(crate) fn config() -> tauri::utils::config::WindowConfig {
 
 #[cfg(target_os = "macos")]
 pub(crate) async fn double_click(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use tauri::Manager;
+
     let (send, receive) = tokio::sync::oneshot::channel();
     let native_window = window.clone();
     window

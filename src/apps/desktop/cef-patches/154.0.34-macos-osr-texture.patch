@@ -1,0 +1,651 @@
+diff --git a/libcef/browser/browser_host_base.h b/libcef/browser/browser_host_base.h
+index f984a15..b282492 100644
+--- a/libcef/browser/browser_host_base.h
++++ b/libcef/browser/browser_host_base.h
+@@ -6,9 +6,12 @@
+ #define CEF_LIBCEF_BROWSER_BROWSER_HOST_BASE_H_
+ #pragma once
+ 
++#include <optional>
++
+ #include "base/memory/raw_ptr.h"
+ #include "base/observer_list.h"
+ #include "base/synchronization/lock.h"
++#include "build/build_config.h"
+ #include "cef/include/cef_browser.h"
+ #include "cef/include/cef_client.h"
+ #include "cef/include/cef_unresponsive_process_callback.h"
+@@ -24,6 +27,9 @@
+ #include "cef/libcef/browser/media_stream_registrar.h"
+ #include "cef/libcef/browser/request_context_impl.h"
+ #include "components/find_in_page/find_notification_details.h"
++#if BUILDFLAG(IS_MAC)
++#include "content/public/browser/weak_document_ptr.h"
++#endif
+ 
+ class RenderViewContextMenuObserver;
+ 
+@@ -379,6 +385,18 @@ class CefBrowserHostBase : public CefBrowserHost,
+   // Thread-safe accessors.
+   const CefBrowserSettings& settings() const { return settings_; }
+   CefRefPtr<CefClient> client() const { return client_; }
++#if BUILDFLAG(IS_MAC)
++  // Set on the UI thread. The weak document invalidates the route on navigation.
++  struct OpenBitFunTextureRoute {
++    CefRefPtr<CefFrameHostImpl> target;
++    content::WeakDocumentPtr document;
++    std::string label;
++  };
++  std::optional<OpenBitFunTextureRoute> openbitfun_texture_route;
++  void PresentOpenBitFunTexture(bool popup,
++                               cef::mojom::OpenBitFunTextureFramePtr frame);
++#endif
++
+   scoped_refptr<CefBrowserInfo> browser_info() const { return browser_info_; }
+   int browser_id() const;
+   CefRefPtr<CefRequestContextImpl> request_context() const {
+diff --git a/libcef/browser/browser_host_create.cc b/libcef/browser/browser_host_create.cc
+index 1d1f4b4..861d507 100644
+--- a/libcef/browser/browser_host_create.cc
++++ b/libcef/browser/browser_host_create.cc
+@@ -9,6 +9,10 @@
+ #include "cef/libcef/browser/chrome/views/chrome_child_window.h"
+ #include "cef/libcef/browser/context.h"
+ #include "cef/libcef/browser/thread_util.h"
++#if BUILDFLAG(IS_MAC)
++#include "content/public/browser/render_frame_host.h"
++#include "url/origin.h"
++#endif
+ 
+ namespace {
+ 
+@@ -166,6 +170,53 @@ CefRefPtr<CefBrowser> CefBrowserHost::GetBrowserByIdentifier(int browser_id) {
+   return CefBrowserHostBase::GetBrowserForBrowserId(browser_id).get();
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++// Private OpenBitFun ABI. Keep the upstream CEF C API hashes and structs intact.
++extern "C" CEF_EXPORT int cef_openbitfun_bind_osr_texture_v1(
++    int guest_id,
++    int workbench_id,
++    const char* label,
++    const char* workbench_origin) {
++  CEF_REQUIRE_UIT_RETURN(0);
++  auto guest = CefBrowserHostBase::GetBrowserForBrowserId(guest_id);
++  auto workbench = CefBrowserHostBase::GetBrowserForBrowserId(workbench_id);
++  if (!guest || !workbench || guest_id == workbench_id || !label ||
++      !workbench_origin ||
++      !guest->GetHost()->IsWindowRenderingDisabled() ||
++      workbench->GetHost()->IsWindowRenderingDisabled()) {
++    return 0;
++  }
++  auto target = workbench->GetMainFrame();
++  if (!target) {
++    return 0;
++  }
++  auto* target_impl = static_cast<CefFrameHostImpl*>(target.get());
++  auto* host = target_impl->GetRenderFrameHost();
++  if (!host || !host->IsRenderFrameLive() || !host->IsActive() ||
++      host->GetLastCommittedOrigin().Serialize() != workbench_origin) {
++    return 0;
++  }
++  guest->openbitfun_texture_route = CefBrowserHostBase::OpenBitFunTextureRoute{
++      CefRefPtr<CefFrameHostImpl>(target_impl), host->GetWeakDocumentPtr(),
++      label};
++  return 1;
++}
++
++void CefBrowserHostBase::PresentOpenBitFunTexture(
++    bool popup,
++    cef::mojom::OpenBitFunTextureFramePtr frame) {
++  CEF_REQUIRE_UIT();
++  const auto& route = openbitfun_texture_route;
++  if (!route || !route->document.AsRenderFrameHostIfValid() ||
++      route->target->GetRenderFrameHost() !=
++          route->document.AsRenderFrameHostIfValid()) {
++    return;
++  }
++  route->target->PresentOpenBitFunTexture(route->label, popup,
++                                         std::move(frame));
++}
++#endif
++
+ // static
+ bool CefBrowserCreateParams::IsChromeStyle(const CefWindowInfo* window_info) {
+   if (!window_info) {
+diff --git a/libcef/browser/frame_host_impl.cc b/libcef/browser/frame_host_impl.cc
+index 26d5616..a38b6ca 100644
+--- a/libcef/browser/frame_host_impl.cc
++++ b/libcef/browser/frame_host_impl.cc
+@@ -4,6 +4,10 @@
+ 
+ #include "cef/libcef/browser/frame_host_impl.h"
+ 
++#if BUILDFLAG(IS_MAC)
++#include "content/browser/renderer_host/render_frame_host_impl.h"
++#endif
++
+ #include "cef/include/cef_request.h"
+ #include "cef/include/cef_stream.h"
+ #include "cef/include/cef_v8.h"
+@@ -269,6 +273,22 @@ CefRefPtr<CefURLRequest> CefFrameHostImpl::CreateURLRequest(
+   return nullptr;
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++void CefFrameHostImpl::PresentOpenBitFunTexture(
++    const std::string& label,
++    bool popup,
++    cef::mojom::OpenBitFunTextureFramePtr frame) {
++  CEF_REQUIRE_UIT();
++  // Unlike ordinary frame actions, do not queue native buffers during attach.
++  auto* host = static_cast<content::RenderFrameHostImpl*>(GetRenderFrameHost());
++  if (host && IsMain() && render_frame_.is_bound() &&
++      render_frame_.is_connected()) {
++    render_frame_->PresentOpenBitFunTexture(label, host->GetDocumentToken(),
++                                            popup, std::move(frame));
++  }
++}
++#endif
++
+ void CefFrameHostImpl::SendProcessMessage(
+     CefProcessId target_process,
+     CefRefPtr<CefProcessMessage> message) {
+diff --git a/libcef/browser/frame_host_impl.h b/libcef/browser/frame_host_impl.h
+index 0412716..14cc96d 100644
+--- a/libcef/browser/frame_host_impl.h
++++ b/libcef/browser/frame_host_impl.h
+@@ -14,6 +14,7 @@
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/synchronization/lock.h"
++#include "build/build_config.h"
+ #include "cef/include/cef_frame.h"
+ #include "cef/libcef/common/mojom/cef.mojom.h"
+ #include "content/public/browser/global_routing_id.h"
+@@ -113,6 +114,12 @@ class CefFrameHostImpl : public CefFrame, public cef::mojom::BrowserFrame {
+   // Called from CefBrowserHostBase::DidStopLoading.
+   void MaybeSendDidStopLoading();
+ 
++#if BUILDFLAG(IS_MAC)
++  void PresentOpenBitFunTexture(const std::string& label,
++                                bool popup,
++                                cef::mojom::OpenBitFunTextureFramePtr frame);
++#endif
++
+   void ExecuteJavaScriptWithUserGestureForTests(const CefString& javascript);
+ 
+   // Returns the RFH currently associated with this frame. May return nullptr if
+diff --git a/libcef/browser/osr/render_widget_host_view_osr.cc b/libcef/browser/osr/render_widget_host_view_osr.cc
+index 90b4765..3cd678c 100644
+--- a/libcef/browser/osr/render_widget_host_view_osr.cc
++++ b/libcef/browser/osr/render_widget_host_view_osr.cc
+@@ -1581,6 +1581,20 @@ void CefRenderWidgetHostViewOSR::UpdateFrameRate() {
+   }
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++SkColor CefRenderWidgetHostViewOSR::OpenBitFunCaptureBackground() const {
++  if (render_widget_host_) {
++    const SkColor color = render_widget_host_->render_frame_metadata_provider()
++                              ->LastRenderFrameMetadata()
++                              .root_background_color.toSkColor();
++    if (SkColorGetA(color)) {
++      return color;
++    }
++  }
++  return background_color_;
++}
++#endif
++
+ gfx::Size CefRenderWidgetHostViewOSR::SizeInPixels() {
+   return gfx::ScaleToCeiledSize(GetViewBounds().size(), GetDeviceScaleFactor());
+ }
+@@ -1837,6 +1851,9 @@ void CefRenderWidgetHostViewOSR::CancelWidget() {
+         browser_impl_->client()->GetRenderHandler();
+     CHECK(handler);
+     handler->OnPopupShow(browser_impl_.get(), false);
++#if BUILDFLAG(IS_MAC)
++    browser_impl_->PresentOpenBitFunTexture(/*popup=*/true, nullptr);
++#endif
+     browser_impl_ = nullptr;
+   }
+ 
+diff --git a/libcef/browser/osr/render_widget_host_view_osr.h b/libcef/browser/osr/render_widget_host_view_osr.h
+index 749a970..b970f86 100644
+--- a/libcef/browser/osr/render_widget_host_view_osr.h
++++ b/libcef/browser/osr/render_widget_host_view_osr.h
+@@ -257,6 +257,9 @@ class CefRenderWidgetHostViewOSR
+   void UpdateFrameRate();
+ 
+   gfx::Size SizeInPixels();
++#if BUILDFLAG(IS_MAC)
++  SkColor OpenBitFunCaptureBackground() const;
++#endif
+   void OnPaint(const gfx::Rect& damage_rect,
+                const gfx::Size& pixel_size,
+                const void* pixels);
+diff --git a/libcef/browser/osr/video_consumer_osr.cc b/libcef/browser/osr/video_consumer_osr.cc
+index 321bf9e..3c49a37 100644
+--- a/libcef/browser/osr/video_consumer_osr.cc
++++ b/libcef/browser/osr/video_consumer_osr.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "cef/libcef/browser/osr/video_consumer_osr.h"
+ 
++#include "build/build_config.h"
++#include "cef/libcef/browser/alloy/alloy_browser_host_impl.h"
+ #include "cef/libcef/browser/osr/render_widget_host_view_osr.h"
+ #include "media/base/video_frame_metadata.h"
+ #include "media/capture/mojom/video_capture_buffer.mojom.h"
+@@ -93,6 +95,33 @@ void CefVideoConsumerOSR::OnFrameCaptured(
+     const gfx::Rect& content_rect,
+     mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
+         callbacks) {
++#if BUILDFLAG(IS_MAC)
++  if (use_shared_texture_) {
++    auto browser = view_->browser_impl();
++    if (browser && browser->openbitfun_texture_route) {
++      // Capture can briefly scale the previous source to the new output size
++      // while the guest is reflowing. Keep presenting the previous native-size
++      // frame until the compositor produces pixels at their true size.
++      const auto& source_size = info->metadata.source_size;
++      if (source_size && *source_size != content_rect.size()) {
++        return;
++      }
++      if (data->is_gpu_memory_buffer_handle() &&
++          data->get_gpu_memory_buffer_handle().io_surface().get() &&
++          !content_rect.IsEmpty() &&
++          gfx::Rect(info->coded_size).Contains(content_rect)) {
++        auto frame = cef::mojom::OpenBitFunTextureFrame::New(
++            std::move(data), std::move(info), std::move(callbacks),
++            content_rect, view_->GetViewBounds().origin(),
++            view_->GetDeviceScaleFactor(),
++            view_->OpenBitFunCaptureBackground());
++        browser->PresentOpenBitFunTexture(view_->IsPopupWidget(),
++                                          std::move(frame));
++      }
++      return;
++    }
++  }
++#endif
+   ScopedVideoFrameDone scoped_done(std::move(callbacks));
+ 
+   media::VideoFrameMetadata metadata = info->metadata;
+diff --git a/libcef/common/mojom/BUILD.gn b/libcef/common/mojom/BUILD.gn
+index a8b59b5..5c9c52b 100644
+--- a/libcef/common/mojom/BUILD.gn
++++ b/libcef/common/mojom/BUILD.gn
+@@ -12,9 +12,11 @@ mojom("mojom") {
+ 
+   public_deps = [
+     "//content/public/common:interfaces",
++    "//media/capture/mojom:video_capture_buffer",
+     "//mojo/public/mojom/base",
+     "//services/network/public/mojom:cookies_mojom",
+     "//services/network/public/mojom:url_loader_base",
++    "//services/viz/privileged/mojom/compositing",
+     "//third_party/blink/public/mojom:mojom_platform",
+     "//ui/gfx/geometry/mojom",
+     "//url/mojom:url_mojom_gurl",
+diff --git a/libcef/common/mojom/cef.mojom b/libcef/common/mojom/cef.mojom
+index 46aa48d..aa415a2 100644
+--- a/libcef/common/mojom/cef.mojom
++++ b/libcef/common/mojom/cef.mojom
+@@ -4,11 +4,13 @@
+ 
+ module cef.mojom;
+ 
++import "media/capture/mojom/video_capture_buffer.mojom";
+ import "mojo/public/mojom/base/shared_memory.mojom";
+ import "mojo/public/mojom/base/string16.mojom";
+ import "mojo/public/mojom/base/values.mojom";
+ import "services/network/public/mojom/site_for_cookies.mojom";
+ import "services/network/public/mojom/url_request.mojom";
++import "services/viz/privileged/mojom/compositing/frame_sink_video_capture.mojom";
+ import "third_party/blink/public/mojom/loader/referrer.mojom";
+ import "third_party/blink/public/mojom/tokens/tokens.mojom";
+ import "ui/gfx/geometry/mojom/geometry.mojom";
+@@ -48,6 +50,18 @@ struct RequestParams {
+   network.mojom.URLRequestBody? upload_data;
+ };
+ 
++// The producer's lease travels with the native IOSurface handle. Dropping the
++// lease on a failed delivery returns the slot to the capture pool.
++struct OpenBitFunTextureFrame {
++  media.mojom.VideoBufferHandle buffer;
++  media.mojom.VideoFrameInfo info;
++  pending_remote<viz.mojom.FrameSinkVideoConsumerFrameCallbacks> lease;
++  gfx.mojom.Rect content_rect;
++  gfx.mojom.Point origin;
++  float scale;
++  uint32 background;
++};
++
+ // Interface for communicating with a frame in the renderer process.
+ interface RenderFrame {
+   // Browser process has received the FrameAttached() message.
+@@ -60,6 +74,10 @@ interface RenderFrame {
+   // Send a shared memory region to the render process.
+   SendSharedMemoryRegion(string name, mojo_base.mojom.WritableSharedMemoryRegion region);
+ 
++  // A null frame hides the guest's popup layer.
++  PresentOpenBitFunTexture(string label, blink.mojom.DocumentToken document,
++                          bool popup, OpenBitFunTextureFrame? frame);
++
+   // Send a command.
+   SendCommand(string command);
+ 
+diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
+index a9a030e..f97f880 100644
+--- a/libcef/renderer/blink_glue.cc
++++ b/libcef/renderer/blink_glue.cc
+@@ -37,6 +37,27 @@
+ #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
+ #include "third_party/blink/renderer/platform/loader/fetch/script_fetch_options.h"
+ #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
++#if BUILDFLAG(IS_MAC)
++#include <iterator>
++#include <tuple>
++
++#include "base/functional/bind.h"
++#include "base/memory/scoped_refptr.h"
++#include "base/task/single_thread_task_runner.h"
++#include "base/threading/platform_thread.h"
++#include "gpu/command_buffer/client/client_shared_image.h"
++#include "gpu/command_buffer/client/shared_image_interface.h"
++#include "gpu/command_buffer/common/shared_image_info.h"
++#include "gpu/command_buffer/common/shared_image_usage.h"
++#include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
++#include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
++#include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
++#include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
++#include "third_party/blink/renderer/platform/bindings/script_state.h"
++#include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
++#include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
++#include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_provider_wrapper.h"
++#endif
+ #undef LOG
+ 
+ #include "base/logging.h"
+@@ -56,6 +77,104 @@ blink::ExecutionContext* GetExecutionContext(v8::Local<v8::Context> context) {
+ 
+ }  // namespace
+ 
++#if BUILDFLAG(IS_MAC)
++void PresentOpenBitFunTexture(blink::WebLocalFrame* frame,
++                            const std::string& label,
++                            bool popup,
++                            OpenBitFunTexture* texture) {
++  auto* isolate = frame->GetAgentGroupScheduler()->Isolate();
++  v8::HandleScope handles(isolate);
++  auto context = frame->MainWorldScriptContext();
++  if (context.IsEmpty() || !GetExecutionContext(context)) {
++    return;
++  }
++  v8::Context::Scope context_scope(context);
++  v8::TryCatch try_catch(isolate);
++  v8::Local<v8::Value> callback;
++  if (!context->Global()
++           ->Get(context, v8::String::NewFromUtf8Literal(
++                              isolate, "__openbitfunPresentOsrTexture"))
++           .ToLocal(&callback) ||
++      !callback->IsFunction()) {
++    return;
++  }
++
++  auto present = [&](v8::Local<v8::Value> image) {
++    const gfx::Rect rect = texture ? texture->content_rect : gfx::Rect();
++    const gfx::Point origin = texture ? texture->origin : gfx::Point();
++    v8::Local<v8::Value> args[] = {
++        v8::String::NewFromUtf8(isolate, label.c_str()).ToLocalChecked(),
++        v8::Boolean::New(isolate, popup), image,
++        v8::Integer::New(isolate, rect.x()),
++        v8::Integer::New(isolate, rect.y()),
++        v8::Integer::New(isolate, rect.width()),
++        v8::Integer::New(isolate, rect.height()),
++        v8::Integer::New(isolate, origin.x()),
++        v8::Integer::New(isolate, origin.y()),
++        v8::Number::New(isolate, texture ? texture->scale : 1),
++        v8::Integer::NewFromUnsigned(isolate, texture ? texture->background : 0),
++    };
++    std::ignore = frame->CallFunctionEvenIfScriptDisabled(
++        callback.As<v8::Function>(), context->Global(), std::size(args), args);
++  };
++  if (!texture) {
++    present(v8::Null(isolate));
++    return;
++  }
++
++  // bitmaprenderer would otherwise read the image back in software mode.
++  if (!blink::SharedGpuContext::IsGpuCompositingEnabled()) {
++    present(v8::Undefined(isolate));
++    return;
++  }
++  auto gpu_context = blink::SharedGpuContext::ContextProviderWrapper();
++  auto* sii = gpu_context
++                  ? gpu_context->ContextProvider().SharedImageInterface()
++                  : nullptr;
++  if (!sii || !texture->buffer.io_surface().get()) {
++    present(v8::Undefined(isolate));
++    return;
++  }
++  const auto format = texture->rgba ? viz::SinglePlaneFormat::kRGBA_8888
++                                    : viz::SinglePlaneFormat::kBGRA_8888;
++  auto image = sii->CreateSharedImage(
++      gpu::SharedImageInfo(format, texture->coded_size, texture->color_space,
++                           kTopLeft_GrSurfaceOrigin,
++                           kPremul_SkAlphaType,
++                           // bitmaprenderer can submit this IOSurface directly
++                           // to the Mac compositor when SCANOUT is present.
++                           gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
++                               gpu::SHARED_IMAGE_USAGE_RASTER_READ |
++                               gpu::SHARED_IMAGE_USAGE_SCANOUT,
++                           "OpenBitFun CEF OSR"),
++      std::move(texture->buffer));
++  if (!image) {
++    present(v8::Undefined(isolate));
++    return;
++  }
++  const auto ready = sii->GenVerifiedSyncToken();
++  auto bitmap = blink::AcceleratedStaticBitmapImage::CreateFromCanvasSharedImage(
++      image, ready, kPremul_SkAlphaType, gfx::HDRMetadata(), gpu_context,
++      base::PlatformThread::CurrentRef(),
++      base::SingleThreadTaskRunner::GetCurrentDefault(),
++      base::BindOnce(
++          [](scoped_refptr<gpu::SharedImageInterface> sii,
++             scoped_refptr<gpu::ClientSharedImage> image,
++             base::OnceClosure done,
++             const gpu::SyncToken& released, bool lost) {
++            image->UpdateDestructionSyncToken(released);
++            if (!lost && released.HasData()) {
++              sii->SignalSyncToken({released}, std::move(done));
++            } else {
++              std::move(done).Run();
++            }
++          }, base::WrapRefCounted(sii), image, std::move(texture->release)));
++  auto* script_state = blink::ScriptState::From(isolate, context);
++  present(blink::ToV8Traits<blink::ImageBitmap>::ToV8(
++      script_state, blink::MakeGarbageCollected<blink::ImageBitmap>(bitmap)));
++}
++#endif
++
+ bool CanGoBack(blink::WebView* view) {
+   if (!view) {
+     return false;
+diff --git a/libcef/renderer/blink_glue.h b/libcef/renderer/blink_glue.h
+index 1d096de..e2c2e9f 100644
+--- a/libcef/renderer/blink_glue.h
++++ b/libcef/renderer/blink_glue.h
+@@ -11,7 +11,14 @@
+ #include <memory>
+ #include <string>
+ 
++#include "build/build_config.h"
+ #include "cef/include/internal/cef_types.h"
++#if BUILDFLAG(IS_MAC)
++#include "base/functional/callback.h"
++#include "ui/gfx/color_space.h"
++#include "ui/gfx/geometry/rect.h"
++#include "ui/gfx/gpu_memory_buffer_handle.h"
++#endif
+ #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink-forward.h"
+ #include "third_party/blink/public/platform/web_common.h"
+ #include "v8/include/v8.h"
+@@ -28,6 +35,26 @@ class WebView;
+ 
+ namespace blink_glue {
+ 
++#if BUILDFLAG(IS_MAC)
++// Keep the CEF Mojo types out of the Blink controller target.
++struct OpenBitFunTexture {
++  gfx::GpuMemoryBufferHandle buffer;
++  gfx::ColorSpace color_space;
++  gfx::Size coded_size;
++  gfx::Rect content_rect;
++  gfx::Point origin;
++  float scale;
++  uint32_t background;
++  bool rgba;
++  base::OnceClosure release;
++};
++
++BLINK_EXPORT void PresentOpenBitFunTexture(blink::WebLocalFrame* frame,
++                                          const std::string& label,
++                                          bool popup,
++                                          OpenBitFunTexture* texture);
++#endif
++
+ BLINK_EXPORT bool CanGoBack(blink::WebView* view);
+ BLINK_EXPORT bool CanGoForward(blink::WebView* view);
+ BLINK_EXPORT void GoBack(blink::WebView* view);
+diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
+index a91adcc..71cf255 100644
+--- a/libcef/renderer/frame_impl.cc
++++ b/libcef/renderer/frame_impl.cc
+@@ -17,6 +17,7 @@
+ #endif
+ #endif
+ 
++#include "base/functional/bind.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/stringprintf.h"
+ #include "base/strings/utf_string_conversions.h"
+@@ -81,6 +82,46 @@ CefFrameImpl::CefFrameImpl(CefBrowserImpl* browser, blink::WebLocalFrame* frame)
+ 
+ CefFrameImpl::~CefFrameImpl() = default;
+ 
++void CefFrameImpl::PresentOpenBitFunTexture(
++    const std::string& label,
++    const blink::DocumentToken& document,
++    bool popup,
++    cef::mojom::OpenBitFunTextureFramePtr frame) {
++#if BUILDFLAG(IS_MAC)
++  if (!frame_ || !IsMain()) {
++    return;
++  }
++  const auto current = frame_->GetDocument();
++  if (current.IsNull() || current.Token() != document) {
++    return;
++  }
++  if (!frame) {
++    blink_glue::PresentOpenBitFunTexture(frame_, label, popup, nullptr);
++    return;
++  }
++
++  const auto format = frame->info->pixel_format;
++  if (!frame->buffer->is_gpu_memory_buffer_handle() ||
++      (format != media::PIXEL_FORMAT_ARGB && format != media::PIXEL_FORMAT_ABGR)) {
++    return;
++  }
++  blink_glue::OpenBitFunTexture texture{
++      std::move(frame->buffer->get_gpu_memory_buffer_handle()),
++      frame->info->color_space, frame->info->coded_size, frame->content_rect,
++      frame->origin, frame->scale, frame->background,
++      format == media::PIXEL_FORMAT_ABGR,
++      base::BindOnce(
++          [](mojo::PendingRemote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
++                 lease) {
++            mojo::Remote<viz::mojom::FrameSinkVideoConsumerFrameCallbacks>
++                remote(std::move(lease));
++            remote->Done();
++          },
++          std::move(frame->lease))};
++  blink_glue::PresentOpenBitFunTexture(frame_, label, popup, &texture);
++#endif
++}
++
+ bool CefFrameImpl::IsValid() {
+   CEF_REQUIRE_RT_RETURN(false);
+ 
+diff --git a/libcef/renderer/frame_impl.h b/libcef/renderer/frame_impl.h
+index 91fe050..3030103 100644
+--- a/libcef/renderer/frame_impl.h
++++ b/libcef/renderer/frame_impl.h
+@@ -163,6 +163,11 @@ class CefFrameImpl
+   void LoadRequest(cef::mojom::RequestParamsPtr params) override;
+   void DidStopLoading() override;
+   void MoveOrResizeStarted() override;
++  void PresentOpenBitFunTexture(
++      const std::string& label,
++      const blink::DocumentToken& document,
++      bool popup,
++      cef::mojom::OpenBitFunTextureFramePtr frame) override;
+ 
+   // blink_glue::CefExecutionContextLifecycleStateObserver methods:
+   void ContextLifecycleStateChanged(
+diff --git a/patch/patch.cfg b/patch/patch.cfg
+index 92cd766..dbb48f6 100644
+--- a/patch/patch.cfg
++++ b/patch/patch.cfg
+@@ -49,6 +49,10 @@ patches = [
+     # https://github.com/chromiumembedded/cef/issues/1617
+     'name': 'component_build',
+   },
++  {
++    # Keep the compositor release fence when an imported canvas is destroyed.
++    'name': 'openbitfun_canvas_release',
++  },
+   {
+     # Revert change on Windows that removes MessageLoop::os_modal_loop().
+     # https://codereview.chromium.org/1992243003
+diff --git a/patch/patches/openbitfun_canvas_release.patch b/patch/patches/openbitfun_canvas_release.patch
+new file mode 100644
+index 0000000..4ff4786
+--- /dev/null
++++ b/patch/patches/openbitfun_canvas_release.patch
+@@ -0,0 +1,34 @@
++diff --git third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.cc third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.cc
++index 8165f46..1ae7e07 100644
++--- third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.cc
+++++ third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.cc
++@@ -298,9 +298,11 @@ bool ImageBitmapRenderingContext::PrepareTransferableResource(
++         viz::TransferableResource::ResourceSource::kImageLayerBridge,
++         image_for_compositor->GetSyncToken(), overrides);
++ 
+++    // A shared external buffer may outlive the DOM canvas. Always record
+++    // the release token so its producer can wait before recycling the buffer.
++     auto func = blink::BindOnce(
++         &ImageBitmapRenderingContext::ResourceReleasedGpu,
++-        WrapWeakPersistent(this), std::move(image_for_compositor));
+++        std::move(image_for_compositor));
++     *out_release_callback = std::move(func);
++   } else {
++     image_ = image_->MakeUnaccelerated();
++diff --git third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.h third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.h
++index 708d0e5..0d832b0 100644
++--- third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.h
+++++ third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.h
++@@ -136,9 +136,9 @@ class MODULES_EXPORT ImageBitmapRenderingContext final
++   void ResetInternalBitmapToBlackTransparent(int width, int height);
++ 
++   void SetImageInternal(scoped_refptr<StaticBitmapImage>);
++-  void ResourceReleasedGpu(scoped_refptr<StaticBitmapImage>,
++-                           const gpu::SyncToken&,
++-                           bool lost_resource);
+++  static void ResourceReleasedGpu(scoped_refptr<StaticBitmapImage>,
+++                                  const gpu::SyncToken&,
+++                                  bool lost_resource);
++ 
++   struct SoftwareResource {
++     SoftwareResource();

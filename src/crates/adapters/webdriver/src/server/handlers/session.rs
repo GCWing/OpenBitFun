@@ -52,12 +52,10 @@ fn parse_user_agent(user_agent: &str) -> (String, String) {
         return ("msedge".to_string(), version.to_string());
     }
 
-    if user_agent.contains("Android") {
-        let version = user_agent
-            .split("Chrome/")
-            .nth(1)
-            .and_then(|value| value.split_whitespace().next())
-            .unwrap_or("unknown");
+    if let Some(version) = user_agent
+        .split_once("Chrome/")
+        .and_then(|(_, suffix)| suffix.split_whitespace().next())
+    {
         return ("chrome".to_string(), version.to_string());
     }
 
@@ -101,7 +99,6 @@ async fn detect_browser_info(state: Arc<AppState>, window_label: &str) -> (Strin
     };
 
     let user_agent = platform::evaluator::evaluate_script(
-        state,
         webview,
         5_000,
         "() => navigator.userAgent || ''",

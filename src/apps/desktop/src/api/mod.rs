@@ -8,6 +8,7 @@ pub mod appearance_market_api;
 pub mod browser_api;
 pub mod browser_control_api;
 pub mod browser_file_drop_api;
+pub mod browser_osr;
 pub mod btw_api;
 pub mod canvas_api;
 pub mod clipboard_file_api;

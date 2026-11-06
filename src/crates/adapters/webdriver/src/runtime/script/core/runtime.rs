@@ -2,7 +2,6 @@ pub(super) fn script() -> &'static str {
     r####"
     const ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf";
     const SHADOW_KEY = "shadow-6066-11e4-a52e-4f735466cecf";
-    const EVENT_NAME = "openbitfun_webdriver_result";
     const STORE_KEY = "__openbitfunWdElements";
     const LOG_KEY = "__openbitfunWdLogs";
     const consolePatchedKey = "__openbitfunWdConsolePatched";
@@ -131,74 +130,5 @@ pub(super) fn script() -> &'static str {
       };
     };
 
-    const emitResult = async (payload) => {
-      const errors = [];
-      const webviewPostMessage = window.chrome && window.chrome.webview
-        && typeof window.chrome.webview.postMessage === "function"
-        ? window.chrome.webview.postMessage.bind(window.chrome.webview)
-        : null;
-      const tauriInvoke = window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === "function"
-        ? window.__TAURI__.core.invoke.bind(window.__TAURI__.core)
-        : null;
-      const internalInvoke = window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === "function"
-        ? window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__)
-        : null;
-
-      if (webviewPostMessage) {
-        try {
-          webviewPostMessage(JSON.stringify(payload));
-          return;
-        } catch (error) {
-          errors.push(`window.chrome.webview.postMessage failed: ${safeStringify(error)}`);
-        }
-      }
-
-      if (tauriInvoke) {
-        try {
-          await tauriInvoke("webdriver_bridge_result", {
-            request: { payload }
-          });
-          return;
-        } catch (error) {
-          errors.push(`core.invoke command failed: ${safeStringify(error)}`);
-        }
-      }
-
-      if (window.__TAURI__ && window.__TAURI__.event && typeof window.__TAURI__.event.emit === "function") {
-        try {
-          await window.__TAURI__.event.emit(EVENT_NAME, payload);
-          return;
-        } catch (error) {
-          errors.push(`window.__TAURI__.event.emit failed: ${safeStringify(error)}`);
-        }
-      }
-
-      if (internalInvoke) {
-        try {
-          await internalInvoke("plugin:event|emit", {
-            event: EVENT_NAME,
-            payload
-          });
-          return;
-        } catch (error) {
-          errors.push(`__TAURI_INTERNALS__.invoke(plugin:event|emit) failed: ${safeStringify(error)}`);
-        }
-
-        try {
-          await internalInvoke("webdriver_bridge_result", {
-            request: { payload }
-          });
-          return;
-        } catch (error) {
-          errors.push(`__TAURI_INTERNALS__.invoke command failed: ${safeStringify(error)}`);
-        }
-      }
-
-      throw new Error(
-        errors.length > 0
-          ? `Tauri bridge unavailable: ${errors.join("; ")}`
-          : "Tauri bridge unavailable"
-      );
-    };
 "####
 }

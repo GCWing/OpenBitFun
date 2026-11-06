@@ -237,6 +237,10 @@
     "publicMarketImageCache": [
       "market_image_load"
     ],
+    "browserOffscreenPresentation": [
+      "browser_webview_osr_frame",
+      "browser_webview_osr_input"
+    ],
     "legacyUpdateCompatibility": [
       "install_update"
     ],
@@ -2515,7 +2519,7 @@
           },
           "evidence": [
             "source:src/web-ui/src/app/scenes/browser/browserInspectorScript.ts#On click, captures: tagName, CSS path, attributes, textContent, outerHTML",
-            "source:src/web-ui/src/app/scenes/browser/BrowserPanel.tsx#insert-context-tag"
+            "source:src/web-ui/src/app/scenes/browser/useBrowserInspector.ts#insert-context-tag"
           ]
         },
         {
@@ -10213,6 +10217,9 @@
       "capabilityId": "feature.git"
     },
     "browser": {
+      "capabilityId": "feature.browser"
+    },
+    "browser_osr": {
       "capabilityId": "feature.browser"
     },
     "html_preview": {

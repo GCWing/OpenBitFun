@@ -1,10 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import {
   isItemFullyAboveViewport,
+  timelineOverscanRange,
   virtualWindowPaddingPx,
   visibleRowRange,
   type FlowChatVirtualRow,
 } from './useFlowChatVirtualizer';
+
+describe('timeline pixel coverage', () => {
+  it('counts the part of a tall answer already outside the viewport as its buffer', () => {
+    expect(timelineOverscanRange(20, 20, 100, 800, () => 40, { above: 2000, below: 3000 }))
+      .toEqual([18, 19, 20, 21, 22]);
+  });
+
+  it('fills the remaining buffer with measured compact tools on either edge', () => {
+    const range = timelineOverscanRange(20, 20, 100, 800, () => 40, { above: 1520, below: 1200 });
+    expect(range[0]).toBe(18);
+    expect(range.at(-1)).toBe(30);
+  });
+
+  it('bounds near-empty rows and clips at the transcript edges', () => {
+    expect(timelineOverscanRange(0, 1, 100, 800, () => 0).at(-1)).toBe(33);
+    expect(timelineOverscanRange(98, 99, 100, 800, () => 0)[0]).toBe(66);
+  });
+});
 
 describe('isItemFullyAboveViewport', () => {
   it('does not compensate a row that is partly visible', () => {

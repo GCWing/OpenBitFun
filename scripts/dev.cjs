@@ -7,6 +7,7 @@
 
 const fs = require('fs');
 const net = require('net');
+const { homedir } = require('node:os');
 const { execSync, spawn } = require('child_process');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -21,10 +22,13 @@ const {
   printBlank,
 } = require('./console-style.cjs');
 const ROOT_DIR = path.resolve(__dirname, '..');
+const DESKTOP_DIR = path.join(ROOT_DIR, 'src', 'apps', 'desktop');
+const DESKTOP_DEV_CONFIG = path.join(DESKTOP_DIR, 'tauri.dev.conf.json');
 let DEV_SERVER_PORT = 1422;
 const DEV_SERVER_HOSTS = ['localhost', '127.0.0.1', '::1'];
 const DESKTOP_PREVIEW_REBUILD_INPUTS = [
   path.join(ROOT_DIR, 'Cargo.toml'),
+  path.join(ROOT_DIR, 'Cargo.lock'),
   path.join(ROOT_DIR, 'src', 'apps', 'desktop'),
   path.join(ROOT_DIR, 'src', 'crates'),
 ];
@@ -39,6 +43,7 @@ const DESKTOP_PREVIEW_REBUILD_IGNORED_DIRS = new Set([
 const DESKTOP_PREVIEW_REBUILD_RELEVANT_EXTENSIONS = new Set([
   '.ftl',
   '.json',
+  '.lock',
   '.md',
   '.rs',
   '.toml',
@@ -81,13 +86,15 @@ function resolveDesktopDevStorageEnvironment(env = process.env, rootDir = ROOT_D
   };
 }
 
-function getDesktopBinaryPath() {
+function getDesktopBinaryPath(bundled = true) {
   const suffix = process.platform === 'win32' ? '.exe' : '';
   const binaryName = `openbitfun-desktop${suffix}`;
 
-  // Preview rebuilds use cargo build, which emits this executable on macOS
-  // as well; it does not create an application bundle.
-  return path.join(ROOT_DIR, 'target', 'debug', binaryName);
+  const debugDir = path.resolve(ROOT_DIR, process.env.CARGO_TARGET_DIR || 'target', 'debug');
+  if (bundled && process.platform === 'darwin') {
+    return path.join(debugDir, 'bundle', 'macos', 'OpenBitFun.app', 'Contents', 'MacOS', binaryName);
+  }
+  return path.join(debugDir, binaryName);
 }
 
 function decodeOutput(output) {
@@ -364,13 +371,18 @@ async function runDesktopTargetGc(profile = 'debug') {
   }
 }
 
-async function rebuildDesktopDebugBinary() {
+async function rebuildDesktopDebugBinary(cefPath) {
   const buildEnv = {
     ...process.env,
     CARGO_PROFILE_DEV_DEBUG: process.env.CARGO_PROFILE_DEV_DEBUG || '0',
     CARGO_PROFILE_DEV_INCREMENTAL: process.env.CARGO_PROFILE_DEV_INCREMENTAL || 'true',
     CARGO_PROFILE_DEV_CODEGEN_UNITS: process.env.CARGO_PROFILE_DEV_CODEGEN_UNITS || '256',
   };
+
+  if (cefPath) {
+    buildEnv.CEF_PATH = cefPath;
+    buildEnv.TAURI_CONFIG = fs.readFileSync(DESKTOP_DEV_CONFIG, 'utf8');
+  }
 
   printInfo('Building openbitfun-desktop in dev mode with reduced debug info for faster local relink');
   printInfo(
@@ -479,18 +491,33 @@ function getDesktopPreviewRebuildPlan(desktopBinary, forceRebuild = false) {
 }
 
 async function ensureDesktopDebugBinaryForPreview(forceRebuild = false) {
-  const desktopBinary = getDesktopBinaryPath();
+  const desktopBinary = getDesktopBinaryPath(false);
+  const cefPath = process.platform === 'darwin'
+    ? path.resolve(ROOT_DIR, process.env.CEF_PATH || path.join(homedir(), 'Library', 'Caches', 'tauri-cef'))
+    : null;
   const rebuildPlan = getDesktopPreviewRebuildPlan(desktopBinary, forceRebuild);
-
-  if (!rebuildPlan.shouldRebuild) {
-    printInfo(rebuildPlan.reason);
-    return desktopBinary;
+  if (cefPath && !fs.existsSync(cefPath) && !rebuildPlan.shouldRebuild) {
+    rebuildPlan.shouldRebuild = true;
+    rebuildPlan.reason = 'The Chromium distribution cache is missing';
   }
 
-  printInfo(`${rebuildPlan.reason}; rebuilding before preview`);
-  await rebuildDesktopDebugBinary();
-  printSuccess('Debug desktop binary rebuilt for preview');
-  return desktopBinary;
+  if (rebuildPlan.shouldRebuild) {
+    printInfo(`${rebuildPlan.reason}; rebuilding before preview`);
+    await rebuildDesktopDebugBinary(cefPath);
+    printSuccess('Debug desktop binary rebuilt for preview');
+  } else {
+    printInfo(rebuildPlan.reason);
+  }
+
+  if (cefPath) {
+    // Chromium starts its renderer and GPU helpers from the application bundle.
+    await spawnCommand(
+      path.join(ROOT_DIR, 'node_modules', '.bin', 'tauri'),
+      ['bundle', '--debug', '--bundles', 'app', '--config', DESKTOP_DEV_CONFIG],
+      DESKTOP_DIR,
+      { CEF_PATH: cefPath },
+    );
+  }
 }
 
 async function startDesktopPreview() {
@@ -498,7 +525,7 @@ async function startDesktopPreview() {
 
   if (!fs.existsSync(desktopBinary)) {
     printError(`Debug desktop binary not found: ${desktopBinary}`);
-    printInfo('Retry with `pnpm run desktop:preview:debug -- --force-rebuild` or build it with `cargo build -p openbitfun-desktop`');
+    printInfo('Retry with `pnpm run desktop:preview:debug -- --force-rebuild`');
     process.exit(1);
   }
 
@@ -592,9 +619,8 @@ async function startDesktopPreview() {
 
   appProcess = spawnBackgroundCommand(desktopBinary, [], ROOT_DIR, {
     ...process.env,
-    // Debug previews must upload the current workspace build. The adjacent
-    // target/debug resource tree is only a build-time copy and can lag behind
-    // mobile-web edits made while the desktop binary is being reused.
+    OPENBITFUN_DEV_PORT: String(DEV_SERVER_PORT),
+    // Keep Remote Connect on the live workspace build while reusing the app.
     OPENBITFUN_MOBILE_WEB_DIR: path.join(ROOT_DIR, 'src/mobile-web/dist'),
   });
 
@@ -803,8 +829,6 @@ async function main() {
   
   try {
     if (mode === 'desktop') {
-      const desktopDir = path.join(ROOT_DIR, 'src/apps/desktop');
-      const tauriConfig = path.join(desktopDir, 'tauri.dev.conf.json');
       // Pin the same codegen-unit count the desktop-preview path uses
       // (rebuildDesktopDebugBinary). 256 is already cargo's dev default when
       // incremental compilation is on; pinning it keeps parallel codegen even
@@ -813,22 +837,21 @@ async function main() {
       const tauriDevEnv = {
         ...process.env,
         CARGO_PROFILE_DEV_CODEGEN_UNITS: process.env.CARGO_PROFILE_DEV_CODEGEN_UNITS || '256',
-        // Tauri copies bundle resources into target/debug at process startup.
         // Point Remote Connect at the live workspace dist so a newly generated
         // QR code never uploads a stale mobile-web bundle.
         OPENBITFUN_MOBILE_WEB_DIR: path.join(ROOT_DIR, 'src/mobile-web/dist'),
       };
       try {
-        const args = ['dev', '--config', tauriConfig, '--config', JSON.stringify({ build: { devUrl: `http://localhost:${DEV_SERVER_PORT}` } })];
+        const args = ['dev', '--config', DESKTOP_DEV_CONFIG, '--config', JSON.stringify({ build: { devUrl: `http://localhost:${DEV_SERVER_PORT}` } })];
         if (process.platform === 'win32') {
           // Running the generated .cmd shim directly via spawn is flaky on Windows.
           // Use cmd.exe with an explicit args array so the desktop app directory
           // stays the Tauri project root without pnpm workspace path rewriting.
           const tauriBin = path.join(ROOT_DIR, 'node_modules', '.bin', 'tauri.cmd');
-          await runWindowsCommandArgs(tauriBin, args, desktopDir, tauriDevEnv);
+          await runWindowsCommandArgs(tauriBin, args, DESKTOP_DIR, tauriDevEnv);
         } else {
           const tauriBin = path.join(ROOT_DIR, 'node_modules', '.bin', 'tauri');
-          await spawnCommand(tauriBin, args, desktopDir, {
+          await spawnCommand(tauriBin, args, DESKTOP_DIR, {
             CARGO_PROFILE_DEV_CODEGEN_UNITS: tauriDevEnv.CARGO_PROFILE_DEV_CODEGEN_UNITS,
             OPENBITFUN_MOBILE_WEB_DIR: tauriDevEnv.OPENBITFUN_MOBILE_WEB_DIR,
           });

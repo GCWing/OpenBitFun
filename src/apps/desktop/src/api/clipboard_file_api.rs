@@ -248,58 +248,84 @@ mod macos_clipboard {
     }
 }
 
-/// Reads the controller clipboard through GTK.
-///
-/// The Desktop host is a GTK application on Linux, so `gtk::Clipboard` is the
-/// clipboard connection the session already grants the focused window. Reading
-/// it here removes the old hard dependency on `wl-clipboard` / `xclip`, which
-/// stock Ubuntu GNOME does not install and which therefore made pasted files
-/// and images fail out of the box. Both helpers must run on the GTK main
-/// thread; `wait_for_*` pumps a nested main loop and returns empty when the
-/// clipboard owner offers no such payload.
+/// Read the controller clipboard asynchronously on the GTK 4 main context.
 #[cfg(target_os = "linux")]
 mod gtk_clipboard {
-    use super::decode_file_uri;
-    use std::time::Duration;
+    use super::parse_uri_list;
+    use futures::future::{select, Either};
+    use gtk4::gdk::prelude::{DisplayExt, TextureExt};
+    use gtk4::gio::prelude::InputStreamExt;
+    use gtk4::{gdk, glib};
+    use std::{future::Future, time::Duration};
 
-    /// GTK clipboard reads answer through the session clipboard owner. A host
-    /// that never answers must not stall the paste path indefinitely.
     const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
-    fn on_main_thread<T, F>(app: &tauri::AppHandle, read: F) -> Result<T, String>
+    fn on_main_thread<T, F, R>(app: &tauri::AppHandle, read: F) -> Result<T, String>
     where
         T: Send + 'static,
-        F: FnOnce() -> T + Send + 'static,
+        F: FnOnce(gdk::Clipboard) -> R + Send + 'static,
+        R: Future<Output = Result<T, String>> + 'static,
     {
         let (sender, receiver) = std::sync::mpsc::channel();
         app.run_on_main_thread(move || {
-            let _ = sender.send(read());
+            let Some(display) = gdk::Display::default() else {
+                let _ = sender.send(Err("GTK clipboard display is unavailable".into()));
+                return;
+            };
+            glib::MainContext::default().spawn_local(async move {
+                let result = match select(
+                    Box::pin(read(display.clipboard())),
+                    glib::timeout_future(READ_TIMEOUT),
+                )
+                .await
+                {
+                    Either::Left((result, _)) => result,
+                    Either::Right(_) => Err("GTK clipboard read timed out".into()),
+                };
+                let _ = sender.send(result);
+            });
         })
         .map_err(|error| format!("clipboard_main_thread_dispatch_failed: {error}"))?;
         receiver
             .recv_timeout(READ_TIMEOUT)
-            .map_err(|error| format!("clipboard_read_timeout: {error}"))
+            .map_err(|error| format!("clipboard_read_timeout: {error}"))?
     }
 
     pub(super) fn read_files(app: &tauri::AppHandle) -> Result<Vec<String>, String> {
-        on_main_thread(app, || {
-            let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
-            clipboard
-                .wait_for_uris()
-                .iter()
-                .filter_map(|uri| decode_file_uri(uri.as_str()))
-                .collect()
+        on_main_thread(app, |clipboard| async move {
+            let mime = "text/uri-list";
+            if !clipboard.formats().contain_mime_type(mime) {
+                return Ok(Vec::new());
+            }
+            let (stream, _) = clipboard
+                .read_future(&[mime], glib::Priority::DEFAULT)
+                .await
+                .map_err(|error| error.to_string())?;
+            let mut contents = Vec::new();
+            loop {
+                let bytes = stream
+                    .read_bytes_future(8192, glib::Priority::DEFAULT)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                if bytes.is_empty() {
+                    break;
+                }
+                contents.extend_from_slice(&bytes);
+                if contents.len() > 4 * 1024 * 1024 {
+                    return Err("GTK clipboard URI list is too large".into());
+                }
+            }
+            Ok(parse_uri_list(&String::from_utf8_lossy(&contents)))
         })
     }
 
     pub(super) fn read_image_png(app: &tauri::AppHandle) -> Result<Option<Vec<u8>>, String> {
-        on_main_thread(app, || {
-            let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
-            clipboard
-                .wait_for_image()
-                // Re-encoding through GTK keeps one payload format for the
-                // webview regardless of the copied source format.
-                .and_then(|pixbuf| pixbuf.save_to_bufferv("png", &[]).ok())
+        on_main_thread(app, |clipboard| async move {
+            let texture = clipboard
+                .read_texture_future()
+                .await
+                .map_err(|error| error.to_string())?;
+            Ok(texture.map(|texture| texture.save_to_png_bytes().to_vec()))
         })
     }
 }

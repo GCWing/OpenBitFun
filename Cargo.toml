@@ -218,22 +218,21 @@ oxc-parse = { package = "oxc", version = "0.138.0", default-features = false }
 sqlx = { version = "0.8", default-features = false }
 rusqlite = { version = "0.32", default-features = false }
 
-# Tauri (desktop only)
-tauri = { version = "2.11" }
-wry = { version = "0.56.0", default-features = false }
-tauri-plugin-opener = "2.5"
-tauri-plugin-dialog = "2.7"
-tauri-plugin-fs = "2.5"
-tauri-plugin-log = "2.8"
-tauri-plugin-autostart = "2.5"
-tauri-plugin-notification = "2.3"
-tauri-plugin-updater = "2.10"
-tauri-plugin-single-instance = "2.4"
-# 2.4+ requires tauri 2.12, which pulls webview2-com 0.39 and breaks the
-# webview2-com 0.38 COM types openbitfun-webdriver is built against.
-tauri-plugin-clipboard-manager = "~2.3.3"
+# Tauri desktop hosts
+tauri = { version = "=3.0.0-alpha.5", default-features = false, features = ["compression", "common-controls-v6", "dynamic-acl"] }
+tauri-build = "=3.0.0-alpha.4"
+tauri-runtime-cef = "=3.0.0-alpha.6"
+tauri-runtime-wry = "=3.0.0-alpha.5"
+tauri-plugin-opener = "=3.0.0-alpha.3"
+tauri-plugin-dialog = { version = "=3.0.0-alpha.4", default-features = false, features = ["xdg-portal"] }
+tauri-plugin-fs = "=3.0.0-alpha.3"
+tauri-plugin-log = "=3.0.0-alpha.3"
+tauri-plugin-autostart = "=3.0.0-alpha.3"
+tauri-plugin-notification = "=3.0.0-alpha.3"
+tauri-plugin-updater = "=3.0.0-alpha.3"
+tauri-plugin-single-instance = "=3.0.0-alpha.3"
+tauri-plugin-clipboard-manager = "=3.0.0-alpha.3"
 notify-rust = { version = "4.18", default-features = false }
-tauri-build = { version = "2.6", features = [] }
 keepawake = "0.6.0"
 
 # Desktop support
@@ -251,15 +250,10 @@ objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false }
 objc2-app-kit = { version = "0.3", default-features = false }
 objc2-vision = { version = "0.3.2", default-features = false }
-objc2-web-kit = { version = "0.3", default-features = false }
 tempfile = "3"
-webview2-com = "0.38"
 windows = "0.61"
 windows-core = "0.61"
 windows-version = "0.1"
-glib = "0.18"
-gtk = "0.18"
-webkit2gtk = "2.0"
 
 # Windows-specific dependencies
 win32job = "2.0"
@@ -315,18 +309,6 @@ rustls = { version = "0.23", default-features = false }
 [patch.crates-io]
 # Keep Socket.IO on the product-owned ring provider; see the patch note.
 eioc = { path = "third_party/eioc" }
-# Restore macOS traffic-light geometry after the queued native style reset.
-# See third_party/tao/OPENBITFUN-PATCH.md for the upstream source and removal condition.
-tao = { path = "third_party/tao" }
-# Keep macOS HTML drags in WebKit while preserving native file-drop paths.
-# See third_party/wry/OPENBITFUN-PATCH.md for source and removal conditions.
-wry = { path = "third_party/wry" }
-# Tauri 2.11 loses keyboard focus for child webviews after Windows reactivates
-# an `unstable` multi-webview window. Use the upstream fix until released;
-# this revision also adopts tao 0.36, which includes the Windows input deadlock fix.
-tauri-runtime = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
-tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
-tauri-utils = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
 
 [profile.dev]
 # Line tables only: keeps panic backtrace line numbers while shrinking PDB/DWARF

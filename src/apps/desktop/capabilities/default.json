@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "OpenBitFun default capabilities",
-  "windows": ["main", "agent-companion-pet", "desktop-card-*", "spotlight", "frontend-update-confirm"],
+  "webviews": ["main", "agent-companion-pet", "desktop-card-*", "spotlight", "frontend-update-confirm"],
   "permissions": [
     "log:default",
     "autostart:default",
@@ -60,7 +60,7 @@
         { "path": "$HOME/**" }
       ]
     },
-    "opener:allow-reveal-item-in-dir",
+    "opener:allow-reveal-items-in-dir",
     "fs:default",
     "fs:allow-read-file",
     "fs:allow-write-file",
@@ -71,8 +71,6 @@
     "fs:allow-remove",
     "fs:allow-rename",
     "fs:allow-exists",
-    "fs:allow-read-text-file",
-    "fs:allow-write-text-file",
     "fs:allow-stat",
     "fs:allow-lstat",
     "fs:allow-fstat",
@@ -82,7 +80,6 @@
     "fs:allow-read",
     "fs:allow-write",
     "fs:allow-seek",
-    "fs:allow-unwatch",
     "fs:allow-watch",
     "fs:read-all",
     "fs:write-all",

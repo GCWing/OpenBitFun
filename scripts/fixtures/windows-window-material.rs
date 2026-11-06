@@ -1,18 +1,11 @@
 // Run with scripts/test-windows-window-material.mjs. This creates no product
 // state and never shows the test windows. Hit testing is performed by the real
-// production Tao/Tauri window procedures, not a fixture copy of their algorithm.
+// production Tauri/CEF window procedures, not a fixture copy of their algorithm.
 #[cfg(target_os = "windows")]
 mod native {
     use std::error::Error;
     use std::mem::size_of;
-    use std::sync::mpsc;
-    use std::time::Duration;
-
-    use tauri::{WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-    use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2Controller2, COREWEBVIEW2_COLOR,
-    };
-    use windows::core::Interface;
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
     use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE};
     use windows::Win32::Graphics::Gdi::ClientToScreen;
@@ -123,58 +116,23 @@ mod native {
         Ok(())
     }
 
-    fn verify_backdrop(hwnd: HWND, native_material: bool) -> Result {
+    fn verify_backdrop(hwnd: HWND) -> Result {
         let mut backdrop: i32 = -1;
-        let result = unsafe {
+        if unsafe {
             DwmGetWindowAttribute(
                 hwnd,
                 DWMWA_SYSTEMBACKDROP_TYPE,
                 &mut backdrop as *mut _ as _,
                 size_of::<i32>() as u32,
             )
-        };
-        match result {
-            Ok(()) if native_material => {
-                assert_eq!(backdrop, 3, "Native Acrylic uses DWMSBT_TRANSIENTWINDOW");
-                println!("PASS compositor-owned Acrylic backdrop");
-            }
-            Ok(()) => {
-                assert!(
-                    backdrop == 0 || backdrop == 1,
-                    "Opaque fallback must not request a system material: {backdrop}"
-                );
-                println!("PASS opaque fallback has no explicit system backdrop");
-            }
-            Err(_) if !crate::window_material::native_sidebar_material_available() => {
-                println!("PASS fallback on Windows without system backdrop support");
-            }
-            Err(error) => return Err(error.into()),
         }
-        Ok(())
-    }
-
-    fn verify_webview_background(window: &WebviewWindow, native_material: bool) -> Result {
-        let (sender, receiver) = mpsc::channel();
-        window.with_webview(move |webview| {
-            let color = (|| -> windows::core::Result<_> {
-                let controller: ICoreWebView2Controller2 = webview.controller().cast()?;
-                let mut color = COREWEBVIEW2_COLOR::default();
-                unsafe { controller.DefaultBackgroundColor(&mut color)? };
-                Ok((color.A, color.R, color.G, color.B))
-            })();
-            let _ = sender.send(color);
-        })?;
-        let actual = receiver.recv_timeout(Duration::from_secs(5))??;
-        let expected = if native_material {
-            (0, 0, 0, 0)
-        } else {
-            (255, 24, 26, 28)
-        };
-        assert_eq!(
-            actual, expected,
-            "Production WebView background opacity and color"
-        );
-        println!("PASS actual WebView2 background: {actual:?}");
+        .is_ok()
+        {
+            assert!(
+                backdrop == 0 || backdrop == 1,
+                "The Chromium window must not request a system material: {backdrop}"
+            );
+        }
         Ok(())
     }
 
@@ -242,56 +200,32 @@ mod native {
 
     pub fn run() -> Result {
         let storage = tempfile::tempdir()?;
-        let app = tauri::Builder::default().build(tauri::generate_context!())?;
-        let native_available = crate::window_material::native_sidebar_material_available();
-        println!(
-            "Windows build {}: native material available={native_available}",
-            windows_version::OsVersion::current().build
-        );
-        let mut windows: Vec<WebviewWindow> = Vec::new();
-        for native_material in [false, true] {
-            if native_material && !native_available {
-                println!("SKIP native material: this Windows build uses the opaque fallback");
-                continue;
-            }
-            let label = if native_material {
-                "native-material"
-            } else {
-                "opaque-fallback"
-            };
-            let builder = WebviewWindowBuilder::new(
-                &app,
-                label,
-                WebviewUrl::External("about:blank".parse()?),
-            )
-            .title("OpenBitFun hidden window material fixture")
-            .inner_size(640.0, 480.0)
-            .position(80.0, 80.0)
-            .resizable(true)
-            .visible(false)
-            .skip_taskbar(true)
-            .incognito(true)
-            .data_directory(storage.path().join(label));
-            let window = crate::window_material::configure_main_window(
-                builder,
-                native_material,
-                tauri::window::Color(24, 26, 28, 255),
-            )
-            .build()?;
-            let hwnd = window.hwnd()?;
-            assert!(!unsafe { IsWindowVisible(hwnd) }.as_bool());
-            verify_frame(hwnd)?;
-            verify_hit_testing(hwnd)?;
-            verify_backdrop(hwnd, native_material)?;
-            verify_webview_background(&window, native_material)?;
-            verify_size_change(hwnd)?;
-            verify_regression_control(hwnd)?;
-            println!("PASS production main-window material mode: {label}");
-            windows.push(window);
-        }
-        for window in windows {
-            window.destroy()?;
-        }
+        let app = tauri::Builder::default()
+            .runtime(tauri_runtime_cef::Cef::default().root_cache_path(storage.path()))
+            .build(tauri::generate_context!())?;
+        println!("Running with Chromium {}", app.webview_version()?);
+        let builder =
+            WebviewWindowBuilder::new(&app, "opaque", WebviewUrl::External("about:blank".parse()?))
+                .title("OpenBitFun hidden Chromium window fixture")
+                .inner_size(640.0, 480.0)
+                .position(80.0, 80.0)
+                .resizable(true)
+                .visible(false)
+                .skip_taskbar(true)
+                .incognito(true);
+        let window = crate::window_material::configure_main_window(
+            builder,
+            tauri::window::Color(24, 26, 28, 255),
+        )
+        .build()?;
+        let hwnd = window.hwnd()?;
+        assert!(!unsafe { IsWindowVisible(hwnd) }.as_bool());
+        verify_frame(hwnd)?;
+        verify_hit_testing(hwnd)?;
+        verify_backdrop(hwnd)?;
+        verify_size_change(hwnd)?;
+        verify_regression_control(hwnd)?;
+        window.destroy()?;
         // Destroy is dispatched through the real event loop, even on the main
         // thread. Let all native Destroyed events release their WebViews before
         // the last-window exit completes and temporary storage is removed.
@@ -302,8 +236,9 @@ mod native {
 }
 
 #[cfg(target_os = "windows")]
-fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    native::run()
+#[tauri_runtime_cef::cef_entry_point]
+fn main() {
+    native::run().expect("Windows Chromium window fixture failed");
 }
 
 #[cfg(not(target_os = "windows"))]

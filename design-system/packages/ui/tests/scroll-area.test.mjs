@@ -68,3 +68,10 @@ test("ScrollArea styling uses public scrollbar tokens and preserves native scrol
   assert.match(publishedStyles, /scrollbar-width:\s*none/);
   assert.doesNotMatch(styles, /#[0-9a-f]{3,8}/i);
 });
+
+test("scrollbar hover avoids inherited color invalidation on WebKit scrollbar engines", async () => {
+  const styles = await readFile(new URL("../src/styles/scrollbars.css", import.meta.url), "utf8");
+  assert.equal((styles.match(/@supports \(scrollbar-color: transparent transparent\) and \(not selector\(::-webkit-scrollbar\)\)/g) ?? []).length, 2);
+  assert.match(styles, /:has\(:focus-visible\)/);
+  assert.match(styles, /forced-colors: active/);
+});

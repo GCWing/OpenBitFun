@@ -15,7 +15,7 @@ Be respectful, kind, and constructive. We welcome contributors of all background
 - Node.js 22.12+ (LTS recommended)
 - pnpm 10.15.0 via Corepack
 - Rust toolchain (install via [rustup](https://rustup.rs/))
-- [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for desktop development
+- [Tauri prerequisites](https://v3.tauri.app/develop/cef/#prerequisites) for desktop development
 
 OpenBitFun standardizes local JavaScript builds and CI on Node.js 22.12+. The GitHub
 Actions upgrades in this repository use Node.js 24-compatible action runtimes,

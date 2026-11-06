@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createEmbeddedConfig } from './embedded-driver';
+import { createEmbeddedConfig, getApplicationPath } from './embedded-driver';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const root = process.env.OPENBITFUN_FLOWCHAT_SCROLL_EVIDENCE || realpathSync(mkdtempSync(join(tmpdir(), 'openbitfun-flowchat-scroll-')));
@@ -19,8 +19,11 @@ if (!existsSync(join(root, 'frontend'))) {
   writeFileSync(join(workspace, 'README.md'), '# FlowChat scroll fixture\n');
   const fixture = spawnSync(process.execPath, [join(repo, 'tests/e2e/scripts/generate-long-session-fixture.mjs'),
     '--workspace', workspace, '--openbitfun-home', home, '--openbitfun-user-root', user,
-    '--session-prefix', 'scroll-history', '--session-count', '2', '--long-turns', '80',
-    '--assistant-chars', '4000', '--tool-items', '3', '--tool-result-chars', '6000',
+    '--session-prefix', 'scroll-history', '--session-count', '2', '--long-turns', process.env.OPENBITFUN_SCROLL_TURNS || '300',
+    '--assistant-chars', process.env.OPENBITFUN_SCROLL_ASSISTANT_CHARS || '4000',
+    '--tool-items', process.env.OPENBITFUN_SCROLL_TOOL_ITEMS || '3', '--tool-result-chars', '6000',
+    '--scenario', process.env.OPENBITFUN_SCROLL_SCENARIO || 'mixed-visible',
+    ...(process.env.OPENBITFUN_SCROLL_RICH_MARKDOWN === '1' ? ['--rich-markdown'] : []),
   ], { cwd: repo, windowsHide: true, encoding: 'utf8' });
   if (fixture.status !== 0) throw new Error(fixture.stderr || fixture.stdout);
 }
@@ -34,4 +37,5 @@ Object.assign(process.env, {
   NO_PROXY: [process.env.NO_PROXY, '127.0.0.1', 'localhost', '::1'].filter(Boolean).join(','),
 });
 console.log(`FlowChat scroll evidence: ${root}`);
+process.env.OPENBITFUN_SCROLL_APP_PATH = getApplicationPath();
 export const config = createEmbeddedConfig(['../specs/flowchat-scroll-native.spec.ts'], 'FlowChat scroll');

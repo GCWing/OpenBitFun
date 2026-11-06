@@ -37,8 +37,11 @@
   /*
    * Keep the standard width/color pair together. Safari 18 supports width but
    * not color; setting thin there disables its transparent WebKit scrollbar.
+   * Engines with scrollbar pseudo-elements use the paint-only rules above.
+   * scrollbar-color inherits: changing it on hovered transcript descendants
+   * invalidates their text/code trees on every virtual-row boundary.
    */
-  @supports (scrollbar-color: transparent transparent) {
+  @supports (scrollbar-color: transparent transparent) and (not selector(::-webkit-scrollbar)) {
     :where([data-openbitfun-design-system-root], [data-openbitfun-design-system-root] *, [data-openbitfun-scrollbar-visibility]) {
       scrollbar-width: thin;
       scrollbar-color: var(--openbitfun-color-scrollbar-thumb) transparent;
@@ -56,7 +59,7 @@
       background: transparent;
     }
 
-    @supports (scrollbar-color: transparent transparent) {
+    @supports (scrollbar-color: transparent transparent) and (not selector(::-webkit-scrollbar)) {
       :where([data-openbitfun-design-system-root], [data-openbitfun-design-system-root] *, [data-openbitfun-scrollbar-visibility]):where(:not(:hover, :focus-visible, :has(:focus-visible), [data-openbitfun-scrollbar-visibility="always"])) {
         scrollbar-color: transparent transparent;
       }

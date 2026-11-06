@@ -303,6 +303,7 @@ jobs:
             pkg-config \
             xdg-utils \
             libglib2.0-dev \
+            libgtk-4-dev \
             libgtk-3-dev \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
