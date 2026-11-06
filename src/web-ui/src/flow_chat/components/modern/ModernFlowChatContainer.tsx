@@ -605,10 +605,6 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const activeWorkspace = viewScope ? undefined : workspaceContext.activeWorkspace;
   const allowUserMessageRollback = !isAcpFlowSession(activeSession);
   const historyState = activeSession?.historyState;
-  const hasRestoredTurnsPendingVirtualItems =
-    historyState === 'ready' &&
-    (activeSession?.dialogTurns.length ?? 0) > 0 &&
-    virtualItems.length === 0;
 
   const rememberSessionViewportState = useCallback((
     sessionId: string,
@@ -672,9 +668,13 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const showHistoryPlaceholder = virtualItems.length === 0 && (
     historyState === 'metadata-only' ||
     historyState === 'hydrating' ||
-    historyState === 'failed' ||
-    hasRestoredTurnsPendingVirtualItems
+    historyState === 'failed'
   );
+  // Session and projected rows commit atomically. A ready internal Turn may
+  // deliberately project no rows; it is not an unfinished hydration. Keep the
+  // list/navigation mounted so earlier history remains reachable.
+  const showSessionTranscript = virtualItems.length > 0
+    || (historyState === 'ready' && activeSessionKnownTurnCount > 0);
   const isPendingHistoryOpenActiveSession =
     pendingHistoryOpenSession !== null &&
     activeSession?.sessionId === pendingHistoryOpenSession.sessionId;
@@ -2697,7 +2697,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
         <FlowChatSelectionBar rootRef={chatScopeRef} sessionId={activeSession?.sessionId} active={isViewportActive}
           onSelectionIntent={() => virtualListRef.current?.notifyUserSelectionIntent()} />
         <FlowChatHeader
-          visible={virtualItems.length > 0}
+          visible={showSessionTranscript}
           sessionId={activeSession?.sessionId}
           isRightPanelOpen={isRightPanelOpen}
           onToggleRightPanel={onToggleRightPanel}
@@ -2764,7 +2764,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
           <HistorySessionLoadingBoundary
             identity={historyLoadingIdentity}
             loading={showHistoryLoadingLayer || showHistoryOpenIntentOverlay}
-            hasTranscript={virtualItems.length > 0 && activeHistoryRestore?.status !== 'loading' && !showFailedHistoryPlaceholder}
+            hasTranscript={showSessionTranscript && activeHistoryRestore?.status !== 'loading' && !showFailedHistoryPlaceholder}
             disabled={showFailedHistoryPlaceholder || !isViewportActive}
             intent={showHistoryOpenIntentOverlay}
             label={t('historyState.loadingTitle')}
@@ -2775,7 +2775,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
                 state="failed"
                 onRetry={handleRetryHistoryLoad}
               />
-            ) : activeHistoryRestore?.status === 'loading' ? null : virtualItems.length === 0 ? (
+            ) : activeHistoryRestore?.status === 'loading' ? null : !showSessionTranscript ? (
               showHistoryPlaceholder || showHistoryOpenIntentOverlay ? null : (
                 emptyState !== undefined ? emptyState : (
                   <WelcomePanel
@@ -2813,7 +2813,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
                 />
               </>
             )}
-            {virtualItems.length > 0 ? (
+            {showSessionTranscript ? (
               <FlowChatTurnRail
                 turns={turnRailItems}
                 currentTurnId={effectiveVisibleTurnInfo?.turnId ?? null}

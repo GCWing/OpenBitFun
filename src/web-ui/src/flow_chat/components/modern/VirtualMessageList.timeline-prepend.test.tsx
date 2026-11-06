@@ -175,6 +175,18 @@ describe('completed history with the production timeline projection', () => {
     { page: 'older turn plus missing earlier blocks', partial: true, addsTurn: true },
     { page: 'missing earlier blocks within the loaded head', partial: true, addsTurn: false },
   ];
+  it('presents an empty projected tail and accepts navigation into earlier history', () => {
+    state.items = [];
+    render();
+    for (let index = 0; index < 45; index++) tick();
+    expect(host.querySelector('[data-testid="flowchat-message-list-empty"]')).not.toBeNull();
+    act(() => expect(listRef.current!.prepareTurnNavigation('previous', { behavior: 'auto' })).toBe('pending'));
+    state.items = turn('previous', 180);
+    render(); resize();
+    for (let index = 0; index < 45; index++) tick();
+    expect(host.querySelector('[data-turn-id="previous"]')).not.toBeNull();
+    expect(host.querySelector<HTMLElement>('.virtual-message-list')!.dataset.openViewportSettled).toBe('true');
+  });
   it('publishes the latest committed history window without a mutation-phase snapshot on paging', () => {
     const onSnapshot = vi.fn();
     const list = (startOrdinal: number) => <VirtualMessageList ref={listRef} latestTurnId="latest"

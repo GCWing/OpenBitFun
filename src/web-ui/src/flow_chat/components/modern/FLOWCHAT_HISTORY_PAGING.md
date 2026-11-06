@@ -95,6 +95,13 @@ supersedes a cold restore has the same obligation. Neither cancellation nor
 late success/failure may overwrite the new presentation. Viewport settlement
 continues to gate the actual reveal; no timer declares unfinished content ready.
 
+The modern store publishes the Session and its projected rows atomically.
+`ready` with zero rows is therefore not proof of unfinished hydration: an
+internal Turn can intentionally omit its input and have no model output. Keep
+the transcript controller, header and Turn Rail available when the Session has
+known history, so earlier Turns remain reachable; only a truly empty Session
+uses the welcome view. Loading follows the explicit hydration/restoration state.
+
 ## Complete Turns are the history publication unit
 
 A history transport packet is not a render transaction. A negotiated single-Turn

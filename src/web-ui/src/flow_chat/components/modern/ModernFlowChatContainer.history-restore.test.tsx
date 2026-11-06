@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session, SessionHistoryPresentation } from '../../types/flow-chat';
 import type { VirtualMessageList } from './VirtualMessageList';
+import type { FlowChatTurnRail } from './FlowChatTurnRail';
 
 const fixture = vi.hoisted(() => ({
   session: null as Session | null,
@@ -12,6 +13,7 @@ const fixture = vi.hoisted(() => ({
   cached: null as SessionHistoryPresentation | null,
   restore: vi.fn(),
   restoreTail: vi.fn(),
+  loadTurnWindow: vi.fn(),
   present: null as ((sessionId: string, presentation: SessionHistoryPresentation) => void) | null,
 }));
 vi.mock('../../store/FlowChatStore', () => ({ flowChatStore: {
@@ -26,6 +28,8 @@ vi.mock('../../store/FlowChatStore', () => ({ flowChatStore: {
   hasDeferredSessionHistoryProjection: () => false,
   releaseSessionHistoryCompletionAfterInitialPaint: () => false,
   extendSessionHistoryWindow: () => null,
+  loadSessionTurnWindow: (...args: unknown[]) => fixture.loadTurnWindow(...args),
+  activateSessionHistoryWindow: () => fixture.cached,
 } }));
 vi.mock('../../store/modernFlowChatStore', async importOriginal => {
   const original = await importOriginal<typeof import('../../store/modernFlowChatStore')>();
@@ -41,14 +45,19 @@ vi.mock('./VirtualMessageList', () => ({ VirtualMessageList: React.forwardRef((p
     scrollToTurnEnd: () => true,
     captureViewportSnapshot: () => null,
     clearSearchMatch: () => {},
+    prepareTurnNavigation: () => 'pending',
   }));
   return <div className="virtual-message-list" data-open-viewport-settled={String(fixture.viewportSettled)}>
     {props.items.map((item, index) => <span key={index} data-turn-id={item.turnId}>{item.turnId}</span>)}
   </div>;
 }) }));
 vi.mock('@/flow_chat/services/FlowChatManager', () => ({ FlowChatManager: {} }));
-vi.mock('./FlowChatHeader', () => ({ FlowChatHeader: () => null }));
-vi.mock('./FlowChatTurnRail', () => ({ FlowChatTurnRail: () => null }));
+vi.mock('./FlowChatHeader', () => ({ FlowChatHeader: ({ visible }: { visible: boolean }) => visible ? <header data-testid="history-header" /> : null }));
+vi.mock('./FlowChatTurnRail', () => ({ FlowChatTurnRail: ({ turns, onNavigate }: ComponentProps<typeof FlowChatTurnRail>) => (
+  <nav data-testid="turn-rail">{turns.map(turn => (
+    <button key={turn.itemKey} data-rail-ordinal={turn.ordinal} onClick={() => onNavigate(turn)}>{turn.turnIndex}</button>
+  ))}</nav>
+) }));
 vi.mock('../background-command/BackgroundCommandInputDialog', () => ({ BackgroundCommandInputDialog: () => null }));
 vi.mock('../WelcomePanel', () => ({ WelcomePanel: () => <div data-testid="empty-session" /> }));
 vi.mock('./HistorySessionPlaceholder', () => ({ HistorySessionPlaceholder: ({ onRetry }: { onRetry: () => void }) => <button onClick={onRetry}>Retry history</button> }));
@@ -307,5 +316,25 @@ describe('FlowChat reader restoration across history rewrites', () => {
     await render();
     expectPresented();
     expect(fixture.restore).not.toHaveBeenCalled();
+  });
+
+  it('keeps earlier history reachable when a ready internal tail deliberately projects no rows', async () => {
+    fixture.session = session(8);
+    const turn = fixture.session.dialogTurns[0];
+    turn.userMessage = { ...turn.userMessage, metadata: { genUIHostRepair: true } };
+    await render();
+    expect(messages().dataset.virtualItemCount).toBe('0');
+    expectPresented();
+    expect(host.querySelector('[data-testid="empty-session"]')).toBeNull();
+    expect(host.querySelector('[data-testid="history-header"]')).not.toBeNull();
+    expect(host.querySelector('.virtual-message-list')).not.toBeNull();
+    fixture.cached = presentation(0, 2);
+    fixture.loadTurnWindow.mockResolvedValueOnce({
+      status: 'ready', isCurrent: true, targetOrdinal: 0, targetTurnId: 'turn-0', navigationGeneration: 1,
+    });
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-rail-ordinal="0"]')!.click());
+    expectPresented();
+    expect(fixture.loadTurnWindow).toHaveBeenCalledWith('session-a', 0, { source: 'target' });
+    expect(host.querySelector('[data-turn-id="turn-0"]')).not.toBeNull();
   });
 });
