@@ -149,7 +149,7 @@
     &.offline .account-panel__device-glyph { color: var(--openbitfun-color-content-muted); }
 
     & + & {
-      @include surface.card-divider(calc(40px + #{surface.$row-gap}));
+      @include surface.card-divider;
     }
 
     // Visibility stays available; rename and remove appear on hover or focus.
