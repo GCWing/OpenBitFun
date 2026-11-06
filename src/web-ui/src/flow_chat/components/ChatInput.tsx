@@ -66,6 +66,7 @@ import {
   type SlashActionId,
 } from '../utils/slashActionSelection';
 import { parseReloadCommand, supportsLocalReloadContext } from '../utils/reloadCommand';
+import { parseCompactCommand } from '../utils/compactCommand';
 import { reviewPromptCommandShell } from '../utils/promptCommandShellReview';
 import { notificationService } from '@/shared/notification-system';
 import { useI18n } from '@/infrastructure/i18n';
@@ -3835,23 +3836,31 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
 
     const message = inputState.value.trim();
-    if (!/^\/compact\s*$/i.test(message)) {
+    const compactRequest = parseCompactCommand(message);
+    if (!compactRequest) {
       notificationService.warning(
         t('chatInput.compactUsage')
       );
       return;
     }
 
+    // Resolve the follow-up while its placeholders are still staged: large
+    // pastes and composer reference tokens only expand from the current draft.
+    const followUp = compactRequest.followUp
+      ? expandComposerSpecialTokens(compactRequest.followUp)
+      : '';
+
     dispatchInput({ type: 'CLEAR_VALUE' });
     setQueuedInput(null);
     setSlashCommandState({ isActive: false, kind: 'all', query: '', selectedIndex: 0 });
 
+    const sessionId = effectiveTargetSessionId;
     try {
-      await FlowChatManager.getInstance().compactSession(effectiveTargetSessionId);
+      await FlowChatManager.getInstance().compactSession(sessionId);
     } catch (error) {
       log.error('Failed to trigger /compact', {
         error,
-        sessionId: effectiveTargetSessionId,
+        sessionId,
       });
       dispatchInput({ type: 'SET_VALUE', payload: message });
       notificationService.error(
@@ -3861,13 +3870,56 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           duration: 5000,
         }
       );
+      return;
+    }
+
+    if (!followUp) {
+      return;
+    }
+
+    /*
+     * A manual `/compact <message>` submits that message only once the
+     * compaction has landed, so the turn it starts reads the compressed context
+     * instead of racing the maintenance turn. Automatic compaction never comes
+     * through the composer, so it keeps submitting nothing.
+     *
+     * Never steer: the compaction's terminal bookkeeping can still be settling
+     * here, and the follow-up belongs to the turn after it. Queuing lets the
+     * host or the local drain send it as soon as the session is idle again. The
+     * composer keeps its attachments too; this send owns the follow-up text, and
+     * anything the user attached while compacting belongs to their next message.
+     */
+    try {
+      await sendMessage(followUp, {
+        clearContextsOnSuccess: false,
+        sendImmediately: false,
+      });
+    } catch (error) {
+      log.error('Failed to submit the message sent with /compact', {
+        error,
+        sessionId,
+      });
+      // The follow-up never became a turn, so hand it back as a draft unless
+      // the user has already started writing something else.
+      if (!inputValueRef.current.trim()) {
+        dispatchInput({ type: 'SET_VALUE', payload: followUp });
+      }
+      notificationService.error(
+        error instanceof Error ? error.message : t('error.unknown'),
+        {
+          title: t('chatInput.compactFollowUpFailed'),
+          duration: 5000,
+        }
+      );
     }
   }, [
     derivedState?.isProcessing,
     dispatchInput,
     effectiveTargetSession,
     effectiveTargetSessionId,
+    expandComposerSpecialTokens,
     inputState.value,
+    sendMessage,
     setQueuedInput,
     t,
   ]);
@@ -5459,7 +5511,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    if (promptSlashCommandsEnabled && caps.ops.has('compact') && /^\/compact\s*$/i.test(message)) {
+    if (promptSlashCommandsEnabled && caps.ops.has('compact') && parseCompactCommand(message)) {
       await submitCompactFromInput();
       return;
     }
@@ -5490,13 +5542,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     if (promptSlashCommandsEnabled && resolveTypedMcpPromptCommand(message)) {
       await submitMcpPromptFromInput();
-      return;
-    }
-
-    if (promptSlashCommandsEnabled && caps.ops.has('compact') && isSlashCommand(message, '/compact')) {
-      notificationService.warning(
-        t('chatInput.compactUsage')
-      );
       return;
     }
 
