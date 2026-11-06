@@ -390,6 +390,16 @@ These DOM and transport fixtures cover local and simulated Peer surfaces,
 including old-host gating and stale-device completions. They do not establish
 live SSH, relay remote control or detached-dispatch behavior.
 
+For composer queue disclosure, recovery rows, keyboard previews, sending states,
+draft restoration and transcript ownership:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/components/HostPendingQueuePanel.test.tsx src/flow_chat/components/PendingQueuePanel.test.tsx src/flow_chat/utils/pendingQueueDraft.test.ts src/flow_chat/utils/pendingQueuePresentation.test.ts src/flow_chat/timeline/useHostQueueTimeline.test.tsx src/flow_chat/timeline/hostQueueProjection.test.ts
+```
+
+These DOM/store fixtures include simulated host recovery and Peer surface changes;
+they do not establish native visual fidelity or live remote behavior.
+
 For Markdown Mermaid rendering states and supported syntax:
 
 ```bash

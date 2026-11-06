@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 
-import { act, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,7 +15,19 @@ const mocks = vi.hoisted(() => ({
   queueRemove: vi.fn(),
   queueSetStatus: vi.fn(),
   steerDialogTurn: vi.fn(),
+  items: [] as Array<Record<string, unknown>>,
 }));
+
+const queuedItem = {
+  id: 'queued-1',
+  sessionId: 'session-1',
+  content: 'steer this turn',
+  timestamp: 1,
+  status: 'queued',
+  retryCount: 0,
+  imageContexts: [{ id: 'image-1' }, { id: 'image-2' }, { id: 'image-3' }],
+  imageDisplayData: [{ id: 'image-1' }, { id: 'image-2' }, { id: 'image-3' }],
+};
 
 vi.mock('../services/hostDialogQueue', () => ({ hostQueueSupported: () => false }));
 vi.mock('./HostPendingQueuePanel', () => ({ HostPendingQueuePanel: () => null }));
@@ -24,17 +36,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('@openbitfun/ui', () => ({
-  Icon: ({ name }: { name: string }) => <span data-openbitfun-component="icon" data-openbitfun-name={name} />,
-  OverflowText: ({ children, behavior: _behavior, marqueeActive: _marqueeActive, ...props }: any) => <span {...props}>{children}</span>,
-  IconButton: ({ icon, loading: _loading, size: _size, variant: _variant, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
-    icon?: ReactNode;
-    loading?: boolean;
-    size?: string;
-    variant?: string;
-  }) => <button {...props}>{icon}</button>,
-  Tooltip: ({ children }: { children: ReactNode }) => children,
-}));
+vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 
 vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
   agentAPI: { steerDialogTurn: mocks.steerDialogTurn },
@@ -59,18 +61,7 @@ vi.mock('../store/FlowChatStore', () => ({
 
 vi.mock('../services/flow-chat-manager/PendingQueueModule', () => ({
   pendingQueueManager: {
-    list: () => [
-      {
-        id: 'queued-1',
-        sessionId: 'session-1',
-        content: 'steer this turn',
-        timestamp: 1,
-        status: 'queued',
-        retryCount: 0,
-        imageContexts: [{ id: 'image-1' }, { id: 'image-2' }, { id: 'image-3' }],
-        imageDisplayData: [{ id: 'image-1' }, { id: 'image-2' }, { id: 'image-3' }],
-      },
-    ],
+    list: () => mocks.items,
     subscribe: () => () => undefined,
     setStatus: mocks.queueSetStatus,
     remove: mocks.queueRemove,
@@ -116,6 +107,13 @@ vi.mock('../utils/acpSession', () => ({
   isAcpFlowSession: () => false,
 }));
 
+async function selectQueueMenuAction(container: HTMLElement, action: 'edit' | 'collapse') {
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="pendingQueue.actions.more"]')!.click());
+  const item = document.querySelector<HTMLButtonElement>(`[role="menu"]:not([aria-hidden="true"]) [data-menu-id="${action}"]`);
+  expect(item).not.toBeNull();
+  await act(async () => item!.click());
+}
+
 describe('PendingQueuePanel', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -126,6 +124,7 @@ describe('PendingQueuePanel', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     mocks.drainPendingQueueForSession.mockResolvedValue(undefined);
+    mocks.items = [queuedItem];
   });
 
   afterEach(() => {
@@ -144,12 +143,14 @@ describe('PendingQueuePanel', () => {
       );
     });
 
-    const title = container.querySelector('[data-openbitfun-part="title"]');
+    expect(container.querySelector('[data-openbitfun-part="header"]')).toBeNull();
     const attachmentBadge = container.querySelector('[data-openbitfun-part="attachmentCount"]');
 
-    expect(title?.textContent).toBe('pendingQueue.title1');
     expect(attachmentBadge?.textContent).toBe('3');
+    expect(attachmentBadge?.getAttribute('role')).toBe('img');
     expect(attachmentBadge?.getAttribute('aria-label')).toBe('pendingQueue.attachmentCount');
+    await selectQueueMenuAction(container, 'collapse');
+    expect(container.querySelector('[data-openbitfun-part="title"]')?.textContent).toBe('pendingQueue.title1');
   });
 
   it('submits only one steering request while send-now is in flight', async () => {
@@ -203,10 +204,35 @@ describe('PendingQueuePanel', () => {
     );
     expect(preview).not.toBeNull();
     expect(preview?.getAttribute('role')).toBeNull();
-    expect(preview?.getAttribute('tabindex')).toBeNull();
+    // A tab stop so the overflow tooltip can follow keyboard focus.
+    expect(preview?.tabIndex).toBe(0);
 
-    act(() => preview!.click());
+    act(() => {
+      preview!.focus();
+      preview!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      preview!.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+      preview!.click();
+    });
+    expect(document.activeElement).toBe(preview);
 
+    expect(onRestoreToComposer).not.toHaveBeenCalled();
+    expect(mocks.queueRemove).not.toHaveBeenCalled();
+  });
+
+  it('returns focus to more actions on Escape without changing the draft', async () => {
+    const onRestoreToComposer = vi.fn(() => true);
+    await act(async () => root.render(
+      <PendingQueuePanel sessionId="session-1" onRestoreToComposer={onRestoreToComposer} />,
+    ));
+    const more = container.querySelector<HTMLButtonElement>('[aria-label="pendingQueue.actions.more"]')!;
+    await act(async () => { more.focus(); more.click(); });
+    expect(more.getAttribute('aria-expanded')).toBe('true');
+    const menu = document.getElementById(more.getAttribute('aria-controls')!)!;
+    expect(menu.getAttribute('role')).toBe('menu');
+    expect(menu.querySelector('[data-menu-id="edit"]')?.textContent).toBe('pendingQueue.actions.edit');
+    await act(async () => menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(more);
     expect(onRestoreToComposer).not.toHaveBeenCalled();
     expect(mocks.queueRemove).not.toHaveBeenCalled();
   });
@@ -222,12 +248,7 @@ describe('PendingQueuePanel', () => {
       );
     });
 
-    const editButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="pendingQueue.actions.edit"]',
-    );
-    expect(editButton).not.toBeNull();
-
-    act(() => editButton!.click());
+    await selectQueueMenuAction(container, 'edit');
 
     expect(onRestoreToComposer).toHaveBeenCalledWith(expect.objectContaining({
       id: 'queued-1',
@@ -247,12 +268,76 @@ describe('PendingQueuePanel', () => {
       );
     });
 
-    const editButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="pendingQueue.actions.edit"]',
-    );
-    act(() => editButton!.click());
+    await selectQueueMenuAction(container, 'edit');
 
     expect(onRestoreToComposer).toHaveBeenCalledTimes(1);
     expect(mocks.queueRemove).not.toHaveBeenCalled();
+  });
+
+  it('collapses the controlled list and keeps failed rows in a recovery list', async () => {
+    mocks.items = [
+      queuedItem,
+      { id: 'failed-1', sessionId: 'session-1', content: 'retry me', timestamp: 2, status: 'failed', retryCount: 1 },
+    ];
+    await act(async () => {
+      root.render(<PendingQueuePanel sessionId="session-1" onRestoreToComposer={() => true} />);
+    });
+
+    const controlled = container.querySelector<HTMLUListElement>('ul')!;
+    const count = () => container.querySelector('[data-openbitfun-part="totalCount"]')?.textContent;
+    expect(controlled.hidden).toBe(false);
+    expect([...controlled.querySelectorAll('li')].map(row => row.textContent)).toEqual([
+      expect.stringContaining('steer this turn'), expect.stringContaining('retry me'),
+    ]);
+    await selectQueueMenuAction(container, 'collapse');
+    const toggle = container.querySelector<HTMLButtonElement>('[data-openbitfun-part="header"] button[aria-expanded]')!;
+    expect(toggle.getAttribute('aria-controls')).toBe(controlled.id);
+    expect(document.activeElement).toBe(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(controlled.hidden).toBe(true);
+    expect(controlled.querySelectorAll('li')).toHaveLength(0);
+    expect(count()).toBe('2');
+    const recovery = [...container.querySelectorAll('ul')].filter(list => list !== controlled);
+    expect(recovery).toHaveLength(1);
+    const rows = recovery[0].querySelectorAll('li');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('retry me');
+    expect(rows[0].textContent).toContain('pendingQueue.statusFailed');
+    expect(rows[0].querySelector('button[aria-label="pendingQueue.actions.delete"]')).not.toBeNull();
+    expect(container.textContent).not.toContain('steer this turn');
+
+    act(() => toggle.click());
+    expect(controlled.hidden).toBe(false);
+    expect(controlled.querySelectorAll('li')).toHaveLength(2);
+    expect(container.querySelectorAll('ul')).toHaveLength(1);
+    expect(document.activeElement).toBe(controlled.querySelector('[data-openbitfun-product-part="preview"]'));
+    expect(container.querySelector('[data-openbitfun-part="header"]')).toBeNull();
+  });
+
+  it('shows a retried item that is sending again as sending, not failed', async () => {
+    mocks.items = [
+      { id: 'retry-1', sessionId: 'session-1', content: 'second attempt', timestamp: 2, status: 'sending', retryCount: 1 },
+    ];
+    await act(async () => {
+      root.render(<PendingQueuePanel sessionId="session-1" onRestoreToComposer={() => true} />);
+    });
+
+    const row = container.querySelector('li')!;
+    expect(row.getAttribute('data-openbitfun-state')).toBe('sending');
+    expect(row.textContent).toContain('pendingQueue.statusQueuedSending');
+    expect(row.textContent).not.toContain('pendingQueue.statusFailed');
+    expect(row.querySelector('[data-openbitfun-tone="danger"]')).toBeNull();
+    expect(row.querySelector<HTMLButtonElement>('[aria-label="pendingQueue.actions.sendNow"]')?.disabled).toBe(true);
+    expect(row.querySelector<HTMLButtonElement>('[aria-label="pendingQueue.actions.delete"]')?.disabled).toBe(true);
+    await act(async () => row.querySelector<HTMLButtonElement>('[aria-label="pendingQueue.actions.more"]')!.click());
+    const edit = document.querySelector<HTMLButtonElement>('[role="menu"]:not([aria-hidden="true"]) [data-menu-id="edit"]')!;
+    expect(edit.disabled).toBe(true);
+    await act(async () => edit.click());
+    expect(mocks.queueRemove).not.toHaveBeenCalled();
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+
+
+    await selectQueueMenuAction(container, 'collapse');
+    expect(container.textContent).not.toContain('second attempt');
   });
 });

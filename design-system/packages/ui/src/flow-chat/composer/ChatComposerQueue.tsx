@@ -1,3 +1,5 @@
+import { Button, type ButtonProps } from "../../components/Button";
+import { Icon } from "../../components/Icon";
 import { OverflowText } from '../../primitives/OverflowText';
 import {
   forwardRef,
@@ -24,20 +26,35 @@ export interface ChatComposerQueueTitleProps
   count?: ReactNode;
 }
 
+export interface ChatComposerQueueToggleProps
+  extends Omit<ButtonProps, "aria-expanded" | "labelBehavior" | "leadingIcon" | "size" | "trailingIcon" | "variant"> {
+  expanded: boolean;
+}
+
 export interface ChatComposerQueueListProps
   extends HTMLAttributes<HTMLUListElement> {}
 
 export interface ChatComposerQueueItemProps
   extends LiHTMLAttributes<HTMLLIElement> {
   state?: ChatComposerQueueItemState;
+  leadingIcon?: ReactNode;
 }
 
 export interface ChatComposerQueueItemContentProps
   extends HTMLAttributes<HTMLDivElement> {}
 
+export type ChatComposerQueueItemStatusTone = "neutral" | "warning" | "danger";
+
+export interface ChatComposerQueueItemStatusProps
+  extends HTMLAttributes<HTMLSpanElement> {
+  tone?: ChatComposerQueueItemStatusTone;
+}
+
 export interface ChatComposerQueueAttachmentBadgeProps
   extends Omit<HTMLAttributes<HTMLSpanElement>, "children"> {
   count: number;
+  /** Supply a real icon from the consumer's icon library. */
+  icon?: ReactNode;
   label: string;
 }
 
@@ -102,6 +119,25 @@ export const ChatComposerQueueTitle = forwardRef<
   );
 });
 
+/** Disclosure for the message list; wrap a ChatComposerQueueTitle as its label. */
+export const ChatComposerQueueToggle = forwardRef<
+  HTMLButtonElement,
+  ChatComposerQueueToggleProps
+>(function ChatComposerQueueToggle({ className, expanded, ...props }, ref) {
+  return (
+    <Button
+      {...props}
+      aria-expanded={expanded}
+      className={classNames(styles.toggle, className)}
+      labelBehavior="static"
+      ref={ref}
+      size="xs"
+      trailingIcon={<Icon name={expanded ? "chevron-down" : "chevron-up"} size="xs" />}
+      variant="text"
+    />
+  );
+});
+
 export const ChatComposerQueueList = forwardRef<
   HTMLUListElement,
   ChatComposerQueueListProps
@@ -120,7 +156,7 @@ export const ChatComposerQueueList = forwardRef<
 export const ChatComposerQueueItem = forwardRef<
   HTMLLIElement,
   ChatComposerQueueItemProps
->(function ChatComposerQueueItem({ className, state = "default", ...props }, ref) {
+>(function ChatComposerQueueItem({ children, className, leadingIcon, state = "default", ...props }, ref) {
   return (
     <li
       {...props}
@@ -129,7 +165,10 @@ export const ChatComposerQueueItem = forwardRef<
       data-openbitfun-part="item"
       data-openbitfun-state={state === "default" ? undefined : state}
       ref={ref}
-    />
+    >
+      {leadingIcon && <span className={styles.leadingIcon} data-openbitfun-part="leading-icon" aria-hidden="true">{leadingIcon}</span>}
+      {children}
+    </li>
   );
 });
 
@@ -148,11 +187,28 @@ export const ChatComposerQueueItemContent = forwardRef<
   );
 });
 
+/** A fact about one message, such as its delivery state or a failure reason. */
+export const ChatComposerQueueItemStatus = forwardRef<
+  HTMLSpanElement,
+  ChatComposerQueueItemStatusProps
+>(function ChatComposerQueueItemStatus({ className, tone = "neutral", ...props }, ref) {
+  return (
+    <span
+      {...props}
+      className={classNames(styles.status, className)}
+      data-openbitfun-component="chat-composer-queue"
+      data-openbitfun-part="status"
+      data-openbitfun-tone={tone}
+      ref={ref}
+    />
+  );
+});
+
 /** Per-message attachment count; this is intentionally distinct from queue position. */
 export const ChatComposerQueueAttachmentBadge = forwardRef<
   HTMLSpanElement,
   ChatComposerQueueAttachmentBadgeProps
->(function ChatComposerQueueAttachmentBadge({ className, count, label, ...props }, ref) {
+>(function ChatComposerQueueAttachmentBadge({ className, count, icon, label, ...props }, ref) {
   if (!Number.isFinite(count) || count <= 0) {
     return null;
   }
@@ -161,12 +217,14 @@ export const ChatComposerQueueAttachmentBadge = forwardRef<
     <span
       {...props}
       aria-label={label}
+      role="img"
       className={classNames(styles.attachmentBadge, className)}
       data-openbitfun-component="chat-composer-queue"
       data-openbitfun-part="attachmentCount"
       ref={ref}
       title={label}
     >
+      {icon}
       {Math.trunc(count)}
     </span>
   );

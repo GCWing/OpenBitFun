@@ -3842,15 +3842,19 @@
     "showAll": "显示全部"
   },
   "pendingQueue": {
-    "title": "等待发送",
-    "label": "等待发送 {{count}}",
+    "title": "待发送",
+    "label": "待发送 {{count}}",
     "attachmentCount": "{{count}} 个图片附件",
     "attachmentCount_one": "{{count}} 个图片附件",
     "attachmentCount_other": "{{count}} 个图片附件",
     "emptyPlaceholder": "（空消息）",
     "statusSending": "正在引导…",
-    "statusFailed": "发送失败 — 请编辑 / 立即发送 / 删除以清除该项",
+    "statusQueuedSending": "发送中…",
+    "statusFailed": "发送失败",
     "actions": {
+      "more": "更多消息操作",
+      "collapse": "收起待发送列表",
+      "sendNowLabel": "立即发送",
       "edit": "编辑",
       "sendNow": "立即发送（引导）",
       "delete": "删除"

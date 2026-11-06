@@ -1,50 +1,10 @@
+// Geometry, rows, status tones and action layout come from ChatComposerQueue.
 .openbitfun-pending-queue-panel {
-  &__item {
-    position: relative;
-
-    &--sending {
-      pointer-events: none;
-    }
-  }
-
-  &__content {
-    min-width: 0;
-  }
-
-  &__preview {
-    display: block;
-    min-width: 0;
-    overflow: hidden;
-    font-size: var(--openbitfun-type-body-md-font-size);
-    line-height: var(--openbitfun-type-body-sm-line-height);
-    white-space: nowrap;
-  }
-
-  &__preview-empty {
-    color: var(--openbitfun-color-content-muted);
-    font-style: italic;
-  }
-
-  &__sending-label,
-  &__failed-label {
+  &__legacy-note {
+    margin: 0;
+    padding-inline: var(--openbitfun-space-3);
     font-size: var(--openbitfun-type-meta-font-size);
     line-height: var(--openbitfun-type-body-sm-line-height);
-  }
-
-  &__sending-label {
     color: var(--openbitfun-color-content-muted);
-  }
-
-  &__failed-label {
-    color: var(--openbitfun-color-status-danger-content);
-    font-weight: var(--openbitfun-type-label-sm-font-weight);
-  }
-
-  &__actions {
-    flex: 0 0 auto;
-  }
-
-  &__btn--danger:hover:not(:disabled) {
-    color: var(--openbitfun-color-status-danger-content);
   }
 }
