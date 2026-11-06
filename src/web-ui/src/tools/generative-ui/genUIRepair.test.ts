@@ -49,6 +49,18 @@ describe('explicit GenUI repair', () => {
     await requestGenUIRepair(origin, report(), automatic);
     expect(fixture.submit).toHaveBeenCalledTimes(1);
   });
+  it('prioritizes structural evidence without claiming argument diagnostics prove where the syntax broke', async () => {
+    const evidence: GenUIVerification = { ...report(), diagnostics: [
+      { source: 'parser', code: 'parse-incomplete', message: 'Source is incomplete', hint: 'Inspect foot' },
+      { source: 'parser', code: 'type-mismatch', message: 'Wrong variant', statementId: 'foot' },
+    ] };
+    await requestGenUIRepair(origin, evidence);
+    const message = fixture.sendMessage.mock.calls[0][0];
+    const payload = JSON.parse(message.split('\n').at(-1));
+    expect(payload.repair_diagnostics).toEqual([evidence.diagnostics![0]]);
+    expect(payload.verification.diagnostics).toEqual(evidence.diagnostics);
+    expect(message).toContain('argument errors may be symptoms');
+  });
   it('refuses unsupported queues and detects navigation during the host read', async () => {
     const automatic = { turnId: 'repair-slot', chainId: 'chain', attempt: 1 };
     fixture.supported = false;

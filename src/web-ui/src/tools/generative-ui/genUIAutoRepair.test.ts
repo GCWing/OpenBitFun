@@ -36,6 +36,13 @@ describe('automatic GenUI repair admission', () => {
     expect(fixture.repair.mock.calls[1][2]).toMatchObject({ chainId: first.chainId, attempt: 2 });
   });
 
+  it.each(['unresolved-reference', 'missing-required', 'null-required'] as const)('repairs %s while the remaining controls stay usable', async code => {
+    const degraded: GenUIVerification = { ...report(), render: 'passed', diagnostics: [{ source: 'parser', code, message: 'Missing content', statementId: 'detail' }] };
+    expect(await requestGenUIAutoRepair(origin, { ...degraded, render: 'unverified' })).toBe(false);
+    expect(await requestGenUIAutoRepair(origin, degraded)).toBe(true);
+    expect(await requestGenUIAutoRepair(origin, degraded)).toBe(false);
+  });
+
   it('does not reset the limit when a repair produces a different application id or another device renders it', async () => {
     await requestGenUIAutoRepair(origin, report());
     const chainId = fixture.repair.mock.calls[0][2].chainId;

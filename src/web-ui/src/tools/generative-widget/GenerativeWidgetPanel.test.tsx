@@ -12,6 +12,9 @@ import type { FlowToolItem, Session } from '@/flow_chat/types/flow-chat';
 const pickerExample = examples.picker as GenUIAppDefinition;
 import GenerativeWidgetPanel from './GenerativeWidgetPanel';
 
+const autoRepair = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+vi.mock('@/tools/generative-ui/genUIAutoRepair', () => ({ requestGenUIAutoRepair: autoRepair }));
+
 vi.mock('@/infrastructure/i18n', () => ({
   useI18n: () => ({ t: createTestI18nT('flow-chat') }),
 }));
@@ -48,6 +51,7 @@ describe('GenerativeWidgetPanel', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    autoRepair.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
   });
@@ -136,5 +140,59 @@ describe('GenerativeWidgetPanel', () => {
       expect(container.innerHTML).toBe('');
       expect(flowChatStore.findToolItem('loading-session', 'loading-turn', item.id)?.toolResult).toEqual(item.toolResult);
     } finally { act(() => root.unmount()); }
+  });
+
+  it.each([false, true])('repairs missing references only after observing a live generation: live=%s', async live => {
+    const root = createRoot(container);
+    const app: GenUIAppDefinition = { ...openbitfunApp,
+      source: { kind: 'openui-lang', content: 'root = Col([Button("Still usable"), missing])' },
+    };
+    const item = streamingItem(app, app.source!.content);
+    const origin = mountProjection(item);
+    flowChatStore.setState(previous => ({ ...previous, activeSessionId: origin.sessionId }));
+    try {
+      if (live) await act(async () => root.render(<GenerativeWidgetPanel origin={origin} presentation="inline" />));
+      await act(async () => {
+        mountProjection({ ...item, status: 'completed', toolResult: { success: true, result: { app, app_state: {} } } });
+      });
+      await act(async () => root.render(<GenerativeWidgetPanel origin={origin} presentation="inline" />));
+      expect(container.textContent).toContain('Still usable');
+      expect(container.querySelector<HTMLButtonElement>('.gen-ui-application button')?.disabled).toBe(false);
+      if (live) expect(autoRepair).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ render: 'passed',
+        diagnostics: expect.arrayContaining([expect.objectContaining({ code: 'unresolved-reference', statementId: 'missing' })]),
+      }));
+      else {
+        expect(autoRepair).not.toHaveBeenCalled();
+        expect(container.querySelector('[data-openbitfun-state="repairRequired"]')).not.toBeNull();
+      }
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it.each(['processing', 'finishing', 'completed'] as const)('handles a deferred GenUI card first mounted during owning turn status %s', async status => {
+    const root = createRoot(container);
+    const app: GenUIAppDefinition = { ...openbitfunApp,
+      source: { kind: 'openui-lang', content: 'root = Col([Button("Still usable"), missing])' },
+    };
+    const item: FlowToolItem = { ...streamingItem(app), toolName: 'CallDeferredTool', status: 'completed',
+      toolCall: { id: 'loading-call', input: { tool_name: 'GenerativeUI', args: {} } },
+      toolResult: { success: true, result: { app, app_state: {} } },
+    };
+    const origin = mountProjection(item);
+    flowChatStore.setState(previous => ({ ...previous, activeSessionId: origin.sessionId,
+      sessions: new Map([...previous.sessions].map(([id, session]) => [id, { ...session,
+        dialogTurns: session.dialogTurns.map(turn => ({ ...turn, status })),
+      }])),
+    }));
+    try {
+      await act(async () => root.render(<GenerativeWidgetPanel origin={origin} presentation="inline" />));
+      expect(container.textContent).toContain('Still usable');
+      if (status === 'completed') {
+        expect(autoRepair).not.toHaveBeenCalled();
+        expect(container.querySelector('[data-openbitfun-state="repairRequired"]')).not.toBeNull();
+      } else {
+        expect(autoRepair).toHaveBeenCalledTimes(1);
+        expect(container.querySelector('[data-openbitfun-state="repairRequired"]')).toBeNull();
+      }
+    } finally { await act(async () => root.unmount()); }
   });
 });

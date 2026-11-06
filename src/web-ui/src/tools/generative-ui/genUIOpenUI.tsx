@@ -1,5 +1,6 @@
 import './disableOpenUIDevtools';
-import type { OpenUIError } from '@openuidev/lang-core';
+import type { OpenUIError, ParseResult } from '@openuidev/lang-core';
+import { mergeGenUIRenderDiagnostics, type GenUIRenderDiagnostic } from './genUIRenderDiagnostics';
 import { action, createLibrary, defineComponent, defineFunction, reactive, Renderer, useIsStreaming, useStateField, useTriggerAction, type ActionPlan } from '@openuidev/react-lang';
 import { z } from 'zod/v4';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
@@ -343,7 +344,7 @@ export default function GenUIOpenUIDocument({
   /** Keep product side effects out of disposable verification probes. */
   executeActions?: boolean;
   onStateUpdate?: (state: GenUIAppState) => void;
-  onError?: (errors: OpenUIError[]) => void;
+  onError?: (errors: GenUIRenderDiagnostic[]) => void;
   onAction?: (event: GenUIOpenUIActionEvent) => void | Promise<void>;
   onInspect?: (event: GenUIOpenUIInspectEvent) => void;
   /** Explicit owner-registered Query/Mutation capabilities; absent by default. */
@@ -419,9 +420,45 @@ export default function GenUIOpenUIDocument({
     if (executeActions) void runGenUIAction(event);
     void onAction?.(event);
   }, [executeActions, onAction]);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+  // Errors and parse metadata arrive in separate effects. Coalesce both before
+  // publishing, and discard pending evidence when the source/library changes.
+  const diagnosticFrame = useMemo(() => ({
+    errors: [] as OpenUIError[], meta: undefined as ParseResult['meta'] | undefined,
+    parsed: false, pending: false, lastKey: undefined as string | undefined,
+  }), [source.content, openUILibrary, isStreaming]);
+  const currentDiagnosticFrame = useRef<typeof diagnosticFrame | undefined>(diagnosticFrame);
+  currentDiagnosticFrame.current = diagnosticFrame;
+  useEffect(() => {
+    currentDiagnosticFrame.current = diagnosticFrame;
+    return () => {
+      if (currentDiagnosticFrame.current === diagnosticFrame) currentDiagnosticFrame.current = undefined;
+    };
+  }, [diagnosticFrame]);
+  const publishDiagnostics = useCallback(() => {
+    if (diagnosticFrame.pending) return;
+    diagnosticFrame.pending = true;
+    queueMicrotask(() => {
+      diagnosticFrame.pending = false;
+      if (currentDiagnosticFrame.current !== diagnosticFrame || (!isStreaming && !diagnosticFrame.parsed)) return;
+      const merged = isStreaming ? [] : mergeGenUIRenderDiagnostics(diagnosticFrame.meta, diagnosticFrame.errors);
+      const key = JSON.stringify(merged);
+      if (key === diagnosticFrame.lastKey) return;
+      diagnosticFrame.lastKey = key;
+      onErrorRef.current?.(merged);
+    });
+  }, [diagnosticFrame, isStreaming]);
   const handleError = useCallback((errors: OpenUIError[]) => {
-    onError?.(errors);
-  }, [onError]);
+    diagnosticFrame.errors = errors;
+    publishDiagnostics();
+  }, [diagnosticFrame, publishDiagnostics]);
+  const handleParseResult = useCallback((result: ParseResult | null) => {
+    diagnosticFrame.meta = result?.meta;
+    diagnosticFrame.parsed = true;
+    publishDiagnostics();
+    onParseResult?.(result);
+  }, [diagnosticFrame, publishDiagnostics, onParseResult]);
   return <OpenUIAsyncRuntimeContext.Provider value={runtime}>
     <Renderer
       response={source.content}
@@ -431,7 +468,7 @@ export default function GenUIOpenUIDocument({
       onAction={handleAction as never}
       toolProvider={runtime && (asyncProvider ?? toolProvider) ? createOpenUIToolProvider(asyncProvider ?? toolProvider!, runtime) : undefined}
       onStateUpdate={handleStateUpdate}
-      onParseResult={result => onParseResult?.(result)}
+      onParseResult={handleParseResult}
       onError={handleError}
     />
   </OpenUIAsyncRuntimeContext.Provider>;

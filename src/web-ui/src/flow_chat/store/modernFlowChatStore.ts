@@ -184,7 +184,9 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
     }
     const turnItemStart = items.length;
 
-    if (turn.userMessage) {
+    // Host rendering evidence drives a repair turn but is not a user utterance.
+    // Keep its model output while omitting the input row (and its spacing).
+    if (turn.userMessage && !turn.userMessage.metadata?.genUIHostRepair) {
       items.push({
         type: 'user-message',
         data: turn.userMessage,

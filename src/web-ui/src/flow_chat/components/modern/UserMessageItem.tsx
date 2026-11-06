@@ -660,6 +660,10 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       );
     }
 
+    // Alternate transcript surfaces may render this component without the
+    // virtual-item projection. Host repair evidence stays invisible there too.
+    if (isGenUIHostEvidence) return null;
+
     const messageImageGallery = messageImages.length > 0 ? (
       <div
         className="user-message-item__images"
@@ -726,10 +730,9 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
           </div>
         ) : (
           <div className="user-message-item__main" data-openbitfun-product-component="user-message-item" data-openbitfun-product-part="main">
-          {isGenUIHostEvidence ? <p className="user-message-item__host-evidence" role="note">{t('toolCards.generativeUI.hostEvidence')}</p> : null}
           {backgroundDeliveryFromMetadata(message.metadata, turnId)?.reason === 'recovery_completed'
                     ? <p>{t('backgroundDelivery.recoveryCompleted')}</p> : null}
-          {isGenUIHostEvidence ? null : <div
+          <div
             className={
               isFailed
                 ? 'user-message-item__failed-inline-cluster'
@@ -784,7 +787,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
                 )}
               </>
             )}
-            </div>}
+            </div>
           </div>
         )}
 

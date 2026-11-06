@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { OpenUIError } from '@openuidev/lang-core';
+import type { GenUIRenderDiagnostic } from './genUIRenderDiagnostics';
 import { isFatalGenUIError } from './genUIRenderDiagnostics';
 import type { GenUIAppDefinition, GenUIAppEnvelope, GenUIAppState } from './genUITypes';
 import { designSpecForApp, libraryFor, preflightGenUIApp } from './genUIContract';
@@ -80,8 +80,8 @@ function Application({ product = genUIProduct, definition, initialState, readOnl
   const [state, setState] = useState(() => store.current.initialize(app, initialState));
   const [persistence, setPersistence] = useState<GenUIVerification['persistence']>('unverified');
   const [saveError, setSaveError] = useState('');
-  const [openUIReport, setOpenUIReport] = useState<{ key: string; errors: OpenUIError[] }>();
-  const receiveOpenUIErrors = useCallback((errors: OpenUIError[]) => {
+  const [openUIReport, setOpenUIReport] = useState<{ key: string; errors: GenUIRenderDiagnostic[] }>();
+  const receiveOpenUIErrors = useCallback((errors: GenUIRenderDiagnostic[]) => {
     setOpenUIReport({ key: definitionKey, errors });
   }, [definitionKey]);
   const openUIErrors = !streaming && openUIReport?.key === definitionKey ? openUIReport.errors : [];
