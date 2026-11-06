@@ -982,6 +982,8 @@ KeyHint uses 10px text on a 10px line and 2px block padding. StatusPill uses a 1
 
 Composer and ChatComposer share the 16px surface radius, 8px padding, 12px content gap, composer border, context tint, and composer shadow. Compact ChatComposer uses a 24px action track plus 8px padding on each side and two 1px borders (42px border-box height); expanded height follows editor content. The generic context shell has no duplicate outer border or surface inset. Queue and editor state remain owned by their existing slots and product adapters.
 
+Place a queued message preview and its `ChatComposerQueueAttachmentBadge` inside `ChatComposerQueueItemMessage`, within `ChatComposerQueueItemContent`. This keeps short text and attachments together while long previews shrink. Status descriptions remain siblings below the message line. `ChatComposerQueueItemActions` reserves consistent action widths and aligns controls to that first line; narrow trays keep icon actions accessible.
+
 ActivityItem `surface` uses a 40px minimum row with a centered outline, 12px
 radius, 9px block padding, 12px leading inset and 9px trailing inset. The 22px
 sibling actions fit inside that row; optional detail grows beneath it. Inline

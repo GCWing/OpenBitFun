@@ -14,6 +14,7 @@ import {
   ChatComposerQueueItem,
   ChatComposerQueueItemActions,
   ChatComposerQueueItemContent,
+  ChatComposerQueueItemMessage,
   ChatComposerQueueItemStatus,
   ChatComposerQueueList,
   ChatComposerQueueTitle,
@@ -106,12 +107,16 @@ test("ChatComposer exposes a neutral pending-message queue with per-message atta
         createElement(
           ChatComposerQueueItemContent,
           null,
-          "Help me turn these photos into a painted scene.",
+          createElement(
+            ChatComposerQueueItemMessage,
+            null,
+            createElement("span", { "data-overflow-behavior": "fade" }, "Help me turn these photos into a painted scene."),
+            createElement(ChatComposerQueueAttachmentBadge, {
+              count: 3,
+              label: "3 image attachments",
+            }),
+          ),
         ),
-        createElement(ChatComposerQueueAttachmentBadge, {
-          count: 3,
-          label: "3 image attachments",
-        }),
         createElement(
           ChatComposerQueueItemActions,
           null,
@@ -214,6 +219,20 @@ test("ChatComposer queue keeps actions visible and message ink primary", async (
   assert.match(styles, /\.item:focus-within\s*\{[^}]*background:/s);
   assert.match(styles, /@container composer-queue \(max-width: 22rem\)/);
   assert.match(styles, /\[data-openbitfun-part="label"\]\s*\{\s*display: none;/);
+});
+
+test("ChatComposer queue groups attachments with natural-width text and anchors actions to the first line", async () => {
+  const styles = await readFile(
+    new URL("../src/flow-chat/composer/ChatComposerQueue.module.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(styles, /\.message\s*\{[^}]*display:\s*flex;[^}]*min-inline-size:\s*0;[^}]*align-items:\s*center;/s);
+  assert.match(styles, /\.message > :global\(\[data-overflow-behavior\]\)\s*\{[^}]*flex:\s*0 1 auto;/s);
+  assert.match(styles, /\.attachmentBadge\s*\{[^}]*flex:\s*0 0 auto;/s);
+  assert.match(styles, /\.item\s*\{[^}]*align-items:\s*flex-start;/s);
+  assert.match(styles, /\.actions\s*\{[^}]*inline-size:\s*calc\(var\(--_queue-primary-action-size\)/s);
+  assert.match(styles, /\.actions\s*\{[^}]*min-block-size:\s*var\(--openbitfun-control-height-sm\)/s);
+  assert.match(styles, /\.list:has\(\.status\)\s*\{[^}]*max-block-size:/s);
 });
 
 test("ChatComposer queue never changes the input surface geometry", async () => {

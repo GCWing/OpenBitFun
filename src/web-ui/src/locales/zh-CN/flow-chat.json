@@ -3932,6 +3932,7 @@
     "cancel": "移出队列",
     "refresh": "刷新",
     "unknown": "尚未确认是否送达，请先检查再重发。",
+    "retry": "重试",
     "checkRetry": "检查 / 重试",
     "copyDraft": "复制草稿到输入框",
     "dismiss": "关闭本地提醒",
