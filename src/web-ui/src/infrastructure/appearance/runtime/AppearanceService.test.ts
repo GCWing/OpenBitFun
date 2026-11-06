@@ -11,11 +11,17 @@ import type {
 import { APPEARANCE_SCHEMA_VERSION } from '../types';
 import type { AppearanceRuntime } from './AppearanceRuntime';
 import { AppearanceService } from './AppearanceService';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 
 const configMocks = vi.hoisted(() => ({
   getConfig: vi.fn(),
   setConfig: vi.fn(),
+  controllerInvoke: vi.fn(),
+  desktop: false,
 }));
+
+vi.mock('@/infrastructure/runtime', () => ({ isTauriRuntime: () => configMocks.desktop }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: configMocks.controllerInvoke }));
 
 vi.mock('@/infrastructure/api/service-api/ConfigAPI', () => ({
   configAPI: configMocks,
@@ -92,6 +98,9 @@ describe('AppearanceService', () => {
     configMocks.getConfig.mockReset();
     configMocks.setConfig.mockReset();
     configMocks.setConfig.mockResolvedValue(undefined);
+    configMocks.controllerInvoke.mockReset();
+    configMocks.desktop = false;
+    activateSurface('local');
     delete globalThis.__OPENBITFUN_BOOTSTRAP_APPEARANCE_ID__;
     delete globalThis.__OPENBITFUN_BOOTSTRAP_APPEARANCE_SELECTION__;
     vi.stubGlobal('window', {
@@ -104,6 +113,7 @@ describe('AppearanceService', () => {
   });
 
   afterEach(() => {
+    activateSurface('local');
     vi.unstubAllGlobals();
     delete globalThis.__OPENBITFUN_BOOTSTRAP_APPEARANCE_ID__;
     delete globalThis.__OPENBITFUN_BOOTSTRAP_APPEARANCE_SELECTION__;
@@ -142,6 +152,103 @@ describe('AppearanceService', () => {
       selectedAppearanceId: 'openbitfun-dark',
       resolvedAppearanceId: 'openbitfun-dark',
     });
+  });
+
+  it.each(['openbitfun-light', 'openbitfun-dark', 'system', 'sample.local'])(
+    'keeps the local appearance %s after peer switches and window focus', async selection => {
+      configMocks.desktop = true;
+      configMocks.getConfig.mockResolvedValue('openbitfun-light'); // The peer's setting must never win.
+      configMocks.controllerInvoke.mockResolvedValue(selection);
+      let focusListener: (() => void) | undefined;
+      let systemListener: (() => void) | undefined;
+      const media = {
+        matches: false,
+        addEventListener: vi.fn((_type: string, listener: () => void) => { systemListener = listener; }),
+        removeEventListener: vi.fn(),
+      };
+      vi.stubGlobal('window', {
+        matchMedia: () => media,
+        addEventListener: (type: string, listener: () => void) => { if (type === 'focus') focusListener = listener; },
+        removeEventListener: vi.fn(),
+      });
+      const { service, storage } = createService();
+      if (selection === 'sample.local') {
+        await storage.put({
+          manifest: { schema: 'openbitfun.appearance', schemaVersion: APPEARANCE_SCHEMA_VERSION,
+            id: selection, name: 'Local skin', version: '1.0.0', mode: 'dark' },
+          archive: new ArrayBuffer(1), archiveSchemaVersion: APPEARANCE_SCHEMA_VERSION,
+          assets: {}, importedAt: '2026-08-01T00:00:00.000Z',
+        });
+      }
+      await service.initialize();
+      for (const surface of ['peer-a', 'peer-b', 'local']) {
+        activateSurface(surface);
+        focusListener?.();
+        await service.reconcilePersistedState();
+        expect(service.getSnapshot().selectedAppearanceId).toBe(selection);
+      }
+      if (selection === 'system') {
+        media.matches = true;
+        systemListener?.();
+        await vi.waitFor(() => expect(service.getSnapshot().resolvedAppearanceId).toBe('openbitfun-dark'));
+      }
+      expect(configMocks.getConfig).not.toHaveBeenCalled();
+      expect(configMocks.setConfig).not.toHaveBeenCalled();
+      expect(configMocks.controllerInvoke).toHaveBeenCalledWith('get_config', {
+        request: { path: 'appearance.selection', skipRetryOnNotFound: true },
+      });
+      await service.dispose();
+    },
+  );
+
+  it('saves a theme on the controller even when the device changes during persistence', async () => {
+    configMocks.desktop = true;
+    const pending = deferred<void>();
+    configMocks.controllerInvoke.mockImplementation((command: string) => command === 'get_config'
+      ? Promise.resolve('openbitfun-dark') : pending.promise);
+    const { service } = createService();
+    await service.initialize();
+    activateSurface('peer-a');
+    const write = service.select('openbitfun-light');
+    await vi.waitFor(() => expect(configMocks.controllerInvoke).toHaveBeenCalledWith('set_config', {
+      request: { path: 'appearance.selection', value: 'openbitfun-light' },
+    }));
+    activateSurface('peer-b');
+    pending.resolve();
+    await write;
+    expect(service.getSnapshot().selectedAppearanceId).toBe('openbitfun-light');
+    expect(configMocks.setConfig).not.toHaveBeenCalled();
+    await service.dispose();
+  });
+
+  it('rolls a failed peer-mode theme save back on the controller without writing peer config', async () => {
+    configMocks.desktop = true;
+    configMocks.controllerInvoke.mockResolvedValueOnce('openbitfun-dark')
+      .mockRejectedValueOnce(new Error('Local settings are read-only'))
+      .mockResolvedValueOnce(undefined);
+    const { service } = createService();
+    await service.initialize();
+    activateSurface('peer-a');
+    await expect(service.select('openbitfun-light')).rejects.toThrow('Local settings are read-only');
+    expect(service.getSnapshot().selectedAppearanceId).toBe('openbitfun-dark');
+    expect(configMocks.controllerInvoke).toHaveBeenLastCalledWith('set_config', {
+      request: { path: 'appearance.selection', value: 'openbitfun-dark' },
+    });
+    expect(configMocks.setConfig).not.toHaveBeenCalled();
+    await service.dispose();
+  });
+
+  it('reads an older local config without appearance.selection without rewriting it', async () => {
+    configMocks.desktop = true;
+    configMocks.controllerInvoke.mockRejectedValue(new Error("Config path not found: 'appearance.selection'"));
+    const { service } = createService();
+    activateSurface('peer-a');
+    await service.initialize();
+    expect(service.getSnapshot().selectedAppearanceId).toBe('system');
+    expect(configMocks.controllerInvoke).toHaveBeenCalledTimes(1);
+    expect(configMocks.getConfig).not.toHaveBeenCalled();
+    expect(configMocks.setConfig).not.toHaveBeenCalled();
+    await service.dispose();
   });
 
   it('reports a pending selection after its runtime apply while persistence is in flight', async () => {
