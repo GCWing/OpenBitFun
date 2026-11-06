@@ -86,6 +86,11 @@ Plugin Source 和完整 domain feature 集合一起带回 Agent Runtime。产品
 配置驱动的 AI client 和生图协议适配。检查图片的窄消费者不应因此启用生成请求。完整产品和
 需要生图的 CLI、ACP、SDK Host 显式选择这两个 owner，工具 provider 与注册顺序保持稳定。
 
+Office 文件生成由 `tools-office-documents` 独立选择：它只引入 `GenOfficeFile` 与可移植的
+OOXML 引擎 `openbitfun-office-documents`（execution 层，纯内存字节，不做 IO），不扩大
+`tools-basic` 的基线闭包。工具归属 `core.basic` provider，因此完整产品以及 CLI、ACP、
+SDK Host 与生图一样显式选择该 owner。
+
 ### 3.3 Workspace dependency 只提供共同底座
 
 - workspace 声明负责版本和真正跨产品共享的最小 feature；

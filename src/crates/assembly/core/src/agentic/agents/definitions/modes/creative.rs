@@ -29,6 +29,7 @@ impl CreativeHarness {
                 "FinalizeMiniApp",
                 "PublishMiniApp",
                 "FrontendWorkbench",
+                "GenOfficeFile",
             ]
             .into_iter()
             .map(str::to_string),

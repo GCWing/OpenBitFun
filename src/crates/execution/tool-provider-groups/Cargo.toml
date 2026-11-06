@@ -18,11 +18,12 @@ browser-web = []
 computer-use = []
 image-analysis = []
 image-generation = []
+office-documents = []
 miniapp = []
 pages = []
 creation = []
 agent-control = []
-product-full = ["basic", "git", "mcp", "browser-web", "computer-use", "image-analysis", "image-generation", "miniapp", "pages", "creation", "agent-control"]
+product-full = ["basic", "git", "mcp", "browser-web", "computer-use", "image-analysis", "image-generation", "office-documents", "miniapp", "pages", "creation", "agent-control"]
 
 [lints]
 workspace = true

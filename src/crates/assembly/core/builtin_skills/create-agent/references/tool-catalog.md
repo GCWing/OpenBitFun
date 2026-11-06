@@ -18,6 +18,7 @@ Use these tables to select tools for the user's tasks, then put their exact name
 | `Write` | Create or overwrite a file. |
 | `Edit` | Make targeted changes to existing file contents. |
 | `Delete` | Delete a file or directory. |
+| `GenOfficeFile` | Create and incrementally edit Word (.docx), Excel (.xlsx), and PowerPoint (.pptx) files. |
 
 ## Command execution
 

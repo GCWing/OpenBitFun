@@ -16,6 +16,7 @@ export const crateLayoutRules = [
   { crateName: 'runtime-services', layer: 'execution', path: 'src/crates/execution/runtime-services' },
   { crateName: 'tool-packs', layer: 'execution', path: 'src/crates/execution/tool-provider-groups' },
   { crateName: 'tool-runtime', layer: 'execution', path: 'src/crates/execution/tool-execution' },
+  { crateName: 'office-documents', layer: 'execution', path: 'src/crates/execution/office-documents' },
 
   { crateName: 'agent-content', layer: 'assembly', path: 'src/crates/assembly/agent-content' },
   { crateName: 'product-capabilities', layer: 'assembly', path: 'src/crates/assembly/product-capabilities' },

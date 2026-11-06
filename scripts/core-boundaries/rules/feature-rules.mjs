@@ -173,6 +173,7 @@ export const optionalDependencyFeatureOwnerRules = [
       },
       { depName: 'openbitfun-agent-runtime', ownerFeatures: ['agent-runtime', 'ai-adapter-runtime'] },
       { depName: 'openbitfun-agent-workflows', ownerFeatures: ['deep-research'] },
+      { depName: 'openbitfun-office-documents', ownerFeatures: ['tools-office-documents'] },
       { depName: 'openbitfun-agent-stream', ownerFeatures: ['agent-runtime'] },
       { depName: 'openbitfun-agent-tools', ownerFeatures: ['agent-runtime', 'local-storage', 'mcp-runtime'] },
       { depName: 'openbitfun-claude-code-adapter', ownerFeatures: ['external-sources'] },
@@ -233,6 +234,7 @@ export const optionalDependencyFeatureOwnerRules = [
           'tools-git',
           'tools-image-analysis',
           'tools-image-generation',
+          'tools-office-documents',
           'tools-mcp',
           'tools-miniapp',
           'tools-pages',
@@ -747,6 +749,7 @@ export const coreProductFullFeatureAssemblyRule = {
     'tools-git',
     'tools-image-analysis',
     'tools-image-generation',
+    'tools-office-documents',
     'tools-mcp',
     'tools-miniapp',
     'tools-pages',
@@ -791,6 +794,7 @@ export const acpServerCoreFeatures = [
   'tools-computer-use',
   'tools-image-analysis',
   'tools-image-generation',
+  'tools-office-documents',
   'tools-agent-control',
 ];
 
@@ -1397,6 +1401,16 @@ export const coreClosedFeatureProfileRules = [
   },
   {
     manifestPath: 'src/crates/assembly/core/Cargo.toml',
+    featureName: 'tools-office-documents',
+    requiredFeatureRefs: [
+      'openbitfun-tool-packs/office-documents',
+      'dep:openbitfun-office-documents',
+    ],
+    exact: true,
+    reason: 'tools-office-documents owns Office file generation with only its portable OOXML engine',
+  },
+  {
+    manifestPath: 'src/crates/assembly/core/Cargo.toml',
     featureName: 'tools-pages',
     requiredFeatureRefs: ['openbitfun-tool-packs/pages'],
     exact: true,
@@ -1833,6 +1847,7 @@ export const ownerCrateFeatureAssemblyRules = [
       'computer-use',
       'image-analysis',
       'image-generation',
+      'office-documents',
       'miniapp',
       'pages',
       'creation',

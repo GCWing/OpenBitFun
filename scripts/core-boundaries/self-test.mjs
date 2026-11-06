@@ -629,6 +629,7 @@ export function runManifestParserSelfTest({
         'openbitfun-core/tools-computer-use',
         'openbitfun-core/tools-image-analysis',
         'openbitfun-core/tools-image-generation',
+        'openbitfun-core/tools-office-documents',
         'openbitfun-core/tools-agent-control',
       ],
     ],

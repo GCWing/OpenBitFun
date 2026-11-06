@@ -29,6 +29,7 @@ impl ClawMode {
                 "Write".to_string(),
                 "Edit".to_string(),
                 "Delete".to_string(),
+                "GenOfficeFile".to_string(),
                 "ExecCommand".to_string(),
                 "WriteStdin".to_string(),
                 "ExecControl".to_string(),

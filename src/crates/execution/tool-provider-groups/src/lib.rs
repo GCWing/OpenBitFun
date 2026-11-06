@@ -16,6 +16,7 @@ pub enum ToolPackFeatureGroup {
     ComputerUse,
     ImageAnalysis,
     ImageGeneration,
+    OfficeDocuments,
     MiniApp,
     Pages,
     Creation,
@@ -32,6 +33,7 @@ impl ToolPackFeatureGroup {
             Self::ComputerUse => "computer-use",
             Self::ImageAnalysis => "image-analysis",
             Self::ImageGeneration => "image-generation",
+            Self::OfficeDocuments => "office-documents",
             Self::MiniApp => "miniapp",
             Self::Pages => "pages",
             Self::Creation => "creation",
@@ -48,6 +50,7 @@ pub const ALL_FEATURE_GROUPS: &[ToolPackFeatureGroup] = &[
     ToolPackFeatureGroup::ComputerUse,
     ToolPackFeatureGroup::ImageAnalysis,
     ToolPackFeatureGroup::ImageGeneration,
+    ToolPackFeatureGroup::OfficeDocuments,
     ToolPackFeatureGroup::MiniApp,
     ToolPackFeatureGroup::Pages,
     ToolPackFeatureGroup::Creation,
@@ -79,6 +82,10 @@ pub fn enabled_feature_groups() -> Vec<ToolPackFeatureGroup> {
             cfg!(feature = "image-generation"),
             ToolPackFeatureGroup::ImageGeneration,
         ),
+        (
+            cfg!(feature = "office-documents"),
+            ToolPackFeatureGroup::OfficeDocuments,
+        ),
         (cfg!(feature = "miniapp"), ToolPackFeatureGroup::MiniApp),
         (cfg!(feature = "pages"), ToolPackFeatureGroup::Pages),
         (cfg!(feature = "creation"), ToolPackFeatureGroup::Creation),
@@ -106,6 +113,7 @@ pub fn tool_feature_group(tool_name: &str) -> Option<ToolPackFeatureGroup> {
         "ComputerUse" => Some(ToolPackFeatureGroup::ComputerUse),
         "view_image" | "analyze_image" => Some(ToolPackFeatureGroup::ImageAnalysis),
         "generate_image" => Some(ToolPackFeatureGroup::ImageGeneration),
+        "GenOfficeFile" => Some(ToolPackFeatureGroup::OfficeDocuments),
         "GenerativeUI" | "InitMiniApp" | "FinalizeMiniApp" | "PublishMiniApp"
         | "MiniAppBrowser" | "PublishAppearance" | "Playbook" => {
             Some(ToolPackFeatureGroup::MiniApp)
@@ -159,6 +167,7 @@ const CORE_BASIC_FEATURE_GROUPS: &[ToolPackFeatureGroup] = &[
     ToolPackFeatureGroup::Basic,
     ToolPackFeatureGroup::ImageAnalysis,
     ToolPackFeatureGroup::ImageGeneration,
+    ToolPackFeatureGroup::OfficeDocuments,
 ];
 const CORE_AGENT_FEATURE_GROUPS: &[ToolPackFeatureGroup] = &[ToolPackFeatureGroup::AgentControl];
 const CORE_REVIEW_FEATURE_GROUPS: &[ToolPackFeatureGroup] = &[ToolPackFeatureGroup::AgentControl];
@@ -186,6 +195,7 @@ const PRODUCT_TOOL_PROVIDER_GROUP_PLAN: &[ToolProviderGroupPlan] = &[
             "Write",
             "Edit",
             "Delete",
+            "GenOfficeFile",
             "ExecCommand",
             "WriteStdin",
             "ExecControl",
@@ -357,6 +367,7 @@ mod tests {
                 "computer-use",
                 "image-analysis",
                 "image-generation",
+                "office-documents",
                 "miniapp",
                 "pages",
                 "creation",
@@ -396,6 +407,10 @@ mod tests {
         assert_eq!(
             groups.contains(&ToolPackFeatureGroup::ImageGeneration),
             cfg!(feature = "image-generation")
+        );
+        assert_eq!(
+            groups.contains(&ToolPackFeatureGroup::OfficeDocuments),
+            cfg!(feature = "office-documents")
         );
         assert_eq!(
             groups.contains(&ToolPackFeatureGroup::MiniApp),
@@ -496,6 +511,10 @@ mod tests {
             ToolPackFeatureGroup::ImageGeneration.id(),
             "image-generation"
         );
+        assert_eq!(
+            ToolPackFeatureGroup::OfficeDocuments.id(),
+            "office-documents"
+        );
         assert_eq!(ToolPackFeatureGroup::MiniApp.id(), "miniapp");
         assert_eq!(ToolPackFeatureGroup::Creation.id(), "creation");
         assert_eq!(ToolPackFeatureGroup::AgentControl.id(), "agent-control");
@@ -546,6 +565,7 @@ mod tests {
                 "Write",
                 "Edit",
                 "Delete",
+                "GenOfficeFile",
                 "ExecCommand",
                 "WriteStdin",
                 "ExecControl",
@@ -622,7 +642,12 @@ mod tests {
             vec![
                 (
                     "core.basic",
-                    vec!["basic", "image-analysis", "image-generation"]
+                    vec![
+                        "basic",
+                        "image-analysis",
+                        "image-generation",
+                        "office-documents"
+                    ]
                 ),
                 ("core.agent", vec!["agent-control"]),
                 ("core.session", vec!["agent-control"]),
