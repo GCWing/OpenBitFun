@@ -8,6 +8,8 @@ export interface UseShortcutOptions {
   priority?: number;
   /** Set to false to temporarily disable this shortcut without unregistering. */
   enabled?: boolean;
+  /** Restrict this mounted handler to the event's owning surface. */
+  when?: (event: KeyboardEvent) => boolean;
 }
 
 /**
@@ -29,6 +31,11 @@ export function useShortcut(
   options: UseShortcutOptions = {}
 ): void {
   const { description, priority, enabled = true } = options;
+  const hasOwnerPredicate = Boolean(options.when);
+  const owner = useRef(Symbol(id));
+  const whenRef = useRef(options.when);
+  whenRef.current = options.when;
+  const stableWhen = useRef((event: KeyboardEvent) => whenRef.current?.(event) ?? true);
 
   // Keep the latest callback in a ref so changes don't trigger re-registration.
   const callbackRef = useRef<ShortcutCallback>(callback);
@@ -46,6 +53,7 @@ export function useShortcut(
     meta: config.meta,
     scope: config.scope,
     allowInInput: config.allowInInput,
+    inheritInChildScopes: config.inheritInChildScopes,
   });
 
   useEffect(() => {
@@ -54,9 +62,11 @@ export function useShortcut(
     const unregister = shortcutManager.register(id, config, stableCallback.current, {
       description,
       priority,
+      owner: hasOwnerPredicate ? owner.current : undefined,
+      when: stableWhen.current,
     });
 
     return unregister;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, configKey, enabled, description, priority]);
+  }, [id, configKey, enabled, description, priority, hasOwnerPredicate]);
 }
