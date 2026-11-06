@@ -184,6 +184,13 @@ it('collapses the controlled list and keeps blocked and unconfirmed rows in a re
 });
 
 it('lets keyboard users read a truncated preview without starting an edit', async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0));
+  vi.stubGlobal('cancelAnimationFrame', clearTimeout);
+  const revealTooltip = () => {
+    act(() => vi.advanceTimersByTime(500));
+    act(() => vi.advanceTimersByTime(20));
+  };
   const longText = 'Summarize the migration plan and list every follow-up owner';
   const requests: string[] = [];
   const queue = new HostDialogQueue('scope', 'session', async request => {
@@ -205,7 +212,7 @@ it('lets keyboard users read a truncated preview without starting an edit', asyn
   try {
     await act(async () => root.render(<HostPendingQueuePanel queue={queue} onRestore={onRestore} />));
     await act(async () => { await queue.refresh(); });
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+    act(() => vi.advanceTimersByTime(1));
     const preview = container.querySelector<HTMLElement>('[data-openbitfun-product-part="preview"]')!;
     expect(preview.tabIndex).toBe(0);
     expect(preview.getAttribute('role')).toBeNull();
@@ -214,7 +221,7 @@ it('lets keyboard users read a truncated preview without starting an edit', asyn
 
     await act(async () => preview.focus());
     expect(document.activeElement).toBe(preview);
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)); });
+    revealTooltip();
     const tooltips = document.querySelectorAll('[role="tooltip"]');
     expect(tooltips).toHaveLength(1);
     expect(tooltips[0].textContent).toBe(longText);
@@ -232,14 +239,16 @@ it('lets keyboard users read a truncated preview without starting an edit', asyn
     // tooltip then shows alone instead of stacking with the preview's.
     const edit = container.querySelector<HTMLButtonElement>('[aria-label="hostQueue.edit"]')!;
     await act(async () => edit.focus());
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)); });
+    revealTooltip();
     expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(0);
     await act(async () => { edit.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); });
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)); });
+    revealTooltip();
     expect([...document.querySelectorAll('[role="tooltip"]')].map(tooltip => tooltip.textContent)).toEqual(['hostQueue.edit']);
   } finally {
-    vi.restoreAllMocks();
     await act(async () => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   }
 });
