@@ -4,7 +4,7 @@ A workbook is a list of **sheets**; each sheet holds sparse cells addressed A1-s
 
 Range reads also honor `offset`/`limit` (at most 500 rows per call); pass the same range and the returned `next_offset` to continue. `detail: "full"` preserves complete cell text; outline reads shorten long text.
 
-Pass ordinary Unicode text; do not manually transcode or pre-escape XML. The tool writes UTF-8. Use `style.font_name` for a font available in the target viewer; fonts are not embedded. File generation does not require an Office installation, and `read` is not a rendered workbook preview.
+File generation does not require an Office installation. `read` inspects cells and formulas, not rendered workbook pages.
 
 ## Cell values
 
@@ -23,6 +23,10 @@ A style-only cell object preserves its existing value/formula. Use `{"value": nu
 
 `style` objects (in `format_range` or a cell object) take: `bold`, `italic`, `underline`, `strike`, `font_color`, `font_size`, `font_name`, `fill_color`, `number_format` (`"#,##0.00"`, `"0.0%"`, `"yyyy-mm-dd"`, `"¥#,##0"` …), `align` (`left` `center` `right` `justify` `general`), `valign` (`top` `center` `bottom`), `wrap`, `indent`, `border` (`thin` `medium` `thick` `dashed` `dotted` `double` `none`), `border_color`. Colors are `#RRGGBB`. Formatting merges into a cell's existing style.
 
+A cell has one font name for all scripts: `style.font_name` (`font` is an accepted alias). There are no `lang`, `east_asia_font`, per-script font overrides or workbook `settings.styles/theme` in XLSX. Choose no font override unless a family is required; the engine defaults to Calibri and the viewer resolves missing glyphs. A style patch preserves the old font when `font_name` is absent or null.
+
+To remove only an explicit font name, use `{"op":"format_range","sheet":"Sales","range":"A1:D4","reset_font":true,"style":{}}`. Values, formulas, font size, weight, colors and number formats remain intact. A supplied `style.font_name` is applied after the reset. Do not clear all formatting or rewrite cell values just to repair fonts.
+
 ## Operations
 
 `sheet` is a sheet name (or 0-based index); it may be omitted when the workbook has exactly one sheet. Rows and columns are 1-based in `row`, letters in `column`.
@@ -39,7 +43,7 @@ A style-only cell object preserves its existing value/formula. Use `{"value": nu
 | `delete_rows` | `sheet`, `row`, `count` | references shift; references to deleted cells become `#REF!` |
 | `insert_columns` / `delete_columns` | `sheet`, `column`, `count` | same for columns |
 | `clear_range` | `sheet`, `range`, `what` (`all` `contents` `formats`) | |
-| `format_range` | `sheet`, `range`, `style` | |
+| `format_range` | `sheet`, `range`, `style`, `reset_font` (default false) | |
 | `set_column_widths` | `sheet`, `widths` `{ "A": 18, "B:D": 12 }` (characters; 0 hides) | |
 | `set_row_heights` | `sheet`, `heights` `{ "1": 28, "2:10": 18 }` (points; 0 hides) | |
 | `merge_cells` / `unmerge_cells` | `sheet`, `range` | |

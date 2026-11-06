@@ -464,7 +464,7 @@ impl StyleRegistry {
                 xml.push_str(&format!("<color rgb=\"FF{rgb}\"/>"));
             }
             xml.push_str(&format!(
-                "<name val=\"{}\"/><family val=\"2\"/></font>",
+                "<name val=\"{}\"/></font>",
                 esc(style.font_name.as_deref().unwrap_or("Calibri"))
             ));
             Self::intern(&mut self.fonts, xml)

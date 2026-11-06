@@ -1,6 +1,6 @@
 ## Completion and verification — all formats
 
-The engine writes Office files directly; it does not depend on an installed Office application. Finish edits, inspect warnings, then use `read` to verify changed content, indexes, formulas or chart references. A successful write plus this structural check is the default completion path.
+The engine writes Office files directly; it does not depend on an installed Office application. Finish edits, inspect warnings, then use `read` to verify changed content, indexes, formulas or chart references. A successful write plus this structural check is the default completion path. `fonts_verified:false` remains false after a structural read; no target-viewer font or glyph check has occurred.
 
 Visual inspection is a separate task when the user requests it or the deliverable requires it. Use a known available viewer on the machine that owns the file. Do not automatically probe, install or repair LibreOffice/soffice or other Office packages, search unrelated application directories, or build a substitute renderer just because `visual_rendered` is false. If no suitable viewer is available, deliver the file and state that visual inspection was not performed.
 

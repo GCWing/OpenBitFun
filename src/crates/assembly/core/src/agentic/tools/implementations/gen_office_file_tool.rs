@@ -15,9 +15,9 @@ use crate::agentic::tools::ToolPathOperation;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
 use openbitfun_office_documents::{
-    collect_image_sources, guide, operation_recovery_hint, operation_schema,
-    validate_operation_headers, Detail, ImageSources, OfficeDocument, OfficeError, OfficeFormat,
-    OpenOptions, ReadRequest,
+    collect_image_sources, guide, operation_recovery_hint, operation_schema, settings_schema,
+    validate_font_input, validate_operation_headers, Detail, ImageSources, OfficeDocument,
+    OfficeError, OfficeFormat, OpenOptions, ReadRequest,
 };
 use serde_json::{json, Value};
 
@@ -144,6 +144,9 @@ impl GenOfficeFileTool {
             return Err("`sheet` and `range` only apply to .xlsx files".to_string());
         }
         validate_operation_headers(format, &operations).map_err(Self::office_error_message)?;
+        if let Some(settings) = input.get("settings") {
+            validate_font_input(settings, "settings").map_err(Self::office_error_message)?;
+        }
         Ok((action, format))
     }
 
@@ -265,7 +268,7 @@ impl GenOfficeFileTool {
             format.as_str(),
             document.revision()
         );
-        text.push_str("\nGeneration complete. Use read to verify changed content and references. Visual rendering is optional and was not performed; do not probe/install/repair an Office package or build a renderer to complete this tool workflow.");
+        text.push_str("\nGeneration complete. Font names were written as supplied; fonts were not embedded or verified in the target viewer. Use read to verify changed content and references. Visual rendering is optional and was not performed; do not probe/install/repair an Office package or build a renderer to complete this tool workflow.");
         if format == OfficeFormat::Pptx {
             text.push_str(" Layout warnings are geometric/text-size estimates.");
         }
@@ -290,6 +293,8 @@ impl GenOfficeFileTool {
         r#"Create and incrementally edit Word (.docx), Excel (.xlsx), and PowerPoint (.pptx) files directly, without scripts or an installed Office application. The extension selects the format.
 
 Workflow: call guide once for the format, create a first batch, then edit in small sections/slides/row chunks. Send text as ordinary Unicode strings; the tool writes UTF-8 XML. Do not manually re-encode, HTML-escape, or replace non-Latin characters.
+
+Fonts: omit font choices unless the user or template requires a particular family; a request for a professional appearance alone does not require custom fonts. Names must match the intended viewer, not the generation host's OS. Fonts are neither embedded nor verified. DOCX/PPTX separate global Latin/East Asian defaults; local font overrides all scripts; use local latin_font/east_asia_font/complex_script_font for one script. XLSX uses style.font_name. Read the guide for inheritance and resetting overrides. lang is a language hint, not encoding or a font repair.
 
 Actions:
 - guide: pass format (docx | xlsx | pptx) for fields, defaults and examples.
@@ -348,11 +353,7 @@ impl Tool for GenOfficeFileTool {
                     "description": "create/edit: ordered atomic batch. Each item needs op AND that operation's fields. Indexes refer to the state after preceding operations. Prefer in-place replacement for content edits.",
                     "items": operation_schema()
                 },
-                "settings": {
-                    "type": "object",
-                    "description": "create only: document defaults. docx: page, styles, header, footer, properties. pptx: slide_size (16:9 | 4:3), theme {font, east_asia_font, text_color, lang?}, properties. xlsx: properties. lang is an optional BCP 47 override; omitted PPTX language follows the text.",
-                    "additionalProperties": true
-                },
+                "settings": settings_schema(),
                 "overwrite": {
                     "type": "boolean",
                     "description": "create only: replace an existing file at file_path."
@@ -385,6 +386,7 @@ impl Tool for GenOfficeFileTool {
                 "changes": { "type": "array", "items": { "type": "string" } },
                 "warnings": { "type": "array", "items": { "type": "string" } },
                 "visual_rendered": { "type": "boolean" },
+                "fonts_verified": { "type": "boolean", "description":"Whether this tool verified fonts in the target viewer. Always false for structural generation/read." },
                 "view": { "type": "object" },
                 "guide": { "type": "string" }
             },
@@ -587,13 +589,15 @@ impl Tool for GenOfficeFileTool {
                     view["audit"] = json!(findings);
                 }
             }
-            let text = serde_json::to_string_pretty(&view).unwrap_or_default();
+            let text = format!("{}\nStructural read only; fonts and visual rendering were not verified in the target viewer.", serde_json::to_string_pretty(&view).unwrap_or_default());
             return Ok(vec![ToolResult::ok(
                 json!({
                     "action": "read",
                     "format": format.as_str(),
                     "file_path": resolved.logical_path,
                     "view": view,
+                    "visual_rendered": false,
+                    "fonts_verified": false,
                 }),
                 Some(text),
             )]);
@@ -674,6 +678,7 @@ impl Tool for GenOfficeFileTool {
                 "changes": report.changes,
                 "warnings": report.warnings,
                 "visual_rendered": false,
+                "fonts_verified": false,
             }),
             Some(text),
         )])
@@ -904,6 +909,9 @@ mod tests {
             json!({"action": "read", "file_path": "/a/b.docx", "operations": [{"op": "x"}]}),
             json!({"action": "write", "file_path": "/a/b.docx"}),
             json!({"action": "guide"}),
+            json!({"action":"create","file_path":"/a/b.docx","settings":{"styles":{"east_asia_font":" "}}}),
+            json!({"action":"edit","file_path":"/a/b.xlsx","operations":[{"op":"format_range","range":"A1","style":{"font_name":42}}]}),
+            json!({"action":"create","file_path":"/a/b.pptx","operations":[{"op":"insert_slides","slides":[{"elements":[{"type":"text","text":"中文","latin_font":"bad\nfont"}]}]}]}),
         ];
         for case in cases {
             assert!(GenOfficeFileTool::check_input(&case).is_err(), "{case}");
@@ -1035,7 +1043,7 @@ mod tests {
                 (
                     "docx",
                     json!([
-                        {"op":"insert_blocks","blocks":[{"type":"paragraph","runs":[{"text":"旧","bold":true},{"text":"项目"}]}]},
+                        {"op":"insert_blocks","blocks":[{"type":"paragraph","runs":[{"text":"旧","bold":true,"latin_font":"Arial"},{"text":"项目"}]}]},
                         {"op":"insert_blocks","markdown":"论文公式 $E=mc^2$"}
                     ]),
                     json!([
@@ -1047,10 +1055,12 @@ mod tests {
                     "xlsx",
                     json!([
                         {"op":"add_sheet","name":"数据","rows":[["项目","数量"],["中文",10],["日本語",20]]},
+                        {"op":"format_range","range":"A1:B3","style":{"font_name":"Required Font"}},
                         {"op":"add_chart","chart":{"type":"column","anchor":"D1","series":[{"categories":{"range":"A2:A3"},"values":{"range":"B2:B3"}}]}}
                     ]),
                     json!([
                         {"op":"set_cells","start":"B2","rows":[[{"style":{"bold":true}}]]},
+                        {"op":"format_range","range":"A1:B3","reset_font":true,"style":{}},
                         {"op":"rename_sheet","name":"新产品"}
                     ]),
                     json!({"op":"add_chart","chart":{"type":"column","anchor":"D1","series":[{"categories":{"range":"A1:A3"},"values":{"range":"B1:B2"}}]}}),
@@ -1061,7 +1071,7 @@ mod tests {
                         {"op":"insert_slides","slides":[{"title":"旧项目","elements":[]}]}
                     ]),
                     json!([
-                        {"op":"replace_slide","index":0,"slide":{"title":"新产品","elements":[]}}
+                        {"op":"replace_slide","index":0,"slide":{"title":"新产品","elements":[{"type":"text","x":40,"y":40,"w":900,"h":100,"text":"新产品 中文","latin_font":"Arial"}]}}
                     ]),
                     json!({"op":"delete_slides","index":99}),
                 ),
@@ -1090,6 +1100,7 @@ mod tests {
                             ..
                         } => {
                             assert_eq!(data["visual_rendered"], false);
+                            assert_eq!(data["fonts_verified"], false);
                             assert!(text.contains("Generation complete"));
                             assert!(text.contains("Use read"));
                         }
@@ -1111,9 +1122,12 @@ mod tests {
                     input["sheet"] = json!("新产品");
                 }
                 let read = data(tool.call_impl(&input, &context).await.unwrap());
+                assert_eq!(read["fonts_verified"], false);
+                assert_eq!(read["visual_rendered"], false);
                 assert!(read["view"].to_string().contains("新产品"));
                 if format == "docx" {
                     assert_eq!(read["view"]["blocks"][0]["runs"][0]["bold"], true);
+                    assert_eq!(read["view"]["blocks"][0]["runs"][0]["latin_font"], "Arial");
                     assert_eq!(read["view"]["blocks"][1]["runs"][1]["math"], "inline");
                     assert_eq!(read["view"]["blocks"][1]["runs"][1]["text"], "E=mc^2");
                     let invalid = tool.call_impl(

@@ -2,7 +2,7 @@
 
 A Word document is an ordered list of **blocks** (0-based indexes) plus document settings. Build it over several `edit` calls: write the skeleton first, then insert sections one or a few at a time. `read` pages over blocks with `offset`/`limit` and returns the heading outline, so you can find where to insert next.
 
-Pass ordinary Unicode text; do not manually transcode or pre-escape XML. The tool writes UTF-8. Choose fonts installed in the intended viewer; fonts are not embedded. File generation does not require an Office installation, and `read` is a model inspection, not a rendered page preview.
+File generation does not require an Office installation. `read` inspects the stored model, not rendered pages.
 
 ## Blocks
 
@@ -21,7 +21,7 @@ Every block is an object with `type`. Text fields take either `text` (plain stri
 | `horizontal_rule` | — |
 | `toc` | `title`, `levels` (default 3). Lists headings; Word computes page numbers. Refresh the field after pagination if needed |
 
-**Run** fields: `text`, `math` (`inline` or `display`, treats `text` as LaTeX math), `bold`, `italic`, `underline`, `strike`, `code`, `superscript`, `subscript`, `color` (`#RRGGBB`), `highlight` (`#RRGGBB`), `size_pt`, `font`, `lang` (optional BCP 47 language, e.g. `zh-CN`), `link` (http/https/mailto URL).
+**Run** fields: `text`, `math` (`inline` or `display`, treats `text` as LaTeX math), `bold`, `italic`, `underline`, `strike`, `code`, `superscript`, `subscript`, `color` (`#RRGGBB`), `highlight` (`#RRGGBB`), `size_pt`, `font`, `latin_font`, `east_asia_font`, `complex_script_font`, `lang` (optional BCP 47 language, e.g. `zh-CN`), `link` (http/https/mailto URL).
 
 ### Markdown
 
@@ -45,7 +45,7 @@ Unsupported syntax/structures fail the whole batch with an actionable error; sim
 | `move_blocks` | `index`, `count` (default 1), `to` | moves blocks; `to` is the position in the list after they are removed |
 | `replace_text` | `find`, `replace`, `match_case` (default true), `include_headers_footers` (default false) | replaces body text, including text split across formatted runs; replacement inherits the first matched run’s format. Matches never cross paragraphs, list items or table cells. `include_headers_footers: true` also updates header/footer text |
 | `set_page_setup` | `size` (`a4` `letter` `legal` `a3` `a5`), `orientation` (`portrait` `landscape`), `margins_cm` `{top,bottom,left,right}` | partial update |
-| `set_styles` | `lang` (BCP 47, optional), `font`, `east_asia_font`, `font_size_pt`, `heading_font`, `heading_color`, `text_color`, `line_spacing`, `paragraph_space_after_pt`, `table_header_fill` | partial update of document-wide styles |
+| `set_styles` | `lang` (BCP 47, optional), `font`, `east_asia_font`, `complex_script_font`, `font_size_pt`, `heading_font`, `heading_color`, `text_color`, `line_spacing`, `paragraph_space_after_pt`, `table_header_fill` | partial update of document-wide styles |
 | `set_header_footer` | `header`, `footer`: a string, `{text, align}`, or `null` to remove. `{PAGE}` and `{NUMPAGES}` become page fields | |
 | `set_properties` | `title`, `subject`, `author`, `keywords`, `description`, `category` | document metadata |
 
@@ -56,6 +56,15 @@ Prefer `replace_blocks` for content corrections instead of insert/delete/move se
 ## Settings at create
 
 `settings` may carry `page`, `styles`, `header`, `footer`, `properties` (same fields as above). CJK run languages follow their text unless overridden by run `lang` or `styles.lang`. Use the style defaults unless document requirements call for specific fonts; `styles.east_asia_font` sets the East Asian font. Font availability and substitution depend on the viewing environment, which may differ from the generation environment.
+
+### Font scope and recovery
+
+- `styles.font` and `styles.heading_font` select Latin and complex-script fonts; `styles.complex_script_font` can override the latter; `styles.east_asia_font` selects the East Asian font. With no font overrides, the engine uses Calibri for Latin text and leaves East Asian selection to the viewer.
+- `run.font` retains its all-script shorthand meaning. Run `latin_font`, `east_asia_font`, and `complex_script_font` override only their script and take precedence over `run.font`; unset scripts inherit document styles. Use `latin_font` for a Latin-only change in a mixed-language run. These fields work in paragraphs, headings, lists and table-cell runs. Equation fonts are selected by the native equation renderer.
+- Remove global overrides with `{"op":"set_styles","font":null,"heading_font":null,"east_asia_font":null,"complex_script_font":null}`. This preserves text, sizes and other styles. Existing local run overrides still win; replace the affected block with the same content and those font fields omitted to restore inheritance.
+- `lang` does not select a font. Run language overrides `styles.lang`; otherwise CJK language follows the text. Set `zh-TW`, `ja-JP`, etc. explicitly when Han-only text is ambiguous.
+
+Example of a required Latin-only override: `{"type":"paragraph","runs":[{"text":"Report 中文 日本語 한국어","latin_font":"Arial"}]}`. Omit `latin_font` too when no particular family is required.
 
 ## Example
 

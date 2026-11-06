@@ -144,6 +144,8 @@ op_struct!(FormatRange {
     sheet: Option<Value>,
     range: String,
     style: CellStyle,
+    #[serde(default)]
+    reset_font: bool,
 });
 op_struct!(SetColumnWidths {
     #[serde(default)]
@@ -469,6 +471,9 @@ pub(crate) fn apply(
                 for col in range.start.col..=range.end.col {
                     let cell = sheet.cells.entry(CellRef::new(row, col)).or_default();
                     let mut style = cell.style.take().unwrap_or_default();
+                    if input.reset_font {
+                        style.font_name = None;
+                    }
                     style.merge(&input.style);
                     cell.style = (!style.is_default()).then_some(style);
                 }

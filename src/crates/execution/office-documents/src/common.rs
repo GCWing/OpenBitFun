@@ -192,6 +192,13 @@ pub struct Run {
     pub size_pt: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
+    /// Script-specific overrides. `font` keeps its legacy all-script meaning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latin_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub east_asia_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub complex_script_font: Option<String>,
     /// BCP 47 text language; omitted legacy runs keep automatic language selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lang: Option<String>,

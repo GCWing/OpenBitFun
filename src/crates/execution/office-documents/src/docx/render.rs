@@ -273,20 +273,31 @@ impl Writer<'_> {
         if link.is_some() {
             rpr.push_str("<w:rStyle w:val=\"Hyperlink\"/>");
         }
-        let font = run
-            .font
+        let code_font = (run.code == Some(true)).then_some("Consolas");
+        let latin = run
+            .latin_font
             .as_deref()
-            .or_else(|| (run.code == Some(true)).then_some("Consolas"));
-        if let Some(font) = font {
-            let font = esc(font);
-            let east_asia = if run.font.is_some() {
-                format!(" w:eastAsia=\"{font}\"")
-            } else {
-                String::new()
-            };
-            rpr.push_str(&format!(
-                "<w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\"{east_asia} w:cs=\"{font}\"/>"
-            ));
+            .or(run.font.as_deref())
+            .or(code_font);
+        let east_asia = run.east_asia_font.as_deref().or(run.font.as_deref());
+        let complex = run
+            .complex_script_font
+            .as_deref()
+            .or(run.font.as_deref())
+            .or(code_font);
+        if latin.is_some() || east_asia.is_some() || complex.is_some() {
+            rpr.push_str("<w:rFonts");
+            for (slot, font) in [
+                ("ascii", latin),
+                ("hAnsi", latin),
+                ("eastAsia", east_asia),
+                ("cs", complex),
+            ] {
+                if let Some(font) = font {
+                    rpr.push_str(&format!(" w:{slot}=\"{}\"", esc(font)));
+                }
+            }
+            rpr.push_str("/>");
         }
         let bold = run.bold.or(defaults.and_then(|d| d.bold));
         if bold == Some(true) {
@@ -775,6 +786,17 @@ fn styles_xml(doc: &DocxDocument) -> String {
         .heading_font
         .as_deref()
         .unwrap_or(styles.font.as_deref().unwrap_or("Calibri")));
+    let complex = esc(styles
+        .complex_script_font
+        .as_deref()
+        .or(styles.font.as_deref())
+        .unwrap_or("Calibri"));
+    let heading_complex = esc(styles
+        .complex_script_font
+        .as_deref()
+        .or(styles.heading_font.as_deref())
+        .or(styles.font.as_deref())
+        .unwrap_or("Calibri"));
     let east_asia = styles
         .east_asia_font
         .as_deref()
@@ -806,7 +828,7 @@ fn styles_xml(doc: &DocxDocument) -> String {
         "<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
     );
     out.push_str(&format!(
-        "<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\" w:cs=\"{font}\"{east_asia}/>{text_color}<w:sz w:val=\"{body_size}\"/><w:szCs w:val=\"{body_size}\"/>{language}</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after=\"{after}\" w:line=\"{line}\" w:lineRule=\"auto\"/></w:pPr></w:pPrDefault></w:docDefaults>"
+        "<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\" w:cs=\"{complex}\"{east_asia}/>{text_color}<w:sz w:val=\"{body_size}\"/><w:szCs w:val=\"{body_size}\"/>{language}</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after=\"{after}\" w:line=\"{line}\" w:lineRule=\"auto\"/></w:pPr></w:pPrDefault></w:docDefaults>"
     ));
     out.push_str("<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/></w:style>");
     out.push_str("<w:style w:type=\"character\" w:default=\"1\" w:styleId=\"DefaultParagraphFont\"><w:name w:val=\"Default Paragraph Font\"/><w:uiPriority w:val=\"1\"/><w:semiHidden/><w:unhideWhenUsed/></w:style>");
@@ -818,13 +840,13 @@ fn styles_xml(doc: &DocxDocument) -> String {
         let size = (heading_sizes[level - 1].max(styles.font_size_pt) * 2.0).round() as i64;
         let italic = if level >= 5 { "<w:i/><w:iCs/>" } else { "" };
         out.push_str(&format!(
-            "<w:style w:type=\"paragraph\" w:styleId=\"Heading{level}\"><w:name w:val=\"heading {level}\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"9\"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before=\"{}\" w:after=\"120\"/><w:outlineLvl w:val=\"{}\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"{heading_font}\" w:hAnsi=\"{heading_font}\" w:cs=\"{heading_font}\"/><w:b/><w:bCs/>{italic}<w:color w:val=\"{heading_color}\"/><w:sz w:val=\"{size}\"/><w:szCs w:val=\"{size}\"/></w:rPr></w:style>",
+            "<w:style w:type=\"paragraph\" w:styleId=\"Heading{level}\"><w:name w:val=\"heading {level}\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"9\"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before=\"{}\" w:after=\"120\"/><w:outlineLvl w:val=\"{}\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"{heading_font}\" w:hAnsi=\"{heading_font}\" w:cs=\"{heading_complex}\"/><w:b/><w:bCs/>{italic}<w:color w:val=\"{heading_color}\"/><w:sz w:val=\"{size}\"/><w:szCs w:val=\"{size}\"/></w:rPr></w:style>",
             spacing_before[level - 1],
             level - 1
         ));
     }
     out.push_str(&format!(
-        "<w:style w:type=\"paragraph\" w:styleId=\"Title\"><w:name w:val=\"Title\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"10\"/><w:qFormat/><w:pPr><w:spacing w:after=\"160\" w:line=\"240\" w:lineRule=\"auto\"/><w:contextualSpacing/></w:pPr><w:rPr><w:rFonts w:ascii=\"{heading_font}\" w:hAnsi=\"{heading_font}\" w:cs=\"{heading_font}\"/><w:b/><w:color w:val=\"{heading_color}\"/><w:kern w:val=\"28\"/><w:sz w:val=\"52\"/><w:szCs w:val=\"52\"/></w:rPr></w:style>"
+        "<w:style w:type=\"paragraph\" w:styleId=\"Title\"><w:name w:val=\"Title\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"10\"/><w:qFormat/><w:pPr><w:spacing w:after=\"160\" w:line=\"240\" w:lineRule=\"auto\"/><w:contextualSpacing/></w:pPr><w:rPr><w:rFonts w:ascii=\"{heading_font}\" w:hAnsi=\"{heading_font}\" w:cs=\"{heading_complex}\"/><w:b/><w:color w:val=\"{heading_color}\"/><w:kern w:val=\"28\"/><w:sz w:val=\"52\"/><w:szCs w:val=\"52\"/></w:rPr></w:style>"
     ));
     out.push_str("<w:style w:type=\"paragraph\" w:styleId=\"Subtitle\"><w:name w:val=\"Subtitle\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"11\"/><w:qFormat/><w:pPr><w:spacing w:after=\"240\"/></w:pPr><w:rPr><w:color w:val=\"595959\"/><w:sz w:val=\"30\"/><w:szCs w:val=\"30\"/></w:rPr></w:style>");
     out.push_str("<w:style w:type=\"paragraph\" w:styleId=\"Caption\"><w:name w:val=\"caption\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"35\"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:spacing w:after=\"200\" w:line=\"240\" w:lineRule=\"auto\"/></w:pPr><w:rPr><w:i/><w:iCs/><w:color w:val=\"595959\"/><w:sz w:val=\"18\"/><w:szCs w:val=\"18\"/></w:rPr></w:style>");
@@ -832,7 +854,7 @@ fn styles_xml(doc: &DocxDocument) -> String {
     out.push_str("<w:style w:type=\"paragraph\" w:styleId=\"Code\"><w:name w:val=\"Code\"/><w:basedOn w:val=\"Normal\"/><w:uiPriority w:val=\"39\"/><w:qFormat/><w:pPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"F2F2F2\"/><w:spacing w:before=\"120\" w:after=\"120\" w:line=\"240\" w:lineRule=\"auto\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Consolas\" w:hAnsi=\"Consolas\" w:cs=\"Consolas\"/><w:sz w:val=\"19\"/><w:szCs w:val=\"19\"/></w:rPr></w:style>");
     out.push_str("<w:style w:type=\"paragraph\" w:styleId=\"ListParagraph\"><w:name w:val=\"List Paragraph\"/><w:basedOn w:val=\"Normal\"/><w:uiPriority w:val=\"34\"/><w:qFormat/><w:pPr><w:spacing w:after=\"60\"/><w:ind w:left=\"720\"/><w:contextualSpacing/></w:pPr></w:style>");
     out.push_str(&format!(
-        "<w:style w:type=\"paragraph\" w:styleId=\"TOCHeading\"><w:name w:val=\"TOC Heading\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"39\"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before=\"240\" w:after=\"120\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"{heading_font}\" w:hAnsi=\"{heading_font}\" w:cs=\"{heading_font}\"/><w:b/><w:color w:val=\"{heading_color}\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:style>"
+        "<w:style w:type=\"paragraph\" w:styleId=\"TOCHeading\"><w:name w:val=\"TOC Heading\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"39\"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before=\"240\" w:after=\"120\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"{heading_font}\" w:hAnsi=\"{heading_font}\" w:cs=\"{heading_complex}\"/><w:b/><w:color w:val=\"{heading_color}\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:style>"
     ));
     for level in 1..=6u32 {
         out.push_str(&format!(

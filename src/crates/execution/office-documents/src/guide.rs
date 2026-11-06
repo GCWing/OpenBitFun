@@ -3,16 +3,22 @@
 use crate::OfficeFormat;
 
 const DOCX: &str = concat!(
+    include_str!("guides/fonts.md"),
+    "\n",
     include_str!("guides/docx.md"),
     "\n",
     include_str!("guides/verification.md")
 );
 const XLSX: &str = concat!(
+    include_str!("guides/fonts.md"),
+    "\n",
     include_str!("guides/xlsx.md"),
     "\n",
     include_str!("guides/verification.md")
 );
 const PPTX: &str = concat!(
+    include_str!("guides/fonts.md"),
+    "\n",
     include_str!("guides/pptx.md"),
     "\n",
     include_str!("guides/verification.md")

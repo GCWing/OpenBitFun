@@ -1096,3 +1096,288 @@ $$A = \begin{pmatrix}a&b\\c&d\end{pmatrix}$$
         assert_eq!(reopened.to_bytes().unwrap(), before);
     }
 }
+
+const FONT_SAMPLE_TEXT: &[(&str, &str)] = &[
+    ("en-US", "English: Report & <data>"),
+    ("zh-CN", "简体中文：工程规模与社区增长"),
+    ("zh-TW", "繁體中文：工程規模與社群成長"),
+    ("ja-JP", "日本語：プロジェクトの成長"),
+    ("ko-KR", "한국어: 프로젝트 성장"),
+    ("ar", "العربية: تقرير المشروع"),
+];
+
+#[test]
+fn docx_font_scopes_and_reset_preserve_multilingual_content() {
+    let mut doc = OfficeDocument::new(
+        OfficeFormat::Docx,
+        Some(&json!({"styles":{
+            "font":"Legacy Latin", "east_asia_font":"Required CJK", "heading_font":"Heading Family",
+            "complex_script_font":"Required Complex", "font_size_pt":12
+        }})),
+    )
+    .unwrap();
+    let mut blocks = vec![json!({"type":"heading","level":1,"text":"Font inheritance · 字体继承"})];
+    blocks.extend(FONT_SAMPLE_TEXT.iter().map(|(lang, text)| {
+        json!({"type":"paragraph","runs":[
+            {"text":text,"lang":lang,"latin_font":"Arial"}
+        ]})
+    }));
+    blocks.push(json!({"type":"table","rows":[["Scope","中文"],["Run override",{"runs":[{"text":"Mixed 中文","font":"Legacy All","east_asia_font":"Required CJK"}]}]]}));
+    doc.apply(
+        &[json!({"op":"insert_blocks","blocks":blocks})],
+        &ImageSources::new(),
+    )
+    .unwrap();
+    let parts = assert_well_formed(&doc.to_bytes().unwrap());
+    let xml = text_of(&parts, "word/document.xml");
+    let dom = roxmltree::Document::parse(&xml).unwrap();
+    let ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    for text in FONT_SAMPLE_TEXT.iter().map(|(_, text)| *text) {
+        let run = dom
+            .descendants()
+            .find(|n| n.tag_name().name() == "t" && n.text() == Some(text))
+            .unwrap()
+            .parent()
+            .unwrap();
+        let fonts = run
+            .descendants()
+            .find(|n| n.tag_name().name() == "rFonts")
+            .unwrap();
+        assert_eq!(fonts.attribute((ns, "ascii")), Some("Arial"));
+        assert_eq!(
+            fonts.attribute((ns, "eastAsia")),
+            None,
+            "Latin-only choice must preserve CJK inheritance"
+        );
+        assert_eq!(fonts.attribute((ns, "cs")), None);
+    }
+    assert!(xml.contains("w:ascii=\"Legacy All\" w:hAnsi=\"Legacy All\" w:eastAsia=\"Required CJK\" w:cs=\"Legacy All\""));
+    let styles = text_of(&parts, "word/styles.xml");
+    assert!(styles.contains("w:cs=\"Required Complex\""));
+    doc.apply(&ops(json!([
+        {"op":"set_styles","font":null,"heading_font":null,"east_asia_font":null,"complex_script_font":null},
+        {"op":"replace_blocks","index":7,"blocks":[{"type":"table","rows":[["Scope","中文"],["Default font restored","内容保留"]]}]}
+    ])), &ImageSources::new()).unwrap();
+    let bytes = doc.to_bytes().unwrap();
+    let reopened = OfficeDocument::open(&bytes, &OpenOptions::default()).unwrap();
+    let view = reopened
+        .read(&ReadRequest {
+            detail: Detail::Full,
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(view["settings"]["styles"]["font_size_pt"], 12.0);
+    for (_, text) in FONT_SAMPLE_TEXT {
+        assert!(view.to_string().contains(text));
+    }
+    let parts = assert_well_formed(&bytes);
+    assert!(!text_of(&parts, "word/styles.xml").contains("w:eastAsia="));
+    assert!(!text_of(&parts, "word/document.xml").contains("Required CJK"));
+    keep_sample("font-inheritance.docx", &reopened.to_bytes().unwrap());
+}
+
+#[test]
+fn pptx_font_precedence_and_reset_preserve_theme_and_content() {
+    let images = ImageSources::new();
+    let mut deck=OfficeDocument::new(OfficeFormat::Pptx,Some(&json!({"theme":{"font":"Theme Latin","east_asia_font":"Theme East","complex_script_font":"Theme Complex"}}))).unwrap();
+    deck.apply(&[json!({"op":"insert_slides","slides":[{"elements":[
+        {"type":"text","x":40,"y":40,"w":1100,"h":200,"font":"Element All","east_asia_font":"Element East","paragraphs":[
+            {"font":"Paragraph All","east_asia_font":"Paragraph East","runs":[
+                {"text":"first","font":"Run All","latin_font":"Run Latin"},
+                {"text":"second","complex_script_font":"Run Complex"}
+            ]}
+        ]}
+    ]}]})],&images).unwrap();
+    let parts = assert_well_formed(&deck.to_bytes().unwrap());
+    let xml = text_of(&parts, "ppt/slides/slide1.xml");
+    let dom = roxmltree::Document::parse(&xml).unwrap();
+    for (text, expected) in [
+        ("first", ["Run Latin", "Run All", "Run All"]),
+        ("second", ["Paragraph All", "Paragraph East", "Run Complex"]),
+    ] {
+        let run = dom
+            .descendants()
+            .find(|n| n.tag_name().name() == "t" && n.text() == Some(text))
+            .unwrap()
+            .parent()
+            .unwrap();
+        for (slot, font) in ["latin", "ea", "cs"].into_iter().zip(expected) {
+            assert_eq!(
+                run.descendants()
+                    .find(|n| n.tag_name().name() == slot)
+                    .unwrap()
+                    .attribute("typeface"),
+                Some(font)
+            );
+        }
+    }
+    let end = dom
+        .descendants()
+        .find(|n| n.tag_name().name() == "endParaRPr")
+        .unwrap();
+    assert_eq!(
+        end.children()
+            .find(|n| n.tag_name().name() == "ea")
+            .unwrap()
+            .attribute("typeface"),
+        Some("Paragraph East")
+    );
+    // Removal through patches restores inherited defaults; replacement retains all text.
+    deck.apply(&ops(json!([
+        {"op":"set_theme","font":null,"east_asia_font":null,"complex_script_font":null},
+        {"op":"update_slide","index":0,"update_elements":[{"index":0,"font":null,"east_asia_font":null,"latin_font":"Arial","paragraphs":[{"text":"Updated 中文","lang":"zh-CN"}]}]}
+    ])),&images).unwrap();
+    let parts = assert_well_formed(&deck.to_bytes().unwrap());
+    let xml = text_of(&parts, "ppt/slides/slide1.xml");
+    assert!(!xml.contains("<a:ea "));
+    assert!(xml.contains("<a:latin typeface=\"Arial\"/>"));
+    assert!(xml.contains("Updated 中文"));
+    let elements:Vec<_>=FONT_SAMPLE_TEXT.iter().enumerate().map(|(i,(lang,text))|json!({
+        "type":"text","x":64,"y":60+i*80,"w":1140,"h":62,"size_pt":26,"latin_font":"Arial","text":text,"lang":lang
+    })).collect();
+    deck.apply(&[json!({"op":"update_slide","index":0,"elements":elements,"notes":"中文 notes: default East Asian fonts, Latin-only override."})],&images).unwrap();
+    let bytes = deck.to_bytes().unwrap();
+    let reopened = OfficeDocument::open(&bytes, &OpenOptions::default()).unwrap();
+    for (_, text) in FONT_SAMPLE_TEXT {
+        assert!(reopened
+            .read(&ReadRequest {
+                detail: Detail::Full,
+                ..Default::default()
+            })
+            .unwrap()
+            .to_string()
+            .contains(text));
+    }
+    keep_sample("font-inheritance.pptx", &reopened.to_bytes().unwrap());
+}
+
+#[test]
+fn xlsx_font_reset_preserves_values_formulas_and_other_styles() {
+    let images = ImageSources::new();
+    let mut book = OfficeDocument::new(OfficeFormat::Xlsx, None).unwrap();
+    let mut rows = vec![json!([
+        "Language",
+        "Default / 默认",
+        "Reset font / 恢复字体",
+        "Amount",
+        "Formula"
+    ])];
+    rows.extend(
+        FONT_SAMPLE_TEXT
+            .iter()
+            .enumerate()
+            .map(|(i, (lang, text))| json!([lang, text, text, i + 1, format!("=D{}*2", i + 2)])),
+    );
+    book.apply(&ops(json!([
+        {"op":"add_sheet","name":"Fonts 字体","rows":rows},
+        {"op":"format_range","range":"C2:E7","style":{"font_name":"Unverified Family","bold":true,"font_color":"#1F4E79","number_format":"0.00"}},
+        {"op":"format_range","range":"A1:E1","style":{"bold":true,"fill_color":"#D9E2F3"}},
+        {"op":"set_column_widths","widths":{"A":12,"B:C":40,"D:E":14}},
+        {"op":"set_row_heights","heights":{"1:7":30}}
+    ])),&images).unwrap();
+    // Null kept its legacy no-op meaning; clearing uses an explicit operation flag.
+    book.apply(
+        &[json!({"op":"format_range","range":"C2:E7","style":{"font_name":null}})],
+        &images,
+    )
+    .unwrap();
+    assert!(
+        text_of(&entries(&book.to_bytes().unwrap()), "xl/styles.xml").contains("Unverified Family")
+    );
+    book.apply(
+        &[json!({"op":"format_range","range":"C2:E7","reset_font":true,"style":{}})],
+        &images,
+    )
+    .unwrap();
+    let bytes = book.to_bytes().unwrap();
+    let parts = assert_well_formed(&bytes);
+    let styles = text_of(&parts, "xl/styles.xml");
+    assert!(!styles.contains("Unverified Family"));
+    let source: Value = serde_json::from_slice(&parts["openbitfun/genoffice.json"]).unwrap();
+    let cells = &source["document"]["sheets"][0]["cells"];
+    assert_eq!(cells["C2"]["value"], FONT_SAMPLE_TEXT[0].1);
+    assert_eq!(cells["D2"]["value"], 1);
+    assert_eq!(cells["E2"]["formula"], "D2*2");
+    for name in ["C2", "D2", "E2"] {
+        assert_eq!(cells[name]["style"]["bold"], true);
+        assert_eq!(cells[name]["style"]["number_format"], "0.00");
+        assert_eq!(cells[name]["style"]["font_color"], "#1F4E79");
+        assert!(cells[name]["style"].get("font_name").is_none());
+    }
+    let reopened = OfficeDocument::open(&bytes, &OpenOptions::default()).unwrap();
+    keep_sample("font-inheritance.xlsx", &reopened.to_bytes().unwrap());
+    // A custom font name does not imply a Swiss/sans-serif font classification.
+    book.apply(
+        &[json!({"op":"format_range","range":"B2","style":{"font_name":"Required Serif"}})],
+        &images,
+    )
+    .unwrap();
+    let styles = text_of(&entries(&book.to_bytes().unwrap()), "xl/styles.xml");
+    let dom = roxmltree::Document::parse(&styles).unwrap();
+    let font = dom
+        .descendants()
+        .find(|n| n.tag_name().name() == "name" && n.attribute("val") == Some("Required Serif"))
+        .unwrap()
+        .parent()
+        .unwrap();
+    assert!(!font.children().any(|n| n.tag_name().name() == "family"));
+}
+
+#[test]
+fn font_input_errors_are_atomic_and_existing_v1_names_stay_readable() {
+    for (format, initial, bad) in [
+        (
+            OfficeFormat::Docx,
+            json!({"op":"insert_blocks","markdown":"中文 original"}),
+            json!({"op":"set_styles","east_asia_font":" "}),
+        ),
+        (
+            OfficeFormat::Pptx,
+            json!({"op":"insert_slides","slides":[{"elements":[]}]}),
+            json!({"op":"set_theme","font":"bad\nname"}),
+        ),
+        (
+            OfficeFormat::Xlsx,
+            json!({"op":"add_sheet","name":"Data","rows":[["中文 original"]]}),
+            json!({"op":"format_range","range":"A1","style":{"font_name":12}}),
+        ),
+    ] {
+        let mut doc = OfficeDocument::new(format, None).unwrap();
+        doc.apply(&[initial], &ImageSources::new()).unwrap();
+        let before = doc.to_bytes().unwrap();
+        let error = doc.apply(&[bad], &ImageSources::new()).unwrap_err();
+        assert_eq!(error.operation_index, Some(0));
+        assert!(error.to_string().contains("font"));
+        assert_eq!(doc.to_bytes().unwrap(), before);
+    }
+    // Hand-authored old payload: no script-specific fields; an old empty name is
+    // preserved rather than making the record unreadable or resetting user data.
+    let legacy=br#"{"schema":"openbitfun.genoffice","version":1,"format":"docx","revision":4,"document":{"styles":{"font":"Legacy All","east_asia_font":""},"blocks":[{"type":"paragraph","runs":[{"text":"\u4e2d\u6587","font":"Legacy Run"}]}]}}"#;
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file(
+        "openbitfun/genoffice.json",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .unwrap();
+    zip.write_all(legacy).unwrap();
+    let bytes = zip.finish().unwrap().into_inner();
+    let mut doc = OfficeDocument::open(&bytes, &OpenOptions::default()).unwrap();
+    doc.apply(
+        &[json!({"op":"set_properties","title":"Unrelated edit"})],
+        &ImageSources::new(),
+    )
+    .unwrap();
+    let bytes = doc.to_bytes().unwrap();
+    let parts = assert_well_formed(&bytes);
+    assert!(text_of(&parts,"word/document.xml").contains("w:ascii=\"Legacy Run\" w:hAnsi=\"Legacy Run\" w:eastAsia=\"Legacy Run\" w:cs=\"Legacy Run\""));
+    let reopened = OfficeDocument::open(&bytes, &OpenOptions::default()).unwrap();
+    let view = reopened
+        .read(&ReadRequest {
+            detail: Detail::Full,
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(view["settings"]["styles"]["east_asia_font"], "");
+    assert_eq!(view["blocks"][0]["runs"][0]["font"], "Legacy Run");
+    assert!(view["blocks"][0]["runs"][0].get("latin_font").is_none());
+}

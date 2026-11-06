@@ -148,12 +148,14 @@ pub(crate) fn cm_to_twips(cm: f64) -> u32 {
 pub struct DocxStyles {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lang: Option<String>,
-    /// Latin body font; Word's default when absent.
+    /// Legacy Latin and complex-script body font. East Asian text is separate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
     /// Font for CJK text, such as "Microsoft YaHei" or "SimSun".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub east_asia_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub complex_script_font: Option<String>,
     #[serde(default = "default_body_size", alias = "size_pt")]
     pub font_size_pt: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -196,6 +198,7 @@ impl Default for DocxStyles {
             lang: None,
             font: None,
             east_asia_font: None,
+            complex_script_font: None,
             font_size_pt: default_body_size(),
             heading_font: None,
             heading_color: default_heading_color(),

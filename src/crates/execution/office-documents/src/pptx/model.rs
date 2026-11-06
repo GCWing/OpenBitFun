@@ -66,6 +66,8 @@ pub struct DeckTheme {
     /// Font for CJK text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub east_asia_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub complex_script_font: Option<String>,
     /// Default text language; runs/elements may override it. Omitted means auto.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lang: Option<String>,
@@ -133,6 +135,12 @@ pub struct TextDefaults {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latin_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub east_asia_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub complex_script_font: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lang: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -269,6 +277,12 @@ pub struct TableElement {
     pub font_size_pt: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latin_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub east_asia_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub complex_script_font: Option<String>,
     #[serde(default = "default_header_fill")]
     pub header_fill: String,
     #[serde(default = "default_header_color")]
@@ -371,6 +385,12 @@ struct ParagraphFull {
     #[serde(default)]
     font: Option<String>,
     #[serde(default)]
+    latin_font: Option<String>,
+    #[serde(default)]
+    east_asia_font: Option<String>,
+    #[serde(default)]
+    complex_script_font: Option<String>,
+    #[serde(default)]
     lang: Option<String>,
     #[serde(flatten)]
     extra: Extra,
@@ -393,6 +413,15 @@ impl From<ParagraphInput> for Paragraph {
                         run.color = full.color.clone();
                     }
                     if run.font.is_none() {
+                        // A run's all-script override outranks paragraph defaults.
+                        // Otherwise inherit each script before the paragraph shorthand.
+                        run.latin_font = run.latin_font.take().or(full.latin_font.clone());
+                        run.east_asia_font =
+                            run.east_asia_font.take().or(full.east_asia_font.clone());
+                        run.complex_script_font = run
+                            .complex_script_font
+                            .take()
+                            .or(full.complex_script_font.clone());
                         run.font = full.font.clone();
                     }
                     if run.lang.is_none() {

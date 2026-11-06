@@ -458,6 +458,16 @@ impl SlideWriter<'_> {
             // empty English end run can reintroduce the wrong font fallback.
             text: paragraph.runs.iter().map(|run| run.text.as_str()).collect(),
             lang: paragraph.runs.last().and_then(|run| run.lang.clone()),
+            font: paragraph.runs.last().and_then(|run| run.font.clone()),
+            latin_font: paragraph.runs.last().and_then(|run| run.latin_font.clone()),
+            east_asia_font: paragraph
+                .runs
+                .last()
+                .and_then(|run| run.east_asia_font.clone()),
+            complex_script_font: paragraph
+                .runs
+                .last()
+                .and_then(|run| run.complex_script_font.clone()),
             size_pt: Some(size),
             ..Run::default()
         };
@@ -514,14 +524,26 @@ impl SlideWriter<'_> {
                 "<a:highlight><a:srgbClr val=\"{rgb}\"/></a:highlight>"
             ));
         }
-        let font = run
-            .font
-            .as_deref()
-            .or(defaults.font.as_deref())
-            .or_else(|| (run.code == Some(true)).then_some("Consolas"));
-        if let Some(font) = font {
-            let font = esc(font);
-            children.push_str(&format!("<a:latin typeface=\"{font}\"/><a:ea typeface=\"{font}\"/><a:cs typeface=\"{font}\"/>"));
+        // Resolve by scope first, then by script. A local legacy `font` still
+        // overrides every script; a Latin-only override leaves CJK inheritance.
+        for (slot, local, inherited) in [
+            ("latin", &run.latin_font, &defaults.latin_font),
+            ("ea", &run.east_asia_font, &defaults.east_asia_font),
+            (
+                "cs",
+                &run.complex_script_font,
+                &defaults.complex_script_font,
+            ),
+        ] {
+            let font = local
+                .as_deref()
+                .or(run.font.as_deref())
+                .or(inherited.as_deref())
+                .or(defaults.font.as_deref())
+                .or_else(|| (run.code == Some(true)).then_some("Consolas"));
+            if let Some(font) = font {
+                children.push_str(&format!("<a:{slot} typeface=\"{}\"/>", esc(font)));
+            }
         }
         if let Some(link) = &run.link {
             let id = self.link(link);
@@ -632,6 +654,9 @@ impl SlideWriter<'_> {
                         .or_else(|| is_header.then(|| table.header_color.clone()))
                         .or_else(|| table.text_color.clone()),
                     font: table.font.clone(),
+                    latin_font: table.latin_font.clone(),
+                    east_asia_font: table.east_asia_font.clone(),
+                    complex_script_font: table.complex_script_font.clone(),
                     lang: None,
                     align: cell.align,
                 };
@@ -774,6 +799,7 @@ fn notes_xml(notes: &str, default_lang: Option<&str>) -> String {
 fn theme_xml(deck: &PptxDocument) -> String {
     let latin = esc(deck.theme.font.as_deref().unwrap_or("Calibri"));
     let east_asia = esc(deck.theme.east_asia_font.as_deref().unwrap_or(""));
+    let complex = esc(deck.theme.complex_script_font.as_deref().unwrap_or(""));
     let dark = deck
         .theme
         .text_color
@@ -783,7 +809,7 @@ fn theme_xml(deck: &PptxDocument) -> String {
         .unwrap_or_else(|| "<a:sysClr val=\"windowText\" lastClr=\"000000\"/>".to_string());
     let font_set = |name: &str| {
         format!(
-            "<a:{name}><a:latin typeface=\"{latin}\"/><a:ea typeface=\"{east_asia}\"/><a:cs typeface=\"\"/><a:font script=\"Jpan\" typeface=\"游ゴシック\"/><a:font script=\"Hang\" typeface=\"맑은 고딕\"/><a:font script=\"Hans\" typeface=\"等线\"/><a:font script=\"Hant\" typeface=\"新細明體\"/></a:{name}>"
+            "<a:{name}><a:latin typeface=\"{latin}\"/><a:ea typeface=\"{east_asia}\"/><a:cs typeface=\"{complex}\"/><a:font script=\"Jpan\" typeface=\"游ゴシック\"/><a:font script=\"Hang\" typeface=\"맑은 고딕\"/><a:font script=\"Hans\" typeface=\"等线\"/><a:font script=\"Hant\" typeface=\"新細明體\"/></a:{name}>"
         )
     };
     let fill_variants = "<a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill><a:solidFill><a:schemeClr val=\"phClr\"><a:tint val=\"50000\"/></a:schemeClr></a:solidFill><a:solidFill><a:schemeClr val=\"phClr\"><a:shade val=\"80000\"/></a:schemeClr></a:solidFill>";
