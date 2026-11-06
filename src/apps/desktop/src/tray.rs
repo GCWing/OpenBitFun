@@ -7,8 +7,9 @@
 //! Left-click  – shows and focuses the main window on macOS; toggles it elsewhere.
 //! Right-click – opens a context menu with:
 //!   • toggle desktop Agent companion pet (persisted via `app.ai_experience`)
-//!   • "Show OpenBitFun"
-//!   • "Quit OpenBitFun"
+//!   • "Show main window"
+//!   • "Restart application"
+//!   • "Quit"
 //!
 //! The context menu is rebuilt every time the user left-clicks (for freshness),
 //! periodically, and after locale changes.
@@ -38,28 +39,32 @@ const TRAY_TRACE_CATEGORY: &str = "native_background";
 
 struct TrayStrings {
     show_app: &'static str,
+    restart_app: &'static str,
     quit_app: &'static str,
     desktop_pet: &'static str,
     mark_all_read: &'static str,
 }
 
 const STRINGS_ZH_CN: TrayStrings = TrayStrings {
-    show_app: "显示 OpenBitFun",
-    quit_app: "退出 OpenBitFun",
+    show_app: "显示主界面",
+    restart_app: "重启应用",
+    quit_app: "退出",
     desktop_pet: "显示桌面宠物",
     mark_all_read: "全部标为已读",
 };
 
 const STRINGS_ZH_TW: TrayStrings = TrayStrings {
-    show_app: "顯示 OpenBitFun",
-    quit_app: "退出 OpenBitFun",
+    show_app: "顯示主介面",
+    restart_app: "重啟應用",
+    quit_app: "退出",
     desktop_pet: "顯示桌面寵物",
     mark_all_read: "全部標為已讀",
 };
 
 const STRINGS_EN_US: TrayStrings = TrayStrings {
-    show_app: "Show OpenBitFun",
-    quit_app: "Quit OpenBitFun",
+    show_app: "Show main window",
+    restart_app: "Restart application",
+    quit_app: "Quit",
     desktop_pet: "Show desktop pet",
     mark_all_read: "Mark all as read",
 };
@@ -141,6 +146,10 @@ async fn rebuild_tray_menu(app: &AppHandle) {
         Ok(i) => i,
         Err(_) => return,
     };
+    let restart_item = match MenuItemBuilder::with_id("restart", s.restart_app).build(app) {
+        Ok(i) => i,
+        Err(_) => return,
+    };
     let quit_item = match MenuItemBuilder::with_id("quit", s.quit_app).build(app) {
         Ok(i) => i,
         Err(_) => return,
@@ -153,6 +162,7 @@ async fn rebuild_tray_menu(app: &AppHandle) {
         .separator()
         .item(&show_item)
         .separator()
+        .item(&restart_item)
         .item(&quit_item)
         .build()
     {
@@ -222,6 +232,7 @@ pub fn setup_tray(
     .enabled(current_unread_count() > 0)
     .build(app)?;
     let show_item = MenuItemBuilder::with_id("show_window", STRINGS_EN_US.show_app).build(app)?;
+    let restart_item = MenuItemBuilder::with_id("restart", STRINGS_EN_US.restart_app).build(app)?;
     let quit_item = MenuItemBuilder::with_id("quit", STRINGS_EN_US.quit_app).build(app)?;
     startup_trace.record_elapsed_step(TRAY_TRACE_CATEGORY, "setup_tray.menu_items", step_started);
 
@@ -233,6 +244,7 @@ pub fn setup_tray(
         .separator()
         .item(&show_item)
         .separator()
+        .item(&restart_item)
         .item(&quit_item)
         .build()?;
     startup_trace.record_elapsed_step(TRAY_TRACE_CATEGORY, "setup_tray.menu", step_started);
@@ -264,6 +276,16 @@ pub fn setup_tray(
                 }
             } else if id == "show_window" {
                 show_main_window(app);
+            } else if id == "restart" {
+                log::info!("Restart requested from tray menu");
+                let app_handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) =
+                        crate::api::system_api::restart_app(app_handle, Default::default()).await
+                    {
+                        log::warn!("Failed to restart application from tray: {}", error);
+                    }
+                });
             } else if id == "quit" {
                 log::info!("Quit requested from tray menu");
                 crate::request_desktop_exit(app, 0, "tray_quit");
