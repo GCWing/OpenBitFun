@@ -1877,9 +1877,9 @@ $_section-header-height: 22px;
   flex: 0 0 var(--openbitfun-control-height-sm);
   pointer-events: auto;
   color: var(--openbitfun-color-content-secondary);
-  // Soft glass with no outline: the card has one edge, its own.
+  // The stage has an opaque background; sampling it with backdrop-filter adds
+  // compositing work during the artwork transition without changing the tint.
   background: color-mix(in srgb, var(--openbitfun-color-content-primary) 7%, transparent);
-  backdrop-filter: var(--openbitfun-effect-blur-subtle);
   transition:
     color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
     background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
