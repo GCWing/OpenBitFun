@@ -3850,6 +3850,9 @@
     "statusQueuedSending": "Sending…",
     "statusFailed": "Send failed",
     "actions": {
+      "more": "More message actions",
+      "collapse": "Collapse queue",
+      "sendNowLabel": "Send now",
       "edit": "Edit",
       "sendNow": "Send now (steer)",
       "delete": "Delete"

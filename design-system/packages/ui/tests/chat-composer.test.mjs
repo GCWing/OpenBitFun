@@ -102,7 +102,7 @@ test("ChatComposer exposes a neutral pending-message queue with per-message atta
       null,
       createElement(
         ChatComposerQueueItem,
-        { state: "default" },
+        { state: "default", leadingIcon: createElement("svg", { "data-queue-mark": true }) },
         createElement(
           ChatComposerQueueItemContent,
           null,
@@ -138,6 +138,7 @@ test("ChatComposer exposes a neutral pending-message queue with per-message atta
   assert.ok(attachmentBadge);
   assert.match(attachmentBadge, /aria-label="3 image attachments"/);
   assert.match(markup, /aria-label="Send now"/);
+  assert.match(markup, /data-openbitfun-part="leading-icon" aria-hidden="true"><svg data-queue-mark="true"/);
 });
 
 test("ChatComposer queue exposes a disclosure toggle and toned per-message status", () => {
@@ -188,44 +189,31 @@ test("ChatComposer queue keeps four message rows visible before scrolling", asyn
   const maxBlockSize = listRule.match(/max-block-size:\s*calc\((.*?)\);/s)?.[1];
   assert.ok(maxBlockSize);
   assert.equal(
-    (maxBlockSize.match(/--openbitfun-control-chat-composer-control-height/g) ?? []).length,
+    (maxBlockSize.match(/--openbitfun-control-height-sm/g) ?? []).length,
     4,
   );
-  assert.equal((maxBlockSize.match(/--openbitfun-space-1/g) ?? []).length, 3);
+  assert.match(listRule, /gap:\s*0;/);
+  assert.match(styles, /\.item\s*\{[^}]*min-block-size:\s*var\(--openbitfun-control-height-sm\)/s);
   assert.match(listRule, /overflow-y:\s*auto/);
   assert.match(listRule, /overscroll-behavior-y:\s*contain/);
 });
 
-test("ChatComposer queue reveals row actions on hover and keyboard focus", async () => {
+test("ChatComposer queue keeps actions visible and message ink primary", async () => {
   const styles = await readFile(
     new URL("../src/flow-chat/composer/ChatComposerQueue.module.css", import.meta.url),
     "utf8",
   );
-
-  assert.match(styles, /@media \(hover: hover\) and \(pointer: fine\)/);
-  assert.match(
-    styles,
-    /\.actions\s*\{[^}]*pointer-events:\s*none;[^}]*opacity:\s*0;/s,
-  );
-  assert.match(
-    styles,
-    /\.item:hover \.actions,\s*\.item:focus-within \.actions\s*\{[^}]*pointer-events:\s*auto;[^}]*opacity:\s*1;/s,
-  );
-});
-
-test("ChatComposer queue promotes message text from secondary to primary on interaction", async () => {
-  const styles = await readFile(
-    new URL("../src/flow-chat/composer/ChatComposerQueue.module.css", import.meta.url),
-    "utf8",
-  );
+  const actionsRule = styles.match(/\.actions\s*\{[^}]*\}/s)?.[0];
   const contentRule = styles.match(/\.content\s*\{[^}]*\}/s)?.[0];
-
+  assert.ok(actionsRule);
   assert.ok(contentRule);
-  assert.match(contentRule, /color:\s*var\(--openbitfun-color-content-secondary\)/);
-  assert.match(
-    styles,
-    /\.item:hover \.content,\s*\.item:focus-within \.content\s*\{[^}]*color:\s*var\(--openbitfun-color-content-primary\)/s,
-  );
+  assert.match(actionsRule, /display:\s*inline-flex/);
+  assert.doesNotMatch(styles, /pointer-events:\s*none|opacity:\s*0(?:;|\s)/);
+  assert.match(contentRule, /color:\s*var\(--openbitfun-color-content-primary\)/);
+  assert.match(styles, /@media \(hover: hover\) and \(pointer: fine\)/);
+  assert.match(styles, /\.item:focus-within\s*\{[^}]*background:/s);
+  assert.match(styles, /@container composer-queue \(max-width: 22rem\)/);
+  assert.match(styles, /\[data-openbitfun-part="label"\]\s*\{\s*display: none;/);
 });
 
 test("ChatComposer queue never changes the input surface geometry", async () => {

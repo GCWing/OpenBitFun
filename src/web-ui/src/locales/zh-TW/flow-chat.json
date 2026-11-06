@@ -3850,6 +3850,9 @@
     "statusQueuedSending": "傳送中…",
     "statusFailed": "傳送失敗",
     "actions": {
+      "more": "更多訊息操作",
+      "collapse": "收起待傳送清單",
+      "sendNowLabel": "立即傳送",
       "edit": "編輯",
       "sendNow": "立即發送（引導）",
       "delete": "刪除"

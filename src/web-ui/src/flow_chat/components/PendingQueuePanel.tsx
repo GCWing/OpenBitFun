@@ -19,8 +19,8 @@ import { getActiveSurfaceScope, isSurfaceChangedError, onSurfaceActivated } from
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Paperclip } from 'lucide-react';
-import { OverflowText, Tooltip } from '@openbitfun/ui';
+import { ListEnd, Paperclip } from 'lucide-react';
+import { OverflowText } from '@openbitfun/ui';
 import { stateMachineManager } from '../state-machine';
 import { FlowChatStore } from '../store/FlowChatStore';
 import { pendingQueueManager } from '../services/flow-chat-manager/PendingQueueModule';
@@ -33,7 +33,9 @@ import type { QueuedMessage, SteeringImage } from '../types/flow-chat';
 import { isAcpFlowSession } from '../utils/acpSession';
 import { getQueuedMessageAttachmentCount } from '../utils/pendingQueuePresentation';
 import './PendingQueuePanel.scss';
-import { IconButton, Icon } from '@openbitfun/ui';
+import { PendingQueueMessageActions } from './PendingQueueMessageActions';
+import { usePendingQueueDisclosure } from './usePendingQueueDisclosure';
+import { Icon } from '@openbitfun/ui';
 import {
   ChatComposerQueue,
   ChatComposerQueueAttachmentBadge,
@@ -74,7 +76,7 @@ function LegacyPendingQueuePanel({
   const { t } = useTranslation('flow-chat');
   const sendNowInFlightIdsRef = useRef(new Set<string>());
   const listId = useId();
-  const [expanded, setExpanded] = useState(true);
+  const { expanded, setExpanded, toggle, toggleRef, listRef } = usePendingQueueDisclosure();
   useSyncExternalStore(
     interruptedTurnRecoveryGate.subscribe,
     interruptedTurnRecoveryGate.getSnapshot,
@@ -99,7 +101,7 @@ function LegacyPendingQueuePanel({
       if (sid === sessionId) setItems(snapshot);
     });
     return unsubscribe;
-  }, [sessionId]);
+  }, [sessionId, setExpanded]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -233,6 +235,7 @@ function LegacyPendingQueuePanel({
         data-openbitfun-state={itemState === 'default' ? undefined : itemState}
         key={item.id}
         state={itemState}
+        leadingIcon={<Icon glyph={ListEnd} size="sm" />}
       >
         <ChatComposerQueueItemContent
           data-openbitfun-product-component="pending-queue-panel"
@@ -278,42 +281,21 @@ function LegacyPendingQueuePanel({
           data-openbitfun-product-component="pending-queue-panel"
           data-openbitfun-product-part="actions"
         >
-          <Tooltip content={t('pendingQueue.actions.edit')}>
-            <IconButton
-              aria-label={t('pendingQueue.actions.edit')}
-              data-openbitfun-product-component="pending-queue-panel"
-              data-openbitfun-product-part="action"
-              disabled={isSending}
-              icon={<Icon name="edit" />}
-              size="xs"
-              onClick={() => handleRestoreToComposer(item)}
-            />
-          </Tooltip>
-          <Tooltip content={t('pendingQueue.tooltip.sendNow')}>
-            <IconButton
-              aria-label={t('pendingQueue.actions.sendNow')}
-              data-openbitfun-product-component="pending-queue-panel"
-              data-openbitfun-product-part="action"
-              disabled={isSending || recoveryInFlight}
-              icon={<Icon name="arrow-up" />}
-              loading={isSendingNow}
-              size="xs"
-              onClick={() => {
-                void handleSendNow(item);
-              }}
-            />
-          </Tooltip>
-          <Tooltip content={t('pendingQueue.actions.delete')}>
-            <IconButton
-              aria-label={t('pendingQueue.actions.delete')}
-              data-openbitfun-product-component="pending-queue-panel"
-              data-openbitfun-product-part="action"
-              disabled={isSending}
-              icon={<Icon name="xmark" />}
-              size="xs"
-              onClick={() => handleDelete(item)}
-            />
-          </Tooltip>
+          <PendingQueueMessageActions
+            sendLabel={t('pendingQueue.actions.sendNowLabel')}
+            sendAriaLabel={t('pendingQueue.actions.sendNow')}
+            sendTooltip={t('pendingQueue.tooltip.sendNow')}
+            sendDisabled={isSending || recoveryInFlight}
+            sending={isSendingNow}
+            onSend={() => void handleSendNow(item)}
+            editLabel={t('pendingQueue.actions.edit')}
+            editDisabled={isSending}
+            onEdit={() => handleRestoreToComposer(item)}
+            removeLabel={t('pendingQueue.actions.delete')}
+            removeDisabled={isSending}
+            onRemove={() => handleDelete(item)}
+            onCollapse={expanded ? toggle : undefined}
+          />
         </ChatComposerQueueItemActions>
       </ChatComposerQueueItem>
     );
@@ -334,14 +316,15 @@ function LegacyPendingQueuePanel({
         e.stopPropagation();
       }}
     >
-      <ChatComposerQueueHeader
+      {!expanded && <ChatComposerQueueHeader
         data-openbitfun-product-component="pending-queue-panel"
         data-openbitfun-product-part="header"
       >
         <ChatComposerQueueToggle
+          ref={toggleRef}
           aria-controls={listId}
           expanded={expanded}
-          onClick={() => setExpanded(value => !value)}
+          onClick={toggle}
         >
           <ChatComposerQueueTitle
             count={visibleItems.length}
@@ -351,10 +334,11 @@ function LegacyPendingQueuePanel({
             {t('pendingQueue.title')}
           </ChatComposerQueueTitle>
         </ChatComposerQueueToggle>
-      </ChatComposerQueueHeader>
+      </ChatComposerQueueHeader>}
       <ChatComposerQueueList
         data-openbitfun-product-component="pending-queue-panel"
         data-openbitfun-product-part="list"
+        ref={listRef}
         hidden={!expanded}
         id={listId}
       >

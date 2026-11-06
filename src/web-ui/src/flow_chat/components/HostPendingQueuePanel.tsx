@@ -3,8 +3,10 @@ import type { QueuedMessage } from '../types/flow-chat';
 import { useEffect, useId, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { Button, Icon, IconButton, OverflowText, Tooltip } from '@openbitfun/ui';
-import { Paperclip, RotateCw } from 'lucide-react';
+import { ListEnd, Paperclip, RotateCw } from 'lucide-react';
 import './HostPendingQueuePanel.scss';
+import { PendingQueueMessageActions } from './PendingQueueMessageActions';
+import { usePendingQueueDisclosure } from './usePendingQueueDisclosure';
 import { hostQueuePresentation, observePresentedHostQueue } from '../services/hostQueuePresentation';
 import { HostDialogQueue, type QueueOutboxRecord, type QueueItem } from '../../../../shared/dialog-queue/HostDialogQueue';
 import {
@@ -24,7 +26,7 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
   const view = useSyncExternalStore(queue.subscribe, queue.getSnapshot, queue.getSnapshot);
   const presentation = hostQueuePresentation(queue);
   const projected = useSyncExternalStore(presentation.subscribe, presentation.getSnapshot, presentation.getSnapshot);
-  const [expanded, setExpanded] = useState(true);
+  const { expanded, toggle, toggleRef, listRef } = usePendingQueueDisclosure();
   const [showHelp, setShowHelp] = useState(false);
   const listId = useId();
   const [busy, setBusy] = useState(false);
@@ -69,7 +71,7 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
     const steering = item.status === 'steering_pending';
     const blocked = item.status === 'blocked';
     return <ChatComposerQueueItem data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="item" key={item.turnId}
-      state={blocked ? 'failed' : steering ? 'sending' : 'default'}>
+      leadingIcon={<Icon glyph={ListEnd} size="sm" />} state={blocked ? 'failed' : steering ? 'sending' : 'default'}>
       <ChatComposerQueueItemContent data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="content">
         {renderPreview(item.displayContent || t('pendingQueue.emptyPlaceholder'))}
         {(blocked || steering) && <ChatComposerQueueItemStatus data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" tone={blocked ? 'warning' : 'neutral'}>
@@ -80,19 +82,22 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
       <ChatComposerQueueAttachmentBadge count={item.attachmentCount} icon={<Icon glyph={Paperclip} size="xs" />}
         label={t('hostQueue.attachments', { count: item.attachmentCount })} />
       <ChatComposerQueueItemActions data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="actions">
-        <QueueAction label={t('hostQueue.edit')} icon={<Icon name="edit" />} disabled={locked || steering} onClick={() => void run(async () => {
-          const saved = await queue.savedDraft(item.turnId);
-          if (!saved || saved.request.action !== 'submit') throw new Error(t('hostQueue.noDraft'));
-          await restoreDraft(saved, item);
-        })} />
-        <QueueAction label={t('hostQueue.sendNow')} icon={<Icon name="arrow-up" />} disabled={locked || steering} onClick={() => void run(() => queue.act(item, 'promote'))} />
-        <QueueAction label={t('hostQueue.cancel')} icon={<Icon name="xmark" />} disabled={locked || steering} onClick={() => void run(() => queue.act(item, 'cancel'))} />
+        <PendingQueueMessageActions sendLabel={t('hostQueue.sendNow')} sendDisabled={locked || steering}
+          onSend={() => void run(() => queue.act(item, 'promote'))}
+          editLabel={t('hostQueue.edit')} editDisabled={locked || steering} onEdit={() => void run(async () => {
+            const saved = await queue.savedDraft(item.turnId);
+            if (!saved || saved.request.action !== 'submit') throw new Error(t('hostQueue.noDraft'));
+            await restoreDraft(saved, item);
+          })}
+          removeLabel={t('hostQueue.cancel')} removeDisabled={locked || steering}
+          onRemove={() => void run(() => queue.act(item, 'cancel'))}
+          onCollapse={expanded ? toggle : undefined} onAbout={() => setShowHelp(value => !value)} />
       </ChatComposerQueueItemActions>
     </ChatComposerQueueItem>;
   };
   const renderPending = (record: QueueOutboxRecord) => {
     const message = record.request.action === 'submit' ? record.request.message : null;
-    return <ChatComposerQueueItem data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="item" key={record.key} state="failed">
+    return <ChatComposerQueueItem data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="item" key={record.key} leadingIcon={<Icon glyph={ListEnd} size="sm" />} state="failed">
       <ChatComposerQueueItemContent data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="content">
         {message && renderPreview(message.displayContent ?? message.content)}
         <ChatComposerQueueItemStatus data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" tone="warning">{t('hostQueue.unknown')}</ChatComposerQueueItemStatus>
@@ -119,21 +124,21 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
   // (blocked or unconfirmed) move to a recovery list outside the disclosure.
   const recoveryItems = expanded ? [] : items.filter(item => item.status === 'blocked');
   const recoveryPending = expanded ? [] : view.pending;
-  return <ChatComposerQueue data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="root" className="host-pending-queue" aria-label={t('hostQueue.title')}>
-    <ChatComposerQueueHeader data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="header">
-      <ChatComposerQueueToggle className="host-pending-queue__toggle" expanded={expanded} aria-controls={listId}
-        onClick={() => setExpanded(value => !value)}>
+  return <ChatComposerQueue data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="root" className="host-pending-queue" aria-label={t('pendingQueue.label', { count: items.length + view.pending.length })}>
+    {(!expanded || items.length === 0) && <ChatComposerQueueHeader data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="header">
+      <ChatComposerQueueToggle ref={toggleRef} className="host-pending-queue__toggle" expanded={expanded} aria-controls={listId}
+        onClick={toggle}>
         <ChatComposerQueueTitle data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="title" count={items.length + view.pending.length}>{t('hostQueue.title')}</ChatComposerQueueTitle>
       </ChatComposerQueueToggle>
       <Tooltip content={t('hostQueue.about')}><IconButton size="xs" variant="annotation" aria-label={t('hostQueue.about')} aria-expanded={showHelp}
         icon={<Icon name="info" />} onClick={() => setShowHelp(value => !value)} /></Tooltip>
-    </ChatComposerQueueHeader>
+    </ChatComposerQueueHeader>}
     {showHelp && <p data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" className="host-pending-queue__note">{t('hostQueue.memoryNotice')}</p>}
     {visibleError && <div data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" role="alert" className="host-pending-queue__error">
       <span className="host-pending-queue__error-text">{visibleError}</span>
       <Button size="xs" variant="text" disabled={busy} onClick={() => void run(() => queue.refresh())}>{t('hostQueue.refresh')}</Button>
     </div>}
-    <ChatComposerQueueList data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="list" id={listId} hidden={!expanded}>
+    <ChatComposerQueueList data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="list" ref={listRef} id={listId} hidden={!expanded}>
       {expanded && <>{items.map(renderItem)}{view.pending.map(renderPending)}</>}
     </ChatComposerQueueList>
     {(recoveryItems.length > 0 || recoveryPending.length > 0) && <ChatComposerQueueList data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="list">

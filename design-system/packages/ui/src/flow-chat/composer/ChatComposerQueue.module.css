@@ -7,7 +7,9 @@
     flex-direction: column;
     gap: var(--openbitfun-space-1);
     padding: var(--openbitfun-space-1);
-    border-radius: var(--openbitfun-radius-lg);
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-control-composer-surface-radius);
+    container: composer-queue / inline-size;
     color: var(--openbitfun-color-content-primary);
     background: var(--openbitfun-color-surface-subtle);
     font-family:var(--openbitfun-type-body-md-font-family);
@@ -16,7 +18,11 @@
   /* A composer with a context bar already tints the tray around its input.
      The queue joins that tray instead of stacking a second translucent card. */
   :global([data-openbitfun-component="chat-composer"][data-has-context="true"]) .root {
-    padding-block-start: 0;
+    margin-block-end: calc(-1 * var(--openbitfun-space-2));
+    padding-block-end: var(--openbitfun-space-3);
+    border-block-end: 0;
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
     background: transparent;
   }
 
@@ -67,18 +73,15 @@
   .list {
     display: flex;
     min-inline-size: 0;
-    /* Four standard message rows plus the three gaps between them. */
+    /* Four comfortable message rows before the tray scrolls. */
     max-block-size: calc(
-      var(--openbitfun-control-chat-composer-control-height) +
-      var(--openbitfun-control-chat-composer-control-height) +
-      var(--openbitfun-control-chat-composer-control-height) +
-      var(--openbitfun-control-chat-composer-control-height) +
-      var(--openbitfun-space-1) +
-      var(--openbitfun-space-1) +
-      var(--openbitfun-space-1)
+      var(--openbitfun-control-height-sm) +
+      var(--openbitfun-control-height-sm) +
+      var(--openbitfun-control-height-sm) +
+      var(--openbitfun-control-height-sm)
     );
     flex-direction: column;
-    gap: var(--openbitfun-space-1);
+    gap: 0;
     margin: 0;
     overflow-x: hidden;
     overflow-y: auto;
@@ -93,11 +96,10 @@
 
   .item {
     box-sizing: border-box;
-    display: grid;
+    display: flex;
     flex: 0 0 auto;
     min-inline-size: 0;
-    min-block-size: var(--openbitfun-control-chat-composer-control-height);
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    min-block-size: var(--openbitfun-control-height-sm);
     align-items: center;
     gap: var(--openbitfun-space-2);
     padding-inline: var(--openbitfun-space-2) var(--openbitfun-space-1);
@@ -110,14 +112,23 @@
     background: var(--openbitfun-color-surface-subtle);
   }
 
+  .leadingIcon {
+    display: inline-flex;
+    flex: 0 0 var(--openbitfun-space-5);
+    align-items: center;
+    justify-content: center;
+    color: var(--openbitfun-color-content-muted);
+  }
+
   .content {
     display: flex;
+    flex: 1 1 0;
     min-inline-size: 0;
     flex-flow: row wrap;
     align-items: baseline;
     gap: 0 var(--openbitfun-space-2);
-    color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-body-sm-font-size);
+    color: var(--openbitfun-color-content-primary);
+    font-size: var(--openbitfun-type-body-md-font-size);
     font-weight: var(--openbitfun-type-body-md-font-weight);
     line-height: var(--openbitfun-type-body-sm-line-height);
   }
@@ -135,11 +146,6 @@
     border-radius: var(--openbitfun-radius-xs);
     outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
     outline-offset: var(--openbitfun-focus-offset);
-  }
-
-  .item:hover .content,
-  .item:focus-within .content {
-    color: var(--openbitfun-color-content-primary);
   }
 
   /* Muted ink instead of row opacity keeps the status text legible. */
@@ -183,31 +189,29 @@
     gap: var(--openbitfun-space-1);
   }
 
-  /* Reveal is instant: this is a high-frequency pointer path. Rows that need a
-     decision or show progress keep their actions visible; focus reaches the rest. */
+  /* The tray stays quiet without making its controls disappear. */
+  .actions [data-openbitfun-component="button"][data-openbitfun-variant="text"] {
+    color: var(--openbitfun-color-content-secondary);
+    padding-inline: var(--openbitfun-space-2);
+  }
+
   @media (hover: hover) and (pointer: fine) {
     .item:hover {
       background: var(--openbitfun-color-surface-subtle);
     }
+  }
 
-    .actions {
-      pointer-events: none;
-      opacity: 0;
-    }
-
-    .item:hover .actions,
-    .item:focus-within .actions {
-      pointer-events: auto;
-      opacity: 1;
-    }
-
-    .item:is([data-openbitfun-state="failed"], [data-openbitfun-state="sending"]) .actions {
-      pointer-events: auto;
-      opacity: 1;
+  @container composer-queue (max-width: 22rem) {
+    .actions [data-openbitfun-component="button"] [data-openbitfun-part="label"] {
+      display: none;
     }
   }
 
   @media (pointer: coarse) {
+    .actions [data-openbitfun-component="button"] {
+      min-block-size: var(--openbitfun-control-height-sm);
+    }
+
     .actions [data-openbitfun-component="icon-button"] {
       inline-size: var(--openbitfun-control-height-sm);
       block-size: var(--openbitfun-control-height-sm);

@@ -8,6 +8,13 @@ import { HostPendingQueuePanel } from './HostPendingQueuePanel';
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('../services/flow-chat-manager/PendingQueueModule', () => ({ pendingQueueManager: { enqueue: vi.fn() } }));
 
+async function selectQueueMenuAction(container: HTMLElement, action: 'edit' | 'collapse') {
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="pendingQueue.actions.more"]')!.click());
+  const item = document.querySelector<HTMLButtonElement>(`[role="menu"]:not([aria-hidden="true"]) [data-menu-id="${action}"]`);
+  expect(item).not.toBeNull();
+  await act(async () => item!.click());
+}
+
 it.each([false, true])('keeps a normal send hidden and shows recovery only on failure (failure=%s)', async failure => {
   const records = new Map<string, QueueOutboxRecord>();
   let finish!: () => void;
@@ -77,8 +84,9 @@ it('keeps four queued messages compact, exposes actions, and toggles help indepe
     expect(container.textContent).not.toContain('hostQueue.memoryNotice');
     expect(container.textContent).not.toContain('hostQueue.queued');
     expect(container.querySelectorAll('[aria-label="hostQueue.sendNow"]')).toHaveLength(4);
+    expect(container.querySelector('[data-openbitfun-part="header"]')).toBeNull();
+    await selectQueueMenuAction(container, 'collapse');
     const toggle = container.querySelector<HTMLButtonElement>('.host-pending-queue__toggle')!;
-    await act(async () => toggle.click());
     expect(container.querySelector('ul')?.hidden).toBe(true);
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="hostQueue.about"]')!.click());
     expect(container.textContent).toContain('hostQueue.memoryNotice');
@@ -147,22 +155,21 @@ it('collapses the controlled list and keeps blocked and unconfirmed rows in a re
   try {
     await act(async () => root.render(<HostPendingQueuePanel queue={queue} onRestore={() => true} />));
     await act(async () => { await queue.refresh(); });
-    const toggle = container.querySelector<HTMLButtonElement>('.host-pending-queue__toggle')!;
-    const controlled = () => document.getElementById(toggle.getAttribute('aria-controls')!)!;
+    const controlled = container.querySelector<HTMLUListElement>('ul')!;
     const count = () => container.querySelector('[data-openbitfun-part="totalCount"]')?.textContent;
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(controlled().hidden).toBe(false);
-    expect([...controlled().querySelectorAll('li')].map(row => row.textContent)).toEqual([
+    expect(controlled.hidden).toBe(false);
+    expect([...controlled.querySelectorAll('li')].map(row => row.textContent)).toEqual([
       expect.stringContaining('message a'), expect.stringContaining('message b'), expect.stringContaining('lost prompt'),
     ]);
-    expect(count()).toBe('3');
-
-    await act(async () => toggle.click());
+    await selectQueueMenuAction(container, 'collapse');
+    const toggle = container.querySelector<HTMLButtonElement>('.host-pending-queue__toggle')!;
+    expect(toggle.getAttribute('aria-controls')).toBe(controlled.id);
+    expect(document.activeElement).toBe(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(controlled().hidden).toBe(true);
-    expect(controlled().querySelectorAll('li')).toHaveLength(0);
+    expect(controlled.hidden).toBe(true);
+    expect(controlled.querySelectorAll('li')).toHaveLength(0);
     expect(count()).toBe('3');
-    const recovery = [...container.querySelectorAll('ul')].filter(list => list !== controlled());
+    const recovery = [...container.querySelectorAll('ul')].filter(list => list !== controlled);
     expect(recovery).toHaveLength(1);
     expect(recovery[0].hidden).toBe(false);
     const rows = recovery[0].querySelectorAll('li');
@@ -172,11 +179,16 @@ it('collapses the controlled list and keeps blocked and unconfirmed rows in a re
     expect(rows[0].querySelector('[aria-label="hostQueue.cancel"]')).not.toBeNull();
     expect(rows[1].querySelector('[aria-label="hostQueue.checkRetry"]')).not.toBeNull();
     expect(container.textContent).not.toContain('message a');
+    await act(async () => rows[0].querySelector<HTMLButtonElement>('[aria-label="pendingQueue.actions.more"]')!.click());
+    expect(document.querySelector('[role="menu"]:not([aria-hidden="true"]) [data-menu-id="collapse"]')).toBeNull();
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+
 
     await act(async () => toggle.click());
-    expect(controlled().hidden).toBe(false);
-    expect(controlled().querySelectorAll('li')).toHaveLength(3);
+    expect(controlled.hidden).toBe(false);
+    expect(controlled.querySelectorAll('li')).toHaveLength(3);
     expect(container.querySelectorAll('ul')).toHaveLength(1);
+    expect(document.activeElement).toBe(controlled.querySelector('[data-openbitfun-product-part="preview"]'));
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -237,13 +249,13 @@ it('lets keyboard users read a truncated preview without starting an edit', asyn
 
     // Leaving the preview dismisses its tooltip; an action's own (hover)
     // tooltip then shows alone instead of stacking with the preview's.
-    const edit = container.querySelector<HTMLButtonElement>('[aria-label="hostQueue.edit"]')!;
-    await act(async () => edit.focus());
+    const send = container.querySelector<HTMLButtonElement>('[aria-label="hostQueue.sendNow"]')!;
+    await act(async () => send.focus());
     revealTooltip();
     expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(0);
-    await act(async () => { edit.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); });
+    await act(async () => { send.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); });
     revealTooltip();
-    expect([...document.querySelectorAll('[role="tooltip"]')].map(tooltip => tooltip.textContent)).toEqual(['hostQueue.edit']);
+    expect([...document.querySelectorAll('[role="tooltip"]')].map(tooltip => tooltip.textContent)).toEqual(['hostQueue.sendNow']);
   } finally {
     await act(async () => root.unmount());
     container.remove();

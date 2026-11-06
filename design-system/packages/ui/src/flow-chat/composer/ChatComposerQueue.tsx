@@ -37,6 +37,7 @@ export interface ChatComposerQueueListProps
 export interface ChatComposerQueueItemProps
   extends LiHTMLAttributes<HTMLLIElement> {
   state?: ChatComposerQueueItemState;
+  leadingIcon?: ReactNode;
 }
 
 export interface ChatComposerQueueItemContentProps
@@ -155,7 +156,7 @@ export const ChatComposerQueueList = forwardRef<
 export const ChatComposerQueueItem = forwardRef<
   HTMLLIElement,
   ChatComposerQueueItemProps
->(function ChatComposerQueueItem({ className, state = "default", ...props }, ref) {
+>(function ChatComposerQueueItem({ children, className, leadingIcon, state = "default", ...props }, ref) {
   return (
     <li
       {...props}
@@ -164,7 +165,10 @@ export const ChatComposerQueueItem = forwardRef<
       data-openbitfun-part="item"
       data-openbitfun-state={state === "default" ? undefined : state}
       ref={ref}
-    />
+    >
+      {leadingIcon && <span className={styles.leadingIcon} data-openbitfun-part="leading-icon" aria-hidden="true">{leadingIcon}</span>}
+      {children}
+    </li>
   );
 });
 
