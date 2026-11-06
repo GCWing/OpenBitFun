@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "dee675e14a8578084f48e69b83e9998fd31f635880f2e435152eee208465a91a",
+  "digest": "8a02be2b328791ebb823e4b7a956bf0371c523caa7f881a6c778cbaa42d72575",
   "ownerDigest": "31d6371f7765bde7bee88e22a6a4f03c2c5370e138cf49975bdc88f3c5eeb052",
   "searchAcceptance": [
     {
@@ -20653,8 +20653,8 @@
         },
         {
           "id": "office-document-generation",
-          "titleZh": "创建并持续编辑 Word、Excel 和 PowerPoint 文件",
-          "titleEn": "Create and incrementally edit Word, Excel, and PowerPoint files",
+          "titleZh": "用 GenOfficeFile 创建并编辑 Word、Excel 和 PowerPoint 文件",
+          "titleEn": "Create and edit Word, Excel, and PowerPoint files with GenOfficeFile",
           "control": {
             "kind": "delegate",
             "tools": [
@@ -20936,8 +20936,8 @@
         "Extend client UI and runtime capabilities in Creative mode",
         "通过已配置的默认图像模型生成图片",
         "Generate images with the configured default image model",
-        "创建并持续编辑 Word、Excel 和 PowerPoint 文件",
-        "Create and incrementally edit Word, Excel, and PowerPoint files",
+        "用 GenOfficeFile 创建并编辑 Word、Excel 和 PowerPoint 文件",
+        "Create and edit Word, Excel, and PowerPoint files with GenOfficeFile",
         "开始、引导、打断、取消或恢复一次智能体运行",
         "Start, steer, interrupt, cancel, or recover an agent turn",
         "查看并逐个或批量回答等待中的权限请求",

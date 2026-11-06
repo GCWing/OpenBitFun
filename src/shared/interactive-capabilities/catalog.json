@@ -499,8 +499,8 @@
         },
         {
           "id": "office-document-generation",
-          "titleZh": "创建并持续编辑 Word、Excel 和 PowerPoint 文件",
-          "titleEn": "Create and incrementally edit Word, Excel, and PowerPoint files",
+          "titleZh": "用 GenOfficeFile 创建并编辑 Word、Excel 和 PowerPoint 文件",
+          "titleEn": "Create and edit Word, Excel, and PowerPoint files with GenOfficeFile",
           "control": {
             "kind": "delegate",
             "tools": [
