@@ -63,6 +63,7 @@ each missing what the other had.
 | `FlowChatOpeningBoundary.test.tsx` | opening-only activation/scroll isolation, bidirectional focus skipping, programmatic focus return, and reveal cleanup; DOM contracts only |
 | `HistorySessionLoadingBoundary.test.tsx` | shared 200 ms indicator delay, immediate settled cold/warm opens, off-screen user-message independence, settled-viewport gating, atomic text/tools/code presentation, interaction blocking, session/device cancellation, failure/inactive/resume/reduced-motion handling and no streaming/remount replay; DOM/animation fixtures, not native paint or live remote evidence |
 | `ModernFlowChatContainer.history-state.test.tsx` | history presentation and the submission event |
+| `ModernFlowChatContainer.history-restore.test.tsx` | production container/loading boundary with controlled history IO: rollback with/without an intermediate hydration commit, empty history, retired legacy snapshots/bookmarks, cold host transfer, pending-read cancellation, navigation takeover, late success/failure, retry and Session switching on local/simulated Peer surfaces; no native layout or live transport claim |
 | `flowChatViewportOwnership.test.ts` | the priority order, preemption, expiry |
 | `useFlowChatVirtualizer.test.ts` | the offsets-and-positions boundary |
 | `useFlowChatVirtualizer.measurement.test.tsx` | `measureRenderedItems` against a real virtualizer, fractional normal-flow sizes and offscreen size reservations across reflow |
@@ -567,6 +568,14 @@ checks; mobile Remote Control uses its own message renderer.
    history: nothing should move.
 
 ### History paging
+
+For rollback, start with an older history range visible, roll back one Turn,
+then roll back to the first Turn. The view must reveal the surviving tail or
+empty Session, and switching away/back must not revive the removed bookmark.
+Repeat while a cold bookmark read is pending, with a second controller
+initiating the rewrite, and after a failed history read followed by Retry.
+These native and live Peer checks remain manual; the container fixture controls
+IO timing.
 
 1. On local and peer devices, open a long session whose last Turn is short.
    Only that Turn starts at the top, with blank space below; background history

@@ -352,6 +352,12 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     after: null,
   });
   const historyPresentationOwnerGenerationRef = useRef(0);
+  const invalidateHistoryPresentationOwner = useCallback(() => {
+    // A superseded restore can no longer clear its own status. Transfer the
+    // loading state together with ownership, before discarding its reply.
+    historyPresentationOwnerGenerationRef.current += 1;
+    setHistoryRestore(null);
+  }, []);
   const activeHistoryPresentation = historyPresentation?.sessionId === activeSession?.sessionId
     ? historyPresentation
     : null;
@@ -563,6 +569,15 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   }, [incomingViewTransfer, activeSession?.sessionId, surfaceScope.surfaceId, viewScope]);
   const viewportRestorePendingSessionIdRef = useRef<string | null>(null);
   const [viewportRestorePendingSessionId, setViewportRestorePendingSessionId] = useState<string | null>(null);
+  const rememberedHistoryRange = activeSession?.sessionId
+    ? incomingViewTransfer?.state.historyPresentation?.range
+      ?? sessionViewportStateRef.current.get(activeSession.sessionId)?.historyPresentation?.range
+    : undefined;
+  const isRememberedHistoryRangeInvalid = Boolean(
+    activeSession?.historyState === 'ready'
+    && rememberedHistoryRange
+    && rememberedHistoryRange.endOrdinalExclusive > activeSessionKnownTurnCount
+  );
   const activeSessionViewportSnapshot = activeSession?.sessionId
     ? incomingViewTransfer?.state.snapshot ?? sessionViewportStateRef.current.get(activeSession.sessionId)?.snapshot ?? null
     : null;
@@ -711,8 +726,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     sessionId: string,
     options?: { discardRecentHistory?: boolean },
   ) => {
-    historyPresentationOwnerGenerationRef.current += 1;
-    setHistoryRestore(null);
+    invalidateHistoryPresentationOwner();
     const retainContinuousProjection = (
       options?.discardRecentHistory !== true
       && activeSession?.sessionId === sessionId
@@ -728,13 +742,20 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       historyPresentationRef.current = null;
       setHistoryPresentation(null);
     }
-    rememberSessionViewportState(sessionId, { snapshot: null });
+    viewportRestorePendingSessionIdRef.current = null;
+    setViewportRestorePendingSessionId(null);
+    rememberSessionViewportState(sessionId, {
+      snapshot: null,
+      ...(options?.discardRecentHistory ? { historyPresentation: null } : {}),
+      viewportIntent: { kind: 'live-tail', sessionId },
+    });
     updateViewportIntent({ kind: 'live-tail', sessionId });
     setHistoryBoundaryState(IDLE_HISTORY_BOUNDARY_STATE);
     setQueuedTurnNavigation(null);
   }, [
     activeSession?.sessionId,
     continuousHistoryProjectionEligible,
+    invalidateHistoryPresentationOwner,
     rememberSessionViewportState,
     updateViewportIntent,
   ]);
@@ -767,10 +788,15 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       });
     }
     activeSessionIdRef.current = sessionId ?? null;
+    // A history rewrite can remove the saved range while this Session stays
+    // selected. Never start restoring that retired bookmark (or resurrect it
+    // on a later hydration/session switch).
+    if (sessionId && isRememberedHistoryRangeInvalid) {
+      sessionViewportStateRef.current.delete(sessionId);
+    }
     const remembered = sessionId ? sessionViewportStateRef.current.get(sessionId) : undefined;
-    historyPresentationOwnerGenerationRef.current += 1;
+    invalidateHistoryPresentationOwner();
     const bookmark = remembered?.historyPresentation;
-    setHistoryRestore(null);
     const cached = sessionId && bookmark
       ? flowChatStore.reactivateSessionHistoryWindow(sessionId, bookmark.range)
       : null;
@@ -823,7 +849,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       });
       return () => { cancelled = true; };
     }
-  }, [activeSession?.sessionId, activeSession?.historyState, rememberSessionViewportState, updateViewportIntent, restoreRevision, historyRestoreRetry, surfaceScope]);
+  }, [activeSession?.sessionId, activeSession?.historyState, isRememberedHistoryRangeInvalid, invalidateHistoryPresentationOwner, rememberSessionViewportState, updateViewportIntent, restoreRevision, historyRestoreRetry, surfaceScope]);
 
   useEffect(() => {
     const retainedSessionId = continuousProjectionSessionId;
@@ -853,28 +879,11 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     if (!activeHistoryPresentation || activeHistoryPresentationFitsSession) {
       return;
     }
-    historyPresentationOwnerGenerationRef.current += 1;
-    historyPresentationRef.current = null;
-    setHistoryPresentation(null);
-    setContinuousProjectionSessionId(null);
-    if (activeSession?.sessionId) {
-      flowChatStore.restoreSessionTailPresentation(activeSession.sessionId);
-    }
-    if (
-      activeViewportIntent?.kind === 'turn'
-      && activeViewportIntent.source === 'history-range'
-    ) {
-      updateViewportIntent(activeSession?.sessionId
-        ? { kind: 'live-tail', sessionId: activeSession.sessionId }
-        : null);
-    }
-    setHistoryBoundaryState(IDLE_HISTORY_BOUNDARY_STATE);
+    switchToLiveTailForSession(activeHistoryPresentation.sessionId, { discardRecentHistory: true });
   }, [
     activeHistoryPresentation,
     activeHistoryPresentationFitsSession,
-    activeSession?.sessionId,
-    activeViewportIntent,
-    updateViewportIntent,
+    switchToLiveTailForSession,
   ]);
 
   useEffect(() => {
@@ -1561,7 +1570,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       };
     },
   ) => {
-    historyPresentationOwnerGenerationRef.current += 1;
+    invalidateHistoryPresentationOwner();
     setHistoryPresentation(previous => {
       const next: FlowChatHistoryPresentationState = {
         ...presentation,
@@ -1589,7 +1598,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     } else {
       setHistoryBoundaryState(IDLE_HISTORY_BOUNDARY_STATE);
     }
-  }, [updateViewportIntent]);
+  }, [invalidateHistoryPresentationOwner, updateViewportIntent]);
 
   const restoreTailPresentation = useCallback((options?: {
     followLatest?: boolean;

@@ -76,6 +76,25 @@ read never navigates to the tail as a fallback. Session, surface and navigation
 generation fence the result. Failures expose retry, while stale reads may warm
 the cache without replacing a newer reader intent.
 
+### History rewrites during reader restoration
+
+Rollback can invalidate a saved range while its Session remains selected. Once
+authoritative history is ready, a bookmark extending past the surviving Turn
+count is retired together with its viewport snapshot and navigation intent.
+The view then presents the surviving tail, or the empty Session. This also
+applies when a Peer rewrite leaves `historyState` at `ready`, and when an
+explicit host transfer supplies an already-invalid bookmark. A valid bookmark
+still restores normally; transport failure retains it for explicit retry.
+
+Every change of presentation owner clears the previous reader restoration
+status when it advances the generation. Otherwise hydration can start a cold
+bookmark read in a layout effect, while range invalidation supersedes it in a
+passive effect: the old reply is correctly rejected, but its `loading` state
+has no remaining owner and hides the transcript indefinitely. Navigation that
+supersedes a cold restore has the same obligation. Neither cancellation nor
+late success/failure may overwrite the new presentation. Viewport settlement
+continues to gate the actual reveal; no timer declares unfinished content ready.
+
 ## Complete Turns are the history publication unit
 
 A history transport packet is not a render transaction. A negotiated single-Turn
