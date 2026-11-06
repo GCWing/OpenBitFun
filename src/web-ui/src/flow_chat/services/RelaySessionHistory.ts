@@ -1,5 +1,6 @@
 import { remoteConnectAPI } from '@/infrastructure/api/service-api/RemoteConnectAPI';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { observeSurfaceEvents } from '@/infrastructure/peer-device/deviceSurfaceRouting';
 import type { SessionRecord } from '../session-stream/SessionRecordReplica';
 import { createLogger } from '@/shared/utils/logger';
 import { resourceBudget } from '@/shared/utils/resourceBudget';
@@ -50,12 +51,26 @@ export function prewarmRelaySessionHistory(surfaceId: string, sessionId: string)
   if (warmStreams.has(key)) return;
   const events: WarmSessionStream['events'] = [];
   const forThisSession = (value: unknown) => (value as { sessionId?: unknown } | null)?.sessionId === sessionId;
+  // Warm reads belong to their target, which is not necessarily rendered yet.
+  // Observe before active-surface filtering; normal product listeners must stay
+  // fenced. Keep the native feeds registered with no-op consumers so the same
+  // event is buffered exactly once, both before and after the device commit.
   const disposers = [
-    remoteConnectAPI.onSessionRecord(value => { if (forThisSession(value)) events.push({ kind: 'record', value }); }),
-    remoteConnectAPI.onSessionGap(value => { if (forThisSession(value)) events.push({ kind: 'gap', value }); }),
-    remoteConnectAPI.onSessionSyncError(value => { if (forThisSession(value)) events.push({ kind: 'syncError', value }); }),
-    remoteConnectAPI.onSessionReady(value => { if (forThisSession(value)) events.push({ kind: 'ready', value }); }),
-    remoteConnectAPI.onSessionInteractionChanged(value => { if (forThisSession(value)) events.push({ kind: 'interaction', value }); }),
+    observeSurfaceEvents((name, sourceDeviceId, value) => {
+      if (sourceDeviceId !== surfaceId || !forThisSession(value)) return;
+      const kind = name === 'session-record' ? 'record'
+        : name === 'relay://session-gap' ? 'gap'
+          : name === 'relay://session-ready' ? 'ready' : null;
+      if (kind) events.push({ kind, value });
+    }),
+    remoteConnectAPI.onSessionRecord(() => undefined),
+    remoteConnectAPI.onSessionGap(() => undefined),
+    remoteConnectAPI.onSessionReady(() => undefined),
+    remoteConnectAPI.onSessionSyncError(value => {
+      if (value.targetDeviceId === surfaceId && forThisSession(value)) events.push({ kind: 'syncError', value });
+    }),
+    // start() reads the interaction mailbox on adoption, including changes made
+    // while warming; no unscoped interaction event needs to be buffered here.
   ];
   const subscription = remoteConnectAPI.subscribeSession(surfaceId, sessionId);
   const stream: WarmSessionStream = {
@@ -86,7 +101,6 @@ function takeWarmStream(surfaceId: string, sessionId: string): WarmSessionStream
   if (!stream) return undefined;
   warmStreams.delete(key);
   clearTimeout(stream.timer);
-  stream.dispose();
   return stream;
 }
 
@@ -153,7 +167,8 @@ export class RelaySessionHistory {
       this.rejectReady(error); this.rejectPage?.(error); onError(error);
     };
     this.resumeInteraction = onResumed;
-    // Taken before this owner listens, so no event is both buffered and live.
+    // Claim the stream first, but retain its native feeds until the new owner
+    // has registered. Unlisten/relisten would lose events during async setup.
     this.warm = takeWarmStream(this.scope.surfaceId, sessionId);
     // Register before asking Rust to replay its cache or fetch the first page.
     this.listeners.push(remoteConnectAPI.onSessionRecord(this.handlers.record = value => {
@@ -208,6 +223,7 @@ export class RelaySessionHistory {
       if (!this.isCurrent() || event.sessionId !== this.sessionId || !onResumed) return;
       void onResumed().catch(error => log.warn('Session interaction mailbox refresh failed', {sessionId:this.sessionId,error}));
     }));
+    this.warm?.dispose();
     // A closed subscription may never have had an open() caller.
     void this.firstPage.catch(() => {});
     if (typeof document !== 'undefined') {

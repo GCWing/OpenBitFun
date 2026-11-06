@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import { create } from 'zustand';
+import { applyDeviceOrder, useDeviceOrderPreferences } from '@/app/navigation/deviceOrderPreferences';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { useDeviceDirectory, isDeviceControllable, resolveDeviceNameFrom } from '@/infrastructure/account/deviceDirectory';
 import { getActiveSurfaceId, LOCAL_SURFACE_ID, onSurfaceActivated, surfaceIdForDevice, type DeviceSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
@@ -37,8 +38,8 @@ export function devicePlatform(os: string | null | undefined): DevicePlatform | 
 const CONTROLLER_KINDS = new Set(['mobile', 'watch']);
 
 /**
- * The sidebar's device order: this machine first, then every online host of
- * the account by name. The order never depends on which device is rendered,
+ * The controller's saved order, falling back to this machine then online hosts
+ * by name for devices the user has not arranged. The order never depends on which device is rendered,
  * so opening something on another device does not move any section.
  *
  * Returns a single slot when there is nothing else to show, so a signed-out or
@@ -46,6 +47,7 @@ const CONTROLLER_KINDS = new Set(['mobile', 'watch']);
  */
 export function useSidebarDevices(localLabel: string): SidebarDeviceSlot[] {
   const directory = useDeviceDirectory();
+  const deviceOrder = useDeviceOrderPreferences(state => state.order);
   const peer = usePeerDeviceModeOptional();
   const activeSurfaceId = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceId, getActiveSurfaceId);
   const renderedPeer = peer?.peerMode.active ? peer.peerMode : null;
@@ -95,8 +97,8 @@ export function useSidebarDevices(localLabel: string): SidebarDeviceSlot[] {
       });
     }
     peers.sort((a, b) => a.name.localeCompare(b.name) || a.surfaceId.localeCompare(b.surfaceId));
-    return [...slots, ...peers];
-  }, [activeSurfaceId, attachments, directory.devices, directory.localId, localLabel, renderedPeer]);
+    return applyDeviceOrder([...slots, ...peers], deviceOrder, slot => slot.deviceId);
+  }, [deviceOrder, activeSurfaceId, attachments, directory.devices, directory.localId, localLabel, renderedPeer]);
 }
 
 interface DeviceSectionDisclosureState {

@@ -1641,7 +1641,7 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
                 role="region"
                 aria-labelledby="remote-connect-view-title"
               >
-                <AccountPanel onCloseDialog={handleDialogClose} />
+                <AccountPanel />
               </div>
             ) : activeView === 'network' ? (
               <ScrollArea

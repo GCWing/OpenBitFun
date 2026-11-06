@@ -1,3 +1,4 @@
+import { applyDeviceOrder, sortAccountDevices, useDeviceOrderPreferences } from '@/app/navigation/deviceOrderPreferences';
 import { useDeviceDirectory, resolveDeviceName, isDeviceControllable, deviceClientVersion, refreshDeviceDirectory } from '@/infrastructure/account/deviceDirectory';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Button, Card, CardBody, CardHeader, Icon, IconButton, Input, ScrollArea, type IconSize } from '@openbitfun/ui';
@@ -103,6 +104,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   onManageDevices,
 }) => {
   useDeviceDirectory();
+  const deviceOrder = useDeviceOrderPreferences(state => state.order);
   const { t, formatNumber } = useI18n('common');
   const { warning, error: notifyError } = useNotification();
   const peerContext = usePeerDeviceModeOptional();
@@ -148,11 +150,14 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   }, [accountId, open, warning]);
 
   const availableTargets = switchTargets?.accountId === accountId ? switchTargets : null;
-  const carouselDeviceIds = availableTargets?.devices.map(device => device.device_id) ?? [];
-  // Presence can lag behind a live control link; keep its disconnect entry reachable.
-  if (availableTargets && activePeerId && !carouselDeviceIds.includes(activePeerId)) {
-    carouselDeviceIds.unshift(activePeerId);
-  }
+  const carouselDeviceIds = useMemo(() => {
+    if (!availableTargets) return [];
+    const ids = sortAccountDevices(availableTargets.devices, availableTargets.localId, []).map(device => device.device_id);
+    // Presence can lag behind a live link. Retain that peer, in its saved
+    // position, only for as long as it remains the rendered device.
+    if (activePeerId && !ids.includes(activePeerId)) ids.unshift(activePeerId);
+    return applyDeviceOrder(ids, deviceOrder, id => id);
+  }, [availableTargets, activePeerId, deviceOrder]);
   const currentId = peerContext?.peerMode.active ? peerContext.peerMode.deviceId : availableTargets?.localId;
   const previewTarget = availableTargets?.devices.find(device => device.device_id === previewId);
   const platformHint = typeof navigator === 'undefined'

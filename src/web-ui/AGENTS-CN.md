@@ -25,7 +25,9 @@
 
 Peer Device Mode（同账号远程完整客户端）的边界见 `docs/architecture/peer-device-mode.md`。
 前端不变量见 `src/infrastructure/peer-device/README.md`。不要重新引入内嵌会话/聊天壳；
-应从设备列表（Remote Connect 的「我的 OpenBitFun」组）进入 peer mode。
+从侧边栏对应设备的分区打开工作区或会话。Remote Connect 的账号设备列表只管理
+显示状态、别名和移除设备，点击设备行不切换当前设备。拖动顺序只保存在控制端本机，
+由账号列表、侧边栏分区和设备预览轮播共用；重命名、在线状态变化和远控切换不改变设备 ID。
 
 Remote Connect 使用共享 OpenBitFun 账号（GitHub 或邮箱验证码登录）和官方版本化 Relay。账户控件复用 account-identity
 服务，不再提供独立 Relay 账户、自定义服务器或自建部署入口。SSH 与 Docker 远程工作区

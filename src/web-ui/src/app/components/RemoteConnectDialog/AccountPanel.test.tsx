@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AccountPanel } from './AccountPanel';
 import { useUpdateInstallStore } from '@/infrastructure/update/updateInstallStore';
+import { useDeviceOrderPreferences } from '@/app/navigation/deviceOrderPreferences';
 import { useDeviceVisibilityPreferences } from '@/app/navigation/deviceVisibilityPreferences';
 const mocks = vi.hoisted(() => ({
   identity: { resolved: true, status: 'signed-in', me: { user: { githubId: 42, login: 'alice' } } } as { resolved: boolean; status: string; me: { user: { githubId: number; login: string } } | null },
@@ -56,6 +57,7 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.resetAllMocks();
   useDeviceVisibilityPreferences.setState({ hidden: {} });
+  useDeviceOrderPreferences.setState({ order: [] });
   mocks.identity = { resolved: true, status: 'signed-in', me: { user: { githubId: 42, login: 'alice' } } };
   mocks.peerMode = { active: false };
   mocks.getDeviceInfo.mockResolvedValueOnce({ device_id: 'local', device_name: 'My computer' })
@@ -77,7 +79,7 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 it('keeps initialization alive when the local device ID arrives', async () => {
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(mocks.accountStatus).toHaveBeenCalledTimes(1);
   expect(mocks.accountConnectDevices).toHaveBeenCalledTimes(1);
   expect(container.textContent).toContain('My computer');
@@ -92,7 +94,7 @@ it('shares sidebar visibility with the preview card, including offline devices, 
   ]);
   // This is the same preference written by the preview card's eye button.
   useDeviceVisibilityPreferences.getState().setVisible('peer-a', false);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   const row = Array.from(container.querySelectorAll('.account-panel__device-card'))
     .find(element => element.textContent?.includes('Offline host'))!;
   const toggle = row.querySelector<HTMLButtonElement>('[aria-label="nav.devices.showInSidebar"]')!;
@@ -111,7 +113,7 @@ it('waits for local identity before saving a visibility choice under the canonic
   let resolveIdentity!: (device: { device_id: string; device_name: string }) => void;
   mocks.getDeviceInfo.mockReset().mockReturnValue(new Promise(resolve => { resolveIdentity = resolve; }));
   mocks.accountListDevices.mockResolvedValue([{ device_id: 'actual-local-id', device_name: 'My computer', online: true }]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   const toggle = container.querySelector<HTMLButtonElement>('[aria-label="nav.devices.hideInSidebar"]')!;
   expect(toggle.disabled).toBe(true);
   await act(async () => resolveIdentity({ device_id: 'actual-local-id', device_name: 'My computer' }));
@@ -123,8 +125,8 @@ it('waits for local identity before saving a visibility choice under the canonic
 it('loads the device snapshot and retains it across a normal rerender', async () => {
   mocks.getDeviceInfo.mockResolvedValue({ device_id: 'local', device_name: 'My computer' });
   mocks.accountListDevices.mockResolvedValue([{ device_id: 'local', device_name: 'My computer', online: true }]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(mocks.accountStatus).toHaveBeenCalledTimes(1);
   expect(mocks.accountListDevices).toHaveBeenCalledTimes(1);
   expect(container.textContent).toContain('My computer');
@@ -133,9 +135,9 @@ it('loads the device snapshot and retains it across a normal rerender', async ()
 it('ignores a late device connection after shared identity signs out', async () => {
   let resolve!: (devices: Array<{ device_id: string; device_name: string }>) => void;
   mocks.accountConnectDevices.mockReturnValue(new Promise(res => { resolve = res; }));
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   mocks.identity = { resolved: true, status: 'signed-out', me: null };
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   await act(async () => { resolve([{ device_id: 'old', device_name: 'Old account device' }]); });
   expect(container.textContent).not.toContain('Old account device');
   expect(container.textContent).toContain('accountLogin.login');
@@ -145,19 +147,19 @@ it('ignores a late device connection after shared identity signs out', async () 
 it('fences a late snapshot when switching accounts', async () => {
   let resolve!: (devices: Array<{ device_id: string; device_name: string; online: boolean }>) => void;
   mocks.accountListDevices.mockReturnValueOnce(new Promise(res => { resolve = res; }));
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   mocks.identity = { resolved: true, status: 'signed-in', me: { user: { githubId: 7, login: 'bob' } } };
   mocks.accountStatus.mockResolvedValue({ logged_in: true, user_id: '7' });
   mocks.accountConnectDevices.mockResolvedValue([]);
   mocks.accountListDevices.mockResolvedValue([{ device_id: 'new', device_name: 'New account device', online: true }]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   await act(async () => { resolve([{ device_id: 'old', device_name: 'Old account device', online: true }]); });
   expect(container.textContent).toContain('New account device');
   expect(container.textContent).not.toContain('Old account device');
 });
 it('shows a connection failure while retaining the signed-in account', async () => {
   mocks.accountStatus.mockReset().mockRejectedValue(new Error('network unavailable'));
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.textContent).toContain('alice');
   expect(container.textContent).toContain('accountLogin.retryConnect');
   expect(container.textContent).not.toContain('accountLogin.loadingDevices');
@@ -169,7 +171,7 @@ it('explains a retired Relay version and offers an update instead of the raw err
     Object.assign(new Error('List devices failed: HTTP 410'), { status: 410 }),
   );
   mocks.checkForUpdates.mockResolvedValue({ updateAvailable: true, currentVersion: '1.0.0', latestVersion: '2.0.0', releaseNotes: null, releaseDate: null });
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   // The actionable sentence replaces the raw transport detail and HTTP status.
   expect(container.textContent).toContain('accountLogin.relayFailureVersionRetired');
   expect(container.textContent).not.toContain('List devices failed');
@@ -187,7 +189,7 @@ it('does not offer an update check in a runtime that cannot install updates', as
   mocks.accountStatus.mockReset().mockRejectedValue(
     Object.assign(new Error('List devices failed: HTTP 410'), { status: 410 }),
   );
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.textContent).toContain('accountLogin.relayFailureVersionRetired');
   expect(container.textContent).not.toContain('update.checkForUpdates');
   // Without a banner action the section heading still offers a way forward.
@@ -200,7 +202,7 @@ it('offers a retry when the Relay is temporarily unavailable', async () => {
   mocks.accountStatus.mockReset().mockRejectedValue(
     Object.assign(new Error('List devices failed: HTTP 502'), { status: 502 }),
   );
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.textContent).toContain('accountLogin.relayFailureUnavailable');
   expect(container.textContent).not.toContain('502');
   const retryButtons = Array.from(container.querySelectorAll('button'))
@@ -217,7 +219,7 @@ async function retryConnection() {
 it('retries a failed connection without asking for GitHub authorization again', async () => {
   mocks.accountStatus.mockResolvedValue({ logged_in: true, user_id: '42' });
   mocks.accountConnectDevices.mockRejectedValueOnce(new Error('socket failure'));
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   await retryConnection();
   expect(container.textContent).toContain('My computer');
   expect(container.textContent).not.toContain('accountLogin.loadingDevices');
@@ -228,14 +230,14 @@ it('allows the new account to retry while an old recovery is still pending', asy
   mocks.accountStatus.mockResolvedValue({ logged_in: true, user_id: '42' });
   mocks.accountConnectDevices.mockRejectedValueOnce(new Error('socket failure'))
     .mockReturnValueOnce(new Promise(res => { finishOld = res; }));
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   await retryConnection();
   mocks.identity = { resolved: true, status: 'signed-in', me: { user: { githubId: 7, login: 'bob' } } };
   mocks.accountStatus.mockResolvedValue({ logged_in: true, user_id: '7' });
   mocks.accountConnectDevices.mockRejectedValueOnce(new Error('socket failure'))
     .mockResolvedValueOnce([{ device_id: 'new', device_name: 'New account device' }]);
   mocks.accountListDevices.mockResolvedValue([{ device_id: 'new', device_name: 'New account device', online: true }]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   await retryConnection();
   expect(container.textContent).toContain('New account device');
   await act(async () => { finishOld([{ device_id: 'old', device_name: 'Old account device' }]); });
@@ -247,7 +249,7 @@ it('adopts the account-bound local device ID without reconnecting', async () => 
   let finishInfo!: (info: { device_id: string }) => void;
   mocks.getDeviceInfo.mockReset().mockResolvedValueOnce({ device_id: 'before-auth' })
     .mockReturnValueOnce(new Promise(resolve => { finishInfo = resolve; }));
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.querySelector('[aria-label="accountLogin.thisDevice"]')).toBeNull();
   await act(async () => { finishInfo({ device_id: 'local' }); });
   expect(container.querySelector('[aria-label="accountLogin.thisDevice"]')).not.toBeNull();
@@ -258,7 +260,7 @@ it('adopts the account-bound local device ID without reconnecting', async () => 
 it('finishes loading an empty device list', async () => {
   mocks.accountConnectDevices.mockResolvedValue([]);
   mocks.accountListDevices.mockResolvedValue([]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.textContent).not.toContain('accountLogin.loadingDevices');
   expect(mocks.accountListDevices).toHaveBeenCalledTimes(1);
 });
@@ -270,10 +272,10 @@ it('does not restart polling when a recovery snapshot finishes after logout', as
     mocks.accountStatus.mockResolvedValue({ logged_in: true, user_id: '42' });
     mocks.accountConnectDevices.mockRejectedValueOnce(new Error('socket failure'));
     mocks.accountListDevices.mockReturnValueOnce(new Promise(resolve => { finishSnapshot = resolve; }));
-    await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+    await act(async () => { root.render(<AccountPanel />); });
     await retryConnection();
     mocks.identity = { resolved: true, status: 'signed-out', me: null };
-    await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+    await act(async () => { root.render(<AccountPanel />); });
     await act(async () => { finishSnapshot([]); });
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(mocks.accountListDevices).toHaveBeenCalledTimes(1);
@@ -288,7 +290,7 @@ it('ignores pre-auth device information that arrives after the adopted ID', asyn
   mocks.getDeviceInfo.mockReset()
     .mockReturnValueOnce(new Promise(resolve => { finishOldInfo = resolve; }))
     .mockResolvedValueOnce({ device_id: 'local' });
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.querySelector('[aria-label="accountLogin.thisDevice"]')).not.toBeNull();
   await act(async () => { finishOldInfo({ device_id: 'before-auth' }); });
   expect(container.querySelector('[aria-label="accountLogin.thisDevice"]')).not.toBeNull();
@@ -298,7 +300,7 @@ it('ignores pre-auth device information that arrives after the adopted ID', asyn
 it('lets a pending login reopen its external sign-in page', async () => {
   mocks.identity = { resolved: true, status: 'authorizing', me: null };
   mocks.accountStatus.mockResolvedValue({ logged_in: false });
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   const reopen = [...container.querySelectorAll('button')].find(button => button.textContent === 'accountLogin.reopen');
   expect(reopen).toBeDefined();
   expect(reopen!.disabled).toBe(false);
@@ -308,14 +310,14 @@ it('lets a pending login reopen its external sign-in page', async () => {
 
 it('shows explicit old Relay capability state before any mutation', async () => {
   mocks.accountRelayCapabilities.mockResolvedValue([]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.textContent).toContain('accountLogin.deviceAliasUnsupported');
   expect(mocks.accountUpdateDevice).not.toHaveBeenCalled();
 });
 it('accepts the negotiated alias capability and displays only alias plus metadata', async () => {
   mocks.accountRelayCapabilities.mockResolvedValue(['device_alias_v1']);
   mocks.accountListDevices.mockResolvedValue([{ device_id: 'local', device_name: 'technical', device_alias: 'Studio', device_model: 'Model', device_os: 'Linux', online: true }]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.textContent).not.toContain('accountLogin.deviceAliasUnsupported');
   expect(container.textContent).not.toContain('technical');
   expect(container.textContent).toContain('Studio');
@@ -329,7 +331,7 @@ it('marks each row with the system it reported, a server for a CLI host, and the
     { device_id: 'srv', device_name: 'lwb_server', device_os: 'Linux', device_kind: 'cli', online: true },
     { device_id: 'legacy', device_name: 'lwb_legacy', online: true },
   ]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
 
   const rowFor = (name: string) => Array.from(
     container.querySelectorAll('[data-openbitfun-part="deviceCard"]'),
@@ -348,7 +350,7 @@ it('keeps the unsupported notice hidden while the capability answer is pending',
   // An unanswered capability read used to render as an unsupported relay, which
   // flashed the notice on every panel entry while `/api/info` was in flight.
   mocks.accountRelayCapabilities.mockImplementation(() => new Promise(() => {}));
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.textContent).toContain('My computer');
   expect(container.textContent).not.toContain('accountLogin.deviceAliasUnsupported');
 });
@@ -356,7 +358,7 @@ it('keeps the unsupported notice hidden when the capability read fails', async (
   // Relay reachability owns its own banner; a transport error is not evidence
   // that the relay lacks the capability.
   mocks.accountRelayCapabilities.mockRejectedValue(new Error('network down'));
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.textContent).not.toContain('accountLogin.deviceAliasUnsupported');
 });
 
@@ -383,7 +385,7 @@ async function openAliasEditor() {
 
 it('replaces the device name in place instead of showing two names', async () => {
   mocks.accountRelayCapabilities.mockResolvedValue(['device_alias_v1']);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.querySelector('.account-panel__device-name')).not.toBeNull();
   const input = await openAliasEditor();
   // The editor occupies the name's slot; the technical name is not repeated.
@@ -397,7 +399,7 @@ it('replaces the device name in place instead of showing two names', async () =>
 
 it('saves an edited alias from the device row with Enter', async () => {
   mocks.accountRelayCapabilities.mockResolvedValue(['device_alias_v1']);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   const input = await openAliasEditor();
   await act(async () => { setInputValue(input, '  Studio  '); });
   await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
@@ -407,7 +409,7 @@ it('saves an edited alias from the device row with Enter', async () => {
 it('clears an alias when the row editor is saved empty', async () => {
   mocks.accountRelayCapabilities.mockResolvedValue(['device_alias_v1']);
   mocks.accountListDevices.mockResolvedValue([{ device_id: 'local', device_name: 'My computer', device_alias: 'Studio', online: true }]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   const input = await openAliasEditor();
   await act(async () => { setInputValue(input, '   '); });
   await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
@@ -416,7 +418,7 @@ it('clears an alias when the row editor is saved empty', async () => {
 
 it('closes the row editor on Escape without renaming', async () => {
   mocks.accountRelayCapabilities.mockResolvedValue(['device_alias_v1']);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   const input = await openAliasEditor();
   await act(async () => { setInputValue(input, 'Studio'); });
   await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
@@ -431,7 +433,7 @@ it('never renders a device offline from an empty presence signal', async () => {
   mocks.accountListDevices.mockReset()
     .mockResolvedValueOnce([{ device_id: 'local', device_name: 'My computer', device_model: 'Model', online: true, last_seen_at: 1_700_000_000 }])
     .mockImplementation(() => new Promise(() => {}));
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.textContent).toContain('accountLogin.online');
   await emitPresence([]);
   expect(container.textContent).toContain('accountLogin.online');
@@ -444,7 +446,7 @@ it('merges presence metadata without clearing fields an older relay omits', asyn
   mocks.accountListDevices.mockReset()
     .mockResolvedValueOnce([{ device_id: 'local', device_name: 'My computer', device_model: 'Model', device_os: 'Linux', online: true }])
     .mockImplementation(() => new Promise(() => {}));
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.textContent).not.toContain('Studio');
   await emitPresence([{ device_id: 'local', device_name: 'My computer', device_alias: 'Studio' }]);
   expect(container.textContent).toContain('Studio');
@@ -461,7 +463,7 @@ it('keeps an incompatible device listed with a reason and never targets it', asy
     { device_id: 'local', device_name: 'My computer', online: true },
     { device_id: 'peer', device_name: 'Old build', online: true, compatible: false, device_client_version: '0.9.0' },
   ]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   // The device stays visible; the reason mentions the peer version.
   expect(container.textContent).toContain('Old build');
   expect(container.textContent).toContain('accountLogin.deviceClientIncompatibleWithVersion');
@@ -472,19 +474,34 @@ it('keeps an incompatible device listed with a reason and never targets it', asy
   expect(container.querySelectorAll('button[aria-label="accountLogin.editDeviceAlias"]').length).toBe(2);
 });
 
-it('still allows switching to a device whose compatibility flag is absent', async () => {
+it.each([false, true])('keeps device rows non-interactive while peer mode is %s', async active => {
+  mocks.peerMode = { active };
   mocks.accountConnectDevices.mockResolvedValue([]);
   mocks.getDeviceInfo.mockReset().mockResolvedValue({ device_id: 'local' });
-  mocks.switchToDevice.mockResolvedValue('activated');
   mocks.accountListDevices.mockResolvedValue([
     { device_id: 'local', device_name: 'My computer', online: true },
     { device_id: 'peer', device_name: 'Peer build', online: true },
+    { device_id: 'offline', device_name: 'Offline host', online: false },
   ]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
-  const peer = container.querySelector<HTMLButtonElement>('button[aria-label="accountLogin.openDevice"]');
-  expect(peer).not.toBeNull();
-  await act(async () => { peer!.click(); });
-  expect(mocks.switchToDevice).toHaveBeenCalledWith('peer', 'Peer build');
+  await act(async () => { root.render(<AccountPanel />); });
+  const summaries = container.querySelectorAll<HTMLElement>('.account-panel__device-summary');
+  expect(summaries).toHaveLength(3);
+  for (const summary of summaries) {
+    expect(summary.tagName).toBe('DIV');
+    expect(summary.tabIndex).toBe(-1);
+    expect(summary.getAttribute('role')).toBeNull();
+    await act(async () => {
+      summary.click();
+      summary.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      summary.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    });
+  }
+  expect(container.querySelector('button[aria-label="accountLogin.openDevice"]')).toBeNull();
+  expect(container.querySelector('.account-panel__device-chevron')).toBeNull();
+  expect(mocks.switchToDevice).not.toHaveBeenCalled();
+  expect(mocks.switchToLocal).not.toHaveBeenCalled();
+  expect(useDeviceVisibilityPreferences.getState().hidden).toEqual({});
+  expect(container.querySelectorAll('[aria-label="nav.devices.hideInSidebar"]')).toHaveLength(3);
 });
 
 it('groups the account and its devices into titled sections with fixed row columns', async () => {
@@ -494,7 +511,7 @@ it('groups the account and its devices into titled sections with fixed row colum
     { device_id: 'local', device_name: 'My computer', online: true },
     { device_id: 'peer', device_name: 'Peer build', online: false },
   ]);
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   const titles = Array.from(container.querySelectorAll('.account-panel__section-title')).map(node => node.textContent);
   expect(titles).toEqual(['accountLogin.accountSectionTitle', 'accountLogin.linkedDevices']);
   const statuses = Array.from(container.querySelectorAll('.account-panel__device-status'))
@@ -503,9 +520,9 @@ it('groups the account and its devices into titled sections with fixed row colum
   for (const row of container.querySelectorAll('[data-openbitfun-part="deviceCard"]')) {
     const children = Array.from(row.children).map(node => node.className);
     expect(children).toEqual([
-      'account-panel__device-select',
+      'account-panel__device-drag-handle',
+      'account-panel__device-summary',
       'account-panel__device-actions',
-      'account-panel__device-chevron',
     ]);
   }
 });
@@ -513,7 +530,51 @@ it('groups the account and its devices into titled sections with fixed row colum
 it('shows the sign-in action inside the account section when signed out', async () => {
   mocks.identity = { resolved: true, status: 'signed-out', me: null };
   mocks.accountStatus.mockReset().mockResolvedValue({ logged_in: false });
-  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  await act(async () => { root.render(<AccountPanel />); });
   expect(container.querySelector('.account-panel__section-title')?.textContent).toBe('accountLogin.accountSectionTitle');
   expect(container.querySelector('[data-openbitfun-part="form"]')?.textContent).toContain('accountLogin.login');
+});
+
+function deviceOrderInPanel() {
+  return Array.from(container.querySelectorAll<HTMLElement>('[data-device-id]')).map(row => row.dataset.deviceId);
+}
+
+function dispatchDeviceDrag(element: Element, type: string, clientY = 0) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperties(event, { clientY: { value: clientY }, dataTransfer: {
+    value: { effectAllowed: '', dropEffect: '', setData: vi.fn() },
+  } });
+  element.dispatchEvent(event);
+}
+
+it('commits a drag only on drop without row activation, key bindings or helper tooltips', async () => {
+  mocks.accountListDevices.mockResolvedValue([
+    { device_id: 'local', device_name: 'My computer', online: true },
+    { device_id: 'peer', device_name: 'Peer', online: true },
+    { device_id: 'offline', device_name: 'Offline', online: false },
+  ]);
+  await act(async () => { root.render(<AccountPanel />); });
+  const row = (id: string) => container.querySelector<HTMLElement>(`[data-device-id="${id}"]`)!;
+  vi.spyOn(row('local'), 'getBoundingClientRect').mockReturnValue({ top: 20, height: 60 } as DOMRect);
+  act(() => dispatchDeviceDrag(row('offline'), 'dragstart'));
+  act(() => dispatchDeviceDrag(row('local'), 'dragover', 21));
+  expect(row('local').dataset.dropPosition).toBe('before');
+  expect(deviceOrderInPanel()).toEqual(['local', 'peer', 'offline']);
+  expect(useDeviceOrderPreferences.getState().order).toEqual([]);
+  act(() => dispatchDeviceDrag(row('local'), 'drop', 21));
+  expect(deviceOrderInPanel()).toEqual(['offline', 'local', 'peer']);
+  expect(useDeviceOrderPreferences.getState().order).toEqual(['offline', 'local', 'peer']);
+  const handle = row('offline').querySelector<HTMLElement>('.account-panel__device-drag-handle')!;
+  expect(handle.tagName).toBe('SPAN');
+  expect(handle.hasAttribute('title')).toBe(false);
+  act(() => handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+  expect(deviceOrderInPanel()).toEqual(['offline', 'local', 'peer']);
+  act(() => dispatchDeviceDrag(row('offline'), 'dragstart'));
+  act(() => dispatchDeviceDrag(row('peer'), 'dragover', 100));
+  act(() => dispatchDeviceDrag(row('offline'), 'dragend'));
+  expect(deviceOrderInPanel()).toEqual(['offline', 'local', 'peer']);
+  expect(container.querySelector('[data-drop-position]')).toBeNull();
+  expect(mocks.switchToDevice).not.toHaveBeenCalled();
+  expect(mocks.switchToLocal).not.toHaveBeenCalled();
+  expect(mocks.accountUpdateDevice).not.toHaveBeenCalled();
 });

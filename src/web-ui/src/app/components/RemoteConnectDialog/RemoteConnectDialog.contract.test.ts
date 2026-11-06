@@ -151,18 +151,18 @@ describe('Remote Connect safety contracts', () => {
     expect(dialogSource).not.toContain('botConciseMode');
   });
 
-  it('keeps device-row actions in fixed columns with the open affordance last', () => {
+  it('keeps device management actions after a passive device summary', () => {
     const deviceRow = accountPanelSource.slice(
-      accountPanelSource.indexOf('const DeviceEntry'),
+      accountPanelSource.indexOf('sortedDevices.map'),
       accountPanelSource.indexOf('export default AccountPanel'),
     );
 
-    expect(deviceRow.indexOf('account-panel__device-actions')).toBeLessThan(
-      deviceRow.indexOf('account-panel__device-chevron'),
+    expect(deviceRow).toContain('account-panel__device-summary');
+    expect(deviceRow.indexOf('account-panel__device-summary')).toBeLessThan(
+      deviceRow.indexOf('account-panel__device-actions'),
     );
-    expect(deviceRow.indexOf('</DeviceEntry>')).toBeLessThan(
-      deviceRow.indexOf('<Icon name="chevron-right"'),
-    );
+    expect(deviceRow).not.toContain('account-panel__device-chevron');
+    expect(deviceRow).not.toContain('selectDevice(');
   });
 
   it('keeps the dialog height stable while selected content scrolls inside it', () => {

@@ -26,8 +26,11 @@ Most changes start in:
 Peer Device Mode (same-account remote full client) is documented in
 `docs/architecture/peer-device-mode.md`. Frontend invariants:
 `src/infrastructure/peer-device/README.md`. Do not reintroduce nested
-sessions/chat shells; enter peer mode from the device list (Remote Connect →
-My OpenBitFun) instead.
+sessions/chat shells; open a device’s workspace or session from its sidebar section.
+Remote Connect’s account device list manages visibility, aliases, and removal;
+its rows do not switch the rendered device. Device order is a controller-local
+preference shared by this list, sidebar sections, and the device preview carousel;
+keep device IDs stable through renames, presence changes, and Peer switches.
 
 Remote Connect uses the shared OpenBitFun account (GitHub or email-code sign-in)
 and the official versioned Relay.
@@ -412,16 +415,26 @@ pnpm --dir src/web-ui run test:run src/app/components/panels/content-canvas/edit
 
 These local DOM/store fixtures do not establish native rendering or live remote behavior.
 
-For device preview motion, linked sidebar visibility controls, and controller-owned theme selection:
+For device preview motion, linked sidebar visibility and ordering, and controller-owned theme selection:
 
 ```bash
-pnpm --dir src/web-ui run test:run src/app/components/NavPanel/components/DeviceStatusControl.test.tsx src/app/components/NavPanel/sections/devices/DeviceWorkspaceSections.test.tsx src/app/components/RemoteConnectDialog/AccountPanel.test.tsx src/app/navigation/deviceVisibilityPreferences.test.ts src/infrastructure/appearance/runtime/AppearanceService.test.ts
+pnpm --dir src/web-ui run test:run src/app/components/NavPanel/components/DeviceStatusControl.test.tsx src/app/components/NavPanel/sections/devices/DeviceWorkspaceSections.test.tsx src/app/components/RemoteConnectDialog/AccountPanel.test.tsx src/app/navigation/deviceVisibilityPreferences.test.ts src/app/navigation/deviceOrderPreferences.test.ts src/app/components/NavPanel/sections/devices/useSidebarDevices.test.tsx src/infrastructure/appearance/runtime/AppearanceService.test.ts
 ```
 
 These DOM/store and transport fixtures cover interrupted motion, reduced motion,
-legacy preference loading, visibility across device activation, and local theme
+legacy preference loading, drag ordering, visibility across device activation, and local theme
 reads/writes during simulated Peer switches. They do not establish native
 WebView frame rate or live SSH, Remote Control, Peer Device or Detached Dispatch behavior.
+
+For cross-device session prewarm, native event routing and subscription handover:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/services/RelaySessionHistory.test.ts src/flow_chat/services/RelaySessionHistory.routing.test.ts src/infrastructure/api/service-api/RemoteConnectAPI.test.ts src/infrastructure/api/adapters/tauri-adapter.test.ts src/infrastructure/peer-device/deviceSurfaceRouting.test.ts
+```
+
+These fixtures route tagged native events before and after a simulated Peer
+activation, including same-ID sessions on other devices and cached replay.
+They do not establish live Relay reconnect or remote-host performance.
 
 For workspace icon editing, host capability gates, persistence requests and device-switch fences:
 
