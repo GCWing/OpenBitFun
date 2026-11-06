@@ -14,14 +14,15 @@ vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({
     assertCurrent: () => { if (!fixture.current) throw new Error('Surface changed'); } }),
 }));
 vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', () => ({ remoteConnectAPI: {
-  onSessionInteractionChanged: (listener: (event:any)=>void) => {fixture.interaction=listener;return()=>{fixture.interaction=null;};},
-  onSessionRecord: (listener: (event: unknown) => void) => { fixture.record = listener; return () => { fixture.record = null; }; },
-  onSessionReady: (listener: (event: any) => void) => { fixture.ready = listener; return () => { fixture.ready = null; }; },
-  onSessionSyncError: (listener: (event: any) => void) => { fixture.error = listener; return () => { fixture.error = null; }; },
-  onSessionGap: (listener: (event: any) => void) => { fixture.gap = listener; return () => { fixture.gap = null; }; },
+  onSessionInteractionChanged: (listener: (event:any)=>void) => {fixture.interaction=listener;return()=>{if (fixture.interaction === listener) fixture.interaction=null;};},
+  onSessionRecord: (listener: (event: unknown) => void) => { fixture.record = listener; return () => { if (fixture.record === listener) fixture.record = null; }; },
+  onSessionReady: (listener: (event: any) => void) => { fixture.ready = listener; return () => { if (fixture.ready === listener) fixture.ready = null; }; },
+  onSessionSyncError: (listener: (event: any) => void) => { fixture.error = listener; return () => { if (fixture.error === listener) fixture.error = null; }; },
+  onSessionGap: (listener: (event: any) => void) => { fixture.gap = listener; return () => { if (fixture.gap === listener) fixture.gap = null; }; },
   subscribeSession: fixture.subscribe, unsubscribeSession: fixture.unsubscribe, loadOlderSession: fixture.older,
 } }));
 
+import { routeSurfaceEvent } from '@/infrastructure/peer-device/deviceSurfaceRouting';
 import { prewarmRelaySessionHistory, RelaySessionHistory } from './RelaySessionHistory';
 
 describe('RelaySessionHistory', () => {
@@ -59,9 +60,9 @@ describe('RelaySessionHistory', () => {
     fixture.subscribe.mockImplementation(() => new Promise<string>(resolve => { resolveSubscription = resolve; }));
     prewarmRelaySessionHistory('host', 'session');
     // The host answers while the device switch is still running.
-    fixture.record?.({ sessionId: 'session', id: 'turn/turn' });
-    fixture.record?.({ sessionId: 'other', id: 'turn/other' });
-    fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 1 });
+    routeSurfaceEvent('session-record', { __openbitfunSourceDeviceId: 'host', sessionId: 'session', id: 'turn/turn' });
+    routeSurfaceEvent('session-record', { __openbitfunSourceDeviceId: 'host', sessionId: 'other', id: 'turn/other' });
+    routeSurfaceEvent('relay://session-ready', { __openbitfunSourceDeviceId: 'host', sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 1 });
     const apply = vi.fn();
     const onReady = vi.fn();
     const history = new RelaySessionHistory('session', apply, onReady, vi.fn());

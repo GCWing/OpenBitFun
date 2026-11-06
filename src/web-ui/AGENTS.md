@@ -426,6 +426,16 @@ legacy preference loading, drag/keyboard ordering, visibility across device acti
 reads/writes during simulated Peer switches. They do not establish native
 WebView frame rate or live SSH, Remote Control, Peer Device or Detached Dispatch behavior.
 
+For cross-device session prewarm, native event routing and subscription handover:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/services/RelaySessionHistory.test.ts src/flow_chat/services/RelaySessionHistory.routing.test.ts src/infrastructure/api/service-api/RemoteConnectAPI.test.ts src/infrastructure/api/adapters/tauri-adapter.test.ts src/infrastructure/peer-device/deviceSurfaceRouting.test.ts
+```
+
+These fixtures route tagged native events before and after a simulated Peer
+activation, including same-ID sessions on other devices and cached replay.
+They do not establish live Relay reconnect or remote-host performance.
+
 For workspace icon editing, host capability gates, persistence requests and device-switch fences:
 
 ```bash

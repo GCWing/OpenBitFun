@@ -130,7 +130,11 @@ notification metadata.
 
 2. **Peer history has one owner.** `loadSessionHistory` uses
    `RelaySessionHistory`; it must not fall back to `restore_session_view`, cloud
-   imports, or a local transcript after a Relay failure.
+   imports, or a local transcript after a Relay failure. A prewarmed stream
+   buffers only its target device and session via the source-aware observer,
+   before active-surface filtering. Keep its native feeds alive until the
+   adopting owner has registered, and await event registration before requesting
+   replay; neither an early host reply nor handover may drop the first page.
 
 3. **Failures stay explicit and recoverable.** Failed reads leave loading state,
    retain previously rendered records, and expose retry. An empty success is not
