@@ -19,6 +19,7 @@ delivery form.
 | `plugin-runtime-client` | Default `PluginRuntimeClient` implementation for dispatch, duplicate-request results, and fault diagnostics; the JS/TS Plugin Host remains a child process managed through service ports | [AGENTS.md](plugin-runtime-client/AGENTS.md) |
 | `runtime-services` | Typed runtime service assembly and service availability facts | [AGENTS.md](runtime-services/AGENTS.md) |
 | `tool-provider-groups` | Tool provider group facts and product-full tool group composition. Cargo package remains `openbitfun-tool-packs`. | [AGENTS.md](tool-provider-groups/AGENTS.md) |
+| `office-documents` | Portable OOXML (docx, xlsx, pptx) document models, atomic edit operations, and package writers behind the `GenOfficeFile` tool; no IO beyond in-memory bytes | [AGENTS.md](office-documents/AGENTS.md) |
 | `tool-execution` | Low-level file/search/tool IO helpers, ExecCommand presentation facts, Computer Use loop/retry policies, prompt-safe tool context facts, and provider-neutral tool runtime policies. Cargo package remains `tool-runtime`. | [AGENTS.md](tool-execution/AGENTS.md) |
 
 ## Placement Rules

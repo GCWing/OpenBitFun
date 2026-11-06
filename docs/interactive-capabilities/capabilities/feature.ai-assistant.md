@@ -27,6 +27,8 @@ Work with AI in project context, create sessions, continue tasks, answer permiss
   - Extend client UI and runtime capabilities in Creative mode
 - **由专用智能体工具控制 / Delegated Agent tool** · `generate_image` · 通过已配置的默认图像模型生成图片
   - Generate images with the configured default image model
+- **由专用智能体工具控制 / Delegated Agent tool** · `GenOfficeFile` · 用 GenOfficeFile 创建并编辑 Word、Excel 和 PowerPoint 文件
+  - Create and edit Word, Excel, and PowerPoint files with GenOfficeFile
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 开始、引导、打断、取消或恢复一次智能体运行
   - Start, steer, interrupt, cancel, or recover an agent turn
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看并逐个或批量回答等待中的权限请求

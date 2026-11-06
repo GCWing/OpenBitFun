@@ -1458,6 +1458,7 @@ export function findProductEntrypointCoreFeatureViolations(
     'tools-computer-use',
     'tools-image-analysis',
     'tools-image-generation',
+    'tools-office-documents',
     'tools-agent-control',
   ];
   const CORE_TEST_SUPPORT_FEATURE = 'test-support';
@@ -1521,6 +1522,7 @@ export function findProductEntrypointCoreFeatureViolations(
     'tools-git',
     'tools-image-analysis',
     'tools-image-generation',
+    'tools-office-documents',
     'tools-mcp',
     'tools-miniapp',
     'web-tools',

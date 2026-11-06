@@ -51,6 +51,7 @@ members = [
     "src/crates/execution/runtime-services",
     "src/crates/execution/tool-provider-groups",
     "src/crates/execution/tool-execution",
+    "src/crates/execution/office-documents",
     "src/crates/contracts/core-types",
     "src/crates/contracts/config-contracts",
     "src/crates/contracts/events",

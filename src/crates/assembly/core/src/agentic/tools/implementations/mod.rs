@@ -34,6 +34,8 @@ pub mod file_read_tool;
 pub mod file_write_tool;
 #[cfg(feature = "tools-creation")]
 pub mod frontend_workbench_tool;
+#[cfg(feature = "tools-office-documents")]
+pub mod gen_office_file_tool;
 #[cfg(feature = "tools-image-generation")]
 pub mod generate_image_tool;
 #[cfg(feature = "tools-miniapp")]
@@ -114,6 +116,8 @@ pub use file_read_tool::FileReadTool;
 pub use file_write_tool::FileWriteTool;
 #[cfg(feature = "tools-creation")]
 pub use frontend_workbench_tool::FrontendWorkbenchTool;
+#[cfg(feature = "tools-office-documents")]
+pub use gen_office_file_tool::GenOfficeFileTool;
 #[cfg(feature = "tools-image-generation")]
 pub use generate_image_tool::GenerateImageTool;
 #[cfg(feature = "tools-miniapp")]

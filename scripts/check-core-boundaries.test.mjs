@@ -730,12 +730,13 @@ test('Services Core text runtime features keep independent exact owner profiles'
   ]);
 });
 
-test('image inspection and generation keep independent exact feature closures', async () => {
+test('image inspection, image generation, and office documents keep independent exact feature closures', async () => {
   const manifestPath = 'src/crates/assembly/core/Cargo.toml';
   const manifest = await readFile(new URL(`../${manifestPath}`, import.meta.url), 'utf8');
   const features = parseManifestFeatures(manifest);
   for (const [name, refs] of [
     ['tools-image-analysis', ['openbitfun-tool-packs/image-analysis']],
+    ['tools-office-documents', ['openbitfun-tool-packs/office-documents', 'dep:openbitfun-office-documents']],
     ['tools-image-generation', [
       'openbitfun-tool-packs/image-generation',
       'ai-adapter-runtime',
@@ -1526,6 +1527,7 @@ test('Core product-full explicitly assembles service and tool capability owners'
     'tools-creation',
     'tools-image-analysis',
     'tools-image-generation',
+    'tools-office-documents',
     'tools-miniapp',
     'tools-agent-control',
   ]) {
@@ -1899,6 +1901,7 @@ const SDK_HOST_REVIEWED_CORE_FEATURES = [
   'tools-computer-use',
   'tools-image-analysis',
   'tools-image-generation',
+  'tools-office-documents',
   'tools-agent-control',
 ];
 

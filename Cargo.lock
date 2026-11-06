@@ -6044,6 +6044,7 @@ dependencies = [
  "openbitfun-events",
  "openbitfun-external-sources",
  "openbitfun-legacy-migration-adapters",
+ "openbitfun-office-documents",
  "openbitfun-opencode-adapter",
  "openbitfun-opencode-plugin-host",
  "openbitfun-pi-adapter",
@@ -6379,6 +6380,19 @@ dependencies = [
  "tokio",
  "uuid",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "openbitfun-office-documents"
+version = "1.0.9"
+dependencies = [
+ "base64 0.22.1",
+ "pulldown-cmark",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "sha2",
+ "zip 4.6.1",
 ]
 
 [[package]]

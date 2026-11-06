@@ -27,6 +27,7 @@ const PRODUCT_TOOL_REGISTRATION_ORDER: &[&str] = &[
     "Write",
     "Edit",
     "Delete",
+    "GenOfficeFile",
     "ExecCommand",
     "WriteStdin",
     "ExecControl",
@@ -117,6 +118,8 @@ impl StaticToolProviderFactory<dyn Tool> for ProductConcreteToolFactory {
             "Write" => Some(Arc::new(FileWriteTool::new())),
             "Edit" => Some(Arc::new(FileEditTool::new())),
             "Delete" => Some(Arc::new(DeleteFileTool::new())),
+            #[cfg(feature = "tools-office-documents")]
+            "GenOfficeFile" => Some(Arc::new(GenOfficeFileTool::new())),
             "ExecCommand" => Some(Arc::new(ExecCommandTool::new())),
             "WriteStdin" => Some(Arc::new(WriteStdinTool::new())),
             "ExecControl" => Some(Arc::new(ExecControlTool::new())),
@@ -268,6 +271,11 @@ mod tests {
                 ToolPackFeatureGroup::ImageAnalysis,
                 &["view_image", "analyze_image"][..],
                 cfg!(feature = "tools-image-analysis"),
+            ),
+            (
+                ToolPackFeatureGroup::OfficeDocuments,
+                &["GenOfficeFile"][..],
+                cfg!(feature = "tools-office-documents"),
             ),
         ] {
             let result = create_product_tool_registry_from_plan(

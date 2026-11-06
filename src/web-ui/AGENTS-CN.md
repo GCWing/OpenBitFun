@@ -80,6 +80,19 @@ pnpm run check:web
 `check:web` 会执行类型检查，以及 CI 使用的 Appearance contract、主题颜色和主题视觉治理门禁，确保渲染 DOM
 或样式回归能在本地发现。完整 lint、build 与大范围测试由 CI 兜底，除非本地改动确实需要复现。
 
+能力目录条目及其全局搜索多语言标签使用以下聚焦检查：
+
+```bash
+pnpm run capabilities:generate && pnpm run capabilities:check && pnpm run capabilities:test
+pnpm run website:test
+pnpm --dir src/web-ui run test:run src/app/global-search/providers/interactiveCapabilitySearchProvider.test.ts
+pnpm run i18n:audit
+```
+
+新增目录条目还需在各语言的 `scenes/capabilities.json` 中补齐 `search.capabilities`
+标签；目录生成器不会写入这些资源。共享搜索验收用例同时覆盖说明书网站和 Web UI，
+并检查是否匹配到正确的子能力。
+
 导航分割线拖拽、弹性反馈、取消操作与键盘调宽使用以下聚焦检查：
 
 ```bash

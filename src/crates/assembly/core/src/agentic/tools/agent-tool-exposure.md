@@ -37,6 +37,7 @@ Notes:
 | `Write` | Direct | None | - |
 | `Edit` | Direct | None | - |
 | `Delete` | Direct | None | - |
+| `GenOfficeFile` | Direct | None | - |
 | `ExecCommand` | Direct | None | - |
 | `WriteStdin` | Direct | None | - |
 | `ExecControl` | Direct | None | - |

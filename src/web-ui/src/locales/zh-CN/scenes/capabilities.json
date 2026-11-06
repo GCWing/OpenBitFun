@@ -43,6 +43,7 @@
             "model-mode-permissions": "为会话选择模型、工作模式、记忆模式与权限模式",
             "creative-frontend-authoring": "让创造模式扩展客户端界面与运行时能力",
             "image-generation": "通过已配置的默认图像模型生成图片",
+            "office-document-generation": "用 GenOfficeFile 创建并编辑 Word、Excel 和 PowerPoint 文件",
             "turn-control": "开始、引导、打断、取消或恢复一次智能体运行",
             "permission-mailbox": "查看并逐个或批量回答等待中的权限请求",
             "history-search": "分页加载、搜索和回填历史消息与会话内容",

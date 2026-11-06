@@ -15,6 +15,7 @@
 | `plugin-runtime-client` | `PluginRuntimeClient` 的默认实现，负责派发、重复请求结果和故障诊断；JS/TS Plugin Host 是经服务端口管理的子进程 | [AGENTS.md](plugin-runtime-client/AGENTS.md) |
 | `runtime-services` | Typed runtime service assembly 和 service availability facts | [AGENTS.md](runtime-services/AGENTS.md) |
 | `tool-provider-groups` | Tool provider group facts 和 product-full tool group composition；Cargo package 仍为 `openbitfun-tool-packs` | [AGENTS.md](tool-provider-groups/AGENTS.md) |
+| `office-documents` | 可移植的 OOXML（docx、xlsx、pptx）文档模型、原子编辑操作和打包写出，供 `GenOfficeFile` 工具使用；只处理内存字节，不做 IO | [AGENTS.md](office-documents/AGENTS.md) |
 | `tool-execution` | 底层 file/search/tool IO helper、ExecCommand presentation facts、Computer Use loop/retry policy、prompt-safe tool context facts 和 provider-neutral tool runtime policy；Cargo package 仍为 `tool-runtime` | [AGENTS.md](tool-execution/AGENTS.md) |
 
 ## 放置规则

@@ -25,6 +25,7 @@ impl UltimateHarness {
                 "Edit",
                 "Write",
                 "Delete",
+                "GenOfficeFile",
                 "Grep",
                 "Glob",
                 "AskUserQuestion",

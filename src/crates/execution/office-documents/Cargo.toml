@@ -1,0 +1,25 @@
+[package]
+name = "openbitfun-office-documents"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license = "MIT AND Apache-2.0"
+description = "Portable OOXML (docx, xlsx, pptx) document models, incremental edit operations, and package writers"
+
+[lib]
+name = "openbitfun_office_documents"
+crate-type = ["rlib"]
+
+[dependencies]
+base64 = { workspace = true }
+pulldown-cmark = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+zip = { workspace = true }
+
+[dev-dependencies]
+roxmltree = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

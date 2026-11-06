@@ -116,6 +116,9 @@ SessionManager -> Session -> DialogTurn -> ModelRound
   Tool implementation groups use the matching `tools-*` owner feature.
   `tools-image-analysis` owns only image inspection; `tools-image-generation`
   separately selects the generation tool and its AI adapter client.
+  `tools-office-documents` owns `GenOfficeFile` and its portable OOXML engine
+  (`openbitfun-office-documents`); the tool moves bytes only through the
+  session's workspace file system, so remote workspaces need no extra owner.
   Product Assembly supplies the exact `ProductToolPlan`; Core materialization
   validates that requested owners were compiled and must not infer product
   capability from Cargo's feature union. The Agent Runtime baseline plan is
@@ -259,6 +262,13 @@ cargo test --locked -p openbitfun-core --no-default-features --features agent-ru
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-image-generation --lib agentic::tools::implementations::generate_image_tool::tests
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-image-generation --lib agentic::tools::product_runtime::materialization::tests::image_tools_follow_independent_compiled_owners
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-image-analysis --lib agentic::tools::product_runtime::materialization::tests::image_tools_follow_independent_compiled_owners
+```
+
+For Office file generation (`GenOfficeFile`); the engine itself is covered by
+`cargo test -p openbitfun-office-documents`:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-office-documents --lib agentic::tools::implementations::gen_office_file_tool::tests
 ```
 
 These fixtures do not call a provider or exercise live remote hosts. Image wire

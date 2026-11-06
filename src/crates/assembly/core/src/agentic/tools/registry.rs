@@ -565,6 +565,7 @@ mod tests {
             "Write",
             "Edit",
             "Delete",
+            "GenOfficeFile",
             "ExecCommand",
             "WriteStdin",
             "ExecControl",
