@@ -4,6 +4,8 @@ A workbook is a list of **sheets**; each sheet holds sparse cells addressed A1-s
 
 Range reads also honor `offset`/`limit` (at most 500 rows per call); pass the same range and the returned `next_offset` to continue. `detail: "full"` preserves complete cell text; outline reads shorten long text.
 
+Pass ordinary Unicode text; do not manually transcode or pre-escape XML. The tool writes UTF-8. Use `style.font_name` for a font available in the target viewer; fonts are not embedded. File generation does not require an Office installation, and `read` is not a rendered workbook preview.
+
 ## Cell values
 
 Rows are arrays of cell values:
@@ -45,6 +47,8 @@ Formula results are computed and cached for arithmetic, comparisons, `&`, cell a
 | `set_properties` | `title`, `subject`, `author`, `keywords`, `description`, `category` | |
 
 Operations run in order and each sees the previous result: after `insert_rows`, later operations in the same batch address the shifted grid. A batch is atomic.
+
+Prefer `set_cells`/`format_range` for corrections instead of deleting/recreating sheets or rows. After failure, correct the named field/range; read the current sheet if uncertain. Do not repeat unchanged failed input or replay successful batches.
 
 ## Example
 

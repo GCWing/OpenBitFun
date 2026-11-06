@@ -140,8 +140,28 @@ pub(crate) fn apply(
                 .to
                 .ok_or_else(|| OfficeError::invalid("move_slides needs `to`"))?;
             let span = existing_span(input.index, input.count, deck.slides.len(), "slide")?;
-            move_span(&mut deck.slides, span, to, "slide")?;
-            ctx.touched.clear();
+            move_span(&mut deck.slides, span.clone(), to, "slide")?;
+            // Keep auditing edited/inserted slides after their positions change.
+            // Moving a slide must not discard that batch's layout findings.
+            ctx.touched = std::mem::take(&mut ctx.touched)
+                .into_iter()
+                .map(|index| {
+                    if span.contains(&index) {
+                        to + index - span.start
+                    } else {
+                        let after_removal = if index >= span.end {
+                            index - span.len()
+                        } else {
+                            index
+                        };
+                        if after_removal >= to {
+                            after_removal + span.len()
+                        } else {
+                            after_removal
+                        }
+                    }
+                })
+                .collect();
             ctx.note(format!("moved slide(s) from {} to {to}", input.index));
             Ok(())
         }
@@ -339,6 +359,19 @@ fn update_slide(
             }
             let mut current = serde_json::to_value(&slide.elements[target])
                 .map_err(|err| OfficeError::invalid(err.to_string()))?;
+            // Stored text is canonical paragraphs. A new plain-text value must
+            // replace them, otherwise canonicalize() silently keeps the old text.
+            if patch.get("text").is_some_and(Value::is_string) {
+                if patch.contains_key("paragraphs") {
+                    return Err(OfficeError::invalid(format!(
+                        "{path}: pass text or paragraphs, not both"
+                    )));
+                }
+                current
+                    .as_object_mut()
+                    .expect("serialized element object")
+                    .remove("paragraphs");
+            }
             crate::common::merge_patch(&mut current, &Value::Object(patch));
             let mut updated = parse_element(&current, &path)?;
             // A changed picture source must be embedded again.

@@ -15,7 +15,8 @@ use crate::agentic::tools::ToolPathOperation;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
 use openbitfun_office_documents::{
-    collect_image_sources, guide, Detail, ImageSources, OfficeDocument, OfficeError, OfficeFormat,
+    collect_image_sources, guide, operation_recovery_hint, operation_schema,
+    validate_operation_headers, Detail, ImageSources, OfficeDocument, OfficeError, OfficeFormat,
     OpenOptions, ReadRequest,
 };
 use serde_json::{json, Value};
@@ -142,6 +143,7 @@ impl GenOfficeFileTool {
         {
             return Err("`sheet` and `range` only apply to .xlsx files".to_string());
         }
+        validate_operation_headers(format, &operations).map_err(Self::office_error_message)?;
         Ok((action, format))
     }
 
@@ -170,10 +172,18 @@ impl GenOfficeFileTool {
         }
     }
 
+    fn office_error_message(error: OfficeError) -> String {
+        match error.operation.as_deref() {
+            Some(op) => format!(
+                "{error}. Nothing was written: the entire batch was rolled back (operation numbers are 0-based). {} Correct the input before retrying; use a smaller batch if indexes are uncertain.",
+                operation_recovery_hint(op)
+            ),
+            None => format!("{error}. The file was not changed. Use action=guide for the format's contract."),
+        }
+    }
+
     fn office_error(error: OfficeError) -> OpenBitFunError {
-        OpenBitFunError::tool(format!(
-            "{error}. Fix the reported problem and resend the whole batch; nothing was written. Use action=guide for the field reference."
-        ))
+        OpenBitFunError::tool(Self::office_error_message(error))
     }
 
     /// Loads image files referenced by the operations through the workspace
@@ -255,6 +265,10 @@ impl GenOfficeFileTool {
             format.as_str(),
             document.revision()
         );
+        text.push_str("\nFile written; visual rendering was not performed by this tool.");
+        if format == OfficeFormat::Pptx {
+            text.push_str(" Layout warnings are geometric/text-size estimates.");
+        }
         if !changes.is_empty() {
             text.push_str("\nChanges:");
             for change in changes.iter().take(30) {
@@ -273,24 +287,26 @@ impl GenOfficeFileTool {
     }
 
     fn description_text() -> String {
-        r#"Create and incrementally edit real Office files: Word (.docx), Excel (.xlsx), and PowerPoint (.pptx). The format comes from the file extension. Use this instead of writing scripts when the user wants an Office document, report, spreadsheet, workbook, slide deck, or presentation.
+        r#"Create and incrementally edit Word (.docx), Excel (.xlsx), and PowerPoint (.pptx) files directly, without scripts or an installed Office application. The extension selects the format.
 
-Build large documents over several calls instead of one: create the file with a first batch, then append or change content with `edit` (one section, a few slides, or a chunk of rows per call). Every call applies a batch of `operations` atomically (all or nothing) and rewrites the file. The editable source travels inside the file, so later calls can keep editing it.
+Workflow: call guide once for the format, create a first batch, then edit in small sections/slides/row chunks. Send text as ordinary Unicode strings; the tool writes UTF-8 XML. Do not manually re-encode, HTML-escape, or replace non-Latin characters.
 
 Actions:
-- `create`: new file at `file_path` (absolute). Optional `settings` (document-level defaults) and `operations`. Refuses to replace an existing file unless `overwrite: true`.
-- `edit`: apply `operations` to a file this tool created.
-- `read`: page through the structure with `offset`/`limit`; `detail: "full"` returns the stored model of each unit (with indexes and embedded image `asset` names) for precise edits. For .xlsx, pass `sheet` to page rows or `range` (A1:D20) to read cells.
-- `guide`: the complete field and operation reference for `format` (docx | xlsx | pptx). Call it before the first create or edit of a format in a session.
+- guide: pass format (docx | xlsx | pptx) for fields, defaults and examples.
+- create: absolute file_path, optional settings and operations. Existing files require explicit overwrite:true.
+- edit: file_path and non-empty operations. For content corrections, replace/update in place; do not insert/delete/move just to replace content.
+- read: file_path, offset/limit, detail:"full" for exact content and current indexes. XLSX accepts sheet and range (A1:D20); use next_offset to continue.
 
-Operations by format (each is `{"op": "...", ...}`):
-- docx — blocks are 0-based: `insert_blocks` {index?, blocks | markdown}, `replace_blocks` {index, count?, blocks | markdown}, `delete_blocks` {index, count?}, `move_blocks` {index, count?, to}, `replace_text`, `set_page_setup`, `set_styles`, `set_header_footer` ({PAGE}/{NUMPAGES} fields), `set_properties`. Block types: heading, paragraph, list, table, image, code, quote, page_break, horizontal_rule, toc. Markdown (headings, lists, tables, code, quotes, links, images, [TOC]) is the fastest way to add content.
-- xlsx — sheets by name: `add_sheet`, `delete_sheet`, `rename_sheet`, `move_sheet`, `set_cells` {sheet, start, rows}, `append_rows` {sheet, rows}, `insert_rows`/`delete_rows`/`insert_columns`/`delete_columns` (references shift), `clear_range`, `format_range` {range, style}, `set_column_widths`, `set_row_heights`, `merge_cells`, `unmerge_cells`, `freeze_panes`, `set_autofilter`, `set_sheet`, `set_properties`. Cell values: numbers, booleans, text, "=FORMULA", or {value, type: date|text|number, style}.
-- pptx — slides are 0-based on a 1280×720 px canvas (16:9) with absolutely positioned elements (text, shape, image, table): `insert_slides` {index?, slides}, `replace_slide`, `update_slide` {index, update_elements/remove_elements/append_elements, background, notes}, `delete_slides`, `move_slides`, `duplicate_slide`, `set_theme`, `set_properties`. After each batch the touched slides are audited for text overflow and off-canvas elements.
+Each operation is {op, ...fields}. Operations run in array order against the result of earlier operations. Block/slide/element indexes are 0-based and shift after insert/delete; move `to` is the position after removing the source. A failed batch writes nothing. Use the error's field/index guidance, read the target if uncertain, and send corrected input; do not repeat an unchanged failed call or replay a successful batch.
 
-Images (docx image blocks, pptx image elements, Markdown images) take an absolute local path or a data URL (PNG, JPEG, GIF, BMP). Download web images first.
+Common edits:
+- DOCX: insert_blocks {markdown} to append; replace_blocks {index, count?, markdown} to replace.
+- XLSX: add_sheet {name, rows}; append_rows {sheet, rows}; set_cells {sheet, start, rows}; format_range {sheet, range, style}.
+- PPTX: insert_slides {slides} to append; replace_slide {index, slide} to replace one complete slide; update_slide {index, update_elements:[{index, ...changed fields}]} for element patches (no nested op); update_slide {index, elements} to replace all elements while keeping slide metadata. Use set_theme for deck defaults. Canvas: 1280×720 px, or 960×720 for 4:3.
 
-Files this tool did not create cannot be edited; read them with the Read tool and create a new file. If another program changed a generated file, edit refuses unless `discard_external_changes: true` (which rebuilds from the last GenOfficeFile state and drops the outside changes)."#
+PPTX warnings estimate text overflow and off-canvas geometry; read/audit is not visual rendering. If visual verification is needed, use an available renderer and report what was actually checked. An unavailable preview renderer does not prevent file generation. For CJK text, choose an east_asia_font available on the target viewer; language is inferred unless lang is supplied in the guide's supported locations.
+
+Images accept absolute workspace paths or data URLs (PNG/JPEG/GIF/BMP); download web images first. Reuse embedded asset names from read. Only files created by this tool are editable. External modifications are preserved by refusing edits; discard_external_changes:true explicitly rebuilds from the last embedded model and drops those modifications."#
             .to_string()
     }
 }
@@ -329,17 +345,12 @@ impl Tool for GenOfficeFileTool {
                 },
                 "operations": {
                     "type": "array",
-                    "description": "create/edit: ordered batch of operations, applied atomically. Each item is an object with `op` plus that operation's fields (see action=guide).",
-                    "items": {
-                        "type": "object",
-                        "properties": { "op": { "type": "string" } },
-                        "required": ["op"],
-                        "additionalProperties": true
-                    }
+                    "description": "create/edit: ordered atomic batch. Each item needs op AND that operation's fields. Indexes refer to the state after preceding operations. Prefer in-place replacement for content edits.",
+                    "items": operation_schema()
                 },
                 "settings": {
                     "type": "object",
-                    "description": "create only: document-level defaults. docx: page, styles, header, footer, properties. pptx: slide_size (\"16:9\" | \"4:3\"), theme {font, east_asia_font, text_color}, properties. xlsx: properties.",
+                    "description": "create only: document defaults. docx: page, styles, header, footer, properties. pptx: slide_size (16:9 | 4:3), theme {font, east_asia_font, text_color, lang?}, properties. xlsx: properties. lang is an optional BCP 47 override; omitted PPTX language follows the text.",
                     "additionalProperties": true
                 },
                 "overwrite": {
@@ -373,6 +384,7 @@ impl Tool for GenOfficeFileTool {
                 "counts": { "type": "object" },
                 "changes": { "type": "array", "items": { "type": "string" } },
                 "warnings": { "type": "array", "items": { "type": "string" } },
+                "visual_rendered": { "type": "boolean" },
                 "view": { "type": "object" },
                 "guide": { "type": "string" }
             },
@@ -661,6 +673,7 @@ impl Tool for GenOfficeFileTool {
                 "counts": document.summary(),
                 "changes": report.changes,
                 "warnings": report.warnings,
+                "visual_rendered": false,
             }),
             Some(text),
         )])
@@ -904,5 +917,110 @@ mod tests {
             Some("/home/u/docs")
         );
         assert_eq!(GenOfficeFileTool::parent_directory("a.pptx", true), None);
+    }
+
+    #[tokio::test]
+    async fn malformed_edits_return_actionable_feedback_before_workspace_access() {
+        // No workspace services: these failures must come from input validation,
+        // with enough information to repair the call without touching any file.
+        let tool = GenOfficeFileTool::new();
+        let mut no_workspace = context(Arc::new(MemoryFs::default()), false);
+        no_workspace.workspace = None;
+        no_workspace.runtime_handles = ToolRuntimeHandles::new(None, None);
+        for (operation, expected) in [
+            (json!({"op":"replace_slide"}), "index, slide"),
+            (
+                json!({"op":"replace_slide","index":0,"slide":3}),
+                "complete slide object",
+            ),
+            (
+                json!({"op":"update_slide","index":0,"update_elements":[{"index":0,"op":"replace","text":"New"}]}),
+                "no op",
+            ),
+            (
+                json!({"op":"move_slides","index":-1,"to":0}),
+                "integer >= 0",
+            ),
+        ] {
+            let input =
+                json!({"action":"edit","file_path":"/docs/deck.pptx","operations":[operation]});
+            let validation = tool.validate_input(&input, None).await;
+            assert!(!validation.result);
+            let message = validation.message.unwrap();
+            assert!(message.contains(expected), "{message}");
+            assert!(message.contains("Nothing was written"), "{message}");
+            assert!(message.contains("Correct the input"), "{message}");
+            let error = tool.call_impl(&input, &no_workspace).await.unwrap_err();
+            assert!(error.to_string().contains(expected), "{error}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_slide_replacement_can_be_repaired_through_the_tool_on_local_and_remote_workspaces(
+    ) {
+        for remote in [false, true] {
+            let fs = Arc::new(MemoryFs::default());
+            let context = context(fs.clone(), remote);
+            let tool = GenOfficeFileTool::new();
+            let path = "/remote/workspace/out/recovery.pptx";
+            let guide = data(
+                tool.call_impl(&json!({"action":"guide","format":"pptx"}), &context)
+                    .await
+                    .unwrap(),
+            );
+            assert!(guide["guide"].as_str().unwrap().contains("replace_slide"));
+            let slide = |title: &str| {
+                json!({"title":title,"notes":"Keep notes","elements":[
+                    {"type":"text","x":40,"y":40,"w":900,"h":90,"size_pt":30,"text":title}
+                ]})
+            };
+            let created = data(tool.call_impl(&json!({"action":"create","file_path":path,"operations":[
+                {"op":"insert_slides","slides":(0..9).map(|i|slide(&format!("Page {i}"))).collect::<Vec<_>>()}
+            ]}), &context).await.unwrap());
+            assert_eq!(created["visual_rendered"], false);
+            let saved = fs.files.lock().unwrap()[path].clone();
+            for index in [4, 6] {
+                let failed = tool
+                    .call_impl(
+                        &json!({"action":"edit","file_path":path,"operations":[
+                            {"op":"insert_slides","slides":[slide("Replacement")]},
+                            {"op":"delete_slides","index":index},
+                            {"op":"move_slides","index":9,"to":index}
+                        ]}),
+                        &context,
+                    )
+                    .await
+                    .unwrap_err();
+                let message = failed.to_string();
+                assert!(message.contains("move_slides"), "{message}");
+                assert!(message.contains("indexes 0..=8"), "{message}");
+                assert!(message.contains("recalculate selectors"), "{message}");
+                assert!(message.contains("replace_slide"), "{message}");
+                assert_eq!(fs.files.lock().unwrap()[path], saved);
+            }
+            let repaired = data(tool.call_impl(&json!({"action":"edit","file_path":path,"operations":[
+                {"op":"replace_slide","index":4,"slide":slide("待更新")},
+                {"op":"update_slide","index":4,"update_elements":[{"index":0,"text":"四种模式，按任务选择协作方式"}]}
+            ]}), &context).await.unwrap());
+            assert_eq!(repaired["revision"], 2);
+            assert_eq!(repaired["counts"]["slides"], 9);
+            assert_eq!(repaired["visual_rendered"], false);
+            let read = data(
+                tool.call_impl(
+                    &json!({"action":"read","file_path":path,"offset":4,"limit":1,"detail":"full"}),
+                    &context,
+                )
+                .await
+                .unwrap(),
+            );
+            let element = &read["view"]["slides"][0]["elements"][0];
+            assert_eq!(
+                element["paragraphs"][0]["runs"][0]["text"],
+                "四种模式，按任务选择协作方式"
+            );
+            assert_eq!(element["size_pt"], 30.0);
+            assert_eq!(read["view"]["slides"][0]["notes"], "Keep notes");
+        }
     }
 }

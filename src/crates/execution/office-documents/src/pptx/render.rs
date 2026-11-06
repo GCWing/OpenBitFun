@@ -76,7 +76,10 @@ pub(crate) fn render(
             notes_rels.add(&rel("slide"), &format!("../slides/slide{number}.xml"));
             parts.add_xml(
                 format!("ppt/notesSlides/notesSlide{number}.xml"),
-                notes_xml(slide.notes.as_deref().unwrap_or("")),
+                notes_xml(
+                    slide.notes.as_deref().unwrap_or(""),
+                    deck.theme.lang.as_deref(),
+                ),
             );
             parts.add_xml(
                 format!("ppt/notesSlides/_rels/notesSlide{number}.xml.rels"),
@@ -451,6 +454,10 @@ impl SlideWriter<'_> {
             }
         }
         let end = Run {
+            // The insertion point must use the paragraph's language too; an
+            // empty English end run can reintroduce the wrong font fallback.
+            text: paragraph.runs.iter().map(|run| run.text.as_str()).collect(),
+            lang: paragraph.runs.last().and_then(|run| run.lang.clone()),
             size_pt: Some(size),
             ..Run::default()
         };
@@ -460,7 +467,14 @@ impl SlideWriter<'_> {
     }
 
     fn run_properties(&mut self, run: &Run, defaults: &TextDefaults, tag: &str) -> String {
-        let mut attributes = String::from(" lang=\"en-US\"");
+        let lang = text_language(
+            &run.text,
+            run.lang
+                .as_deref()
+                .or(defaults.lang.as_deref())
+                .or(self.deck.theme.lang.as_deref()),
+        );
+        let mut attributes = format!(" lang=\"{}\"", esc(lang));
         if let Some(size) = run.size_pt.or(defaults.size_pt) {
             attributes.push_str(&format!(" sz=\"{}\"", (size * 100.0).round() as i64));
         }
@@ -618,6 +632,7 @@ impl SlideWriter<'_> {
                         .or_else(|| is_header.then(|| table.header_color.clone()))
                         .or_else(|| table.text_color.clone()),
                     font: table.font.clone(),
+                    lang: None,
                     align: cell.align,
                 };
                 let paragraph = Paragraph {
@@ -726,15 +741,35 @@ fn notes_master_xml() -> String {
     )
 }
 
-fn notes_xml(notes: &str) -> String {
+/// PowerPoint uses the run language when choosing the script/font mapping.
+/// Forcing en-US onto CJK text can display unrelated Latin glyphs even though
+/// the XML is valid UTF-8. Han-only text defaults to Chinese; explicit `lang`
+/// handles Traditional Chinese and Japanese/Korean text containing only Han.
+fn text_language<'a>(text: &str, explicit: Option<&'a str>) -> &'a str {
+    if let Some(lang) = explicit {
+        return lang;
+    }
+    if text.chars().any(|c| matches!(c as u32, 0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF66..=0xFF9D | 0x1B000..=0x1B16F)) {
+        "ja-JP"
+    } else if text.chars().any(|c| matches!(c as u32, 0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF | 0xFFA0..=0xFFDC)) {
+        "ko-KR"
+    } else if text.chars().any(|c| matches!(c as u32, 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x2FA1F | 0x30000..=0x323AF)) {
+        "zh-CN"
+    } else {
+        "en-US"
+    }
+}
+
+fn notes_xml(notes: &str, default_lang: Option<&str>) -> String {
     let paragraphs: String = notes
         .split('\n')
         .map(|line| {
+            let lang = esc(text_language(line, default_lang));
             if line.is_empty() {
-                "<a:p><a:endParaRPr lang=\"en-US\" dirty=\"0\"/></a:p>".to_string()
+                format!("<a:p><a:endParaRPr lang=\"{lang}\" dirty=\"0\"/></a:p>")
             } else {
                 format!(
-                    "<a:p><a:r><a:rPr lang=\"en-US\" dirty=\"0\"/><a:t>{}</a:t></a:r></a:p>",
+                    "<a:p><a:r><a:rPr lang=\"{lang}\" dirty=\"0\"/><a:t>{}</a:t></a:r></a:p>",
                     esc(line)
                 )
             }

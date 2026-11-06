@@ -2,13 +2,26 @@
 
 A deck is a list of **slides** (0-based). Each slide is a fixed canvas — **1280 × 720 px** for `16:9` (default) or 960 × 720 for `4:3` — with absolutely positioned elements: origin top-left, `x` `y` `w` `h` in px, painted in array order (first = bottom). Build one slide (or a few) per `edit` call; `read` pages over slides, and `detail: "full"` returns a slide's elements with their indexes for targeted edits.
 
+## Editing workflow
+
+- Append new pages with `insert_slides`. To rewrite a page, use `replace_slide` with **both `index` and `slide`**; no insert/delete/move sequence is needed.
+- For a small correction, `read` the target with `detail: "full"`, then `update_slide` with its slide index and element patches. Each patch is `{index, ...changed fields}`, with **no nested `op`**. `text` replaces the old paragraphs; use `paragraphs` instead to retain rich run formatting. Do not supply both.
+- Indexes are live within a batch: inserting or deleting slides shifts subsequent indexes. Recalculate later selectors against the resulting order. `move_slides.to` is measured after removing the moved pages.
+- Failure leaves the whole batch unapplied. Correct the named field/index; if uncertain, read the current document and retry a smaller edit. Do not resend unchanged failed input or replay successful calls.
+
+## Text and fonts
+
+Pass ordinary Unicode text; do not manually transcode or pre-escape XML. The tool writes UTF-8. Set deck defaults at create with `settings.theme`, or later with `set_theme`: `{font, east_asia_font, text_color, lang}`. Use the theme defaults unless document requirements call for specific fonts. Fonts are not embedded; availability and substitution depend on the viewing environment, which may differ from the generation environment.
+
+`lang` is an optional BCP 47 override on the theme, text/shape element, paragraph, or run (most specific wins). Omit it for automatic selection: kana → `ja-JP`, Hangul → `ko-KR`, Han → `zh-CN`, otherwise `en-US`. Set the intended language explicitly when script alone is ambiguous, such as Traditional Chinese or Han-only Japanese/Korean. `font` on an element/run overrides its font; `theme.east_asia_font` supplies the theme's East Asian font.
+
 ## Slide
 
 `{ "title", "layout", "background": "#RRGGBB", "notes": "speaker notes", "elements": [ … ] }`. `title` and `layout` are planning labels shown by `read` (not drawn).
 
 ## Elements
 
-Colors are `#RRGGBB` or `#RRGGBBAA` (alpha). Text-bearing elements accept `text` (string, `\n` = new paragraph) or `paragraphs`, plus element-level run defaults `size_pt`, `bold`, `italic`, `color`, `font`, `align` that apply wherever a run or paragraph does not set its own.
+Colors are `#RRGGBB` or `#RRGGBBAA` (alpha). Text-bearing elements accept `text` (string, `\n` = new paragraph) or `paragraphs`, plus element-level defaults `size_pt`, `bold`, `italic`, `color`, `font`, `lang`, `align`. Defaults apply only where a run/paragraph does not set its own value; changing element size/color/font does not override explicit values inside runs.
 
 **text** — `{type: "text", x, y, w, h, text | paragraphs, valign (top|middle|bottom, default top), rotation, …defaults}`. Zero inner padding; the box wraps at `w` and does not grow, so size it for its content.
 
@@ -18,9 +31,9 @@ Colors are `#RRGGBB` or `#RRGGBBAA` (alpha). Text-bearing elements accept `text`
 
 **table** — `{type: "table", x, y, w, h, rows, header (default true), column_widths (px, scaled to w), font_size_pt (default 14), font, header_fill, header_color, fill, band_fill ("" disables banding), border_color, text_color}`. Cells are strings/numbers or `{text/runs, bold, color, fill, align}`. Rows share `h` equally. At most 60 rows × 30 columns.
 
-**Paragraph** — a string, or `{text | runs, align (left|center|right|justify), line_spacing_pct, space_before_pt, space_after_pt, bullet, numbered, level, size_pt, bold, italic, color, font}`.
+**Paragraph** — a string, or `{text | runs, align (left|center|right|justify), line_spacing_pct, space_before_pt, space_after_pt, bullet, numbered, level, size_pt, bold, italic, color, font, lang}`.
 
-**Run** — `{text, size_pt, bold, italic, underline, strike, superscript, subscript, color, highlight, font, link}`.
+**Run** — `{text, size_pt, bold, italic, underline, strike, superscript, subscript, color, highlight, font, lang, link}`.
 
 GenOffice spec spellings are accepted as aliases: `sizePt`, `lineSpacingPct`, `spaceBeforePt`, `spaceAfterPt`, `widthPt`, `flipH`, `flipV`, `url`.
 
@@ -34,10 +47,22 @@ GenOffice spec spellings are accepted as aliases: `sizePt`, `lineSpacingPct`, `s
 | `delete_slides` | `index`, `count` (default 1) | |
 | `move_slides` | `index`, `count`, `to` | `to` is the position after the moved slides are removed |
 | `duplicate_slide` | `index`, `to` (default right after) | |
-| `set_theme` | `font`, `east_asia_font`, `text_color` | deck-wide defaults |
+| `set_theme` | `font`, `east_asia_font`, `text_color`, `lang` (null clears an override) | deck-wide defaults |
 | `set_properties` | `title`, `subject`, `author`, `keywords`, `description`, `category` | |
 
-After a batch the tool audits the touched slides and reports elements outside the canvas and text that likely overflows its box; fix those with `update_slide`.
+After a batch the tool audits the touched slides and reports elements outside the canvas and text that likely overflows its box; fix relevant findings with `update_slide`. These are estimates, not rendered images. Visual verification is a separate step using an available viewer/renderer; report the environment actually checked. File generation does not require an installed Office application or renderer.
+
+### In-place edit examples
+
+```json
+{"action":"edit","file_path":"/abs/deck.pptx","operations":[
+  {"op":"replace_slide","index":2,"slide":{"title":"Summary","elements":[
+    {"type":"text","x":80,"y":80,"w":1000,"h":100,"size_pt":32,"text":"Updated result"}
+  ]}}
+]}
+```
+
+Then change only that text with `{"op":"update_slide","index":2,"update_elements":[{"index":0,"text":"Final result"}]}`. Slide index 2 and element index 0 are different selectors; get both from `read`.
 
 ## Design rules (from GenOffice's deck pipeline)
 

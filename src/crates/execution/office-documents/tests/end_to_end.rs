@@ -463,3 +463,283 @@ fn image_sources_include_markdown_and_element_patches() {
         vec!["/abs/a.png", "/abs/b.png", "/abs/c.png"]
     );
 }
+
+#[test]
+fn pptx_failed_replacement_recovers_in_place_without_losing_text_or_audit() {
+    let images = ImageSources::new();
+    let mut deck = OfficeDocument::new(OfficeFormat::Pptx, None).unwrap();
+    let slide = |title: &str| {
+        json!({"title": title, "notes": "Keep these notes", "elements": [
+            {"type":"text","x":40,"y":40,"w":800,"h":90,"size_pt":30,"text":title},
+            {"type":"shape","shape":"rect","x":40,"y":160,"w":800,"h":90,"fill":"#EFEFEF","text":"Original card"}
+        ]})
+    };
+    deck.apply(&[json!({"op":"insert_slides","slides":(0..9).map(|i|slide(&format!("Page {i}"))).collect::<Vec<_>>()})], &images).unwrap();
+    let saved = deck.to_bytes().unwrap();
+    // Same operation order/source index as the reported model call.
+    let error = deck
+        .apply(
+            &ops(json!([
+                {"op":"insert_slides","slides":[slide("Replacement")]},
+                {"op":"delete_slides","index":4},
+                {"op":"move_slides","index":9,"to":4}
+            ])),
+            &images,
+        )
+        .unwrap_err();
+    assert_eq!(error.operation_index, Some(2));
+    assert_eq!(error.kind, OfficeErrorKind::OutOfRange);
+    assert_eq!(deck.to_bytes().unwrap(), saved);
+
+    let mut deck = OfficeDocument::open(&saved, &OpenOptions::default()).unwrap();
+    deck.apply(
+        &ops(json!([
+            {"op":"replace_slide","index":4,"slide":slide("Replaced")},
+            {"op":"update_slide","index":4,"update_elements":[
+                {"index":0,"text":"四种模式，按任务选择协作方式"},
+                {"index":1,"text":"已更新卡片\nSecond line"}
+            ]}
+        ])),
+        &images,
+    )
+    .unwrap();
+    let parts = assert_well_formed(&deck.to_bytes().unwrap());
+    let xml = text_of(&parts, "ppt/slides/slide5.xml");
+    assert!(xml.contains("四种模式，按任务选择协作方式"));
+    assert!(xml.contains("已更新卡片"));
+    assert!(xml.contains("Second line"));
+    assert!(!xml.contains("Original card"));
+    assert!(!xml.contains("Replaced"));
+    let view = deck
+        .read(&ReadRequest {
+            offset: Some(4),
+            limit: Some(1),
+            detail: Detail::Full,
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(view["total_slides"], 9);
+    assert_eq!(view["slides"][0]["notes"], "Keep these notes");
+    assert_eq!(view["slides"][0]["elements"][0]["size_pt"], 30.0);
+
+    // Geometry findings must follow a newly inserted slide through delete/move.
+    let report = deck.apply(&ops(json!([
+        {"op":"insert_slides","slides":[{"elements":[{"type":"text","x":1400,"y":40,"w":100,"h":90,"text":"Outside"}]}]},
+        {"op":"delete_slides","index":4},
+        {"op":"move_slides","index":8,"to":4}
+    ])), &images).unwrap();
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("slide 4 element 0") && w.contains("extends past")),
+        "{:?}",
+        report.warnings
+    );
+    // And follow an edited existing slide when a preceding block moves past it.
+    let report = deck
+        .apply(
+            &ops(json!([
+                {"op":"update_slide","index":4,"update_elements":[{"index":0,"x":1500}]},
+                {"op":"move_slides","index":0,"count":2,"to":7}
+            ])),
+            &images,
+        )
+        .unwrap();
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("slide 2 element 0") && w.contains("extends past")),
+        "{:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn pptx_cjk_language_and_fonts_survive_export_reopen_and_edits() {
+    let mut deck = OfficeDocument::new(
+        OfficeFormat::Pptx,
+        Some(&json!({"theme":{"font":"Arial","east_asia_font":"PingFang SC"}})),
+    )
+    .unwrap();
+    let cases = [
+        ("四种模式 & <Agent> 🙂", None, "zh-CN"),
+        ("日本語の説明", None, "ja-JP"),
+        ("한국어 설명", None, "ko-KR"),
+        ("Plain English", None, "en-US"),
+        ("繁體中文", Some("zh-TW"), "zh-TW"),
+        ("日本漢字", Some("ja-JP"), "ja-JP"),
+    ];
+    let elements: Vec<_> = cases
+        .iter()
+        .enumerate()
+        .map(|(i, (text, lang, _))| {
+            let mut element =
+                json!({"type":"text","x":40,"y":40+i*90,"w":1100,"h":80,"size_pt":28,"text":text});
+            if let Some(lang) = lang {
+                element["lang"] = json!(lang);
+            }
+            element
+        })
+        .collect();
+    deck.apply(
+        &[json!({"op":"insert_slides","slides":[{"notes":"中文演讲备注","elements":elements}]})],
+        &ImageSources::new(),
+    )
+    .unwrap();
+    let bytes = deck.to_bytes().unwrap();
+    keep_sample("cjk-languages.pptx", &bytes);
+    let reopened = OfficeDocument::open(&bytes, &OpenOptions::default()).unwrap();
+    let parts = assert_well_formed(&reopened.to_bytes().unwrap());
+    let xml = text_of(&parts, "ppt/slides/slide1.xml");
+    let dom = roxmltree::Document::parse(&xml).unwrap();
+    for (text, _, lang) in cases {
+        let t = dom
+            .descendants()
+            .find(|node| {
+                node.has_tag_name(("http://schemas.openxmlformats.org/drawingml/2006/main", "t"))
+                    && node.text() == Some(text)
+            })
+            .unwrap();
+        let properties = t
+            .parent()
+            .unwrap()
+            .children()
+            .find(|n| n.tag_name().name() == "rPr")
+            .unwrap();
+        assert_eq!(properties.attribute("lang"), Some(lang));
+        // Preserve theme/script fallback; do not force a platform UI font onto
+        // every run just because it was supplied as a generic theme font.
+        assert!(!properties.children().any(|n| n.tag_name().name() == "ea"));
+        let end = t
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .children()
+            .find(|n| n.tag_name().name() == "endParaRPr")
+            .unwrap();
+        assert_eq!(end.attribute("lang"), Some(lang));
+    }
+    let theme_xml = text_of(&parts, "ppt/theme/theme1.xml");
+    let theme = roxmltree::Document::parse(&theme_xml).unwrap();
+    for (script, expected) in [
+        ("Hans", "等线"),
+        ("Hant", "新細明體"),
+        ("Jpan", "游ゴシック"),
+        ("Hang", "맑은 고딕"),
+    ] {
+        let font = theme
+            .descendants()
+            .find(|n| n.attribute("script") == Some(script))
+            .unwrap();
+        assert_eq!(font.attribute("typeface"), Some(expected));
+    }
+    assert!(text_of(&parts, "ppt/notesSlides/notesSlide1.xml").contains("lang=\"zh-CN\""));
+
+    // Theme, element, paragraph and run language overrides retain precedence.
+    let mut edited = reopened;
+    edited.apply(&ops(json!([
+        {"op":"set_theme","lang":"zh-TW"},
+        {"op":"replace_slide","index":0,"slide":{"elements":[
+            {"type":"text","x":40,"y":40,"w":1000,"h":80,"text":"主題語言"},
+            {"type":"text","x":40,"y":140,"w":1000,"h":80,"lang":"zh-CN","paragraphs":[{"lang":"ja-JP","runs":[{"text":"漢字"},{"text":"繁體","lang":"zh-HK"}]}]},
+            {"type":"table","x":40,"y":240,"w":600,"h":200,"rows":[[{"runs":[{"text":"한국어","lang":"ko-KR"}]}]]}
+        ]}}
+    ])), &ImageSources::new()).unwrap();
+    let bytes = edited.to_bytes().unwrap();
+    let reopened = OfficeDocument::open(&bytes, &OpenOptions::default()).unwrap();
+    let parts = entries(&reopened.to_bytes().unwrap());
+    let xml = text_of(&parts, "ppt/slides/slide1.xml");
+    let dom = roxmltree::Document::parse(&xml).unwrap();
+    for (text, lang) in [
+        ("主題語言", "zh-TW"),
+        ("漢字", "ja-JP"),
+        ("繁體", "zh-HK"),
+        ("한국어", "ko-KR"),
+    ] {
+        let t = dom
+            .descendants()
+            .find(|n| n.tag_name().name() == "t" && n.text() == Some(text))
+            .unwrap();
+        assert_eq!(
+            t.parent()
+                .unwrap()
+                .children()
+                .find(|n| n.tag_name().name() == "rPr")
+                .unwrap()
+                .attribute("lang"),
+            Some(lang)
+        );
+    }
+}
+
+#[test]
+fn legacy_pptx_without_language_fields_round_trips_and_renders_cjk() {
+    // Hand-authored version-1 payload: no new language fields, no current writer.
+    let legacy = br#"{"schema":"openbitfun.genoffice","version":1,"format":"pptx","revision":7,"document":{"slide_size":"16:9","theme":{"font":"Arial"},"slides":[{"title":"Legacy","elements":[{"type":"text","x":40,"y":40,"w":900,"h":90,"paragraphs":[{"runs":[{"text":"\u4e2d\u6587 Agent"}]}]}]}]}}"#;
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file(
+        "openbitfun/genoffice.json",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .unwrap();
+    zip.write_all(legacy).unwrap();
+    let old_bytes = zip.finish().unwrap().into_inner();
+    let old = OfficeDocument::open(&old_bytes, &OpenOptions::default()).unwrap();
+    assert_eq!(old.revision(), 7);
+    let read = ReadRequest {
+        detail: Detail::Full,
+        ..Default::default()
+    };
+    let old_view = old.read(&read).unwrap();
+    let bytes = old.to_bytes().unwrap();
+    let reopened = OfficeDocument::open(&bytes, &OpenOptions::default()).unwrap();
+    assert_eq!(reopened.read(&read).unwrap(), old_view);
+    let parts = assert_well_formed(&bytes);
+    assert!(text_of(&parts, "ppt/slides/slide1.xml").contains("lang=\"zh-CN\""));
+    let source: Value = serde_json::from_slice(&parts["openbitfun/genoffice.json"]).unwrap();
+    assert_eq!(source["version"], 1);
+    assert!(source["document"]["theme"].get("lang").is_none());
+    assert!(
+        source["document"]["slides"][0]["elements"][0]["paragraphs"][0]["runs"][0]
+            .get("lang")
+            .is_none()
+    );
+}
+
+#[test]
+fn unicode_text_is_preserved_in_word_and_excel_xml() {
+    let text = "中文、繁體、日本語、한국어 & <Agent> 🙂";
+    for (format, operations, part) in [
+        (
+            OfficeFormat::Docx,
+            vec![
+                json!({"op":"insert_blocks","blocks":[{"type":"paragraph","runs":[{"text":text,"lang":"zh-CN"}]}]}),
+            ],
+            "word/document.xml",
+        ),
+        (
+            OfficeFormat::Xlsx,
+            vec![json!({"op":"add_sheet","name":"数据","rows":[[text]]})],
+            "xl/sharedStrings.xml",
+        ),
+    ] {
+        let mut doc = OfficeDocument::new(format, None).unwrap();
+        doc.apply(&operations, &ImageSources::new()).unwrap();
+        let bytes = doc.to_bytes().unwrap();
+        let reopened = OfficeDocument::open(&bytes, &OpenOptions::default()).unwrap();
+        let parts = assert_well_formed(&reopened.to_bytes().unwrap());
+        let xml = text_of(&parts, part);
+        let dom = roxmltree::Document::parse(&xml).unwrap();
+        assert!(
+            dom.descendants()
+                .any(|n| n.tag_name().name() == "t" && n.text() == Some(text)),
+            "{xml}"
+        );
+        if format == OfficeFormat::Docx {
+            assert!(xml.contains("w:lang w:val=\"zh-CN\""));
+        }
+    }
+}

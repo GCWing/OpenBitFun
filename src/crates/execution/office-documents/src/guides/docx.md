@@ -2,6 +2,8 @@
 
 A Word document is an ordered list of **blocks** (0-based indexes) plus document settings. Build it over several `edit` calls: write the skeleton first, then insert sections one or a few at a time. `read` pages over blocks with `offset`/`limit` and returns the heading outline, so you can find where to insert next.
 
+Pass ordinary Unicode text; do not manually transcode or pre-escape XML. The tool writes UTF-8. Choose fonts installed in the intended viewer; fonts are not embedded. File generation does not require an Office installation, and `read` is a model inspection, not a rendered page preview.
+
 ## Blocks
 
 Every block is an object with `type`. Text fields take either `text` (plain string) or `runs` (formatted spans). Inside text, `\n` is a line break.
@@ -19,7 +21,7 @@ Every block is an object with `type`. Text fields take either `text` (plain stri
 | `horizontal_rule` | — |
 | `toc` | `title`, `levels` (default 3). Lists the headings; Word refreshes page numbers on open |
 
-**Run** fields: `text`, `bold`, `italic`, `underline`, `strike`, `code`, `superscript`, `subscript`, `color` (`#RRGGBB`), `highlight` (`#RRGGBB`), `size_pt`, `font`, `link` (http/https/mailto URL).
+**Run** fields: `text`, `bold`, `italic`, `underline`, `strike`, `code`, `superscript`, `subscript`, `color` (`#RRGGBB`), `highlight` (`#RRGGBB`), `size_pt`, `font`, `lang` (optional BCP 47 language, e.g. `zh-CN`), `link` (http/https/mailto URL).
 
 ### Markdown
 
@@ -41,9 +43,11 @@ Every block is an object with `type`. Text fields take either `text` (plain stri
 
 Indexes inside one batch are live: after inserting two blocks at index 3, the old block 3 is block 5 for the next operation in the same batch. A batch is atomic — if any operation fails, nothing is written and the error names the operation.
 
+Prefer `replace_blocks` for content corrections instead of insert/delete/move sequences. After failure, correct the named field/index; read the current target if uncertain. Do not repeat unchanged failed input or replay successful batches.
+
 ## Settings at create
 
-`settings` may carry `page`, `styles`, `header`, `footer`, `properties` (same fields as above). For Chinese documents set `styles.east_asia_font` (for example `Microsoft YaHei`, `SimSun`, `PingFang SC`).
+`settings` may carry `page`, `styles`, `header`, `footer`, `properties` (same fields as above). Use the style defaults unless document requirements call for specific fonts; `styles.east_asia_font` sets the East Asian font. Font availability and substitution depend on the viewing environment, which may differ from the generation environment.
 
 ## Example
 

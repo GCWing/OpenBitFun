@@ -182,6 +182,9 @@ pub struct Run {
     pub size_pt: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
+    /// BCP 47 text language; omitted legacy runs keep automatic language selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
     /// External hyperlink target (http, https, or mailto).
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "url")]
     pub link: Option<String>,
@@ -198,6 +201,9 @@ impl Run {
     }
 
     pub fn validate(&self, path: &str) -> OfficeResult<()> {
+        if let Some(lang) = &self.lang {
+            validate_language(lang).map_err(|err| prefix(err, path, "lang"))?;
+        }
         if let Some(color) = &self.color {
             parse_color(color).map_err(|err| prefix(err, path, "color"))?;
         }
@@ -216,6 +222,24 @@ impl Run {
         }
         Ok(())
     }
+}
+
+/// A syntax check, not a locale allowlist: Office language tags are independent
+/// of the product UI's supported locales.
+pub(crate) fn validate_language(lang: &str) -> OfficeResult<()> {
+    let mut parts = lang.split('-');
+    let primary = parts.next().unwrap_or_default();
+    if (!(2..=8).contains(&primary.len()) && !matches!(primary, "x" | "X" | "i" | "I"))
+        || !primary.bytes().all(|c| c.is_ascii_alphabetic())
+        || parts.any(|part| {
+            part.is_empty() || part.len() > 8 || !part.bytes().all(|c| c.is_ascii_alphanumeric())
+        })
+    {
+        return Err(OfficeError::invalid(
+            "use a BCP 47 language tag, such as en-US, zh-CN, zh-TW, ja-JP, or ko-KR",
+        ));
+    }
+    Ok(())
 }
 
 impl UnknownFields for Run {
