@@ -1561,13 +1561,6 @@ $_section-header-height: 22px;
 // Device overview — one compact model, local and connected states
 // ──────────────────────────────────────────────
 
-// State color is limited to the device controls; the card stays neutral.
-@property --_device-overview-light {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: transparent;
-}
-
 .openbitfun-device-overview {
   // The card sizes to its content, so the artwork, name, action and device list
   // always render whole. Only the device list scrolls, and only when the window
@@ -1587,7 +1580,8 @@ $_section-header-height: 22px;
   flex-direction: column;
   box-sizing: border-box;
   background: var(--openbitfun-color-surface-raised);
-  transition: --_device-overview-light var(--openbitfun-motion-duration-slow) var(--openbitfun-motion-easing-standard);
+  // Switch state color once. Interpolating an inherited custom property forces
+  // style recalculation throughout the card on every animation frame.
   animation: openbitfun-nav-popover-in 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
 
   &[data-control-state='active'] {
@@ -1820,17 +1814,40 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__page-dot {
-  inline-size: 5px;
+  position: relative;
+  inline-size: 14px;
   block-size: 5px;
-  border-radius: var(--openbitfun-radius-pill);
-  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 22%, transparent);
-  transition:
-    inline-size var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-    background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  // Fixed slots keep the flex row out of layout during every page change.
+  // The small dot remains circular; a separate pill fades and scales over it.
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    margin-inline: auto;
+    border-radius: var(--openbitfun-radius-pill);
+  }
 
-  &[data-active='true'] {
-    inline-size: 14px;
+  &::before {
+    inline-size: 5px;
+    background: color-mix(in srgb, var(--openbitfun-color-content-primary) 22%, transparent);
+  }
+
+  &::after {
     background: var(--openbitfun-color-content-secondary);
+    opacity: 0;
+    transform: scaleX(0.357143);
+  }
+
+  [data-preview-motion='true'] &::after {
+    transition:
+      transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  &[data-active='true']::after {
+    opacity: 1;
+    transform: scaleX(1);
   }
 }
 
@@ -2010,20 +2027,6 @@ $_section-header-height: 22px;
   }
 }
 
-// This machine's home mark sits where other devices have their action: the
-// same tinted glass disc, as a status rather than a button.
-.openbitfun-device-overview__local-mark {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  inline-size: var(--openbitfun-control-height-md);
-  block-size: var(--openbitfun-control-height-md);
-  border-radius: var(--openbitfun-radius-pill);
-  background: color-mix(in srgb, var(--_device-overview-light) 20%, transparent);
-  color: color-mix(in srgb, var(--_device-overview-light) 72%, var(--openbitfun-color-content-primary));
-}
-
 // Renaming sits right after the name: a small quiet pencil that brightens
 // with the heading it edits.
 .openbitfun-device-overview__alias-edit {
@@ -2111,18 +2114,8 @@ $_section-header-height: 22px;
   box-sizing: border-box;
 }
 
-.openbitfun-device-overview__device-status {
-  display: flex;
-  flex: 0 1 auto;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-}
-
-// The action is one round button lit by the same state light as the card: a
-// tinted glass disc with a ring. Disconnecting is neutral rather than wearing
-// the green of the link it ends.
-.openbitfun-device-overview__connection-status {
+// One eye control reflects the device's sidebar visibility.
+.openbitfun-device-overview__visibility-control {
   --_device-overview-action-tone: var(--_device-overview-light);
   --_icon-button-size: var(--openbitfun-control-height-md);
   --_icon-button-icon-size: 16px;
@@ -2147,15 +2140,6 @@ $_section-header-height: 22px;
     --_icon-button-background-hover: var(--_icon-button-background);
     --_icon-button-background-active: var(--_icon-button-background);
     cursor: not-allowed;
-  }
-
-  // An incompatible device keeps its warning mark legible.
-  [data-control-state='incompatible'] > &[aria-disabled='true'] {
-    --_icon-button-content: var(--openbitfun-color-status-warning-content);
-  }
-
-  [data-control-state='active'] > & {
-    --_device-overview-action-tone: var(--openbitfun-color-content-secondary);
   }
 }
 
@@ -3020,7 +3004,7 @@ $_section-header-height: 22px;
   }
 
   .openbitfun-nav-panel__top-action-sublist,
-  .openbitfun-device-overview__page-dot {
+  .openbitfun-device-overview .openbitfun-device-overview__page-dot::after {
     transition: none;
   }
 }

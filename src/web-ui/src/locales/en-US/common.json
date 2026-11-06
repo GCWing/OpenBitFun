@@ -65,6 +65,8 @@
   },
   "nav": {
     "devices": {
+      "hideInSidebar": "Hide {{name}} from sidebar",
+      "showInSidebar": "Show {{name}} in sidebar",
       "thisDevice": "This device",
       "current": "Shown in this window",
       "expand": "Expand {{name}}",

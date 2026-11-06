@@ -7,7 +7,6 @@ interface DevicePreviewMotionOptions {
   artworkRef: RefObject<HTMLElement | null>;
   headingRef: RefObject<HTMLElement | null>;
   actionsRef: RefObject<HTMLElement | null>;
-  paginationRef: RefObject<HTMLElement | null>;
   onSelect: (deviceId: string) => void;
 }
 
@@ -24,7 +23,7 @@ function readDuration(style: CSSStyleDeclaration, token: string): number {
 
 /** Manual browsing owns motion; hydration and surface changes always settle directly. */
 export function useDevicePreviewMotion({
-  scope, surfaceRef, artworkRef, headingRef, actionsRef, paginationRef, onSelect,
+  scope, surfaceRef, artworkRef, headingRef, actionsRef, onSelect,
 }: DevicePreviewMotionOptions) {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [entrance, setEntrance] = useState<{ target: PreviewTarget; generation: number } | null>(null);
@@ -52,9 +51,10 @@ export function useDevicePreviewMotion({
 
   const readMotion = useCallback(() => {
     const surface = surfaceRef.current;
-    const elements = [artworkRef.current, headingRef.current, actionsRef.current, paginationRef.current]
+    // Pagination is visually hidden; it only needs the new accessible text.
+    const elements = [artworkRef.current, headingRef.current, actionsRef.current]
       .filter((element): element is HTMLElement => element !== null);
-    if (!surface || isReducedMotionPreferred() || elements.length !== 4
+    if (!surface || isReducedMotionPreferred() || elements.length !== 3
       || elements.some(element => typeof element.animate !== 'function')) return null;
     const style = getComputedStyle(surface);
     const exitDuration = readDuration(style, '--openbitfun-motion-duration-instant');
@@ -63,17 +63,22 @@ export function useDevicePreviewMotion({
     const distance = style.getPropertyValue('--openbitfun-motion-distance-sm').trim();
     if (!exitDuration || !enterDuration || !easing || !distance) return null;
     return { elements, exitDuration, enterDuration, easing, distance };
-  }, [actionsRef, artworkRef, headingRef, paginationRef, surfaceRef]);
+  }, [actionsRef, artworkRef, headingRef, surfaceRef]);
+  const motionRef = useRef<ReturnType<typeof readMotion>>(null);
 
-  const navigateTo = useCallback((deviceId: string, direction: -1 | 1) => {
+  const navigateTo = useCallback((deviceId: string, direction: -1 | 1, animate = true) => {
     pendingTargetRef.current = { deviceId, direction };
+    if (!animate || isReducedMotionPreferred()) { settle(true); return; }
+    // Repeated clicks during the short exit only change its destination.
+    // Do this before any style read, so a burst of clicks cannot force layout.
+    if (phaseRef.current === 'exit') return;
     const motion = readMotion();
     if (!motion) { settle(true); return; }
-    // Repeated clicks during the short exit only change its destination.
-    if (phaseRef.current === 'exit') return;
+    motionRef.current = motion;
 
     // Interrupted entrances leave from their actual frame, without snapping back.
     const starts = motion.elements.map(element => {
+      if (phaseRef.current !== 'enter') return { opacity: '1', transform: 'none' };
       const style = getComputedStyle(element);
       return { opacity: style.opacity || '1', transform: style.transform || 'none' };
     });
@@ -110,8 +115,10 @@ export function useDevicePreviewMotion({
 
   useLayoutEffect(() => {
     if (!entrance || entrance.generation !== generationRef.current) return;
-    const motion = readMotion();
-    if (!motion) { settle(true); return; }
+    // Reuse the parameters read before exit. Reading styles after swapping the
+    // artwork would synchronously flush its new layout in the hand-off frame.
+    const motion = motionRef.current;
+    if (!motion || isReducedMotionPreferred()) { settle(true); return; }
     cancelAnimations();
     const generation = generationRef.current;
     try {
@@ -128,7 +135,7 @@ export function useDevicePreviewMotion({
     } catch {
       settle(true);
     }
-  }, [artworkRef, cancelAnimations, entrance, readMotion, settle]);
+  }, [artworkRef, cancelAnimations, entrance, settle]);
 
   useEffect(() => {
     const preference = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');

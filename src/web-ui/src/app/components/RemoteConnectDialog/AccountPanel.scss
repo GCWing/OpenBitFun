@@ -159,7 +159,7 @@
 
     // Row actions stay quiet until the row is in hand.
     // Row actions appear with the row in hand; at rest the list is just names.
-    &:not(:hover, :focus-within) .account-panel__device-action { opacity: 0; }
+    &:not(:hover, :focus-within) .account-panel__device-action:not(.account-panel__device-visibility) { opacity: 0; }
 
     &.selectable:has(> .account-panel__device-select:active) {
       background: var(--openbitfun-color-action-neutral-surface-pressed);

@@ -22,6 +22,7 @@ import { useDeviceOpenIntent } from '@/infrastructure/peer-device/deviceOpenInte
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { installBackgroundSurfaceSeeding } from '@/flow_chat/services/backgroundSurfaceSeeding';
+import { useDeviceVisibilityPreferences } from '@/app/navigation/deviceVisibilityPreferences';
 import { devicePlatform, useDeviceSectionDisclosure, useSidebarDevices, type SidebarDeviceSlot } from './useSidebarDevices';
 import './DeviceWorkspaceSections.scss';
 
@@ -157,16 +158,18 @@ const DeviceSection: React.FC<{
 
 const DeviceWorkspaceSections: React.FC<DeviceWorkspaceSectionsProps> = ({ scrollRootRef }) => {
   const { t } = useI18n('common');
-  const slots = useSidebarDevices(t('deviceOverview.thisDevice'));
+  const devices = useSidebarDevices(t('deviceOverview.thisDevice'));
+  const hidden = useDeviceVisibilityPreferences(state => state.hidden);
+  const slots = devices.filter(slot => hidden[slot.surfaceId] !== true);
   const activeSurfaceId = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceId, getActiveSurfaceId);
   const setExpanded = useDeviceSectionDisclosure(state => state.setExpanded);
 
   // Every listed host keeps its session statuses current (debounced host
   // invalidations), whether or not its section is open. The rendered device is
   // kept warm too, so leaving it shows its catalog at once instead of a reload.
-  const backgroundSurfaces = slots.filter(slot => slot.controllable && slots.length > 1)
+  const backgroundSurfaces = slots.filter(slot => slot.controllable && (devices.length > 1 || !slot.rendered))
     .map(slot => slot.surfaceId).join('\n');
-  const multiDevice = slots.length > 1;
+  const multiDevice = devices.length > 1;
   useEffect(() => (multiDevice ? installBackgroundSurfaceSeeding() : undefined), [multiDevice]);
   useEffect(() => {
     if (!backgroundSurfaces) return;
@@ -185,7 +188,8 @@ const DeviceWorkspaceSections: React.FC<DeviceWorkspaceSectionsProps> = ({ scrol
   const containerRef = useRef<HTMLDivElement>(null);
   useSwitchLayoutHold(containerRef, scrollRootRef);
 
-  if (slots.length <= 1) {
+  if (slots.length === 0) return null;
+  if (devices.length === 1 && slots[0].rendered) {
     return <WorkspaceListSection variant="all" scrollRootRef={scrollRootRef} />;
   }
   return (
