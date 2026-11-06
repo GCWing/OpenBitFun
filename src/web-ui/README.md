@@ -31,6 +31,8 @@ conversation links open in the **Built-in browser** or the **System default
 browser**. The choice applies immediately and is saved on this device, including
 while viewing remote workspaces or switching peers. Existing installs keep the
 built-in default until you change it.
+In a Web deployment, the external option opens a new tab in the current browser.
+Changes also synchronize to other open pages sharing this device's local storage.
 
 Right-click a link to choose either browser for that click. Modifier-clicks
 continue to open the external browser; supported PR/MR links keep their review

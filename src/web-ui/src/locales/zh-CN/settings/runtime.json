@@ -201,7 +201,8 @@
     "defaultTarget": "默认打开方式",
     "description": "选择点击对话中的网页链接时使用的浏览器。仅对当前设备生效，右键菜单仍可单独选择。",
     "builtin": "内置浏览器",
-    "external": "系统默认浏览器"
+    "external": "系统默认浏览器",
+    "browserTab": "当前浏览器（新标签页）"
   },
   "browserControl": {
     "sectionTitle": "浏览器控制",

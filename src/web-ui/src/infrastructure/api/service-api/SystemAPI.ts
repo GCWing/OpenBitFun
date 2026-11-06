@@ -4,6 +4,7 @@ import { api } from './ApiClient';
 import { createTauriCommandError } from '../errors/TauriCommandError';
 import { copyTextToClipboard } from '@/shared/utils/textSelection';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { isTauriRuntime } from '@/infrastructure/runtime';
 import { createLogger } from '@/shared/utils/logger';
 import { productControlAPI } from './ProductControlAPI';
 import {
@@ -158,7 +159,16 @@ export class SystemAPI {
    
   async openExternal(url: string): Promise<void> {
     try {
-      await openUrl(url);
+      if (isTauriRuntime()) {
+        await openUrl(url);
+      } else {
+        const protocol = new URL(url).protocol;
+        if (!['http:', 'https:', 'mailto:', 'tel:'].includes(protocol) || typeof window === 'undefined') {
+          throw new Error('This URL cannot be opened in the web client');
+        }
+        // Open synchronously within the click gesture, on the controller browser.
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
     } catch (error) {
       log.error('Failed to open external URL', { url, error });
       throw new Error(`Failed to open external URL: ${error}`);

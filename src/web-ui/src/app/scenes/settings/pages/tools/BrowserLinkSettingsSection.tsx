@@ -1,6 +1,7 @@
 import { useStore } from 'zustand';
 import { Select } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
+import { isTauriRuntime } from '@/infrastructure/runtime';
 import { ConfigPageRow, ConfigPageSection } from '@/infrastructure/config/components/common';
 import { browserLinkPreferenceStore } from '@/infrastructure/config/services/browserLinkPreference';
 
@@ -18,7 +19,7 @@ export default function BrowserLinkSettingsSection() {
           value={target}
           options={[
             { value: 'builtin', label: t('browserLinks.builtin') },
-            { value: 'external', label: t('browserLinks.external') },
+            { value: 'external', label: t(isTauriRuntime() ? 'browserLinks.external' : 'browserLinks.browserTab') },
           ]}
           onValueChange={value => {
             if (value === 'builtin' || value === 'external') setTarget(value);

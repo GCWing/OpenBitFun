@@ -201,7 +201,8 @@
     "defaultTarget": "預設開啟方式",
     "description": "選擇點擊對話中的網頁連結時使用的瀏覽器。僅對目前裝置生效，右鍵選單仍可單獨選擇。",
     "builtin": "內建瀏覽器",
-    "external": "系統預設瀏覽器"
+    "external": "系統預設瀏覽器",
+    "browserTab": "目前瀏覽器（新分頁）"
   },
   "browserControl": {
     "sectionTitle": "瀏覽器控制",

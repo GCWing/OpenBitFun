@@ -51,7 +51,7 @@ pnpm --dir src/web-ui run test:run src/infrastructure/config/services/browserLin
 ```
 
 The link preference remains editable independently of host control status. These
-storage/DOM fixtures cover remote workspace metadata and simulated Peer switches;
+storage/DOM fixtures cover cross-window preference updates, remote workspace metadata and simulated Peer switches;
 they do not establish native browser opening, live remote scenarios, or visual fidelity.
 
 For keyboard shortcut recording, command suppression, IME and capture lifetime:

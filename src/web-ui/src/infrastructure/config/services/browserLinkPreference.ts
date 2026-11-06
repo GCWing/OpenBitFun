@@ -30,4 +30,18 @@ export function createBrowserLinkPreferenceStore(storage = controllerStorage()) 
   }));
 }
 
-export const browserLinkPreferenceStore = createBrowserLinkPreferenceStore();
+const storage = controllerStorage();
+export const browserLinkPreferenceStore = createBrowserLinkPreferenceStore(storage);
+
+if (typeof window !== 'undefined' && storage) {
+  const onStorage = (event: StorageEvent) => {
+    if (event.storageArea !== storage || (event.key !== null && event.key !== BROWSER_LINK_TARGET_STORAGE_KEY)) return;
+    try {
+      // Read the latest value: an older queued event must not undo a newer choice.
+      const saved = storage.getItem(BROWSER_LINK_TARGET_STORAGE_KEY);
+      browserLinkPreferenceStore.setState({ target: saved === 'external' ? 'external' : 'builtin' });
+    } catch { /* Preserve the current choice if storage is temporarily unavailable. */ }
+  };
+  window.addEventListener('storage', onStorage);
+  import.meta.hot?.dispose(() => window.removeEventListener('storage', onStorage));
+}

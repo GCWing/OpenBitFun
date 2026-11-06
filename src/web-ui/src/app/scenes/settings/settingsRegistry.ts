@@ -419,6 +419,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
       phrase('settings/runtime', 'browserLinks.defaultTarget'),
       phrase('settings/runtime', 'browserLinks.builtin'),
       phrase('settings/runtime', 'browserLinks.external'),
+      phrase('settings/runtime', 'browserLinks.browserTab'),
       phrase('settings/runtime', 'browserControl.sectionTitle'),
       phrase('settings/runtime', 'browserControl.preferredBrowser'),
       phrase('settings/runtime', 'browserControl.autoConnectOnStartup'),
