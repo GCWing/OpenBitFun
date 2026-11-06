@@ -13,6 +13,7 @@
 pub mod common;
 pub mod docx;
 mod error;
+mod font_contract;
 mod guide;
 pub mod image;
 mod operation_contract;
@@ -22,6 +23,7 @@ pub mod xlsx;
 mod xml;
 
 pub use error::{OfficeError, OfficeErrorKind, OfficeResult};
+pub use font_contract::{settings_schema, validate_font_input};
 pub use guide::guide;
 pub use operation_contract::{
     operation_recovery_hint, operation_schema, validate_operation_headers,
@@ -486,6 +488,7 @@ where
     if !settings.is_object() {
         return Err(OfficeError::invalid("settings must be an object"));
     }
+    validate_font_input(settings, "settings")?;
     if settings.get(content_key).is_some() {
         return Err(OfficeError::invalid(format!(
             "settings cannot carry `{content_key}`; add content with operations"

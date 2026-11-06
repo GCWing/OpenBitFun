@@ -146,12 +146,16 @@ pub(crate) fn cm_to_twips(cm: f64) -> u32 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DocxStyles {
-    /// Latin body font; Word's default when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
+    /// Legacy Latin and complex-script body font. East Asian text is separate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
     /// Font for CJK text, such as "Microsoft YaHei" or "SimSun".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub east_asia_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub complex_script_font: Option<String>,
     #[serde(default = "default_body_size", alias = "size_pt")]
     pub font_size_pt: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -191,8 +195,10 @@ fn default_table_header_fill() -> String {
 impl Default for DocxStyles {
     fn default() -> Self {
         Self {
+            lang: None,
             font: None,
             east_asia_font: None,
+            complex_script_font: None,
             font_size_pt: default_body_size(),
             heading_font: None,
             heading_color: default_heading_color(),
@@ -207,6 +213,9 @@ impl Default for DocxStyles {
 
 impl DocxStyles {
     pub fn validate(&self) -> OfficeResult<()> {
+        if let Some(lang) = &self.lang {
+            crate::common::validate_language(lang)?;
+        }
         if !(6.0..=72.0).contains(&self.font_size_pt) {
             return Err(OfficeError::invalid(format!(
                 "styles.font_size_pt must be between 6 and 72, got {}",
@@ -528,28 +537,59 @@ impl Block {
         }
     }
 
-    /// Every run of the block, for text replacement.
-    pub fn runs_mut(&mut self) -> Vec<&mut Run> {
+    pub fn run_groups(&self) -> Vec<&[Run]> {
         match self {
-            Block::Heading(block) => block.runs.iter_mut().collect(),
-            Block::Paragraph(block) => block.runs.iter_mut().collect(),
-            Block::Quote(block) => block.runs.iter_mut().collect(),
+            Block::Heading(block) => vec![&block.runs],
+            Block::Paragraph(block) => vec![&block.runs],
+            Block::Quote(block) => vec![&block.runs],
             Block::List(block) => block
                 .items
-                .iter_mut()
-                .flat_map(|item| item.runs.iter_mut())
+                .iter()
+                .map(|item| item.runs.as_slice())
                 .collect(),
+            Block::Table(block) => block
+                .rows
+                .iter()
+                .flatten()
+                .map(|cell| cell.runs.as_slice())
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Every run of the block, for text replacement.
+    /// Separate text containers; replacements never cross paragraphs, list
+    /// items or table cells, even when their text happens to be adjacent.
+    pub fn run_groups_mut(&mut self) -> Vec<&mut Vec<Run>> {
+        match self {
+            Block::Heading(block) => vec![&mut block.runs],
+            Block::Paragraph(block) => vec![&mut block.runs],
+            Block::Quote(block) => vec![&mut block.runs],
+            Block::List(block) => block.items.iter_mut().map(|item| &mut item.runs).collect(),
             Block::Table(block) => block
                 .rows
                 .iter_mut()
                 .flat_map(|row| row.iter_mut())
-                .flat_map(|cell| cell.runs.iter_mut())
+                .map(|cell| &mut cell.runs)
                 .collect(),
             _ => Vec::new(),
         }
     }
 
     pub fn validate(&self, path: &str) -> OfficeResult<()> {
+        for runs in self.run_groups() {
+            for run in runs {
+                if let Some(mode) = run.math {
+                    if mode == crate::common::MathMode::Display && runs.len() != 1 {
+                        return Err(OfficeError::invalid(format!(
+                            "{path}: display math must be the only run in its paragraph or cell"
+                        )));
+                    }
+                    super::math::render(&run.text, mode)
+                        .map_err(|err| prefix(err, path, "math"))?;
+                }
+            }
+        }
         match self {
             Block::Heading(block) => {
                 if !(1..=6).contains(&block.level) {
@@ -598,7 +638,12 @@ impl Block {
                     )));
                 }
                 for (row_index, row) in block.rows.iter().enumerate() {
-                    if row.len() > 63 {
+                    if row
+                        .iter()
+                        .map(|cell| cell.colspan.unwrap_or(1) as u64)
+                        .sum::<u64>()
+                        > 63
+                    {
                         return Err(OfficeError::limit(format!(
                             "{path}.rows[{row_index}]: Word tables are limited to 63 columns"
                         )));
@@ -606,6 +651,14 @@ impl Block {
                     for (cell_index, cell) in row.iter().enumerate() {
                         cell.validate(&format!("{path}.rows[{row_index}][{cell_index}]"))?;
                     }
+                }
+                if block
+                    .font_size_pt
+                    .is_some_and(|size| !(1.0..=400.0).contains(&size))
+                {
+                    return Err(OfficeError::invalid(format!(
+                        "{path}.font_size_pt must be between 1 and 400"
+                    )));
                 }
                 if let Some(widths) = &block.column_widths_cm {
                     if widths.iter().any(|width| !(0.2..=60.0).contains(width)) {

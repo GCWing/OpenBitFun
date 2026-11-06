@@ -1,12 +1,15 @@
 //! Workbooks (`.xlsx`).
 
 pub(crate) mod address;
+mod chart_render;
+pub(crate) mod charts;
 pub(crate) mod eval;
 pub(crate) mod formula;
 pub(crate) mod model;
 pub(crate) mod ops;
 pub(crate) mod render;
 
+pub use charts::{Chart, ChartKind, ChartRange, ChartSeries};
 pub use model::{Cell, CellStyle, Sheet, XlsxDocument};
 
 use crate::common::preview;
@@ -35,7 +38,9 @@ pub(crate) fn read(book: &XlsxDocument, request: &ReadRequest) -> OfficeResult<V
     let computed = eval::evaluate_workbook(book);
     let used = used_range(sheet);
     let Some(used) = used else {
-        return Ok(json!({ "sheet": sheet.name, "used_range": null, "rows": [], "total_rows": 0 }));
+        return Ok(
+            json!({ "sheet": sheet.name, "used_range": null, "rows": [], "total_rows": 0, "charts": sheet.charts }),
+        );
     };
     let requested = match &request.range {
         Some(range) => parse_range(range)?,
@@ -105,6 +110,7 @@ pub(crate) fn read(book: &XlsxDocument, request: &ReadRequest) -> OfficeResult<V
         "merges": sheet.merges,
         "freeze": sheet.freeze,
         "autofilter": sheet.autofilter,
+        "charts": sheet.charts,
         "note": "formula cells show {formula, value}; a null value means the formula uses functions only the spreadsheet application computes (on open)",
     });
     if window.end.col > last_col {
@@ -142,6 +148,7 @@ fn list_sheets(book: &XlsxDocument, request: &ReadRequest) -> Value {
                 "cells": sheet.cells.values().filter(|cell| !cell.value.is_null() || cell.formula.is_some()).count(),
                 "formulas": sheet.cells.values().filter(|cell| cell.formula.is_some()).count(),
                 "merges": sheet.merges.len(),
+                "charts": sheet.charts.len(),
                 "freeze": sheet.freeze,
                 "autofilter": sheet.autofilter,
             })

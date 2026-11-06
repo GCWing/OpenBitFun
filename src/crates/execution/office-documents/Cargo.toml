@@ -13,13 +13,12 @@ crate-type = ["rlib"]
 [dependencies]
 base64 = { workspace = true }
 pulldown-cmark = { workspace = true }
+math-core = { workspace = true }
+roxmltree = { workspace = true, features = ["std"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 zip = { workspace = true }
-
-[dev-dependencies]
-roxmltree = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true

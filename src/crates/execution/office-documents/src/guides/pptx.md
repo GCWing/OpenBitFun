@@ -11,9 +11,13 @@ A deck is a list of **slides** (0-based). Each slide is a fixed canvas — **128
 
 ## Text and fonts
 
-Pass ordinary Unicode text; do not manually transcode or pre-escape XML. The tool writes UTF-8. Set deck defaults at create with `settings.theme`, or later with `set_theme`: `{font, east_asia_font, text_color, lang}`. Use the theme defaults unless document requirements call for specific fonts. Fonts are not embedded; availability and substitution depend on the viewing environment, which may differ from the generation environment.
+Set deck defaults at create with `settings.theme`, or later with `set_theme`: `{font, east_asia_font, complex_script_font, text_color, lang}`. Use the theme defaults unless document requirements call for specific fonts. Fonts are not embedded; availability and substitution depend on the viewing environment, which may differ from the generation environment.
 
-`lang` is an optional BCP 47 override on the theme, text/shape element, paragraph, or run (most specific wins). Omit it for automatic selection: kana → `ja-JP`, Hangul → `ko-KR`, Han → `zh-CN`, otherwise `en-US`. Set the intended language explicitly when script alone is ambiguous, such as Traditional Chinese or Han-only Japanese/Korean. `font` on an element/run overrides its font; `theme.east_asia_font` supplies the theme's East Asian font.
+`lang` is an optional BCP 47 override on the theme, text/shape element, paragraph, or run (most specific wins). Omit it for automatic selection: kana → `ja-JP`, Hangul → `ko-KR`, Han → `zh-CN`, otherwise `en-US`. Set the intended language explicitly when script alone is ambiguous, such as Traditional Chinese or Han-only Japanese/Korean. `theme.font` selects Latin text; `theme.east_asia_font` supplies the theme's East Asian font; `theme.complex_script_font` selects complex-script text. With neither set, Latin defaults to Calibri and the theme supplies language/script fallbacks.
+
+Font precedence is run → paragraph → element/table → theme. At each local scope, `latin_font`, `east_asia_font` and `complex_script_font` affect only their script; `font` is the legacy all-script shorthand. A run's `font` therefore outranks an element's `east_asia_font`. Prefer `latin_font` for Latin-only styling of mixed text, e.g. `{type:"text", x:40, y:40, w:1000, h:100, text:"Report 中文 日本語 한국어", latin_font:"Arial"}` when that family is required.
+
+To restore theme defaults, use `{"op":"set_theme","font":null,"east_asia_font":null,"complex_script_font":null}`. To remove an element override, set its font fields to `null` in `update_elements`. Explicit paragraph/run overrides remain; `read` the slide and replace its `paragraphs` with the same content and those font fields omitted. Keep rich formatting when doing so. Resetting a theme never silently deletes local formatting.
 
 ## Slide
 
@@ -21,7 +25,7 @@ Pass ordinary Unicode text; do not manually transcode or pre-escape XML. The too
 
 ## Elements
 
-Colors are `#RRGGBB` or `#RRGGBBAA` (alpha). Text-bearing elements accept `text` (string, `\n` = new paragraph) or `paragraphs`, plus element-level defaults `size_pt`, `bold`, `italic`, `color`, `font`, `lang`, `align`. Defaults apply only where a run/paragraph does not set its own value; changing element size/color/font does not override explicit values inside runs.
+Colors are `#RRGGBB` or `#RRGGBBAA` (alpha). Text-bearing elements accept `text` (string, `\n` = new paragraph) or `paragraphs`, plus element-level defaults `size_pt`, `bold`, `italic`, `color`, `font`, `latin_font`, `east_asia_font`, `complex_script_font`, `lang`, `align`. Defaults apply only where a run/paragraph does not set its own value; changing element size/color/font does not override explicit values inside runs.
 
 **text** — `{type: "text", x, y, w, h, text | paragraphs, valign (top|middle|bottom, default top), rotation, …defaults}`. Zero inner padding; the box wraps at `w` and does not grow, so size it for its content.
 
@@ -29,11 +33,11 @@ Colors are `#RRGGBB` or `#RRGGBBAA` (alpha). Text-bearing elements accept `text`
 
 **image** — `{type: "image", src, x, y, w, h, fit: cover|contain|stretch (default cover), alt, rotation}`. `src` is an absolute local path or a data URL (PNG/JPEG/GIF/BMP; download web images to a local file first). `cover` center-crops to fill the box, so give the box roughly the picture's aspect ratio. After embedding, `read` shows `asset`; keep it to reuse the picture.
 
-**table** — `{type: "table", x, y, w, h, rows, header (default true), column_widths (px, scaled to w), font_size_pt (default 14), font, header_fill, header_color, fill, band_fill ("" disables banding), border_color, text_color}`. Cells are strings/numbers or `{text/runs, bold, color, fill, align}`. Rows share `h` equally. At most 60 rows × 30 columns.
+**table** — `{type: "table", x, y, w, h, rows, header (default true), column_widths (px, scaled to w), font_size_pt (default 14), font, latin_font, east_asia_font, complex_script_font, header_fill, header_color, fill, band_fill ("" disables banding), border_color, text_color}`. Cells are strings/numbers or `{text/runs, bold, color, fill, align}`. Rows share `h` equally. At most 60 rows × 30 columns.
 
-**Paragraph** — a string, or `{text | runs, align (left|center|right|justify), line_spacing_pct, space_before_pt, space_after_pt, bullet, numbered, level, size_pt, bold, italic, color, font, lang}`.
+**Paragraph** — a string, or `{text | runs, align (left|center|right|justify), line_spacing_pct, space_before_pt, space_after_pt, bullet, numbered, level, size_pt, bold, italic, color, font, latin_font, east_asia_font, complex_script_font, lang}`.
 
-**Run** — `{text, size_pt, bold, italic, underline, strike, superscript, subscript, color, highlight, font, lang, link}`.
+**Run** — `{text, size_pt, bold, italic, underline, strike, superscript, subscript, color, highlight, font, latin_font, east_asia_font, complex_script_font, lang, link}`.
 
 GenOffice spec spellings are accepted as aliases: `sizePt`, `lineSpacingPct`, `spaceBeforePt`, `spaceAfterPt`, `widthPt`, `flipH`, `flipV`, `url`.
 

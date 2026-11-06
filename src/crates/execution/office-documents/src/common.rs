@@ -144,12 +144,22 @@ impl DocumentProperties {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MathMode {
+    Inline,
+    Display,
+}
+
 /// One formatted span of text. Shared by Word paragraphs, slide paragraphs,
 /// and table cells; each writer ignores the fields its format cannot show.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Run {
     #[serde(default)]
     pub text: String,
+    /// DOCX equation source is kept as text for inspection and legacy readers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub math: Option<MathMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bold: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -182,6 +192,13 @@ pub struct Run {
     pub size_pt: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
+    /// Script-specific overrides. `font` keeps its legacy all-script meaning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latin_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub east_asia_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub complex_script_font: Option<String>,
     /// BCP 47 text language; omitted legacy runs keep automatic language selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lang: Option<String>,
@@ -221,6 +238,20 @@ impl Run {
             validate_link(link).map_err(|err| prefix(err, path, "link"))?;
         }
         Ok(())
+    }
+}
+
+/// Script-based fallback shared by Word and PowerPoint. Han-only content is
+/// ambiguous; callers can override the language without forcing a font.
+pub(crate) fn inferred_cjk_language(text: &str) -> Option<&'static str> {
+    if text.chars().any(|c| matches!(c as u32, 0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF66..=0xFF9D | 0x1B000..=0x1B16F)) {
+        Some("ja-JP")
+    } else if text.chars().any(|c| matches!(c as u32, 0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF | 0xFFA0..=0xFFDC)) {
+        Some("ko-KR")
+    } else if text.chars().any(|c| matches!(c as u32, 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x2FA1F | 0x30000..=0x323AF)) {
+        Some("zh-CN")
+    } else {
+        None
     }
 }
 

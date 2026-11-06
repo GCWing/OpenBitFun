@@ -12,7 +12,9 @@ shapes (Markdown/blocks for Word, the workbook cell DSL for Excel, the
 - Pure in-memory bytes: no file, network, or process IO. The tool in
   `assembly/core` resolves paths, loads referenced images through the
   session's workspace file system (local or remote), and writes the result.
-- Depends only on serialization, zip, Markdown parsing, and hashing crates.
+- Depends only on serialization, zip, Markdown/math/XML parsing, and hashing crates.
+  Math conversion stays in memory; unsupported constructs fail without spawning
+  an Office or TeX process.
   Do not add Core, services, or runtime dependencies.
 
 ## Contracts

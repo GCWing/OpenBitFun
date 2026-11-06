@@ -2,9 +2,27 @@
 
 use crate::OfficeFormat;
 
-const DOCX: &str = include_str!("guides/docx.md");
-const XLSX: &str = include_str!("guides/xlsx.md");
-const PPTX: &str = include_str!("guides/pptx.md");
+const DOCX: &str = concat!(
+    include_str!("guides/fonts.md"),
+    "\n",
+    include_str!("guides/docx.md"),
+    "\n",
+    include_str!("guides/verification.md")
+);
+const XLSX: &str = concat!(
+    include_str!("guides/fonts.md"),
+    "\n",
+    include_str!("guides/xlsx.md"),
+    "\n",
+    include_str!("guides/verification.md")
+);
+const PPTX: &str = concat!(
+    include_str!("guides/fonts.md"),
+    "\n",
+    include_str!("guides/pptx.md"),
+    "\n",
+    include_str!("guides/verification.md")
+);
 
 /// The full operation and field reference for one format.
 pub fn guide(format: OfficeFormat) -> &'static str {

@@ -4,6 +4,7 @@ use super::address::{
     column_letters, parse_cell, parse_column, parse_range, CellRange, CellRef, MAX_COLUMNS,
     MAX_ROWS,
 };
+use super::charts::Chart;
 use super::formula::{rename_sheet_in_formula, shift_formula, Axis, Shift};
 use super::model::{validate_sheet_name, CellStyle, Freeze, Sheet, XlsxDocument};
 use crate::common::{
@@ -37,6 +38,9 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "set_autofilter",
     "set_sheet",
     "set_properties",
+    "add_chart",
+    "replace_chart",
+    "delete_chart",
 ];
 
 const MAX_SHEETS: usize = 255;
@@ -140,6 +144,8 @@ op_struct!(FormatRange {
     sheet: Option<Value>,
     range: String,
     style: CellStyle,
+    #[serde(default)]
+    reset_font: bool,
 });
 op_struct!(SetColumnWidths {
     #[serde(default)]
@@ -176,6 +182,22 @@ op_struct!(SetSheet {
     #[serde(default)]
     tab_color: Option<String>,
 });
+op_struct!(AddChart {
+    #[serde(default)]
+    sheet: Option<Value>,
+    chart: Chart,
+});
+op_struct!(ReplaceChart {
+    #[serde(default)]
+    sheet: Option<Value>,
+    index: usize,
+    chart: Chart,
+});
+op_struct!(DeleteChart {
+    #[serde(default)]
+    sheet: Option<Value>,
+    index: usize,
+});
 
 pub(crate) fn apply(
     book: &mut XlsxDocument,
@@ -184,6 +206,35 @@ pub(crate) fn apply(
     ctx: &mut ApplyContext,
 ) -> OfficeResult<()> {
     match op {
+        "add_chart" | "replace_chart" => {
+            let (sheet, at, mut chart) = if op == "add_chart" {
+                let input: AddChart = parse_operation(value)?;
+                (input.sheet, None, input.chart)
+            } else {
+                let input: ReplaceChart = parse_operation(value)?;
+                (input.sheet, Some(input.index), input.chart)
+            };
+            let owner = resolve_sheet(book, sheet.as_ref())?;
+            chart.normalize(book, &book.sheets[owner].name)?;
+            let charts = &mut book.sheets[owner].charts;
+            if let Some(index) = at {
+                crate::common::existing_span(index, Some(1), charts.len(), "chart")?;
+                charts[index] = chart;
+            } else {
+                charts.push(chart);
+            }
+            ctx.note(format!("{op} on `{}`", book.sheets[owner].name));
+            Ok(())
+        }
+        "delete_chart" => {
+            let input: DeleteChart = parse_operation(value)?;
+            let owner = resolve_sheet(book, input.sheet.as_ref())?;
+            let charts = &mut book.sheets[owner].charts;
+            crate::common::existing_span(input.index, Some(1), charts.len(), "chart")?;
+            charts.remove(input.index);
+            ctx.note(format!("deleted chart {}", input.index));
+            Ok(())
+        }
         "add_sheet" => {
             let input: AddSheet = parse_operation(value)?;
             validate_sheet_name(&input.name)?;
@@ -216,6 +267,21 @@ pub(crate) fn apply(
             let input: DeleteSheet = parse_operation(value)?;
             let index = resolve_sheet(book, input.sheet.as_ref())?;
             let removed = book.sheets.remove(index);
+            for sheet in &mut book.sheets {
+                for chart in &mut sheet.charts {
+                    for series in &mut chart.series {
+                        for source in [&mut series.categories, &mut series.values] {
+                            if source
+                                .sheet
+                                .as_deref()
+                                .is_some_and(|name| name.eq_ignore_ascii_case(&removed.name))
+                            {
+                                source.range = "#REF!".to_string();
+                            }
+                        }
+                    }
+                }
+            }
             ctx.note(format!("deleted sheet `{}`", removed.name));
             Ok(())
         }
@@ -233,6 +299,19 @@ pub(crate) fn apply(
             }
             let old = std::mem::replace(&mut book.sheets[index].name, input.name.clone());
             for sheet in &mut book.sheets {
+                for chart in &mut sheet.charts {
+                    for series in &mut chart.series {
+                        for source in [&mut series.categories, &mut series.values] {
+                            if source
+                                .sheet
+                                .as_deref()
+                                .is_some_and(|name| name.eq_ignore_ascii_case(&old))
+                            {
+                                source.sheet = Some(input.name.clone());
+                            }
+                        }
+                    }
+                }
                 for cell in sheet.cells.values_mut() {
                     if let Some(formula) = &mut cell.formula {
                         *formula = rename_sheet_in_formula(formula, &old, &input.name);
@@ -392,6 +471,9 @@ pub(crate) fn apply(
                 for col in range.start.col..=range.end.col {
                     let cell = sheet.cells.entry(CellRef::new(row, col)).or_default();
                     let mut style = cell.style.take().unwrap_or_default();
+                    if input.reset_font {
+                        style.font_name = None;
+                    }
                     style.merge(&input.style);
                     cell.style = (!style.is_default()).then_some(style);
                 }
@@ -655,8 +737,10 @@ fn write_rows(sheet: &mut Sheet, start: CellRef, rows: &[Vec<Value>]) -> OfficeR
                 continue;
             };
             let cell = sheet.cells.entry(address).or_default();
-            cell.value = update.value;
-            cell.formula = update.formula;
+            if update.write_value {
+                cell.value = update.value;
+                cell.formula = update.formula;
+            }
             if let Some(style) = update.style {
                 let mut merged = cell.style.take().unwrap_or_default();
                 merged.merge(&style);
@@ -672,6 +756,7 @@ fn write_rows(sheet: &mut Sheet, start: CellRef, rows: &[Vec<Value>]) -> OfficeR
 }
 
 struct CellUpdate {
+    write_value: bool,
     value: Value,
     formula: Option<String>,
     style: Option<CellStyle>,
@@ -680,6 +765,7 @@ struct CellUpdate {
 fn parse_cell_input(input: &Value, path: &str) -> OfficeResult<Option<CellUpdate>> {
     let simple = |value: Value, formula: Option<String>| {
         Ok(Some(CellUpdate {
+            write_value: true,
             value,
             formula,
             style: None,
@@ -714,6 +800,16 @@ fn parse_cell_object(object: &Map<String, Value>, path: &str) -> OfficeResult<Ce
             )));
         }
     }
+    for field in ["formula", "type"] {
+        if object
+            .get(field)
+            .is_some_and(|value| !value.is_null() && !value.is_string())
+        {
+            return Err(OfficeError::invalid(format!(
+                "{path}.{field} must be a string"
+            )));
+        }
+    }
     let style = match object.get("style") {
         None | Some(Value::Null) => None,
         Some(value) => {
@@ -737,6 +833,7 @@ fn parse_cell_object(object: &Map<String, Value>, path: &str) -> OfficeResult<Ce
         let formula = formula.strip_prefix('=').unwrap_or(formula);
         check_formula(formula, path)?;
         return Ok(CellUpdate {
+            write_value: true,
             value: Value::Null,
             formula: Some(formula.to_string()),
             style,
@@ -827,6 +924,10 @@ fn parse_cell_object(object: &Map<String, Value>, path: &str) -> OfficeResult<Ce
         }
     };
     Ok(CellUpdate {
+        // A style-only patch must not erase an existing literal or formula.
+        write_value: object.contains_key("value")
+            || object.get("formula").is_some_and(|value| !value.is_null())
+            || kind.is_some(),
         value,
         formula,
         style,
@@ -1029,6 +1130,26 @@ fn shift_sheet(
 
     for other in &mut book.sheets {
         let host = other.name.clone();
+        for chart in &mut other.charts {
+            // Keep the chart's anchor attached to the edited grid. If its cell
+            // is deleted, retain its position at the start of the deleted span.
+            if host == shift.sheet {
+                let mut anchor = parse_cell(&chart.anchor)?;
+                let old = coordinate(&anchor);
+                let new = moved(old).unwrap_or(at);
+                match axis {
+                    Axis::Row => anchor.row = new,
+                    Axis::Column => anchor.col = new,
+                }
+                chart.anchor = anchor.to_string();
+            }
+            for series in &mut chart.series {
+                for source in [&mut series.categories, &mut series.values] {
+                    let source_sheet = source.sheet.as_deref().unwrap_or(&host);
+                    source.range = shift_formula(&source.range, source_sheet, &shift);
+                }
+            }
+        }
         for cell in other.cells.values_mut() {
             if let Some(formula) = &mut cell.formula {
                 *formula = shift_formula(formula, &host, &shift);

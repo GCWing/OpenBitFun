@@ -5,6 +5,9 @@
 //! document owner; this preflight catches missing selectors/content before IO.
 
 use crate::common::{operation_name, unknown_operation};
+use crate::font_contract::{
+    block_schema, cell_style_schema, element_schema, family_schema, validate_font_input,
+};
 use crate::{OfficeError, OfficeFormat, OfficeResult};
 use serde_json::{json, Value};
 
@@ -19,42 +22,60 @@ pub fn operation_schema() -> Value {
             }
         }
     }
+    let chart_schema = json!({"type": "object", "description": "XLSX add_chart/replace_chart: native editable chart. Read the xlsx guide for range references.", "properties": {
+                "type": {"type": "string", "enum": ["column", "bar", "line", "pie"]},
+                "anchor": {"type": "string", "description": "Top-left cell, e.g. F2."},
+                "title": {"type": "string"},
+                "width_px": {"type": "integer", "minimum": 1},
+                "height_px": {"type": "integer", "minimum": 1},
+                "legend": {"type": "boolean"},
+                "series": {"type": "array", "minItems": 1, "items": {
+                    "type": "object", "properties": {
+                        "name": {"type": "string"},
+                        "color": {"type": "string"},
+                        "categories": {"type": "object", "properties": {
+                            "sheet": {"type": "string"}, "range": {"type": "string", "description": "Single row/column, e.g. A2:A5."}
+                        }, "required": ["range"], "additionalProperties": true},
+                        "values": {"type": "object", "properties": {
+                            "sheet": {"type": "string"}, "range": {"type": "string", "description": "Numeric cells; same length as categories, e.g. B2:B5."}
+                        }, "required": ["range"], "additionalProperties": true}
+                    }, "required": ["categories", "values"], "additionalProperties": true
+                }}
+            }, "required": ["type", "anchor", "series"], "additionalProperties": true});
+    let slide = json!({"type":"object", "description":"Complete slide {title?, background?, notes?, elements:[...]}. replace_slide requires both index and slide.", "properties":{"elements":{"type":"array", "items":element_schema()}}, "additionalProperties":true});
+    let mut patch = element_schema();
+    patch["required"] = json!(["index"]);
     json!({
         "type": "object",
         "properties": {
             "op": {"type": "string", "enum": names},
-            "index": {"type": "integer", "minimum": 0, "description": "Current 0-based block/slide index. Required to replace/update/delete/move blocks or slides, and for duplicate_slide. Optional insertion position for insert_blocks, insert_slides, or add_sheet. Earlier operations in this batch shift indexes."},
+            "index": {"type": "integer", "minimum": 0, "description": "Current 0-based block/slide/chart index. Required for replace/update/delete/move operations that use an index. Optional insertion position for insert_blocks, insert_slides, or add_sheet. Earlier operations in this batch shift indexes."},
             "count": {"type": "integer", "minimum": 1, "description": "Number of items; omit for the operation's default."},
             "to": {"type": "integer", "minimum": 0, "description": "Move destination after removing the source items; required for move operations."},
-            "slide": {"type": "object", "description": "replace_slide: complete replacement slide {title?, background?, notes?, elements:[...]}; both index and slide are required.", "properties": {
-                "elements": {"type": "array", "items": {"type": "object", "additionalProperties": true}}
-            }, "additionalProperties": true},
-            "slides": {"type": "array", "minItems": 1, "description": "insert_slides: complete slide objects. Omit index to append.", "items": {"type": "object", "additionalProperties": true}},
-            "elements": {"type": "array", "description": "update_slide: replace all elements while keeping slide metadata. Do not combine with update/remove/append_elements.", "items": {"type": "object", "additionalProperties": true}},
-            "update_elements": {"type": "array", "description": "update_slide: patches {index, ...changed element fields}. No nested op, patch, or replace field.", "items": {
-                "type": "object", "properties": {
-                    "index": {"type": "integer", "minimum": 0},
-                    "text": {"type": "string"},
-                    "x": {"type": "number"}, "y": {"type": "number"},
-                    "w": {"type": "number"}, "h": {"type": "number"},
-                    "size_pt": {"type": "number"}, "color": {"type": "string"}
-                }, "required": ["index"], "additionalProperties": true
-            }},
+            "slide": slide,
+            "slides": {"type":"array", "minItems":1, "description":"insert_slides: complete slides. Omit index to append.", "items":slide},
+            "elements": {"type":"array", "description":"update_slide: replaces all elements. Do not combine with update/remove/append_elements.", "items":element_schema()},
+            "update_elements": {"type":"array", "description":"update_slide: patches {index, ...changed fields}; no nested op. Null removes a font override; omitted fields keep existing values.", "items":patch},
             "remove_elements": {"type": "array", "items": {"type": "integer", "minimum": 0}},
-            "append_elements": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+            "append_elements": {"type": "array", "items": element_schema()},
             "markdown": {"type": "string", "description": "Word insert_blocks/replace_blocks content; use this or blocks."},
-            "blocks": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+            "blocks": {"type": "array", "items": block_schema()},
             "sheet": {"description": "Excel sheet name (preferred) or 0-based index; omit only for a one-sheet workbook."},
             "name": {"type": "string", "description": "add_sheet/rename_sheet: sheet name."},
             "start": {"type": "string", "description": "Excel starting cell, e.g. A1."},
-            "rows": {"description": "Excel: 2-D array of cell values; for freeze_panes only, a non-negative row count."},
+            "rows": {"description": "Excel: 2-D array of scalar values or cell objects; for freeze_panes only, a non-negative row count.", "items":{"type":"array", "items":{"properties":{"value":{}, "formula":{"type":"string"}, "style":cell_style_schema()}, "additionalProperties":true}}},
             "row": {"type": "integer", "minimum": 1},
             "column": {"type": "string", "description": "Excel column letters, e.g. A."},
             "range": {"description": "Excel A1 range; set_autofilter also accepts null to clear it."},
-            "style": {"type": "object", "additionalProperties": true},
-            "font": {"type": "string"},
-            "east_asia_font": {"type": "string"},
-            "lang": {"type": "string", "description": "PPTX set_theme: optional BCP 47 language, e.g. zh-CN or zh-TW. Omit for automatic text-based selection."}
+            "style": cell_style_schema(),
+            "reset_font": {"type":"boolean", "description":"XLSX format_range only: clear the existing font name before applying style. Keeps values, formulas and all other formatting. Use style:{} for default-font recovery."},
+            "chart": chart_schema,
+            "include_headers_footers": {"type": "boolean", "description": "DOCX replace_text: also replace header/footer text (default false)."},
+            "font": family_schema("DOCX: default Latin/complex-script font. PPTX: default Latin font. Null clears the override."),
+            "east_asia_font": family_schema("DOCX set_styles / PPTX set_theme: default East Asian font. Null restores fallback."),
+            "complex_script_font": family_schema("DOCX set_styles / PPTX set_theme: complex-script override. Null restores inheritance."),
+            "heading_font": family_schema("DOCX: Latin/complex-script heading font. Null restores inheritance."),
+            "lang": {"type": "string", "description": "DOCX set_styles / PPTX set_theme: optional BCP 47 language, e.g. zh-CN or zh-TW. Omit for text-based selection."}
         },
         "required": ["op"],
         "additionalProperties": true
@@ -81,6 +102,9 @@ fn required_fields(op: &str) -> &'static [&'static str] {
         "format_range" => &["range", "style"],
         "set_column_widths" => &["widths"],
         "set_row_heights" => &["heights"],
+        "add_chart" => &["chart"],
+        "replace_chart" => &["index", "chart"],
+        "delete_chart" => &["index"],
         _ => &[],
     }
 }
@@ -91,6 +115,7 @@ pub fn validate_operation_headers(format: OfficeFormat, operations: &[Value]) ->
     for (index, operation) in operations.iter().enumerate() {
         let name = operation_name(operation).map_err(|err| err.at_operation(index, "?"))?;
         let check = || -> OfficeResult<()> {
+            validate_font_input(operation, "operation")?;
             if !format.operations().contains(&name) {
                 return Err(unknown_operation(name, format.operations()));
             }
@@ -125,6 +150,14 @@ pub fn validate_operation_headers(format: OfficeFormat, operations: &[Value]) ->
                     "`slide` must be a complete slide object, not an index or array",
                 ));
             }
+            if matches!(name, "add_chart" | "replace_chart") {
+                let chart = &operation["chart"];
+                for field in ["type", "anchor", "series"] {
+                    if chart.get(field).is_none_or(Value::is_null) {
+                        return Err(OfficeError::invalid(format!("{name} requires chart.{field}; pass a chart object {{type, anchor, series}}")));
+                    }
+                }
+            }
             if name == "update_slide" {
                 if let Some(patches) = operation.get("update_elements") {
                     let patches = patches.as_array().ok_or_else(|| {
@@ -155,6 +188,8 @@ pub fn validate_operation_headers(format: OfficeFormat, operations: &[Value]) ->
 /// Recovery advice keyed to the actual failed operation, not a loop counter.
 pub fn operation_recovery_hint(op: &str) -> &'static str {
     match op {
+        "add_chart" | "replace_chart" => "Use chart:{type:\"column\"|\"bar\"|\"line\"|\"pie\",anchor:\"F2\",series:[{categories:{range:\"A2:A4\"},values:{range:\"B2:B4\"}}]}. Source ranges must be single rows/columns of equal length. Read the sheet to check data and existing chart indexes before retrying.",
+        "replace_text" => "Use {op:\"replace_text\",find:<literal text>,replace:<new text>}. Matches may span formatted runs within one paragraph, list item or table cell. Set include_headers_footers:true only when those should also change.",
         "replace_slide" => "Use {op:\"replace_slide\",index:<current slide index>,slide:<complete slide object>}. This replaces the slide in place; no insert/delete/move is needed.",
         "update_slide" => "Read the target slide with detail=full. Use {op:\"update_slide\",index:<slide index>,update_elements:[{index:<element index>,...changed fields}]}; patches have no op. Or pass elements to replace the whole element list.",
         "move_slides" => "Indexes use the state after earlier operations in this batch. Inserting or deleting slides shifts subsequent indexes; recalculate selectors against that order. `to` is measured after removing the moved slides. To replace content, use replace_slide with index and slide instead.",
