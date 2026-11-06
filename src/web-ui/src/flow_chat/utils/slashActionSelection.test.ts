@@ -17,6 +17,7 @@ describe('resolveSlashActionInputValue', () => {
   it.each([
     ['compact', '/compact'],
     ['usage', '/usage'],
+    ['model', '/model'],
     ['init', '/init'],
     ['reload', '/reload'],
   ] as const)('fills the %s action', (actionId, expected) => {

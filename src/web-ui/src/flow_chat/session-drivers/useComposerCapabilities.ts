@@ -19,16 +19,19 @@ import { deriveSessionConversationCapability, type SessionConversationCapability
 export const DISPATCH_TRANSFER_ROUND_PREFIX = 'dispatch-transfer:';
 
 /** Renderer-side slash commands the composer can offer for a session. */
-export type ComposerSlashOp = 'btw' | 'compact' | 'goal' | 'usage' | 'init' | 'review';
+export type ComposerSlashOp = 'btw' | 'compact' | 'goal' | 'usage' | 'init' | 'review' | 'model';
 
 const LOCAL_SLASH_OPS: ReadonlySet<ComposerSlashOp> = new Set([
-  'btw', 'compact', 'goal', 'usage', 'init', 'review',
+  'btw', 'compact', 'goal', 'usage', 'init', 'review', 'model',
 ]);
 const LOCAL_SLASH_OPS_WITHOUT_THREAD_GOAL: ReadonlySet<ComposerSlashOp> = new Set([
-  'btw', 'compact', 'usage', 'init', 'review',
+  'btw', 'compact', 'usage', 'init', 'review', 'model',
 ]);
-/** Ops a detached target serves via its durable turn mailbox / query verb. */
-const DISPATCH_SLASH_OPS: ReadonlySet<ComposerSlashOp> = new Set(['compact', 'usage']);
+/**
+ * Ops a detached target serves locally (the model picker over its probe) or
+ * through its durable turn mailbox / query verb.
+ */
+const DISPATCH_SLASH_OPS: ReadonlySet<ComposerSlashOp> = new Set(['compact', 'usage', 'model']);
 
 export interface ComposerCapabilities {
   conversation: SessionConversationCapability;

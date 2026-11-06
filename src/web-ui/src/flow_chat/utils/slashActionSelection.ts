@@ -4,6 +4,7 @@ export type SlashActionId =
   | 'btw'
   | 'review'
   | 'goal'
+  | 'model'
   | 'usage'
   | 'reload'
   | 'compact'
@@ -52,6 +53,8 @@ export function resolveSlashActionInputValue(
     }
     case 'usage':
       return '/usage';
+    case 'model':
+      return '/model';
     case 'init':
       return '/init';
     case 'reload':
