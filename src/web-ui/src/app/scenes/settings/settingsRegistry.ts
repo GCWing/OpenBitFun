@@ -407,6 +407,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     descriptionKey: 'navigation.pages.browserDesktopControl.description',
     keywords: [
       'browser', 'cdp', 'chrome', 'edge', 'remote debugging', 'connection',
+      'links', 'built-in browser', 'external browser',
       'desktop', 'computer use', 'accessibility', 'screen capture', 'mouse', 'keyboard',
     ],
     namespaces: ['settings', 'settings/runtime'],
@@ -414,6 +415,10 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
       phrase('settings/runtime', 'computerUse.sectionTitle'),
       phrase('settings/runtime', 'computerUse.accessibility'),
       phrase('settings/runtime', 'computerUse.screenCapture'),
+      phrase('settings/runtime', 'browserLinks.sectionTitle'),
+      phrase('settings/runtime', 'browserLinks.defaultTarget'),
+      phrase('settings/runtime', 'browserLinks.builtin'),
+      phrase('settings/runtime', 'browserLinks.external'),
       phrase('settings/runtime', 'browserControl.sectionTitle'),
       phrase('settings/runtime', 'browserControl.preferredBrowser'),
       phrase('settings/runtime', 'browserControl.autoConnectOnStartup'),

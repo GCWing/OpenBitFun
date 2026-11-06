@@ -21,6 +21,7 @@ import type { PeerHostCapabilities } from '@/infrastructure/peer-device/PeerConn
 import { useFlowChatHttpLinkClick } from '@/flow_chat/components/modern/useFlowChatHttpLinkClick';
 import { FlowTextBlock } from '@/flow_chat/components/FlowTextBlock';
 import { captureFlowChatSelection } from '@/flow_chat/selection/flowChatSelection';
+import { browserLinkPreferenceStore, BROWSER_LINK_TARGET_STORAGE_KEY } from '@/infrastructure/config/services/browserLinkPreference';
 
 /** The chat session's workspace record; content opened from chat links is routed by its ID. */
 const SESSION_WORKSPACE = vi.hoisted(() => ({
@@ -194,6 +195,7 @@ describe('Markdown file links', () => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
     activateSurface('local');
+    browserLinkPreferenceStore.setState({ target: 'builtin' });
     flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: null }));
     useContentResourceStore.setState({ resources: {} });
     resetSceneStoreForTest();
@@ -225,6 +227,8 @@ describe('Markdown file links', () => {
     });
     activateSurface('local');
     container.remove();
+    browserLinkPreferenceStore.setState({ target: 'builtin' });
+    localStorage.removeItem(BROWSER_LINK_TARGET_STORAGE_KEY);
     flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: null }));
     useContentResourceStore.setState({ resources: {} });
     resetSceneStoreForTest();
@@ -731,6 +735,69 @@ Second paragraph.
     } finally {
       useAgentCanvasStore.getState().reset();
     }
+  });
+
+  it.each(['local', 'linux-peer'])('uses the current browser preference without remounting links on %s', async surface => {
+    container.className = 'openbitfun-session-scene modern-flowchat-container';
+    activateSurface(surface);
+    openSessionHost();
+    const url = 'https://example.com/docs';
+    await act(async () => root.render(<MarkdownRenderer content={`[Example](${url})`} />));
+    const link = container.querySelector<HTMLAnchorElement>('a')!;
+
+    act(() => browserLinkPreferenceStore.getState().setTarget('external'));
+    await act(async () => link.click());
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url);
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(0);
+
+    act(() => browserLinkPreferenceStore.getState().setTarget('builtin'));
+    expect(container.querySelector('a')).toBe(link);
+    await act(async () => link.click());
+    expect(mocks.openExternal).toHaveBeenCalledTimes(1);
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].content).toMatchObject({
+      type: 'browser', data: { url },
+    });
+  });
+
+  it('retains the controller preference across selected device changes', async () => {
+    container.className = 'openbitfun-session-scene modern-flowchat-container';
+    browserLinkPreferenceStore.getState().setTarget('external');
+    const url = 'https://example.com/docs';
+    await act(async () => root.render(<MarkdownRenderer content={`[Example](${url})`} />));
+    for (const surface of ['local', 'linux-peer', 'local']) {
+      await act(async () => activateSurface(surface));
+      await act(async () => container.querySelector<HTMLAnchorElement>('a')!.click());
+    }
+    expect(mocks.openExternal.mock.calls).toEqual([[url], [url], [url]]);
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(0);
+  });
+
+  it.each(['builtin', 'external'] as const)('keeps both explicit context menu choices with the %s default', async target => {
+    container.className = 'openbitfun-session-scene modern-flowchat-container';
+    openSessionHost();
+    browserLinkPreferenceStore.getState().setTarget(target);
+    const url = 'https://example.com/docs';
+    await act(async () => root.render(<MarkdownRenderer content={`[Example](${url})`} />));
+    act(() => container.querySelector('a')!.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true, cancelable: true,
+    })));
+    const items = mocks.showContextMenu.mock.calls[0][1] as MenuItem[];
+    const context = mocks.showContextMenu.mock.calls[0][2];
+    await act(async () => items.find(item => item.id === 'markdown-open-in-browser')!.onClick?.(context));
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url);
+    act(() => items.find(item => item.id === 'markdown-open-in-built-in-browser')!.onClick?.(context));
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].content).toMatchObject({
+      type: 'browser', data: { url },
+    });
+    expect(browserLinkPreferenceStore.getState().target).toBe(target);
+  });
+
+  it('opens links outside conversations externally even with the built-in default', async () => {
+    const url = 'https://example.com/docs';
+    await act(async () => root.render(<MarkdownRenderer content={`[Example](${url})`} />));
+    await act(async () => container.querySelector<HTMLAnchorElement>('a')!.click());
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url);
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(0);
   });
 
   it('commits a browser view and explicitly reveals its inline host', async () => {

@@ -29,6 +29,7 @@ import { contextMenuController } from '@/shared/context-menu-system/core/Context
 import { ContextType, type CustomContext, type MenuItem } from '@/shared/context-menu-system/types';
 import { createTab, openFileInBestTarget } from '@/shared/utils/tabUtils';
 import { isHtmlFilePath, openHtmlFileInExternalBrowser } from '@/shared/utils/htmlFilePreview';
+import { browserLinkPreferenceStore } from '@/infrastructure/config/services/browserLinkPreference';
 import { createLogger } from '@/shared/utils/logger';
 import type { LineRange } from '@/shared/editor/LineRange';
 import {
@@ -1568,7 +1569,11 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
                 return;
               }
               const hasExternalOpenModifier = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
-              if (canOpenInBuiltInBrowser(e.currentTarget) && !hasExternalOpenModifier) {
+              if (
+                browserLinkPreferenceStore.getState().target === 'builtin' &&
+                canOpenInBuiltInBrowser(e.currentTarget) &&
+                !hasExternalOpenModifier
+              ) {
                 handleOpenBuiltInBrowserLink(hrefValue);
                 return;
               }
