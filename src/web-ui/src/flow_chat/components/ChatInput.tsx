@@ -244,7 +244,7 @@ import type { SessionPermissionMode } from '@/infrastructure/api/service-api/Age
 import { isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandError';
 import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
-import { isBtwSessionDraft } from '../utils/modelSelectionTarget';
+import { isBtwParentBackedSession, isBtwSessionDraft } from '../utils/modelSelectionTarget';
 import { hasSessionStarted, isSessionBindingLocked } from '../utils/sessionLifecycle';
 import {
   canTreatMissingPermissionModeAsDefault,
@@ -724,6 +724,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const hasEffectiveTargetSession = effectiveTargetSession !== undefined;
   const peer = usePeerDeviceModeOptional();
   const isBtwDraftTarget = isBtwSessionDraft(effectiveTargetSession);
+  const isBtwParentBackedTarget = isBtwParentBackedSession(effectiveTargetSession);
   const btwDraftSettingsInherited = isBtwDraftTarget && Boolean(peer?.peerMode.active)
     && (effectiveTargetSession?.config.modelPoolId
       ? peer?.currentPeerCapabilities?.btwModelPoolSelectionV1 !== true
@@ -2613,6 +2614,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     void (async () => {
       try {
         const permissionSessionId = isBtwDraftTarget
+          || isBtwParentBackedTarget
           ? effectiveTargetSession?.parentSessionId : effectiveTargetSessionId;
         if (!permissionSessionId) return;
         const response = await readComposerPermissionMode({
@@ -2692,6 +2694,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     effectiveTargetSession?.externalHistory,
     effectiveTargetSession?.externalContinuationPermissionMode,
     isBtwDraftTarget,
+    isBtwParentBackedTarget,
     isAcpTargetSession,
     t,
     hasEffectiveTargetSession,
