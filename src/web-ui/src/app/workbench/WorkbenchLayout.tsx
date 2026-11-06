@@ -79,7 +79,7 @@ export default function WorkbenchLayout({ workspacePath, children, ...windowProp
   const renderTabs = (location: WorkbenchPane) => <div className="openbitfun-workbench-layout__pane-tabs"
     data-openbitfun-scene="workbench" data-openbitfun-part="paneTabs">
     {(location === 'primary' || hasSecondaryScenes) && <SceneBar pane={location} showDropHint={false} />}
-    {location === canvasPane && <div className="openbitfun-workbench-layout__canvas-tabs" data-openbitfun-scene="workbench" data-openbitfun-part="canvasTabs" data-shortcut-scope="canvas"
+    {location === canvasPane && <div className="openbitfun-workbench-layout__canvas-tabs" data-openbitfun-scene="workbench" data-openbitfun-part="canvasTabs" data-shortcut-scope="canvas" data-canvas-mode="agent"
       onPointerDownCapture={() => useSceneStore.getState().selectCanvas()}
       onFocusCapture={() => useSceneStore.getState().selectCanvas()}>
       <CanvasToolbarHost />

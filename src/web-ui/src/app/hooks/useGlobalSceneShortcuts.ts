@@ -14,6 +14,7 @@ import { useCallback } from 'react';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
 import { useSceneStore } from '@/app/stores/sceneStore';
 import type { SceneTabId } from '@/app/components/SceneBar/types';
+import { useTabCloseShortcut } from './useTabCloseShortcut';
 
 function activateSceneByStripIndex(index: number): void {
   const { openTabs, activateScene } = useSceneStore.getState();
@@ -27,6 +28,19 @@ function openSceneById(id: SceneTabId): void {
 
 export function useGlobalSceneShortcuts(): void {
   const byIndex = useCallback((i: number) => () => activateSceneByStripIndex(i), []);
+
+  useTabCloseShortcut('app', event => {
+    // A canvas owns its tabs, including nested file/terminal views. An empty
+    // or temporarily inactive canvas must never close the conversation instead.
+    if (event.target instanceof Element && event.target.closest('[data-shortcut-scope="canvas"]')) return;
+    const { activeTabId, openTabs, closeScene } = useSceneStore.getState();
+    // Tabbing onto a scene label does not activate it. Its own close shortcut
+    // must still address that label, rather than the previously focused pane.
+    const focusedTabId = event.target instanceof Element
+      ? event.target.closest('[data-scene-tab-id]')?.getAttribute('data-scene-tab-id') : null;
+    const targetId = focusedTabId ? openTabs.find(tab => tab.id === focusedTabId)?.id : activeTabId;
+    if (targetId) return closeScene(targetId);
+  });
 
   // ── Scene-bar position shortcuts (Alt+1–3) ────────────────────────────
   useShortcut('scene.focus1', { key: '1', alt: true, scope: 'app', allowInInput: true }, byIndex(0), {

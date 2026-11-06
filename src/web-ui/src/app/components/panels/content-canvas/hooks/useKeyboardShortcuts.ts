@@ -2,15 +2,17 @@
  * useKeyboardShortcuts Hook
  *
  * Registers canvas-level keyboard shortcuts via ShortcutManager.
- * All shortcuts use scope 'canvas' so they only fire when focus is inside
- * the editor canvas area (data-shortcut-scope="canvas").
+ * Canvas shortcuts follow DOM scope. Close also follows the workbench's focused
+ * pane when focus returns to the document body after a tab is removed.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useContext } from 'react';
 import { CANVAS_OVERVIEW_SHORTCUT } from '@/shared/constants/shortcuts';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
 import { activeEditTargetService } from '@/tools/editor/services/ActiveEditTargetService';
-import { useCanvasStore } from '../stores';
+import { CanvasStoreModeContext, useCanvasStore } from '../stores';
+import { useTabCloseShortcut } from '@/app/hooks/useTabCloseShortcut';
+import { useSceneStore } from '@/app/stores/sceneStore';
 import type { EditorGroupId } from '../types';
 
 interface UseKeyboardShortcutsOptions {
@@ -21,6 +23,7 @@ interface UseKeyboardShortcutsOptions {
 }
 
 export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) => {
+  const mode = useContext(CanvasStoreModeContext);
   const {
     enabled = true,
     missionControlEnabled = true,
@@ -31,6 +34,7 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
   const {
     primaryGroup,
     secondaryGroup,
+    tertiaryGroup,
     activeGroupId,
     layout,
     closeTab,
@@ -44,8 +48,9 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
   } = useCanvasStore();
 
   const getActiveGroup = useCallback(() => {
-    return activeGroupId === 'primary' ? primaryGroup : secondaryGroup;
-  }, [activeGroupId, primaryGroup, secondaryGroup]);
+    return activeGroupId === 'primary' ? primaryGroup
+      : activeGroupId === 'secondary' ? secondaryGroup : tertiaryGroup;
+  }, [activeGroupId, primaryGroup, secondaryGroup, tertiaryGroup]);
 
   const getVisibleTabs = useCallback(() => {
     return getActiveGroup().tabs.filter((t) => !t.isHidden);
@@ -106,19 +111,38 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
   );
 
   // Close current tab: mod+W
-  useShortcut(
-    'tab.close',
-    { key: 'W', ctrl: true, scope: 'canvas', allowInInput: true },
-    () => {
-      const activeGroup = getActiveGroup();
+  useTabCloseShortcut(
+    'app',
+    event => {
+      // Keyboard focus can enter a split group without its click handler running.
+      const groupElement = event.target instanceof Element
+        ? event.target.closest('[data-openbitfun-group], [data-canvas-toolbar-group]') : null;
+      const focusedGroup = groupElement?.getAttribute('data-openbitfun-group')
+        ?? groupElement?.getAttribute('data-canvas-toolbar-group');
+      const groupId = focusedGroup === 'primary' || focusedGroup === 'secondary' || focusedGroup === 'tertiary'
+        ? focusedGroup : activeGroupId;
+      const activeGroup = groupId === 'primary' ? primaryGroup
+        : groupId === 'secondary' ? secondaryGroup : tertiaryGroup;
       if (!activeGroup.activeTabId) return;
       if (handleCloseWithDirtyCheck) {
-        handleCloseWithDirtyCheck(activeGroup.activeTabId, activeGroupId);
+        return handleCloseWithDirtyCheck(activeGroup.activeTabId, groupId);
       } else {
-        closeTab(activeGroup.activeTabId, activeGroupId);
+        closeTab(activeGroup.activeTabId, groupId);
       }
     },
-    { enabled, priority: 10, description: 'keyboard.shortcuts.tab.close' }
+    {
+      enabled,
+      priority: 20,
+      when: event => {
+        const target = event.target instanceof Element ? event.target : null;
+        const owner = target?.closest('[data-canvas-mode]')?.getAttribute('data-canvas-mode');
+        if (owner) return owner === mode;
+        // Explicit editor/chat/terminal scope always wins over remembered pane focus.
+        if (target?.closest('[data-shortcut-scope], [data-openbitfun-component="scene-bar"]')) return false;
+        const scene = useSceneStore.getState();
+        return mode === 'agent' && scene.paneSelections[scene.focusedPane].kind === 'canvas';
+      },
+    }
   );
 
   // Reopen closed tab: mod+Shift+T

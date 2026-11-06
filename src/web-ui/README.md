@@ -9,6 +9,18 @@ This directory contains OpenBitFun’s **Web UI** (React + TypeScript). The same
 - **Desktop**: loaded via **Tauri**
 - **Server/Web**: built into static assets and served by the backend
 
+## Closing tabs with the keyboard
+
+In Desktop, **Ctrl+W** on Windows/Linux or **Cmd+W** on macOS closes the current
+tab in the region you are using. From the conversation area it closes the
+conversation tab; from the file or terminal area it closes that area's current
+tab. Split views use the focused group. An empty content pane does not close a
+conversation in the other pane.
+
+The shortcut uses the same unsaved-change checks and terminal lifecycle as the
+tab's close button. Existing custom bindings for **Close tab** continue to apply
+to both regions. Dialogs and held-key repeats do not close additional tabs.
+
 ## Creating a project
 
 The sidebar's add button opens two clickable cards without footer actions.
