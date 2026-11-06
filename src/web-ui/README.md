@@ -20,6 +20,9 @@ conversation in the other pane.
 The shortcut uses the same unsaved-change checks and terminal lifecycle as the
 tab's close button. Existing custom bindings for **Close tab** continue to apply
 to both regions. Dialogs and held-key repeats do not close additional tabs.
+Numbered tab selection, reopening a closed tab and layout shortcuts also stay
+with their owning canvas. Recording a new binding in Settings captures the key
+without executing the existing command.
 
 ## Creating a project
 

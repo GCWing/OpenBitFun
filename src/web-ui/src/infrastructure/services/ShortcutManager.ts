@@ -161,7 +161,9 @@ function makeEventKey(scope: ShortcutScope, event: KeyboardEvent): string {
   const c = ctrl ? '1' : '0';
   const s = event.shiftKey ? '1' : '0';
   const a = event.altKey ? '1' : '0';
-  const m = !isMacPlatform() && event.metaKey ? '1' : '0';
+  // Physical Control on macOS is an additional modifier, not logical Ctrl/Cmd.
+  // Keep it distinct so Ctrl+Cmd+W cannot match Cmd+W (or Ctrl+W a plain W).
+  const m = (isMacPlatform() ? event.ctrlKey : event.metaKey) ? '1' : '0';
   return `${scope}:${eventKeyForLookup(event)}:${c}${s}${a}${m}`;
 }
 
@@ -181,6 +183,7 @@ export class ShortcutManager {
 
   private keyDownHandler: ((e: KeyboardEvent) => void) | null = null;
   private isEnabled: boolean = true;
+  private captures = new Map<symbol, Pick<ShortcutRegistration, 'callback' | 'when'>>();
 
   /**
    * User overrides from configManager (id → key+modifiers).
@@ -292,9 +295,27 @@ export class ShortcutManager {
 
   // ─── Event handling ────────────────────────────────────────────────────────
 
+  /** A keybinding recorder owns matching events before commands and native fallbacks. */
+  public capture(callback: ShortcutCallback, when: (event: KeyboardEvent) => boolean): () => void {
+    const owner = Symbol('shortcut-capture');
+    this.captures.set(owner, { callback, when });
+    return () => { this.captures.delete(owner); };
+  }
+
   private handleKeyDown(event: KeyboardEvent): void {
-    if (!this.isEnabled) return;
     if (event.defaultPrevented) return;
+    const capture = [...this.captures.values()].reverse().find(owner => owner.when?.(event));
+    if (capture) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      try {
+        capture.callback(event);
+      } catch (error) {
+        log.error('Shortcut capture failed', { error });
+      }
+      return;
+    }
+    if (!this.isEnabled) return;
     if (this.isImeOwnedKey(event)) return;
     // The latest overlay owns Escape even if focus is still in its trigger.
     if (event.key === 'Escape' && hasOverlayLayers()) return;
@@ -587,6 +608,7 @@ export class ShortcutManager {
   }
 
   public clear(): void {
+    this.captures.clear();
     this.registrations.clear();
     this.lookupMap.clear();
     this.notifyRegistrationListeners();

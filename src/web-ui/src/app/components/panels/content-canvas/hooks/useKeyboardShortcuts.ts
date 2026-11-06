@@ -47,13 +47,28 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
     toggleMissionControl,
   } = useCanvasStore();
 
-  const getActiveGroup = useCallback(() => {
-    return activeGroupId === 'primary' ? primaryGroup
-      : activeGroupId === 'secondary' ? secondaryGroup : tertiaryGroup;
-  }, [activeGroupId, primaryGroup, secondaryGroup, tertiaryGroup]);
+  const ownsCanvasEvent = useCallback((event: KeyboardEvent) => event.target instanceof Element
+    && event.target.closest('[data-canvas-mode]')?.getAttribute('data-canvas-mode') === mode, [mode]);
+  const canvasShortcutOptions = { enabled, when: ownsCanvasEvent };
 
-  const getVisibleTabs = useCallback(() => {
-    return getActiveGroup().tabs.filter((t) => !t.isHidden);
+  const getFocusedGroupId = useCallback((event: KeyboardEvent): EditorGroupId => {
+    // Keyboard focus can enter a split group without its click handler running.
+    const groupElement = event.target instanceof Element
+      ? event.target.closest('[data-openbitfun-group], [data-canvas-toolbar-group]') : null;
+    const focusedGroup = groupElement?.getAttribute('data-openbitfun-group')
+      ?? groupElement?.getAttribute('data-canvas-toolbar-group');
+    return focusedGroup === 'primary' || focusedGroup === 'secondary' || focusedGroup === 'tertiary'
+      ? focusedGroup : activeGroupId;
+  }, [activeGroupId]);
+
+  const getActiveGroup = useCallback((event: KeyboardEvent) => {
+    const groupId = getFocusedGroupId(event);
+    return groupId === 'primary' ? primaryGroup
+      : groupId === 'secondary' ? secondaryGroup : tertiaryGroup;
+  }, [getFocusedGroupId, primaryGroup, secondaryGroup, tertiaryGroup]);
+
+  const getVisibleTabs = useCallback((event: KeyboardEvent) => {
+    return getActiveGroup(event).tabs.filter((t) => !t.isHidden);
   }, [getActiveGroup]);
 
   // Find in file (Monaco) — only when `data-shortcut-scope="editor"` is innermost
@@ -63,7 +78,13 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
     () => {
       activeEditTargetService.openMonacoFind();
     },
-    { enabled, priority: 20, description: 'keyboard.shortcuts.editor.findInFile' }
+    {
+      enabled, priority: 20, description: 'keyboard.shortcuts.editor.findInFile',
+      // Main document editors share the active edit target service. Canvas
+      // instances must nevertheless survive another canvas unmounting.
+      when: event => event.target instanceof Element
+        && (!event.target.closest('[data-canvas-mode]') || ownsCanvasEvent(event)),
+    }
   );
 
   // Mission control
@@ -73,6 +94,7 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
     () => toggleMissionControl(),
     {
       enabled: enabled && missionControlEnabled,
+      when: ownsCanvasEvent,
       priority: 10,
       description: 'keyboard.shortcuts.canvas.missionControl',
     }
@@ -83,7 +105,7 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
     'canvas.splitHorizontal',
     { key: '\\', ctrl: true, scope: 'canvas' },
     () => setSplitMode(layout.splitMode === 'horizontal' ? 'none' : 'horizontal'),
-    { enabled, description: 'keyboard.shortcuts.canvas.splitHorizontal' }
+    { ...canvasShortcutOptions, description: 'keyboard.shortcuts.canvas.splitHorizontal' }
   );
 
   // Vertical split: mod+Shift+\
@@ -91,7 +113,7 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
     'canvas.splitVertical',
     { key: '\\', ctrl: true, shift: true, scope: 'canvas' },
     () => setSplitMode(layout.splitMode === 'vertical' ? 'none' : 'vertical'),
-    { enabled, description: 'keyboard.shortcuts.canvas.splitVertical' }
+    { ...canvasShortcutOptions, description: 'keyboard.shortcuts.canvas.splitVertical' }
   );
 
   // Anchor zone: mod+`
@@ -99,7 +121,7 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
     'canvas.anchorZone',
     { key: '`', ctrl: true, scope: 'canvas' },
     () => setAnchorPosition(layout.anchorPosition === 'hidden' ? 'bottom' : 'hidden'),
-    { enabled, description: 'keyboard.shortcuts.canvas.anchorZone' }
+    { ...canvasShortcutOptions, description: 'keyboard.shortcuts.canvas.anchorZone' }
   );
 
   // Maximize: mod+Shift+M
@@ -107,22 +129,15 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
     'canvas.maximize',
     { key: 'M', ctrl: true, shift: true, scope: 'canvas' },
     () => toggleMaximize(),
-    { enabled, description: 'keyboard.shortcuts.canvas.maximize' }
+    { ...canvasShortcutOptions, description: 'keyboard.shortcuts.canvas.maximize' }
   );
 
   // Close current tab: mod+W
   useTabCloseShortcut(
     'app',
     event => {
-      // Keyboard focus can enter a split group without its click handler running.
-      const groupElement = event.target instanceof Element
-        ? event.target.closest('[data-openbitfun-group], [data-canvas-toolbar-group]') : null;
-      const focusedGroup = groupElement?.getAttribute('data-openbitfun-group')
-        ?? groupElement?.getAttribute('data-canvas-toolbar-group');
-      const groupId = focusedGroup === 'primary' || focusedGroup === 'secondary' || focusedGroup === 'tertiary'
-        ? focusedGroup : activeGroupId;
-      const activeGroup = groupId === 'primary' ? primaryGroup
-        : groupId === 'secondary' ? secondaryGroup : tertiaryGroup;
+      const groupId = getFocusedGroupId(event);
+      const activeGroup = getActiveGroup(event);
       if (!activeGroup.activeTabId) return;
       if (handleCloseWithDirtyCheck) {
         return handleCloseWithDirtyCheck(activeGroup.activeTabId, groupId);
@@ -154,29 +169,29 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
       reopenClosedTab();
       onReveal?.();
     },
-    { enabled, priority: 10, description: 'keyboard.shortcuts.tab.reopenClosed' }
+    { ...canvasShortcutOptions, priority: 10, description: 'keyboard.shortcuts.tab.reopenClosed' }
   );
 
   // Switch to tab by number: mod+1~9
   const switchToTabByIndex = useCallback(
-    (index: number) => {
-      const tabs = getVisibleTabs();
+    (event: KeyboardEvent, index: number) => {
+      const tabs = getVisibleTabs(event);
       const target = index === -1 ? tabs[tabs.length - 1] : tabs[index];
-      if (target) switchToTab(target.id, activeGroupId);
+      if (target) switchToTab(target.id, getFocusedGroupId(event));
     },
-    [getVisibleTabs, switchToTab, activeGroupId]
+    [getVisibleTabs, switchToTab, getFocusedGroupId]
   );
 
   // allowInInput so Ctrl+1..9 still work while focus is in a Monaco editor
-  useShortcut('tab.switch1',    { key: '1', ctrl: true, scope: 'canvas', allowInInput: true }, () => switchToTabByIndex(0),  { enabled, description: 'keyboard.shortcuts.tab.switchMerged' });
-  useShortcut('tab.switch2',    { key: '2', ctrl: true, scope: 'canvas', allowInInput: true }, () => switchToTabByIndex(1),  { enabled, description: 'keyboard.shortcuts.tab.switchMerged' });
-  useShortcut('tab.switch3',    { key: '3', ctrl: true, scope: 'canvas', allowInInput: true }, () => switchToTabByIndex(2),  { enabled, description: 'keyboard.shortcuts.tab.switchMerged' });
-  useShortcut('tab.switch4',    { key: '4', ctrl: true, scope: 'canvas', allowInInput: true }, () => switchToTabByIndex(3),  { enabled, description: 'keyboard.shortcuts.tab.switchMerged' });
-  useShortcut('tab.switch5',    { key: '5', ctrl: true, scope: 'canvas', allowInInput: true }, () => switchToTabByIndex(4),  { enabled, description: 'keyboard.shortcuts.tab.switchMerged' });
-  useShortcut('tab.switch6',    { key: '6', ctrl: true, scope: 'canvas', allowInInput: true }, () => switchToTabByIndex(5),  { enabled, description: 'keyboard.shortcuts.tab.switchMerged' });
-  useShortcut('tab.switch7',    { key: '7', ctrl: true, scope: 'canvas', allowInInput: true }, () => switchToTabByIndex(6),  { enabled, description: 'keyboard.shortcuts.tab.switchMerged' });
-  useShortcut('tab.switch8',    { key: '8', ctrl: true, scope: 'canvas', allowInInput: true }, () => switchToTabByIndex(7),  { enabled, description: 'keyboard.shortcuts.tab.switchMerged' });
-  useShortcut('tab.switchLast', { key: '9', ctrl: true, scope: 'canvas', allowInInput: true }, () => switchToTabByIndex(-1), { enabled, description: 'keyboard.shortcuts.tab.switchMerged' });
+  useShortcut('tab.switch1',    { key: '1', ctrl: true, scope: 'canvas', allowInInput: true }, event => switchToTabByIndex(event, 0),  { ...canvasShortcutOptions, description: 'keyboard.shortcuts.tab.switchMerged' });
+  useShortcut('tab.switch2',    { key: '2', ctrl: true, scope: 'canvas', allowInInput: true }, event => switchToTabByIndex(event, 1),  { ...canvasShortcutOptions, description: 'keyboard.shortcuts.tab.switchMerged' });
+  useShortcut('tab.switch3',    { key: '3', ctrl: true, scope: 'canvas', allowInInput: true }, event => switchToTabByIndex(event, 2),  { ...canvasShortcutOptions, description: 'keyboard.shortcuts.tab.switchMerged' });
+  useShortcut('tab.switch4',    { key: '4', ctrl: true, scope: 'canvas', allowInInput: true }, event => switchToTabByIndex(event, 3),  { ...canvasShortcutOptions, description: 'keyboard.shortcuts.tab.switchMerged' });
+  useShortcut('tab.switch5',    { key: '5', ctrl: true, scope: 'canvas', allowInInput: true }, event => switchToTabByIndex(event, 4),  { ...canvasShortcutOptions, description: 'keyboard.shortcuts.tab.switchMerged' });
+  useShortcut('tab.switch6',    { key: '6', ctrl: true, scope: 'canvas', allowInInput: true }, event => switchToTabByIndex(event, 5),  { ...canvasShortcutOptions, description: 'keyboard.shortcuts.tab.switchMerged' });
+  useShortcut('tab.switch7',    { key: '7', ctrl: true, scope: 'canvas', allowInInput: true }, event => switchToTabByIndex(event, 6),  { ...canvasShortcutOptions, description: 'keyboard.shortcuts.tab.switchMerged' });
+  useShortcut('tab.switch8',    { key: '8', ctrl: true, scope: 'canvas', allowInInput: true }, event => switchToTabByIndex(event, 7),  { ...canvasShortcutOptions, description: 'keyboard.shortcuts.tab.switchMerged' });
+  useShortcut('tab.switchLast', { key: '9', ctrl: true, scope: 'canvas', allowInInput: true }, event => switchToTabByIndex(event, -1), { ...canvasShortcutOptions, description: 'keyboard.shortcuts.tab.switchMerged' });
 };
 
 export default useKeyboardShortcuts;

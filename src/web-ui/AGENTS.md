@@ -243,7 +243,8 @@ pnpm --dir src/web-ui run test:run src/app/components/SceneBar/SceneBar.test.tsx
 These local DOM/store fixtures cover the session tab limit, other-device tabs and simulated
 SSH/Peer identities; they do not establish native rendering or live remote behavior.
 
-For Ctrl/Cmd+W ownership across conversation, content, split groups and terminals:
+For close/reopen, numbered tab selection and layout shortcuts across conversation,
+content, split groups and terminals:
 
 ```bash
 pnpm --dir src/web-ui run test:run src/app/hooks/useTabCloseShortcut.test.tsx src/infrastructure/services/ShortcutManager.test.ts src/app/components/panels/content-canvas/hooks/useTabLifecycle.btw.test.tsx

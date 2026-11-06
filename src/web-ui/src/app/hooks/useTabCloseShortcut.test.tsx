@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Portal } from '@openbitfun/ui';
 import { shortcutManager } from '@/infrastructure/services/ShortcutManager';
+import { activeEditTargetService } from '@/tools/editor/services/ActiveEditTargetService';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { useConfirmDialogStore } from '@/infrastructure/confirm-dialog/confirmDialogService';
 import {
@@ -46,7 +47,7 @@ function Fixture({ canvasEnabled = true, bottom = false }: { canvasEnabled?: boo
     <GlobalShortcuts />
     <textarea data-testid="chat" data-shortcut-scope="chat"
       onFocus={() => useSceneStore.getState().focusPane('primary')} />
-    <div data-shortcut-scope="canvas" data-canvas-mode="agent"
+    <div data-testid="canvas-shell" tabIndex={-1} data-shortcut-scope="canvas" data-canvas-mode="agent"
       onFocus={() => useSceneStore.getState().focusPane(useSceneStore.getState().canvasPane)}>
       <CanvasStoreModeContext.Provider value="agent"><CanvasShortcuts enabled={canvasEnabled} /></CanvasStoreModeContext.Provider>
       {(['primary', 'secondary', 'tertiary'] as const).map(group => <div key={group} data-openbitfun-group={group}>
@@ -299,11 +300,73 @@ describe('close-tab keyboard ownership', () => {
     expect(useSceneStore.getState().openTabs).toEqual([]);
   });
 
+  it('switches numbered tabs in the right canvas without changing the simultaneously mounted bottom canvas', async () => {
+    const first = addFile();
+    useAgentCanvasStore.getState().addTab({ type: 'text-viewer', title: 'second', data: {} }, 'active');
+    useBottomTerminalCanvasStore.getState().addTab({ type: 'text-viewer', title: 'bottom-first', data: {} }, 'active');
+    useBottomTerminalCanvasStore.getState().addTab({ type: 'text-viewer', title: 'bottom-second', data: {} }, 'active');
+    const bottom = useBottomTerminalCanvasStore.getState().primaryGroup.activeTabId;
+    await render({ bottom: true });
+    await press('editor-primary', { key: '2', code: 'Digit2' });
+    expect(useAgentCanvasStore.getState().primaryGroup.activeTabId).toBe(first);
+    expect(useBottomTerminalCanvasStore.getState().primaryGroup.activeTabId).toBe(bottom);
+  });
+
+  it('keeps right-canvas tab navigation registered when the bottom canvas unmounts', async () => {
+    const first = addFile();
+    useAgentCanvasStore.getState().addTab({ type: 'text-viewer', title: 'second', data: {} }, 'active');
+    await render({ bottom: true });
+    await render({ bottom: false });
+    expect((await press('editor-primary', { key: '2', code: 'Digit2' })).defaultPrevented).toBe(true);
+    expect(useAgentCanvasStore.getState().primaryGroup.activeTabId).toBe(first);
+  });
+
+  it('keeps editor find registered when another canvas unmounts', async () => {
+    const find = vi.spyOn(activeEditTargetService, 'openMonacoFind').mockImplementation(() => {});
+    await render({ bottom: true });
+    await render({ bottom: false });
+    await press('editor-primary', { key: 'f' });
+    expect(find).toHaveBeenCalledOnce();
+  });
+
+  it('uses the focused split for numbered tab selection before a click updates activeGroupId', async () => {
+    useAgentCanvasStore.getState().setSplitMode('grid');
+    const first = addFile('tertiary');
+    useAgentCanvasStore.getState().addTab({ type: 'text-viewer', title: 'second', data: {} }, 'active', 'tertiary');
+    const primary = addFile('primary');
+    useAgentCanvasStore.getState().setActiveGroup('primary');
+    await render();
+    await press('editor-tertiary', { key: '2', code: 'Digit2' });
+    expect(useAgentCanvasStore.getState().tertiaryGroup.activeTabId).toBe(first);
+    expect(useAgentCanvasStore.getState().primaryGroup.activeTabId).toBe(primary);
+  });
+
+  it('reopens a closed right-canvas tab without consuming the bottom canvas history', async () => {
+    const file = addFile();
+    useAgentCanvasStore.getState().closeTab(file, 'primary');
+    useBottomTerminalCanvasStore.getState().addTab({ type: 'text-viewer', title: 'bottom', data: {} }, 'active');
+    const bottom = useBottomTerminalCanvasStore.getState().primaryGroup.activeTabId!;
+    useBottomTerminalCanvasStore.getState().closeTab(bottom, 'primary');
+    await render({ bottom: true });
+    await press('editor-primary', { key: 't', shiftKey: true });
+    expect(useAgentCanvasStore.getState().primaryGroup.activeTabId).toBe(file);
+    expect(useBottomTerminalCanvasStore.getState().primaryGroup.tabs).toEqual([]);
+    expect(useBottomTerminalCanvasStore.getState().closedTabs).toHaveLength(1);
+  });
+
+  it('applies canvas layout shortcuts only to the owning canvas', async () => {
+    addFile();
+    await render({ bottom: true });
+    await press('canvas-shell', { key: 'm', shiftKey: true });
+    expect(useAgentCanvasStore.getState().layout.isMaximized).toBe(true);
+    expect(useBottomTerminalCanvasStore.getState().layout.isMaximized).toBe(false);
+  });
+
   it('does not treat macOS Control or extra modifiers as Command+W', async () => {
     setPlatform('MacIntel');
     addFile();
     await render();
-    for (const extra of [{ metaKey: false, ctrlKey: true }, { shiftKey: true }, { altKey: true }]) {
+    for (const extra of [{ metaKey: false, ctrlKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }]) {
       expect((await press('editor-primary', extra)).defaultPrevented).toBe(false);
     }
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
