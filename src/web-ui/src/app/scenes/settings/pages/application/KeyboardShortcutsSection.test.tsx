@@ -26,7 +26,8 @@ describe('keyboard shortcut recording ownership', () => {
     const row = [...container.querySelectorAll<HTMLElement>('[data-openbitfun-part="item"]')]
       .find(item => item.textContent?.includes('Close tab'))!;
     const button = row.querySelector<HTMLButtonElement>('button[aria-pressed]')!;
-    await act(async () => { button.focus(); button.click(); });
+    await act(async () => { button.click(); });
+    expect(document.activeElement).toBe(button);
     return button;
   };
 
@@ -90,5 +91,17 @@ describe('keyboard shortcut recording ownership', () => {
     await act(async () => root.render(null));
     await press(document.body);
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('keeps global conflict checks when a command also has a scoped registration', async () => {
+    await act(async () => {
+      shortcutManager.register('tab.close', { key: 'w', ctrl: true, scope: 'workbench-content', allowInInput: true }, vi.fn());
+      shortcutManager.register('fixture.chat', { key: 'q', ctrl: true, scope: 'chat' }, vi.fn(), { description: 'Chat command' });
+    });
+    const button = await record();
+    await press(button, { key: 'q' });
+    const apply = [...container.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === 'keyboard.apply')!;
+    expect(apply.disabled).toBe(true);
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
   });
 });

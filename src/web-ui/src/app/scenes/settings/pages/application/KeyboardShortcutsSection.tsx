@@ -102,7 +102,14 @@ function formatShortcutKeyCap(key: string, t: (key: string) => string): string {
 }
 
 function mergeCatalogWithLive(live: ShortcutRegistration[]): ShortcutRegistration[] {
-  const liveById = new Map(live.map((r) => [r.id, r]));
+  const liveById = new Map<string, ShortcutRegistration>();
+  for (const registration of live) {
+    // A scoped instance must not narrow a command that is also active globally;
+    // otherwise recording can miss conflicts with commands in other panels.
+    if (!liveById.has(registration.id) || (registration.config.scope ?? 'app') === 'app') {
+      liveById.set(registration.id, registration);
+    }
+  }
   const out: ShortcutRegistration[] = [];
   for (const def of ALL_SHORTCUTS) {
     const hit = liveById.get(def.id);
@@ -317,6 +324,11 @@ const KeyboardShortcutsSection: React.FC = () => {
   const sectionRef = useRef<HTMLDivElement>(null);
   const saveInFlightRef = useRef(false);
   recordingRef.current = recordingId;
+  const toggleRecording = useCallback((event: React.MouseEvent<HTMLButtonElement>, id: string) => {
+    // Pointer activation does not focus buttons on every WebView/platform.
+    event.currentTarget.focus();
+    setRecordingId(current => current === id ? null : id);
+  }, []);
 
   // Live registrations from ShortcutManager (effects may register after first paint).
   const refreshRegistrations = useCallback(() => {
@@ -711,9 +723,7 @@ const KeyboardShortcutsSection: React.FC = () => {
                       size="xs"
                       tone={mergedTabConflict ? 'danger' : 'neutral'}
                       variant={recordingId === MERGED_TAB_RECORD_ID ? 'primary' : 'outline'}
-                      onClick={() =>
-                        setRecordingId(recordingId === MERGED_TAB_RECORD_ID ? null : MERGED_TAB_RECORD_ID)
-                      }
+                      onClick={event => toggleRecording(event, MERGED_TAB_RECORD_ID)}
                     >
                       {recordingId === MERGED_TAB_RECORD_ID ? t('keyboard.recording') : mergedTabKeyLabel}
                     </Button>
@@ -780,9 +790,7 @@ const KeyboardShortcutsSection: React.FC = () => {
                       size="xs"
                       tone={mergedSceneConflict ? 'danger' : 'neutral'}
                       variant={recordingId === MERGED_SCENE_RECORD_ID ? 'primary' : 'outline'}
-                      onClick={() =>
-                        setRecordingId(recordingId === MERGED_SCENE_RECORD_ID ? null : MERGED_SCENE_RECORD_ID)
-                      }
+                      onClick={event => toggleRecording(event, MERGED_SCENE_RECORD_ID)}
                     >
                       {recordingId === MERGED_SCENE_RECORD_ID ? t('keyboard.recording') : mergedSceneKeyLabel}
                     </Button>
@@ -854,7 +862,7 @@ const KeyboardShortcutsSection: React.FC = () => {
                         size="xs"
                         tone={conflict ? 'danger' : 'neutral'}
                         variant={isRecording ? 'primary' : 'outline'}
-                        onClick={() => setRecordingId(isRecording ? null : reg.id)}
+                        onClick={event => toggleRecording(event, reg.id)}
                       >
                         {isRecording
                           ? t('keyboard.recording')
