@@ -19,7 +19,6 @@ impl ComputerUseMode {
     pub fn new() -> Self {
         Self {
             default_tools: vec![
-                "AskUserQuestion".to_string(),
                 "TodoWrite".to_string(),
                 "Skill".to_string(),
                 "view_image".to_string(),
@@ -84,6 +83,9 @@ mod tests {
         assert!(agent.default_tools().contains(&"ControlHub".to_string()));
         assert!(agent.default_tools().contains(&"ComputerUse".to_string()));
         assert!(!agent.default_tools().contains(&"Write".to_string()));
+        assert!(!agent
+            .default_tools()
+            .contains(&"AskUserQuestion".to_string()));
         assert!(!agent.is_readonly());
         assert!(agent
             .description()
