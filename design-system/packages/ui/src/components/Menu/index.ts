@@ -13,3 +13,4 @@ export {
   type MenuSeparatorProps,
 } from "./Menu";
 export { MenuPopover, type MenuPopoverProps, type MenuPopoverParts, type MenuEntry } from "./MenuPopover";
+export { MenuConfirmItem, type MenuConfirmItemProps, type MenuConfirmation } from "./MenuConfirmItem";

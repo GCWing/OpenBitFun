@@ -1,3 +1,4 @@
+import { captureConfirmationAnchor } from '@openbitfun/ui';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { requireSessionOwningWorkspaceId } from '../../utils/sessionOrdering';
 /**
@@ -2490,7 +2491,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     }
   }, [t]);
 
-  const handleDeleteSessionTreeSession = useCallback(async (selection: SessionTreeSelection) => {
+  const handleDeleteSessionTreeSession = useCallback(async (selection: SessionTreeSelection, anchor?: ReturnType<typeof captureConfirmationAnchor>) => {
     if (selection.isRoot) return false;
     if (activeSession && resolveSessionDriverId(activeSession.sessionId, activeSession) === 'dispatch') {
       notificationService.error(t('flowChatHeader.agentTreeDeleteUnsupported'), { duration: 5000 });
@@ -2501,7 +2502,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       const confirmed = await confirmDanger(
         t('flowChatHeader.agentTreeDelete'),
         t('flowChatHeader.agentTreeDeleteConfirm', { name: selection.displayTitle }),
-        { confirmText: t('flowChatHeader.agentTreeDelete') },
+        { anchor, confirmText: t('flowChatHeader.agentTreeDelete') },
       );
       if (!confirmed) return false;
       await deleteSessionTreeBranch({ sessionId: selection.sessionId, workspaceId: requireSessionOwningWorkspaceId(flowChatStore.getState().sessions.get(selection.sessionId) || activeSession!) }, scope);

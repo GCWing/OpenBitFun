@@ -1,3 +1,4 @@
+import { captureConfirmationAnchor } from '@openbitfun/ui';
  
 
 import { BaseCommand } from '../../BaseCommand';
@@ -57,6 +58,7 @@ export class DeleteFileCommand extends BaseCommand {
       : t('common:contextMenu.confirmDeleteFile', { name: context.fileName });
 
     return confirmDanger(t('common:file.delete'), message, {
+      anchor: captureConfirmationAnchor(context.targetElement),
       confirmText: t('common:actions.delete'),
     });
   }

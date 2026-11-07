@@ -34,7 +34,7 @@ export interface TodoItemRowProps {
   statusLabel?: string;
   isSelected?: boolean;
   onEdit: (job: CronJob) => void;
-  onDelete: (job: CronJob) => void;
+  onDelete: (job: CronJob, trigger?: HTMLElement) => void;
   onToggleEnabled: (job: CronJob, enabled: boolean) => void;
 }
 
@@ -169,7 +169,7 @@ const TodoItemRow: React.FC<TodoItemRowProps> = ({
               tone="danger"
               aria-label={t('actions.delete')}
               icon={<Icon name="delete" size="lg" />}
-              onClick={() => onDelete(job)}
+              onClick={event => onDelete(job, event.currentTarget)}
             />
           </Tooltip>
         </div>

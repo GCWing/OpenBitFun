@@ -104,10 +104,6 @@ const click = async (id: string) => {
 const clickDialogButton = (label: string) => act(async () => {
   [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(button => button.textContent === label)!.click();
 });
-const answerAssistantConfirmation = (confirm: boolean) => act(async () => {
-  const label = confirm ? 'agents.createAssistant' : 'dialog.confirm.cancel';
-  [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button => button.textContent === label)!.click();
-});
 const fillAgentField = async (field: string, value: string, scope: ParentNode = document.querySelector('[role="dialog"]')!) => {
   if (field === 'prompt') {
     await act(async () => { await vi.dynamicImportSettled(); });
@@ -304,13 +300,10 @@ describe('overview catalog actions', () => {
     expect(mocks.openScene).not.toHaveBeenCalled();
   });
 
-  it('requires confirmation before creating an assistant and opening its configuration', async () => {
+  it('creates an assistant directly and opens its configuration', async () => {
     await render();
     await click('personal-overview-create-assistant');
-    expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain('agents.createAssistantConfirmMessage');
-    expect(mocks.createAssistant).not.toHaveBeenCalled();
-    expect(mocks.openScene).not.toHaveBeenCalled();
-    await answerAssistantConfirmation(true);
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     expect(mocks.createAssistant).toHaveBeenCalledOnce();
     expect(useNurseryStore.getState()).toMatchObject({ page: 'assistant', activeWorkspaceId: 'new-assistant' });
     expect(mocks.openScene).toHaveBeenCalledWith('assistant');
@@ -318,29 +311,30 @@ describe('overview catalog actions', () => {
     expect(useNurseryStore.getState().page).toBe('gallery');
   });
 
-  it('cancels assistant creation without creating or navigating and allows retry', async () => {
+  it('allows retry after assistant creation fails', async () => {
+    mocks.createAssistant.mockRejectedValueOnce(new Error('Host unavailable'));
     await render();
     await click('personal-overview-create-assistant');
-    await answerAssistantConfirmation(false);
-    expect(mocks.createAssistant).not.toHaveBeenCalled();
+    expect(mocks.error).toHaveBeenCalledOnce();
     expect(mocks.openScene).not.toHaveBeenCalled();
     expect(useNurseryStore.getState().page).toBe('gallery');
     await click('personal-overview-create-assistant');
-    await answerAssistantConfirmation(true);
-    expect(mocks.createAssistant).toHaveBeenCalledOnce();
+    expect(mocks.createAssistant).toHaveBeenCalledTimes(2);
+    expect(mocks.openScene).toHaveBeenCalledWith('assistant');
   });
 
-  it('does not create an assistant if the device changes while confirmation is open', async () => {
+  it('ignores an assistant creation failure from a previous device', async () => {
+    let fail!: (error: Error) => void;
+    mocks.createAssistant.mockReturnValue(new Promise((_resolve, reject) => { fail = reject; }));
     await render();
     await click('personal-overview-create-assistant');
-    await act(async () => { activateSurface('peer-host'); });
-    await answerAssistantConfirmation(true);
-    expect(mocks.createAssistant).not.toHaveBeenCalled();
+    await act(async () => { activateSurface('peer-host'); fail(new Error('Old host unavailable')); });
+    expect(mocks.createAssistant).toHaveBeenCalledOnce();
     expect(mocks.openScene).not.toHaveBeenCalled();
     expect(mocks.error).not.toHaveBeenCalled();
   });
 
-  it('creates only once when the entry and confirmation are clicked repeatedly', async () => {
+  it('creates only once when the entry is clicked repeatedly', async () => {
     let finish!: (workspace: { id: string }) => void;
     mocks.createAssistant.mockReturnValue(new Promise(resolve => { finish = resolve; }));
     await render();
@@ -349,14 +343,9 @@ describe('overview catalog actions', () => {
       button.click();
       button.click();
     });
-    expect(mocks.createAssistant).not.toHaveBeenCalled();
-    await act(async () => {
-      const button = [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button => button.textContent === 'agents.createAssistant')!;
-      button.click();
-      button.click();
-    });
     await click('personal-overview-create-assistant');
     expect(mocks.createAssistant).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     await act(async () => { finish({ id: 'new-assistant' }); });
     expect(mocks.openScene).toHaveBeenCalledOnce();
   });
@@ -366,7 +355,6 @@ describe('overview catalog actions', () => {
     mocks.createAssistant.mockReturnValue(new Promise(resolve => { finish = resolve; }));
     await render();
     await click('personal-overview-create-assistant');
-    await answerAssistantConfirmation(true);
     await act(async () => { activateSurface('peer-host'); finish({ id: 'old-assistant' }); });
     expect(mocks.openScene).not.toHaveBeenCalled();
     expect(useNurseryStore.getState().page).toBe('gallery');

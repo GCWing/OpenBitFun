@@ -1,3 +1,4 @@
+import { captureConfirmationAnchor } from '@openbitfun/ui';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { confirmWarning } from '@/infrastructure/confirm-dialog';
@@ -39,7 +40,7 @@ export interface ThreadGoalController {
   /** Fetch latest goal from backend, then open menu or create dialog. */
   openGoalEntry: () => Promise<void>;
   runSlashAction: (message: string) => Promise<ThreadGoalSnapshot | null>;
-  runUiAction: (action: 'clear' | 'pause' | 'resume') => Promise<void>;
+  runUiAction: (action: 'clear' | 'pause' | 'resume', trigger?: HTMLElement) => Promise<void>;
   saveEdit: (objective: string) => Promise<void>;
   confirmResume: () => Promise<void>;
   dismissResume: () => void;
@@ -272,14 +273,15 @@ export function useThreadGoalController(
   );
 
   const runUiAction = useCallback(
-    async (action: 'clear' | 'pause' | 'resume') => {
+    async (action: 'clear' | 'pause' | 'resume', trigger?: HTMLElement) => {
       if (!session || disabled) return;
       // Clearing drops the objective together with the time and tokens spent on
       // it, and none of that can be recovered, so every entry point asks first.
       if (action === 'clear') {
         const confirmed = await confirmWarning(
           t('threadGoal.clearConfirmTitle'),
-          t('threadGoal.clearConfirmMessage', { objective: goal?.objective ?? '' })
+          t('threadGoal.clearConfirmMessage', { objective: goal?.objective ?? '' }),
+          { anchor: captureConfirmationAnchor(trigger) }
         );
         if (!confirmed) return;
       }

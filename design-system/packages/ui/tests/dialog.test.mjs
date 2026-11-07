@@ -14,7 +14,7 @@ test("Dialog and Sheet compose the shared overlay kernel and compound anatomy", 
   assert.match(source, /<Portal target=\{resolvedPortalHost\} open=\{open\} modal/);
   assert.match(source, /useDismissibleLayer/);
   assert.match(source, /useFocusScope/);
-  assert.match(source, /preventScroll=\{preventScroll\}/);
+  assert.match(source, /preventScroll=\{!anchored && preventScroll\}/);
   assert.match(source, /usePresence/);
   assert.match(source, /kind="dialog"/);
   assert.match(source, /kind="sheet"/);

@@ -22,7 +22,7 @@ import { confirmDanger } from '@/infrastructure/confirm-dialog';
 import { useI18n } from '@/infrastructure/i18n';
 import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
-import {
+import { captureConfirmationAnchor,
   Button,
   Disclosure,
   Icon,
@@ -126,7 +126,7 @@ const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true 
     const confirmed = await confirmDanger(
       t('features.pet.deleteConfirmTitle'),
       t('features.pet.deleteConfirmBody'),
-      { confirmText: t('features.pet.delete') },
+      { anchor: captureConfirmationAnchor(event.currentTarget as HTMLElement), confirmText: t('features.pet.delete') },
     );
     if (!confirmed) return;
     setCompanionPetDeletingPath(pet.packagePath);

@@ -129,7 +129,7 @@ export interface ChatInputWorkspaceStripProps {
     /** Actions the goal menu offers for the current status; the track mirrors them. */
     actions?: ThreadGoalUiAction[];
     onOpen: () => void;
-    onAction?: (action: ThreadGoalStripAction) => void;
+    onAction?: (action: ThreadGoalStripAction, trigger?: HTMLElement) => void;
   };
   /** Immutable per-session dispatch destination. Hidden on embedded/mini composers. */
   dispatchControl?: {

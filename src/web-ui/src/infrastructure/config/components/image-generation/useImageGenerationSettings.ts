@@ -1,3 +1,4 @@
+import { captureConfirmationAnchor } from '@openbitfun/ui';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { configManager } from '../../services/ConfigManager';
 import { useConfigSeed } from '../../hooks/useConfigSeed';
@@ -121,9 +122,9 @@ export function useImageGenerationSettings() {
     await mutate(value => ({ ...value, image_services: value.image_services.map(item => item.id === service.id ? { ...item, enabled } : item),
       default_image_service: !enabled && value.default_image_service === service.id ? undefined : value.default_image_service }));
   };
-  const remove = async (service: ImageServiceConfig) => {
+  const remove = async (service: ImageServiceConfig, trigger?: HTMLElement) => {
     const currentScope = scope;
-    if (!await confirmDialog({ title: t('delete.title'), message: t('delete.message', { name: service.name || service.model_name }), confirmText: t('delete.confirm'), type: 'warning' }) || !currentScope.isCurrent()) return;
+    if (!await confirmDialog({ anchor: captureConfirmationAnchor(trigger), title: t('delete.title'), message: t('delete.message', { name: service.name || service.model_name }), confirmText: t('delete.confirm'), type: 'warning' }) || !currentScope.isCurrent()) return;
     await mutate(value => ({ ...value, image_services: value.image_services.filter(item => item.id !== service.id),
       default_image_service: value.default_image_service === service.id ? undefined : value.default_image_service }));
   };

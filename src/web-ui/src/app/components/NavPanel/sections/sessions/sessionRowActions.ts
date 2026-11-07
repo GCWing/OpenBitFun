@@ -18,6 +18,16 @@ const log = createLogger('SessionRowActions');
 
 export type SessionRowTranslate = (key: string, options?: Record<string, unknown>) => string;
 
+/** Delete after menu confirmation; the session module reports failures. */
+export async function deleteSessionRow(sessionId: string): Promise<void> {
+  try {
+    await flowChatManager.deleteChatSession(sessionId);
+  } catch (error) {
+    if (isSurfaceChangedError(error)) return;
+    log.error('Failed to delete session', { sessionId, error });
+  }
+}
+
 /** Archive a session; the archive module reports its own failures. */
 export async function archiveSessionRow(sessionId: string, t: SessionRowTranslate): Promise<void> {
   try {

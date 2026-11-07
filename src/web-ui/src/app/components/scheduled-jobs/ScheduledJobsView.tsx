@@ -5,7 +5,7 @@
  * job list at top, inline editor expands below the selected job.
  */
 
-import { Alert, OverflowText, Icon, Button, Combobox, Switch, IconButton, Input, Select, StatusPill, Textarea, Tooltip, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle, Field } from '@openbitfun/ui';
+import { captureConfirmationAnchor, Alert, OverflowText, Icon, Button, Combobox, Switch, IconButton, Input, Select, StatusPill, Textarea, Tooltip, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle, Field } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
@@ -481,11 +481,12 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
     targetKind,
   ]);
 
-  const handleDeleteJob = useCallback(async (job: CronJob) => {
+  const handleDeleteJob = useCallback(async (job: CronJob, trigger?: HTMLElement) => {
     const scope = getActiveSurfaceScope();
     const confirmed = await confirmDanger(
       t('nav.scheduledJobs.deleteDialog.title', { name: job.name }),
       null,
+      { anchor: captureConfirmationAnchor(trigger) },
     );
     if (!confirmed || !mounted.current || !scope.isCurrent()) return;
     try {
@@ -738,7 +739,7 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
                   <IconButton size="sm" disabled={saving} aria-label={t('nav.scheduledJobs.actions.edit')} aria-expanded={expandedJobId === job.id}
                     icon={<Icon name="edit" size="sm" />} onClick={() => handleEditJob(job)} />
                   <IconButton size="sm" tone="danger" disabled={saving} aria-label={t('nav.scheduledJobs.actions.delete')}
-                    icon={<Icon name="delete" size="sm" />} onClick={() => void handleDeleteJob(job)} />
+                    icon={<Icon name="delete" size="sm" />} onClick={event => void handleDeleteJob(job, event.currentTarget)} />
                 </div></div>
               </div>
               {expandedJobId === job.id && <div role="row" className="resource-table__row resource-table__details asv__table-editor"><div role="cell" aria-colspan={4}>{renderEditor()}</div></div>}
@@ -792,7 +793,7 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
                             size="sm"
                             tone="danger"
                             aria-label={t('nav.scheduledJobs.actions.delete')}
-                            onClick={e => { e.stopPropagation(); void handleDeleteJob(job); }}
+                            onClick={e => { e.stopPropagation(); void handleDeleteJob(job, e.currentTarget); }}
                             icon={<Icon name="delete" size="lg" style={{ width: 13, height: 13 }} />}
                           />
                         </Tooltip>

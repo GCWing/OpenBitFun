@@ -11,7 +11,7 @@
  * broadcast on the shared change event so those views stay in step.
  */
 
-import {
+import { captureConfirmationAnchor,
   Button,
   Icon,
   ScrollArea,
@@ -253,8 +253,8 @@ const TodosScene: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     }
   }, [loadJobs, t]);
 
-  const handleDelete = useCallback(async (job: CronJob) => {
-    const confirmed = await confirmDanger(t('deleteDialog.title', { name: job.name }), null);
+  const handleDelete = useCallback(async (job: CronJob, trigger?: HTMLElement) => {
+    const confirmed = await confirmDanger(t('deleteDialog.title', { name: job.name }), null, { anchor: captureConfirmationAnchor(trigger) });
     if (!confirmed) return;
 
     try {
@@ -519,7 +519,7 @@ const TodosScene: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                     workspaces={openedWorkspacesList}
                     isSelected={editingJob?.id === occurrence.job.id}
                     onEdit={handleEdit}
-                    onDelete={(job) => { void handleDelete(job); }}
+                    onDelete={(job, trigger) => { void handleDelete(job, trigger); }}
                     onToggleEnabled={(job, enabled) => { void handleToggleEnabled(job, enabled); }}
                   />
                 ))}
@@ -542,7 +542,7 @@ const TodosScene: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                       statusLabel={inactiveStatusLabel(entry.reason)}
                       isSelected={editingJob?.id === entry.job.id}
                       onEdit={handleEdit}
-                      onDelete={(job) => { void handleDelete(job); }}
+                      onDelete={(job, trigger) => { void handleDelete(job, trigger); }}
                       onToggleEnabled={(job, enabled) => { void handleToggleEnabled(job, enabled); }}
                     />
                   ))}
@@ -619,7 +619,7 @@ const TodosScene: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                           workspaces={openedWorkspacesList}
                           isSelected={editingJob?.id === occurrence.job.id}
                           onEdit={handleEdit}
-                          onDelete={(job) => { void handleDelete(job); }}
+                          onDelete={(job, trigger) => { void handleDelete(job, trigger); }}
                           onToggleEnabled={(job, enabled) => { void handleToggleEnabled(job, enabled); }}
                         />
                       ))}

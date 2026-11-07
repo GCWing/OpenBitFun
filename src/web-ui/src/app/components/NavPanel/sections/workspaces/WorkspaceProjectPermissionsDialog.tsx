@@ -1,4 +1,4 @@
-import { Alert, OverflowText,
+import { captureConfirmationAnchor, Alert, OverflowText,
   Button,
   Icon,
   IconButton,
@@ -190,13 +190,13 @@ function WorkspaceProjectPermissionsContent({
     void Promise.all([loadGrants(), loadRules()]);
   }, [isOpen, loadGrants, loadRules, refreshKey]);
 
-  const handleRemovePermissionGrant = async (grant: PermissionGrant) => {
+  const handleRemovePermissionGrant = async (grant: PermissionGrant, trigger?: HTMLElement) => {
     if (!current() || !active.current || mutationRunning.current) return;
     const confirmationEpoch = dialogEpoch.current;
     const confirmed = await confirmDanger(
       t('projectPermissions.removeGrantTitle'),
       t('projectPermissions.removeGrantMessage', { action: grant.action, resource: grant.resource }),
-      { confirmText: t('projectPermissions.removeGrantConfirm') },
+      { anchor: captureConfirmationAnchor(trigger), confirmText: t('projectPermissions.removeGrantConfirm') },
     );
     if (!confirmed || !current() || !active.current || confirmationEpoch !== dialogEpoch.current || mutationRunning.current) {
       return;
@@ -500,7 +500,7 @@ function WorkspaceProjectPermissionsContent({
               <div role="cell">{effectPill('allow')}</div><div role="cell" title={formatDate(grant.createdAtMs, { dateStyle: 'medium', timeStyle: 'short' })}>{t('projectPermissions.grantsTitle')}</div>
               <div role="cell"><div className="workspace-project-permissions-dialog__row-actions">
                 <IconButton size="sm" tone="danger" aria-label={t('projectPermissions.removeGrant')} disabled={isBusy}
-                  onClick={() => void handleRemovePermissionGrant(grant)} icon={<Icon name="delete" size="sm" />} />
+                  onClick={event => void handleRemovePermissionGrant(grant, event.currentTarget)} icon={<Icon name="delete" size="sm" />} />
               </div></div>
             </div>)}
             {complete && draftRules.length + permissionGrants.length === 0 && <div role="row" className="resource-table__row resource-table__details"><div role="cell" aria-colspan={5} className="workspace-project-permissions-dialog__empty">{t('projectPermissions.empty')}</div></div>}

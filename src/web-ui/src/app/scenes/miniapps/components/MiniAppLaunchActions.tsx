@@ -3,8 +3,8 @@ import { forwardRef, useRef, useState } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 
 interface MiniAppLaunchActionsProps {
-  onOpenTab: () => void;
-  onOpenWindow: () => void;
+  onOpenTab: (trigger?: HTMLElement) => void;
+  onOpenWindow: (trigger?: HTMLElement) => void;
   disabled?: boolean;
   windowSupported: boolean;
   busy?: boolean;
@@ -38,11 +38,11 @@ export function MiniAppLaunchActions({ onOpenTab, onOpenWindow, disabled, window
       ]} />
   </>;
   return <>
-    <Button size="sm" variant="outline" disabled={disabled || busy} onClick={onOpenTab}>
+    <Button size="sm" variant="outline" disabled={disabled || busy} onClick={event => onOpenTab(event.currentTarget)}>
       {t('presentation.openTab')}
     </Button>
     <Tooltip content={t('presentation.unsupported')} disabled={windowSupported}>
-      <Button size="sm" variant="outline" disabled={disabled || busy || !windowSupported} onClick={onOpenWindow}>
+      <Button size="sm" variant="outline" disabled={disabled || busy || !windowSupported} onClick={event => onOpenWindow(event.currentTarget)}>
         {t('presentation.openWindow')}
       </Button>
     </Tooltip>

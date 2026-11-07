@@ -26,7 +26,7 @@ import { notificationService } from '@/shared/notification-system';
 import type { SessionMetadata } from '@/shared/types/session-history';
 import { externalHistoryFromMetadata } from '@/flow_chat/utils/externalHistory';
 import { createLogger } from '@/shared/utils/logger';
-import { Button, Empty, Icon, OverflowText } from '@openbitfun/ui';
+import { captureConfirmationAnchor, Button, Empty, Icon, OverflowText } from '@openbitfun/ui';
 import { Inbox, RotateCcw } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -78,7 +78,7 @@ function formatDateTime(timestampMs: number): string {
 interface ArchivedRowProps {
   entry: ArchivedEntry;
   onRestore: (entry: ArchivedEntry) => void;
-  onDelete: (entry: ArchivedEntry) => void;
+  onDelete: (entry: ArchivedEntry, trigger?: HTMLElement) => void;
   pendingAction: PendingAction | null;
   disabled: boolean;
   t: (key: string, options?: Record<string, unknown>) => string;
@@ -142,7 +142,7 @@ const ArchivedRow: React.FC<ArchivedRowProps> = ({
           size="sm"
           variant="outline"
           leadingIcon={<Icon name="delete" size="lg" style={{ width: 13, height: 13 }} />}
-          onClick={() => onDelete(entry)}
+          onClick={event => onDelete(entry, event.currentTarget)}
           disabled={disabled}
           loading={pendingAction?.entryKey === archivedEntryIdentityKey(entry)
             && pendingAction.type === 'delete'}
@@ -338,7 +338,7 @@ const ArchivedSessionsSettingsPage: React.FC = () => {
 
   // ── Delete single archived session ───────────────────────────────────────
 
-  const handleDelete = useCallback(async (entry: ArchivedEntry) => {
+  const handleDelete = useCallback(async (entry: ArchivedEntry, trigger?: HTMLElement) => {
     if (pendingAction || bulkDeleting) return;
     const sourceView = !!externalHistoryFromMetadata(entry.session.customMetadata);
     const confirmed = await confirmDanger(
@@ -351,7 +351,7 @@ const ArchivedSessionsSettingsPage: React.FC = () => {
           entry.remoteSshHost,
         ),
       }),
-      { confirmText: t(sourceView ? 'nav.sessions.removeSource' : 'nav.sessions.deleteArchived') },
+      { anchor: captureConfirmationAnchor(trigger), confirmText: t(sourceView ? 'nav.sessions.removeSource' : 'nav.sessions.deleteArchived') },
     );
     if (!confirmed) return;
 
@@ -540,7 +540,7 @@ const ArchivedSessionsSettingsPage: React.FC = () => {
                             key={archivedEntryIdentityKey(entry)}
                             entry={entry}
                             onRestore={(e) => { void handleRestore(e); }}
-                            onDelete={(e) => { void handleDelete(e); }}
+                            onDelete={(entry, trigger) => { void handleDelete(entry, trigger); }}
                             pendingAction={pendingAction}
                             disabled={pendingAction !== null || bulkDeleting}
                             t={t}

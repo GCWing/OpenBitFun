@@ -392,6 +392,16 @@ establish visual or remote transport behavior):
 pnpm --dir src/web-ui run test:run src/shared/ui/OverlayStack.test.tsx src/shared/ui/OverlayOwnership.contract.test.ts src/shared/ui/Dialog.test.tsx src/shared/ui/MenuPopover.test.tsx src/infrastructure/appearance/runtime/AppearanceOverlayHost.test.ts src/shared/notification-system/components/NotificationContainer.test.tsx src/shared/context-menu-system/components/ui/ContextMenu.test.tsx
 ```
 
+For anchored confirmations, inline menu confirmation, pending-action guards and
+device-switch cancellation:
+
+```bash
+pnpm --dir src/web-ui run test:run src/shared/ui/ConfirmationInteraction.test.tsx src/infrastructure/confirm-dialog src/app/components/DesktopCard/DesktopCardWindow.test.tsx
+```
+
+These DOM fixtures exercise viewport placement, focus and simulated Peer surface
+changes; they do not establish native rendering or live remote behavior.
+
 For global-search source diagnostics, retry, portal ownership and layered Escape dismissal:
 
 ```bash

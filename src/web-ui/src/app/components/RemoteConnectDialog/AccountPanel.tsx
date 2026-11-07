@@ -1,7 +1,7 @@
 import { refreshDeviceDirectory, isDeviceControllable, deviceClientVersion } from '@/infrastructure/account/deviceDirectory';
 /** Account login and linked-device management. */
 
-import { OverflowText, Alert, Avatar, Button, Icon, IconButton, Input, ScrollArea } from '@openbitfun/ui';
+import { captureConfirmationAnchor, OverflowText, Alert, Avatar, Button, Icon, IconButton, Input, ScrollArea } from '@openbitfun/ui';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import {
@@ -672,7 +672,7 @@ export const AccountPanel: React.FC = () => {
     }
   }, [invalidateAccountRequests, isAccountEpochCurrent, reportAccountFailure, resetState]);
 
-  const handleDeleteDevice = useCallback(async (deviceId: string, deviceName: string) => {
+  const handleDeleteDevice = useCallback(async (deviceId: string, deviceName: string, trigger?: HTMLElement) => {
     const isLocal = localDeviceId === deviceId;
     const confirmation = isLocal
       ? t('accountLogin.confirmRemoveCurrentDevice', { name: deviceName })
@@ -683,6 +683,7 @@ export const AccountPanel: React.FC = () => {
         : t('accountLogin.removeDevice'),
       confirmation,
       {
+        anchor: captureConfirmationAnchor(trigger),
         confirmText: isLocal
           ? t('accountLogin.removeCurrentDevice')
           : t('accountLogin.removeDevice'),
@@ -1026,7 +1027,7 @@ export const AccountPanel: React.FC = () => {
                           aria-label={`${removeLabel}: ${displayName}`}
                           disabled={loading || savingAliasId !== null}
                           icon={<Icon name="delete" size="xs" />}
-                          onClick={(e) => { e.stopPropagation(); handleDeleteDevice(d.device_id, displayName); }}
+                          onClick={(e) => { e.stopPropagation(); handleDeleteDevice(d.device_id, displayName, e.currentTarget); }}
                           size="xs"
                           title={removeLabel}
                           variant="quiet"

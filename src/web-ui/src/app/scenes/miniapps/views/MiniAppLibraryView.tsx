@@ -1,4 +1,4 @@
-import { subscribeOverlayInteraction, createOverlayPortal,
+import { captureConfirmationAnchor, subscribeOverlayInteraction, createOverlayPortal,
   Button,
   ConfirmDialog,
   Icon,
@@ -154,6 +154,7 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
   const [busyListingId, setBusyListingId] = useState<string>();
   const [installPrompt, setInstallPrompt] = useState(false);
   const [releasesExpanded, setReleasesExpanded] = useState(false);
+  const [deleteAnchor, setDeleteAnchor] = useState<ReturnType<typeof captureConfirmationAnchor>>(undefined);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<MiniAppMeta | null>(initialDetailApp ?? null);
   const selectedInstance = presentationSnapshot?.instances.find(instance => instance.appId === selectedApp?.id);
@@ -251,11 +252,10 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
   ]), [activityById, presentationSnapshot]);
   const customizingIdSet = useMemo(() => new Set(customizingAppIds), [customizingAppIds]);
 
-  const handleOpenApp = (appId: string, kind: 'tab' | 'window' = 'tab') => {
+  const handleOpenApp = (appId: string, kind: 'tab' | 'window' = 'tab', trigger?: HTMLElement) => {
     const icon = useMiniAppStore.getState().apps.find(app => app.id === appId)?.icon
       ?? (selectedApp?.id === appId ? selectedApp.icon : undefined);
-    closeDetail();
-    void launch.openApp(appId, kind, icon);
+    void launch.openApp(appId, kind, icon, captureConfirmationAnchor(trigger));
   };
 
   const handleAddToSystem = async (app: MiniAppMeta) => {
@@ -270,8 +270,8 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
       disabled={disabled}
       busy={launch.busyAppIds.includes(appId)}
       windowSupported={launch.supported}
-      onOpenTab={() => handleOpenApp(appId, 'tab')}
-      onOpenWindow={() => handleOpenApp(appId, 'window')}
+      onOpenTab={trigger => handleOpenApp(appId, 'tab', trigger)}
+      onOpenWindow={trigger => handleOpenApp(appId, 'window', trigger)}
     />
   );
 
@@ -721,9 +721,9 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
                     if (item.listing) void openMarketDetail(item.listing);
                     else openInstalledDetail(app);
                   }}
-                  onLaunch={() => handleOpenApp(app.id)}
+                  onLaunch={trigger => handleOpenApp(app.id, 'tab', trigger)}
                   onAddToSystem={() => handleAddToSystem(app)}
-                  onDelete={() => setPendingDeleteId(app.id)}
+                  onDelete={trigger => { setDeleteAnchor(captureConfirmationAnchor(trigger)); setPendingDeleteId(app.id); }}
                   systemAppSupported={launch.supported}
                   busy={launch.busyAppIds.includes(app.id)}
                   launchDisabled={workspaceUnsupported}
@@ -1022,12 +1022,12 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
         isActive={selectedApp ? activeIdSet.has(selectedApp.id) : false}
         isCustomizing={selectedApp ? customizingIdSet.has(selectedApp.id) : false}
         onClose={closeDetail}
-        onOpen={handleOpenApp}
+        onOpen={(id, trigger) => handleOpenApp(id, 'tab', trigger)}
         launchActions={selectedApp ? renderLaunchActions(selectedApp.id, Boolean(workspace && isRemoteWorkspace(workspace) && requiresWorkspace(selectedApp.permissions)), 'menu') : undefined}
         systemAppActions={selectedApp ? <MiniAppSystemAppActions key={selectedApp.id} app={selectedApp}
           workspacePath={selectedInstance ? selectedInstance.workspacePath : workspacePath}
           supported={launch.supported} /> : undefined}
-        onDelete={setPendingDeleteId}
+        onDelete={(id, trigger) => { setDeleteAnchor(captureConfirmationAnchor(trigger)); setPendingDeleteId(id); }}
         onStop={handleStopRunning}
       />
 
@@ -1205,6 +1205,7 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
       </MiniAppDetailPage>}
 
       <ConfirmDialog
+        anchor={deleteAnchor}
         open={pendingDeleteId !== null}
         onOpenChange={() => setPendingDeleteId(null)}
         onConfirm={handleDeleteConfirm}
@@ -1220,6 +1221,7 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
       />
 
       <ConfirmDialog
+        anchor={launch.transfer?.anchor}
         open={Boolean(launch.transfer)}
         onOpenChange={open => { if (!open) launch.cancelTransfer(); }}
         title={launch.transfer?.kind === 'window' ? t('presentation.openWindow') : t('presentation.openTab')}

@@ -12,7 +12,7 @@ interface ModelPoolCardActionsProps {
   connectionTestSupported: boolean;
   onEdit: () => void;
   onTest: () => void;
-  onDelete: () => void;
+  onDelete: (trigger?: HTMLElement) => void;
   onEnabledChange: (enabled: boolean) => void;
 }
 

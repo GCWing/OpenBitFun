@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   openLatestAssistant: vi.fn(async () => undefined),
   workspaces: new Map<string, { id: string; workspaceKind: string; rootPath: string }>(),
   archiveRow: vi.fn(async () => undefined),
+  deleteRow: vi.fn(async () => undefined),
   duplicateRow: vi.fn(async () => undefined),
   renameRow: vi.fn(async () => undefined),
   worktreeRow: vi.fn(async () => undefined),
@@ -28,6 +29,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('../sessions/sessionRowActions', () => ({
   archiveSessionRow: mocks.archiveRow,
+  deleteSessionRow: mocks.deleteRow,
   duplicateSessionRow: mocks.duplicateRow,
   renameSessionRow: mocks.renameRow,
   openWorktreeWorkspaceRow: mocks.worktreeRow,
@@ -186,6 +188,7 @@ describe('openOnDevice', () => {
       const peer = peerContext();
       for (const action of [
         { kind: 'archive' as const },
+        { kind: 'delete' as const },
         { kind: 'rename' as const, title: 'Renamed' },
         { kind: 'open-worktree' as const, worktreePath: '/wt' },
       ]) await runDeviceSessionAction(peer, peerSlot, 's-1', action, t);
@@ -194,22 +197,26 @@ describe('openOnDevice', () => {
       const switchedAt = peer.switchToDevice.mock.invocationCallOrder[0];
       expect(mocks.promote.mock.invocationCallOrder[0]).toBeGreaterThan(switchedAt);
       expect(mocks.archiveRow).toHaveBeenCalledWith('s-1', t);
+      expect(mocks.deleteRow).toHaveBeenCalledWith('s-1');
+      expect(mocks.deleteRow.mock.invocationCallOrder[0]).toBeGreaterThan(mocks.promote.mock.invocationCallOrder[1]);
       expect(mocks.archiveRow.mock.invocationCallOrder[0]).toBeGreaterThan(mocks.promote.mock.invocationCallOrder[0]);
       expect(mocks.renameRow).toHaveBeenCalledWith('s-1', 'Renamed', t);
       expect(mocks.worktreeRow).toHaveBeenCalledWith('/wt', t);
       expect(mocks.exportMarkdown).toHaveBeenCalledWith({ sessionId: 's-1', title: 'Chat', workspaceId: 'ws-1' }, 'full');
     });
 
-    it('runs nothing when a newer switch superseded the action', async () => {
+    it.each(['archive', 'delete'] as const)('does not %s when a newer switch superseded the action', async kind => {
       mocks.sessions.set('s-1', seeded);
-      await runDeviceSessionAction(peerContext('superseded'), peerSlot, 's-1', { kind: 'archive' }, t);
+      await runDeviceSessionAction(peerContext('superseded'), peerSlot, 's-1', { kind }, t);
       expect(mocks.archiveRow).not.toHaveBeenCalled();
+      expect(mocks.deleteRow).not.toHaveBeenCalled();
     });
 
-    it('fails loudly when the rendered device no longer has the session', async () => {
-      await expect(runDeviceSessionAction(peerContext(), peerSlot, 'gone', { kind: 'archive' }, t))
+    it.each(['archive', 'delete'] as const)('fails %s when the rendered device no longer has the session', async kind => {
+      await expect(runDeviceSessionAction(peerContext(), peerSlot, 'gone', { kind }, t))
         .rejects.toThrow('common:nav.devices.sessionUnavailable');
       expect(mocks.archiveRow).not.toHaveBeenCalled();
+      expect(mocks.deleteRow).not.toHaveBeenCalled();
     });
 
     it('re-checks copy gates on the rendered device instead of faking success', async () => {

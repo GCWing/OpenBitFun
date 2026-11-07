@@ -103,6 +103,8 @@ export {
 } from "./components/MultiSelect";
 export {
   ConfirmDialog,
+  captureConfirmationAnchor,
+  type ConfirmationAnchor,
   type ConfirmDialogAction,
   type ConfirmDialogCloseReason,
   type ConfirmDialogProps,
@@ -167,6 +169,9 @@ export {
   type MenuPopoverParts,
   type MenuEntry,
   MenuItem,
+  MenuConfirmItem,
+  type MenuConfirmItemProps,
+  type MenuConfirmation,
   MenuList,
   MenuSection,
   MenuSeparator,

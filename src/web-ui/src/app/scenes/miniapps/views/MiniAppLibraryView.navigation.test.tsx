@@ -190,7 +190,7 @@ describe('MiniApp detail page navigation', () => {
     expect(mocks.openApp).not.toHaveBeenCalled();
     await act(async () => button('detail.back').click());
     await act(async () => launch.click());
-    expect(mocks.openApp).toHaveBeenCalledWith('notes', 'tab', 'box');
+    expect(mocks.openApp).toHaveBeenCalledWith('notes', 'tab', 'box', expect.objectContaining({ element: expect.any(HTMLButtonElement) }));
     expect(page()).toBeNull();
     expect(mocks.getListing).not.toHaveBeenCalled();
 
@@ -236,8 +236,9 @@ describe('MiniApp detail page navigation', () => {
     const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="detail.start"]')!;
     expect(menu).not.toBeNull();
     await act(async () => button(kind === 'tab' ? 'presentation.openTab' : 'presentation.openWindow', menu).click());
-    expect(mocks.openApp).toHaveBeenCalledExactlyOnceWith('notes', kind, 'box');
-    expect(page()).toBeNull();
+    expect(mocks.openApp).toHaveBeenCalledExactlyOnceWith('notes', kind, 'box', expect.objectContaining({ element: expect.any(HTMLButtonElement) }));
+    // Keep the action's context mounted while the host checks for a transfer.
+    expect(page()?.querySelector('h1')?.textContent).toBe('Notes');
   });
 
   it('disables the independent-window menu choice on remote surfaces and permits in-app launch', async () => {
@@ -250,7 +251,7 @@ describe('MiniApp detail page navigation', () => {
     await act(async () => windowChoice.click());
     expect(mocks.openApp).not.toHaveBeenCalled();
     await act(async () => button('presentation.openTab', menu).click());
-    expect(mocks.openApp).toHaveBeenCalledExactlyOnceWith('notes', 'tab', 'box');
+    expect(mocks.openApp).toHaveBeenCalledExactlyOnceWith('notes', 'tab', 'box', expect.objectContaining({ element: expect.any(HTMLButtonElement) }));
   });
 
   it('requires confirmation before uninstalling from details', async () => {

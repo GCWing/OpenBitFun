@@ -1,5 +1,5 @@
 import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
-import { OverflowText, Button, Icon, Input, Select, type SelectOption } from '@openbitfun/ui';
+import { captureConfirmationAnchor, OverflowText, Button, Icon, Input, Select, type SelectOption } from '@openbitfun/ui';
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CircleStop, FileClock, HardDrive, Lock, PanelsTopLeft, Rocket, Save, Users, type LucideIcon } from 'lucide-react';
 import { RetainedMountBoundary } from '@/shared/presence';
@@ -613,12 +613,13 @@ const PagesScene: React.FC<PagesSceneProps> = ({ isActive = true }) => {
     page: PageInfo,
     ownerEpoch: number,
     version: PageVersionInfo,
+    trigger?: HTMLElement,
   ) => {
     if (version.deployed) return;
     const confirmed = await confirmDanger(
       t('confirm.deleteVersionTitle'),
       t('confirm.deleteVersionMessage', { version: version.version_id, title: page.title }),
-      { confirmText: t('actions.deleteVersion') },
+      { anchor: captureConfirmationAnchor(trigger), confirmText: t('actions.deleteVersion') },
     );
     if (!confirmed) return;
     const key = `delete-version:${page.slug}:${version.version_id}`;
@@ -646,11 +647,11 @@ const PagesScene: React.FC<PagesSceneProps> = ({ isActive = true }) => {
     }
   }, [beginPageAction, endPageAction, notification, t, validatePageAction]);
 
-  const deletePage = useCallback(async (page: PageInfo, ownerEpoch: number) => {
+  const deletePage = useCallback(async (page: PageInfo, ownerEpoch: number, trigger?: HTMLElement) => {
     const confirmed = await confirmDanger(
       t('confirm.deletePageTitle'),
       t('confirm.deletePageMessage', { title: page.title, slug: page.slug }),
-      { confirmText: t('actions.deletePage') },
+      { anchor: captureConfirmationAnchor(trigger), confirmText: t('actions.deletePage') },
     );
     if (!confirmed) return;
     const key = `delete-page:${page.slug}`;
@@ -980,7 +981,7 @@ const PagesScene: React.FC<PagesSceneProps> = ({ isActive = true }) => {
                         variant="fill"
                         tone="danger"
                         size="sm"
-                        onClick={() => void deletePage(page, pageOwnerEpoch)}
+                        onClick={event => void deletePage(page, pageOwnerEpoch, event.currentTarget)}
                         disabled={pageBusy}
                         loading={pendingAction === `delete-page:${page.slug}`}
                         leadingIcon={<Icon name="delete" size="lg" style={{ width: 13, height: 13 }} />}
@@ -1072,7 +1073,7 @@ const PagesScene: React.FC<PagesSceneProps> = ({ isActive = true }) => {
                                   variant="fill"
                                   tone="danger"
                                   size="sm"
-                                  onClick={() => void deleteVersion(page, pageOwnerEpoch, version)}
+                                  onClick={event => void deleteVersion(page, pageOwnerEpoch, version, event.currentTarget)}
                                   disabled={pageBusy}
                                   loading={pendingAction === `delete-version:${page.slug}:${version.version_id}`}
                                   aria-label={t('actions.deleteVersionAria', { version: version.version_id })}

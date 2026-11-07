@@ -35,10 +35,10 @@ interface MiniAppDetailModalProps {
   isActive: boolean;
   isCustomizing: boolean;
   onClose: () => void;
-  onOpen: (appId: string) => void;
+  onOpen: (appId: string, trigger?: HTMLElement) => void;
   launchActions?: React.ReactNode;
   systemAppActions?: React.ReactNode;
-  onDelete: (appId: string) => void;
+  onDelete: (appId: string, trigger?: HTMLElement) => void;
   onStop?: (appId: string) => void | Promise<void>;
 }
 
@@ -207,13 +207,13 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
         actions={<>
           <MiniAppNavigationAction appId={displayedApp.id} />
           {systemAppActions}
-          {launchActions ?? <Button variant="outline" size="sm" onClick={() => onOpen(displayedApp.id)}>
+          {launchActions ?? <Button variant="outline" size="sm" onClick={event => onOpen(displayedApp.id, event.currentTarget)}>
             {t('detail.start')}
           </Button>}
           {snapshot.isActive && onStop && <Button variant="outline" size="sm" onClick={() => void onStop(displayedApp.id)}>
             {t('detail.stop')}
           </Button>}
-          <Button variant="outline" tone="danger" size="sm" onClick={() => onDelete(displayedApp.id)}>{t('detail.uninstall')}</Button>
+          <Button variant="outline" tone="danger" size="sm" onClick={event => onDelete(displayedApp.id, event.currentTarget)}>{t('detail.uninstall')}</Button>
         </>}
         preview={showcase ? <MarketImage source={showcase} responsive width={1280} height={720}
           sizes="(min-width: 720px) 680px, 100vw" alt={t('market.library.showcaseAlt', { name: localizedName })} /> : undefined}
@@ -370,7 +370,7 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
               variant="primary"
               size="md"
               className="miniapp-detail-modal__primary"
-              onClick={() => onOpen(displayedApp.id)}
+              onClick={event => onOpen(displayedApp.id, event.currentTarget)}
               data-testid="miniapp-detail-primary-action"
               leadingIcon={<Play size={18} fill="currentColor" strokeWidth={0} />}
             >
@@ -382,7 +382,7 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
               variant="outline"
               size="md"
               className="miniapp-detail-modal__delete"
-              onClick={() => onDelete(displayedApp.id)}
+              onClick={event => onDelete(displayedApp.id, event.currentTarget)}
               data-testid="miniapp-detail-delete"
               leadingIcon={<Icon name="delete" size="lg" style={{ width: 18, height: 18 }} />}
             >

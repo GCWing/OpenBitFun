@@ -429,6 +429,7 @@ describe('HarnessProfileSelector', () => {
     });
     expect(onSelectProfile).not.toHaveBeenCalled();
     expect(confirmation.dialog).toHaveBeenCalledWith({
+      anchor: expect.objectContaining({ element: expect.any(HTMLButtonElement) }),
       title: 'chatInput.harness.newSessionConfirmation.title',
       message: 'chatInput.harness.newSessionConfirmation.message',
       confirmText: 'chatInput.harness.newSessionConfirmation.confirm',
@@ -481,6 +482,7 @@ describe('HarnessProfileSelector', () => {
     });
     expect(onSelectAgent).not.toHaveBeenCalled();
     expect(confirmation.dialog).toHaveBeenCalledWith({
+      anchor: expect.objectContaining({ element: expect.any(HTMLButtonElement) }),
       title: 'chatInput.harness.newSessionConfirmation.title',
       message: 'chatInput.harness.newSessionConfirmation.message',
       confirmText: 'chatInput.harness.newSessionConfirmation.confirm',

@@ -17,11 +17,16 @@ function sliceBetween(source: string, startMarker: string, endMarker: string): s
 }
 
 describe('session action confirmation policy', () => {
-  it('archives a single session immediately without delete or batch actions in its menu', () => {
+  it('archives immediately and offers deletion through the shared confirmation handler', () => {
     const source = readSource('./SessionsSection.tsx');
     const archiveHandler = sliceBetween(source, 'const handleArchive = useCallback(', 'const handleDuplicateSession = useCallback(');
 
-    expect(source).not.toContain('data-testid="nav-session-menu-delete"');
+    expect(source).toContain('testId="nav-session-menu-delete"');
+    expect(source.indexOf('testId="nav-session-menu-delete"')).toBeGreaterThan(
+      source.indexOf('data-testid="nav-session-menu-archive"'),
+    );
+    expect(source).toContain('<SessionDeleteMenuItem');
+    expect(source).toContain('return deleteSessionRow(session.sessionId);');
     expect(source).not.toContain('data-testid="nav-session-menu-manage-sessions"');
     expect(source).not.toContain('flowChatManager.deleteChatSession');
     expect(archiveHandler).not.toMatch(/confirm(?:Danger|Warning)\(/);

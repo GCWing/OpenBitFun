@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Square } from 'lucide-react';
-import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Spinner, Tooltip } from '@openbitfun/ui';
+import { captureConfirmationAnchor, subscribeOverlayInteraction, createOverlayPortal, OverflowText, Spinner, Tooltip } from '@openbitfun/ui';
 import { RetainedMountBoundary } from '@/shared/presence';
 import { sessionAPI, type SessionLineageSnapshot } from '@/infrastructure/api/service-api/SessionAPI';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance';
@@ -45,8 +45,8 @@ interface SessionTreePopoverProps {
   fallbackWorkspaceId?: string;
   hasActiveDescendants?: boolean;
   onSelectSession?: (selection: SessionTreeSelection) => void;
-  onCancelSession?: (selection: SessionTreeSelection) => Promise<boolean>;
-  onDeleteSession?: (selection: SessionTreeSelection) => Promise<boolean>;
+  onCancelSession?: (selection: SessionTreeSelection, anchor?: ReturnType<typeof captureConfirmationAnchor>) => Promise<boolean>;
+  onDeleteSession?: (selection: SessionTreeSelection, anchor?: ReturnType<typeof captureConfirmationAnchor>) => Promise<boolean>;
   /** Render the tree inside a parent-owned popover instead of creating another trigger and surface. */
   embedded?: boolean;
   activeOnly?: boolean;
@@ -362,14 +362,15 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
     updateActionMenuPosition();
   }, [onCancelSession, onDeleteSession, openActionSessionId, updateActionMenuPosition]);
 
-  const handleDelete = useCallback(async (node: SessionLineageNode) => {
+  const handleDelete = useCallback(async (node: SessionLineageNode, trigger?: HTMLElement) => {
+    const anchor = captureConfirmationAnchor(trigger);
     if (!onDeleteSession || node.isRoot || deletingSessionId) return;
     const scope = getActiveSurfaceScope();
     setOpenActionSessionId(null);
     setActionMenuPosition(null);
     setDeletingSessionId(node.sessionId);
     try {
-      await onDeleteSession({ ...node, displayTitle: nodeDisplayTitle(node) });
+      await onDeleteSession({ ...node, displayTitle: nodeDisplayTitle(node) }, anchor);
     } finally {
       setDeletingSessionId(null);
       if (scope.isCurrent()) await refreshSnapshot();
@@ -531,7 +532,7 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
                   {canDelete ? <MenuItem
                     type="button"
                     tone="danger"
-                    onClick={() => void handleDelete(node)}
+                    onClick={event => void handleDelete(node, event.currentTarget)}
                     disabled={deletingSessionId !== null}
                     leading={<Icon name="delete" size="sm" />}
                   >

@@ -1,7 +1,8 @@
+import { confirmDanger } from '@/infrastructure/confirm-dialog';
  
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Icon, ScrollArea } from '@openbitfun/ui';
+import { captureConfirmationAnchor, Button, Icon, ScrollArea } from '@openbitfun/ui';
 import { AlertCircle } from 'lucide-react';
 import { useContextStore, selectContexts } from '../../../stores/contextStore';
 import { ContextCard } from '../ContextCard/ContextCard';
@@ -74,11 +75,13 @@ export const ContextList: React.FC<ContextListProps> = ({
     removeAfterExit([id]);
   }, [contexts, leavingContextIds, removeAfterExit]);
   
-  const handleClearAll = useCallback(async () => {
+  const handleClearAll = useCallback(async (event: React.MouseEvent<HTMLElement>) => {
     
     if (
       leavingContextIds.size === 0
-      && await window.confirm(t('contextSystem.contextList.clearAllConfirm', { count: contexts.length }))
+      && await confirmDanger(t('contextSystem.contextList.clearAllTitle'),
+        t('contextSystem.contextList.clearAllConfirm', { count: contexts.length }),
+        { anchor: captureConfirmationAnchor(event.currentTarget), confirmText: t('contextSystem.contextList.clearAll') })
     ) {
       removeAfterExit(contexts.map(context => context.id));
     }

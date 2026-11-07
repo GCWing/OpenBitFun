@@ -14,9 +14,9 @@ interface MiniAppInstalledCardProps {
   itemKey: string;
   statuses: MiniAppLibraryStatus[];
   onOpenDetails: () => void;
-  onLaunch: () => void;
+  onLaunch: (trigger?: HTMLElement) => void;
   onAddToSystem: () => Promise<void>;
-  onDelete: () => void;
+  onDelete: (trigger?: HTMLElement) => void;
   systemAppSupported: boolean;
   launchDisabled?: boolean;
   launchDisabledReason?: string;
@@ -64,7 +64,7 @@ export default function MiniAppInstalledCard({
         leading={renderMiniAppIcon(app.icon || 'box', 32)}
         actions={[
           { id: 'launch', label: t('card.start'), tooltip: launchDisabledReason ?? t('card.start'),
-            icon: <Icon className="miniapp-installed-card__launch-icon" glyph={Play} size="sm" />, disabled: launchDisabled || actionsDisabled, loading: busy, onClick: onLaunch },
+            icon: <Icon className="miniapp-installed-card__launch-icon" glyph={Play} size="sm" />, disabled: launchDisabled || actionsDisabled, loading: busy, onClick: event => onLaunch(event.currentTarget) },
           { id: 'more', label: t('presentation.moreActions'), tooltip: t('presentation.moreActions'),
             icon: <Icon name="more" size="sm" />, disabled: actionsDisabled, loading: addingToSystem,
             'aria-haspopup': 'menu', 'aria-expanded': menuOpen, 'aria-controls': menuOpen ? menuId : undefined,

@@ -6524,8 +6524,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             onOpen: () => {
               void threadGoalController.openGoalEntry();
             },
-            onAction: action => {
-              void threadGoalController.runUiAction(action);
+            onAction: (action, trigger) => {
+              void threadGoalController.runUiAction(action, trigger);
             },
           }
         : undefined}

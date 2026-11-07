@@ -87,6 +87,7 @@ describe('device catalog session row menu', () => {
       'nav-device-session-menu-export-markdown',
       'nav-device-session-menu-open-storage',
       'nav-device-session-menu-archive',
+      'nav-device-session-menu-delete',
     ]);
     // Opening the menu is not an intent to open the session.
     expect(device.openSession).not.toHaveBeenCalled();
@@ -100,11 +101,17 @@ describe('device catalog session row menu', () => {
     expect(reveal.getAttribute('title')).toBe('nav.sessions.storageDirectoryDesktopOnly');
   });
 
-  it('runs a chosen action on the owning device and closes the menu', async () => {
+  it.each(['archive', 'delete'] as const)('runs %s on the owning device and closes the menu', async kind => {
     await openMenu();
-    await act(async () => menu()!.querySelector<HTMLButtonElement>('[data-testid="nav-device-session-menu-archive"]')!.click());
-    expect(actions.run).toHaveBeenCalledWith('session-action:s-1:archive', expect.any(Function), 'nav.devices.sessionActionFailed');
-    expect(device.runAction).toHaveBeenCalledWith(null, slot, 's-1', { kind: 'archive' }, expect.any(Function));
+    await act(async () => menu()!.querySelector<HTMLButtonElement>(`[data-testid="nav-device-session-menu-${kind}"]`)!.click());
+    if (kind === 'delete') {
+      expect(actions.run).not.toHaveBeenCalled();
+      expect(device.runAction).not.toHaveBeenCalled();
+      expect(menu()).not.toBeNull();
+      await act(async () => menu()!.querySelector<HTMLButtonElement>('[data-testid="nav-device-session-menu-delete-confirm"]')!.click());
+    }
+    expect(actions.run).toHaveBeenCalledWith(`session-action:s-1:${kind}`, expect.any(Function), 'nav.devices.sessionActionFailed');
+    expect(device.runAction).toHaveBeenCalledWith(null, slot, 's-1', { kind }, expect.any(Function));
     expect(device.openSession).not.toHaveBeenCalled();
     expect(menu()).toBeNull();
   });

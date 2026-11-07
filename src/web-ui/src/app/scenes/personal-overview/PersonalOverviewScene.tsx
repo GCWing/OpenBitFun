@@ -4,7 +4,6 @@ import { useSubagentAvatarMotion } from '@openbitfun/ui/brand';
 import { useAccountIdentity } from '@/infrastructure/account-identity/useAccountIdentity';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
-import { confirmDialog } from '@/infrastructure/confirm-dialog';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { useNotification } from '@/shared/notification-system';
@@ -130,14 +129,6 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
     const scope = getActiveSurfaceScope();
     assistantCreationPending.current = true;
     try {
-      const confirmed = await confirmDialog({
-        title: t('agents.createAssistant'),
-        message: t('agents.createAssistantConfirmMessage'),
-        confirmText: t('agents.createAssistant'),
-        type: 'info',
-      });
-      if (!confirmed || !scope.isCurrent()) return;
-
       setCreatingAssistant(true);
       const workspace = await createAssistantWorkspace();
       scope.assertCurrent('open newly created assistant');

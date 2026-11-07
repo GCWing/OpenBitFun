@@ -136,7 +136,7 @@ describe('SessionTreePopover', () => {
     await act(async () => {
       menu?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.click();
     });
-    expect(onDeleteSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'child' }));
+    expect(onDeleteSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'child' }), expect.objectContaining({ element: expect.any(HTMLButtonElement) }));
     expect(onSelectSession).not.toHaveBeenCalled();
     expect(mocks.getSessionLineage).toHaveBeenCalledTimes(2);
   });

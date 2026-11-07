@@ -2,7 +2,7 @@
  * MiniAppScene — standalone scene tab for a single MiniApp.
  * Mounts MiniAppRunner; transfers keep work, closing the final view stops the app.
  */
-import { Button, ConfirmDialog, Icon, IconButton, Tooltip } from '@openbitfun/ui';
+import { captureConfirmationAnchor, Button, ConfirmDialog, Icon, IconButton, Tooltip } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, AlertTriangle, SquareArrowOutUpRight, MessageSquare } from 'lucide-react';
 import { miniAppAPI } from '@/infrastructure/api/service-api/MiniAppAPI';
@@ -72,6 +72,7 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
   const [strictRuntime, setStrictRuntime] = useState(false);
   const [key, setKey] = useState(0);
   const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [windowAnchor, setWindowAnchor] = useState<ReturnType<typeof captureConfirmationAnchor>>(undefined);
   const [windowConfirm, setWindowConfirm] = useState(false);
   const [presentationNotice, setPresentationNotice] = useState<string | null>(null);
   const [presentationBusy, setPresentationBusy] = useState(false);
@@ -226,14 +227,14 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
           <MiniAppActionTooltip content={presentationSupported ? t('presentation.openWindow') : t('presentation.unsupported')} disabled={windowDisabled}>
             <IconButton size="xs" disabled={windowDisabled}
               loading={windowPending}
-              onClick={() => setWindowConfirm(true)} aria-label={t('presentation.openWindow')}
+              onClick={event => { setWindowAnchor(captureConfirmationAnchor(event.currentTarget)); setWindowConfirm(true); }} aria-label={t('presentation.openWindow')}
               icon={<Icon glyph={SquareArrowOutUpRight} size="sm" />} />
           </MiniAppActionTooltip>
           {app && <MiniAppSystemAppActions compact key={app.id} app={app} workspacePath={initialPath} supported={presentationSupported} />}
         </div>
       </SceneChromeContribution>
       {presentationNotice && <div role="status">{presentationNotice}</div>}
-      <ConfirmDialog open={windowConfirm} onOpenChange={setWindowConfirm} onConfirm={() => void openWindow()}
+      <ConfirmDialog anchor={windowAnchor} open={windowConfirm} onOpenChange={setWindowConfirm} onConfirm={() => void openWindow()}
         title={t('presentation.openWindow')} message={t('presentation.transferWarning')}
         confirmText={t('presentation.openWindow')} cancelText={t('confirmDelete.cancel')} />
       <div className={[

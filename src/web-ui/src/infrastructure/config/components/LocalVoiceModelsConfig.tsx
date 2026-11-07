@@ -1,4 +1,4 @@
-import { OverflowText,
+import { captureConfirmationAnchor, OverflowText,
   Button,
   Icon,
   IconButton,
@@ -219,11 +219,12 @@ const LocalVoiceModelsConfig: React.FC<LocalVoiceModelsConfigProps> = ({
     }
   }, [t]);
 
-  const handleDelete = useCallback(async (model: SpeechModelStatus) => {
+  const handleDelete = useCallback(async (model: SpeechModelStatus, trigger?: HTMLElement) => {
     const confirmed = await confirmDanger(
       t('model.deleteConfirmTitle'),
       t('model.deleteConfirmMessage', { name: model.displayName }),
       {
+        anchor: captureConfirmationAnchor(trigger),
         confirmText: t('model.delete'),
         cancelText: t('model.keep'),
       },
@@ -271,7 +272,7 @@ const LocalVoiceModelsConfig: React.FC<LocalVoiceModelsConfigProps> = ({
         icon: <Icon name="delete" size="sm" />,
         className: 'context-menu-item--danger',
         disabled: busyAction !== null,
-        onClick: () => handleDelete(model),
+        onClick: () => handleDelete(model, target),
       },
     ];
     showMenu(

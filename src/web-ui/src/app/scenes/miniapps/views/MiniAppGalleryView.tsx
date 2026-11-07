@@ -19,7 +19,7 @@ import {
   type MarketPackageInspection,
 } from '@/infrastructure/api/service-api/MiniAppMarketAPI';
 import { createLogger } from '@/shared/utils/logger';
-import { subscribeOverlayInteraction, createOverlayPortal,
+import { captureConfirmationAnchor, subscribeOverlayInteraction, createOverlayPortal,
   ConfirmDialog,
   Icon,
   IconButton,
@@ -78,6 +78,7 @@ const MiniAppGalleryView: React.FC<MiniAppGalleryViewProps> = ({ tabs }) => {
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [deleteAnchor, setDeleteAnchor] = useState<ReturnType<typeof captureConfirmationAnchor>>(undefined);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<MiniAppMeta | null>(null);
   const [pendingPackage, setPendingPackage] = useState<{
@@ -202,7 +203,8 @@ const MiniAppGalleryView: React.FC<MiniAppGalleryViewProps> = ({ tabs }) => {
     [activityById, closeScene, currentLanguage, markWorkerStopped, notification, t]
   );
 
-  const handleDeleteRequest = (appId: string) => {
+  const handleDeleteRequest = (appId: string, trigger?: HTMLElement) => {
+    setDeleteAnchor(captureConfirmationAnchor(trigger));
     setPendingDeleteId(appId);
   };
 
@@ -556,6 +558,7 @@ const MiniAppGalleryView: React.FC<MiniAppGalleryViewProps> = ({ tabs }) => {
       />
 
       <ConfirmDialog
+        anchor={deleteAnchor}
         open={pendingDeleteId !== null}
         onOpenChange={() => setPendingDeleteId(null)}
         onConfirm={handleDeleteConfirm}

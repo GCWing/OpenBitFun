@@ -11,6 +11,7 @@ import { useFocusScope } from "../../overlay/useFocusScope";
 import { usePresence } from "../../overlay/usePresence";
 import { inertProps } from "../../internal/inert";
 import styles from "./MenuPopover.module.css";
+import { MenuConfirmItem, type MenuConfirmation } from "./MenuConfirmItem";
 
 export interface MenuEntry {
   id: string;
@@ -24,7 +25,8 @@ export interface MenuEntry {
   checked?: boolean;
   tone?: "neutral" | "danger";
   /** Dispatch only: the host owns async work and error presentation. */
-  onSelect?: () => void;
+  onSelect?: (trigger: HTMLButtonElement) => void | Promise<void>;
+  confirmation?: MenuConfirmation;
 }
 
 export interface MenuPopoverProps extends Omit<MenuProps, "children"> {
@@ -79,7 +81,11 @@ export function MenuPopover({ items, open, onClose, anchorRef, ownerRef, positio
       && target.closest("[data-openbitfun-menu-tree]")?.getAttribute("data-openbitfun-menu-tree") === treeId,
     enabled: open,
     layerRef: menuRef,
-    onDismiss: closeAndRestoreFocus,
+    onDismiss: reason => {
+      const cancel = menuRef.current?.querySelector<HTMLButtonElement>("[data-openbitfun-menu-confirmation-cancel]");
+      if (reason === "escape-key" && cancel) { cancel.click(); return; }
+      closeAndRestoreFocus();
+    },
   });
   useFocusScope({
     active: open && present,
@@ -155,10 +161,10 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
     intent.openNow(item.id);
     if (keyboard && activeId === item.id && submenuRef.current) ownItems(submenuRef.current)[0]?.focus();
   };
-  const activate = (item: MenuEntry) => {
+  const activate = (item: MenuEntry, trigger: HTMLButtonElement) => {
     if (item.disabled || item.separator) return;
     onClose();
-    item.onSelect?.();
+    void item.onSelect?.(trigger);
   };
 
   useEffect(() => { if (!open) intent.closeNow(); }, [open, intent.closeNow]);
@@ -172,6 +178,7 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
       const current = enabled.indexOf(doc.activeElement as HTMLButtonElement);
       const button = enabled[current];
       const item = items.find(entry => entry.id === button?.getAttribute("data-menu-id"));
+      if (button?.closest("[data-openbitfun-menu-confirmation]") && event.key !== "Tab") return;
       let index: number | undefined;
       switch (event.key) {
         case "ArrowDown": index = (current + 1) % enabled.length; break;
@@ -188,7 +195,7 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
         case "Enter":
         case " ":
           event.preventDefault(); event.stopPropagation();
-          if (item && button) { if (item.submenu?.length) openSubmenu(item, button, true); else activate(item); }
+          if (item && button) { if (item.submenu?.length) openSubmenu(item, button, true); else if (item.confirmation) button.click(); else activate(item, button); }
           return;
         default:
           if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -212,10 +219,13 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
     <MenuSurface {...props} ref={node => { (menuRef as { current: HTMLDivElement | null }).current = node; }} className={classNames(styles.popup, className)} inlineSize={inlineSize} autoFocusFirstItem={open && autoFocusFirstItem && Boolean(layout)} tabIndex={-1}
       style={{ ...layout?.style, ...style, visibility: layout ? undefined : "hidden" }} data-openbitfun-native-webview-occlusion data-openbitfun-menu-tree={treeId} data-placement={layout?.placement ?? placement} data-state={phase}
       aria-hidden={!open || undefined} {...inertProps(!open)} onContextMenu={event => event.preventDefault()}>
-      {items.map(item => item.separator ? <Separator key={item.id} /> : <Item key={item.id} data-menu-id={item.id} leading={item.icon ? <Leading className={styles.icon} data-openbitfun-icon-slot="true">{item.icon}</Leading> : undefined} shortcut={item.shortcut ? <Shortcut>{item.shortcut}</Shortcut> : undefined} tone={item.tone} role={item.role} checked={item.checked}
+      {items.map(item => item.separator ? <Separator key={item.id} /> : item.confirmation ? <MenuConfirmItem key={`${item.id}:${open}`} data-menu-id={item.id}
+        confirmation={item.confirmation} disabled={item.disabled} tone={item.tone} leading={item.icon}
+        onConfirm={async trigger => { await item.onSelect?.(trigger); onClose(); }}>{item.label}</MenuConfirmItem>
+        : <Item key={item.id} data-menu-id={item.id} leading={item.icon ? <Leading className={styles.icon} data-openbitfun-icon-slot="true">{item.icon}</Leading> : undefined} shortcut={item.shortcut ? <Shortcut>{item.shortcut}</Shortcut> : undefined} tone={item.tone} role={item.role} checked={item.checked}
         disabled={item.disabled} aria-disabled={item.disabled || undefined} aria-haspopup={item.submenu?.length ? "menu" : undefined} aria-expanded={item.submenu?.length ? activeEntry?.id === item.id : undefined}
         aria-controls={activeEntry?.id === item.id ? submenuId : undefined} metadata={item.submenu?.length ? <Arrow className={styles.submenuArrow}><Icon name="chevron-right" size="sm" /></Arrow> : undefined}
-        onClick={event => { event.stopPropagation(); if (item.submenu?.length) openSubmenu(item, event.currentTarget, true); else activate(item); }}
+        onClick={event => { event.stopPropagation(); if (item.submenu?.length) openSubmenu(item, event.currentTarget, true); else activate(item, event.currentTarget); }}
         onPointerEnter={event => { if (activeId === null || activeId === item.id) submenuAnchor.current = event.currentTarget; keyboardOpen.current = false; intent.requestChange(!item.disabled && item.submenu?.length ? item.id : null, event); }}
         onPointerLeave={intent.requestClose}
         ref={element => { if (activeEntry?.id === item.id && element) submenuAnchor.current = element; }}>

@@ -70,7 +70,7 @@ test("overlay components consume the shared kernel instead of owning document di
     assert.doesNotMatch(source, /addEventListener\("mousedown"/);
   }
   assert.match(dialog, /useFocusScope/);
-  assert.match(dialog, /preventScroll=\{preventScroll\}/);
+  assert.match(dialog, /preventScroll=\{!anchored && preventScroll\}/);
   assert.match(dialog, /usePresence/);
   assert.match(tooltip, /<Portal/);
 });

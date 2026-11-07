@@ -62,7 +62,7 @@ describe('archived session row menu', () => {
       </Menu>,
     ));
   };
-  const click = async (action: 'restore' | 'delete-archived') => {
+  const click = async (action: 'restore' | 'delete-archived' | 'delete-archived-confirm' | 'delete-archived-cancel') => {
     await act(async () => container.querySelector<HTMLButtonElement>(`[data-testid="nav-session-menu-${action}"]`)!.click());
   };
 
@@ -97,16 +97,17 @@ describe('archived session row menu', () => {
   });
 
   it('confirms permanent deletion and preserves the record when cancelled', async () => {
-    mocks.confirm.mockResolvedValueOnce(false);
     await render();
     await click('delete-archived');
     expect(mocks.delete).not.toHaveBeenCalled();
     expect(mocks.changed).not.toHaveBeenCalled();
     expect(mocks.state.sessions.get(session.sessionId)?.persistedStatus).toBe('archived');
+    await click('delete-archived-cancel');
+    expect(mocks.delete).not.toHaveBeenCalled();
     await click('delete-archived');
-    expect(mocks.confirm).toHaveBeenLastCalledWith(
-      'Delete Archived Session', expect.stringContaining('Archived chat'), { confirmText: 'Delete' },
-    );
+    expect(container.querySelector('[role="group"]')?.getAttribute('aria-label')).toContain('Archived chat');
+    await click('delete-archived-confirm');
+    expect(mocks.confirm).not.toHaveBeenCalled();
     expect(mocks.delete).toHaveBeenCalledExactlyOnceWith('archived-one');
     expect(mocks.changed).toHaveBeenCalledOnce();
   });
@@ -122,12 +123,10 @@ describe('archived session row menu', () => {
   });
 
   it('does not delete on another device if the surface changes while confirmation is open', async () => {
-    let confirm!: (value: boolean) => void;
-    mocks.confirm.mockImplementationOnce(() => new Promise<boolean>(resolve => { confirm = resolve; }));
     await render();
     await click('delete-archived');
     activateSurface('peer-one');
-    await act(async () => confirm(true));
+    await click('delete-archived-confirm');
     expect(mocks.delete).not.toHaveBeenCalled();
     expect(mocks.changed).not.toHaveBeenCalled();
     expect(mocks.error).not.toHaveBeenCalled();

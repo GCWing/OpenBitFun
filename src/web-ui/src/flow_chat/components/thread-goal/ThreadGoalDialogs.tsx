@@ -117,7 +117,7 @@ export const ThreadGoalDialogs: React.FC<ThreadGoalDialogsProps> = ({
     : null;
 
   const runAction = useCallback(
-    async (action: ThreadGoalUiAction) => {
+    async (action: ThreadGoalUiAction, trigger?: HTMLElement) => {
       if (disabled) return;
       if (action === 'edit') {
         controller.openEdit(goal ? 'update' : 'create');
@@ -128,7 +128,7 @@ export const ThreadGoalDialogs: React.FC<ThreadGoalDialogsProps> = ({
         return;
       }
       if (action === 'clear' || action === 'pause' || action === 'resume') {
-        await controller.runUiAction(action);
+        await controller.runUiAction(action, trigger);
       }
     },
     [controller, disabled, goal]
@@ -225,7 +225,7 @@ export const ThreadGoalDialogs: React.FC<ThreadGoalDialogsProps> = ({
                     tone={action === 'clear' ? 'danger' : 'neutral'}
                     size="sm"
                     disabled={disabled}
-                    onClick={() => void runAction(action)}
+                    onClick={event => void runAction(action, event.currentTarget)}
                   >
                     {resolveThreadGoalActionLabel(t, action)}
                   </Button>

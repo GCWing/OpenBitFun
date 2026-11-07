@@ -11,7 +11,7 @@ export function resolveLayerPortal(target: PortalTarget | undefined, anchor: HTM
   return target ?? anchor?.closest("[data-openbitfun-design-system-root]") ?? anchor?.ownerDocument.body ?? null;
 }
 
-export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "bottom", matchWidth = false, overlapAnchor = false, revision, point }: {
+export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "bottom", matchWidth = false, overlapAnchor = false, revision, point, fallbackRect }: {
   open: boolean;
   anchorRef: RefObject<HTMLElement | null>;
   layerRef: RefObject<HTMLElement | null>;
@@ -22,6 +22,8 @@ export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "botto
   overlapAnchor?: boolean;
   revision?: unknown;
   point?: { x: number; y: number };
+  /** Keep the action's origin when a menu item disappears before the layer mounts. */
+  fallbackRect?: Pick<DOMRect, "left" | "right" | "top" | "bottom" | "width" | "height">;
 }) {
   const [layout, setLayout] = useState<{ style: CSSProperties; placement: LayerPlacement } | null>(null);
   const measuredContentWidth = useRef(0);
@@ -30,13 +32,13 @@ export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "botto
     const anchor = anchorRef.current;
     const layer = layerRef.current;
     const view = layer?.ownerDocument.defaultView;
-    if (!layer || !view || (!anchor && !point)) return;
+    if (!layer || !view || (!anchor && !point && !fallbackRect)) return;
     const update = () => {
       const padding = 8;
       const resolvedGap = point ? 0 : 4;
       const rect = point
         ? { left: point.x, right: point.x, top: point.y, bottom: point.y, width: 0, height: 0 }
-        : anchor!.getBoundingClientRect();
+        : anchor?.isConnected ? anchor.getBoundingClientRect() : fallbackRect ?? anchor!.getBoundingClientRect();
       const viewport = view.visualViewport;
       const vx = viewport?.offsetLeft ?? 0;
       const vy = viewport?.offsetTop ?? 0;
@@ -105,6 +107,6 @@ export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "botto
       view.visualViewport?.removeEventListener("resize", update);
       view.visualViewport?.removeEventListener("scroll", update);
     };
-  }, [open, anchorRef, layerRef, placement, matchWidth, overlapAnchor, revision, point?.x, point?.y]);
+  }, [open, anchorRef, layerRef, placement, matchWidth, overlapAnchor, revision, point?.x, point?.y, fallbackRect]);
   return layout;
 }

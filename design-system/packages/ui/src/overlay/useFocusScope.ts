@@ -8,13 +8,14 @@ export interface UseFocusScopeOptions {
   autoFocus?: boolean;
   containerRef: RefObject<HTMLElement | null>;
   initialFocusRef?: RefObject<HTMLElement | null>;
+  returnFocusRef?: RefObject<HTMLElement | null>;
   ownerDocument?: Document | null;
   restoreFocus?: boolean;
   trapFocus?: boolean;
 }
 
 export function useFocusScope({
-  active, autoFocus = true, containerRef, initialFocusRef, ownerDocument,
+  active, autoFocus = true, containerRef, initialFocusRef, returnFocusRef, ownerDocument,
   restoreFocus = true, trapFocus = true,
 }: UseFocusScopeOptions): void {
   const identity = useRef(Symbol("openbitfun-focus-scope"));
@@ -31,7 +32,7 @@ export function useFocusScope({
       trapFocus,
       restoreFocus,
       initialFocus: initialFocusRef?.current,
-      previousFocus: HTMLElementType && doc.activeElement instanceof HTMLElementType ? doc.activeElement : null,
+      previousFocus: returnFocusRef?.current ?? (HTMLElementType && doc.activeElement instanceof HTMLElementType ? doc.activeElement : null),
     });
-  }, [active, autoFocus, containerRef, initialFocusRef, ownerDocument, restoreFocus, trapFocus]);
+  }, [active, autoFocus, containerRef, initialFocusRef, returnFocusRef, ownerDocument, restoreFocus, trapFocus]);
 }

@@ -1,4 +1,4 @@
-import { OverflowText, Button, Disclosure, Empty, Field, Icon, Input, Select, ScrollArea, Textarea } from '@openbitfun/ui';
+import { captureConfirmationAnchor, OverflowText, Button, Disclosure, Empty, Field, Icon, Input, Select, ScrollArea, Textarea } from '@openbitfun/ui';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Inbox, ShieldCheck } from 'lucide-react';
 import { confirmDialog } from '@/infrastructure/confirm-dialog';
@@ -137,8 +137,9 @@ export function AppearanceMarketWorkflows({ workflow }: AppearanceMarketWorkflow
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflow]);
 
-  const withdraw = async (submission: AppearanceMarketSubmission) => {
+  const withdraw = async (submission: AppearanceMarketSubmission, trigger?: HTMLElement) => {
     const confirmed = await confirmDialog({
+      anchor: captureConfirmationAnchor(trigger),
       title: t('package.market.submissions.withdrawTitle'),
       message: t('package.market.submissions.withdrawMessage', { name: submission.name || submission.slug }),
       confirmText: t('package.market.submissions.withdraw'),
@@ -468,7 +469,7 @@ export function AppearanceMarketWorkflows({ workflow }: AppearanceMarketWorkflow
                         variant="outline"
                         size="sm"
                         loading={actingId === submission.submissionId}
-                        onClick={() => void withdraw(submission)}
+                        onClick={event => void withdraw(submission, event.currentTarget)}
                       >
                         {t('package.market.submissions.withdraw')}
                       </Button>

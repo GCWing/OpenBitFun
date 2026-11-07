@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { activateSurface, resetDeviceSurfaceForTest } from '@/infrastructure/peer-device/deviceSurface';
 import {
   confirmDanger,
   confirmDialog,
@@ -8,7 +9,20 @@ import {
 
 describe('confirmDialogService', () => {
   beforeEach(() => {
+    useConfirmDialogStore.getState().cancel();
+    resetDeviceSurfaceForTest();
     useConfirmDialogStore.setState({ isOpen: false, options: null, resolve: null });
+  });
+
+  it('cancels a pending choice when the device changes, including a switch back', async () => {
+    const result = confirmDialogChoice({ title: 'Delete on this device?' });
+    const oldReply = useConfirmDialogStore.getState().resolve!;
+    activateSurface('peer-a');
+    activateSurface('local');
+    oldReply('confirm');
+    await expect(result).resolves.toBe('cancel');
+    expect(useConfirmDialogStore.getState().isOpen).toBe(false);
+    expect(useConfirmDialogStore.getState().options).toBeNull();
   });
 
   it('resolves boolean confirmations through the shared renderer state', async () => {

@@ -12,7 +12,7 @@ export function ProjectDirectoriesSection({ workspace, fileAccess, onBrowse, onM
   onBrowse: () => void;
   onManage: () => void;
   onAdd: () => void;
-  onRemove: (path: string) => void;
+  onRemove: (path: string, trigger?: HTMLElement) => void;
   removingPath: string | null;
   canReveal: boolean;
   onReveal: (path: string) => void;
@@ -52,7 +52,7 @@ export function ProjectDirectoriesSection({ workspace, fileAccess, onBrowse, onM
               loading: revealingPath === directory.path, onClick: () => onReveal(directory.path) },
               ...(directory.primary ? [] : [{ id: 'remove', label: t('directories.removeDirectory', { name: directory.name }),
               icon: <Icon name="delete" size="sm" />, tone: 'danger', 'aria-haspopup': 'dialog',
-              disabled: !!removingPath, loading: removingPath === directory.path, onClick: () => onRemove(directory.path) } satisfies ActionCardAction])]}
+              disabled: !!removingPath, loading: removingPath === directory.path, onClick: event => onRemove(directory.path, event.currentTarget) } satisfies ActionCardAction])]}
             body={<>
             <span className="project-resource-cards__icon" aria-hidden="true"><Icon name="folder" size="lg" /></span>
             <span className="project-resource-cards__copy">
