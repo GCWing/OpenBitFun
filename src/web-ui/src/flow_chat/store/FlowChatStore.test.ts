@@ -844,6 +844,20 @@ describe('FlowChatStore metadata persistence callbacks', () => {
     expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBe('completed');
   });
 
+  it('keeps a reconnecting bot completion read before its transcript is loaded', () => {
+    const session = createSession({ sessionId: 'bot-reconnect', dialogTurns: [], historyState: 'metadata-only' });
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
+    sessionActivityStore.applyRead(sessionActivityStore.beginRead(), [{
+      sessionId: session.sessionId, execution: 'running', pendingApprovals: 0, pendingQuestions: 0,
+      lastTurn: { turnId: 'bot', turnIndex: 0, status: 'inprogress' }, lastTurnSource: 'bot',
+    }]);
+    const persist = vi.fn();
+    flowChatStore.registerPersistUnreadCompletionCallback(persist);
+    flowChatStore.markSessionUnreadCompletion(session.sessionId, 'completed', 'bot');
+    expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBeUndefined();
+    expect(persist).not.toHaveBeenCalled();
+  });
+
   it.each(['completed', 'error', 'interrupted'] as const)('keeps bot %s results read without persisting another receipt', (outcome) => {
     const session = completedSession();
     session.hasUnreadCompletion = undefined;

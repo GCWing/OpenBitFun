@@ -7423,7 +7423,10 @@ export class FlowChatStore {
     const session = this.state.sessions.get(sessionId);
     const turn = turnId ? session?.dialogTurns.find(candidate => candidate.id === turnId)
       : session && lastUserDialogTurn(session);
-    if (turn?.userMessage.metadata?.submissionSource === 'bot') return;
+    const activity = sessionActivityStore.get(sessionId)?.summary;
+    const resultTurnId = turnId ?? turn?.id;
+    if (turn?.userMessage.metadata?.submissionSource === 'bot'
+      || (resultTurnId && activity?.lastTurn?.turnId === resultTurnId && activity.lastTurnSource === 'bot')) return;
 
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);

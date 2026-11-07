@@ -8,6 +8,18 @@ const summary = (execution = 'idle', id = 'session'): SessionActivitySummary => 
 });
 
 describe('session activity read projection', () => {
+  it('keeps a bot result read when reconnecting after its start event', () => {
+    const store = new SessionActivityStore();
+    const hostSummary = {
+      ...summary('running'), activeTurnId: 'bot', lastTurnSource: 'bot',
+      lastTurn: { turnId: 'bot', turnIndex: 0, status: 'inprogress' as const },
+    };
+    store.applyRead(store.beginRead('peer'), [hostSummary]);
+    store.observe('peer', 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'bot' });
+    expect(store.get('session', 'peer')?.summary?.unreadCompletion).toBeUndefined();
+    expect(store.get('session', 'peer')?.summary?.execution).toBe('idle');
+  });
+
   it.each(['completed', 'failed', 'cancelled', 'interrupted'])('keeps bot %s results read on local and peer surfaces', (outcome) => {
     for (const surface of ['local', 'peer']) {
       const store = new SessionActivityStore();
@@ -29,7 +41,7 @@ describe('session activity read projection', () => {
     store.observe('peer', 'agentic://dialog-turn-started', {
       sessionId: 'session', turnId: 'bot', userMessageMetadata: { submissionSource: 'bot' },
     });
-    store.applyRead(store.beginRead('peer'), [store.get('session', 'peer')!.summary!]);
+    store.applyRead(store.beginRead('peer'), [{ ...store.get('session', 'peer')!.summary!, lastTurnSource: undefined }]);
     store.observe('peer', 'agentic://dialog-turn-recovered', { sessionId: 'session', turnId: 'bot', executionGeneration: 1 });
     store.observe('peer', 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'bot', executionGeneration: 1 });
     expect(store.get('session', 'peer')?.summary).toMatchObject({

@@ -1510,6 +1510,12 @@ impl CoreAgentRuntimeCompatibility {
                     };
                     let unread_turn =
                         openbitfun_services_core::session::unread_completion_target(&metadata);
+                    let last_turn_source = metadata
+                        .custom_metadata
+                        .as_ref()
+                        .and_then(|custom| custom.get("lastTurnSource"))
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned);
                     SessionActivitySummary {
                         pending_approvals: approvals
                             .get(&metadata.session_id)
@@ -1523,6 +1529,7 @@ impl CoreAgentRuntimeCompatibility {
                         execution: execution.to_string(),
                         active_turn_id,
                         last_turn: metadata.last_turn,
+                        last_turn_source,
                         unread_completion: metadata.unread_completion,
                         unread_turn,
                     }
