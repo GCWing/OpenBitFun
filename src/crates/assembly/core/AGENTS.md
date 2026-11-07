@@ -334,6 +334,17 @@ For durable per-turn token usage, client checkpoint reconciliation, and recovery
 The fixtures cover host-ledger isolation and client-free completion, not live SSH,
 Relay, Peer Device, or Detached Dispatch connections.
 
+For model-round order when completion fills sparse client checkpoints:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib generation_round_order
+```
+
+These fixtures cover suffix/scattered checkpoints, legacy record round trips,
+idempotent merge, prior interrupted generations, additive metadata, and headless
+completion/reload. They do not establish live SSH, Relay, Peer Device, or
+Detached Dispatch behavior.
+
 For cold dialog startup and the production-feature scheduler stack regression:
 
 ```bash
