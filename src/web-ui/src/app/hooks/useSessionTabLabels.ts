@@ -44,7 +44,12 @@ function readSessionTabLabels(
 }
 
 function subscribeToLabels(notify: () => void): () => void {
-  const unsubscribe = flowChatStore.subscribe(notify);
+  // Use subscribeSelector to only trigger when the sessions Map identity changes or surface changes,
+  // preventing unrelated store state changes from broadcasting to tab labels.
+  const unsubscribe = flowChatStore.subscribeSelector(
+    state => state.sessions,
+    () => notify(),
+  );
   const unsubscribeSurfaces = flowChatStore.subscribeSurfaceSessions(notify);
   return () => { unsubscribe(); unsubscribeSurfaces(); };
 }
