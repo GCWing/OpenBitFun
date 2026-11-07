@@ -945,8 +945,10 @@ pub fn load_or_create_device_secret(
             let secret = previous
                 .filter(|session| {
                     session.user_id == user_id
-                        && session.relay_url.trim_end_matches('/')
-                            == relay_url.trim_end_matches('/')
+                        && openbitfun_product_domains::account::same_relay_deployment(
+                            &session.relay_url,
+                            relay_url,
+                        )
                         && session.device_id.as_deref() == Some(device_id)
                 })
                 .map(|session| session.master_key)
