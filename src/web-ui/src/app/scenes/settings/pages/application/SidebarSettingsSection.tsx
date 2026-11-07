@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useStore } from 'zustand';
-import { Button, Icon, IconButton, OverflowText, Tooltip } from '@openbitfun/ui';
+import { Button, Icon, IconButton, OverflowText } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 import { ConfigPageRow, ConfigPageSection } from '@/infrastructure/config/components/common';
 import { useSidebarNavigation } from '@/app/navigation/useSidebarNavigation';
@@ -58,22 +58,20 @@ export default function SidebarSettingsSection() {
       <div className="sidebar-settings__available" role="group" aria-label={t('sidebar.available')}>
         {available.map((entry, index) => {
           const name = tCommon(entry.labelKey);
-          const reason = entry.unavailableReason?.(context);
-          return <Tooltip key={entry.id} content={reason ? tCommon(reason) : t('sidebar.addEntry', { name })}>
-            <Button className="sidebar-settings__available-page" size="xs" variant="outline" leadingIcon={<Icon name="plus" size="xs" />}
-              ref={element => {
-                if (element) capsuleRefs.current.set(entry.id, element);
-                else capsuleRefs.current.delete(entry.id);
-              }}
-              data-testid="sidebar-available-page"
-              aria-label={t('sidebar.addEntry', { name })} disabled={readOnly} onClick={() => {
-                nextFocus.current = available[index + 1]?.id ?? available[index - 1]?.id ?? null;
-                setPinned(entry.id, true);
-                if (!sidebarPreferences.getState().pinnedIds.includes(entry.id)) nextFocus.current = undefined;
-              }}>
-              {name}
-            </Button>
-          </Tooltip>;
+          return <Button key={entry.id} className="sidebar-settings__available-page" size="xs" variant="outline"
+            trailingIcon={<Icon name="plus" size="xs" />}
+            ref={element => {
+              if (element) capsuleRefs.current.set(entry.id, element);
+              else capsuleRefs.current.delete(entry.id);
+            }}
+            data-testid="sidebar-available-page"
+            aria-label={t('sidebar.addEntry', { name })} disabled={readOnly} onClick={() => {
+              nextFocus.current = available[index + 1]?.id ?? available[index - 1]?.id ?? null;
+              setPinned(entry.id, true);
+              if (!sidebarPreferences.getState().pinnedIds.includes(entry.id)) nextFocus.current = undefined;
+            }}>
+            {name}
+          </Button>;
         })}
         {available.length === 0 && <span role="status">{t('sidebar.noResults')}</span>}
       </div>
