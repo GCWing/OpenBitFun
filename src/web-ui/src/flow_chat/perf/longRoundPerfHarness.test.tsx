@@ -217,6 +217,13 @@ function LiveContainerHarness({ latestTurnId }: { latestTurnId: string }) {
 
 describe('FlowChat Long-Round Categorized Benchmark Suites', () => {
   describe('Category 1: Store & Adjacent Group Projection [bench:store-projection]', () => {
+    it('keeps live reuse while history and a side session project between streaming flushes', () => {
+      const solo = benchStoreProjection();
+      const result = benchStoreProjection({ interleaveViews: true });
+      expect(result.totalFlushes).toBe(20);
+      expect(result.settledVirtualItemReuseRatio).toBe(solo.settledVirtualItemReuseRatio);
+    });
+
     it('benchmarks sessionToVirtualItems & projectAdjacentFlowGroups scaling and reference reuse', () => {
       const result = benchStoreProjection({
         checkpoints: [10, 50, 100, 200, 300],

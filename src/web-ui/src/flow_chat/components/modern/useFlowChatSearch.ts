@@ -45,7 +45,6 @@ export interface UseFlowChatSearchReturn {
 }
 
 interface SearchableSource {
-  content: string;
   foldedContent: string;
   flowItemId?: string;
   expandableIds?: readonly string[];
@@ -67,7 +66,6 @@ function flowItemSearchSources(
     const content = item.content ?? '';
 
     return [{
-      content,
       foldedContent: content.toLowerCase(),
       flowItemId: item.id,
       expandableIds: expandableIds.length > 0 ? expandableIds : undefined,
@@ -75,21 +73,17 @@ function flowItemSearchSources(
   });
 }
 
-const virtualItemSearchSourcesCache = new WeakMap<VirtualItem, SearchableSource[]>();
-
 function getVirtualItemSearchSources(item: VirtualItem): SearchableSource[] {
-  const cached = virtualItemSearchSourcesCache.get(item);
-  if (cached) return cached;
   let sources: SearchableSource[];
   if (item.type === 'background-run') {
     const userContent = item.turn.userMessage.content;
     sources = [
-      { content: userContent, foldedContent: userContent.toLowerCase() },
+      { foldedContent: userContent.toLowerCase() },
       ...flowItemSearchSources(item.turn.modelRounds.flatMap(round => round.items)),
     ];
   } else if (item.type === 'user-message' || item.type === 'user-steering-message') {
     const content = item.data?.content ?? '';
-    sources = [{ content, foldedContent: content.toLowerCase() }];
+    sources = [{ foldedContent: content.toLowerCase() }];
   } else if (item.type === 'model-round') {
     sources = getProjectedModelRoundGroups(item).flatMap(group => group.type !== 'critical'
       ? flowItemSearchSources(group.items, getCachedInlineFlowGroupData(item.data, group).groupId)
@@ -98,7 +92,7 @@ function getVirtualItemSearchSources(item: VirtualItem): SearchableSource[] {
     sources = flowItemSearchSources(item.data.allItems, item.data.groupId);
   } else if (item.type === 'turn-completion-notice') {
     const content = item.data.reasonCode;
-    sources = [{ content, foldedContent: content.toLowerCase() }];
+    sources = [{ foldedContent: content.toLowerCase() }];
   } else if (item.type === 'turn-failure-notice') {
     const content = [
       item.data.error,
@@ -107,11 +101,10 @@ function getVirtualItemSearchSources(item: VirtualItem): SearchableSource[] {
       item.data.errorDetail?.providerMessage,
       item.data.errorDetail?.requestId,
     ].filter(Boolean).join(' ');
-    sources = [{ content, foldedContent: content.toLowerCase() }];
+    sources = [{ foldedContent: content.toLowerCase() }];
   } else {
     sources = [];
   }
-  virtualItemSearchSourcesCache.set(item, sources);
   return sources;
 }
 
@@ -129,15 +122,16 @@ function countFoldedQueryOccurrences(foldedContent: string, foldedQuery: string)
 }
 
 const emptySearchMatches: SearchMatch[] = [];
-const perItemSearchMatchCache = new WeakMap<VirtualItem, {
+type SearchMatchCache = WeakMap<VirtualItem, {
   query: string;
   virtualItemIndex: number;
   matches: readonly SearchMatch[];
-}>();
+}>;
 
 export function buildFlowChatSearchMatches(
   virtualItems: readonly VirtualItem[],
   searchQuery: string,
+  cache?: SearchMatchCache,
 ): SearchMatch[] {
   const trimmed = searchQuery.trim();
   if (!trimmed) return emptySearchMatches;
@@ -146,7 +140,7 @@ export function buildFlowChatSearchMatches(
 
   for (let virtualItemIndex = 0; virtualItemIndex < virtualItems.length; virtualItemIndex += 1) {
     const item = virtualItems[virtualItemIndex];
-    const cached = perItemSearchMatchCache.get(item);
+    const cached = cache?.get(item);
     if (cached && cached.query === query && cached.virtualItemIndex === virtualItemIndex) {
       for (let i = 0; i < cached.matches.length; i += 1) {
         matches.push(cached.matches[i]);
@@ -167,7 +161,7 @@ export function buildFlowChatSearchMatches(
         });
       }
     }
-    perItemSearchMatchCache.set(item, { query, virtualItemIndex, matches: itemMatches });
+    cache?.set(item, { query, virtualItemIndex, matches: itemMatches });
     for (let i = 0; i < itemMatches.length; i += 1) {
       matches.push(itemMatches[i]);
     }
@@ -176,13 +170,26 @@ export function buildFlowChatSearchMatches(
   return matches;
 }
 
+/** Cache only match metadata while this view searches; folded text is temporary. */
+export function createFlowChatSearchMatcher() {
+  let cache: SearchMatchCache = new WeakMap();
+  return (items: readonly VirtualItem[], query: string): SearchMatch[] => {
+    if (!query.trim()) {
+      cache = new WeakMap();
+      return emptySearchMatches;
+    }
+    return buildFlowChatSearchMatches(items, query, cache);
+  };
+}
+
 export function useFlowChatSearch(virtualItems: VirtualItem[]): UseFlowChatSearchReturn {
   const [searchQuery, setSearchQuery] = useState('');
+  const [findMatches] = useState(createFlowChatSearchMatcher);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
   const matches = useMemo<SearchMatch[]>(() => (
-    buildFlowChatSearchMatches(virtualItems, searchQuery)
-  ), [virtualItems, searchQuery]);
+    findMatches(virtualItems, searchQuery)
+  ), [virtualItems, searchQuery, findMatches]);
 
   const resolvedCurrentMatchIndex = matches.length > 0
     ? Math.min(currentMatchIndex, matches.length - 1)
@@ -226,9 +233,10 @@ export function useFlowChatSearch(virtualItems: VirtualItem[]): UseFlowChatSearc
   }, [matches.length]);
 
   const clearSearch = useCallback(() => {
+    findMatches([], '');
     setSearchQuery('');
     setCurrentMatchIndex(0);
-  }, []);
+  }, [findMatches]);
 
   return {
     searchQuery,

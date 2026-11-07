@@ -16,7 +16,7 @@
  *   (Streaming tail updates vs viewport scroll windowing)
  */
 
-import { sessionToVirtualItems, type VirtualItem } from '../store/modernFlowChatStore';
+import { createSessionVirtualItemProjector, sessionToVirtualItems, type VirtualItem } from '../store/modernFlowChatStore';
 import { indexFlowGroups, getVirtualItemFlowGroups } from '../grouping/selectors';
 import {
   captureFlowGroupFeedbackSnapshot,
@@ -25,7 +25,7 @@ import {
 import { ConversationDocumentProjection, type TimelineProjectionOptions } from '../timeline/document';
 import { FlowChatReaderState } from '../timeline/readerState';
 import { getNextVisibleVirtualItemIndexes } from '../components/modern/flowChatRhythm';
-import { buildFlowChatSearchMatches } from '../components/modern/useFlowChatSearch';
+import { createFlowChatSearchMatcher } from '../components/modern/useFlowChatSearch';
 import { calculateTurnHash } from '../services/flow-chat-manager/PersistenceModule';
 import { estimateRetainedBytes } from '@/shared/utils/resourceBudget';
 import { getVirtualItemStableKey } from '../components/modern/virtualItemIdentity';
@@ -382,10 +382,15 @@ function percentile(sorted: number[], p: number): number {
 export function benchStoreProjection(options?: {
   checkpoints?: number[];
   chunksPerCheckpoint?: number;
+  interleaveViews?: boolean;
 }): StoreProjectionBenchResult {
   const checkpoints = options?.checkpoints ?? [10, 50, 100, 200, 300];
   const chunksPerCheckpoint = options?.chunksPerCheckpoint ?? 5;
 
+  const projectLive = createSessionVirtualItemProjector();
+  const projectHistory = createSessionVirtualItemProjector();
+  const projectSide = createSessionVirtualItemProjector();
+  const side = buildLongRoundSessionFixture({ roundCount: 10, sessionId: 'side-session' });
   let previousVirtualItems: VirtualItem[] = [];
   const stepMs: Array<{ roundCount: number; ms: number; reuseRatio: number }> = [];
 
@@ -397,8 +402,12 @@ export function benchStoreProjection(options?: {
         chunkIdx,
         chunksPerCheckpoint,
       );
+      if (options?.interleaveViews) {
+        projectHistory({ ...session, dialogTurns: session.dialogTurns.slice(0, -1) });
+        projectSide(buildStreamingChunkSession(side, chunkIdx, chunksPerCheckpoint).session);
+      }
       const t0 = performance.now();
-      const virtualItems = sessionToVirtualItems(session);
+      const virtualItems = projectLive(session);
       const t1 = performance.now();
 
       if (chunkIdx > 0) {
@@ -563,6 +572,7 @@ export function benchGroupStateAndSearch(options?: {
   const checkpoints = options?.checkpoints ?? [10, 50, 100, 200, 300];
   const chunksPerCheckpoint = options?.chunksPerCheckpoint ?? 5;
   const activeSearchQuery = options?.activeSearchQuery ?? 'projection';
+  const findMatches = createFlowChatSearchMatcher();
 
   let feedbackSnapshot: ReturnType<typeof captureFlowGroupFeedbackSnapshot> | undefined;
 
@@ -589,7 +599,7 @@ export function benchGroupStateAndSearch(options?: {
       );
       feedbackSnapshot = captureFlowGroupFeedbackSnapshot(virtualItems, session.sessionId);
       const t2 = performance.now();
-      buildFlowChatSearchMatches(virtualItems, activeSearchQuery);
+      findMatches(virtualItems, activeSearchQuery);
       const t3 = performance.now();
 
       if (chunkIdx > 0) {

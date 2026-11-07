@@ -46,7 +46,7 @@ import { TRAJECTORY_NAVIGATE_EVENT, type TrajectoryPanelData, showTrajectoryRang
 import type { TrajectoryRangeSummary } from '../../trajectory/trajectoryRange';
 import { useTrajectoryNavigation } from '../../trajectory/useTrajectoryNavigation';
 import {
-  sessionToVirtualItems,
+  createSessionVirtualItemProjector,
   useVirtualItems,
   useActiveSession,
   useVisibleTurnInfo,
@@ -321,6 +321,8 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const { t } = useTranslation('flow-chat');
   const canonicalVirtualItems = useVirtualItems();
   const activeSession = useActiveSession();
+  const [projectContinuousHistory] = useState(createSessionVirtualItemProjector);
+  const [projectHistory] = useState(createSessionVirtualItemProjector);
   const surfaceScope = getActiveSurfaceScope();
   useLayoutEffect(() => activeSession?.sessionId
     ? flowChatStore.retainSessionHistory(activeSession.sessionId)
@@ -415,13 +417,14 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   }, [activeSession, canonicalizedHistoryPresentation]);
   const continuousHistoryVirtualItems = useMemo(() => {
     if (!activeSession || !continuousHistoryPresentation) {
+      projectContinuousHistory(null);
       return null;
     }
-    return sessionToVirtualItems({
+    return projectContinuousHistory({
       ...activeSession,
       dialogTurns: continuousHistoryPresentation.turns,
     });
-  }, [activeSession, continuousHistoryPresentation]);
+  }, [activeSession, continuousHistoryPresentation, projectContinuousHistory]);
   const continuousHistoryProjectionEligible = canRetainContinuousHistoryProjection(
     continuousHistoryPresentation,
     continuousHistoryVirtualItems?.length ?? Number.POSITIVE_INFINITY,
@@ -482,14 +485,16 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const virtualItems = useMemo(() => {
     let items: VirtualItem[];
     if (!activeSession || !renderedHistoryPresentation) {
+      projectHistory(null);
       items = canonicalVirtualItems;
     } else if (
       isRenderingContinuousHistoryProjection
       && continuousHistoryVirtualItems
     ) {
+      projectHistory(null);
       items = continuousHistoryVirtualItems;
     } else {
-      items = sessionToVirtualItems({
+      items = projectHistory({
         ...activeSession,
         dialogTurns: renderedHistoryPresentation.turns,
       });
@@ -517,6 +522,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     isViewportDetachedFromLiveTail,
     renderedHistoryPresentation,
     submittedPreviews,
+    projectHistory,
   ]);
 
   // The transcript reads the pending list to mark the tool cards that are

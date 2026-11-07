@@ -8,6 +8,10 @@ History uses a bottom-origin scroller and newest-first internal indexes. Public
 row indexes, stable keys, DOM order, navigation and viewport snapshots remain
 chronological. `data-virtual-index` is public; `data-flowchat-measure-index` is
 private to the adapter and is refreshed for surviving rows after each commit.
+This includes live prepends and new tail rows in bottom-origin history, not only
+origin handoffs. Refresh indexes through the adapter's connected row registry;
+an index update requires no geometry read or DOM subtree scan. A later observer
+delivery must still resize the same row key.
 
 For native history, internal offset is `-scrollTop`, index zero is the newest
 row, and the footer is the scroll margin. The internal window's before/after
@@ -59,7 +63,14 @@ Warm session projections are keyed weakly by the canonical `dialogTurns` array,
 so a history eviction or replacement can release both the body and its derived
 rows. Equal session IDs on different device sources do not share that key.
 Per-Turn streaming reconciliation drops removed Turn IDs on paging/rollback;
-clearing the presentation store also clears warm projections. Normalized steering,
+each store, history projection and side panel owns its own mutable prefix state.
+Alternating views must not invalidate another view's live prefix. Immutable
+completed-Turn projections are shared weakly across views, while clearing a
+presentation store clears that store's warm projections. The same completed Turn
+can be the last row of a history window and an earlier row of the live transcript;
+retain those presentation variants separately. User-message reuse
+depends on the message and its presentation fields, not on its first model round.
+Normalized steering,
 retry and recovery rounds use weak source identities, including both source
 rounds for a merged retry. Inline group caches follow group objects rather than
 positions, which change when candidate groups are collected or expanded.
@@ -71,6 +82,10 @@ their weakly cached index. The resource estimator remains a shared-reference-awa
 graph walk; the history owner already caches immutable Turn estimates and
 coalesces active-history accounting at 500 ms. A completed round does not prove
 an unchanged prefix or disjoint object graph.
+
+Search caches only match metadata for an active query in its owning view. Clearing
+search drops that cache, and unmounting drops the matcher. Lowercase transcript
+text exists only during a cache miss and is not retained beside the source body.
 
 ## Large text and decoration residency
 

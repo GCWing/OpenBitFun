@@ -146,42 +146,32 @@ function isStableTurnProjection(turn: DialogTurn): boolean {
 }
 
 interface SessionProjectionCache {
-  dialogTurnsRef: DialogTurn[] | null;
   turnCatalogRef: Session['turnCatalog'] | undefined;
   isPartial: boolean | undefined;
   totalTurnCount: number | undefined;
   needsUserAttention: Session['needsUserAttention'];
   virtualItems: VirtualItem[];
-  turnItems: WeakMap<
-    DialogTurn,
-    { items: VirtualItem[]; hasNewerDialogTurn: boolean; absoluteTurnIndex: number; backgroundCollapsed?: boolean }
-  >;
 }
 
-/**
- * Per-session projection caches. Switching back to a previously projected
- * session reuses its last VirtualItem array (and its stable rows) instead of
- * rebuilding the whole transcript, so alternating sessions keep object identity.
- */
-// The canonical transcript owns the cache lifetime. A session-id LRU would
-// keep evicted history alive after the history budget released its body.
-let sessionProjectionCaches = new WeakMap<DialogTurn[], SessionProjectionCache>();
+// Settled source Turns can be shared by live, history and side views without
+// making any one view the owner of another view's streaming state or body.
+type StableTurnPresentation = 'background' | 'earlier' | 'latest';
+const cachedTurnItems = new WeakMap<DialogTurn, Map<StableTurnPresentation, {
+  items: VirtualItem[];
+  absoluteTurnIndex: number;
+}>>();
 
-let cachedSession: Session | null = null;
-let cachedDialogTurnsRef: DialogTurn[] | null = null;
-let cachedTurnCatalogRef: Session['turnCatalog'] | undefined;
-let cachedIsPartial: boolean | undefined;
-let cachedTotalTurnCount: number | undefined;
-let cachedNeedsUserAttention: Session['needsUserAttention'];
-let cachedVirtualItems: VirtualItem[] = [];
-let cachedTurnItems = new WeakMap<
-  DialogTurn,
-  { items: VirtualItem[]; hasNewerDialogTurn: boolean; absoluteTurnIndex: number; backgroundCollapsed?: boolean }
->();
-
-function resetSessionProjectionCaches(): void {
-  sessionProjectionCaches = new WeakMap();
+function rememberStableTurnItems(
+  turn: DialogTurn,
+  presentation: StableTurnPresentation,
+  absoluteTurnIndex: number,
+  items: VirtualItem[],
+): void {
+  let variants = cachedTurnItems.get(turn);
+  if (!variants) cachedTurnItems.set(turn, variants = new Map());
+  variants.set(presentation, { items, absoluteTurnIndex });
 }
+
 interface CachedTurnPrefixProjection {
   turnId: string;
   isTurnComplete: boolean;
@@ -193,11 +183,6 @@ interface CachedTurnPrefixProjection {
   rawItems: VirtualItem[];
   projectedItems: VirtualItem[];
 }
-
-const previousTurnItemsById = new Map<string, VirtualItem[]>();
-const previousTurnModelRoundsById = new Map<string, readonly ModelRound[]>();
-const currentTurnModelRoundsById = new Map<string, readonly ModelRound[]>();
-const cachedTurnPrefixById = new Map<string, CachedTurnPrefixProjection>();
 
 function sameStringList(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
   if (a === b) return true;
@@ -274,11 +259,7 @@ function canReuseVirtualItem(prev: VirtualItem, next: VirtualItem): boolean {
   switch (next.type) {
     case 'user-message': {
       const p = prev as typeof next;
-      const prevRounds = previousTurnModelRoundsById.get(next.turnId);
-      const currRounds = currentTurnModelRoundsById.get(next.turnId);
-      const firstRoundSame = prevRounds?.[0] !== undefined && prevRounds[0] === currRounds?.[0];
       return (
-        firstRoundSame &&
         p.data === next.data &&
         p.absoluteTurnIndex === next.absoluteTurnIndex &&
         p.turnStatus === next.turnStatus &&
@@ -356,10 +337,8 @@ function reconcileProjectedGroupsInPlace(
   return allSame ? (prevGroups as import('../grouping/types').ModelRoundItemGroup[]) : nextGroups;
 }
 
-function reconcileTurnVirtualItems(turnId: string, nextItems: VirtualItem[]): VirtualItem[] {
-  const prevItems = previousTurnItemsById.get(turnId);
+function reconcileTurnVirtualItems(prevItems: VirtualItem[] | undefined, nextItems: VirtualItem[]): VirtualItem[] {
   if (!prevItems || prevItems.length === 0) {
-    previousTurnItemsById.set(turnId, nextItems);
     return nextItems;
   }
   for (let i = 0; i < nextItems.length; i += 1) {
@@ -375,7 +354,6 @@ function reconcileTurnVirtualItems(turnId: string, nextItems: VirtualItem[]): Vi
       );
     }
   }
-  previousTurnItemsById.set(turnId, nextItems);
   return nextItems;
 }
 
@@ -385,6 +363,7 @@ function projectTurnItemsWithPrefixCache(
   isTurnComplete: boolean,
   turnOutputDurationMs: number | undefined,
   turnTtftMs: number | undefined,
+  cachedTurnPrefixById: Map<string, CachedTurnPrefixProjection>,
 ): VirtualItem[] {
   const prev = cachedTurnPrefixById.get(turn.id);
   let reuseCount = 0;
@@ -403,13 +382,7 @@ function projectTurnItemsWithPrefixCache(
     let commonLen = 0;
     while (
       commonLen < limit &&
-      ((commonLen === 0 &&
-        prev.rawItems[0]?.type === 'user-message' &&
-        rawTurnItems[0]?.type === 'user-message' &&
-        prev.rawItems[0].data === rawTurnItems[0].data &&
-        prev.rawItems[0].turnStatus === rawTurnItems[0].turnStatus &&
-        prev.rawItems[0].absoluteTurnIndex === rawTurnItems[0].absoluteTurnIndex) ||
-        canReuseVirtualItem(prev.rawItems[commonLen], rawTurnItems[commonLen]))
+      canReuseVirtualItem(prev.rawItems[commonLen], rawTurnItems[commonLen])
     ) {
       commonLen += 1;
     }
@@ -421,7 +394,6 @@ function projectTurnItemsWithPrefixCache(
     }
   }
 
-  currentTurnModelRoundsById.set(turn.id, turn.modelRounds);
   const projectedTurnItems = reuseCount > 1 && prev
     ? [
         prev.projectedItems[0],
@@ -430,8 +402,7 @@ function projectTurnItemsWithPrefixCache(
       ]
     : projectAdjacentFlowGroups(rawTurnItems, { isTurnComplete });
 
-  const reconciled = reconcileTurnVirtualItems(turn.id, projectedTurnItems);
-  previousTurnModelRoundsById.set(turn.id, turn.modelRounds);
+  const reconciled = reconcileTurnVirtualItems(prev?.projectedItems, projectedTurnItems);
   cachedTurnPrefixById.set(turn.id, {
     turnId: turn.id,
     isTurnComplete,
@@ -446,98 +417,60 @@ function projectTurnItemsWithPrefixCache(
   return reconciled;
 }
 
-/**
- * Convert Session to virtualized render items
- *
- * Performance optimizations:
- * 1. Uses references directly, relies on FlowChatStore immutable updates to detect reference changes
- * 2. Memoization cache: only recalculates when dialogTurns reference changes
- * 
- * Stable model-round rows host category groups from first execution through completion.
- */
-export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
-  if (!session) {
-    if (cachedSession !== null) {
-      cachedSession = null;
-      cachedDialogTurnsRef = null;
-      cachedTurnCatalogRef = undefined;
-      cachedIsPartial = undefined;
-      cachedTotalTurnCount = undefined;
-      cachedVirtualItems = [];
-      cachedTurnItems = new WeakMap();
-      previousTurnItemsById.clear();
-      previousTurnModelRoundsById.clear();
-      currentTurnModelRoundsById.clear();
+/** Each mounted projection owns its mutable streaming prefix and warm snapshots. */
+export function createSessionVirtualItemProjector(): (session: Session | null) => VirtualItem[] {
+  let sessionId: string | null = null;
+  let previousProjection: SessionProjectionCache | undefined;
+  let warmProjections = new WeakMap<DialogTurn[], SessionProjectionCache>();
+  const cachedTurnPrefixById = new Map<string, CachedTurnPrefixProjection>();
+  const emptyItems: VirtualItem[] = [];
+
+  return (session: Session | null): VirtualItem[] => {
+    if (!session) {
+      sessionId = null;
+      previousProjection = undefined;
+      warmProjections = new WeakMap();
       cachedTurnPrefixById.clear();
-      resetSessionProjectionCaches();
+      return emptyItems;
     }
-    return cachedVirtualItems;
-  }
-
-  if (
-    cachedSession?.sessionId === session.sessionId &&
-    cachedDialogTurnsRef === session.dialogTurns &&
-    cachedTurnCatalogRef === session.turnCatalog &&
-    cachedIsPartial === session.isPartial &&
-    cachedTotalTurnCount === session.totalTurnCount && cachedNeedsUserAttention === session.needsUserAttention
-  ) {
-    return cachedVirtualItems;
-  }
-  if (cachedSession?.sessionId !== session.sessionId || sessionProjectionCaches.has(session.dialogTurns)) {
-    previousTurnItemsById.clear();
-    previousTurnModelRoundsById.clear();
-    currentTurnModelRoundsById.clear();
-    cachedTurnPrefixById.clear();
-    // Switching sessions: restore the target session's own projection cache so
-    // its previously projected rows keep their identity across the switch.
-    const restored = sessionProjectionCaches.get(session.dialogTurns);
-    if (restored) {
-      cachedDialogTurnsRef = restored.dialogTurnsRef;
-      cachedTurnCatalogRef = restored.turnCatalogRef;
-      cachedIsPartial = restored.isPartial;
-      cachedTotalTurnCount = restored.totalTurnCount;
-      cachedNeedsUserAttention = restored.needsUserAttention;
-      cachedVirtualItems = restored.virtualItems;
-      cachedTurnItems = restored.turnItems;
-      if (
-        restored.dialogTurnsRef === session.dialogTurns &&
-        restored.turnCatalogRef === session.turnCatalog &&
-        restored.isPartial === session.isPartial &&
-        restored.totalTurnCount === session.totalTurnCount &&
-        restored.needsUserAttention === session.needsUserAttention
-      ) {
-        cachedSession = session;
-        return cachedVirtualItems;
-      }
-    } else {
-      cachedDialogTurnsRef = null;
-      cachedTurnCatalogRef = undefined;
-      cachedIsPartial = undefined;
-      cachedTotalTurnCount = undefined;
-      cachedNeedsUserAttention = undefined;
-      cachedVirtualItems = [];
-      cachedTurnItems = new WeakMap();
+    if (sessionId !== session.sessionId) cachedTurnPrefixById.clear();
+    sessionId = session.sessionId;
+    const restored = warmProjections.get(session.dialogTurns);
+    if (restored
+      && restored.turnCatalogRef === session.turnCatalog
+      && restored.isPartial === session.isPartial
+      && restored.totalTurnCount === session.totalTurnCount
+      && restored.needsUserAttention === session.needsUserAttention) {
+      // Returning to another snapshot must release the previous window's body.
+      if (restored !== previousProjection) cachedTurnPrefixById.clear();
+      previousProjection = restored;
+      return restored.virtualItems;
     }
-  }
 
-  cachedSession = session;
-  cachedDialogTurnsRef = session.dialogTurns;
-  cachedTurnCatalogRef = session.turnCatalog;
-  cachedIsPartial = session.isPartial;
-  cachedTotalTurnCount = session.totalTurnCount;
-  cachedNeedsUserAttention = session.needsUserAttention;
+    // Paging and rollback can discard Turns while this same view stays mounted.
+    const turnIds = new Set(session.dialogTurns.map(turn => turn.id));
+    for (const turnId of cachedTurnPrefixById.keys()) {
+      if (!turnIds.has(turnId)) cachedTurnPrefixById.delete(turnId);
+    }
 
-  // History paging and rollback can remove Turns without switching sessions.
-  // Reconciliation must not become a second owner of those discarded bodies.
-  const turnIds = new Set(session.dialogTurns.map(turn => turn.id));
-  for (const turnId of previousTurnItemsById.keys()) {
-    if (turnIds.has(turnId)) continue;
-    previousTurnItemsById.delete(turnId);
-    previousTurnModelRoundsById.delete(turnId);
-    currentTurnModelRoundsById.delete(turnId);
-    cachedTurnPrefixById.delete(turnId);
-  }
+    const items = projectSessionItems(session, cachedTurnPrefixById);
+    const projection = {
+      turnCatalogRef: session.turnCatalog,
+      isPartial: session.isPartial,
+      totalTurnCount: session.totalTurnCount,
+      needsUserAttention: session.needsUserAttention,
+      virtualItems: items,
+    };
+    warmProjections.set(session.dialogTurns, projection);
+    previousProjection = projection;
+    return items;
+  };
+}
 
+function projectSessionItems(
+  session: Session,
+  cachedTurnPrefixById: Map<string, CachedTurnPrefixProjection>,
+): VirtualItem[] {
   const items: VirtualItem[] = [];
   const resolveAbsoluteTurnIndex = createAbsoluteSessionTurnIndexResolver(session);
 
@@ -545,19 +478,20 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
     const hasNewerDialogTurn = turnIndex < session.dialogTurns.length - 1;
     const absoluteTurnIndex = resolveAbsoluteTurnIndex(turnIndex);
     const backgroundCollapsed = isSuppressedBackgroundTurn(turn) && !session.needsUserAttention;
-    const cachedItems = cachedTurnItems.get(turn);
-    if (
-      cachedItems &&
-      cachedItems.hasNewerDialogTurn === hasNewerDialogTurn &&
-      cachedItems.absoluteTurnIndex === absoluteTurnIndex && Boolean(cachedItems.backgroundCollapsed) === Boolean(backgroundCollapsed)
-    ) {
+    // A historical window can end on a Turn that has newer siblings in the
+    // live view. Keep both presentations without replacing each other's rows.
+    const presentation = backgroundCollapsed ? 'background' : hasNewerDialogTurn ? 'earlier' : 'latest';
+    const cachedItems = cachedTurnItems.get(turn)?.get(presentation);
+    if (cachedItems?.absoluteTurnIndex === absoluteTurnIndex) {
+      cachedTurnPrefixById.delete(turn.id);
       items.push(...cachedItems.items);
       return;
     }
     if (backgroundCollapsed) {
+      cachedTurnPrefixById.delete(turn.id);
       const backgroundItems: VirtualItem[] = [{ type: 'background-run', data: turn.userMessage, turn, turnId: turn.id, absoluteTurnIndex, turnStatus: turn.status }];
       items.push(...backgroundItems);
-      if (isStableTurnProjection(turn)) cachedTurnItems.set(turn, { items: backgroundItems, hasNewerDialogTurn, absoluteTurnIndex, backgroundCollapsed: true });
+      if (isStableTurnProjection(turn)) rememberStableTurnItems(turn, presentation, absoluteTurnIndex, backgroundItems);
       return;
     }
     const turnItemStart = items.length;
@@ -619,7 +553,7 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
           renderEntries.push({ type: 'steering', item });
         });
     });
-    
+
     const isTurnComplete = turn.status === 'completed' || turn.status === 'cancelled' || turn.status === 'error';
     const turnOutputDurationMs = getTurnOutputDurationMs(turn.modelRounds);
     const turnTtftMs = getTurnTtftMs(turn.modelRounds);
@@ -703,32 +637,23 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
       isTurnComplete,
       turnOutputDurationMs,
       turnTtftMs,
+      cachedTurnPrefixById,
     );
     items.splice(turnItemStart, items.length - turnItemStart, ...projectedTurnItems);
 
     if (isStableTurnProjection(turn)) {
-      cachedTurnItems.set(turn, {
-        items: projectedTurnItems,
-        hasNewerDialogTurn,
-        absoluteTurnIndex,
-      });
+      cachedTurnPrefixById.delete(turn.id);
+      rememberStableTurnItems(turn, presentation, absoluteTurnIndex, projectedTurnItems);
     }
   });
 
-  cachedVirtualItems = items;
-  sessionProjectionCaches.set(session.dialogTurns, {
-    dialogTurnsRef: cachedDialogTurnsRef,
-    turnCatalogRef: cachedTurnCatalogRef,
-    isPartial: cachedIsPartial,
-    totalTurnCount: cachedTotalTurnCount,
-    needsUserAttention: cachedNeedsUserAttention,
-    virtualItems: items,
-    turnItems: cachedTurnItems,
-  });
   return items;
 }
 
-function getInitialModernState(): Pick<
+/** Standalone projection entry point; mounted views create their own projector. */
+export const sessionToVirtualItems = createSessionVirtualItemProjector();
+
+function getInitialModernState(projectSession: ReturnType<typeof createSessionVirtualItemProjector>): Pick<
   ModernFlowChatState,
   'activeSession' | 'virtualItems' | 'visibleTurnInfo'
 > {
@@ -739,69 +664,60 @@ function getInitialModernState(): Pick<
 
   return {
     activeSession,
-    virtualItems: sessionToVirtualItems(activeSession),
+    virtualItems: projectSession(activeSession),
     visibleTurnInfo: null,
   };
 }
 
-export const createModernFlowChatStore = (initialSession?: Session | null) => create<ModernFlowChatState>()(
-  (set, get) => ({
-    ...(initialSession === undefined ? getInitialModernState() : {
-      activeSession: initialSession,
-      virtualItems: sessionToVirtualItems(initialSession),
-      visibleTurnInfo: null,
-    }),
-
-    setActiveSession: (session) => {
-      const items = sessionToVirtualItems(session);
-      set((state) => ({
-        ...(state.activeSession?.sessionId !== session?.sessionId ? { visibleTurnInfo: null } : null),
-        activeSession: session,
-        virtualItems: items,
-      }));
-    },
-
-    updateVirtualItems: () => {
-      const session = get().activeSession;
-      const items = sessionToVirtualItems(session);
-
-      set((state) => ({
-        ...state,
-        virtualItems: items,
-      }));
-    },
-
-    setVisibleTurnInfo: (info) => {
-      set((state) => ({
-        ...state,
-        visibleTurnInfo: info,
-      }));
-    },
-
-    clear: () => {
-      cachedSession = null;
-      cachedDialogTurnsRef = null;
-      cachedTurnCatalogRef = undefined;
-      cachedIsPartial = undefined;
-      cachedTotalTurnCount = undefined;
-      cachedVirtualItems = [];
-      cachedTurnItems = new WeakMap();
-      previousTurnItemsById.clear();
-      previousTurnModelRoundsById.clear();
-      currentTurnModelRoundsById.clear();
-      cachedTurnPrefixById.clear();
-      resetSessionProjectionCaches();
-      cachedNeedsUserAttention = undefined;
-
-      set((state) => ({
-        ...state,
-        activeSession: null,
-        virtualItems: [],
+export const createModernFlowChatStore = (initialSession?: Session | null) => {
+  const projectSession = createSessionVirtualItemProjector();
+  return create<ModernFlowChatState>()(
+    (set, get) => ({
+      ...(initialSession === undefined ? getInitialModernState(projectSession) : {
+        activeSession: initialSession,
+        virtualItems: projectSession(initialSession),
         visibleTurnInfo: null,
-      }));
-    },
-  })
-);
+      }),
+
+      setActiveSession: (session) => {
+        const items = projectSession(session);
+        set((state) => ({
+          ...(state.activeSession?.sessionId !== session?.sessionId ? { visibleTurnInfo: null } : null),
+          activeSession: session,
+          virtualItems: items,
+        }));
+      },
+
+      updateVirtualItems: () => {
+        const session = get().activeSession;
+        const items = projectSession(session);
+
+        set((state) => ({
+          ...state,
+          virtualItems: items,
+        }));
+      },
+
+      setVisibleTurnInfo: (info) => {
+        set((state) => ({
+          ...state,
+          visibleTurnInfo: info,
+        }));
+      },
+
+      clear: () => {
+        projectSession(null);
+
+        set((state) => ({
+          ...state,
+          activeSession: null,
+          virtualItems: [],
+          visibleTurnInfo: null,
+        }));
+      },
+    })
+  );
+};
 
 const defaultModernFlowChatStore = createModernFlowChatStore();
 export const ModernFlowChatStoreContext = createContext<ReturnType<typeof createModernFlowChatStore> | null>(null);

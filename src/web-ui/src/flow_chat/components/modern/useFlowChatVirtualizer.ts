@@ -810,20 +810,21 @@ export function useFlowChatVirtualizer<T>({
   }, [toVirtualIndex]);
   const measuredOriginRef = useRef(endOrigin);
   useLayoutEffect(() => {
-    const scroller = scrollerRef.current;
     const originChanged = measuredOriginRef.current !== endOrigin;
     measuredOriginRef.current = endOrigin;
-    // Stable DOM rows keep their chronological index while an origin handoff
-    // changes the library index. ResizeObserver must see the new mapping too.
-    const attached = originChanged
-      ? [...(scroller?.querySelectorAll<HTMLElement>('[data-virtual-index]') ?? [])]
-          .filter(element => element.closest('[data-flowchat-virtual-viewport]') === scroller)
-      : [...attachingRowsRef.current].filter(element => element.isConnected);
-    if (originChanged) {
-      for (const element of attached) {
-        element.setAttribute('data-flowchat-measure-index', String(toVirtualIndex(Number(element.getAttribute('data-virtual-index')))));
+    const connectedRows = new Set([...virtualizer.elementsCache.values(), ...attachingRowsRef.current]
+      .filter(element => element.isConnected));
+    // A surviving keyed row does not reattach when insertion changes its
+    // index. Refresh observer addresses on every commit, without measuring
+    // existing rows or scanning nested transcript DOM.
+    for (const element of connectedRows) {
+      const index = String(toVirtualIndex(Number(element.getAttribute('data-virtual-index'))));
+      if (element.getAttribute('data-flowchat-measure-index') !== index) {
+        element.setAttribute('data-flowchat-measure-index', index);
       }
     }
+    const attached = originChanged ? [...connectedRows]
+      : [...attachingRowsRef.current].filter(element => element.isConnected);
     attachingRowsRef.current.clear();
     // A shrinking window can detach rows without attaching any replacements.
     // Cleanup must still unobserve and release those DOM nodes.

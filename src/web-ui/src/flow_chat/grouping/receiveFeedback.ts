@@ -50,9 +50,7 @@ export function captureFlowGroupFeedbackSnapshot(items: readonly VirtualItem[], 
     if (item.type === 'model-round' && item.isTurnComplete) continue;
     const { activeKeys, groupedKeys } = getItemFeedbackKeys(item);
     for (let i = 0; i < activeKeys.length; i += 1) activeMembers.add(activeKeys[i]);
-    if (activeKeys.length > 0 || groupedKeys.length > 0) {
-      for (let i = 0; i < groupedKeys.length; i += 1) groupedMembers.add(groupedKeys[i]);
-    }
+    for (let i = 0; i < groupedKeys.length; i += 1) groupedMembers.add(groupedKeys[i]);
   }
   return { scope, activeMembers, groupedMembers };
 }

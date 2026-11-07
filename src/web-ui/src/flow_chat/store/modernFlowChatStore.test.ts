@@ -10,7 +10,7 @@ vi.mock('./FlowChatStore', () => ({
   },
 }));
 
-import { createModernFlowChatStore, sessionToVirtualItems, type VirtualItem } from './modernFlowChatStore';
+import { createModernFlowChatStore, createSessionVirtualItemProjector, sessionToVirtualItems, type VirtualItem } from './modernFlowChatStore';
 import { getVirtualItemFlowGroups } from '../grouping/selectors';
 import { getVirtualItemStableKey } from '../components/modern/virtualItemIdentity';
 import { getModelRoundExploreGroups, getProjectedModelRoundGroups } from '../components/modern/modelRoundItemGrouping';
@@ -132,6 +132,47 @@ describe('incremental projection cache contracts', () => {
     )) }] };
   }
 
+  it('keeps a user row stable while its only model round streams', () => {
+    const session = processingSession([makeRound({ items: [makeTextItem('text', 'Answer')] })]);
+    const before = sessionToVirtualItems(session);
+    const after = sessionToVirtualItems(updateTail(session));
+    expect(after[0]).toBe(before[0]);
+  });
+
+  it('shares immutable completed Turns across alternating streaming session revisions', () => {
+    const completed = makeSession().dialogTurns[0];
+    const session = { ...processingSession([makeRound()]), dialogTurns: [completed, {
+      ...completed, id: 'active', status: 'processing' as const,
+    }] };
+    const before = sessionToVirtualItems(session);
+    sessionToVirtualItems(makeSession({ sessionId: 'side' }));
+    const active = session.dialogTurns[1];
+    const after = sessionToVirtualItems({ ...session, dialogTurns: [completed, {
+      ...active, modelRounds: [...active.modelRounds, makeRound({ id: 'new' })],
+    }] });
+    expect(after.filter(item => item.turnId === completed.id).every((item, index) => item === before[index])).toBe(true);
+  });
+
+  it.each(['side session', 'history view'])('preserves live prefixes when a %s projects between flushes', other => {
+    let session = processingSession([
+      makeRound({ id: 'read', items: [makeReadTool('read')] }),
+      makeRound({ id: 'boundary', items: [makeTool('ask', 'AskUserQuestion')] }),
+      makeRound({ id: 'tail', items: [makeTextItem('tail', 'Answer')] }),
+    ]);
+    const live = createModernFlowChatStore(session);
+    const settled = live.getState().virtualItems.slice(0, 3);
+    const history = makeSession();
+    for (let step = 0; step < 4; step++) {
+      sessionToVirtualItems(other === 'side session'
+        ? makeSession({ sessionId: 'side' }) : history);
+      session = updateTail(session);
+      live.getState().setActiveSession(session);
+      expect(live.getState().virtualItems.slice(0, 3)).toEqual(settled);
+      expect(live.getState().virtualItems.slice(0, 3).every((item, index) => item === settled[index])).toBe(true);
+    }
+    live.getState().clear();
+  });
+
   it('preserves settled rows and groups across tail updates', () => {
     const session = processingSession([
       makeRound({ id: 'read', items: [makeReadTool('read')] }),
@@ -189,40 +230,74 @@ describe('incremental projection cache contracts', () => {
     expect(after).not.toBe(before);
   });
 
-  it('matches a fresh projection through streaming, old-round replacement, rollback and completion', () => {
+  it('matches fresh projections through repeated thinking, tool-parameter, interior, rollback and completion updates', () => {
     let seed = 3778;
     const random = (max: number) => {
       seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
       return (seed >>> 8) % max;
     };
     const names = ['Read', 'ExecCommand', 'Edit', 'AskUserQuestion', 'ToolSearch'];
+    const thinking = (id: string): FlowThinkingItem => ({
+      id, type: 'thinking', timestamp: 1000, content: `Thinking ${id}`,
+      status: 'streaming', isStreaming: true, isCollapsed: true,
+    });
+    const params = (id: string): FlowToolItem => ({
+      ...makeTool(id, 'Read', 'preparing'), isParamsStreaming: true,
+      toolCall: { id, input: { file_path: 'part' } },
+    });
     for (let scenario = 0; scenario < 150; scenario++) {
-      sessionToVirtualItems(null);
+      const project = createSessionVirtualItemProjector();
       const rounds = Array.from({ length: 4 + random(8) }, (_, index) => makeRound({
         id: `round-${index}`, index,
         items: Array.from({ length: 1 + random(6) }, (_, member) => {
-          const kind = random(7);
+          const kind = random(9);
           const id = `${index}-${member}`;
           return kind < 5 ? makeTool(id, names[kind]) : kind === 5
-            ? makeTextItem(id, `Paragraph ${id}`) : makeSteeringItem(id);
+            ? makeTextItem(id, `Paragraph ${id}`) : kind === 6
+              ? makeSteeringItem(id) : kind === 7 ? thinking(id) : params(id);
         }),
       }));
-      const session = processingSession(rounds);
-      sessionToVirtualItems(session);
-      const changed = random(rounds.length);
-      const nextRounds = rounds.map((round, index) => index === changed
-        ? { ...round, items: [...round.items, makeTool(`new-${scenario}`, names[random(names.length)])] } : round);
-      const updated = { ...session, dialogTurns: [{ ...session.dialogTurns[0],
-        modelRounds: scenario % 3 === 0 ? nextRounds.slice(0, -1) : nextRounds,
-        status: scenario % 4 === 0 ? 'completed' as const : 'processing' as const,
-      }] };
-      const original = JSON.stringify(updated);
-      const cached = sessionToVirtualItems(updated);
-      sessionToVirtualItems(null);
-      expect(cached, `scenario ${scenario}`).toEqual(sessionToVirtualItems(structuredClone(updated)));
-      expect(JSON.stringify(updated)).toBe(original);
+      let session = processingSession(rounds);
+      project(session);
+      for (let step = 0; step < 8; step++) {
+        const turn = session.dialogTurns[0];
+        let nextRounds = [...turn.modelRounds];
+        const lastIndex = nextRounds.length - 1;
+        const targetIndex = step === 3 ? random(lastIndex) : lastIndex;
+        const target = nextRounds[targetIndex];
+        if (step === 2 || step === 6) {
+          nextRounds.push(makeRound({ id: `added-${step}`, status: 'streaming', isComplete: false,
+            isStreaming: true, items: [makeTool(`ask-${step}`, 'AskUserQuestion'), thinking(`new-${step}`)] }));
+        } else if (step === 5) {
+          nextRounds = nextRounds.slice(0, -1);
+        } else if (step === 4 || step === 7) {
+          nextRounds = nextRounds.map(round => ({ ...round, status: 'completed', isComplete: true, isStreaming: false,
+            items: round.items.map(item => ({ ...item, status: 'completed',
+              ...(item.type === 'text' || item.type === 'thinking' ? { isStreaming: false } : {}),
+              ...(item.type === 'tool' ? { isParamsStreaming: false } : {}),
+            })),
+          }));
+        } else {
+          nextRounds[targetIndex] = { ...target, status: 'streaming', isComplete: false, isStreaming: true,
+            items: [...target.items.map(item => item.type === 'thinking'
+              ? { ...item, content: item.content + ' continued', isStreaming: true }
+              : item.type === 'tool' ? { ...item, isParamsStreaming: true,
+                toolCall: { ...item.toolCall, input: { file_path: `changed-${step}` } } } : item),
+              step === 0 ? thinking(`think-${step}`) : params(`params-${step}`)],
+          };
+        }
+        session = { ...session, dialogTurns: [{ ...turn, modelRounds: nextRounds,
+          status: step === 7 ? 'completed' : 'processing',
+        }] };
+        const original = JSON.stringify(session);
+        const cached = project(session);
+        const fresh = createSessionVirtualItemProjector()(structuredClone(session));
+        expect(cached, `scenario ${scenario}, step ${step}`).toEqual(fresh);
+        expect(JSON.stringify(session)).toBe(original);
+      }
     }
   });
+
 });
 
 describe('sessionToVirtualItems unified work grouping', () => {
@@ -1480,6 +1555,7 @@ describe('sessionToVirtualItems explore grouping', () => {
 
     expect(secondItems[0]).toBe(firstItems[0]);
     expect(secondItems[1]).toBe(firstItems[1]);
-    expect(secondItems[2]).not.toBe(firstItems[2]);
+    expect(secondItems[2]).toBe(firstItems[2]); // The unchanged user message is independent of its reply.
+    expect(secondItems[3]).not.toBe(firstItems[3]);
   });
 });
