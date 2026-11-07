@@ -13,6 +13,7 @@ import React, {
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react';
@@ -475,6 +476,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   }, [scrollerElement, viewportWidthPx, endOrigin]);
   /** Native minimization withdraws the scroller without unmounting the session. */
   const isViewportSuspendedRef = useRef(false);
+  const [, commitResumedViewport] = useReducer(revision => revision + 1, 0);
   const measurementSuspendedRef = useRef(measurementSuspended);
   measurementSuspendedRef.current = measurementSuspended;
   /** The last width the observer saw while the pane was still moving. */
@@ -1521,6 +1523,10 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     if (!isViewportSuspendedRef.current) return;
 
     isViewportSuspendedRef.current = false;
+    // The restored box may be unchanged and output may have already stopped.
+    // Commit so pending row attachments and layout measurements can resume
+    // without waiting for a new message, resize or reader gesture.
+    commitResumedViewport();
     const suspendedScrollTopPx = suspendedViewportScrollTopRef.current;
     suspendedViewportScrollTopRef.current = null;
     const wasFollowingOutput = isFollowingOutputNow();

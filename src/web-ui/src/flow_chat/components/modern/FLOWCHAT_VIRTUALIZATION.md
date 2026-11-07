@@ -14,7 +14,10 @@ an index update requires no geometry read or DOM subtree scan. A later observer
 delivery must still resize the same row key.
 Rows mounted while the viewport is suspended stay in the pending attachment
 registry until a resumed commit registers them with the measurement observer.
-Prune disconnected pending rows even during suspension.
+The viewport recovery frame explicitly requests that commit, even when the
+restored dimensions are unchanged and output has stopped. It must not rely on
+the reader's next scroll or a later resize. Prune disconnected pending rows
+even during suspension.
 
 For native history, internal offset is `-scrollTop`, index zero is the newest
 row, and the footer is the scroll margin. The internal window's before/after
