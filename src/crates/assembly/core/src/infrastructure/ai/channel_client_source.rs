@@ -339,6 +339,53 @@ mod tests {
         );
         assert!(projected[0].model_response_replay.is_none());
     }
+
+    #[test]
+    fn auxiliary_requests_drop_signed_history_from_another_identity() {
+        let client = AIClient::new(
+            openbitfun_core_types::AIConfig::try_from(AIModelConfig {
+                id: "primary".into(),
+                name: "Primary".into(),
+                provider: "anthropic".into(),
+                enabled: true,
+                api_key: "synthetic-current".into(),
+                base_url: "https://primary.invalid".into(),
+                model_name: "model".into(),
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let signed = |fingerprint: Option<String>| {
+            let mut message = openbitfun_core_types::Message::assistant("Answer".into());
+            message.thinking_signature = Some("sig".into());
+            message.reasoning_content = Some("Signed reasoning".into());
+            message.model_response_replay =
+                fingerprint.map(|fingerprint| openbitfun_core_types::ModelResponseReplay {
+                    protocol: "anthropic".into(),
+                    channel_origin: Some("primary".into()),
+                    channel_fingerprint: Some(fingerprint),
+                    account_origin: None,
+                    items: vec![],
+                });
+            message
+        };
+        let mut history = vec![
+            signed(Some(client.channel_replay_fingerprint())),
+            signed(Some("other-credential".into())),
+            // Legacy history written before replay provenance existed.
+            signed(None),
+        ];
+        assert_eq!(
+            ChannelClientSource::project_replay_for_client(&mut history, &client),
+            2
+        );
+        assert_eq!(history[0].thinking_signature.as_deref(), Some("sig"));
+        for message in &history[1..] {
+            assert!(message.thinking_signature.is_none());
+            assert!(message.reasoning_content.is_none());
+            assert_eq!(message.content.as_deref(), Some("Answer"));
+        }
+    }
 }
 
 pub(crate) struct ChannelClientSource {
@@ -479,6 +526,28 @@ impl ChannelClientSource {
         client: &AIClient,
         account: Option<&openbitfun_core_types::ModelAccountOrigin>,
     ) -> usize {
+        Self::project_replay(messages, Some(channel), client, account)
+    }
+
+    /// Auxiliary one-shot requests (compression summaries) have no channel
+    /// binding of their own. Keep signed state only when it was produced by
+    /// this exact endpoint/credential identity; degrade everything else.
+    pub(crate) fn project_replay_for_client(
+        messages: &mut [openbitfun_core_types::Message],
+        client: &AIClient,
+    ) -> usize {
+        let account = client
+            .subscription_provider_key()
+            .and_then(|provider| client.subscription_account_origin(provider));
+        Self::project_replay(messages, None, client, account.as_ref())
+    }
+
+    fn project_replay(
+        messages: &mut [openbitfun_core_types::Message],
+        channel: Option<&str>,
+        client: &AIClient,
+        account: Option<&openbitfun_core_types::ModelAccountOrigin>,
+    ) -> usize {
         let fingerprint = client.channel_replay_fingerprint();
         let mut stripped = 0;
         for message in messages {
@@ -498,7 +567,8 @@ impl ChannelClientSource {
                         });
                     let same_channel = match (&replay.channel_origin, &replay.channel_fingerprint) {
                         (Some(origin), Some(original)) => {
-                            origin == channel && original == &fingerprint
+                            channel.is_none_or(|channel| origin == channel)
+                                && original == &fingerprint
                         }
                         // Older subscription history can prove its producing seat
                         // without channel fields. Preserve that existing replay path.
