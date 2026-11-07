@@ -98,7 +98,7 @@ const roundGroupsCache = new WeakMap<ModelRound, {
   disabled: boolean;
   groups?: ModelRoundItemGroup[];
   retainedCandidateGroups?: ModelRoundItemGroup[];
-  inlineGroupsByKey?: Map<number, FlowGroupData>;
+  inlineGroups?: WeakMap<GroupedFlowItems, Map<number, FlowGroupData>>;
 }>();
 
 function getOrCreateRoundGroupsCacheEntry(round: ModelRound, disabled: boolean) {
@@ -116,7 +116,6 @@ function getOrCreateRoundGroupsCacheEntry(round: ModelRound, disabled: boolean) 
 
 export function getCachedInlineFlowGroupData(
   round: ModelRound,
-  groupIndex: number,
   group: GroupedFlowItems,
   isLastGroupInTurn = group.isLast,
   includeRoundIdAlias = false,
@@ -124,11 +123,14 @@ export function getCachedInlineFlowGroupData(
   if (group.projection) return group.projection;
   const disabled = isModelRoundGroupingDisabled(round);
   const entry = getOrCreateRoundGroupsCacheEntry(round, disabled);
-  const key = groupIndex * 4 + (isLastGroupInTurn ? 2 : 0) + (includeRoundIdAlias ? 1 : 0);
-  let byKey = entry.inlineGroupsByKey;
+  const key = (isLastGroupInTurn ? 2 : 0) + (includeRoundIdAlias ? 1 : 0);
+  // Candidate retention and cross-round collection can change group positions.
+  // Only the actual immutable group proves which members this projection owns.
+  const groups = entry.inlineGroups ??= new WeakMap();
+  let byKey = groups.get(group);
   if (!byKey) {
     byKey = new Map();
-    entry.inlineGroupsByKey = byKey;
+    groups.set(group, byKey);
   }
   let cached = byKey.get(key);
   if (!cached) {
@@ -151,9 +153,9 @@ export function projectedFlowGroup(category: FlowGroupCategory, items: FlowItem[
 
 export function getModelRoundFlowGroups(round: ModelRound, projectedGroups?: ModelRoundItemGroup[]): FlowGroupData[] {
   if (projectedGroups) {
-    return projectedGroups.flatMap((group, index) => group.type === 'critical'
+    return projectedGroups.flatMap(group => group.type === 'critical'
       ? []
-      : [getCachedInlineFlowGroupData(round, index, group)]);
+      : [getCachedInlineFlowGroupData(round, group)]);
   }
   const disabled = isModelRoundGroupingDisabled(round);
   const entry = getOrCreateRoundGroupsCacheEntry(round, disabled);
@@ -163,9 +165,9 @@ export function getModelRoundFlowGroups(round: ModelRound, projectedGroups?: Mod
       disabled,
     });
   }
-  return entry.groups.flatMap((group, index) => group.type === 'critical'
+  return entry.groups.flatMap(group => group.type === 'critical'
     ? []
-    : [getCachedInlineFlowGroupData(round, index, group)]);
+    : [getCachedInlineFlowGroupData(round, group)]);
 }
 
 export function getProjectedModelRoundGroups(item: Extract<VirtualItem, { type: 'model-round' }>, retainCandidates = false): ModelRoundItemGroup[] {

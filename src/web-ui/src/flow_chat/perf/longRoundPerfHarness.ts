@@ -643,7 +643,8 @@ export function benchBackgroundBudgetAndPersistence(options?: {
 
   for (const roundCount of checkpoints) {
     const baseSession = buildLongRoundSessionFixture({ roundCount });
-    // Warm the initial turn prefix (first 500ms budget tick or initial hydrate)
+    // Sample the initial turn before the later 500ms budget ticks. Production
+    // caches immutable whole Turns at the history owner, not round prefixes here.
     const { updatedTurn: initialTurn } = buildStreamingChunkSession(baseSession, 0, iterationsPerCheckpoint + 1);
     estimateRetainedBytes(initialTurn);
     for (let i = 1; i <= iterationsPerCheckpoint; i += 1) {

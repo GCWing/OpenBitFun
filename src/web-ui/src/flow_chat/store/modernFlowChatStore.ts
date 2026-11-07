@@ -50,8 +50,13 @@ function steeringItemToUserMessage(item: FlowUserSteeringItem): NonNullable<Dial
   };
 }
 
+const mergedRoundDisplayCache = new WeakMap<ModelRound, WeakMap<ModelRound, ModelRound>>();
+
 function mergeRoundGroupForDisplay(currentRound: ModelRound, nextRound: ModelRound): ModelRound {
-  return {
+  let byNext = mergedRoundDisplayCache.get(currentRound);
+  const cached = byNext?.get(nextRound);
+  if (cached) return cached;
+  const merged = {
     ...nextRound,
     historyRounds: [
       ...(currentRound.historyRounds ?? []),
@@ -61,6 +66,38 @@ function mergeRoundGroupForDisplay(currentRound: ModelRound, nextRound: ModelRou
       },
     ],
   };
+  if (!byNext) mergedRoundDisplayCache.set(currentRound, byNext = new WeakMap());
+  byNext.set(nextRound, merged);
+  return merged;
+}
+
+const normalizedRoundDisplayCache = new WeakMap<ModelRound, { ordinary?: ModelRound; continued?: ModelRound }>();
+
+/** Immutable recorded rounds own both display variants, including retry repair. */
+function normalizeRoundForDisplay(round: ModelRound, continuedAfterInterruption: boolean): ModelRound {
+  let entry = normalizedRoundDisplayCache.get(round);
+  const variant = continuedAfterInterruption ? 'continued' : 'ordinary';
+  const cached = entry?.[variant];
+  if (cached) return cached;
+  const nonSteeringItems = round.items.filter(item => item.type !== 'user-steering');
+  let normalized = nonSteeringItems.length === round.items.length ? round : { ...round, items: nonSteeringItems };
+  // Older runtimes recorded a cancelled stream as a superseded retry.
+  // Repair only that terminal attempt in the display projection.
+  const lastAttempt = round.attempts?.reduce<ModelRoundAttempt | undefined>(
+    (last, attempt) => !last || attempt.index > last.index ? attempt : last, undefined,
+  );
+  if (round.status === 'cancelled' && lastAttempt?.diagnostic?.category === 'stream_error'
+    && lastAttempt.diagnostic.rawError?.startsWith('Cancelled: ')) {
+    normalized = { ...normalized, attempts: round.attempts?.map(attempt => (
+      attempt === lastAttempt ? { ...attempt, status: 'cancelled', diagnostic: undefined } : attempt
+    )) };
+  }
+  if (continuedAfterInterruption) {
+    normalized = { ...normalized, renderHints: { ...normalized.renderHints, continuedAfterInterruption: true } };
+  }
+  if (!entry) normalizedRoundDisplayCache.set(round, entry = {});
+  entry[variant] = normalized;
+  return normalized;
 }
 
 function isTerminalTurnStatus(status: DialogTurn['status']): boolean {
@@ -126,8 +163,9 @@ interface SessionProjectionCache {
  * session reuses its last VirtualItem array (and its stable rows) instead of
  * rebuilding the whole transcript, so alternating sessions keep object identity.
  */
-const sessionProjectionCaches = new Map<string, SessionProjectionCache>();
-const MAX_SESSION_PROJECTION_CACHES = 8;
+// The canonical transcript owns the cache lifetime. A session-id LRU would
+// keep evicted history alive after the history budget released its body.
+let sessionProjectionCaches = new WeakMap<DialogTurn[], SessionProjectionCache>();
 
 let cachedSession: Session | null = null;
 let cachedDialogTurnsRef: DialogTurn[] | null = null;
@@ -142,17 +180,7 @@ let cachedTurnItems = new WeakMap<
 >();
 
 function resetSessionProjectionCaches(): void {
-  sessionProjectionCaches.clear();
-}
-
-function rememberSessionProjectionCache(sessionId: string, cache: SessionProjectionCache): void {
-  sessionProjectionCaches.delete(sessionId);
-  sessionProjectionCaches.set(sessionId, cache);
-  while (sessionProjectionCaches.size > MAX_SESSION_PROJECTION_CACHES) {
-    const oldest = sessionProjectionCaches.keys().next().value;
-    if (oldest === undefined) break;
-    sessionProjectionCaches.delete(oldest);
-  }
+  sessionProjectionCaches = new WeakMap();
 }
 interface CachedTurnPrefixProjection {
   turnId: string;
@@ -446,19 +474,23 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
     return cachedVirtualItems;
   }
 
-  if (cachedSession?.sessionId === session.sessionId) {
-    if (
-      cachedDialogTurnsRef === session.dialogTurns &&
-      cachedTurnCatalogRef === session.turnCatalog &&
-      cachedIsPartial === session.isPartial &&
-      cachedTotalTurnCount === session.totalTurnCount && cachedNeedsUserAttention === session.needsUserAttention
-    ) {
-      return cachedVirtualItems;
-    }
-  } else {
+  if (
+    cachedSession?.sessionId === session.sessionId &&
+    cachedDialogTurnsRef === session.dialogTurns &&
+    cachedTurnCatalogRef === session.turnCatalog &&
+    cachedIsPartial === session.isPartial &&
+    cachedTotalTurnCount === session.totalTurnCount && cachedNeedsUserAttention === session.needsUserAttention
+  ) {
+    return cachedVirtualItems;
+  }
+  if (cachedSession?.sessionId !== session.sessionId || sessionProjectionCaches.has(session.dialogTurns)) {
+    previousTurnItemsById.clear();
+    previousTurnModelRoundsById.clear();
+    currentTurnModelRoundsById.clear();
+    cachedTurnPrefixById.clear();
     // Switching sessions: restore the target session's own projection cache so
     // its previously projected rows keep their identity across the switch.
-    const restored = sessionProjectionCaches.get(session.sessionId);
+    const restored = sessionProjectionCaches.get(session.dialogTurns);
     if (restored) {
       cachedDialogTurnsRef = restored.dialogTurnsRef;
       cachedTurnCatalogRef = restored.turnCatalogRef;
@@ -486,10 +518,6 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
       cachedVirtualItems = [];
       cachedTurnItems = new WeakMap();
     }
-    previousTurnItemsById.clear();
-    previousTurnModelRoundsById.clear();
-    currentTurnModelRoundsById.clear();
-    cachedTurnPrefixById.clear();
   }
 
   cachedSession = session;
@@ -498,6 +526,17 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
   cachedIsPartial = session.isPartial;
   cachedTotalTurnCount = session.totalTurnCount;
   cachedNeedsUserAttention = session.needsUserAttention;
+
+  // History paging and rollback can remove Turns without switching sessions.
+  // Reconciliation must not become a second owner of those discarded bodies.
+  const turnIds = new Set(session.dialogTurns.map(turn => turn.id));
+  for (const turnId of previousTurnItemsById.keys()) {
+    if (turnIds.has(turnId)) continue;
+    previousTurnItemsById.delete(turnId);
+    previousTurnModelRoundsById.delete(turnId);
+    currentTurnModelRoundsById.delete(turnId);
+    cachedTurnPrefixById.delete(turnId);
+  }
 
   const items: VirtualItem[] = [];
   const resolveAbsoluteTurnIndex = createAbsoluteSessionTurnIndexResolver(session);
@@ -551,27 +590,8 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
       const continuedAfterInterruption = hasRecovery && continuationPending;
       continuationPending ||= round.status === 'cancelled';
       if (!round.items || round.items.length === 0) return;
-      const nonSteeringItems = round.items.filter(item => item.type !== 'user-steering');
-      if (nonSteeringItems.length > 0) {
-        let normalizedRound = nonSteeringItems.length === round.items.length
-          ? round
-          : { ...round, items: nonSteeringItems };
-        // Older runtimes recorded a cancelled stream as a superseded retry.
-        // Repair only that terminal attempt in the display projection.
-        const lastAttempt = round.attempts?.reduce<ModelRoundAttempt | undefined>(
-          (last, attempt) => !last || attempt.index > last.index ? attempt : last, undefined,
-        );
-        if (round.status === 'cancelled' && lastAttempt?.diagnostic?.category === 'stream_error'
-          && lastAttempt.diagnostic.rawError?.startsWith('Cancelled: ')) {
-          normalizedRound = { ...normalizedRound, attempts: round.attempts?.map(attempt => (
-            attempt === lastAttempt ? { ...attempt, status: 'cancelled', diagnostic: undefined } : attempt
-          )) };
-        }
-        if (continuedAfterInterruption) {
-          normalizedRound = { ...normalizedRound, renderHints: {
-            ...normalizedRound.renderHints, continuedAfterInterruption: true,
-          } };
-        }
+      const normalizedRound = normalizeRoundForDisplay(round, continuedAfterInterruption);
+      if (normalizedRound.items.length > 0) {
         continuationPending = round.status === 'cancelled';
         const lastRenderEntry = renderEntries[renderEntries.length - 1];
 
@@ -696,7 +716,7 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
   });
 
   cachedVirtualItems = items;
-  rememberSessionProjectionCache(session.sessionId, {
+  sessionProjectionCaches.set(session.dialogTurns, {
     dialogTurnsRef: cachedDialogTurnsRef,
     turnCatalogRef: cachedTurnCatalogRef,
     isPartial: cachedIsPartial,
@@ -770,6 +790,7 @@ export const createModernFlowChatStore = (initialSession?: Session | null) => cr
       previousTurnModelRoundsById.clear();
       currentTurnModelRoundsById.clear();
       cachedTurnPrefixById.clear();
+      resetSessionProjectionCaches();
       cachedNeedsUserAttention = undefined;
 
       set((state) => ({

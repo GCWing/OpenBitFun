@@ -13,6 +13,7 @@ let reconcileEnabled = false;
 let shortOverscan = false;
 let viewportSuspended = false;
 let shiftEnabled = false;
+const unobserve = vi.fn();
 function Harness({ count, tail }: { count: number; tail: boolean }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -67,6 +68,7 @@ describe('initial virtual window with the real virtualizer', () => {
     shortOverscan = false;
     viewportSuspended = false;
     shiftEnabled = false;
+    unobserve.mockClear();
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
@@ -76,7 +78,7 @@ describe('initial virtual window with the real virtualizer', () => {
     });
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
-      unobserve() {}
+      unobserve(element: Element) { unobserve(element); }
       disconnect() {}
     });
     // Explicit geometry supplies jsdom's missing layout, not performance proof.
@@ -105,6 +107,16 @@ describe('initial virtual window with the real virtualizer', () => {
     vi.useRealTimers();
   });
   const render = (count: number, tail: boolean) => act(() => root.render(<Harness count={count} tail={tail} />));
+
+  it('unobserves removed rows when the transcript becomes empty without new attachments', () => {
+    render(8, false);
+    const rows = [...host.querySelectorAll('[data-virtual-index]')];
+    expect(rows.length).toBeGreaterThan(0);
+    unobserve.mockClear();
+    render(0, false);
+    expect(host.querySelectorAll('[data-virtual-index]')).toHaveLength(0);
+    for (const row of rows) expect(unobserve).toHaveBeenCalledWith(row);
+  });
 
   it('mounts the tail first without measuring head rows, then accepts user scrolling', () => {
     render(34, true);

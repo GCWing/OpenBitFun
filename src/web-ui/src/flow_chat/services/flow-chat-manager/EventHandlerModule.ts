@@ -1,5 +1,6 @@
 import { modelPoolAPI, supportsModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { isRuntimeSessionProjectionStale } from '@/infrastructure/peer-device/runtimeSessionEventGate';
 import { sessionWorkspaceId, sessionProjectWorkspacePath } from '../../utils/sessionWorkspace';
 /**
  * Event handling module
@@ -260,15 +261,11 @@ function logDroppedDataEvent(
   turnId: string | null,
   details: Record<string, unknown>
 ): void {
-  if (details.reason === 'missing_state_machine') {
-    const knownSession = FlowChatStore.getInstance().getState().sessions.get(sessionId);
-    if (!knownSession) {
-      // Unregistered background sessions (e.g., MemoryPhase2 or internal subagents)
-      // have no UI transcript or state machine. Silently ignore their data events
-      // instead of spamming webview.log and scheduling repair timers every chunk.
-      return;
-    }
-  }
+  // Missing UI state does not identify an internal background session. Preserve
+  // the first replay gap, then coalesce repeated drops until it materializes.
+  if (details.reason === 'missing_state_machine'
+    && !FlowChatStore.getInstance().getState().sessions.has(sessionId)
+    && isRuntimeSessionProjectionStale(getActiveSurfaceScope().surfaceId, sessionId)) return;
   requestRuntimeProjectionRepair(sessionId);
   log.debug('Dropped agentic data event', {
     eventName,

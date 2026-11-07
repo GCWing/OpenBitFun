@@ -42,25 +42,6 @@ function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLEle
 
   const requestRender = useCallback((sync: boolean) => {
     if (!mounted.current || (!sync && requested.current)) return;
-    if (commits.current < MAX_SYNCHRONOUS_VIRTUALIZER_COMMITS) {
-      pending.current = false;
-      requested.current = true;
-      commits.current += 1;
-      if (frame.current === null) {
-        frame.current = requestAnimationFrame(() => {
-          frame.current = null;
-          commits.current = 0;
-          if (!mounted.current || !pending.current) return;
-          pending.current = false;
-          requested.current = true;
-          commits.current = 1;
-          rerender();
-        });
-      }
-      if (sync) flushSync(rerender);
-      else rerender();
-      return;
-    }
     pending.current = true;
     if (frame.current === null) {
       frame.current = requestAnimationFrame(() => {
@@ -75,6 +56,12 @@ function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLEle
         rerender();
       });
     }
+    if (commits.current >= MAX_SYNCHRONOUS_VIRTUALIZER_COMMITS) return;
+    pending.current = false;
+    requested.current = true;
+    commits.current += 1;
+    if (sync) flushSync(rerender);
+    else rerender();
   }, []);
 
   instance.setOptions({
@@ -838,8 +825,10 @@ export function useFlowChatVirtualizer<T>({
       }
     }
     attachingRowsRef.current.clear();
-    if (!attached.length || isViewportSuspendedRef.current()) return;
+    // A shrinking window can detach rows without attaching any replacements.
+    // Cleanup must still unobserve and release those DOM nodes.
     virtualizer.measureElement(null);
+    if (!attached.length || isViewportSuspendedRef.current()) return;
     // Read before any viewport shift or size-cache notification can write.
     measurementBatchRef.current = new Map(attached.map(element => [element, measureRowHeight(element)]));
     try {

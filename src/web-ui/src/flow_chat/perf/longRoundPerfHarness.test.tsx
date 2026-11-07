@@ -233,6 +233,9 @@ describe('FlowChat Long-Round Categorized Benchmark Suites', () => {
       );
 
       expect(result.totalFlushes).toBe(20);
+      // Identity reuse is deterministic for this fixture; wall-clock timings
+      // remain diagnostics, not a portable machine-speed assertion.
+      expect(result.settledVirtualItemReuseRatio).toBeGreaterThan(0.9);
     });
   });
 
@@ -255,6 +258,7 @@ describe('FlowChat Long-Round Categorized Benchmark Suites', () => {
       );
 
       expect(result.totalFlushes).toBe(20);
+      expect(result.settledTimelineBlockReuseRatio).toBeGreaterThan(0.9);
     });
   });
 

@@ -40,4 +40,42 @@ describe('application resource budget', () => {
     cycle.self = cycle;
     expect(estimateRetainedBytes(cycle)).toBeGreaterThan(0);
   });
+
+  const round = (id: string, content: string, status = 'completed') => ({
+    id, status, isStreaming: status === 'streaming', isComplete: status === 'completed',
+    items: [{ id: `${id}-text`, type: 'text', content }],
+  });
+
+  it.each(['cancelled', 'error'])('counts the completed prefix before a %s round in a resumed turn', status => {
+    const content = 'x'.repeat(1024 * 1024);
+    const turn = { id: 'resumed', modelRounds: [
+      round('first', content), round('interrupted', 'partial', status),
+      round('resumed', 'continued'), round('tail', 'streaming', 'streaming'),
+    ] };
+    const bytes = estimateRetainedBytes(turn);
+    expect(bytes).toBeGreaterThan(content.length * 2);
+    expect(estimateRetainedBytes(turn)).toBe(bytes);
+  });
+
+  it('accounts immutable updates to an interior completed round', () => {
+    const rounds = ['first', 'middle', 'last', 'tail'].map(id => round(id, '', id === 'tail' ? 'streaming' : 'completed'));
+    const turn = { id: 'updated', modelRounds: rounds };
+    const before = estimateRetainedBytes(turn);
+    const content = 'x'.repeat(1024 * 1024);
+    const updated = { ...turn, modelRounds: rounds.map((value, index) => index === 1
+      ? { ...value, items: [{ ...value.items[0], content }] } : value) };
+    expect(estimateRetainedBytes(updated) - before).toBe(content.length * 2);
+  });
+
+  it('counts shared completed-round contents once even after separate measurements', () => {
+    const shared = { content: 'x'.repeat(4096) };
+    const completed = { ...round('shared', ''), items: [shared] };
+    const first = estimateRetainedBytes({ shared, completed });
+    estimateRetainedBytes(completed);
+    expect(estimateRetainedBytes({ shared, completed })).toBe(first);
+    expect(estimateRetainedBytes({ completed, shared })).toBe(first);
+    const seen = new Set<object>();
+    estimateRetainedBytes(completed, seen);
+    expect(estimateRetainedBytes(shared, seen)).toBe(0);
+  });
 });

@@ -91,8 +91,8 @@ function getVirtualItemSearchSources(item: VirtualItem): SearchableSource[] {
     const content = item.data?.content ?? '';
     sources = [{ content, foldedContent: content.toLowerCase() }];
   } else if (item.type === 'model-round') {
-    sources = getProjectedModelRoundGroups(item).flatMap((group, index) => group.type !== 'critical'
-      ? flowItemSearchSources(group.items, getCachedInlineFlowGroupData(item.data, index, group).groupId)
+    sources = getProjectedModelRoundGroups(item).flatMap(group => group.type !== 'critical'
+      ? flowItemSearchSources(group.items, getCachedInlineFlowGroupData(item.data, group).groupId)
       : flowItemSearchSources([group.item]));
   } else if (item.type === 'explore-group') {
     sources = flowItemSearchSources(item.data.allItems, item.data.groupId);

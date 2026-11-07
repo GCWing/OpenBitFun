@@ -10,7 +10,7 @@ vi.mock('./FlowChatStore', () => ({
   },
 }));
 
-import { sessionToVirtualItems, type VirtualItem } from './modernFlowChatStore';
+import { createModernFlowChatStore, sessionToVirtualItems, type VirtualItem } from './modernFlowChatStore';
 import { getVirtualItemFlowGroups } from '../grouping/selectors';
 import { getVirtualItemStableKey } from '../components/modern/virtualItemIdentity';
 import { getModelRoundExploreGroups, getProjectedModelRoundGroups } from '../components/modern/modelRoundItemGrouping';
@@ -115,6 +115,115 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     ...overrides,
   };
 }
+
+describe('incremental projection cache contracts', () => {
+  afterEach(() => sessionToVirtualItems(null));
+
+  function processingSession(rounds: ModelRound[]): Session {
+    const session = makeSession();
+    session.dialogTurns[0] = { ...session.dialogTurns[0], status: 'processing', modelRounds: rounds };
+    return session;
+  }
+
+  function updateTail(session: Session): Session {
+    const turn = session.dialogTurns[0];
+    return { ...session, dialogTurns: [{ ...turn, modelRounds: turn.modelRounds.map((round, index) => (
+      index === turn.modelRounds.length - 1 ? { ...round, items: [...round.items, makeTextItem('tail-chunk', 'next chunk')] } : round
+    )) }] };
+  }
+
+  it('preserves settled rows and groups across tail updates', () => {
+    const session = processingSession([
+      makeRound({ id: 'read', items: [makeReadTool('read')] }),
+      makeRound({ id: 'boundary', items: [makeTool('ask', 'AskUserQuestion')] }),
+      makeRound({ id: 'tail', items: [makeTextItem('tail', 'Answer')] }),
+    ]);
+    const before = sessionToVirtualItems(session);
+    const after = sessionToVirtualItems(updateTail(session));
+    expect(after.slice(0, 3).every((item, index) => item === before[index])).toBe(true);
+    expect(getVirtualItemFlowGroups(after[1])[0]).toBe(getVirtualItemFlowGroups(before[1])[0]);
+    expect(after.at(-1)).not.toBe(before.at(-1));
+  });
+
+  it.each(['steering', 'retry', 'recovery'])('reuses immutable %s display rounds during tail streaming', variant => {
+    const special = makeRound({ id: 'special', items: [makeTextItem('special-text', 'Previous output')] });
+    const tail = makeRound({ id: 'tail', items: [makeTextItem('tail-text', 'Answer')] });
+    const rounds = variant === 'steering'
+      ? [{ ...special, items: [...special.items, makeSteeringItem('steer')] }, tail]
+      : variant === 'retry'
+        ? [makeRound({ id: 'failed', status: 'error', roundGroupId: 'retry' }), { ...special, roundGroupId: 'retry' }, tail]
+        : [makeRound({ id: 'cancelled', status: 'cancelled' }), special, tail];
+    const session = processingSession(rounds);
+    if (variant === 'recovery') session.dialogTurns[0].recoveryEpoch = 1;
+    const original = JSON.stringify(session);
+    const before = sessionToVirtualItems(session);
+    const updated = updateTail(session);
+    const after = sessionToVirtualItems(updated);
+    const row = (items: VirtualItem[]) => items.find((item): item is ModelRoundVirtualItem => (
+      item.type === 'model-round' && item.data.id === 'special'
+    ))!;
+    expect(row(after).data).toBe(row(before).data);
+    expect(JSON.stringify(session)).toBe(original);
+    sessionToVirtualItems(null);
+    expect(after).toEqual(sessionToVirtualItems(structuredClone(updated)));
+  });
+
+  it('restores exact warm projections while keeping equal session ids on separate sources isolated', () => {
+    const local = makeSession();
+    const peer = makeSession();
+    peer.dialogTurns[0].userMessage.content = 'Peer prompt';
+    const localItems = sessionToVirtualItems(local);
+    const peerItems = sessionToVirtualItems(peer);
+    expect(peerItems).not.toEqual(localItems);
+    expect(sessionToVirtualItems(local)).toBe(localItems);
+    expect(sessionToVirtualItems(peer)).toBe(peerItems);
+  });
+
+  it('invalidates cached warm sessions when the presentation store is cleared', () => {
+    const session = makeSession();
+    const store = createModernFlowChatStore(session);
+    const before = store.getState().virtualItems;
+    store.getState().clear();
+    const after = sessionToVirtualItems(session);
+    expect(after).toEqual(before);
+    expect(after).not.toBe(before);
+  });
+
+  it('matches a fresh projection through streaming, old-round replacement, rollback and completion', () => {
+    let seed = 3778;
+    const random = (max: number) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return (seed >>> 8) % max;
+    };
+    const names = ['Read', 'ExecCommand', 'Edit', 'AskUserQuestion', 'ToolSearch'];
+    for (let scenario = 0; scenario < 150; scenario++) {
+      sessionToVirtualItems(null);
+      const rounds = Array.from({ length: 4 + random(8) }, (_, index) => makeRound({
+        id: `round-${index}`, index,
+        items: Array.from({ length: 1 + random(6) }, (_, member) => {
+          const kind = random(7);
+          const id = `${index}-${member}`;
+          return kind < 5 ? makeTool(id, names[kind]) : kind === 5
+            ? makeTextItem(id, `Paragraph ${id}`) : makeSteeringItem(id);
+        }),
+      }));
+      const session = processingSession(rounds);
+      sessionToVirtualItems(session);
+      const changed = random(rounds.length);
+      const nextRounds = rounds.map((round, index) => index === changed
+        ? { ...round, items: [...round.items, makeTool(`new-${scenario}`, names[random(names.length)])] } : round);
+      const updated = { ...session, dialogTurns: [{ ...session.dialogTurns[0],
+        modelRounds: scenario % 3 === 0 ? nextRounds.slice(0, -1) : nextRounds,
+        status: scenario % 4 === 0 ? 'completed' as const : 'processing' as const,
+      }] };
+      const original = JSON.stringify(updated);
+      const cached = sessionToVirtualItems(updated);
+      sessionToVirtualItems(null);
+      expect(cached, `scenario ${scenario}`).toEqual(sessionToVirtualItems(structuredClone(updated)));
+      expect(JSON.stringify(updated)).toBe(original);
+    }
+  });
+});
 
 describe('sessionToVirtualItems unified work grouping', () => {
   it('omits host GenUI repair input rows while retaining repair output and stored diagnostics', () => {

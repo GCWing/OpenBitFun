@@ -26,61 +26,25 @@ export interface FlowGroupLocation {
   virtualIndex: number;
 }
 
-let lastIndexedItems: readonly VirtualItem[] = [];
-let lastIndexedById = new Map<string, FlowGroupLocation>();
-let lastIndexedByMemberId = new Map<string, FlowGroupLocation>();
-let lastIndexedByTurnId = new Map<string, FlowGroupLocation[]>();
+interface FlowGroupIndex {
+  byId: Map<string, FlowGroupLocation>;
+  byMemberId: Map<string, FlowGroupLocation>;
+  byTurnId: Map<string, FlowGroupLocation[]>;
+}
+
+const flowGroupIndexCache = new WeakMap<readonly VirtualItem[], FlowGroupIndex>();
 
 /** One ownership index for disclosure and navigation, including merged legacy aliases. */
-export function indexFlowGroups(items: readonly VirtualItem[]) {
-  if (items === lastIndexedItems) {
-    return { byId: lastIndexedById, byMemberId: lastIndexedByMemberId, byTurnId: lastIndexedByTurnId };
-  }
+export function indexFlowGroups(items: readonly VirtualItem[]): FlowGroupIndex {
+  const cached = flowGroupIndexCache.get(items);
+  if (cached) return cached;
 
-  let prefixLen = 0;
-  const maxPrefix = Math.min(lastIndexedItems.length, items.length);
-  while (prefixLen < maxPrefix && lastIndexedItems[prefixLen] === items[prefixLen]) {
-    prefixLen += 1;
-  }
-
-  // Only reuse prefix maps when strictly appending or mutating the tail (no removed items from the replaced suffix)
-  const canReusePrefix = prefixLen > 0 && prefixLen >= lastIndexedItems.length - 2;
-  const byId = canReusePrefix ? new Map(lastIndexedById) : new Map<string, FlowGroupLocation>();
-  const byMemberId = canReusePrefix ? new Map(lastIndexedByMemberId) : new Map<string, FlowGroupLocation>();
+  // Copying the old maps already costs O(groups). Rebuild from cached per-row
+  // groups so removed tails restore shadowed aliases, with no retained old array.
+  const byId = new Map<string, FlowGroupLocation>();
+  const byMemberId = new Map<string, FlowGroupLocation>();
   const byTurnId = new Map<string, FlowGroupLocation[]>();
-
-  if (canReusePrefix) {
-    // Remove entries from the replaced suffix of lastIndexedItems before indexing the new suffix
-    const affectedTurnIds = new Set<string>();
-    for (let i = prefixLen; i < lastIndexedItems.length; i += 1) {
-      const oldItem = lastIndexedItems[i];
-      affectedTurnIds.add(oldItem.turnId);
-      for (const group of getVirtualItemFlowGroups(oldItem)) {
-        for (const id of getFlowGroupStateIds(group)) byId.delete(id);
-        byId.delete(group.groupId);
-        for (const member of group.allItems) {
-          if (byMemberId.get(member.id)?.virtualIndex === i) {
-            byMemberId.delete(member.id);
-          }
-        }
-      }
-    }
-    for (let i = prefixLen; i < items.length; i += 1) {
-      affectedTurnIds.add(items[i].turnId);
-    }
-    for (const [turnId, locations] of lastIndexedByTurnId) {
-      if (!affectedTurnIds.has(turnId)) {
-        byTurnId.set(turnId, locations);
-      } else {
-        const kept = locations.filter(loc => loc.virtualIndex < prefixLen);
-        if (kept.length > 0) byTurnId.set(turnId, kept);
-      }
-    }
-  }
-
-  const startIndex = canReusePrefix ? prefixLen : 0;
-  for (let virtualIndex = startIndex; virtualIndex < items.length; virtualIndex += 1) {
-    const item = items[virtualIndex];
+  items.forEach((item, virtualIndex) => {
     for (const group of getVirtualItemFlowGroups(item)) {
       const location = { group, turnId: item.turnId, virtualIndex };
       for (const id of getFlowGroupStateIds(group)) byId.set(id, location);
@@ -90,11 +54,8 @@ export function indexFlowGroups(items: readonly VirtualItem[]) {
       turnGroups.push(location);
       byTurnId.set(item.turnId, turnGroups);
     }
-  }
-
-  lastIndexedItems = items;
-  lastIndexedById = byId;
-  lastIndexedByMemberId = byMemberId;
-  lastIndexedByTurnId = byTurnId;
-  return { byId, byMemberId, byTurnId };
+  });
+  const result = { byId, byMemberId, byTurnId };
+  flowGroupIndexCache.set(items, result);
+  return result;
 }

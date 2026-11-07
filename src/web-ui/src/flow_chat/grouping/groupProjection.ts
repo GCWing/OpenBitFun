@@ -249,7 +249,6 @@ export function projectAdjacentFlowGroups(items: readonly VirtualItem[], options
       const includeRoundIdAlias = group.type === 'explore' && firstExploreIndex === groupIndex;
       const data = getCachedInlineFlowGroupData(
         item.data,
-        groupIndex,
         group,
         item.isLastRound && groupIndex === groups.length - 1,
         includeRoundIdAlias,

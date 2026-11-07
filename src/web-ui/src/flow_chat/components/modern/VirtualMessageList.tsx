@@ -1613,7 +1613,12 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       const delta = previous === null ? 0 : position - previous;
       const direction = delta < -0.5 ? 'before' : delta > 0.5 ? 'after' : undefined;
       let geometrySample: FlowChatViewportGeometry | undefined;
-      const getGeometry = () => (geometrySample ??= readFlowChatViewportGeometry(scrollerElement));
+      const getGeometry = () => {
+        if (!geometrySample || geometrySample.scrollTop !== readFlowChatScrollTop(scrollerElement)) {
+          geometrySample = readFlowChatViewportGeometry(scrollerElement);
+        }
+        return geometrySample;
+      };
       // Synchronous corrections are removed by the register. Smooth owned
       // navigation/follow scrolls are excluded here; unowned momentum counts.
       if (direction && (owner === null || owner === 'user-gesture')) {
@@ -1640,13 +1645,14 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
        * Re-anchor to wherever the user has arrived, and only there. The rule
        * for "was this scroll the user's" lives with the anchor.
        */
-      viewportAnchor.captureAnchorForScroll(
-        geometrySample && readFlowChatScrollTop(scrollerElement) === geometrySample.scrollTop ? geometrySample : undefined,
-      );
+      // A snapshot subscriber will need geometry even if this event had no
+      // reader travel. Share that read with the anchor instead of sampling twice.
+      const sample = onViewportSnapshotRef.current ? getGeometry() : geometrySample;
+      const currentSample = sample && readFlowChatScrollTop(scrollerElement) === sample.scrollTop ? sample : undefined;
+      viewportAnchor.captureAnchorForScroll(currentSample);
       scheduleVisibleTurnInfoUpdate();
       if (onViewportSnapshotRef.current) {
-        const sample = getGeometry();
-        publishViewportSnapshot(readFlowChatScrollTop(scrollerElement) === sample.scrollTop ? sample : undefined);
+        publishViewportSnapshot(currentSample);
       }
       /*
        * Paging is a question about where the reader is, so a scroll is its

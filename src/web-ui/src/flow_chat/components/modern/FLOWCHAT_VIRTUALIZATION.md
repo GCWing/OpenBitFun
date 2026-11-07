@@ -53,6 +53,25 @@ assert zero scroll writes as well as node and screen-position continuity.
 These supplied-geometry tests do not establish native paint or live remote
 behavior.
 
+## Projection cache lifetime
+
+Warm session projections are keyed weakly by the canonical `dialogTurns` array,
+so a history eviction or replacement can release both the body and its derived
+rows. Equal session IDs on different device sources do not share that key.
+Per-Turn streaming reconciliation drops removed Turn IDs on paging/rollback;
+clearing the presentation store also clears warm projections. Normalized steering,
+retry and recovery rounds use weak source identities, including both source
+rounds for a merged retry. Inline group caches follow group objects rather than
+positions, which change when candidate groups are collected or expanded.
+
+The group index rebuilds from cached row groups when the transcript changes,
+preserving the original last-alias/first-member ownership rules even when a tail
+that shadowed an earlier alias disappears. Identical transcript arrays reuse
+their weakly cached index. The resource estimator remains a shared-reference-aware
+graph walk; the history owner already caches immutable Turn estimates and
+coalesces active-history accounting at 500 ms. A completed round does not prove
+an unchanged prefix or disjoint object graph.
+
 ## Large text and decoration residency
 
 `markdownSections` uses the existing streaming parser's block tokenizer to find

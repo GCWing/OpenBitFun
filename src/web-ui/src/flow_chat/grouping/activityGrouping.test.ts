@@ -24,6 +24,20 @@ function groups(rows: VirtualItem[]) {
 }
 
 describe('execution activity grouping', () => {
+  it('keeps inline group identities independent of their position in a projected list', () => {
+    const first = tool('read', 'Read');
+    const second = tool('run', 'ExecCommand');
+    const row = model('round', [first, tool('boundary', 'AskUserQuestion'), second]);
+    const firstGroup = { type: 'explore' as const, items: [first], isLast: false };
+    const secondGroup = { type: 'explore' as const, items: [second], isLast: false };
+    const before = getModelRoundFlowGroups(row.data, [firstGroup])[0];
+    const after = getModelRoundFlowGroups(row.data, [secondGroup])[0];
+    expect(after.allItems).toEqual([second]);
+    expect(after.groupId).not.toBe(before.groupId);
+    expect(getModelRoundFlowGroups(row.data, [firstGroup])[0]).toBe(before);
+    expect(getModelRoundFlowGroups(row.data, [secondGroup])[0]).toBe(after);
+  });
+
   it.each(['ExecCommand', 'WriteStdin', 'ExecControl', 'Bash'])('collects %s with exploration without any mode hints', toolName => {
     for (const call of [tool('shell', toolName),
       tool('deferred', 'CallDeferredTool', { tool_name: toolName, args: {} })]) {
