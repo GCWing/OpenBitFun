@@ -38,12 +38,17 @@ export function activeSessionTerminalDirectory(workspaceId: string | undefined):
   );
 }
 
-const subscribeFlowChatStore = (listener: () => void) => flowChatStore.subscribe(listener);
+function subscribeActiveTerminalDirectory(workspaceId: string | undefined, notify: () => void): () => void {
+  return flowChatStore.subscribeSelector(
+    () => activeSessionTerminalDirectory(workspaceId),
+    () => notify(),
+  );
+}
 
 /** Terminal default cwd for `workspaceId`, tracking the active session. */
 export function useSessionTerminalDirectory(workspaceId: string | undefined): string | undefined {
   return useSyncExternalStore(
-    subscribeFlowChatStore,
+    listener => subscribeActiveTerminalDirectory(workspaceId, listener),
     () => activeSessionTerminalDirectory(workspaceId),
     () => undefined,
   );
