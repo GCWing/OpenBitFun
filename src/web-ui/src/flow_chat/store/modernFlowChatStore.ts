@@ -108,6 +108,27 @@ function isStableTurnProjection(turn: DialogTurn): boolean {
   );
 }
 
+interface SessionProjectionCache {
+  dialogTurnsRef: DialogTurn[] | null;
+  turnCatalogRef: Session['turnCatalog'] | undefined;
+  isPartial: boolean | undefined;
+  totalTurnCount: number | undefined;
+  needsUserAttention: Session['needsUserAttention'];
+  virtualItems: VirtualItem[];
+  turnItems: WeakMap<
+    DialogTurn,
+    { items: VirtualItem[]; hasNewerDialogTurn: boolean; absoluteTurnIndex: number; backgroundCollapsed?: boolean }
+  >;
+}
+
+/**
+ * Per-session projection caches. Switching back to a previously projected
+ * session reuses its last VirtualItem array (and its stable rows) instead of
+ * rebuilding the whole transcript, so alternating sessions keep object identity.
+ */
+const sessionProjectionCaches = new Map<string, SessionProjectionCache>();
+const MAX_SESSION_PROJECTION_CACHES = 8;
+
 let cachedSession: Session | null = null;
 let cachedDialogTurnsRef: DialogTurn[] | null = null;
 let cachedTurnCatalogRef: Session['turnCatalog'] | undefined;
@@ -119,6 +140,20 @@ let cachedTurnItems = new WeakMap<
   DialogTurn,
   { items: VirtualItem[]; hasNewerDialogTurn: boolean; absoluteTurnIndex: number; backgroundCollapsed?: boolean }
 >();
+
+function resetSessionProjectionCaches(): void {
+  sessionProjectionCaches.clear();
+}
+
+function rememberSessionProjectionCache(sessionId: string, cache: SessionProjectionCache): void {
+  sessionProjectionCaches.delete(sessionId);
+  sessionProjectionCaches.set(sessionId, cache);
+  while (sessionProjectionCaches.size > MAX_SESSION_PROJECTION_CACHES) {
+    const oldest = sessionProjectionCaches.keys().next().value;
+    if (oldest === undefined) break;
+    sessionProjectionCaches.delete(oldest);
+  }
+}
 interface CachedTurnPrefixProjection {
   turnId: string;
   isTurnComplete: boolean;
@@ -406,26 +441,57 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
       previousTurnModelRoundsById.clear();
       currentTurnModelRoundsById.clear();
       cachedTurnPrefixById.clear();
+      resetSessionProjectionCaches();
     }
     return cachedVirtualItems;
   }
-  
-  if (
-    cachedSession?.sessionId === session.sessionId && 
-    cachedDialogTurnsRef === session.dialogTurns &&
-    cachedTurnCatalogRef === session.turnCatalog &&
-    cachedIsPartial === session.isPartial &&
-    cachedTotalTurnCount === session.totalTurnCount && cachedNeedsUserAttention === session.needsUserAttention
-  ) {
-    return cachedVirtualItems;
-  }
-  if (cachedSession?.sessionId !== session.sessionId) {
+
+  if (cachedSession?.sessionId === session.sessionId) {
+    if (
+      cachedDialogTurnsRef === session.dialogTurns &&
+      cachedTurnCatalogRef === session.turnCatalog &&
+      cachedIsPartial === session.isPartial &&
+      cachedTotalTurnCount === session.totalTurnCount && cachedNeedsUserAttention === session.needsUserAttention
+    ) {
+      return cachedVirtualItems;
+    }
+  } else {
+    // Switching sessions: restore the target session's own projection cache so
+    // its previously projected rows keep their identity across the switch.
+    const restored = sessionProjectionCaches.get(session.sessionId);
+    if (restored) {
+      cachedDialogTurnsRef = restored.dialogTurnsRef;
+      cachedTurnCatalogRef = restored.turnCatalogRef;
+      cachedIsPartial = restored.isPartial;
+      cachedTotalTurnCount = restored.totalTurnCount;
+      cachedNeedsUserAttention = restored.needsUserAttention;
+      cachedVirtualItems = restored.virtualItems;
+      cachedTurnItems = restored.turnItems;
+      if (
+        restored.dialogTurnsRef === session.dialogTurns &&
+        restored.turnCatalogRef === session.turnCatalog &&
+        restored.isPartial === session.isPartial &&
+        restored.totalTurnCount === session.totalTurnCount &&
+        restored.needsUserAttention === session.needsUserAttention
+      ) {
+        cachedSession = session;
+        return cachedVirtualItems;
+      }
+    } else {
+      cachedDialogTurnsRef = null;
+      cachedTurnCatalogRef = undefined;
+      cachedIsPartial = undefined;
+      cachedTotalTurnCount = undefined;
+      cachedNeedsUserAttention = undefined;
+      cachedVirtualItems = [];
+      cachedTurnItems = new WeakMap();
+    }
     previousTurnItemsById.clear();
     previousTurnModelRoundsById.clear();
     currentTurnModelRoundsById.clear();
     cachedTurnPrefixById.clear();
   }
-  
+
   cachedSession = session;
   cachedDialogTurnsRef = session.dialogTurns;
   cachedTurnCatalogRef = session.turnCatalog;
@@ -630,6 +696,15 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
   });
 
   cachedVirtualItems = items;
+  rememberSessionProjectionCache(session.sessionId, {
+    dialogTurnsRef: cachedDialogTurnsRef,
+    turnCatalogRef: cachedTurnCatalogRef,
+    isPartial: cachedIsPartial,
+    totalTurnCount: cachedTotalTurnCount,
+    needsUserAttention: cachedNeedsUserAttention,
+    virtualItems: items,
+    turnItems: cachedTurnItems,
+  });
   return items;
 }
 
