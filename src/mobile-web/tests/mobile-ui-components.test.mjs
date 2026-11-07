@@ -333,7 +333,7 @@ test('mobile chat markdown lazily loads katex plugins and keeps mobile display s
   assert.match(math, /import rehypeKatex from 'rehype-katex';/);
   assert.match(math, /import remarkMath from 'remark-math';/);
   assert.match(math, /import 'katex\/dist\/katex\.min\.css';/);
-  assert.match(math, /remarkPlugins=\{\[remarkGfm,\s*\[remarkMath,\s*\{\s*singleDollarTextMath:\s*false\s*\}\]\]\}/);
+  assert.match(math, /remarkPlugins=\{\[\[remarkGfm,\s*chatMarkdownGfmOptions\],\s*\[remarkMath,\s*\{\s*singleDollarTextMath:\s*false\s*\}\]\]\}/);
   assert.match(math, /rehypePlugins=\{\[\[rehypeKatex,\s*\{\s*strict:\s*false,\s*throwOnError:\s*false\s*\}\]\]\}/);
   assert.match(markdown, /import\('\.\/MarkdownMathContent'\)/);
   assert.match(markdown, /mayContainMarkdownMath\(content\)/);
@@ -347,6 +347,18 @@ test('mobile chat markdown lazily loads katex plugins and keeps mobile display s
   assert.match(markdownStyles, /\.katex\s*\{[\s\S]*?font-size:\s*var\(--openbitfun-type-body-lg-font-size\);/);
   assert.match(markdownStyles, /\.katex\s*\{[\s\S]*?line-height:\s*var\(--openbitfun-type-modifier-leading-dense-line-height\);/);
   assert.match(markdownStyles, /\.katex-error\s*\{[\s\S]*?color:\s*var\(--openbitfun-color-status-danger-content\);/);
+});
+
+test('mobile chat markdown keeps single tildes literal in both renderers, like desktop chat', async () => {
+  const markdown = await readFile(path.join(sourceDirectory, 'components/ChatMarkdown.tsx'), 'utf8');
+  const math = await readFile(path.join(sourceDirectory, 'components/MarkdownMathContent.tsx'), 'utf8');
+  const options = await readFile(path.join(sourceDirectory, 'components/chatMarkdownGfm.ts'), 'utf8');
+  assert.match(options, /export const chatMarkdownGfmOptions: Options = \{ singleTilde: false \};/);
+  for (const renderer of [markdown, math]) {
+    assert.match(renderer, /import \{ chatMarkdownGfmOptions \} from '\.\/chatMarkdownGfm';/);
+    assert.match(renderer, /\[remarkGfm,\s*chatMarkdownGfmOptions\]/);
+    assert.doesNotMatch(renderer, /remarkPlugins=\{\[remarkGfm[,\]]/);
+  }
 });
 
 test('math activation ignores currency-only dollar pairs', async () => {
