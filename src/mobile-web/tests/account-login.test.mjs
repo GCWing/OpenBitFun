@@ -229,10 +229,12 @@ test('official and local invitations share strict device-only targeting', async 
     }
   }
   for (const base of ['https://evil.example/', 'https://remote.openbitfun.com.evil.example/v/1.0.0/',
-    'https://user@remote.openbitfun.com/v/1.0.2/', 'http://remote.openbitfun.com/v/1.0.2/',
-    'https://remote.openbitfun.com/relay/']) {
+    'https://user@remote.openbitfun.com/v/1.0.2/', 'http://remote.openbitfun.com/v/1.0.2/']) {
     assert.equal(pairingRelayUrl(base), null);
   }
+  // Both official aliases resolve to the same deployment.
+  assert.equal(pairingRelayUrl('https://remote.openbitfun.com/relay/'), 'https://remote.openbitfun.com/relay');
+  assert.equal(pairingRelayUrl('https://remote.openbitfun.com/relay/?v=1.0.9'), 'https://remote.openbitfun.com/relay');
   assert.equal(accountDeviceIdFromHash('#/pair?did=desktop'), 'desktop');
   assert.equal(accountDeviceIdFromHash('#/chat?did=desktop'), null);
 });

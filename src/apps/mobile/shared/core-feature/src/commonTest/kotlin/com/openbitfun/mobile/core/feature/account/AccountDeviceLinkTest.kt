@@ -8,13 +8,14 @@ class AccountDeviceLinkTest {
     @Test fun explicitLegacyConstructorsPreserveTheExistingDefaults() {
         assertNull(AccountDeviceLinkResult(AccountDeviceLinkStatus.INVALID, null).relayUrl)
         val legacy = AccountUiState.Ready("user", "name", emptyList(), null, null)
-        assertEquals("https://remote.openbitfun.com/v/1.0.2", legacy.relayUrl)
+        assertEquals("https://remote.openbitfun.com/relay", legacy.relayUrl)
         assertEquals(false, legacy.refreshing)
         assertNull(legacy.refreshFailure)
     }
 
-    private val link = "https://remote.openbitfun.com/v/1.0.2/#/pair?did=desktop-1"
-    private val ready = AccountUiState.Ready(userId = "user", username = "name", relayUrl = "https://remote.openbitfun.com/v/1.0.2", devices = listOf(AccountDeviceUi("desktop-1", "Desktop", true, null)), selectedDeviceId = null, selectedDeviceName = null)
+    private val endpoint = "https://remote.openbitfun.com/relay"
+    private val link = "$endpoint/#/pair?did=desktop-1"
+    private val ready = AccountUiState.Ready(userId = "user", username = "name", relayUrl = endpoint, devices = listOf(AccountDeviceUi("desktop-1", "Desktop", true, null)), selectedDeviceId = null, selectedDeviceName = null)
 
     @Test fun onlyAuthenticatedOnlineMembershipCanResolveTheTarget() {
         assertEquals(AccountDeviceLinkStatus.SIGN_IN_REQUIRED, resolveAccountDeviceLink(link, AccountUiState.SignedOut).status)
@@ -34,11 +35,16 @@ class AccountDeviceLinkTest {
             resolveAccountDeviceLink(localLink.replace("desktop-1", "foreign"), ready.copy(relayUrl = endpoint)).status)
     }
 
-    @Test fun rejectsLegacyAndLookalikeLinksWithoutUsingTheirRoutingFields() {
+    @Test fun rejectsLookalikeEndpointsAndUnexpectedRoutingFields() {
         for (invalid in listOf(
             link.replace("https:", "http:"), link.replace("remote.openbitfun.com", "evil.example"),
             link.replace("remote.openbitfun.com", "user@remote.openbitfun.com"),
-            link.replace("/v/1.0.2/", "/relay/"), link + "&did=foreign", link + "&pk=untrusted", link + "&relay=evil", link.replace("did=desktop-1", "room=old"),
+            // Another host's `/relay` is not the official deployment.
+            link.replace("https://remote.openbitfun.com", "https://remote.openbitfun.com.evil.example"),
+            // A query on the endpoint may only ever carry the service version.
+            link.replace("/#/pair?did=", "/?v=1.0.9&relay=evil#/pair?did="),
+            link.replace("/#/pair?did=", "/?version=1.0.9#/pair?did="),
+            link + "&did=foreign", link + "&pk=untrusted", link + "&relay=evil", link.replace("did=desktop-1", "room=old"),
             link.replace("did=desktop-1", "did=../bad"),
         )) {
             val result = resolveAccountDeviceLink(invalid, ready)

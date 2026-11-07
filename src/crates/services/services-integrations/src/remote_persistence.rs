@@ -112,6 +112,23 @@ struct AccountSessionPayload {
     device_id: Option<String>,
 }
 
+/// Whether a stored account session belongs to the same deployed Relay.
+///
+/// `/relay` and `/v/1.0.2` are two live aliases of one deployment, so a stored
+/// master key must survive the endpoint move. Only builds that link the Relay
+/// transport can consult the shared endpoint rules; the persistence-only
+/// configuration keeps its original exact comparison.
+fn same_relay_session_endpoint(stored: &str, current: &str) -> bool {
+    #[cfg(feature = "remote-connect")]
+    {
+        openbitfun_product_domains::account::same_relay_deployment(stored, current)
+    }
+    #[cfg(not(feature = "remote-connect"))]
+    {
+        stored.trim_end_matches('/') == current.trim_end_matches('/')
+    }
+}
+
 pub fn read_device_identity(path: &Path) -> Result<Option<DeviceIdentityRecord>> {
     let value: Option<DeviceIdentityRecord> = read_optional_json(path)?;
     if let Some(value) = &value {
@@ -945,8 +962,7 @@ pub fn load_or_create_device_secret(
             let secret = previous
                 .filter(|session| {
                     session.user_id == user_id
-                        && session.relay_url.trim_end_matches('/')
-                            == relay_url.trim_end_matches('/')
+                        && same_relay_session_endpoint(&session.relay_url, relay_url)
                         && session.device_id.as_deref() == Some(device_id)
                 })
                 .map(|session| session.master_key)
