@@ -99,10 +99,9 @@ export function groupModelConfigsByProvider<T extends ProviderConfigLike, G>(
       appendModel(existing, config);
       continue;
     }
-    grouped.set(
-      groupKey,
-      createGroup(config, groupKey, getProviderDisplayName(config), getProviderTemplateId(config)),
-    );
+    const newGroup = createGroup(config, groupKey, getProviderDisplayName(config), getProviderTemplateId(config));
+    appendModel(newGroup, config);
+    grouped.set(groupKey, newGroup);
   }
   return grouped;
 }
