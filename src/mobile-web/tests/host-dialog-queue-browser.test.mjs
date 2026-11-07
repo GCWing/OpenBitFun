@@ -121,15 +121,17 @@ test('queue stays above the measured composer across phone, keyboard-height and 
     const composer=box('.chat-page__composer'),stop=box('.chat-page__send-btn.is-stop');
     const plus=box('.chat-page__composer-leading');
     const text=box('.chat-msg__assistant-content');
-    const icon=box('.chat-thinking [data-openbitfun-part="leading"]');
+    const message=box('.chat-msg--assistant');
     return {top:stop.top-composer.top,bottom:composer.bottom-stop.bottom,right:composer.right-stop.right,
       left:plus.left-composer.left,width:stop.width,plusWidth:plus.width,
-      textLeft:text.left+parseFloat(getComputedStyle(document.querySelector('.chat-msg__assistant-content')).paddingLeft),iconLeft:icon.left};
+      textLeft:text.left+parseFloat(getComputedStyle(document.querySelector('.chat-msg__assistant-content')).paddingLeft),messageLeft:message.left};
   });
   assert.equal(geometry.width,44);
   assert.equal(geometry.plusWidth,44);
   for(const edge of ['top','bottom','left']) assert.ok(Math.abs(geometry[edge]-geometry.right)<1,JSON.stringify(geometry));
-  assert.ok(Math.abs(geometry.textLeft-geometry.iconLeft)<1,JSON.stringify(geometry));
+  // The transcript gutter owns assistant text alignment; thinking/tool controls
+  // keep their own inset icon column.
+  assert.ok(Math.abs(geometry.textLeft-geometry.messageLeft)<1,JSON.stringify(geometry));
   await page.screenshot({path:path.join(tmpdir(),'mobile-queue-aligned.png'),fullPage:true});
   await page.click('[aria-label="排队消息说明"]');
   await page.waitForSelector('.host-message-queue__help');
@@ -171,10 +173,11 @@ test('touch-sized queue handles reorder real component rows and overflow removes
   assert.deepEqual(geometry, {gap: 0, firstLine: '1px', lastBottom: 'none', outerBorder: '0px'});
   const handles = await page.$$('.host-message-queue__handle');
   assert.ok((await handles[0].boundingBox()).width >= 44);
+  assert.equal(await handles[0].evaluate(el => el.hasAttribute('title')), false);
   const before = await page.$$eval('.host-message-queue__preview', nodes => nodes.map(n => n.textContent));
   await handles[2].focus(); await page.keyboard.press('ArrowUp');
-  await page.waitForFunction(first => document.querySelectorAll('.host-message-queue__preview')[1].textContent === first, {}, before[2]);
-  assert.deepEqual(await page.$$eval('.host-message-queue__preview', nodes => nodes.map(n => n.textContent)), [before[0], before[2], before[1]]);
+  await handles[0].focus(); await page.keyboard.press('ArrowDown');
+  assert.deepEqual(await page.$$eval('.host-message-queue__preview', nodes => nodes.map(n => n.textContent)), before);
   const first = await page.$('.host-message-queue__handle'); const box = await first.boundingBox();
   const last = await page.$eval('.host-message-queue__row:last-child', el => { const r=el.getBoundingClientRect();return {y:r.bottom-3}; });
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2); await page.mouse.down();

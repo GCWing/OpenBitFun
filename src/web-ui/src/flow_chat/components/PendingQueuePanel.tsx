@@ -244,7 +244,7 @@ function LegacyPendingQueuePanel({
         key={item.id}
         {...reorder.rowProps(item.id)}
         leadingControl={<IconButton variant="annotation" size="xs"
-          aria-label={t('pendingQueue.reorder')} title={t('pendingQueue.reorder')} icon={<Icon glyph={GripVertical} size="sm" />} {...reorder.handleProps(item.id)} />}
+          aria-label={t('pendingQueue.reorder')} icon={<Icon glyph={GripVertical} size="sm" />} {...reorder.handleProps(item.id)} />}
         state={itemState}
         leadingIcon={<Icon glyph={ListEnd} size="sm" />}
       >

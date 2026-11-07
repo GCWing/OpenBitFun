@@ -10,7 +10,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
   'en-US': {
     backgroundDelivery: { quiet: 'Background task completed · No report needed', running: 'Background task running' },
     queue: {
-      "reorder": "Drag to reorder, or use Up and Down arrow keys",
+      "reorder": "Drag to reorder",
       "moveUp": "Move up",
       "moveDown": "Move down",
       "orderChanged": "The queue changed. Refresh it before reordering.",
@@ -388,7 +388,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
   'zh-CN': {
     backgroundDelivery: { quiet: '后台任务已完成 · 无需汇报', running: '后台任务执行中' },
     queue: {
-      "reorder": "拖动排序，也可使用上下方向键",
+      "reorder": "拖动排序",
       "moveUp": "上移",
       "moveDown": "下移",
       "orderChanged": "队列已变化，请刷新后重新调整顺序。",
@@ -766,7 +766,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
   'zh-TW': {
     backgroundDelivery: { quiet: '背景任務已完成 · 無需回報', running: '背景任務執行中' },
     queue: {
-      "reorder": "拖曳排序，也可使用上下方向鍵",
+      "reorder": "拖曳排序",
       "moveUp": "上移",
       "moveDown": "下移",
       "orderChanged": "佇列已變更，請重新整理後再調整順序。",

@@ -73,7 +73,7 @@ it('keeps four queued messages compact, exposes actions, and toggles help indepe
     requests.push(request.action);
     if (request.action === 'cancel' || request.action === 'promote') items = items.filter(item => item.turnId !== request.turnId);
     return { sessionId: 'session', queueEpoch: 'epoch', revision: requests.length, activeTurnId: 'active',
-      items, capacity: 20, used: items.length, receipt: null };
+      items, capacity: 20, used: items.length, receipt: null, supportsReorder: true };
   }, { list: async () => [], put: async () => {}, remove: async () => {} });
   const container = document.createElement('div');
   document.body.append(container);
@@ -81,6 +81,10 @@ it('keeps four queued messages compact, exposes actions, and toggles help indepe
   try {
     await act(async () => root.render(<HostPendingQueuePanel queue={queue} onRestore={() => true} />));
     expect(container.querySelectorAll('li')).toHaveLength(4);
+    const handle = container.querySelector<HTMLButtonElement>('[data-queue-handle]')!;
+    expect(handle.getAttribute('title')).toBeNull();
+    await act(async () => handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    expect(requests).not.toContain('reorder');
     const badge = container.querySelector('[data-openbitfun-part="attachmentCount"]')!;
     expect(badge.closest('[data-openbitfun-part="message"]')?.querySelector('[data-openbitfun-product-part="preview"]')?.textContent).toBe('1');
     expect(badge.previousElementSibling?.getAttribute('data-openbitfun-product-part')).toBe('preview');

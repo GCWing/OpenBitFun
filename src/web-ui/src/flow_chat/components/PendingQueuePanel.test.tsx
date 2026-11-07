@@ -144,6 +144,7 @@ describe('PendingQueuePanel', () => {
     });
 
     expect(container.querySelector('[data-openbitfun-part="header"]')).toBeNull();
+    expect(container.querySelector('[data-queue-handle]')?.getAttribute('title')).toBeNull();
     const attachmentBadge = container.querySelector('[data-openbitfun-part="attachmentCount"]');
 
     expect(attachmentBadge?.textContent).toBe('3');

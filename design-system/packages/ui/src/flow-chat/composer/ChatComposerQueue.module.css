@@ -69,7 +69,8 @@
       var(--openbitfun-control-height-sm) +
       var(--openbitfun-control-height-sm) +
       var(--openbitfun-control-height-sm) +
-      var(--openbitfun-control-height-sm)
+      var(--openbitfun-control-height-sm) +
+      var(--openbitfun-space-1) * 8
     );
     flex-direction: column;
     gap: 0;
@@ -99,6 +100,9 @@
     min-block-size: var(--openbitfun-control-height-sm);
     align-items: flex-start;
     gap: var(--openbitfun-space-2);
+    /* Own both sides of the divider; document li margins must not leak in. */
+    margin: 0;
+    padding-block: var(--openbitfun-space-1);
     padding-inline: var(--openbitfun-space-2) var(--openbitfun-space-1);
     border-radius: var(--openbitfun-radius-md);
     color: var(--openbitfun-color-content-primary);
@@ -190,7 +194,6 @@
     font-size: var(--openbitfun-type-meta-font-size);
     line-height: var(--openbitfun-type-body-sm-line-height);
     overflow-wrap: anywhere;
-    padding-block-end: var(--openbitfun-space-1);
   }
 
   .status[data-openbitfun-tone="warning"] {

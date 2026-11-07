@@ -77,7 +77,7 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
     const blocked = item.status === 'blocked';
     return <ChatComposerQueueItem data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="item" key={item.turnId} {...reorder.rowProps(item.turnId)}
       leadingControl={item.status === 'queued' && view.snapshot?.supportsReorder ? <IconButton variant="annotation" size="xs"
-        aria-label={t('pendingQueue.reorder')} title={t('pendingQueue.reorder')} icon={<Icon glyph={GripVertical} size="sm" />} {...reorder.handleProps(item.turnId)} /> : undefined}
+        aria-label={t('pendingQueue.reorder')} icon={<Icon glyph={GripVertical} size="sm" />} {...reorder.handleProps(item.turnId)} /> : undefined}
       leadingIcon={<Icon glyph={ListEnd} size="sm" />} state={blocked ? 'failed' : steering ? 'sending' : 'default'}>
       <ChatComposerQueueItemContent data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="content">
         <ChatComposerQueueItemMessage>
