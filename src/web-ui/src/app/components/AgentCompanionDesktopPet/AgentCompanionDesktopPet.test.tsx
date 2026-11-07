@@ -215,11 +215,12 @@ describe('AgentCompanionDesktopPet', () => {
       root.render(<I18nextProvider i18n={i18n}><AgentCompanionDesktopPet /></I18nextProvider>);
     });
     // Reserve the bubble slot before there is a task, not after it paints.
-    expect(invokeMock).toHaveBeenLastCalledWith('resize_agent_companion_desktop_pet', { width: 480, height: 198 });
+    expect(invokeMock).toHaveBeenLastCalledWith('resize_agent_companion_desktop_pet', { width: 408, height: 102 });
     invokeMock.mockClear();
     pushActivity({ mood: 'rest', tasks: [task({ state: 'error', mood: 'rest' })], livingLineState: 'error', emittedAt: 1, sequence: 1 });
 
-    expect(query('.openbitfun-agent-companion-window__stack')?.getAttribute('style')).toContain('--openbitfun-agent-companion-pet-width: 288px');
+    expect(query('.openbitfun-agent-companion-window__stack')?.getAttribute('style')).toContain('--openbitfun-agent-companion-pet-width: 216px');
+    expect(query('.openbitfun-agent-companion-window__stack')?.getAttribute('style')).toContain('--openbitfun-agent-companion-pet-height: 96px');
     expect(query('[data-testid="pixel-pet"]')?.getAttribute('data-living-line-state')).toBe('error');
     pushActivity({ mood: 'working', tasks: [task(), task({ sessionId: 'second' })], emittedAt: 2, sequence: 2 });
     pushActivity({ mood: 'rest', tasks: [], emittedAt: 3, sequence: 3 });
@@ -229,7 +230,7 @@ describe('AgentCompanionDesktopPet', () => {
   });
 
   it('waits for the LivingLine viewport before revealing bubbles and preserves their nodes', async () => {
-    vi.stubGlobal('innerWidth', 288);
+    vi.stubGlobal('innerWidth', 216);
     act(() => window.dispatchEvent(new Event('resize')));
     const settingsListener = listenMock.mock.calls.find(([name]) => name === 'agent-companion://settings-updated')?.[1];
     await act(async () => settingsListener({ payload: {
@@ -245,9 +246,9 @@ describe('AgentCompanionDesktopPet', () => {
     const bubble = query('.openbitfun-agent-companion-window__bubble');
     expect(bubbles.style.visibility).toBe('hidden');
     expect(bubbles.getAttribute('aria-hidden')).toBe('true');
-    expect(invokeMock).toHaveBeenLastCalledWith('resize_agent_companion_desktop_pet', { width: 480, height: 198 });
+    expect(invokeMock).toHaveBeenLastCalledWith('resize_agent_companion_desktop_pet', { width: 408, height: 102 });
 
-    vi.stubGlobal('innerWidth', 480);
+    vi.stubGlobal('innerWidth', 408);
     act(() => window.dispatchEvent(new Event('resize')));
     expect(bubbles.style.visibility).toBe('');
     expect(bubbles.hasAttribute('aria-hidden')).toBe(false);

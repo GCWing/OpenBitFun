@@ -1,4 +1,4 @@
-import { GEOMETRY, MARK_RADIUS, type LivingState, type Point } from './geometry';
+import { GEOMETRY, MARK_RADIUS, TRANSITION_SPRING, type LivingState, type Point } from './geometry';
 
 type MutablePoint = { x: number; y: number };
 
@@ -14,7 +14,10 @@ export class LivingLineEngine {
   private readonly start: Point;
   private readonly end: Point;
 
-  constructor(private readonly stiffness = 150, private readonly damping = 24) {
+  constructor(
+    private readonly stiffness = TRANSITION_SPRING.stiffness,
+    private readonly damping = TRANSITION_SPRING.damping,
+  ) {
     this.current = GEOMETRY.idle.map(p => ({ ...p }));
     this.target = this.current.map(p => ({ ...p }));
     this.velocity = this.current.map(() => ({ x: 0, y: 0 }));

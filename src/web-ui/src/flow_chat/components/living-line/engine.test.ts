@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { GEOMETRY, IDLE_WAVE_MODES, idleWaveLines, MARK, MARK_RADIUS, SOURCE_PATHS, toPolyline, workingCoreStrokeWidth, workingHoverLines } from './geometry';
+import { GEOMETRY, IDLE_WAVE_MODES, idleWaveLines, MARK, MARK_RADIUS, SOURCE_PATHS, toPolyline, TRANSITION_SPRING, workingCoreStrokeWidth, workingHoverLines } from './geometry';
 import { LivingLineEngine } from './engine';
 
 describe('LivingLine geometry and engine', () => {
   it('uses the approved v0.4 SVG paths and fixed anchors', () => {
-    expect(SOURCE_PATHS.working).toContain('M38,84L76,84L83,80L90,84');
-    expect(SOURCE_PATHS.question).toMatch(/^M38,84C/);
+    expect(SOURCE_PATHS.working).toContain('M60.5,84L76,84L83,80L90,84');
+    expect(SOURCE_PATHS.question).toMatch(/^M60.5,84C/);
     expect(SOURCE_PATHS.question).toContain('149,53.25');
     expect(SOURCE_PATHS.error).toContain('128,36');
+    expect(GEOMETRY.working[0].x).toBe(60.5);
+    expect(GEOMETRY.working.at(-1)?.x).toBe(195.5);
     for (const state of ['working', 'question', 'error'] as const) {
-      expect(GEOMETRY[state][0]).toEqual({ x: 38, y: 84 });
-      expect(GEOMETRY[state].at(-1)).toEqual({ x: 218, y: 84 });
+      expect(GEOMETRY[state][0]).toEqual({ x: 60.5, y: 84 });
+      expect(GEOMETRY[state].at(-1)).toEqual({ x: 195.5, y: 84 });
     }
   });
   it('flattens the approved paths to shared M/L vertices while retaining landmarks', () => {
@@ -59,6 +61,15 @@ describe('LivingLine geometry and engine', () => {
       expect(points.at(-1)).toEqual(GEOMETRY.working.at(-1));
       expect(toPolyline(points)).not.toMatch(/[CQASTZ]/i);
     }
+  });
+  it('uses a slower transition spring while preserving its damped response', () => {
+    expect(TRANSITION_SPRING).toEqual({ stiffness: 66.7, damping: 16 });
+    const engine = new LivingLineEngine();
+    engine.setState('working');
+    for (let i = 0; i < 30; i++) engine.step(1 / 60);
+    expect(engine.settled).toBe(false);
+    for (let i = 0; i < 900; i++) engine.step(1 / 60);
+    expect(engine.settled).toBe(true);
   });
   it('keeps both endpoints fixed during updates', () => {
     const engine = new LivingLineEngine();

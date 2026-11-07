@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { HEIGHT, IDLE_WAVE_MODES, MARK, idleWaveLines, toPolyline, workingCoreStrokeWidth, workingHoverLines, WIDTH, type LivingState, type Point } from './geometry';
+import { IDLE_WAVE_MODES, MARK, idleWaveLines, toPolyline, VIEW_BOX, workingCoreStrokeWidth, workingHoverLines, type LivingState, type Point } from './geometry';
 import { approachFlowOpacity, sliceFlowHighlight } from './flow';
 import { DEFAULT_SETTINGS, validateSettings, type LivingLineSettings } from './settings';
 import { readLivingLineSettings, saveLivingLineSettings, subscribeLivingLineSettings } from './livingLineSettingsStore';
@@ -62,7 +62,10 @@ export function LivingLineRenderer({ state, reducedMotion, settings, hovered = f
           const currentState = options.current.state;
           const activeColor = currentState === 'question' ? config.questionColor : currentState === 'error' ? config.errorColor : config.lineColor;
           main.current?.setAttribute('stroke', activeColor);
-          main.current?.style.setProperty('filter', config.lineGlowBlur ? `drop-shadow(0 0 ${config.lineGlowBlur}px ${rgba(activeColor, 0.58)})` : 'none');
+          const isAlertState = currentState === 'question' || currentState === 'error';
+          const lineGlowBlur = isAlertState ? Math.min(config.lineGlowBlur, 8) : config.lineGlowBlur;
+          const lineGlowOpacity = isAlertState ? 0.7 : 0.58;
+          main.current?.style.setProperty('filter', lineGlowBlur ? `drop-shadow(0 0 ${lineGlowBlur}px ${rgba(activeColor, lineGlowOpacity)})` : 'none');
           const dt = delta;
           hoverTarget.current = options.current.hoverEnabled && !options.current.reducedMotion;
           const splitTarget = currentState === 'working' && hoverTarget.current ? 1 : 0;
@@ -127,8 +130,12 @@ export function LivingLineRenderer({ state, reducedMotion, settings, hovered = f
           const radius = engine.current!.getMarkRadius();
           ring.current?.setAttribute('stroke', activeColor); ring.current?.style.setProperty('stroke-width', `${config.lineWidth}px`);
           ring.current?.setAttribute('r', String(radius)); ring.current?.setAttribute('visibility', radius < 0.15 ? 'hidden' : 'visible');
-          glow.current?.setAttribute('fill', activeColor); glow.current?.setAttribute('r', String(radius * 1.8));
-          glow.current?.setAttribute('opacity', String(Math.min(0.22, radius / MARK.errorRadius * 0.22)));
+          glow.current?.setAttribute('fill', activeColor);
+          const glowScale = currentState === 'question' || currentState === 'error' ? 1.45 : 1.8;
+          const glowPeak = currentState === 'question' || currentState === 'error' ? 0.3 : 0.22;
+          const glowBreathing = isAlertState ? 0.9 + Math.sin(now / 520) * 0.1 : 1;
+          glow.current?.setAttribute('r', String(radius * glowScale * glowBreathing));
+          glow.current?.setAttribute('opacity', String(Math.min(glowPeak, radius / MARK.errorRadius * glowPeak) * glowBreathing));
 
           const flowTargets = currentState === 'idle'
             ? idleSplitProgress.current > 0.01 ? lanes : lanes.slice(0, IDLE_WAVE_MODES[waveMode.current].secondOpacity > 0.001 ? 2 : 1)
@@ -162,7 +169,7 @@ export function LivingLineRenderer({ state, reducedMotion, settings, hovered = f
   }, []);
   const stroke = state === 'question' ? settings.questionColor : state === 'error' ? settings.errorColor : settings.lineColor;
   const initialD = toPolyline(engine.current.getPoints());
-  return <svg className={`living-line-art state-${state} ${className}`.trim()} data-pointer-over={hovered || pointerOver} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ color: stroke }} role="img" aria-label={`LivingLine ${state}`} onPointerEnter={event => { if (event.pointerType === 'mouse') setPointerOver(true); }} onMouseEnter={() => setPointerOver(true)} onPointerLeave={() => setPointerOver(false)} onMouseLeave={() => setPointerOver(false)}>
+  return <svg className={`living-line-art state-${state} ${className}`.trim()} data-pointer-over={hovered || pointerOver} viewBox={VIEW_BOX} style={{ color: stroke }} role="img" aria-label={`LivingLine ${state}`} onPointerEnter={event => { if (event.pointerType === 'mouse') setPointerOver(true); }} onMouseEnter={() => setPointerOver(true)} onPointerLeave={() => setPointerOver(false)} onMouseLeave={() => setPointerOver(false)}>
     <path ref={main} className="main-path" d={initialD} stroke={stroke} />
     {Array.from({ length: 3 }, (_, index) => <path key={`hover-${index}`} ref={node => { hoverPaths.current[index] = node; }} className="hover-path" d={initialD} stroke={stroke} visibility="hidden" />)}
     {Array.from({ length: 3 }, (_, index) => <path key={`flow-${index}`} ref={node => { flowPaths.current[index] = node; }} className="flow-path" visibility="hidden" />)}

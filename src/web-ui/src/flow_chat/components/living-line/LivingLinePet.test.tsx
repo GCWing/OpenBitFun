@@ -41,6 +41,11 @@ describe('LivingLine product settings integration', () => {
     act(() => root.render(<LivingLinePet state="working" mood="working" onFrameSizeChange={onFrame} />));
     const svg = container.querySelector('svg');
     const main = container.querySelector('.main-path')!;
+    expect(LIVING_LINE_FRAME_SIZE).toEqual({ width: 216, height: 96 });
+    expect(svg?.getAttribute('viewBox')).toBe('32 29 192 85.33333333333333');
+    const [, , viewWidth, viewHeight] = svg!.getAttribute('viewBox')!.split(' ').map(Number);
+    expect(LIVING_LINE_FRAME_SIZE.width / viewWidth).toBeCloseTo(288 / 256);
+    expect(LIVING_LINE_FRAME_SIZE.height / viewHeight).toBeCloseTo(288 / 256);
     expect(onFrame).toHaveBeenCalledExactlyOnceWith(LIVING_LINE_FRAME_SIZE);
     expect(requestFrame).toHaveBeenCalledTimes(1);
     expect(setState).toHaveBeenCalledTimes(1);

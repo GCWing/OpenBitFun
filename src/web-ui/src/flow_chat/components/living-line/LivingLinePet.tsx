@@ -5,7 +5,7 @@ import { readLivingLineSettings, subscribeLivingLineSettings } from './livingLin
 import type { LivingState } from './geometry';
 import './LivingLinePet.scss';
 
-export const LIVING_LINE_FRAME_SIZE = { width: 288, height: 192 } as const;
+export const LIVING_LINE_FRAME_SIZE = { width: 216, height: 96 } as const;
 
 export function LivingLinePet({
   state,

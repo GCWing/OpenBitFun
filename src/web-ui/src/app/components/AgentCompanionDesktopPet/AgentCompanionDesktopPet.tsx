@@ -245,7 +245,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
   const activePetSize = pet && petFrameSize
     ? petFrameSize
     : pet && isLivingLinePet(pet)
-      ? { width: 288, height: 192 }
+      ? { width: 216, height: 96 }
       : pet && isGrokLivePet(pet)
         ? { width: DEFAULT_PET_SIZE, height: DEFAULT_PET_SIZE }
       : pet
@@ -501,7 +501,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       : activePetSize.height) + WINDOW_VERTICAL_BUFFER * 2;
     const measuredBubbleWidth = bubbleCount > 0 ? BUBBLE_WIDTH : 0;
     // Keep the wide renderer's bubble slot reserved even without a task. Native
-    // resize and reposition are asynchronous, so growing/shrinking by 192px on
+    // resize and reposition are asynchronous, so growing/shrinking by the pet frame height on
     // bubble arrival/removal otherwise exposes a clipped, left-shifted frame.
     const measuredDockWidth = livingLinePet
       ? BUBBLE_WIDTH + WINDOW_HORIZONTAL_GAP + activePetSize.width + WINDOW_EDGE_BUFFER
