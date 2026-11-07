@@ -95,6 +95,27 @@ Search caches only match metadata for an active query in its owning view. Cleari
 search drops that cache, and unmounting drops the matcher. Lowercase transcript
 text exists only during a cache miss and is not retained beside the source body.
 
+### Settled record identity
+
+Live text/thinking items can have client-generated IDs, while the host's settled
+record uses journal-derived IDs. Replacing those IDs as React/measurement keys
+remounted unchanged output and discarded its measured height. A supplied-geometry
+regression observed a 92px downward displacement followed by an eased return.
+`TimelineItemIdentity` keeps view-local aliases across a one-to-one ordered
+narrative handoff inside the same Turn and model round. Types, attempts and
+content must agree (allowing coalesced blank lines and a recovered suffix);
+insertions, removals, unrelated prose and replaced tools do not qualify.
+Unchanged source arrays skip item reconciliation, retired sources are released,
+and aliases are weakly keyed by the source item objects.
+
+Only rendered block keys use these aliases. Canonical item IDs, source references,
+search/navigation membership and persisted records remain host-owned. Bookmarks
+use `getVirtualItemBookmarkKey` and the row's canonical bookmark attribute, so a
+fresh projection can restore them after reopening. Restoration still accepts
+legacy row keys. The full-list regression checks every frame, retained DOM nodes,
+canonical bookmarks and reopening on local/simulated Peer surfaces, both while
+following and while reading. It does not establish native paint or live transport.
+
 ## Large text and decoration residency
 
 `markdownSections` uses the existing streaming parser's block tokenizer to find

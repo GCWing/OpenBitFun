@@ -96,7 +96,7 @@ import {
 import { getKnownVirtualItemHeightPx } from './virtualItemHeightEstimators';
 import { resolveVisibleFlowChatTurnIds } from './flowChatVisibleTurns';
 import type { FlowChatViewportSnapshot } from './flowChatViewportSnapshot';
-import { getVirtualItemStableKey } from './virtualItemIdentity';
+import { getVirtualItemBookmarkKey, getVirtualItemStableKey } from './virtualItemIdentity';
 import { useConversationTimeline } from '../../timeline/useConversationTimeline';
 import { FlowChatReaderProvider } from '../../timeline/readerState';
 import { findTimelineBlockIndex } from '../../timeline/document';
@@ -1222,7 +1222,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       presentationMode,
       viewportMode,
       historyWindow,
-      anchorItemKey: anchorEntry?.key ?? null,
+      anchorItemKey: anchorEntry?.element.dataset.virtualBookmarkKey ?? anchorEntry?.key ?? null,
       anchorItemType: anchorEntry?.itemType ?? null,
       anchorMarkdownStart: anchorEntry?.element.dataset.markdownSectionStart === undefined
         ? undefined : Number(anchorEntry.element.dataset.markdownSectionStart),
@@ -1249,10 +1249,12 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     const exactAnchor = snapshot.anchorItemKey
       ? Array.from(
         scroller.querySelectorAll<HTMLElement>('.virtual-item-wrapper[data-virtual-item-key]'),
-      ).find(element => element.dataset.virtualItemKey === snapshot.anchorItemKey) ?? null
+      ).find(element => element.dataset.virtualBookmarkKey === snapshot.anchorItemKey
+        || element.dataset.virtualItemKey === snapshot.anchorItemKey) ?? null
       : null;
     const exactAnchorIndex = snapshot.anchorItemKey
-      ? virtualItems.findIndex(item => getVirtualItemStableKey(item) === snapshot.anchorItemKey)
+      ? virtualItems.findIndex(item => getVirtualItemBookmarkKey(item) === snapshot.anchorItemKey
+        || getVirtualItemStableKey(item) === snapshot.anchorItemKey)
       : -1;
     const sourceRow = virtualItems[exactAnchorIndex];
     if (snapshot.anchorMarkdownStart === undefined && sourceRow?.timeline?.markdownSection?.start === 0

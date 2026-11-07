@@ -11,6 +11,7 @@ import { getConcurrentCapsuleRows } from '../tool-cards/toolCapsuleLayout';
 import { AGENT_CARD_BATCH_SIZE, isAgentCardRun, isAgentLaunchCard } from './agentCardLayout';
 import { markdownSections } from '@/infrastructure/markdown/markdownSections';
 import { parseDeepResearchContent } from '../deep-research/deepResearchProtocol';
+import { TimelineItemIdentity } from './timelineItemIdentity';
 
 export interface TimelineProjectionOptions {
   reader: FlowChatReaderState;
@@ -89,6 +90,7 @@ const emptyItems: FlowItem[] = [];
  * even when a different leaf in the same live round receives another token.
  */
 export class ConversationDocumentProjection {
+  private itemIdentity = new TimelineItemIdentity();
   private previous = new Map<string, VirtualItem>();
   private sourceCache = new WeakMap<VirtualItem, { viewStamp: number; sourceIndex: number; items: VirtualItem[] }>();
   private next = new Map<string, VirtualItem>();
@@ -132,6 +134,7 @@ export class ConversationDocumentProjection {
 
   project(sources: readonly VirtualItem[], options: TimelineProjectionOptions): VirtualItem[] {
     const started = isStartupRenderTraceEnabled() ? performance.now() : undefined;
+    if (this.itemIdentity.reconcile(sources)) this.sourceCache = new WeakMap();
     if (this.labels !== options.toolLabels) {
       this.labels = options.toolLabels;
       this.sourceCache = new WeakMap();
@@ -231,8 +234,8 @@ export class ConversationDocumentProjection {
         const sections = text && text.isMarkdown
           && options.reader.get('navigation:whole-text', '') !== identity
           && !parseDeepResearchContent(text.content).hasProtocol ? markdownSections(text.content) : undefined;
-        if (!sections) { add(kind, run[0].id, run, extra); return; }
-        sections.forEach((section, index) => add(kind, index === 0 ? run[0].id : `${text!.id}:markdown:${section.start}`, index === 0 ? run : [text!], {
+        if (!sections) { add(kind, this.itemIdentity.key(run[0]), run, extra); return; }
+        sections.forEach((section, index) => add(kind, index === 0 ? this.itemIdentity.key(run[0]) : `${this.itemIdentity.key(text!)}:markdown:${section.start}`, index === 0 ? run : [text!], {
           ...extra, first: extra.first && index === 0, last: extra.last && index === sections.length - 1,
           markdownSection: section,
         }));

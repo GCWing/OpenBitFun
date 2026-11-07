@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { activateSurface, getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { isSubmittedMessageScrollIntentPending, registerSubmittedMessageScrollIntent } from '../../services/submittedMessageScrollIntent';
 import { VirtualMessageList, type VirtualMessageListRef } from './VirtualMessageList';
-import { getVirtualItemStableKey } from './virtualItemIdentity';
+import { getVirtualItemBookmarkKey, getVirtualItemStableKey } from './virtualItemIdentity';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
 import type { FlowToolItem, Session } from '../../types/flow-chat';
 
@@ -28,7 +28,8 @@ vi.mock('./VirtualItemRenderer', () => ({
     item: VirtualItem; index: number; measureRef: (element: HTMLElement | null) => void;
   }) => <div ref={measureRef} className="virtual-item-wrapper"
     data-item-type={item.type} data-timeline-kind={item.timeline?.kind} data-turn-id={item.turnId} data-virtual-index={index}
-    data-virtual-item-key={getVirtualItemStableKey(item)} data-markdown-section-start={item.timeline?.markdownSection?.start} />,
+    data-virtual-item-key={getVirtualItemStableKey(item)} data-virtual-bookmark-key={getVirtualItemBookmarkKey(item)}
+    data-markdown-section-start={item.timeline?.markdownSection?.start} data-member-id={item.timeline?.memberIds[0]} />,
 }));
 
 // Full list, virtualizer, viewport owners and follow controller. Only row
@@ -148,7 +149,9 @@ describe('completed history with the production timeline projection', () => {
     });
     vi.spyOn(HTMLElement.prototype, 'scrollTop', 'get').mockImplementation(function () {
       const range = Math.max(0, this.scrollHeight - this.clientHeight);
-      return reversed(this) ? Math.max(-range, Math.min(0, offsets.get(this) ?? 0)) : Math.min(offsets.get(this) ?? 0, range);
+      const clamped = reversed(this) ? Math.max(-range, Math.min(0, offsets.get(this) ?? 0)) : Math.min(offsets.get(this) ?? 0, range);
+      offsets.set(this, clamped); // Native clamping persists if the range grows again.
+      return clamped;
     });
     vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (value) {
       if (this.hasAttribute('data-flowchat-scroller')) writes.push(value);
@@ -168,6 +171,56 @@ describe('completed history with the production timeline projection', () => {
   afterEach(() => {
     act(() => root.unmount()); host.remove(); activateSurface('local');
     vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
+  });
+
+  it.each(['local', 'peer-settlement'].flatMap(surface => [false, true].map(reading => ({ surface, reading }))))(
+    'keeps measured output stationary when settled persistence replaces stream item IDs: %j', ({ surface, reading }) => {
+    activateSurface(surface);
+    state.processing = true;
+    const tail = turn('latest', 1400);
+    state.items = tail;
+    render();
+    for (let frame = 0; frame < 80; frame++) { resize(); tick(); }
+    const scroller = host.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+    if (reading) act(() => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -250 }));
+      scroller.scrollTop -= 250;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    const before = latest()!;
+    const top = before.getBoundingClientRect().top;
+    const source = tail[1] as Extract<VirtualItem, { type: 'model-round' }>;
+    const items = source.data.items.map((item, index) => {
+      const id = `round-latest-text-${index}`;
+      heights.set(`block:latest:${id}`, heights.get(`block:latest:${item.id}`)!);
+      return { ...item, id };
+    });
+    state.processing = false;
+    state.items = [tail[0], { ...source, data: { ...source.data, items } }];
+    render();
+    const after = () => host.querySelector<HTMLElement>('[data-member-id="round-latest-text-9"]');
+    expect(after()).toBe(before);
+    const samples: number[] = [];
+    for (let frame = 0; frame < 60; frame++) {
+      samples.push(after()?.getBoundingClientRect().top ?? NaN);
+      resize(); tick();
+      if (frame === 2) act(() => scroller.dispatchEvent(new Event('scroll')));
+      if (frame === 5) act(() => vi.advanceTimersByTime(200));
+    }
+    expect(samples.every(value => Math.abs(value - top) <= 1), JSON.stringify({ top, samples })).toBe(true);
+    const snapshot = listRef.current!.captureViewportSnapshot()!;
+    expect(snapshot.anchorItemKey).toBe('block:latest:round-latest-text-9');
+    if (reading) {
+      act(() => {
+        scroller.scrollTop -= 80;
+        expect(listRef.current!.restoreViewportSnapshot(snapshot)).toBe(true);
+      });
+      expect(after()!.getBoundingClientRect().top).toBeCloseTo(top, 1);
+      act(() => root.render(<VirtualMessageList key="reopened" ref={listRef} latestTurnId="latest" initialViewportSnapshot={snapshot} />));
+      for (let frame = 0; frame < 60; frame++) { resize(); tick(); }
+      expect(after()!.dataset.virtualItemKey).toBe(snapshot.anchorItemKey);
+      expect(after()!.getBoundingClientRect().top).toBeCloseTo(top, 1);
+    }
   });
 
   const pages = [
