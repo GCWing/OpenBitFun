@@ -34,6 +34,8 @@ export interface MonacoEditorCoreProps {
   // Other
   className?: string;
   style?: React.CSSProperties;
+  /** Defer editor instantiation until the container intersects the viewport */
+  lazy?: boolean;
   /** @deprecated Use jumpToRange */
   jumpToLine?: number;
   /** @deprecated Use jumpToRange */

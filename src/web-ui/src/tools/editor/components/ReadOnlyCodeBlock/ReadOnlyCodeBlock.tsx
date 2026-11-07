@@ -37,6 +37,8 @@ export interface ReadOnlyCodeBlockProps {
   style?: React.CSSProperties;
   /** Config overrides */
   config?: EditorConfigPartial;
+  /** Whether to defer loading Monaco until visible in viewport (defaults to true) */
+  lazy?: boolean;
   /** Click handler */
   onClick?: () => void;
   /** Editor ready callback */
@@ -54,6 +56,7 @@ export const ReadOnlyCodeBlock: React.FC<ReadOnlyCodeBlockProps> = ({
   className = '',
   style,
   config,
+  lazy = true,
   onClick,
   onReady,
 }) => {
@@ -125,6 +128,7 @@ export const ReadOnlyCodeBlock: React.FC<ReadOnlyCodeBlockProps> = ({
         readOnly={true}
         showLineNumbers={showLineNumbers}
         showMinimap={false}
+        lazy={lazy}
         onEditorReady={handleEditorReady}
       />
     </div>
