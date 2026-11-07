@@ -54,12 +54,14 @@ export const MonacoEditorCore = forwardRef<MonacoEditorCoreRef, MonacoEditorCore
       onSave,
       className = '',
       style,
+      lazy = false,
       jumpToLine,
       jumpToColumn,
       jumpToRange,
     } = props;
     
     const containerRef = useRef<HTMLDivElement>(null);
+    const [isVisible, setIsVisible] = useState(!lazy);
     const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
     const modelRef = useRef<monaco.editor.ITextModel | null>(null);
     const editorIdRef = useRef<string>('');
@@ -160,7 +162,24 @@ export const MonacoEditorCore = forwardRef<MonacoEditorCoreRef, MonacoEditorCore
     }, [createExtensionContext]);
     
     useEffect(() => {
-      if (!containerRef.current) return;
+      if (!lazy || isVisible || !containerRef.current) return;
+      const el = containerRef.current;
+      if (typeof IntersectionObserver === 'undefined') {
+        setIsVisible(true);
+        return;
+      }
+      const observer = new IntersectionObserver(([entry]) => {
+        if (entry?.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      }, { rootMargin: '200px' });
+      observer.observe(el);
+      return () => observer.disconnect();
+    }, [lazy, isVisible]);
+
+    useEffect(() => {
+      if (!containerRef.current || !isVisible) return;
       
       isUnmountedRef.current = false;
       hasJumpedRef.current = false;
@@ -278,7 +297,7 @@ export const MonacoEditorCore = forwardRef<MonacoEditorCoreRef, MonacoEditorCore
         
         setIsReady(false);
       };
-    }, [filePath, createExtensionContext, registerEventListeners]);
+    }, [filePath, isVisible, createExtensionContext, registerEventListeners]);
     
     useEffect(() => {
       if (!isReady || !editorRef.current || hasJumpedRef.current) return;
