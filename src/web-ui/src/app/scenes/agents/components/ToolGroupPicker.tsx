@@ -1,4 +1,4 @@
-import {
+import { captureConfirmationAnchor,
   OverflowText,
   Checkbox,
   DialogFooter,
@@ -236,11 +236,11 @@ const GroupManagerModal: React.FC<GroupManagerModalProps> = ({
     }
   };
 
-  const deleteGroup = async (group: UserToolGroup) => {
+  const deleteGroup = async (group: UserToolGroup, trigger?: HTMLElement) => {
     const confirmed = await confirmDanger(
       t('agentsOverview.toolGroups.deleteTitle'),
       t('agentsOverview.toolGroups.deleteMessage', { name: group.name }),
-      { confirmText: t('agentsOverview.toolGroups.deleteConfirm') },
+      { anchor: captureConfirmationAnchor(trigger), confirmText: t('agentsOverview.toolGroups.deleteConfirm') },
     );
     if (!confirmed) {
       return;
@@ -409,7 +409,7 @@ const GroupManagerModal: React.FC<GroupManagerModalProps> = ({
                                 size="sm"
                                 tone="danger"
                                 aria-label={t('agentsOverview.toolGroups.deleteGroup')}
-                                onClick={() => void deleteGroup(group)}
+                                onClick={event => void deleteGroup(group, event.currentTarget)}
                                 disabled={saving}
                                 icon={<Icon name="delete" />}
                               />

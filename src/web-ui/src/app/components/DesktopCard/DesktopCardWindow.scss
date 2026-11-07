@@ -564,22 +564,6 @@ body.openbitfun-desktop-card-window-body #root {
     background: transparent;
   }
 
-  &__confirm {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    justify-content: center;
-    gap: var(--openbitfun-space-3);
-
-    p { margin: 0; }
-  }
-
-  &__confirm-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--openbitfun-space-2);
-  }
-
   // Dependable edge targets for the OS resize loop on Windows and Linux,
   // where the native undecorated-window border is too thin or unreachable.
   &__resize {

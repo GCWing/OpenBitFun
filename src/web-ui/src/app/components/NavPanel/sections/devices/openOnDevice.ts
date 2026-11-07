@@ -41,6 +41,7 @@ import { exportSessionToMarkdown } from '@/flow_chat/services/sessionMarkdownExp
 import type { TranscriptExportScope } from '@/flow_chat/utils/dialogTranscriptExport';
 import {
   archiveSessionRow,
+  deleteSessionRow,
   duplicateSessionRow,
   openWorktreeWorkspaceRow,
   renameSessionRow,
@@ -191,7 +192,8 @@ export type DeviceSessionAction =
   | { kind: 'export'; scope: TranscriptExportScope; title: string }
   | { kind: 'open-worktree'; worktreePath: string }
   | { kind: 'reveal-storage' }
-  | { kind: 'archive' };
+  | { kind: 'archive' }
+  | { kind: 'delete' };
 
 /**
  * Render `slot`'s device and return the session as the rendered surface knows
@@ -260,6 +262,9 @@ export async function runDeviceSessionAction(
       return;
     case 'archive':
       await archiveSessionRow(sessionId, t);
+      return;
+    case 'delete':
+      await deleteSessionRow(sessionId);
       return;
   }
 }

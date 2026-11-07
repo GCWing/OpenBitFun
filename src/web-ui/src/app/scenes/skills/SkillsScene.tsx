@@ -1,4 +1,4 @@
-import {
+import { captureConfirmationAnchor,
   Button,
   ConfirmDialog,
   Empty,
@@ -121,6 +121,7 @@ const SkillsScene: React.FC = () => {
 
   const [marketSettingsOpen, setMarketSettingsOpen] = useState(false);
   useEffect(() => { if (!desktopConfigAvailable) setMarketSettingsOpen(false); }, [desktopConfigAvailable]);
+  const [deleteAnchor, setDeleteAnchor] = useState<ReturnType<typeof captureConfirmationAnchor>>(undefined);
   const [deleteTarget, setDeleteTarget] = useState<SkillInfo | null>(null);
   const [installedSearch, setInstalledSearch] = useState('');
   const [groupSearch, setGroupSearch] = useState('');
@@ -851,9 +852,9 @@ const SkillsScene: React.FC = () => {
               variant="text"
               tone="danger"
               size="sm"
-              onClick={() => {
+              onClick={event => {
+                setDeleteAnchor(captureConfirmationAnchor(event.currentTarget));
                 setDeleteTarget(selectedInstalledSkill);
-                setSelectedDetail(null);
               }}
               leadingIcon={<Icon name="delete" size="sm" />}
             >
@@ -894,6 +895,7 @@ const SkillsScene: React.FC = () => {
       />
 
       <ConfirmDialog
+        anchor={deleteAnchor}
         open={desktopConfigAvailable && Boolean(deleteTarget)}
         onOpenChange={() => setDeleteTarget(null)}
         onConfirm={async () => {
@@ -904,6 +906,7 @@ const SkillsScene: React.FC = () => {
           const deleted = await installed.handleDelete(deleteTarget);
           if (deleted) {
             setDeleteTarget(null);
+            setSelectedDetail(null);
           }
         }}
         title={t('deleteModal.title')}

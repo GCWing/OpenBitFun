@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Ellipsis, RefreshCw, X } from 'lucide-react';
-import { Button, Icon, IconButton, MenuPopover, OverflowText, Spinner, type MenuEntry } from '@openbitfun/ui';
+import { Icon, IconButton, MenuPopover, OverflowText, Spinner, type MenuEntry } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { desktopCardAPI, hasDesktopPinFailure, isDesktopPinned, type DesktopCardRecord } from '@/infrastructure/api/service-api/DesktopCardAPI';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
@@ -133,7 +133,6 @@ export default function DesktopCardWindow() {
   const [card, setCard] = useState<DesktopCardRecord | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [desktopPinningSupported, setDesktopPinningSupported] = useState(false);
   const [stackingBusy, setStackingBusy] = useState(false);
@@ -196,7 +195,7 @@ export default function DesktopCardWindow() {
 
   const remove = useCallback(() => {
     if (!cardId) return;
-    void desktopCardAPI.delete(cardId).catch(error => {
+    return desktopCardAPI.delete(cardId).catch(error => {
       log.warn('Failed to delete desktop card', { cardId, error });
     });
   }, [cardId]);
@@ -244,7 +243,6 @@ export default function DesktopCardWindow() {
   const sessionId = card.origin?.sessionId;
   const link = isSafeWebLink(card.link) ? card.link : null;
   const menuItems: MenuEntry[] = [
-    ...(hasDataSource(card) ? [{ id: 'refresh', label: t('desktopCard.menu.refresh'), onSelect: refresh }] : []),
     ...(link ? [{ id: 'open-link', label: t('desktopCard.menu.openLink'), onSelect: () => openLink(link) }] : []),
     ...(sessionId ? [{
       id: 'open-session',
@@ -273,7 +271,8 @@ export default function DesktopCardWindow() {
     }] : []),
     { id: 'separator', label: '', separator: true },
     { id: 'hide', label: t('desktopCard.menu.hide'), onSelect: hide },
-    { id: 'delete', label: t('desktopCard.menu.delete'), tone: 'danger', onSelect: () => setConfirmingDelete(true) },
+    { id: 'delete', label: t('desktopCard.menu.delete'), tone: 'danger', onSelect: remove,
+      confirmation: { description: t('desktopCard.deleteConfirm.message'), cancelText: t('desktopCard.deleteConfirm.cancel'), confirmText: t('common:actions.confirm') } },
   ];
   const CardIcon = desktopCardIcon(card);
 
@@ -294,10 +293,8 @@ export default function DesktopCardWindow() {
           )}
         </div>
         <div className="openbitfun-desktop-card__actions" data-openbitfun-component="desktop-card" data-openbitfun-part="actions">
-          {hasDataSource(card) && (
-            <IconButton size="xs" aria-label={t('desktopCard.menu.refresh')} loading={refreshing}
-              icon={<Icon glyph={RefreshCw} size="xs" />} onClick={refresh} />
-          )}
+          <IconButton size="xs" aria-label={t('desktopCard.menu.refresh')} loading={refreshing}
+            icon={<Icon glyph={RefreshCw} size="xs" />} onClick={refresh} />
           <IconButton ref={menuButtonRef} size="xs" aria-label={t('desktopCard.menu.more')} aria-haspopup="menu"
             aria-expanded={menuOpen} icon={<Icon glyph={Ellipsis} size="xs" />} onClick={() => setMenuOpen(open => !open)} />
           <IconButton size="xs" aria-label={t('desktopCard.menu.hide')} icon={<Icon glyph={X} size="xs" />} onClick={hide} />
@@ -306,17 +303,7 @@ export default function DesktopCardWindow() {
       <div className="openbitfun-desktop-card__body" data-openbitfun-component="desktop-card" data-openbitfun-part="body">
         {stackingError === null && hasDesktopPinFailure(card) && <p className="openbitfun-desktop-card__empty" role="alert">{t('desktopCard.pinRecoveryFailed')}</p>}
         {stackingError !== null && <p className="openbitfun-desktop-card__empty" role="alert">{t('desktopCard.stackingFailed', { error: stackingError })}</p>}
-        {confirmingDelete ? (
-          <div className="openbitfun-desktop-card__confirm" role="alertdialog" aria-label={t('desktopCard.deleteConfirm.title')}>
-            <p>{t('desktopCard.deleteConfirm.message')}</p>
-            <div className="openbitfun-desktop-card__confirm-actions">
-              <Button size="sm" variant="secondary" onClick={() => setConfirmingDelete(false)}>{t('desktopCard.deleteConfirm.cancel')}</Button>
-              <Button size="sm" variant="primary" tone="danger" onClick={remove}>{t('desktopCard.deleteConfirm.confirm')}</Button>
-            </div>
-          </div>
-        ) : (
-          <DesktopCardBody card={card} formatters={formatters} onOpenLink={openLink} onDismiss={remove} />
-        )}
+        <DesktopCardBody card={card} formatters={formatters} onOpenLink={openLink} onDismiss={remove} />
       </div>
       <DesktopCardFooter card={card} formatRelativeTime={formatters.formatRelativeTime} />
       <MenuPopover items={menuItems} open={menuOpen} onClose={() => setMenuOpen(false)} anchorRef={menuButtonRef}

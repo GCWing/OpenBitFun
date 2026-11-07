@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   setAlwaysOnTop: vi.fn(),
   nativeWindow: true,
   card: null as unknown,
+  deleteCard: vi.fn(async () => {}),
   startResize: vi.fn(async (_direction: string) => {}),
   startDrag: vi.fn(async () => {}),
 }));
@@ -36,20 +37,25 @@ vi.mock('./DesktopCardTemplates', () => {
   };
 });
 
-vi.mock('@openbitfun/ui', () => ({
+vi.mock('@openbitfun/ui', async importOriginal => {
+  const actual = await importOriginal<typeof import('@openbitfun/ui')>();
+  return ({
   Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => <button onClick={onClick}>{children}</button>,
   Icon: () => <span />,
   IconButton: React.forwardRef<HTMLButtonElement, { 'aria-label'?: string; onClick?: () => void }>(
     ({ 'aria-label': label, onClick }, ref) => <button ref={ref} aria-label={label} onClick={onClick} />,
   ),
-  MenuPopover: ({ items, open }: { items: Array<{ id: string; label: string; checked?: boolean; disabled?: boolean; onSelect?: () => void }>; open: boolean }) => open ? (
-    <div role="menu">{items.filter(item => item.onSelect).map(item => (
+  MenuPopover: ({ items, open }: { items: Array<{ id: string; label: string; checked?: boolean; disabled?: boolean; confirmation?: import('@openbitfun/ui').MenuConfirmation; onSelect?: () => void }>; open: boolean }) => open ? (
+    <div role="menu">{items.filter(item => item.onSelect).map(item => item.confirmation ? (
+      <actual.MenuConfirmItem key={item.id} data-menu-id={item.id} confirmation={item.confirmation} onConfirm={() => item.onSelect?.()}>{item.label}</actual.MenuConfirmItem>
+    ) : (
       <button key={item.id} data-menu-id={item.id} aria-checked={item.checked} disabled={item.disabled} onClick={item.onSelect}>{item.label}</button>
     ))}</div>
   ) : null,
   OverflowText: ({ children, ...props }: { children: React.ReactNode }) => <span {...props}>{children}</span>,
   Spinner: () => <span data-testid="spinner" />,
-}));
+  });
+});
 
 vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({
   useI18n: () => ({
@@ -75,7 +81,7 @@ vi.mock('@/infrastructure/api/service-api/DesktopCardAPI', () => ({
     onChanged: vi.fn(() => () => {}),
     setChecklistItem: vi.fn(),
     setVisible: vi.fn(async () => mocks.card),
-    delete: vi.fn(async () => {}),
+    delete: mocks.deleteCard,
     refresh: vi.fn(async () => mocks.card),
     setAlwaysOnTop: mocks.setAlwaysOnTop,
     setDesktopPinned: mocks.setDesktopPinned,
@@ -137,6 +143,7 @@ describe('DesktopCardWindow', () => {
     mocks.setAlwaysOnTop.mockReset().mockImplementation(async (_id: string, top: boolean) => ({ ...noteCard(), alwaysOnTop: top, desktopPinned: false }));
     mocks.startResize.mockClear();
     mocks.startDrag.mockClear();
+    mocks.deleteCard.mockClear();
   });
 
   afterEach(() => {
@@ -159,6 +166,19 @@ describe('DesktopCardWindow', () => {
       await Promise.resolve();
     });
   }
+
+  it('confirms deletion inside the menu without replacing the card body', async () => {
+    await render();
+    await click('[aria-label="desktopCard.menu.more"]');
+    await click('[data-menu-id="delete"]');
+    expect(container.querySelector('.openbitfun-desktop-card__body [data-template="note"]')?.textContent).toBe('hello');
+    expect(container.querySelector('.openbitfun-desktop-card__confirm')).toBeNull();
+    expect(mocks.deleteCard).not.toHaveBeenCalled();
+    const confirm = [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'common:actions.confirm')!;
+    expect(confirm.closest('[role="menu"]')).not.toBeNull();
+    await act(async () => confirm.click());
+    expect(mocks.deleteCard).toHaveBeenCalledExactlyOnceWith('card-1');
+  });
 
   it('switches between desktop pinning and global topmost without hiding the card', async () => {
     mocks.card = { ...noteCard(), desktopPinningSupported: true };

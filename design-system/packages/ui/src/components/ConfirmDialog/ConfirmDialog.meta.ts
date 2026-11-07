@@ -6,6 +6,7 @@ export const confirmDialogMeta = {
   maturity: "stable",
   name: "ConfirmDialog",
   props: [
+    { name: "anchor", type: "ConfirmationAnchor" },
     { name: "open", type: "boolean" },
     { name: "title", type: "ReactNode" },
     { name: "message", type: "ReactNode" },

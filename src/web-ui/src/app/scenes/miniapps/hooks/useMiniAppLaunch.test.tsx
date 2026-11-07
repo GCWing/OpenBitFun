@@ -2,6 +2,7 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { captureConfirmationAnchor } from '@openbitfun/ui';
 import { activateSurface, resetDeviceSurfaceForTest } from '@/infrastructure/peer-device/deviceSurface';
 import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
 import type { MiniAppInstanceSnapshot, MiniAppViewKind } from '@/infrastructure/api/service-api/MiniAppPresentationAPI';
@@ -97,6 +98,25 @@ describe('MiniApp catalog launch choices', () => {
     act(() => launch.cancelTransfer());
     await act(async () => { await launch.confirmTransfer(); });
     expect(mocks.open).not.toHaveBeenCalled();
+  });
+
+  it('retains the explicit action origin across snapshot loading and menu removal', async () => {
+    let finish!: (value: MiniAppInstanceSnapshot) => void;
+    mocks.snapshot.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const trigger = document.createElement('button');
+    document.body.append(trigger);
+    trigger.getBoundingClientRect = () => new DOMRect(140, 80, 40, 30);
+    const anchor = captureConfirmationAnchor(trigger);
+    await render();
+    let pending!: Promise<void>;
+    await act(async () => { pending = launch.openApp('notes', 'tab', undefined, anchor); });
+    trigger.remove();
+    await act(async () => { finish(snapshot('window')); await pending; });
+    expect(launch.transfer?.anchor).toBe(anchor);
+    expect(launch.transfer?.anchor?.rect).toMatchObject({ left: 140, top: 80, bottom: 110 });
+    expect(mocks.open).not.toHaveBeenCalled();
+    await act(async () => { await launch.confirmTransfer(); });
+    expect(mocks.open).toHaveBeenCalledExactlyOnceWith('notes', 'tab', '/pinned', undefined);
   });
 
   it.each([false, true])('sends the catalog glyph for native launch, including confirmed transfers: %s', async transfer => {

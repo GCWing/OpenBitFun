@@ -10,7 +10,7 @@ import {
   GalleryGrid,
   GallerySkeleton,
 } from '@/app/components/GalleryLayout';
-import { confirmDanger, confirmDialog } from '@/infrastructure/confirm-dialog';
+import { confirmDanger } from '@/infrastructure/confirm-dialog';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { WorkspaceInfo } from '@/shared/types';
@@ -51,14 +51,6 @@ const NurseryGallery: React.FC = () => {
     const scope = getActiveSurfaceScope();
     assistantCreationPending.current = true;
     try {
-      const confirmed = await confirmDialog({
-        title: t('nursery.gallery.newAssistant'),
-        message: t('nursery.gallery.createConfirmMessage'),
-        confirmText: t('nursery.gallery.newAssistant'),
-        type: 'info',
-      });
-      if (!confirmed || !scope.isCurrent()) return;
-
       setCreating(true);
       const newWorkspace = await createAssistantWorkspace();
       scope.assertCurrent('open newly created assistant');

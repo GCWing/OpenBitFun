@@ -27,6 +27,9 @@ const storage = vi.hoisted(() => {
   return implementation;
 });
 
+const confirmation = vi.hoisted(() => vi.fn());
+vi.mock('@/infrastructure/confirm-dialog', () => ({ confirmDanger: confirmation }));
+
 vi.mock('@/infrastructure/i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }));
@@ -66,6 +69,7 @@ describe('ContextList removal presence', () => {
     vi.useFakeTimers();
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })));
     storage.clear();
+    confirmation.mockReset().mockResolvedValue(false);
     useContextStore.setState({
       contexts: [context('a'), context('b'), context('c')],
       validationStates: new Map(),
@@ -110,6 +114,21 @@ describe('ContextList removal presence', () => {
 
     act(() => vi.advanceTimersByTime(1));
     expect(contextIds()).toEqual(['a']);
+  });
+
+  it('confirms clearing beside its button and keeps contexts on cancellation', async () => {
+    const clear = container!.querySelector<HTMLButtonElement>('[title="contextSystem.contextList.clearAllTitle"]')!;
+    await act(async () => clear.click());
+    expect(confirmation).toHaveBeenCalledWith('contextSystem.contextList.clearAllTitle', 'contextSystem.contextList.clearAllConfirm', {
+      anchor: expect.objectContaining({ element: clear }), confirmText: 'contextSystem.contextList.clearAll',
+    });
+    act(() => vi.advanceTimersByTime(160));
+    expect(contextIds()).toEqual(['a', 'b', 'c']);
+    confirmation.mockResolvedValueOnce(true);
+    await act(async () => clear.click());
+    expect(contextIds()).toEqual(['a', 'b', 'c']);
+    act(() => vi.advanceTimersByTime(160));
+    expect(contextIds()).toEqual([]);
   });
 
   it('commits a requested removal if the list unmounts during its exit', () => {

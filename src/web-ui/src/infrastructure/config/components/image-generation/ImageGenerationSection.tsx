@@ -27,7 +27,7 @@ export function ImageGenerationAcquisitionRow({ settings }: Props) {
           <Capsule size="sm" action={<Tooltip content={t('actions.delete')}>
             <IconButton className="openbitfun-model-settings__source-pill-delete" size="xs" shape="circle" variant="quiet" tone="danger" icon={<Icon name="delete" size="xs" />}
               aria-label={t('acquisition.remove', { name: service.name || service.model_name })} disabled={settings.saving || Boolean(settings.testingId)}
-              onClick={() => void settings.remove(service)} />
+              onClick={event => void settings.remove(service, event.currentTarget)} />
           </Tooltip>}>
             <Button size="sm" variant="outline" className="openbitfun-model-settings__source-pill"
               onClick={() => settings.openEdit(service)} disabled={settings.saving || Boolean(settings.testingId)}>{imageModelLabel(service)}</Button>

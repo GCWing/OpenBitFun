@@ -1,4 +1,4 @@
-import { ConfirmDialog, Icon, IconButton, NavigationPanelItem, Tooltip } from '@openbitfun/ui';
+import { captureConfirmationAnchor, ConfirmDialog, Icon, IconButton, NavigationPanelItem, Tooltip } from '@openbitfun/ui';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
 import { useI18n } from '@/infrastructure/i18n';
 import { isRemoteWorkspace } from '@/shared/types';
@@ -41,7 +41,7 @@ function MiniAppShortcutItems({ scope, pinnedAppIds, setPinned }: ReturnType<typ
           aria-label={name}
           selected={selected}
           disabled={workspaceUnsupported || launch.busyAppIds.includes(app.id)}
-          onClick={() => void launch.openApp(app.id)}
+          onClick={event => void launch.openApp(app.id, 'tab', undefined, captureConfirmationAnchor(event.currentTarget))}
           leading={<span className="openbitfun-nav-panel__top-action-icon-slot">{renderMiniAppIcon(app.icon || 'box', 'sm')}</span>}
           actionContent={<Tooltip content={removeLabel}>
             <IconButton className="openbitfun-nav-panel__miniapp-shortcut-remove" size="xs" variant="quiet" aria-label={removeLabel}
@@ -53,6 +53,7 @@ function MiniAppShortcutItems({ scope, pinnedAppIds, setPinned }: ReturnType<typ
       </Tooltip>;
     })}
     <ConfirmDialog
+      anchor={launch.transfer?.anchor}
       open={Boolean(launch.transfer)}
       onOpenChange={open => { if (!open) launch.cancelTransfer(); }}
       title={t('presentation.openTab')}

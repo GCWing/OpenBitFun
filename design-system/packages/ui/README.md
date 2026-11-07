@@ -779,6 +779,22 @@ restores focus before dispatching `onSelect`; the host owns asynchronous work
 and error handling. The popup flips and clamps to the viewport, keeps keyboard
 navigation in the active menu, and supports safe pointer travel to either side.
 
+For a simple destructive menu action, add `confirmation: { description,
+confirmText, cancelText }` to its entry. `MenuConfirmItem` exposes the same
+behavior for composed menus: the row changes to Cancel / Confirm, focuses
+Cancel first, and Escape restores the original row. The confirmed action is
+awaited with both controls disabled; the host owns error presentation.
+Reopening a `MenuPopover` keeps that action disabled until it settles, and a late
+completion does not close the newly opened menu.
+
+Use `ConfirmDialog anchor={captureConfirmationAnchor(event.currentTarget)}`
+when a single-item action needs a short explanation beside its trigger. Capture
+the anchor before awaiting work or closing a menu. It retains the trigger's
+rectangle and overlay owner, flips within the viewport, and restores focus to
+the trigger or its surviving owner. Without an anchor the dialog remains modal;
+keep this presentation for bulk deletion, overwrite, reset, and permission
+decisions. Confirmations focus Cancel first when it is available.
+
 Portals resolve through `DesignSystemProvider.portalHost`, then fall back to one
 document-owned overlay host above application content. Stable `parts` wrappers preserve host data hooks;
 they must forward all props and refs and retain public component ownership.

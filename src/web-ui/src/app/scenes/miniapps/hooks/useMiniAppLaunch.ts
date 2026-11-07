@@ -1,3 +1,4 @@
+import { captureConfirmationAnchor } from '@openbitfun/ui';
 import { useRef, useState } from 'react';
 import { useSceneStore } from '@/app/stores/sceneStore';
 import { hasLocalMiniAppPresentation, miniAppPresentationAPI, type MiniAppViewKind } from '@/infrastructure/api/service-api/MiniAppPresentationAPI';
@@ -16,6 +17,7 @@ interface Transfer {
   kind: MiniAppViewKind;
   workspacePath: string | null;
   iconSvg?: string;
+  anchor?: ReturnType<typeof captureConfirmationAnchor>;
 }
 
 /** Launch choice belongs to the catalog, before either presentation is created. */
@@ -52,7 +54,7 @@ export function useMiniAppLaunch() {
     }
   };
 
-  const openApp = (appId: string, kind: MiniAppViewKind = 'tab', icon?: string) => run(appId, async () => {
+  const openApp = (appId: string, kind: MiniAppViewKind = 'tab', icon?: string, anchor?: ReturnType<typeof captureConfirmationAnchor>) => run(appId, async () => {
     if (!supported) {
       if (kind === 'window') {
         notification.error(t('presentation.unsupported'));
@@ -69,7 +71,7 @@ export function useMiniAppLaunch() {
     useMiniAppPresentationStore.getState().apply(snapshot);
     const instance = snapshot.instances.find(candidate => candidate.appId === appId);
     const request = {
-      appId, kind, workspacePath: instance ? instance.workspacePath : workspacePath || null,
+      anchor, appId, kind, workspacePath: instance ? instance.workspacePath : workspacePath || null,
       iconSvg: kind === 'window' && icon ? renderMiniAppSystemIcon(icon) : undefined,
     };
     if (instance?.primaryView && instance.primaryView.kind !== kind) {

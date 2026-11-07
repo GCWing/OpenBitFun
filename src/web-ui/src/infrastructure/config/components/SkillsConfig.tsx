@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-use-before-define */
-import { OverflowText, Button, Card, CardBody, ConfirmDialog, Field, Icon, IconButton, Input, SearchField, Select, Tooltip } from '@openbitfun/ui';
+import { captureConfirmationAnchor, OverflowText, Button, Card, CardBody, ConfirmDialog, Field, Icon, IconButton, Input, SearchField, Select, Tooltip } from '@openbitfun/ui';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen, TrendingUp } from 'lucide-react';
@@ -39,6 +39,7 @@ const SkillsConfig: React.FC = () => {
   const [isValidating, setIsValidating] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
 
+  const [deleteAnchor, setDeleteAnchor] = useState<ReturnType<typeof captureConfirmationAnchor>>(undefined);
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; skill: SkillInfo | null }>({
     show: false,
     skill: null,
@@ -337,7 +338,7 @@ const SkillsConfig: React.FC = () => {
         <IconButton
           type="button"
           className="openbitfun-collection-btn openbitfun-collection-btn--danger"
-          onClick={() => setDeleteConfirm({ show: true, skill })}
+          onClick={event => { setDeleteAnchor(captureConfirmationAnchor(event.currentTarget)); setDeleteConfirm({ show: true, skill }); }}
           title={t('list.item.deleteTooltip')}
           aria-label={t('list.item.deleteTooltip')}
           icon={<Icon name="delete" size="sm" />}
@@ -725,6 +726,7 @@ const SkillsConfig: React.FC = () => {
       </ConfigPageContent>
 
       <ConfirmDialog
+        anchor={deleteAnchor}
         open={deleteConfirm.show && !!deleteConfirm.skill}
         onOpenChange={() => setDeleteConfirm({ show: false, skill: null })}
         onConfirm={confirmDelete}

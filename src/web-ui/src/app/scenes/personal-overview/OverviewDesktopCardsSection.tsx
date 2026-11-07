@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Eye, EyeOff, Pin, PinOff, Settings, Trash2 } from 'lucide-react';
-import { Button, Icon, IconButton, OverflowText } from '@openbitfun/ui';
+import { captureConfirmationAnchor, Button, Icon, IconButton, OverflowText } from '@openbitfun/ui';
 import {
   desktopCardAPI,
   hasDesktopPinFailure,
@@ -104,11 +104,11 @@ export function OverviewDesktopCardsSection({ isActive }: { isActive: boolean })
     }
   };
 
-  const deleteCard = async (card: DesktopCardRecord) => {
+  const deleteCard = async (card: DesktopCardRecord, trigger?: HTMLElement) => {
     const confirmed = await confirmDanger(
       t('desktopCards.deleteConfirmTitle'),
       t('desktopCards.deleteConfirmMessage', { title: card.title }),
-      { confirmText: t('desktopCards.delete') },
+      { anchor: captureConfirmationAnchor(trigger), confirmText: t('desktopCards.delete') },
     );
     if (!confirmed) return;
     setBusyCardId(card.id);
@@ -194,7 +194,7 @@ export function OverviewDesktopCardsSection({ isActive }: { isActive: boolean })
                         icon={<Icon glyph={card.visible ? EyeOff : Eye} size="sm" />}
                         onClick={() => void toggleVisible(card)} />
                       <IconButton size="sm" tone="danger" disabled={busy} aria-label={t('desktopCards.delete')}
-                        icon={<Icon glyph={Trash2} size="sm" />} onClick={() => void deleteCard(card)} />
+                        icon={<Icon glyph={Trash2} size="sm" />} onClick={event => void deleteCard(card, event.currentTarget)} />
                     </li>
                   );
                 })}

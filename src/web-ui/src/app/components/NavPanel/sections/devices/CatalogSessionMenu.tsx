@@ -22,6 +22,7 @@ import { isWorktreeIsolatedSession } from '@/flow_chat/utils/sessionOrdering';
 import { sessionWorktreeRootPath } from '@/flow_chat/utils/sessionWorktree';
 import { useSideAnchoredPopoverPosition } from '@/shared/utils/useSideAnchoredPopoverPosition';
 import ArchivedSessionMenuItems from '../sessions/ArchivedSessionMenuItems';
+import SessionDeleteMenuItem from '../sessions/SessionDeleteMenuItem';
 import { activateDeviceSlot, runDeviceSessionAction, type DeviceSessionAction } from './openOnDevice';
 import type { BackgroundActions } from './BackgroundSessionList';
 import type { SidebarDeviceSlot } from './useSidebarDevices';
@@ -269,6 +270,17 @@ export const CatalogSessionMenu: React.FC<{
               >
                 <span>{t('nav.sessions.archive')}</span>
               </MenuItem>
+              <SessionDeleteMenuItem
+                key={slot.surfaceId}
+                sessionId={session.sessionId}
+                testId="nav-device-session-menu-delete"
+                label={t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSource' : 'nav.sessions.delete')}
+                description={t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSourceConfirmMessage' : 'nav.sessions.deleteConfirmMessage', { name: title })}
+                onConfirm={() => {
+                  close();
+                  runCatalogSessionAction(actions, peer, slot, session.sessionId, { kind: 'delete' }, t);
+                }}
+              />
             </>
           )}
         </Menu>,

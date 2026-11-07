@@ -129,7 +129,7 @@ function ProjectResourcesContent({ workspace, scope, isActive }: { workspace: Wo
         {!fileAccess && <p className="project-resources__error" role="status">{t('connectionUnavailable')}</p>}
 
         <ProjectDirectoriesSection workspace={workspace} fileAccess={fileAccess} onBrowse={browseFiles} onManage={() => setDialog('directories')}
-          onAdd={() => setDialog('addDirectory')} onRemove={path => void directoryActions.remove(path)}
+          onAdd={() => setDialog('addDirectory')} onRemove={(path, trigger) => void directoryActions.remove(path, trigger)}
           canReveal={isActive && directoryActions.canReveal} onReveal={path => void directoryActions.reveal(path)} revealingPath={directoryActions.revealingPath}
           removingPath={directoryActions.removingPath} error={directoryActions.error} />
 

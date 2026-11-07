@@ -6,7 +6,7 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import { Keyboard, Square } from 'lucide-react';
-import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Icon, IconButton, Menu, MenuItem, SearchField, Switch, ToolbarSeparator, Tooltip } from '@openbitfun/ui';
+import { captureConfirmationAnchor, subscribeOverlayInteraction, createOverlayPortal, OverflowText, Icon, IconButton, Menu, MenuItem, SearchField, Switch, ToolbarSeparator, Tooltip } from '@openbitfun/ui';
 import { SceneChromeContribution } from '@/app/components/SceneTopBar/SceneChrome';
 import { useSceneChromeContext } from '@/app/components/SceneTopBar/sceneChromeContext';
 import { useTranslation } from 'react-i18next';
@@ -75,8 +75,8 @@ export interface FlowChatHeaderProps {
   /** Whether the active Agent tree contains running descendants. */
   hasActiveSessionTreeDescendants?: boolean;
   /** Cancel one running session from the active Agent tree without cancelling descendants. */
-  onCancelSessionTreeSession?: (selection: SessionTreeSelection) => Promise<boolean>;
-  onDeleteSessionTreeSession?: (selection: SessionTreeSelection) => Promise<boolean>;
+  onCancelSessionTreeSession?: (selection: SessionTreeSelection, anchor?: ReturnType<typeof captureConfirmationAnchor>) => Promise<boolean>;
+  onDeleteSessionTreeSession?: (selection: SessionTreeSelection, anchor?: ReturnType<typeof captureConfirmationAnchor>) => Promise<boolean>;
   /** Long-running background commands launched by the active parent session. */
   backgroundCommands?: FlowChatHeaderCommandSummary[];
   /** Open a read-only output panel for a background command. */

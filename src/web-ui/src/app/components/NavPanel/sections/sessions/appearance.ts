@@ -13,6 +13,7 @@ export const sessionsSectionAppearanceDescriptor: AppearanceSurfaceDescriptor = 
     { id: 'edit' },
     { id: 'actions' },
     { id: 'menu' },
+    { id: 'deleteConfirmation' },
     { id: 'toggle' },
   ],
   states: [

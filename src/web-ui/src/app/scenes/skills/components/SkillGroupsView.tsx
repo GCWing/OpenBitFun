@@ -4,7 +4,6 @@ import {
   type MenuEntry,
 } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
-import { confirmDialog } from '@/infrastructure/confirm-dialog';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import type { UserSkillGroup } from '@/infrastructure/config/types';
 import {
@@ -87,11 +86,7 @@ export default function SkillGroupsView({ searchQuery, skills, collection, catal
   };
 
   const remove = async (group: UserSkillGroup) => {
-    const confirmed = await confirmDialog({
-      title: t('groups.deleteTitle'), message: t('groups.deleteMessage', { name: group.name }),
-      confirmText: t('groups.delete'), cancelText: t('groups.cancel'), confirmDanger: true, type: 'warning',
-    });
-    if (confirmed && collection.scope.isCurrent()) await mutate(current => deleteUserSkillGroup(current, group));
+    if (collection.scope.isCurrent()) await mutate(current => deleteUserSkillGroup(current, group));
   };
 
   const renderGroup = (group: ResolvedSkillGroup) => {
@@ -105,7 +100,8 @@ export default function SkillGroupsView({ searchQuery, skills, collection, catal
       { id: 'down', label: t('groups.moveDown'), disabled: index === collection.groups.length - 1,
         onSelect: () => { if (original) void mutate(current => moveUserSkillGroup(current, original.id, 1)); } },
       { id: 'delete', label: t('groups.delete'), tone: 'danger',
-        onSelect: () => { if (original) void remove(original); } },
+        confirmation: { description: t('groups.deleteMessage', { name: group.label }), confirmText: t('groups.delete'), cancelText: t('groups.cancel') },
+        onSelect: async () => { if (original) await remove(original); } },
     ];
     return (
       <div key={group.id} role="row" className="skill-groups__row" data-overflow-trigger

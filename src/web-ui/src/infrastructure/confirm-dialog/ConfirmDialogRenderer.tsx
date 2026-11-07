@@ -10,6 +10,7 @@ export function ConfirmDialogRenderer() {
 
   return (
     <ConfirmDialog
+      anchor={options.anchor}
       cancelText={options.cancelText ?? t('dialog.confirm.cancel')}
       confirmDanger={options.confirmDanger}
       confirmText={options.confirmText ?? t('dialog.confirm.ok')}

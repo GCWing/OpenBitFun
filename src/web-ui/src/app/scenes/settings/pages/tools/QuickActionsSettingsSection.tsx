@@ -16,7 +16,7 @@ import {
 } from '@/infrastructure/config/settingsDraftRegistry';
 import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
-import {
+import { captureConfirmationAnchor,
   Button,
   ConfirmDialog,
   Dialog,
@@ -204,7 +204,7 @@ interface ActionRowProps {
   action: QuickAction;
   onToggle: (id: string) => void;
   onEdit: (action: QuickAction) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string, trigger?: HTMLElement) => void;
   canDelete: boolean;
   disabled: boolean;
   t: TranslationFn;
@@ -246,7 +246,7 @@ const ActionRow: React.FC<ActionRowProps> = ({ action, onToggle, onEdit, onDelet
               type="button"
               size="sm"
               aria-label={t('delete.button')}
-              onClick={() => onDelete(action.id)}
+              onClick={event => onDelete(action.id, event.currentTarget)}
               disabled={disabled}
               className="quick-actions-config__delete-btn"
               icon={<Icon name="delete" size="lg" style={{ width: 13, height: 13 }} />}
@@ -274,6 +274,7 @@ const QuickActionsSettingsSection: React.FC = () => {
 
   // Modal state: undefined = closed, null = create, QuickAction = edit
   const [modalTarget, setModalTarget] = useState<QuickAction | null | undefined>(undefined);
+  const [deleteAnchor, setDeleteAnchor] = useState<ReturnType<typeof captureConfirmationAnchor>>(undefined);
   const [deleteTarget, setDeleteTarget] = useState<QuickAction | null>(null);
   const isModalOpen = modalTarget !== undefined;
 
@@ -329,7 +330,8 @@ const QuickActionsSettingsSection: React.FC = () => {
     void persist(actions.map(a => a.id === id ? { ...a, enabled: !a.enabled } : a));
   }, [actions, persist, saving]);
 
-  const handleDelete = useCallback((id: string) => {
+  const handleDelete = useCallback((id: string, trigger?: HTMLElement) => {
+    setDeleteAnchor(captureConfirmationAnchor(trigger));
     const target = actions.find(action => action.id === id);
     if (target) setDeleteTarget(target);
   }, [actions]);
@@ -451,6 +453,7 @@ const QuickActionsSettingsSection: React.FC = () => {
         t={t}
       />
       <ConfirmDialog
+        anchor={deleteAnchor}
         open={!!deleteTarget}
         onOpenChange={(open) => { if (!open && !saving) setDeleteTarget(null); }}
         onConfirm={confirmDelete}

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ComponentType, type HTMLAttributes, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentType, type HTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Menu, MenuItem, MenuSeparator, type MenuProps, type MenuItemRole } from "./Menu";
 import { Icon } from "../Icon";
 import { classNames } from "../../internal/classNames";
@@ -11,6 +11,7 @@ import { useFocusScope } from "../../overlay/useFocusScope";
 import { usePresence } from "../../overlay/usePresence";
 import { inertProps } from "../../internal/inert";
 import styles from "./MenuPopover.module.css";
+import { MenuConfirmItem, type MenuConfirmation } from "./MenuConfirmItem";
 
 export interface MenuEntry {
   id: string;
@@ -24,7 +25,8 @@ export interface MenuEntry {
   checked?: boolean;
   tone?: "neutral" | "danger";
   /** Dispatch only: the host owns async work and error presentation. */
-  onSelect?: () => void;
+  onSelect?: (trigger: HTMLButtonElement) => void | Promise<void>;
+  confirmation?: MenuConfirmation;
 }
 
 export interface MenuPopoverProps extends Omit<MenuProps, "children"> {
@@ -66,11 +68,33 @@ export function MenuPopover({ items, open, onClose, anchorRef, ownerRef, positio
   const menuRef = useRef<HTMLDivElement>(null);
   const treeId = useId();
   const { present, state: phase } = usePresence(open, exitDurationMs);
+  // Mutations outlive a dismissed menu. Keep their lock above the mounted rows,
+  // and do not let a late completion dismiss a newer opening of the menu.
+  const inFlightActions = useRef(new Set<string>());
+  const [pendingActions, setPendingActions] = useState<ReadonlySet<string>>(new Set());
+  const openingRevision = useRef(0);
+  useLayoutEffect(() => {
+    openingRevision.current += 1;
+    return () => { openingRevision.current += 1; };
+  }, [open]);
   const resolvedAnchor = anchorRef ?? markerRef;
   const branchRefs = anchorRef ? [anchorRef] : [];
   const closeAndRestoreFocus = () => {
     if (anchorRef?.current?.isConnected) anchorRef.current.focus();
     onClose();
+  };
+  const confirmEntry = async (item: MenuEntry, key: string, trigger: HTMLButtonElement) => {
+    if (inFlightActions.current.has(key)) return;
+    inFlightActions.current.add(key);
+    setPendingActions(new Set(inFlightActions.current));
+    const revision = openingRevision.current;
+    try {
+      await item.onSelect?.(trigger);
+      if (revision === openingRevision.current) closeAndRestoreFocus();
+    } finally {
+      inFlightActions.current.delete(key);
+      setPendingActions(new Set(inFlightActions.current));
+    }
   };
 
   useDismissibleLayer({
@@ -79,7 +103,11 @@ export function MenuPopover({ items, open, onClose, anchorRef, ownerRef, positio
       && target.closest("[data-openbitfun-menu-tree]")?.getAttribute("data-openbitfun-menu-tree") === treeId,
     enabled: open,
     layerRef: menuRef,
-    onDismiss: closeAndRestoreFocus,
+    onDismiss: reason => {
+      const cancel = menuRef.current?.querySelector<HTMLButtonElement>("[data-openbitfun-menu-confirmation-cancel]");
+      if (reason === "escape-key" && cancel) { cancel.click(); return; }
+      closeAndRestoreFocus();
+    },
   });
   useFocusScope({
     active: open && present,
@@ -97,6 +125,8 @@ export function MenuPopover({ items, open, onClose, anchorRef, ownerRef, positio
       items={items}
       menuRef={menuRef}
       onClose={closeAndRestoreFocus}
+      onConfirmEntry={confirmEntry}
+      pendingActions={pendingActions}
       open={open}
       phase={phase}
       placement={placement}
@@ -119,6 +149,9 @@ interface MenuLevelProps extends Omit<MenuProps, "children"> {
   phase: string;
   treeId: string;
   onClose: () => void;
+  onConfirmEntry: (item: MenuEntry, key: string, trigger: HTMLButtonElement) => Promise<void>;
+  pendingActions: ReadonlySet<string>;
+  actionPath?: string;
   onBack?: () => void;
   anchorRef: RefObject<HTMLElement | null>;
   position?: { x: number; y: number };
@@ -128,7 +161,7 @@ interface MenuLevelProps extends Omit<MenuProps, "children"> {
   parts?: MenuPopoverParts;
 }
 
-function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, position, placement, overlapAnchor, menuRef: externalRef, autoFocusFirstItem, className, inlineSize, style, parts, ...props }: MenuLevelProps) {
+function MenuLevel({ items, open, phase, treeId, onClose, onConfirmEntry, pendingActions, actionPath = "", onBack, anchorRef, position, placement, overlapAnchor, menuRef: externalRef, autoFocusFirstItem, className, inlineSize, style, parts, ...props }: MenuLevelProps) {
   const MenuSurface = parts?.root ?? Menu;
   const Item = parts?.item ?? MenuItem;
   const Separator = parts?.separator ?? MenuSeparator;
@@ -148,6 +181,7 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
   // Keep geometry until presence unmounts the menu, including its exit transition.
   const layout = useAnchoredLayer({ open: true, anchorRef, layerRef: menuRef, placement, overlapAnchor, point: position });
   const activeEntry = items.find(item => item.id === activeId && !item.disabled && item.submenu?.length);
+  const actionKey = (id: string) => `${actionPath}/${encodeURIComponent(id)}`;
   const openSubmenu = (item: MenuEntry, trigger: HTMLElement, keyboard: boolean) => {
     if (item.disabled || !item.submenu?.length) return;
     submenuAnchor.current = trigger;
@@ -155,10 +189,10 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
     intent.openNow(item.id);
     if (keyboard && activeId === item.id && submenuRef.current) ownItems(submenuRef.current)[0]?.focus();
   };
-  const activate = (item: MenuEntry) => {
+  const activate = (item: MenuEntry, trigger: HTMLButtonElement) => {
     if (item.disabled || item.separator) return;
     onClose();
-    item.onSelect?.();
+    void item.onSelect?.(trigger);
   };
 
   useEffect(() => { if (!open) intent.closeNow(); }, [open, intent.closeNow]);
@@ -172,6 +206,7 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
       const current = enabled.indexOf(doc.activeElement as HTMLButtonElement);
       const button = enabled[current];
       const item = items.find(entry => entry.id === button?.getAttribute("data-menu-id"));
+      if (button?.closest("[data-openbitfun-menu-confirmation]") && event.key !== "Tab") return;
       let index: number | undefined;
       switch (event.key) {
         case "ArrowDown": index = (current + 1) % enabled.length; break;
@@ -188,7 +223,7 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
         case "Enter":
         case " ":
           event.preventDefault(); event.stopPropagation();
-          if (item && button) { if (item.submenu?.length) openSubmenu(item, button, true); else activate(item); }
+          if (item && button) { if (item.submenu?.length) openSubmenu(item, button, true); else if (item.confirmation) button.click(); else activate(item, button); }
           return;
         default:
           if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -205,6 +240,7 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
   });
 
   const submenu = activeEntry ? <SubmenuBoundary className={styles.submenuBoundary}><MenuLevel key={activeEntry.id} id={submenuId} aria-label={activeEntry.label} menuRef={submenuRef} items={activeEntry.submenu!} open={open} phase={phase} treeId={treeId} onClose={onClose} parts={parts} inlineSize={inlineSize}
+    onConfirmEntry={onConfirmEntry} pendingActions={pendingActions} actionPath={actionKey(activeEntry.id)}
     onBack={() => { intent.closeNow(); submenuAnchor.current?.focus(); }} anchorRef={submenuAnchor} placement="right" autoFocusFirstItem={keyboardOpen.current}
     onPointerEnter={intent.keepOpen} onPointerLeave={intent.requestClose} /></SubmenuBoundary> : null;
 
@@ -212,10 +248,13 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
     <MenuSurface {...props} ref={node => { (menuRef as { current: HTMLDivElement | null }).current = node; }} className={classNames(styles.popup, className)} inlineSize={inlineSize} autoFocusFirstItem={open && autoFocusFirstItem && Boolean(layout)} tabIndex={-1}
       style={{ ...layout?.style, ...style, visibility: layout ? undefined : "hidden" }} data-openbitfun-native-webview-occlusion data-openbitfun-menu-tree={treeId} data-placement={layout?.placement ?? placement} data-state={phase}
       aria-hidden={!open || undefined} {...inertProps(!open)} onContextMenu={event => event.preventDefault()}>
-      {items.map(item => item.separator ? <Separator key={item.id} /> : <Item key={item.id} data-menu-id={item.id} leading={item.icon ? <Leading className={styles.icon} data-openbitfun-icon-slot="true">{item.icon}</Leading> : undefined} shortcut={item.shortcut ? <Shortcut>{item.shortcut}</Shortcut> : undefined} tone={item.tone} role={item.role} checked={item.checked}
+      {items.map(item => item.separator ? <Separator key={item.id} /> : item.confirmation ? <MenuConfirmItem key={`${item.id}:${open}`} data-menu-id={item.id}
+        confirmation={item.confirmation} disabled={item.disabled || pendingActions.has(actionKey(item.id))} tone={item.tone} leading={item.icon}
+        onConfirm={trigger => onConfirmEntry(item, actionKey(item.id), trigger)}>{item.label}</MenuConfirmItem>
+        : <Item key={item.id} data-menu-id={item.id} leading={item.icon ? <Leading className={styles.icon} data-openbitfun-icon-slot="true">{item.icon}</Leading> : undefined} shortcut={item.shortcut ? <Shortcut>{item.shortcut}</Shortcut> : undefined} tone={item.tone} role={item.role} checked={item.checked}
         disabled={item.disabled} aria-disabled={item.disabled || undefined} aria-haspopup={item.submenu?.length ? "menu" : undefined} aria-expanded={item.submenu?.length ? activeEntry?.id === item.id : undefined}
         aria-controls={activeEntry?.id === item.id ? submenuId : undefined} metadata={item.submenu?.length ? <Arrow className={styles.submenuArrow}><Icon name="chevron-right" size="sm" /></Arrow> : undefined}
-        onClick={event => { event.stopPropagation(); if (item.submenu?.length) openSubmenu(item, event.currentTarget, true); else activate(item); }}
+        onClick={event => { event.stopPropagation(); if (item.submenu?.length) openSubmenu(item, event.currentTarget, true); else activate(item, event.currentTarget); }}
         onPointerEnter={event => { if (activeId === null || activeId === item.id) submenuAnchor.current = event.currentTarget; keyboardOpen.current = false; intent.requestChange(!item.disabled && item.submenu?.length ? item.id : null, event); }}
         onPointerLeave={intent.requestClose}
         ref={element => { if (activeEntry?.id === item.id && element) submenuAnchor.current = element; }}>

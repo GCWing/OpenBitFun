@@ -22,7 +22,7 @@ export interface ThreadGoalStripControlProps {
   actions?: ThreadGoalUiAction[];
   onOpen: () => void;
   /** Omitted where the surface cannot run goal actions; those controls then stay away. */
-  onAction?: (action: ThreadGoalStripAction) => void;
+  onAction?: (action: ThreadGoalStripAction, trigger?: HTMLElement) => void;
 }
 
 /**
@@ -139,7 +139,7 @@ export const ThreadGoalStripControl: React.FC<ThreadGoalStripControlProps> = ({
             aria-label={clearLabel}
             onClick={event => {
               event.stopPropagation();
-              onAction?.('clear');
+              onAction?.('clear', event.currentTarget);
             }}
           >
             <Icon glyph={Trash2} size="xs" aria-hidden />

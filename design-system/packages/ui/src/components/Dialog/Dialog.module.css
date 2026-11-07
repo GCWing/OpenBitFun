@@ -44,6 +44,27 @@
   .surface[data-size="xl"] { max-inline-size: var(--openbitfun-overlay-dialog-max-inline-size-xlarge); }
   .surface[data-size="2xl"] { max-inline-size: var(--openbitfun-overlay-dialog-max-inline-size-xxlarge); }
 
+  .anchoredOverlay {
+    display: contents;
+  }
+
+  .anchoredSurface {
+    inline-size: min(var(--openbitfun-overlay-dialog-max-inline-size-small), calc(100vw - 2 * var(--openbitfun-space-2)));
+    box-shadow: var(--openbitfun-shadow-overlay);
+    transform-origin: top left;
+    animation: none;
+  }
+
+  .anchoredSurface[data-placement="top"] { transform-origin: bottom left; }
+
+  .anchoredSurface > .header,
+  .anchoredSurface > .body,
+  .anchoredSurface > .footer {
+    padding: var(--openbitfun-space-3);
+  }
+
+  .anchoredSurface > .body { padding-block-start: 0; }
+
   .surface[data-preset="panel"] {
     --_dialog-panel-title-gap: calc(var(--openbitfun-overlay-dialog-header-padding-block-start) + var(--openbitfun-space-4));
 

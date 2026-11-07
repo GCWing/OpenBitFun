@@ -79,7 +79,7 @@ it('keeps the primary directory first and routes browsing and related-directory 
   expect(deleteButton.getAttribute('data-openbitfun-variant')).toBe('glass');
   expect(deleteButton.getAttribute('data-openbitfun-shape')).toBe('circle');
   await act(async () => deleteButton.click());
-  expect(remove).toHaveBeenCalledExactlyOnceWith('/related/0');
+  expect(remove).toHaveBeenCalledExactlyOnceWith('/related/0', deleteButton);
   expect(manage).toHaveBeenCalledOnce();
   expect(container.querySelector('.project-resource-cards__add')).toBeNull();
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.project-resources__section-actions button')]

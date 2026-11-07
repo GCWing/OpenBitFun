@@ -1,3 +1,4 @@
+import { captureConfirmationAnchor } from '@openbitfun/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { confirmDialog } from '@/infrastructure/confirm-dialog';
@@ -39,7 +40,7 @@ export function useProjectDirectoryActions(workspace: WorkspaceInfo, scope: Surf
       if (mounted.current && scope.isCurrent() && latest.current.workspace.id === workspace.id) setRevealingPath(null);
     }
   }, [canReveal, scope, t, workspace.id]);
-  const remove = useCallback(async (path: string) => {
+  const remove = useCallback(async (path: string, trigger?: HTMLElement) => {
     const current = () => mounted.current && scope.isCurrent() && latest.current.isActive
       && latest.current.workspace.id === workspace.id;
     const canRemove = () => path !== latest.current.workspace.rootPath
@@ -48,7 +49,7 @@ export function useProjectDirectoryActions(workspace: WorkspaceInfo, scope: Surf
     pending.current = true;
     setError(null);
     try {
-      const confirmed = await confirmDialog({ title: t('directories.removeTitle'), message: t('directories.removeMessage'),
+      const confirmed = await confirmDialog({ anchor: captureConfirmationAnchor(trigger), title: t('directories.removeTitle'), message: t('directories.removeMessage'),
         type: 'warning', confirmDanger: true, confirmText: t('directories.removeConfirm') });
       if (!confirmed || !current() || !canRemove()) return;
       setRemovingPath(path);

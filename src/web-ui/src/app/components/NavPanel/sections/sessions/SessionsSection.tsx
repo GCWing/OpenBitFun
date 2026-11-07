@@ -65,6 +65,7 @@ import { getWorkspaceSessionHierarchy } from './sessionNavHierarchy';
 import { useWorkspaceSessionCatalog } from './useWorkspaceSessionCatalog';
 import { useArchivedSessionMetadata } from './useArchivedSessionMetadata';
 import ArchivedSessionMenuItems from './ArchivedSessionMenuItems';
+import SessionDeleteMenuItem from './SessionDeleteMenuItem';
 import { captureWorkspaceSessionCatalogQuery, countPersistedWorkspaceCatalogSessions, resolveWorkspaceSessionCatalogSource, workspaceSessionCatalogQuery, workspaceSessionCatalogSources, workspaceSessionCatalogTotal } from './workspaceSessionCatalogQuery';
 import { useWorkspaceSessionDiscovery } from './useWorkspaceSessionDiscovery';
 import { useSessionNavExpansion } from './useSessionNavExpansion';
@@ -122,7 +123,7 @@ import {
 import { useSessionRowRemovalTransition } from './sessionRowShift';
 import { SessionStatusIndicator } from './SessionStatusIndicator';
 import { createSessionsNavSelector } from './sessionsNavSelector';
-import { archiveSessionRow, duplicateSessionRow, openWorktreeWorkspaceRow, renameSessionRow } from './sessionRowActions';
+import { archiveSessionRow, deleteSessionRow, duplicateSessionRow, openWorktreeWorkspaceRow, renameSessionRow } from './sessionRowActions';
 import './SessionsSection.scss';
 
 /** A limited flat list reads each workspace's newest rows in steps of this many. */
@@ -1929,6 +1930,13 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                           >
                             <span>{t('nav.sessions.archive')}</span>
                           </MenuItem>
+                          <SessionDeleteMenuItem
+                            sessionId={session.sessionId}
+                            testId="nav-session-menu-delete"
+                            label={t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSource' : 'nav.sessions.delete')}
+                            description={t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSourceConfirmMessage' : 'nav.sessions.deleteConfirmMessage', { name: sessionTitle })}
+                            onConfirm={() => { closeSessionMenu(); return deleteSessionRow(session.sessionId); }}
+                          />
                         </>
                       )}
                     </Menu>,

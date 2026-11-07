@@ -123,7 +123,7 @@ import { useNotification } from '@/shared/notification-system';
 import type { ProviderRegion } from '@/shared/types';
 import { translateConnectionTestMessage } from '@/shared/utils/aiConnectionTestMessages';
 import { createLogger } from '@/shared/utils/logger';
-import {
+import { captureConfirmationAnchor,
   Button,
   Capsule,
   Card,
@@ -662,6 +662,7 @@ const ModelSettingsPage: React.FC = () => {
   const [subscriptionLoginClock, setSubscriptionLoginClock] = useState(() => Date.now());
   const [subscriptionLoginAccountId, setSubscriptionLoginAccountId] = useState<string | null>(null);
   const [subscriptionLogoutRequest, setSubscriptionLogoutRequest] = useState<SubscriptionLogoutRequest | null>(null);
+  const [deleteAnchor, setDeleteAnchor] = useState<ReturnType<typeof captureConfirmationAnchor>>(undefined);
   const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
   const modelDiscoveryRef = React.useRef(new ModelDiscoveryCoordinator());
   const editorSavingRef = React.useRef(false);
@@ -2340,10 +2341,12 @@ const ModelSettingsPage: React.FC = () => {
       .reduce<number>((count, value) => count + countModelConfigReferences(value, ids), 0);
   };
 
-  const requestDelete = async (config: AIModelConfigType) => {
+  const requestDelete = async (config: AIModelConfigType, trigger?: HTMLElement) => {
+    const anchor = captureConfirmationAnchor(trigger);
     if (!config.id) return;
     try {
       const referenceCount = await inspectModelReferenceCount([config.id]);
+      setDeleteAnchor(anchor);
       setDeleteRequest({ kind: 'model', config, modelIds: [config.id], referenceCount });
     } catch (error) {
       log.error('Failed to inspect model references before deletion', { configId: config.id, error });
@@ -4604,7 +4607,7 @@ const ModelSettingsPage: React.FC = () => {
               aria-label={t('actions.delete')}
               tone="danger"
               size="sm"
-              onClick={() => void requestDelete(config)}
+              onClick={event => void requestDelete(config, event.currentTarget)}
               icon={<Icon name="delete" size="sm" />}
             />
           </Tooltip>
@@ -4650,7 +4653,7 @@ const ModelSettingsPage: React.FC = () => {
                 connectionTestSupported={connectionTestSupported}
                 onEdit={() => handleEdit(config)}
                 onTest={() => void handleTest(config)}
-                onDelete={() => void requestDelete(config)}
+                onDelete={trigger => void requestDelete(config, trigger)}
                 onEnabledChange={enabled => void handleToggleEnabled(config, enabled)}
               />
             </CardFooter>
@@ -5622,6 +5625,7 @@ const ModelSettingsPage: React.FC = () => {
         type="warning"
       />
       <ConfirmDialog
+        anchor={deleteRequest?.kind === 'model' ? deleteAnchor : undefined}
         open={!!deleteRequest}
         onOpenChange={(open) => { if (!open) setDeleteRequest(null); }}
         onConfirm={handleDelete}

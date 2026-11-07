@@ -16,6 +16,7 @@ impl ClawMode {
     pub fn new() -> Self {
         Self {
             default_tools: vec![
+                "AskUserQuestion".to_string(),
                 "AgentSpawn".to_string(),
                 "AgentSendInput".to_string(),
                 "AgentControl".to_string(),
@@ -118,6 +119,7 @@ mod tests {
         assert!(tools.contains(&"ListModels".to_string()));
         assert!(tools.contains(&"ListWorkspaces".to_string()));
         assert!(tools.contains(&"DesktopCard".to_string()));
+        assert!(tools.contains(&"AskUserQuestion".to_string()));
     }
 
     #[test]

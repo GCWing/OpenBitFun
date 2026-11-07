@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
-import {
+import { captureConfirmationAnchor,
   Button, Capsule, Card, CardBody, CardHeader, ConfirmDialog, Dialog, DialogBody, DialogClose, DialogFooter,
   DialogHeader, DialogHeading, DialogTitle, Icon, IconButton, Input, MenuPopover, OverflowText, Radio, StatusPill, Tooltip,
   type MenuEntry,
@@ -107,6 +107,7 @@ export function ModelPoolsSection({ models }: { models: AIModelConfig[] }) {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const statusRequest = useRef(0);
+  const [deleteAnchor, setDeleteAnchor] = useState<ReturnType<typeof captureConfirmationAnchor>>(undefined);
   const [deleteId, setDeleteId] = useState<string>();
   const supported = supportsModelPools();
   const strategyOptions = [
@@ -226,7 +227,7 @@ export function ModelPoolsSection({ models }: { models: AIModelConfig[] }) {
               <Tooltip content={t('pools.delete')}>
                 <IconButton size="sm" tone="danger" aria-label={t('pools.delete')}
                   icon={<Icon name="delete" size="sm" />} disabled={busy}
-                  onClick={() => { setError(undefined); setDeleteId(pool.id); }} />
+                  onClick={event => { setDeleteAnchor(captureConfirmationAnchor(event.currentTarget)); setError(undefined); setDeleteId(pool.id); }} />
               </Tooltip>
             </div>
           </ConfigPageRow>)}
@@ -235,6 +236,7 @@ export function ModelPoolsSection({ models }: { models: AIModelConfig[] }) {
     </ConfigPageSection>
     <ConfirmDialog
       key={scope.epoch}
+      anchor={deleteAnchor}
       open={Boolean(deleteId)}
       onOpenChange={() => { if (!busy) { setDeleteId(undefined); setError(undefined); } }}
       onConfirm={async () => { if (deleteId) await remove(deleteId); }}

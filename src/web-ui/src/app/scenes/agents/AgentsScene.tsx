@@ -1,5 +1,5 @@
 import { isPrimaryAgent, isOrdinaryAgent } from './agentVisibility';
-import {
+import { captureConfirmationAnchor,
   Button, Combobox, Dialog, DialogBody, DialogClose, DialogFooter,
   DialogHeader, DialogHeaderActions, DialogHeading, DialogTitle, Field,
   FormSection, Icon, IconButton, SearchField, Select, StatusPill, Toolbar, Tooltip,
@@ -623,7 +623,7 @@ const AgentsHomeView: React.FC = () => {
     }
   }, [activeDetailSection, selectedAgentCapabilities]);
 
-  const handleDeleteCustomAgent = useCallback(async () => {
+  const handleDeleteCustomAgent = useCallback(async (trigger?: HTMLElement) => {
     if (!selectedAgent) return;
     if (['builtin', 'external'].includes(
       selectedAgent.source ?? selectedAgent.subagentSource ?? 'builtin',
@@ -635,6 +635,7 @@ const AgentsHomeView: React.FC = () => {
     const ok = await confirmDanger(
       t('agentsOverview.deleteAgent'),
       t('agentsOverview.deleteConfirm', { name }),
+      { anchor: captureConfirmationAnchor(trigger) },
     );
     if (!ok) return;
     setDeletingAgent(true);
@@ -982,7 +983,7 @@ const AgentsHomeView: React.FC = () => {
                         aria-label={t('agentsOverview.deleteAgent')}
                         size="sm"
                         loading={deletingAgent}
-                        onClick={() => void handleDeleteCustomAgent()}
+                        onClick={event => void handleDeleteCustomAgent(event.currentTarget)}
                         icon={<Icon name="delete" />}
                       />
                     </Tooltip>

@@ -925,7 +925,7 @@ describe('McpToolsConfig remote behavior', () => {
     expect(confirmDangerMock).toHaveBeenCalledWith(
       'actions.delete',
       'messages.deleteConfirm',
-      { confirmText: 'actions.delete', cancelText: 'actions.cancel' },
+      { confirmText: 'actions.delete', cancelText: 'actions.cancel', anchor: expect.objectContaining({ element: deleteButton }) },
     );
     expect(deleteServerMock).toHaveBeenCalledWith({ serverId: 'local-test' });
     expect(getServersMock).toHaveBeenCalledTimes(2);
