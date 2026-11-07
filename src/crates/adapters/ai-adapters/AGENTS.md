@@ -255,6 +255,18 @@ metadata with credential revision checks, preserving their tokens and models.
 A failed account request (including 404) must not fall back to public OAuth
 inference. Account route metadata must not contain keys or token material.
 
+HTTP proxy policy (legacy disabled settings stay direct; Windows bypass rules
+retain wildcard and `<local>` semantics):
+
+```bash
+cargo test --locked -p openbitfun-ai-adapters --lib client::http::tests
+cargo test --locked -p openbitfun-ai-adapters --features subscription-auth --lib client::http::tests::router_proxy_policy_preserves_environment_explicit_and_disabled_routes
+```
+
+The second command uses the auth feature's hidden-process helper for an isolated
+environment-proxy fixture, including on Windows. Fixtures do not change the OS
+proxy, access provider accounts, or verify remote-host behavior.
+
 Router HTTP serialization, classifier parsing, authentication, and failures:
 
 ```bash

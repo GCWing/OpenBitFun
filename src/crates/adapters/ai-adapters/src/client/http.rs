@@ -3,7 +3,7 @@ use crate::types::ProxyConfig;
 use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
 use openbitfun_services_core::system_proxy::SystemProxy;
-use reqwest::{Client, ClientBuilder, NoProxy, Proxy};
+use reqwest::{Client, ClientBuilder, Proxy};
 
 /// Router requests use the shared proxy policy with their own total timeout.
 pub(crate) fn create_router_http_client(
@@ -61,55 +61,59 @@ pub(crate) fn create_http_client(
         );
     }
 
-    builder = apply_proxy_policy(builder, proxy_config);
+    builder = apply_proxy_policy(builder, proxy_config.clone());
 
     match builder.build() {
         Ok(client) => client,
         Err(e) => {
             error!(
-                "HTTP client initialization failed: {}, using default client",
+                "HTTP client initialization failed: {}, using default transport options",
                 e
             );
-            Client::new()
+            apply_proxy_policy(Client::builder(), proxy_config)
+                .build()
+                .expect("Failed to initialize HTTP client with configured proxy policy")
         }
     }
 }
 
-/// Resolve the transport proxy policy in priority order.
-///
-/// 1. An enabled proxy with an address is used as configured.
-/// 2. A configured address with the switch off means "connect directly"; the
-///    user turned the proxy off on purpose.
-/// 3. No configured address falls back to the operating system proxy. Many users
-///    reach providers only through a local proxy agent, and that setting lives in
-///    the OS rather than in this app.
-/// 4. Without any of the above the client keeps reqwest's default, which honours
-///    the `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` environment variables.
+/// Missing or disabled app proxy settings retain the legacy direct connection.
+/// Only an enabled proxy may select a manual address or, when its address is
+/// empty, inherit operating system / environment settings.
 fn apply_proxy_policy(builder: ClientBuilder, proxy_config: Option<ProxyConfig>) -> ClientBuilder {
-    if let Some(proxy_cfg) = proxy_config {
-        let configured = !proxy_cfg.url.trim().is_empty();
-        if proxy_cfg.enabled && configured {
-            return match build_proxy(&proxy_cfg) {
-                Ok(proxy) => {
-                    info!("Using proxy: {}", proxy_cfg.url);
-                    builder.proxy(proxy)
-                }
-                Err(e) => {
-                    error!(
-                        "Proxy configuration failed: {}, proceeding without proxy",
-                        e
-                    );
-                    builder.no_proxy()
-                }
-            };
-        }
-        if configured {
-            info!("Proxy disabled by configuration, connecting directly");
-            return builder.no_proxy();
-        }
+    apply_proxy_policy_with_system_proxy(
+        builder,
+        proxy_config,
+        openbitfun_services_core::system_proxy::detect,
+    )
+}
+
+fn apply_proxy_policy_with_system_proxy(
+    builder: ClientBuilder,
+    proxy_config: Option<ProxyConfig>,
+    detect: impl FnOnce() -> Option<SystemProxy>,
+) -> ClientBuilder {
+    let Some(proxy_cfg) = proxy_config.filter(|config| config.enabled) else {
+        return builder.no_proxy();
+    };
+
+    if !proxy_cfg.url.trim().is_empty() {
+        return match build_proxy(&proxy_cfg) {
+            Ok(proxy) => {
+                info!("Using proxy: {}", proxy_cfg.url);
+                builder.proxy(proxy)
+            }
+            Err(e) => {
+                error!(
+                    "Proxy configuration failed: {}, proceeding without proxy",
+                    e
+                );
+                builder.no_proxy()
+            }
+        };
     }
 
-    match openbitfun_services_core::system_proxy::detect() {
+    match detect() {
         Some(system) => match system_proxy(&system) {
             Some(proxy) => {
                 info!("Using operating system proxy: {}", system.url);
@@ -131,9 +135,14 @@ fn apply_proxy_policy(builder: ClientBuilder, proxy_config: Option<ProxyConfig>)
 ///
 /// Loopback targets always bypass the proxy so local model servers keep working.
 fn system_proxy(system: &SystemProxy) -> Option<Proxy> {
-    let proxy = Proxy::all(&system.url).ok()?;
-    let no_proxy = system.no_proxy.as_deref().and_then(NoProxy::from_string);
-    Some(proxy.no_proxy(no_proxy))
+    // Validate eagerly, then use the Windows matcher rather than translating
+    // wildcard / <local> rules into reqwest's narrower NoProxy syntax.
+    Proxy::all(&system.url).ok()?;
+    let system = system.clone();
+    Some(Proxy::custom(move |url| {
+        let host = url.host_str()?;
+        (!system.bypasses_host(host)).then(|| system.url.clone())
+    }))
 }
 
 pub(crate) fn build_proxy(config: &ProxyConfig) -> Result<Proxy> {
@@ -161,7 +170,9 @@ fn normalize_proxy_url(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_proxy, normalize_proxy_url, system_proxy};
+    use super::{
+        apply_proxy_policy_with_system_proxy, build_proxy, normalize_proxy_url, system_proxy,
+    };
     use crate::types::ProxyConfig;
     use openbitfun_services_core::system_proxy::SystemProxy;
 
@@ -209,6 +220,109 @@ mod tests {
                 .unwrap(),
             "system proxy"
         );
+        direct_server.abort();
+        proxy_server.abort();
+    }
+
+    #[tokio::test]
+    async fn legacy_proxy_payloads_round_trip_and_connect_directly_without_system_detection() {
+        openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
+        let (direct_url, direct_server) = response_fixture("direct").await;
+        let address = direct_url.strip_prefix("http://").unwrap().parse().unwrap();
+        let target = direct_url.replace("127.0.0.1", "legacy-model.corp.internal");
+        let mut configs = vec![None];
+        for payload in [
+            serde_json::json!({}),
+            serde_json::json!({"enabled": false}),
+            serde_json::json!({"enabled": false, "url": ""}),
+            serde_json::json!({"enabled": false, "url": "  "}),
+            serde_json::json!({
+                "enabled": false,
+                "url": "http://unused-proxy.invalid:7897",
+                "username": "saved-user",
+                "password": "saved-password"
+            }),
+        ] {
+            let config: ProxyConfig = serde_json::from_value(payload.clone()).unwrap();
+            let stored = serde_json::to_value(&config).unwrap();
+            for (key, value) in payload.as_object().unwrap() {
+                assert_eq!(&stored[key], value, "legacy field {key} changed");
+            }
+            configs.push(Some(serde_json::from_value(stored).unwrap()));
+        }
+        for config in configs {
+            let builder = reqwest::Client::builder()
+                .resolve("legacy-model.corp.internal", address)
+                .timeout(std::time::Duration::from_secs(3));
+            let client = apply_proxy_policy_with_system_proxy(builder, config, || {
+                panic!("legacy direct settings must not inspect the system proxy")
+            })
+            .build()
+            .unwrap();
+            assert_eq!(
+                client
+                    .get(&target)
+                    .send()
+                    .await
+                    .unwrap()
+                    .text()
+                    .await
+                    .unwrap(),
+                "direct"
+            );
+        }
+        direct_server.abort();
+    }
+
+    #[tokio::test]
+    async fn system_proxy_routes_windows_wildcards_and_local_marker_without_bypassing_public_hosts()
+    {
+        openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
+        let (direct_url, direct_server) = response_fixture("direct").await;
+        let (proxy_url, proxy_server) = response_fixture("system proxy").await;
+        let address = direct_url.strip_prefix("http://").unwrap().parse().unwrap();
+        let mut builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(3));
+        for host in ["model.corp.internal", "intranet", "exact.internal"] {
+            builder = builder.resolve(host, address);
+        }
+        let client = apply_proxy_policy_with_system_proxy(
+            builder,
+            Some(ProxyConfig {
+                enabled: true,
+                ..Default::default()
+            }),
+            || {
+                Some(SystemProxy {
+                    url: proxy_url,
+                    no_proxy: Some("*.corp.internal,<local>,exact.internal".into()),
+                })
+            },
+        )
+        .build()
+        .unwrap();
+        for (host, expected) in [
+            ("model.corp.internal", "direct"),
+            ("intranet", "direct"),
+            ("exact.internal", "direct"),
+            ("public.example", "system proxy"),
+            ("corp.internal", "system proxy"),
+            ("child.exact.internal", "system proxy"),
+            ("model.corp.internal.attacker.example", "system proxy"),
+        ] {
+            let target = direct_url.replace("127.0.0.1", host);
+            assert_eq!(
+                client
+                    .get(target)
+                    .send()
+                    .await
+                    .unwrap()
+                    .text()
+                    .await
+                    .unwrap(),
+                expected,
+                "unexpected route for {host}"
+            );
+        }
         direct_server.abort();
         proxy_server.abort();
     }
@@ -262,12 +376,10 @@ mod tests {
         server.abort();
     }
 
-    // On Windows OS proxy detection precedes the environment fallback; the
-    // synthetic SystemProxy test above covers that portable adapter boundary.
     // A separate process keeps reqwest's environment cache and proxy variables
     // isolated from concurrent tests. The existing auth feature supplies the
     // platform-safe process helper without adding a production dependency.
-    #[cfg(all(feature = "subscription-auth", not(windows)))]
+    #[cfg(feature = "subscription-auth")]
     #[tokio::test]
     async fn router_proxy_policy_preserves_environment_explicit_and_disabled_routes() {
         use super::create_router_http_client;
@@ -286,17 +398,44 @@ mod tests {
                 None,
                 Some(ProxyConfig::default()),
                 Some(ProxyConfig {
-                    enabled: true,
-                    ..Default::default()
-                }),
-                Some(ProxyConfig {
-                    enabled: true,
-                    url: "  ".into(),
+                    enabled: false,
+                    url: explicit_proxy.clone(),
                     ..Default::default()
                 }),
             ] {
-                let client =
-                    create_router_http_client(Duration::from_secs(3), config, false).unwrap();
+                for client in [
+                    super::create_http_client(config.clone(), false),
+                    create_router_http_client(Duration::from_secs(3), config, false).unwrap(),
+                ] {
+                    assert_eq!(
+                        client
+                            .get(&direct_url)
+                            .send()
+                            .await
+                            .unwrap()
+                            .text()
+                            .await
+                            .unwrap(),
+                        "direct"
+                    );
+                }
+            }
+
+            // An enabled proxy with no address retains inheritance. Inject the
+            // absence of an OS proxy so this fixture is independent of the
+            // Windows machine's actual registry configuration.
+            for url in ["", "  "] {
+                let client = apply_proxy_policy_with_system_proxy(
+                    reqwest::Client::builder().timeout(Duration::from_secs(3)),
+                    Some(ProxyConfig {
+                        enabled: true,
+                        url: url.into(),
+                        ..Default::default()
+                    }),
+                    || None,
+                )
+                .build()
+                .unwrap();
                 assert_eq!(
                     client
                         .get("http://router-proxy-fixture.invalid/probe")
