@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { VirtualMessageList } from '../components/modern/VirtualMessageList';
 import { getVirtualItemStableKey } from '../components/modern/virtualItemIdentity';
-import { sessionToVirtualItems, type VirtualItem } from '../store/modernFlowChatStore';
+import { createSessionVirtualItemProjector, type VirtualItem } from '../store/modernFlowChatStore';
 import { useFlowGroupState } from '../components/modern/useFlowGroupState';
 import { FlowChatContext, FlowChatVolatileContext } from '../components/modern/FlowChatContext';
 import {
@@ -224,7 +224,7 @@ describe('FlowChat Long-Round Categorized Benchmark Suites', () => {
       expect(result.settledVirtualItemReuseRatio).toBe(solo.settledVirtualItemReuseRatio);
     });
 
-    it('benchmarks sessionToVirtualItems & projectAdjacentFlowGroups scaling and reference reuse', () => {
+    it('benchmarks scoped session projection & projectAdjacentFlowGroups scaling and reference reuse', () => {
       const result = benchStoreProjection({
         checkpoints: [10, 50, 100, 200, 300],
         chunksPerCheckpoint: 5,
@@ -496,6 +496,7 @@ describe('FlowChat Long-Round Categorized Benchmark Suites', () => {
     });
 
     it('[bench:react-streaming] measures React commits & wasted settled-row renders during 10 tail stream chunks (120 rounds)', () => {
+      const projectSession = createSessionVirtualItemProjector();
       const roundCount = 120;
       const baseSession = buildLongRoundSessionFixture({ roundCount });
       const activeTurnIndex = baseSession.dialogTurns.length - 1;
@@ -504,7 +505,7 @@ describe('FlowChat Long-Round Categorized Benchmark Suites', () => {
       const tailRoundIndex = roundCount - 1;
 
       harnessStoreState.session = baseSession;
-      harnessStoreState.items = sessionToVirtualItems(baseSession);
+      harnessStoreState.items = projectSession(baseSession);
       harnessStoreState.isProcessing = true;
 
       act(() => {
@@ -554,7 +555,7 @@ describe('FlowChat Long-Round Categorized Benchmark Suites', () => {
         };
 
         harnessStoreState.session = nextSession;
-        harnessStoreState.items = sessionToVirtualItems(nextSession);
+        harnessStoreState.items = projectSession(nextSession);
 
         act(() => {
           root.render(<LiveContainerHarness latestTurnId={baseTurn.id} />);
@@ -596,13 +597,14 @@ describe('FlowChat Long-Round Categorized Benchmark Suites', () => {
     });
 
     it('[bench:react-scroll] measures Virtualizer windowing commits & latency across 9 viewport scroll steps (120 rounds)', () => {
+      const projectSession = createSessionVirtualItemProjector();
       const roundCount = 120;
       const baseSession = buildLongRoundSessionFixture({ roundCount });
       const activeTurnIndex = baseSession.dialogTurns.length - 1;
       const baseTurn = baseSession.dialogTurns[activeTurnIndex];
 
       harnessStoreState.session = baseSession;
-      harnessStoreState.items = sessionToVirtualItems(baseSession);
+      harnessStoreState.items = projectSession(baseSession);
       harnessStoreState.isProcessing = true;
 
       act(() => {

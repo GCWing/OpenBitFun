@@ -21,6 +21,7 @@ function KeyedHarness({ items, endOrigin }: { items: string[]; endOrigin: boolea
   const headerRef = useRef<HTMLDivElement>(null);
   const api = useFlowChatVirtualizer({
     items, scrollerRef, headerRef, endOrigin,
+    isViewportSuspended: () => viewportSuspended,
     getItemKey: item => item,
     estimateItemHeightPx: () => 80,
     scrollPaddingStartPx: 0,
@@ -132,6 +133,27 @@ describe('initial virtual window with the real virtualizer', () => {
     vi.useRealTimers();
   });
   const render = (count: number, tail: boolean) => act(() => root.render(<Harness count={count} tail={tail} />));
+
+  it.each([
+    [false, false], [false, true], [true, false],
+  ])('observes rows mounted during suspension after resuming (%s → %s)', (initialOrigin, resumedOrigin) => {
+    viewportSuspended = true;
+    act(() => root.render(<KeyedHarness items={['a', 'b', 'c']} endOrigin={initialOrigin} />));
+    const row = host.querySelector<HTMLElement>('[data-row-key="b"]')!;
+    expect(row).not.toBeNull();
+    expect(rowObservers.some(entry => entry.elements.has(row))).toBe(false);
+    // A still-suspended commit can discard other rows and switch the origin.
+    act(() => root.render(<KeyedHarness items={['a', 'b', 'd']} endOrigin={resumedOrigin} />));
+    viewportSuspended = false;
+    act(() => root.render(<KeyedHarness items={['a', 'b', 'd']} endOrigin={resumedOrigin} />));
+    expect(host.querySelector('[data-row-key="b"]')).toBe(row);
+    const observer = rowObservers.find(entry => entry.elements.has(row));
+    expect(observer).toBeDefined();
+    vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({ height: 221.5 } as DOMRect);
+    act(() => observer!.callback([{ target: row } as ResizeObserverEntry], {} as ResizeObserver));
+    const bounds = latestApi.getItemBounds(1)!;
+    expect(bounds.endPx - bounds.startPx).toBe(221.5);
+  });
 
   it.each([false, true])('keeps observer measurements on surviving keys after insertion (endOrigin=%s)', endOrigin => {
     const initial = ['a', 'b', 'c'];

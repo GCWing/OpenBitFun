@@ -12,6 +12,9 @@ This includes live prepends and new tail rows in bottom-origin history, not only
 origin handoffs. Refresh indexes through the adapter's connected row registry;
 an index update requires no geometry read or DOM subtree scan. A later observer
 delivery must still resize the same row key.
+Rows mounted while the viewport is suspended stay in the pending attachment
+registry until a resumed commit registers them with the measurement observer.
+Prune disconnected pending rows even during suspension.
 
 For native history, internal offset is `-scrollTop`, index zero is the newest
 row, and the footer is the scroll margin. The internal window's before/after
@@ -66,9 +69,11 @@ Per-Turn streaming reconciliation drops removed Turn IDs on paging/rollback;
 each store, history projection and side panel owns its own mutable prefix state.
 Alternating views must not invalidate another view's live prefix. Immutable
 completed-Turn projections are shared weakly across views, while clearing a
-presentation store clears that store's warm projections. The same completed Turn
-can be the last row of a history window and an earlier row of the live transcript;
-retain those presentation variants separately. User-message reuse
+presentation store clears that store's warm projections. A completed Turn's
+normal projection does not depend on newer siblings, so appending a new message
+reuses its existing rows. Only the collapsed background presentation needs a
+separate variant. There is no shared mutable standalone projector; each caller,
+including benchmarks, creates its own. User-message reuse
 depends on the message and its presentation fields, not on its first model round.
 Normalized steering,
 retry and recovery rounds use weak source identities, including both source

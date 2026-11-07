@@ -5,7 +5,7 @@
  * measured, verified, and regressed independently:
  *
  * - Category 1 (`benchStoreProjection`): Store & Adjacent Group Projection
- *   (`sessionToVirtualItems` + `projectAdjacentFlowGroups`, reference stability of `VirtualItem`s)
+ *   (`projectSession` + `projectAdjacentFlowGroups`, reference stability of `VirtualItem`s)
  * - Category 2 (`benchTimelineDocument`): Timeline Document & Rhythm Pass
  *   (`ConversationDocumentProjection.project` + `getNextVisibleVirtualItemIndexes`, `TimelineBlock` reference stability)
  * - Category 3 (`benchGroupStateAndSearch`): Container Derived Passes
@@ -16,7 +16,7 @@
  *   (Streaming tail updates vs viewport scroll windowing)
  */
 
-import { createSessionVirtualItemProjector, sessionToVirtualItems, type VirtualItem } from '../store/modernFlowChatStore';
+import { createSessionVirtualItemProjector, type VirtualItem } from '../store/modernFlowChatStore';
 import { indexFlowGroups, getVirtualItemFlowGroups } from '../grouping/selectors';
 import {
   captureFlowGroupFeedbackSnapshot,
@@ -377,7 +377,7 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /**
- * Category 1: Store & Adjacent Group Projection (`sessionToVirtualItems` + `projectAdjacentFlowGroups`)
+ * Category 1: Store & Adjacent Group Projection (`projectSession` + `projectAdjacentFlowGroups`)
  */
 export function benchStoreProjection(options?: {
   checkpoints?: number[];
@@ -455,6 +455,7 @@ export function benchTimelineDocument(options?: {
   const checkpoints = options?.checkpoints ?? [10, 50, 100, 200, 300];
   const chunksPerCheckpoint = options?.chunksPerCheckpoint ?? 5;
 
+  const projectSession = createSessionVirtualItemProjector();
   const reader = new FlowChatReaderState();
   const docProjection = new ConversationDocumentProjection();
   const docOptions: TimelineProjectionOptions = {
@@ -477,7 +478,7 @@ export function benchTimelineDocument(options?: {
         chunkIdx,
         chunksPerCheckpoint,
       );
-      const virtualItems = sessionToVirtualItems(session);
+      const virtualItems = projectSession(session);
 
       const t0 = performance.now();
       const timelineBlocks = docProjection.project(virtualItems, docOptions);
@@ -506,7 +507,7 @@ export function benchTimelineDocument(options?: {
   const isolatedProjection = new ConversationDocumentProjection();
   const maxRoundCount = checkpoints[checkpoints.length - 1];
   const baseMaxSession = buildLongRoundSessionFixture({ roundCount: maxRoundCount });
-  const initialVirtualItems = sessionToVirtualItems(baseMaxSession);
+  const initialVirtualItems = projectSession(baseMaxSession);
   const stableSettledPrefix = initialVirtualItems.slice(0, -1);
   let prevIsolatedBlocks = isolatedProjection.project(initialVirtualItems, docOptions);
   let isolatedTotalMs = 0;
@@ -519,7 +520,7 @@ export function benchTimelineDocument(options?: {
       chunkIdx,
       chunksPerCheckpoint,
     );
-    const freshVirtualItems = sessionToVirtualItems(session);
+    const freshVirtualItems = projectSession(session);
     const stabilizedInput = [...stableSettledPrefix, freshVirtualItems[freshVirtualItems.length - 1]];
     const t0 = performance.now();
     const nextBlocks = isolatedProjection.project(stabilizedInput, docOptions);
@@ -572,6 +573,7 @@ export function benchGroupStateAndSearch(options?: {
   const checkpoints = options?.checkpoints ?? [10, 50, 100, 200, 300];
   const chunksPerCheckpoint = options?.chunksPerCheckpoint ?? 5;
   const activeSearchQuery = options?.activeSearchQuery ?? 'projection';
+  const projectSession = createSessionVirtualItemProjector();
   const findMatches = createFlowChatSearchMatcher();
 
   let feedbackSnapshot: ReturnType<typeof captureFlowGroupFeedbackSnapshot> | undefined;
@@ -587,7 +589,7 @@ export function benchGroupStateAndSearch(options?: {
     const baseSession = buildLongRoundSessionFixture({ roundCount });
     for (let chunkIdx = 0; chunkIdx < chunksPerCheckpoint; chunkIdx += 1) {
       const { session } = buildStreamingChunkSession(baseSession, chunkIdx, chunksPerCheckpoint);
-      const virtualItems = sessionToVirtualItems(session);
+      const virtualItems = projectSession(session);
 
       const t0 = performance.now();
       indexFlowGroups(virtualItems);
@@ -714,6 +716,7 @@ export function runLongRoundPipelineBenchmark(options: {
   const chunksPerCheckpoint = options.chunksPerCheckpoint ?? 4;
   const measureRetainedBytesEveryFlush = options.measureRetainedBytesEveryFlush ?? true;
 
+  const projectSession = createSessionVirtualItemProjector();
   const reader = new FlowChatReaderState();
   const docProjection = new ConversationDocumentProjection();
   const groupStates = new Map<string, boolean>();
@@ -739,9 +742,9 @@ export function runLongRoundPipelineBenchmark(options: {
         chunksPerCheckpoint,
       );
 
-      // Stage 1: Store projection (sessionToVirtualItems + projectAdjacentFlowGroups)
+      // Stage 1: Store projection (projectSession + projectAdjacentFlowGroups)
       const t0 = performance.now();
-      const virtualItems = sessionToVirtualItems(session);
+      const virtualItems = projectSession(session);
       const t1 = performance.now();
 
       // Stage 2: Group indexing & receive feedback (useFlowGroupState equivalents)
@@ -887,7 +890,7 @@ export function formatBenchmarkReport(summary: LongRoundBenchmarkSummary): strin
     `Flush Latency       : avg=${summary.avgFlushMs.toFixed(2)}ms | p50=${summary.p50FlushMs.toFixed(2)}ms | p95=${summary.p95FlushMs.toFixed(2)}ms | max=${summary.maxFlushMs.toFixed(2)}ms`,
     `Scaling (Late/Early): early=${summary.earlyFlushAvgMs.toFixed(2)}ms -> late=${summary.lateFlushAvgMs.toFixed(2)}ms (${summary.lateToEarlyScalingRatio.toFixed(2)}x)`,
     `Stage Breakdown     :`,
-    `  1. Store Projection (sessionToVirtualItems + grouping): ${summary.stageTotalsMs.storeProjectionMs.toFixed(2)} ms`,
+    `  1. Store Projection (projectSession + grouping): ${summary.stageTotalsMs.storeProjectionMs.toFixed(2)} ms`,
     `  2. Group Index & Feedback (useFlowGroupState)         : ${summary.stageTotalsMs.groupIndexAndFeedbackMs.toFixed(2)} ms`,
     `  3. Document Timeline (ConversationDocumentProjection) : ${summary.stageTotalsMs.documentProjectionMs.toFixed(2)} ms`,
     `  4. Rhythm Spacing Pass (getNextVisibleIndexes)        : ${summary.stageTotalsMs.rhythmPassMs.toFixed(2)} ms`,

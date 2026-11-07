@@ -812,6 +812,9 @@ export function useFlowChatVirtualizer<T>({
   useLayoutEffect(() => {
     const originChanged = measuredOriginRef.current !== endOrigin;
     measuredOriginRef.current = endOrigin;
+    for (const element of attachingRowsRef.current) {
+      if (!element.isConnected) attachingRowsRef.current.delete(element);
+    }
     const connectedRows = new Set([...virtualizer.elementsCache.values(), ...attachingRowsRef.current]
       .filter(element => element.isConnected));
     // A surviving keyed row does not reattach when insertion changes its
@@ -825,11 +828,13 @@ export function useFlowChatVirtualizer<T>({
     }
     const attached = originChanged ? [...connectedRows]
       : [...attachingRowsRef.current].filter(element => element.isConnected);
-    attachingRowsRef.current.clear();
     // A shrinking window can detach rows without attaching any replacements.
     // Cleanup must still unobserve and release those DOM nodes.
     virtualizer.measureElement(null);
     if (!attached.length || isViewportSuspendedRef.current()) return;
+    // Suspended mounts have not entered elementsCache or its observer yet.
+    // Keep their attachment pending until a resumed commit can register them.
+    attachingRowsRef.current.clear();
     // Read before any viewport shift or size-cache notification can write.
     measurementBatchRef.current = new Map(attached.map(element => [element, measureRowHeight(element)]));
     try {

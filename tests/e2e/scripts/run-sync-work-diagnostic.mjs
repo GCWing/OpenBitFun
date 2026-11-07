@@ -57,7 +57,7 @@ try {
       await page.execute(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     }));
     assert.ok(result.phases[0].work.groups.some(group => group.label.endsWith(':processToolEvent')), 'Observe real event processing');
-    assert.ok(result.phases[0].work.groups.some(group => group.label.endsWith(':sessionToVirtualItems')), 'Observe real timeline projection');
+    assert.ok(result.phases[0].work.groups.some(group => group.label.endsWith(':projectSessionItems')), 'Observe real timeline projection');
     for (let index = 0; index < 4; index++) {
       assert.ok((await readFile(path.join(run.workspace, `flowchat-live-${index}.ts`), 'utf8')).includes('value = 1'));
     }

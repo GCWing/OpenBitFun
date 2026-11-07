@@ -155,7 +155,7 @@ interface SessionProjectionCache {
 
 // Settled source Turns can be shared by live, history and side views without
 // making any one view the owner of another view's streaming state or body.
-type StableTurnPresentation = 'background' | 'earlier' | 'latest';
+type StableTurnPresentation = 'background' | 'normal';
 const cachedTurnItems = new WeakMap<DialogTurn, Map<StableTurnPresentation, {
   items: VirtualItem[];
   absoluteTurnIndex: number;
@@ -475,12 +475,9 @@ function projectSessionItems(
   const resolveAbsoluteTurnIndex = createAbsoluteSessionTurnIndexResolver(session);
 
   session.dialogTurns.forEach((turn, turnIndex) => {
-    const hasNewerDialogTurn = turnIndex < session.dialogTurns.length - 1;
     const absoluteTurnIndex = resolveAbsoluteTurnIndex(turnIndex);
     const backgroundCollapsed = isSuppressedBackgroundTurn(turn) && !session.needsUserAttention;
-    // A historical window can end on a Turn that has newer siblings in the
-    // live view. Keep both presentations without replacing each other's rows.
-    const presentation = backgroundCollapsed ? 'background' : hasNewerDialogTurn ? 'earlier' : 'latest';
+    const presentation = backgroundCollapsed ? 'background' : 'normal';
     const cachedItems = cachedTurnItems.get(turn)?.get(presentation);
     if (cachedItems?.absoluteTurnIndex === absoluteTurnIndex) {
       cachedTurnPrefixById.delete(turn.id);
@@ -649,9 +646,6 @@ function projectSessionItems(
 
   return items;
 }
-
-/** Standalone projection entry point; mounted views create their own projector. */
-export const sessionToVirtualItems = createSessionVirtualItemProjector();
 
 function getInitialModernState(projectSession: ReturnType<typeof createSessionVirtualItemProjector>): Pick<
   ModernFlowChatState,

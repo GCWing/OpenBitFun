@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FlowTextItem, FlowThinkingItem, FlowToolItem, FlowUserSteeringItem, ModelRound, Session } from '../types/flow-chat';
 
 vi.mock('./FlowChatStore', () => ({
@@ -10,12 +10,14 @@ vi.mock('./FlowChatStore', () => ({
   },
 }));
 
-import { createModernFlowChatStore, createSessionVirtualItemProjector, sessionToVirtualItems, type VirtualItem } from './modernFlowChatStore';
+import { createModernFlowChatStore, createSessionVirtualItemProjector, type VirtualItem } from './modernFlowChatStore';
 import { getVirtualItemFlowGroups } from '../grouping/selectors';
 import { getVirtualItemStableKey } from '../components/modern/virtualItemIdentity';
 import { getModelRoundExploreGroups, getProjectedModelRoundGroups } from '../components/modern/modelRoundItemGrouping';
 
 type ModelRoundVirtualItem = Extract<VirtualItem, { type: 'model-round' }>;
+let sessionToVirtualItems: ReturnType<typeof createSessionVirtualItemProjector>;
+beforeEach(() => { sessionToVirtualItems = createSessionVirtualItemProjector(); });
 
 function makeTextItem(id: string, content: string): FlowTextItem {
   return {
@@ -225,9 +227,25 @@ describe('incremental projection cache contracts', () => {
     const store = createModernFlowChatStore(session);
     const before = store.getState().virtualItems;
     store.getState().clear();
-    const after = sessionToVirtualItems(session);
+    expect(store.getState().activeSession).toBeNull();
+    expect(store.getState().virtualItems).toEqual([]);
+    store.getState().setActiveSession(session);
+    const after = store.getState().virtualItems;
     expect(after).toEqual(before);
     expect(after).not.toBe(before);
+  });
+
+  it('keeps every completed-turn row when a newer message is appended', () => {
+    const project = createSessionVirtualItemProjector();
+    const session = makeSession();
+    const before = project(session);
+    const after = project({ ...session, dialogTurns: [...session.dialogTurns, {
+      ...session.dialogTurns[0], id: 'new-turn', status: 'processing', modelRounds: [],
+      userMessage: { id: 'new-message', content: 'Continue', timestamp: 2000 },
+    }] });
+    const retained = after.filter(item => item.turnId === session.dialogTurns[0].id);
+    expect(retained).toEqual(before);
+    expect(retained.every((item, index) => item === before[index])).toBe(true);
   });
 
   it('matches fresh projections through repeated thinking, tool-parameter, interior, rollback and completion updates', () => {
