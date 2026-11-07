@@ -1,6 +1,7 @@
 package com.openbitfun.mobile.core.feature.account
 
 import com.openbitfun.mobile.core.transport.accountDeviceLink
+import com.openbitfun.mobile.core.transport.sameRelayDeployment
 
 public enum class AccountDeviceLinkStatus { INVALID, SIGN_IN_REQUIRED, UNAVAILABLE, READY }
 
@@ -13,7 +14,7 @@ public fun resolveAccountDeviceLink(url: String, state: AccountUiState): Account
     val link = accountDeviceLink(url)
         ?: return AccountDeviceLinkResult(AccountDeviceLinkStatus.INVALID, null)
     val id = link.deviceId
-    val ready = (state as? AccountUiState.Ready)?.takeIf { it.relayUrl == link.relayUrl }
+    val ready = (state as? AccountUiState.Ready)?.takeIf { sameRelayDeployment(it.relayUrl, link.relayUrl) }
         ?: return AccountDeviceLinkResult(AccountDeviceLinkStatus.SIGN_IN_REQUIRED, id, link.relayUrl)
     // A scanned target must never resolve to a device the Relay confirmed is
     // incompatible; the link reads as unavailable, the same as offline.

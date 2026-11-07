@@ -64,7 +64,7 @@ class GeneralChatCloudConfigPolicyTest {
             payload(
                 model("a", "anthropic", "sonnet", "https://api.anthropic.com/", "sk"),
                 model("b", "anthropic", "sonnet", "https://api.anthropic.com/v1/messages", "sk"),
-                model("c", "anthropic", "sonnet", "https://remote.openbitfun.com/relay", "sk"),
+                model("c", "anthropic", "sonnet", "https://remote.openbitfun.com/relay?v=1.0.9", "sk"),
                 model("d", "openai", "gpt", "https://api.openai.com/", "sk"),
             ),
         )
@@ -73,7 +73,9 @@ class GeneralChatCloudConfigPolicyTest {
             listOf(
                 "https://api.anthropic.com/v1/messages",
                 "https://api.anthropic.com/v1/messages",
-                "https://remote.openbitfun.com/relay",
+                // The version travels as a GET parameter, so no path may ever be
+                // appended after it: the relay answers its own route.
+                "https://remote.openbitfun.com/relay?v=1.0.9",
                 "https://api.openai.com",
             ),
             models.map { it.apiUrl },

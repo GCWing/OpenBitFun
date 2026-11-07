@@ -229,6 +229,37 @@ class AccountStoreTest {
         assertIs<AccountUiState.Ready>(restored.state.value)
     }
 
+    /**
+     * `/relay` and the older `/v/1.0.2` are one deployment and one account
+     * database, so a record saved before the version moved into the query keeps
+     * its token and master key — and is stored against today's identity, which
+     * carries no version of its own.
+     */
+    @Test fun liveRelayAliasesKeepTheStoredTokenAndMasterKey() = runTest {
+        val secure = MemorySecureStore(); val backend = FakeAccountBackend()
+        val first = AccountStore.create(this, backend, secure, "phone-1", "Android")
+        first.dispatch(AccountIntent.Login); advanceUntilIdle()
+        val pristine = secure.read("github_device_session_v1")!!.decodeToString()
+        for (alias in listOf(
+            "https://remote.openbitfun.com/v/1.0.2",
+            AccountDefaults.CLOUD_RELAY_URL,
+            "https://remote.openbitfun.com/relay?v=1.0.9",
+        )) {
+            val stored = pristine.replace(AccountDefaults.CLOUD_RELAY_URL, alias)
+            secure.write("github_device_session_v1", stored.encodeToByteArray())
+            val requests = backend.listRequests
+            val restored = AccountStore.create(this, backend, secure, "phone-1", "Android")
+            restored.dispatch(AccountIntent.Restore); advanceUntilIdle()
+            val state = assertIs<AccountUiState.Ready>(restored.state.value)
+            assertEquals(AccountDefaults.CLOUD_RELAY_URL, state.relayUrl, alias)
+            // The directory was read with the retained credential, not after
+            // another sign-in, and the stored bytes are left alone.
+            assertEquals(requests + 1, backend.listRequests, alias)
+            assertEquals(AccountDefaults.CLOUD_RELAY_URL, backend.lastLoginRelay, alias)
+            assertEquals(stored, secure.read("github_device_session_v1")!!.decodeToString(), alias)
+        }
+    }
+
     @Test
     fun enrichesExistingAccountAndRetainsIdentityAndCacheOffline() = runTest {
         val secure = MemorySecureStore()
@@ -824,8 +855,10 @@ private class FakeAccountBackend : AccountBackend {
         lastLoginRelay = relayUrl
         loginThrowable?.let { throw it }
         failure?.let { throw CloudAccountException(it) }
+        // Mirrors the live backend: the session keeps the endpoint it signed in
+        // against, which the store only ever hands over as a base URL.
         return AccountSessionData(
-            "https://remote.openbitfun.com/v/1.0.2",
+            relayUrl,
             "user",
             "token",
             userId,
