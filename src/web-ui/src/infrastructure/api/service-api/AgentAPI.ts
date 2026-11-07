@@ -483,7 +483,7 @@ export interface ModelRoutingStatus {
   subagentModel?: string;
 }
 export type ModelRoutingStatusRequest = Partial<Pick<UpdateSessionModelRequest,
-  'sessionId' | 'workspaceId' | 'workspacePath' | 'remoteConnectionId' | 'remoteSshHost'>> & { probe?: boolean };
+  'sessionId' | 'workspaceId' | 'workspacePath' | 'remoteConnectionId' | 'remoteSshHost' | 'includeInternal'>> & { probe?: boolean };
 
 export interface UpdateSessionModelRequest {
   sessionId: string;
