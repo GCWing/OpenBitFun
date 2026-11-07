@@ -259,6 +259,7 @@ import { hasSessionStarted, isSessionBindingLocked } from '../utils/sessionLifec
 import {
   canTreatMissingPermissionModeAsDefault,
   isSessionNotFoundError,
+  sessionPermissionModeScope,
 } from '../utils/sessionPermissionMode';
 import { prepareSessionDraftForCommand } from '../services/sessionDraftService';
 import { useSessionWorkspaceSelection } from '../hooks/useSessionWorkspaceSelection';
@@ -2650,10 +2651,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         }, () => agentAPI.getSessionPermissionMode({
           sessionId: permissionSessionId,
           turnId: activePermissionTurnId ?? undefined,
-          workspaceId: sessionOwningId,
-          workspacePath: sessionOwningPath,
-          remoteConnectionId: effectiveTargetSession?.remoteConnectionId,
-          remoteSshHost: effectiveTargetSession?.remoteSshHost,
+          ...sessionPermissionModeScope(effectiveTargetSession),
         }));
         if (permissionModeRequestGenerationRef.current !== generation) return;
         setSessionPermissionMode(response.mode ?? null);
@@ -2716,6 +2714,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     effectiveTargetSession?.persistedTurnCount,
     effectiveTargetSession?.remoteConnectionId,
     effectiveTargetSession?.remoteSshHost,
+    effectiveTargetSession?.sessionKind,
+    effectiveTargetSession?.agentBackedTransient,
     effectiveTargetSession?.parentSessionId,
     effectiveTargetSession?.draft,
     effectiveTargetSession?.externalHistory,
@@ -2774,10 +2774,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         sessionId: targetSessionId,
         mode: nextMode,
         turnId: targetTurnId ?? undefined,
-        workspaceId: sessionOwningId,
-        workspacePath: sessionOwningPath,
-        remoteConnectionId: effectiveTargetSession?.remoteConnectionId,
-        remoteSshHost: effectiveTargetSession?.remoteSshHost,
+        ...sessionPermissionModeScope(effectiveTargetSession),
       });
       if (
         permissionModeRequestGenerationRef.current === generation
@@ -2813,6 +2810,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     sessionOwningPath,
     effectiveTargetSession?.remoteConnectionId,
     effectiveTargetSession?.remoteSshHost,
+    effectiveTargetSession?.sessionKind,
+    effectiveTargetSession?.agentBackedTransient,
     activeTurnPermissionMode,
     sessionPermissionMode,
     t,
@@ -2897,10 +2896,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         sessionId: targetSessionId,
         turnId: targetTurnId,
         mode: nextTemporaryMode,
-        workspaceId: sessionOwningId,
-        workspacePath: sessionOwningPath,
-        remoteConnectionId: effectiveTargetSession?.remoteConnectionId,
-        remoteSshHost: effectiveTargetSession?.remoteSshHost,
+        ...sessionPermissionModeScope(effectiveTargetSession),
       });
       if (
         permissionModeRequestGenerationRef.current === generation
@@ -2935,6 +2931,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     confirmFullAccessIfNeeded,
     effectiveTargetSession?.remoteConnectionId,
     effectiveTargetSession?.remoteSshHost,
+    effectiveTargetSession?.sessionKind,
+    effectiveTargetSession?.agentBackedTransient,
     effectiveTargetSessionId,
     isAcpTargetSession,
     sessionOwningId,

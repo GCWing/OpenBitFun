@@ -285,6 +285,16 @@ pnpm --dir src/web-ui run test:run src/flow_chat/hooks/useChatInputModeSync.test
 These state/hook fixtures cover delayed session loading and selected peer-surface
 replacement; they do not establish native rendering or live remote behavior.
 
+For composer permission reads and updates, including internal MiniApp sessions:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/utils/sessionPermissionMode.test.ts src/flow_chat/utils/modelSelectionTarget.test.ts src/app/scenes/miniapps/hooks/useMiniAppBridge.test.tsx
+```
+
+These request/bridge fixtures cover restored topics, legacy path-only scopes and
+simulated remote workspace identity. They do not establish native rendering or
+live SSH, Remote Control, Peer Device or Detached Dispatch behavior.
+
 For cross-device undo/redo/rollback history invalidation and settled-Turn fences,
 run `pnpm --dir src/web-ui run test:run src/flow_chat/services/flow-chat-manager/EventHandlerModule.test.ts`.
 Missing fence identities (including legacy payloads) must reload authoritative
