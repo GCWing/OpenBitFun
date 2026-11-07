@@ -844,6 +844,28 @@ describe('FlowChatStore metadata persistence callbacks', () => {
     expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBe('completed');
   });
 
+  it.each(['completed', 'error', 'interrupted'] as const)('keeps bot %s results read without persisting another receipt', (outcome) => {
+    const session = completedSession();
+    session.hasUnreadCompletion = undefined;
+    session.dialogTurns[0].userMessage.metadata = { submissionSource: 'bot' };
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
+    const persist = vi.fn();
+    flowChatStore.registerPersistUnreadCompletionCallback(persist);
+
+    flowChatStore.markSessionUnreadCompletion(session.sessionId, outcome, session.dialogTurns[0].id);
+    expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBeUndefined();
+    expect(persist).not.toHaveBeenCalled();
+
+    // A bot result cannot acknowledge an earlier desktop result in this session.
+    flowChatStore.applySessionActivityReceipt({
+      sessionId: session.sessionId, execution: 'idle', pendingApprovals: 0, pendingQuestions: 0,
+      unreadCompletion: 'completed', unreadTurn: { turnId: 'desktop', turnIndex: 0, status: 'completed' },
+    });
+    flowChatStore.markSessionUnreadCompletion(session.sessionId, outcome);
+    expect(flowChatStore.getState().sessions.get(session.sessionId)?.unreadCompletionTurnId).toBe('desktop');
+    expect(persist).not.toHaveBeenCalled();
+  });
+
   it('attaches the completion to its owner when a follow-up turn already exists', () => {
     const session = completedSession();
     session.dialogTurns.push({ ...session.dialogTurns[0], id: 'queued-follow-up', status: 'pending' });

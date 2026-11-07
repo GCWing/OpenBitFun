@@ -7420,6 +7420,11 @@ export class FlowChatStore {
     completionKind: 'completed' | 'error' | 'interrupted',
     turnId?: string,
   ): void {
+    const session = this.state.sessions.get(sessionId);
+    const turn = turnId ? session?.dialogTurns.find(candidate => candidate.id === turnId)
+      : session && lastUserDialogTurn(session);
+    if (turn?.userMessage.metadata?.submissionSource === 'bot') return;
+
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);
       if (!session) return prev;

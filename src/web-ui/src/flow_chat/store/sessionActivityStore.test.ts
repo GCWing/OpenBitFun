@@ -8,6 +8,35 @@ const summary = (execution = 'idle', id = 'session'): SessionActivitySummary => 
 });
 
 describe('session activity read projection', () => {
+  it.each(['completed', 'failed', 'cancelled', 'interrupted'])('keeps bot %s results read on local and peer surfaces', (outcome) => {
+    for (const surface of ['local', 'peer']) {
+      const store = new SessionActivityStore();
+      store.observe(surface, 'agentic://dialog-turn-started', {
+        sessionId: 'session', turnId: 'bot', userMessageMetadata: { submissionSource: 'bot' },
+      });
+      store.observe(surface, 'agentic://dialog-turn-' + outcome, { sessionId: 'session', turnId: 'bot' });
+      expect(store.get('session', surface)?.summary?.unreadCompletion).toBeUndefined();
+      expect(store.get('session', surface)?.summary?.lastTurn?.turnId).toBe('bot');
+      store.observe(surface, 'agentic://dialog-turn-started', { sessionId: 'session', turnId: 'desktop' });
+      store.observe(surface, 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'desktop' });
+      expect(store.get('session', surface)?.summary?.unreadCompletion).toBe('completed');
+    }
+  });
+
+  it('preserves earlier unread work across bot recovery and host refreshes', () => {
+    const store = new SessionActivityStore();
+    store.observe('peer', 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'desktop' });
+    store.observe('peer', 'agentic://dialog-turn-started', {
+      sessionId: 'session', turnId: 'bot', userMessageMetadata: { submissionSource: 'bot' },
+    });
+    store.applyRead(store.beginRead('peer'), [store.get('session', 'peer')!.summary!]);
+    store.observe('peer', 'agentic://dialog-turn-recovered', { sessionId: 'session', turnId: 'bot', executionGeneration: 1 });
+    store.observe('peer', 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'bot', executionGeneration: 1 });
+    expect(store.get('session', 'peer')?.summary).toMatchObject({
+      unreadCompletion: 'completed', unreadTurn: { turnId: 'desktop' }, lastTurn: { turnId: 'bot' },
+    });
+  });
+
   it('keeps a prior unread result across a newer quiet run and acknowledges its original identity', () => {
     activateSurface('local');
     const store = new SessionActivityStore();

@@ -16,6 +16,8 @@ interface Entry {
   stale: boolean;
   acknowledged?: { turnId: string; status?: SessionLastTurn['status']; executionGeneration?: number; recoveryPending?: boolean };
   position?: { streamId: string; cursor: number };
+  /** Preserve the live ingress fact even when this surface has no transcript. */
+  botTurnId?: string;
 }
 
 const blank = (sessionId: string): SessionActivitySummary => ({
@@ -148,6 +150,10 @@ export class SessionActivityStore {
     if (generation !== undefined && summary.lastTurn?.turnId === turnId
       && (summary.lastTurn?.executionGeneration ?? -1) > generation) return;
     const starting = eventName === 'agentic://dialog-turn-started' || eventName === 'agentic://dialog-turn-recovered';
+    const userMetadata = event.userMessageMetadata as Record<string, unknown> | undefined;
+    const botTurnId = eventName === 'agentic://dialog-turn-started'
+      ? userMetadata?.submissionSource === 'bot' ? turnId : undefined
+      : previous?.botTurnId;
     const settling = ['agentic://dialog-turn-completed', 'agentic://dialog-turn-failed',
       'agentic://dialog-turn-cancelled', 'agentic://dialog-turn-interrupted'].includes(eventName);
     let newResult = false;
@@ -173,6 +179,7 @@ export class SessionActivityStore {
       // Learning an optional recovery fact from a replay is not a new result.
       // A known paused -> cancelled transition is, even within one generation.
       newResult = (!sameOutcome || summary.lastTurn?.recoveryPending !== undefined)
+        && (!turnId || botTurnId !== turnId)
         && (outcome !== 'completed' || shouldDeliverBackgroundCompletion(event));
       summary = {
         ...summary, execution: outcome === 'error' ? 'error' : 'idle', activeTurnId: undefined,
@@ -202,6 +209,7 @@ export class SessionActivityStore {
     this.entries(surfaceId).set(sessionId, {
       summary, eventVersion: ++this.eventVersion, readSequence: previous?.readSequence ?? 0,
       checkedAt: previous?.checkedAt ?? 0, stale: true, position: position ?? previous?.position,
+      botTurnId,
       acknowledged: starting || newResult ? undefined : previous?.acknowledged,
     });
     this.notify(surfaceId, sessionId);

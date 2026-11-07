@@ -346,6 +346,15 @@ fn refresh_latest_turn(metadata: &mut SessionMetadata, turn: &DialogTurnData) {
         && openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(turn.user_message.metadata.as_ref(), &turn.turn_id)
             .is_some_and(|delivery| delivery.execution_generation == turn.recovery_epoch.unwrap_or(0)
                 && delivery.disposition == openbitfun_core_types::background_delivery::BackgroundReportDisposition::Quiet && delivery.suppresses_report());
+    let source = turn
+        .user_message
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("submissionSource"))
+        .and_then(Value::as_str);
+    // IM is the reading surface for bot turns. Keep any earlier desktop result
+    // unread, but do not create another receipt for this turn on the host.
+    let bot = source == Some("bot");
     let mut unread_target = previous_unread_target;
     if !same_outcome && !quiet {
         if let Some(outcome) = match turn.status {
@@ -354,15 +363,25 @@ fn refresh_latest_turn(metadata: &mut SessionMetadata, turn: &DialogTurnData) {
             TurnStatus::Cancelled => Some("interrupted"),
             TurnStatus::InProgress => None,
         } {
-            metadata.unread_completion = Some(outcome.to_string());
             metadata.needs_user_attention = None;
-            unread_target = Some(next.clone());
+            if !bot {
+                metadata.unread_completion = Some(outcome.to_string());
+                unread_target = Some(next.clone());
+            }
         }
     }
     let custom = metadata
         .custom_metadata
         .get_or_insert_with(|| serde_json::json!({}));
     if let Some(object) = custom.as_object_mut() {
+        if let Some(source) = source {
+            object.insert(
+                "lastTurnSource".to_owned(),
+                Value::String(source.to_owned()),
+            );
+        } else {
+            object.remove("lastTurnSource");
+        }
         if let Some(delivery) =
             openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(
                 turn.user_message.metadata.as_ref(),
@@ -505,31 +524,126 @@ mod background_delivery_contracts {
     }
 }
 
+#[cfg(test)]
+mod bot_read_contracts {
+    use super::super::types::UserMessageData;
+    use super::*;
+
+    fn turn(id: &str, index: usize, source: Option<&str>) -> DialogTurnData {
+        let mut turn = DialogTurnData::new(
+            id.into(),
+            index,
+            "session".into(),
+            UserMessageData {
+                id: format!("{id}-input"),
+                content: "hello".into(),
+                timestamp: index as u64,
+                metadata: source.map(|source| serde_json::json!({ "submissionSource": source })),
+            },
+        );
+        turn.status = TurnStatus::Completed;
+        turn
+    }
+
+    #[test]
+    fn bot_results_stay_read_after_reload_and_legacy_observer_writes() {
+        for status in [
+            TurnStatus::Completed,
+            TurnStatus::Error,
+            TurnStatus::Cancelled,
+        ] {
+            let mut metadata = SessionMetadata::new(
+                "session".into(),
+                "Bot".into(),
+                "Standard".into(),
+                "model".into(),
+            );
+            let mut bot = turn("bot", 0, Some("bot"));
+            bot.status = status;
+            metadata.needs_user_attention = Some("tool_confirm".into());
+            refresh_latest_turn(&mut metadata, &bot);
+            assert!(metadata.unread_completion.is_none());
+            assert!(metadata.needs_user_attention.is_none());
+            assert_eq!(metadata.last_turn.as_ref().unwrap().turn_id, "bot");
+
+            let mut reloaded: SessionMetadata =
+                serde_json::from_value(serde_json::to_value(&metadata).unwrap()).unwrap();
+            let persisted: DialogTurnData =
+                serde_json::from_value(serde_json::to_value(&bot).unwrap()).unwrap();
+            refresh_latest_turn(&mut reloaded, &persisted);
+            let mut old_observer = reloaded.clone();
+            old_observer.unread_completion = Some("completed".into());
+            apply_session_unread_completion(&mut reloaded, &old_observer);
+            assert!(reloaded.unread_completion.is_none());
+
+            // Legacy turns without a source retain their unread semantics.
+            refresh_latest_turn(&mut reloaded, &turn("legacy", 1, None));
+            assert_eq!(reloaded.unread_completion.as_deref(), Some("completed"));
+            assert!(reloaded
+                .custom_metadata
+                .as_ref()
+                .unwrap()
+                .get("lastTurnSource")
+                .is_none());
+        }
+    }
+
+    #[test]
+    fn bot_turn_keeps_an_earlier_desktop_result_and_its_read_receipt() {
+        let mut metadata = SessionMetadata::new(
+            "session".into(),
+            "Mixed".into(),
+            "Standard".into(),
+            "model".into(),
+        );
+        refresh_latest_turn(&mut metadata, &turn("desktop", 0, Some("desktop_ui")));
+        let mut receipt = metadata.clone();
+        receipt.unread_completion = None;
+        let bot = turn("bot", 1, Some("bot"));
+        refresh_latest_turn(&mut metadata, &bot);
+        assert_eq!(
+            unread_completion_target(&metadata).unwrap().turn_id,
+            "desktop"
+        );
+        apply_session_unread_completion(&mut metadata, &receipt);
+        assert!(metadata.unread_completion.is_none());
+        refresh_latest_turn(&mut metadata, &bot);
+        assert!(metadata.unread_completion.is_none());
+    }
+}
+
 /// A delayed UI acknowledgement must not clear a newer completion. New clients
 /// name the rendered Turn/generation; old clients retain the finish-time guard.
 pub fn apply_session_unread_completion(current: &mut SessionMetadata, incoming: &SessionMetadata) {
     let current_target = unread_completion_target(current);
     let incoming_target = receipt_target(incoming);
-    // An older observer may still mark a quiet completion as new unread work.
+    // An older observer may still mark a quiet or bot completion as unread work.
     // Read receipts remain client-owned, while the host owns result creation.
-    let suppressed_latest = current
-        .last_turn
+    let bot_latest = current
+        .custom_metadata
         .as_ref()
-        .and_then(|last| {
-            let value = current
-                .custom_metadata
-                .as_ref()?
-                .get("lastBackgroundDelivery")?;
-            let delivery: openbitfun_core_types::background_delivery::BackgroundDelivery =
-                serde_json::from_value(value.clone()).ok()?;
-            Some(
-                delivery.run_id == last.turn_id
-                    && delivery.execution_generation == last.execution_generation.unwrap_or(0)
-                    && last.status == TurnStatus::Completed
-                    && delivery.suppresses_report(),
-            )
-        })
-        .unwrap_or(false);
+        .and_then(|custom| custom.get("lastTurnSource"))
+        .and_then(Value::as_str)
+        == Some("bot");
+    let suppressed_latest = bot_latest
+        || current
+            .last_turn
+            .as_ref()
+            .and_then(|last| {
+                let value = current
+                    .custom_metadata
+                    .as_ref()?
+                    .get("lastBackgroundDelivery")?;
+                let delivery: openbitfun_core_types::background_delivery::BackgroundDelivery =
+                    serde_json::from_value(value.clone()).ok()?;
+                Some(
+                    delivery.run_id == last.turn_id
+                        && delivery.execution_generation == last.execution_generation.unwrap_or(0)
+                        && last.status == TurnStatus::Completed
+                        && delivery.suppresses_report(),
+                )
+            })
+            .unwrap_or(false);
     if current_target.is_none() && incoming.unread_completion.is_some() && suppressed_latest {
         return;
     }

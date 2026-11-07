@@ -1262,6 +1262,7 @@ async fn remote_connect_command_owner_routes_send_message_and_prefers_explicit_i
         &RemoteCommand::SendMessage {
             session_id: "session-1".to_string(),
             content: "hello".to_string(),
+            source: None,
             display_content: None,
             turn_id: Some("harmony-turn-1".to_string()),
             agent_type: Some("code".to_string()),
@@ -1302,6 +1303,34 @@ async fn remote_connect_command_owner_routes_send_message_and_prefers_explicit_i
     assert_eq!(submitted.image_contexts, vec!["explicit:ctx-1".to_string()]);
     assert_eq!(submitted.policy.source, RemoteConnectSubmissionSource::Bot);
     assert_eq!(submitted.turn_id.as_deref(), Some("harmony-turn-1"));
+}
+
+#[tokio::test]
+async fn remote_connect_command_preserves_bot_ingress_and_legacy_send_payloads() {
+    for (source, expected) in [
+        (None, RemoteConnectSubmissionSource::Relay),
+        (Some("bot"), RemoteConnectSubmissionSource::Bot),
+        (Some("future_source"), RemoteConnectSubmissionSource::Relay),
+    ] {
+        let host = RecordingCommandHost::default();
+        let mut payload = serde_json::json!({
+            "cmd": "send_message", "session_id": "session", "content": "hello"
+        });
+        if let Some(source) = source {
+            payload["source"] = serde_json::json!(source);
+        }
+        let command: RemoteCommand = serde_json::from_value(payload).unwrap();
+        let encoded = serde_json::to_value(&command).unwrap();
+        assert_eq!(
+            encoded.get("source").and_then(serde_json::Value::as_str),
+            source
+        );
+        let round_trip: RemoteCommand = serde_json::from_value(encoded).unwrap();
+        let response =
+            handle_remote_command(&host, &round_trip, RemoteConnectSubmissionSource::Relay).await;
+        assert!(matches!(response, RemoteResponse::MessageSent { .. }));
+        assert_eq!(host.submitted_dialog().policy.source, expected);
+    }
 }
 
 #[tokio::test]
@@ -2364,6 +2393,7 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
             "workspace_id_references_v1",
             REMOTE_CAPABILITY_HARNESS_PROFILES_V1,
             REMOTE_CAPABILITY_DIALOG_STEER_V1,
+            "bot_read_receipts_v1",
             "dialog_queue_v1",
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
             "session_attachments_v1",
@@ -2615,6 +2645,7 @@ fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
             "workspace_id_references_v1",
             REMOTE_CAPABILITY_HARNESS_PROFILES_V1,
             REMOTE_CAPABILITY_DIALOG_STEER_V1,
+            "bot_read_receipts_v1",
             "dialog_queue_v1",
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
             "session_attachments_v1",
@@ -2777,6 +2808,7 @@ fn remote_connect_command_wire_shape_lives_in_owner_contract() {
     let command = RemoteCommand::SendMessage {
         session_id: "session-1".to_string(),
         content: "hello".to_string(),
+        source: None,
         display_content: None,
         turn_id: Some("harmony-turn-1".to_string()),
         agent_type: Some("code".to_string()),

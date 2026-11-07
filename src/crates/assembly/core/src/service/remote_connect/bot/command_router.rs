@@ -3764,6 +3764,7 @@ async fn execute_remote_forward(
     submission_finished: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> ForwardedTurnResult {
     use openbitfun_services_integrations::remote_connect::bot::remote_turn::observe_turn;
+    use openbitfun_services_integrations::remote_connect::REMOTE_CAPABILITY_BOT_READ_RECEIPTS_V1;
     let s = strings_for(current_bot_language().await);
     let target = forward.remote_target.as_ref().unwrap();
     let current = || fence.is_lifecycle_current() && fence.identity_epoch() == epoch;
@@ -3775,14 +3776,30 @@ async fn execute_remote_forward(
     if !current() {
         return empty();
     }
+    let mut command = serde_json::json!({
+        "cmd":"send_message", "session_id":target.session_id,
+        "content":forward.content, "turn_id":forward.turn_id,
+        "image_contexts":forward.image_contexts,
+    });
+    // Old hosts keep accepting messages with their existing receipt behavior.
+    // Only advertise bot ingress after the target confirms it can honor it.
+    if let Ok(info) = target
+        .rpc(serde_json::json!({"cmd":"get_workspace_info"}))
+        .await
+    {
+        if info["capabilities"].as_array().is_some_and(|capabilities| {
+            capabilities.iter().any(|capability| {
+                capability.as_str() == Some(REMOTE_CAPABILITY_BOT_READ_RECEIPTS_V1)
+            })
+        }) {
+            command["source"] = serde_json::json!("bot");
+        }
+    }
+    if !current() {
+        return empty();
+    }
     // Submission is never retried blindly: older peers need not deduplicate.
-    let sent = target
-        .rpc(serde_json::json!({
-            "cmd":"send_message", "session_id":target.session_id,
-            "content":forward.content, "turn_id":forward.turn_id,
-            "image_contexts":forward.image_contexts,
-        }))
-        .await;
+    let sent = target.rpc(command).await;
     drop(submission_finished);
     if !current() {
         return empty();
@@ -5109,7 +5126,7 @@ mod handle_chat_tests {
                             }
                         }
                         "get_workspace_info" => serde_json::json!({"resp":"workspace_info", "capabilities":
-                            if supports_interaction { vec!["user_question_interaction_v1", "session_attachments_v1"] } else { vec![] }
+                            if supports_interaction { vec!["user_question_interaction_v1", "session_attachments_v1", "bot_read_receipts_v1"] } else { vec![] }
                         }),
                         "store_session_attachment" => {
                             assert!(supports_interaction);
@@ -5273,6 +5290,17 @@ mod handle_chat_tests {
             1
         );
         let observed = calls.lock().unwrap();
+        assert_eq!(
+            observed
+                .iter()
+                .find(|call| call["cmd"] == "send_message")
+                .unwrap()["source"],
+            if supports_interaction {
+                serde_json::json!("bot")
+            } else {
+                Value::Null
+            }
+        );
         let activity = observed
             .iter()
             .position(|call| call["cmd"] == "start_question_interaction");

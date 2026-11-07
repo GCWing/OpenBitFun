@@ -563,6 +563,7 @@ pub const REMOTE_FILE_MAX_READ_BYTES: u64 = 30 * 1024 * 1024;
 pub const REMOTE_FILE_MAX_CHUNK_BYTES: u64 = 3 * 1024 * 1024;
 pub const REMOTE_CAPABILITY_HARNESS_PROFILES_V1: &str = "harness_profiles_v1";
 pub const REMOTE_CAPABILITY_DIALOG_STEER_V1: &str = "dialog_steer_v1";
+pub const REMOTE_CAPABILITY_BOT_READ_RECEIPTS_V1: &str = "bot_read_receipts_v1";
 pub const REMOTE_CAPABILITY_USER_QUESTION_INTERACTION_V1: &str = "user_question_interaction_v1";
 pub const REMOTE_CAPABILITY_BACKGROUND_RESULT_DELIVERY_V1: &str = "background_result_delivery_v1";
 pub const REMOTE_CAPABILITY_SESSION_ROLLBACK_V1: &str = "session_rollback_v1";
@@ -580,6 +581,7 @@ fn remote_host_capabilities() -> Vec<String> {
         "workspace_id_references_v1".to_string(),
         REMOTE_CAPABILITY_HARNESS_PROFILES_V1.to_string(),
         REMOTE_CAPABILITY_DIALOG_STEER_V1.to_string(),
+        REMOTE_CAPABILITY_BOT_READ_RECEIPTS_V1.to_string(),
         "dialog_queue_v1".to_string(),
         REMOTE_CAPABILITY_PLAN_BUILD_V1.to_string(),
         REMOTE_CAPABILITY_SESSION_ATTACHMENTS_V1.to_string(),
@@ -2951,6 +2953,10 @@ pub enum RemoteCommand {
     SendMessage {
         session_id: String,
         content: String,
+        /// Optional ingress hint retained by bot forwards across devices. Older
+        /// hosts ignore it; absent/unknown values keep the transport's source.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
         #[serde(default)]
         display_content: Option<String>,
         /// Client-generated stable identity for the turn. Older clients omit it;
@@ -3495,6 +3501,7 @@ where
         RemoteCommand::SendMessage {
             session_id,
             content,
+            source: ingress_source,
             display_content,
             turn_id,
             agent_type,
@@ -3520,7 +3527,13 @@ where
                     display_content: display_content.clone(),
                     agent_type: agent_type.clone(),
                     image_contexts: resolved_contexts,
-                    policy: RemoteDialogSubmissionPolicy::for_source(source),
+                    policy: RemoteDialogSubmissionPolicy::for_source(
+                        if ingress_source.as_deref() == Some("bot") {
+                            RemoteConnectSubmissionSource::Bot
+                        } else {
+                            source
+                        },
+                    ),
                     turn_id: turn_id.clone(),
                 })
                 .await,
