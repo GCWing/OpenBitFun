@@ -45,6 +45,7 @@ export function MenuConfirmItem({ confirmation, onConfirm, onActionError, disabl
     catch (error) { onActionError?.(error); }
     finally {
       pendingRef.current = false;
+      restoreFocus.current = true;
       setPending(false);
       setConfirming(false);
     }

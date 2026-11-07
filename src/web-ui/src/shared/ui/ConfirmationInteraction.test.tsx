@@ -128,4 +128,28 @@ describe('confirmation at the action origin', () => {
     await click('Delete card'); await click('Confirm');
     expect(deleted).toHaveBeenCalledOnce();
   });
+
+  it('keeps an in-flight menu action disabled after reopening and preserves the new opening', async () => {
+    let finish!: () => void;
+    const deleted = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+    function Menu() {
+      const anchor = useRef<HTMLButtonElement>(null);
+      const [open, setOpen] = useState(false);
+      return <><Button ref={anchor} onClick={() => setOpen(value => !value)}>More</Button>
+        <MenuPopover open={open} anchorRef={anchor} onClose={() => setOpen(false)} exitDurationMs={0} items={[
+          { id: 'delete', label: 'Delete card', onSelect: deleted,
+            confirmation: { description: 'Delete this card?', cancelText: 'Cancel', confirmText: 'Confirm' } },
+        ]} /></>;
+    }
+    act(() => root.render(<Menu />));
+    await click('More'); await click('Delete card'); await click('Confirm');
+    expect(deleted).toHaveBeenCalledOnce();
+    await click('More'); await click('More');
+    expect(button('Delete card').disabled).toBe(true);
+    await click('Delete card');
+    expect(deleted).toHaveBeenCalledOnce();
+    await act(async () => finish());
+    expect(document.querySelector('[role="menu"]')?.getAttribute('aria-hidden')).toBeNull();
+    expect(button('Delete card').disabled).toBe(false);
+  });
 });

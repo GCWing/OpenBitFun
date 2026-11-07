@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ComponentType, type HTMLAttributes, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentType, type HTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Menu, MenuItem, MenuSeparator, type MenuProps, type MenuItemRole } from "./Menu";
 import { Icon } from "../Icon";
 import { classNames } from "../../internal/classNames";
@@ -68,11 +68,33 @@ export function MenuPopover({ items, open, onClose, anchorRef, ownerRef, positio
   const menuRef = useRef<HTMLDivElement>(null);
   const treeId = useId();
   const { present, state: phase } = usePresence(open, exitDurationMs);
+  // Mutations outlive a dismissed menu. Keep their lock above the mounted rows,
+  // and do not let a late completion dismiss a newer opening of the menu.
+  const inFlightActions = useRef(new Set<string>());
+  const [pendingActions, setPendingActions] = useState<ReadonlySet<string>>(new Set());
+  const openingRevision = useRef(0);
+  useLayoutEffect(() => {
+    openingRevision.current += 1;
+    return () => { openingRevision.current += 1; };
+  }, [open]);
   const resolvedAnchor = anchorRef ?? markerRef;
   const branchRefs = anchorRef ? [anchorRef] : [];
   const closeAndRestoreFocus = () => {
     if (anchorRef?.current?.isConnected) anchorRef.current.focus();
     onClose();
+  };
+  const confirmEntry = async (item: MenuEntry, key: string, trigger: HTMLButtonElement) => {
+    if (inFlightActions.current.has(key)) return;
+    inFlightActions.current.add(key);
+    setPendingActions(new Set(inFlightActions.current));
+    const revision = openingRevision.current;
+    try {
+      await item.onSelect?.(trigger);
+      if (revision === openingRevision.current) closeAndRestoreFocus();
+    } finally {
+      inFlightActions.current.delete(key);
+      setPendingActions(new Set(inFlightActions.current));
+    }
   };
 
   useDismissibleLayer({
@@ -103,6 +125,8 @@ export function MenuPopover({ items, open, onClose, anchorRef, ownerRef, positio
       items={items}
       menuRef={menuRef}
       onClose={closeAndRestoreFocus}
+      onConfirmEntry={confirmEntry}
+      pendingActions={pendingActions}
       open={open}
       phase={phase}
       placement={placement}
@@ -125,6 +149,9 @@ interface MenuLevelProps extends Omit<MenuProps, "children"> {
   phase: string;
   treeId: string;
   onClose: () => void;
+  onConfirmEntry: (item: MenuEntry, key: string, trigger: HTMLButtonElement) => Promise<void>;
+  pendingActions: ReadonlySet<string>;
+  actionPath?: string;
   onBack?: () => void;
   anchorRef: RefObject<HTMLElement | null>;
   position?: { x: number; y: number };
@@ -134,7 +161,7 @@ interface MenuLevelProps extends Omit<MenuProps, "children"> {
   parts?: MenuPopoverParts;
 }
 
-function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, position, placement, overlapAnchor, menuRef: externalRef, autoFocusFirstItem, className, inlineSize, style, parts, ...props }: MenuLevelProps) {
+function MenuLevel({ items, open, phase, treeId, onClose, onConfirmEntry, pendingActions, actionPath = "", onBack, anchorRef, position, placement, overlapAnchor, menuRef: externalRef, autoFocusFirstItem, className, inlineSize, style, parts, ...props }: MenuLevelProps) {
   const MenuSurface = parts?.root ?? Menu;
   const Item = parts?.item ?? MenuItem;
   const Separator = parts?.separator ?? MenuSeparator;
@@ -154,6 +181,7 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
   // Keep geometry until presence unmounts the menu, including its exit transition.
   const layout = useAnchoredLayer({ open: true, anchorRef, layerRef: menuRef, placement, overlapAnchor, point: position });
   const activeEntry = items.find(item => item.id === activeId && !item.disabled && item.submenu?.length);
+  const actionKey = (id: string) => `${actionPath}/${encodeURIComponent(id)}`;
   const openSubmenu = (item: MenuEntry, trigger: HTMLElement, keyboard: boolean) => {
     if (item.disabled || !item.submenu?.length) return;
     submenuAnchor.current = trigger;
@@ -212,6 +240,7 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
   });
 
   const submenu = activeEntry ? <SubmenuBoundary className={styles.submenuBoundary}><MenuLevel key={activeEntry.id} id={submenuId} aria-label={activeEntry.label} menuRef={submenuRef} items={activeEntry.submenu!} open={open} phase={phase} treeId={treeId} onClose={onClose} parts={parts} inlineSize={inlineSize}
+    onConfirmEntry={onConfirmEntry} pendingActions={pendingActions} actionPath={actionKey(activeEntry.id)}
     onBack={() => { intent.closeNow(); submenuAnchor.current?.focus(); }} anchorRef={submenuAnchor} placement="right" autoFocusFirstItem={keyboardOpen.current}
     onPointerEnter={intent.keepOpen} onPointerLeave={intent.requestClose} /></SubmenuBoundary> : null;
 
@@ -220,8 +249,8 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
       style={{ ...layout?.style, ...style, visibility: layout ? undefined : "hidden" }} data-openbitfun-native-webview-occlusion data-openbitfun-menu-tree={treeId} data-placement={layout?.placement ?? placement} data-state={phase}
       aria-hidden={!open || undefined} {...inertProps(!open)} onContextMenu={event => event.preventDefault()}>
       {items.map(item => item.separator ? <Separator key={item.id} /> : item.confirmation ? <MenuConfirmItem key={`${item.id}:${open}`} data-menu-id={item.id}
-        confirmation={item.confirmation} disabled={item.disabled} tone={item.tone} leading={item.icon}
-        onConfirm={async trigger => { await item.onSelect?.(trigger); onClose(); }}>{item.label}</MenuConfirmItem>
+        confirmation={item.confirmation} disabled={item.disabled || pendingActions.has(actionKey(item.id))} tone={item.tone} leading={item.icon}
+        onConfirm={trigger => onConfirmEntry(item, actionKey(item.id), trigger)}>{item.label}</MenuConfirmItem>
         : <Item key={item.id} data-menu-id={item.id} leading={item.icon ? <Leading className={styles.icon} data-openbitfun-icon-slot="true">{item.icon}</Leading> : undefined} shortcut={item.shortcut ? <Shortcut>{item.shortcut}</Shortcut> : undefined} tone={item.tone} role={item.role} checked={item.checked}
         disabled={item.disabled} aria-disabled={item.disabled || undefined} aria-haspopup={item.submenu?.length ? "menu" : undefined} aria-expanded={item.submenu?.length ? activeEntry?.id === item.id : undefined}
         aria-controls={activeEntry?.id === item.id ? submenuId : undefined} metadata={item.submenu?.length ? <Arrow className={styles.submenuArrow}><Icon name="chevron-right" size="sm" /></Arrow> : undefined}

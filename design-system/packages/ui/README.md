@@ -784,6 +784,8 @@ confirmText, cancelText }` to its entry. `MenuConfirmItem` exposes the same
 behavior for composed menus: the row changes to Cancel / Confirm, focuses
 Cancel first, and Escape restores the original row. The confirmed action is
 awaited with both controls disabled; the host owns error presentation.
+Reopening a `MenuPopover` keeps that action disabled until it settles, and a late
+completion does not close the newly opened menu.
 
 Use `ConfirmDialog anchor={captureConfirmationAnchor(event.currentTarget)}`
 when a single-item action needs a short explanation beside its trigger. Capture
