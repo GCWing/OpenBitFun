@@ -3,7 +3,7 @@ import { flowChatStore } from '../store/FlowChatStore';
 import { stateMachineManager } from '../state-machine/SessionStateMachineManager';
 import { ProcessingPhase, SessionExecutionEvent, SessionExecutionState } from '../state-machine/types';
 import type { DialogTurn, Session } from '../types/flow-chat';
-import { buildAgentCompanionActivity } from './agentCompanionActivity';
+import { buildAgentCompanionActivity, deriveLivingLineState } from './agentCompanionActivity';
 
 const background = vi.hoisted(() => ({ rows: [] as unknown[] }));
 vi.mock('../services/crossDeviceSessions', () => ({
@@ -195,6 +195,18 @@ function createAskUserQuestionSessionWithTrailingText(): Session {
   return session;
 }
 
+describe('LivingLine activity adapter', () => {
+  const base = { title: 'Session', mood: 'rest' as const, labelKey: '', defaultLabel: '', startedAt: 0, updatedAt: 0 };
+  const status = (sessionId: string, state: 'running' | 'waiting' | 'attention' | 'completed' | 'error' | 'interrupted') => ({ ...base, sessionId, state });
+
+  it('prioritizes errors across all tasks, then questions, active work, and idle', () => {
+    expect(deriveLivingLineState([status('a', 'running'), status('b', 'attention')])).toBe('question');
+    expect(deriveLivingLineState([status('a', 'completed'), status('b', 'running')])).toBe('working');
+    expect(deriveLivingLineState([status('a', 'completed')])).toBe('idle');
+    expect(deriveLivingLineState([...Array.from({ length: 4 }, (_, index) => status(String(index), 'completed')), status('late-error', 'error')])).toBe('error');
+  });
+});
+
 describe('buildAgentCompanionActivity', () => {
   afterEach(() => {
     resetState();
@@ -230,6 +242,7 @@ describe('buildAgentCompanionActivity', () => {
     expect(buildAgentCompanionActivity()).toEqual({
       mood: 'rest',
       tasks: [],
+      livingLineState: 'idle',
     });
   });
 

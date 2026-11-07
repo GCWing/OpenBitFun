@@ -1,0 +1,41 @@
+.openbitfun-grok-live {
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+  pointer-events: none;
+
+  &__stage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+  }
+
+  &__stage > svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  &__stats {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    width: max-content;
+    max-width: 280px;
+    padding: 3px;
+    font-family: var(--openbitfun-type-code-md-font-family);
+    font-size: var(--openbitfun-type-meta-font-size);
+    line-height: var(--openbitfun-type-support-line-height);
+    color: var(--openbitfun-color-content-on-dark);
+    background: var(--openbitfun-color-content-on-light);
+    pointer-events: none;
+    white-space: normal;
+  }
+}
+
+:root[data-openbitfun-appearance-mode='dark'] .openbitfun-grok-live__stage > svg,
+[data-openbitfun-appearance-mode='dark'] .openbitfun-grok-live__stage > svg {
+  filter: drop-shadow(0 0 2px var(--openbitfun-color-content-on-dark));
+}

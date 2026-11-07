@@ -14,6 +14,10 @@ const pet: AgentCompanionPetSelection = {
   id: 'sample', displayName: 'Sample', source: 'preset', packagePath: '/sample',
   spritesheetPath: '/sample/spritesheet.webp', spritesheetMimeType: 'image/webp', spriteVersionNumber: 2,
 };
+const livingLine: AgentCompanionPetSelection = {
+  id: 'living-line', displayName: 'LivingLine', source: 'preset', packagePath: '/agent-companion-pets/living-line',
+  spritesheetPath: '/agent-companion-pets/living-line/preview.svg', spritesheetMimeType: 'image/svg+xml',
+};
 
 let root: Root;
 let container: HTMLDivElement;
@@ -49,6 +53,23 @@ afterEach(() => {
 function sprite() {
   return container.querySelector<HTMLElement>('[data-openbitfun-part="petdex"]')!;
 }
+
+describe('AgentCompanionPet renderer routing', () => {
+  it('renders the independent LivingLine renderer and reports its rectangular frame', async () => {
+    const onSize = vi.fn();
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+
+    await act(async () => root.render(
+      <AgentCompanionPet pet={livingLine} mood="rest" livingLineState="question" onPetFrameSizeChange={onSize} />,
+    ));
+
+    expect(container.querySelector('.living-line-pet')?.getAttribute('data-openbitfun-state')).toBe('question');
+    expect(container.querySelector('svg.living-line-art')?.getAttribute('viewBox')).toBe('0 0 256 144');
+    expect(onSize).toHaveBeenCalledWith({ width: 288, height: 192 });
+    expect(resolvePet).not.toHaveBeenCalled();
+  });
+});
 
 describe('pet sprite renderer', () => {
   it('restores BitBlob atlas-only animation after look tracking expires', async () => {

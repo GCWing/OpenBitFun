@@ -8,6 +8,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import type { AgentCompanionActivityPayload, AgentCompanionTaskStatus } from '@/flow_chat/utils/agentCompanionActivity';
 import { AgentCompanionDesktopPet } from './AgentCompanionDesktopPet';
 
+const companionPet = vi.hoisted(() => ({ selection: null as any }));
 const emitMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 const listenMock = vi.hoisted(() => vi.fn());
 const invokeMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
@@ -43,17 +44,17 @@ vi.mock('@tauri-apps/api/window', () => ({
 
 vi.mock('@/infrastructure/config/services/AIExperienceConfigService', () => ({
   aiExperienceConfigService: {
-    getSettings: () => ({ agent_companion_pet: null }),
+    getSettings: () => ({ agent_companion_pet: companionPet.selection }),
     getSettingsAsync: () => Promise.resolve({
       enable_agent_companion: true,
-      agent_companion_pet: null,
+      agent_companion_pet: companionPet.selection,
     }),
   },
 }));
 
 vi.mock('@/flow_chat/components/AgentCompanionPet', () => ({
-  AgentCompanionPet: ({ lookDirection, action, mood, dragDirection }: { lookDirection?: number | null; action?: string | null; mood?: string; dragDirection?: string }) => (
-    <div data-testid="pixel-pet" data-look-direction={lookDirection ?? 'none'} data-action={action ?? 'none'} data-mood={mood} data-direction={dragDirection} />
+  AgentCompanionPet: ({ lookDirection, action, mood, dragDirection, livingLineState }: { lookDirection?: number | null; action?: string | null; mood?: string; dragDirection?: string; livingLineState?: string }) => (
+    <div data-testid="pixel-pet" data-look-direction={lookDirection ?? 'none'} data-action={action ?? 'none'} data-mood={mood} data-direction={dragDirection} data-living-line-state={livingLineState} />
   ),
 }));
 
@@ -147,6 +148,7 @@ describe('AgentCompanionDesktopPet', () => {
 
   beforeEach(async () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    companionPet.selection = null;
     emitMock.mockClear();
     invokeMock.mockClear();
     cursorPositionMock.mockReset();
@@ -198,6 +200,63 @@ describe('AgentCompanionDesktopPet', () => {
     container.remove();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('reserves the LivingLine rectangle and forwards its persistent state', async () => {
+    await act(async () => root.unmount());
+    companionPet.selection = {
+      id: 'living-line', displayName: 'LivingLine', source: 'preset',
+      packagePath: '/agent-companion-pets/living-line',
+      spritesheetPath: '/agent-companion-pets/living-line/preview.svg', spritesheetMimeType: 'image/svg+xml',
+    };
+    invokeMock.mockClear();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<I18nextProvider i18n={i18n}><AgentCompanionDesktopPet /></I18nextProvider>);
+    });
+    // Reserve the bubble slot before there is a task, not after it paints.
+    expect(invokeMock).toHaveBeenLastCalledWith('resize_agent_companion_desktop_pet', { width: 408, height: 102 });
+    invokeMock.mockClear();
+    pushActivity({ mood: 'rest', tasks: [task({ state: 'error', mood: 'rest' })], livingLineState: 'error', emittedAt: 1, sequence: 1 });
+
+    expect(query('.openbitfun-agent-companion-window__stack')?.getAttribute('style')).toContain('--openbitfun-agent-companion-pet-width: 216px');
+    expect(query('.openbitfun-agent-companion-window__stack')?.getAttribute('style')).toContain('--openbitfun-agent-companion-pet-height: 96px');
+    expect(query('[data-testid="pixel-pet"]')?.getAttribute('data-living-line-state')).toBe('error');
+    pushActivity({ mood: 'working', tasks: [task(), task({ sessionId: 'second' })], emittedAt: 2, sequence: 2 });
+    pushActivity({ mood: 'rest', tasks: [], emittedAt: 3, sequence: 3 });
+    await act(async () => { await Promise.resolve(); });
+    // No horizontal shrink/grow/reposition cycle for zero, one or two bubbles.
+    expect(invokeMock).not.toHaveBeenCalledWith('resize_agent_companion_desktop_pet', expect.anything());
+  });
+
+  it('waits for the LivingLine viewport before revealing bubbles and preserves their nodes', async () => {
+    vi.stubGlobal('innerWidth', 216);
+    act(() => window.dispatchEvent(new Event('resize')));
+    const settingsListener = listenMock.mock.calls.find(([name]) => name === 'agent-companion://settings-updated')?.[1];
+    await act(async () => settingsListener({ payload: {
+      enable_agent_companion: true,
+      agent_companion_pet: {
+        id: 'living-line', displayName: 'LivingLine', source: 'preset',
+        packagePath: '/agent-companion-pets/living-line',
+        spritesheetPath: '/agent-companion-pets/living-line/preview.svg', spritesheetMimeType: 'image/svg+xml',
+      },
+    } }));
+    pushActivity({ mood: 'working', tasks: [task()], emittedAt: 1, sequence: 1 });
+    const bubbles = query<HTMLElement>('.openbitfun-agent-companion-window__bubbles')!;
+    const bubble = query('.openbitfun-agent-companion-window__bubble');
+    expect(bubbles.style.visibility).toBe('hidden');
+    expect(bubbles.getAttribute('aria-hidden')).toBe('true');
+    expect(invokeMock).toHaveBeenLastCalledWith('resize_agent_companion_desktop_pet', { width: 408, height: 102 });
+
+    vi.stubGlobal('innerWidth', 408);
+    act(() => window.dispatchEvent(new Event('resize')));
+    expect(bubbles.style.visibility).toBe('');
+    expect(bubbles.hasAttribute('aria-hidden')).toBe(false);
+    expect(query('.openbitfun-agent-companion-window__bubble')).toBe(bubble);
+    invokeMock.mockClear();
+    pushActivity({ mood: 'waiting', tasks: [task({ state: 'attention', latestOutput: 'Reply needed' })], emittedAt: 2, sequence: 2 });
+    await act(async () => { await Promise.resolve(); });
+    expect(invokeMock).not.toHaveBeenCalledWith('resize_agent_companion_desktop_pet', expect.anything());
   });
 
   it.each(['before activity', 'after activity'])(

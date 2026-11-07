@@ -5,6 +5,7 @@ import { isTauriRuntime } from '@/infrastructure/runtime';
 import { createLogger } from '@/shared/utils/logger';
 import builtinPetMetadata from './agentCompanionBuiltinPetMetadata.json';
 import { getPetSpriteLayout } from './agentCompanionPetSprite';
+import { LIVING_LINE_PET } from './livingLinePetIdentity';
 
 const log = createLogger('AgentCompanionPetService');
 const BUILTIN_PET_BASE = '/agent-companion-pets';
@@ -21,6 +22,17 @@ export const DEFAULT_AGENT_COMPANION_PET: AgentCompanionPetSelection = {
   spritesheetPath: `${BUILTIN_PET_BASE}/bitblob/spritesheet.webp`,
   spritesheetMimeType: 'image/webp',
   spriteVersionNumber: 2,
+};
+
+export const GROK_LIVE_PET: AgentCompanionPetSelection = {
+  id: 'grok-live',
+  displayName: 'GrokLive',
+  description: 'A live procedural SVG companion with a black body and white eyes.',
+  source: 'preset',
+  packagePath: `${BUILTIN_PET_BASE}/grok-live`,
+  // Only a picker thumbnail: the live renderer never parses this as a spritesheet.
+  spritesheetPath: `${BUILTIN_PET_BASE}/grok-live/preview.svg`,
+  spritesheetMimeType: 'image/svg+xml',
 };
 
 /** Cache: absolute file path → blob URL (prevents re-reading the same file). */
@@ -218,6 +230,8 @@ const BUILTIN_PETS: AgentCompanionPetSelection[] = [
     spritesheetPath: `${BUILTIN_PET_BASE}/usagi/spritesheet.webp`,
     spritesheetMimeType: 'image/webp',
   },
+  GROK_LIVE_PET,
+  LIVING_LINE_PET,
 ];
 
 export interface AgentCompanionPetPackage extends AgentCompanionPetSelection {

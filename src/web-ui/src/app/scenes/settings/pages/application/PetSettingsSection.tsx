@@ -17,6 +17,10 @@ import {
   type AgentCompanionPetPackage,
 } from '@/infrastructure/config/services/AgentCompanionPetService';
 import { getPetSpriteLayout } from '@/infrastructure/config/services/agentCompanionPetSprite';
+import { isGrokLivePet } from '@/infrastructure/config/services/grokLivePetIdentity';
+import { isLivingLinePet } from '@/infrastructure/config/services/livingLinePetIdentity';
+import LivingLineSettingsSection from './LivingLineSettingsSection';
+import { DEFAULT_GROK_LIVE_SETTINGS, readGrokLiveSettings, saveGrokLiveSettings, subscribeGrokLiveSettings, type GrokLiveSettings } from '@/flow_chat/components/grok-live/grokLiveSettings';
 import { aiExperienceConfigService, type AIExperienceSettings } from '@/infrastructure/config/services/AIExperienceConfigService';
 import { confirmDanger } from '@/infrastructure/confirm-dialog';
 import { useI18n } from '@/infrastructure/i18n';
@@ -28,6 +32,7 @@ import { captureConfirmationAnchor,
   Icon,
   IconButton,
   OverflowText,
+  Select,
   Switch,
   Tooltip
 } from '@openbitfun/ui';
@@ -38,10 +43,12 @@ const log = createLogger('PetSettingsSection');
 const IS_TAURI_DESKTOP = typeof window !== 'undefined' && '__TAURI__' in window;
 
 function getPetPreviewStyle(pet: AgentCompanionPetPackage): React.CSSProperties {
+  const vectorPet = isGrokLivePet(pet) || isLivingLinePet(pet);
   return {
-    imageRendering: pet.source === 'preset' && pet.id === 'bitblob' ? 'auto' : undefined,
+    imageRendering: vectorPet || (pet.source === 'preset' && pet.id === 'bitblob') ? 'auto' : undefined,
     '--openbitfun-pet-preview-src': `url("${pet.previewSrc}")`,
-    backgroundSize: `800% ${getPetSpriteLayout(pet.spriteVersionNumber).rows * 100}%`,
+    backgroundSize: vectorPet ? 'contain' : `800% ${getPetSpriteLayout(pet.spriteVersionNumber).rows * 100}%`,
+    ...(vectorPet ? { backgroundPosition: 'center', animation: 'none' } : {}),
   } as React.CSSProperties;
 }
 
@@ -70,6 +77,16 @@ const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true 
   const [companionPetImporting, setCompanionPetImporting] = useState(false);
 
   const [companionPetDeletingPath, setCompanionPetDeletingPath] = useState<string | null>(null);
+  const [grokSettings, setGrokSettings] = useState(readGrokLiveSettings);
+  useEffect(() => subscribeGrokLiveSettings(() => setGrokSettings(readGrokLiveSettings())), []);
+  const updateGrok = (patch: Partial<GrokLiveSettings>) => {
+    try {
+      setGrokSettings(saveGrokLiveSettings(patch));
+    } catch (error) {
+      log.error('Failed to save GrokLive settings', error);
+      notification.error(t('messages.saveFailed'));
+    }
+  };
 
   const reloadCompanionPets = useCallback(async () => {
     setCompanionPets(await companionPetInventory.read(listAgentCompanionPets));
@@ -388,6 +405,74 @@ const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                 </Disclosure>
               </div>
             </div>
+            {isGrokLivePet(selectedCompanionPetReference) && (
+              <>
+                <ConfigPageRow label={t('features.pet.grok.title')} align="center">
+                  <Button size="sm" variant="secondary" onClick={() => updateGrok(DEFAULT_GROK_LIVE_SETTINGS)}>
+                    {t('features.pet.grok.reset')}
+                  </Button>
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.size')} align="center">
+                  <input type="range" min={64} max={128} step={8} value={grokSettings.size}
+                    aria-label={t('features.pet.grok.size')}
+                    onChange={event => updateGrok({ size: Number(event.target.value) })} />
+                  <output>{grokSettings.size}</output>
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.frameRate')} align="center">
+                  <Select size="sm" value={grokSettings.fps}
+                    onValueChange={value => updateGrok({ fps: value as GrokLiveSettings['fps'] })}
+                    options={[
+                      { value: 'auto', label: t('features.pet.grok.auto') },
+                      { value: '60', label: '60 FPS' },
+                      { value: '120', label: '120 FPS' },
+                    ]} aria-label={t('features.pet.grok.frameRate')} />
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.follow')} align="center">
+                  <Switch checked={grokSettings.follow} onChange={event => updateGrok({ follow: event.target.checked })} />
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.idleMotion')} align="center">
+                  <Switch checked={grokSettings.idleMotion} onChange={event => updateGrok({ idleMotion: event.target.checked })} />
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.glow')} align="center">
+                  <Switch checked={grokSettings.glow} onChange={event => updateGrok({ glow: event.target.checked })} />
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.bodyColor')} align="center">
+                  <Select size="sm" value={grokSettings.bodyColor}
+                    onValueChange={value => updateGrok({ bodyColor: value as GrokLiveSettings['bodyColor'] })}
+                    options={[
+                      { value: 'black', label: t('features.pet.grok.bodyColor.black') },
+                      { value: 'darkGray', label: t('features.pet.grok.bodyColor.darkGray') },
+                      { value: 'gray', label: t('features.pet.grok.bodyColor.gray') },
+                      { value: 'custom', label: t('features.pet.grok.bodyColor.custom') },
+                    ]} aria-label={t('features.pet.grok.bodyColor')} />
+                  {grokSettings.bodyColor === 'custom' && (
+                    <input type="color" value={grokSettings.bodyCustomColor}
+                      aria-label={t('features.pet.grok.bodyColor.custom')}
+                      onChange={event => updateGrok({ bodyCustomColor: event.target.value })} />
+                  )}
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.eyeColor')} align="center">
+                  <Select size="sm" value={grokSettings.eyeColor}
+                    onValueChange={value => updateGrok({ eyeColor: value as GrokLiveSettings['eyeColor'] })}
+                    options={[
+                      { value: 'white', label: t('features.pet.grok.eyeColor.white') },
+                      { value: 'lightGray', label: t('features.pet.grok.eyeColor.lightGray') },
+                      { value: 'custom', label: t('features.pet.grok.eyeColor.custom') },
+                    ]} aria-label={t('features.pet.grok.eyeColor')} />
+                  {grokSettings.eyeColor === 'custom' && (
+                    <input type="color" value={grokSettings.eyeCustomColor}
+                      aria-label={t('features.pet.grok.eyeColor.custom')}
+                      onChange={event => updateGrok({ eyeCustomColor: event.target.value })} />
+                  )}
+                </ConfigPageRow>
+                {import.meta.env.DEV && (
+                  <ConfigPageRow label={t('features.pet.grok.showStats')} align="center">
+                    <Switch checked={grokSettings.showStats} onChange={event => updateGrok({ showStats: event.target.checked })} />
+                  </ConfigPageRow>
+                )}
+              </>
+            )}
+            {isLivingLinePet(selectedCompanionPetReference) && <LivingLineSettingsSection />}
           </ConfigPageSection>
         )}
       </ConfigPageSectionStack>

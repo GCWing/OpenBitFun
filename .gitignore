@@ -163,3 +163,9 @@ src/apps/mobile/android/.kotlin/
 /docs/superpowers/
 
 AGENTS.override.md
+
+# CodeGraph index (local, large)
+.codegraph/
+
+# Desktop test artifacts
+target-desktop-test/

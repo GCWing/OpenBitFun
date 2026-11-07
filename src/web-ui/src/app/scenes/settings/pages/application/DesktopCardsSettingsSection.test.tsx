@@ -191,6 +191,21 @@ it('renders nothing to pin and never reads cards while the feature is off', asyn
   expect(mocks.list).not.toHaveBeenCalled();
 });
 
+it('removes the pin row when the host deletes a card', async () => {
+  mocks.list.mockResolvedValue({
+    enabled: true,
+    desktopPinningSupported: true,
+    cards: [card('review'), card('ordinary')],
+  });
+  await render();
+  expect(pinRows()).toHaveLength(2);
+  await act(async () => mocks.changed.forEach(listener => listener({ cardId: 'review', deleted: true })));
+  expect(pinRows()).toHaveLength(1);
+  expect(pinRows()[0].textContent).toContain('Card ordinary');
+  await act(async () => pinSwitch(pinRows()[0]).click());
+  expect(mocks.setDesktopPinned).toHaveBeenCalledWith('ordinary', true);
+});
+
 it('reports a rejected pin change without flipping the switch', async () => {
   mocks.list.mockResolvedValue({
     enabled: true,
