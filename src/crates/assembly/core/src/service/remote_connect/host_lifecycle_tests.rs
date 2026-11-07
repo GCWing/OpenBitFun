@@ -255,7 +255,10 @@ async fn official_and_lan_invitations_use_the_same_authenticated_device_protocol
         let result = service.start(method.clone()).await.unwrap();
         assert_eq!(
             result.qr_url,
-            Some(format!("{url}/#/pair?did=authenticated-host-1"))
+            Some(openbitfun_product_domains::account::relay_page_url(
+                &url,
+                "#/pair?did=authenticated-host-1"
+            ))
         );
         assert!(result
             .qr_data

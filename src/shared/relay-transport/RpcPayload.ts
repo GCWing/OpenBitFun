@@ -1,3 +1,5 @@
+import { relayEndpointBase } from './RelayEndpoint';
+
 /** Short-lived opaque bulk transfers. References stay on the configured Relay. */
 const INLINE_BYTES = 128 * 1024;
 const MAX_BYTES = 64 * 1024 * 1024;
@@ -6,11 +8,9 @@ export class RpcPayload {
   private readonly endpoint: string;
   private readonly lifetime = new AbortController();
   constructor(url: string, private readonly token: string) {
-    const base = new URL(url);
-    if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) {
-      throw new Error('Invalid Relay URL');
-    }
-    this.endpoint = `${base.href.replace(/\/$/, '')}/v1/rpc/payloads`;
+    const base = relayEndpointBase(url);
+    if (!base) throw new Error('Invalid Relay URL');
+    this.endpoint = `${base}/v1/rpc/payloads`;
   }
   close(): void { this.lifetime.abort(); }
   async uploadIfLarge(value: unknown): Promise<unknown> {

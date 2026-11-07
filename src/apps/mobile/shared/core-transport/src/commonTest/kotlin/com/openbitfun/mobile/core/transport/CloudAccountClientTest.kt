@@ -81,7 +81,7 @@ class CloudAccountClientTest {
     fun githubLoginRegistersOnlyThePublicDeviceKey() = runTest {
         val bodies = mutableListOf<kotlinx.serialization.json.JsonObject>()
         val engine = MockEngine { request ->
-            assertEquals("https://remote.openbitfun.com/v/1.0.2/api/auth/login", request.url.toString())
+            assertEquals("https://remote.openbitfun.com/relay/api/auth/login", request.url.toString())
             bodies += RelayJson.parseToJsonElement(request.text()).jsonObject
             json("""{"token":"token-1","user_id":"123"}""")
         }
@@ -97,6 +97,35 @@ class CloudAccountClientTest {
         // The Relay stores this build on the device row and gates control on it.
         assertEquals(CLIENT_VERSION, bodies[0]["clientVersion"]?.jsonPrimitive?.content)
         assertEquals(CLIENT_PROTOCOL_VERSION, bodies[0]["clientProtocol"]?.jsonPrimitive?.int)
+    }
+
+    /**
+     * The service version rides along as a GET parameter, while the identity a
+     * credential is stored, compared, and joined against stays the bare base.
+     */
+    @Test
+    fun theOfficialEndpointCarriesTheVersionWithoutTakingItIntoAnIdentity() {
+        assertEquals("1.0.9", RELAY_SERVICE_VERSION)
+        assertEquals("https://remote.openbitfun.com/relay", DEFAULT_CLOUD_RELAY_URL)
+        assertEquals("https://remote.openbitfun.com/relay?v=1.0.9", OFFICIAL_CLOUD_RELAY_URL)
+        // One deployment answers on both live paths, so a token or master key
+        // saved by either build keeps working across the change.
+        assertTrue(sameRelayDeployment(DEFAULT_CLOUD_RELAY_URL, OFFICIAL_CLOUD_RELAY_URL))
+        assertTrue(sameRelayDeployment("https://remote.openbitfun.com/v/1.0.2/", DEFAULT_CLOUD_RELAY_URL))
+        assertTrue(sameRelayDeployment("https://remote.openbitfun.com/v/1.0.2", OFFICIAL_CLOUD_RELAY_URL))
+        // Any other versioned path is another deployment, and a value that is not
+        // a plain endpoint is never the same deployment as anything.
+        assertFalse(sameRelayDeployment("https://remote.openbitfun.com/v/1.0.0", DEFAULT_CLOUD_RELAY_URL))
+        assertFalse(sameRelayDeployment("https://remote.openbitfun.com/v/1.0.0", "https://remote.openbitfun.com/v/1.0.2"))
+        assertFalse(sameRelayDeployment("http://remote.openbitfun.com/relay", DEFAULT_CLOUD_RELAY_URL))
+        assertFalse(sameRelayDeployment("https://remote.openbitfun.com/relay?x=1", DEFAULT_CLOUD_RELAY_URL))
+        assertFalse(sameRelayDeployment("https://remote.openbitfun.com/relay?v=1.0.9&x=1", DEFAULT_CLOUD_RELAY_URL))
+        assertFalse(sameRelayDeployment("https://remote.openbitfun.com/relay#/pair?did=d", DEFAULT_CLOUD_RELAY_URL))
+        assertFalse(sameRelayDeployment("https://user@remote.openbitfun.com/relay", DEFAULT_CLOUD_RELAY_URL))
+        assertFalse(sameRelayDeployment(null, DEFAULT_CLOUD_RELAY_URL))
+        // A LAN relay is compared exactly, as it always was.
+        assertTrue(sameRelayDeployment("http://192.168.1.10:9700/", "http://192.168.1.10:9700"))
+        assertFalse(sameRelayDeployment("http://192.168.1.10:9700", "http://192.168.1.11:9700"))
     }
 
     @Test

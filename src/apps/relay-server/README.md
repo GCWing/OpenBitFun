@@ -10,7 +10,12 @@ deploy a server. Older clients can remain on the GitHub-only authorization flow.
 For connection choices, internet requirements, privacy, service limits, and
 self-hosting, see the user FAQ: [English](FAQ.md) / [中文](FAQ.zh-CN.md).
 
-The official endpoint is `https://remote.openbitfun.com/v/1.0.2`. This release is deployed with
+The official endpoint is `https://remote.openbitfun.com/relay?v=1.0.9`: the
+service version travels as a `v` query parameter so a release no longer needs
+its own proxy location, and the bare origin is the account controller. The
+older `https://remote.openbitfun.com/v/1.0.2/` path stays live on the same
+process and database for builds that predate the parameter, so both aliases
+share credentials and device registration. This release is deployed with
 its own process, database, assets, and reverse-proxy location. An existing
 `/relay` deployment remains on its existing binary and data directory.
 
@@ -55,7 +60,7 @@ Relay URL. A private Relay therefore needs a matching client build.
    and `src/mobile-web/src/services/pairingLink.ts`. Native clients have
    matching constants in KMP `core-transport/AccountDeviceLink.kt` and HarmonyOS
    `services/AccountDeviceLink.ets`; update the HarmonyOS account-link parser too.
-   Search for `https://remote.openbitfun.com/v/1.0.2` to verify every runtime
+   Search for `https://remote.openbitfun.com/relay?v=` to verify every runtime
    reference and corresponding test before building your distribution.
 3. Decide who owns identity. You can retain the official OpenBitFun identity
    authority, or run the [shared identity service](../../../deploy/miniapp-market/README.md)

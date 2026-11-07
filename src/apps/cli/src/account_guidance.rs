@@ -147,8 +147,10 @@ mod tests {
 
     #[test]
     fn the_endpoint_variant_prefers_a_retired_official_endpoint() {
-        let older = DEFAULT_RELAY_URL.replace("/v/1.0.2", "/v/1.0.1");
-        let retired = account_failure_guidance_for_endpoint("some generic error", &older);
+        // `/v/1.0.2` and `/relay` are live aliases of one deployment; any other
+        // `/v/<release>` path belongs to a retired deployment.
+        let older = "https://remote.openbitfun.com/v/1.0.1";
+        let retired = account_failure_guidance_for_endpoint("some generic error", older);
         assert_eq!(retired.0, UPDATE_SENTENCE);
         assert_eq!(retired.1, Some(UPDATE_HINT));
 

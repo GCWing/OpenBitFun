@@ -54,7 +54,40 @@ import kotlin.uuid.Uuid
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.time.TimeSource
 
-public const val DEFAULT_CLOUD_RELAY_URL: String = "https://remote.openbitfun.com/v/1.0.2"
+/** Hosted Relay service version announced by the official endpoint. */
+public const val RELAY_SERVICE_VERSION: String = "1.0.9"
+
+/**
+ * Identity of the official Relay: no version query, no fragment, no trailing
+ * slash.
+ *
+ * Every API and socket path is joined onto this, and a stored token or master
+ * key is compared against it. The version parameter belongs to
+ * [OFFICIAL_CLOUD_RELAY_URL] only, so it can never reach a path.
+ */
+public const val DEFAULT_CLOUD_RELAY_URL: String = "https://remote.openbitfun.com/relay"
+
+/**
+ * The same deployment as a user sees and shares it: the service version travels
+ * as a GET parameter instead of a path segment, so a release no longer needs a
+ * proxy location of its own.
+ */
+public const val OFFICIAL_CLOUD_RELAY_URL: String = "$DEFAULT_CLOUD_RELAY_URL?v=$RELAY_SERVICE_VERSION"
+
+/**
+ * Paths served by the same deployed Relay and the same account database.
+ *
+ * `?v=` replaced the path segment as the client-facing version, but `/v/1.0.2`
+ * stays live for builds that predate the change: a token, master key, or device
+ * registration obtained through either path is interchangeable, because both
+ * reach one process and one database. Any other `/v/<version>` path is a
+ * different deployment.
+ */
+private val LIVE_RELAY_ENDPOINT_PATHS: Set<String> = setOf("/relay", "/v/1.0.2")
+
+/** The only query parameter a Relay endpoint may carry, and its value shape. */
+private const val RELAY_VERSION_PARAMETER = "v"
+private val RELAY_VERSION_VALUE = Regex("[A-Za-z0-9.]{1,32}")
 
 /** A relayed stream page slower than this is worth a breadcrumb; faster ones are not. */
 internal const val SLOW_STREAM_PAGE_MS: Long = 300L
@@ -695,6 +728,41 @@ private fun statusFailure(status: Int): CloudAccountException = when (status) {
     429 -> CloudAccountException(CloudAccountFailure.RATE_LIMITED, status)
     in 500..599 -> CloudAccountException(CloudAccountFailure.RELAY_UNAVAILABLE, status)
     else -> CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE, status)
+}
+
+/** The server an endpoint names, and the path it names on that server. */
+private class RelayEndpointIdentity(val origin: String, val path: String)
+
+/**
+ * Whether two Relay URLs resolve to the same deployed Relay.
+ *
+ * This is the comparison behind reusing a stored token or master key: both live
+ * aliases of one host count as one deployment, so a build that moves from
+ * `/v/1.0.2` to `/relay?v=` keeps its credential, while any other versioned
+ * path is a different or retired deployment. Exactly one `v=<version>`
+ * parameter is allowed and it is never part of the identity; a fragment makes
+ * the value not an endpoint at all.
+ */
+public fun sameRelayDeployment(left: String?, right: String?): Boolean {
+    val a = relayEndpointIdentity(left) ?: return false
+    val b = relayEndpointIdentity(right) ?: return false
+    if (a.origin != b.origin) return false
+    return a.path == b.path || (a.path in LIVE_RELAY_ENDPOINT_PATHS && b.path in LIVE_RELAY_ENDPOINT_PATHS)
+}
+
+private fun relayEndpointIdentity(value: String?): RelayEndpointIdentity? {
+    val text = value?.trim().orEmpty()
+    if (text.isEmpty()) return null
+    val url = runCatching { io.ktor.http.Url(text) }.getOrNull() ?: return null
+    if (url.protocol.name !in setOf("http", "https") || url.user != null || url.password != null ||
+        url.fragment.isNotEmpty()) return null
+    if (url.parameters.names().isNotEmpty()) {
+        val versions = url.parameters.getAll(RELAY_VERSION_PARAMETER).orEmpty()
+        if (url.parameters.names() != setOf(RELAY_VERSION_PARAMETER) || versions.size != 1 ||
+            !RELAY_VERSION_VALUE.matches(versions.single())) return null
+    }
+    val port = url.port.takeIf { it != url.protocol.defaultPort }?.let { ":$it" }.orEmpty()
+    return RelayEndpointIdentity(url.protocol.name + "://" + url.host.lowercase() + port, url.encodedPath.trimEnd('/'))
 }
 
 private fun encodePathSegment(value: String): String = value.encodeToByteArray().joinToString("") { byte ->
