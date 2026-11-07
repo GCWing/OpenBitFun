@@ -1,6 +1,6 @@
 import type { SessionPermissionModeRequest } from '@/infrastructure/api/service-api/AgentAPI';
 import type { Session } from '../types/flow-chat';
-import { shouldIncludeInternalModelSession } from './modelSelectionTarget';
+import { shouldIncludeInternalSession } from './internalSession';
 import { sessionOwningWorkspaceId } from './sessionOrdering';
 import { sessionProjectWorkspacePath } from './sessionWorkspace';
 
@@ -16,7 +16,7 @@ export function sessionPermissionModeScope(session: Session | undefined): Pick<
     remoteSshHost: session?.remoteSshHost,
     // MiniApp and other agent-backed transient views use hidden host sessions,
     // just like the model selector. Their existence is not a missing-record gap.
-    includeInternal: shouldIncludeInternalModelSession(session),
+    includeInternal: shouldIncludeInternalSession(session),
   };
 }
 

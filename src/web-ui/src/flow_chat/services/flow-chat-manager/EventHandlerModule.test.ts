@@ -1947,15 +1947,18 @@ describe('handleSessionHistoryChanged', () => {
     expect(context.pendingHistoryFenceSessions.has('session-1')).toBe(false);
   });
 
-  it('reloads an out-of-lifecycle edit even when the obsolete local tail is still finishing', () => {
+  it.each(['normal', 'miniapp', 'subagent'] as const)('reloads an out-of-lifecycle %s edit even when the obsolete local tail is still finishing', sessionKind => {
     createSessionWithTurn(createFinishingTurn());
     const store = FlowChatStore.getInstance();
+    store.setState(prev => ({ sessions: new Map(prev.sessions).set('session-1', {
+      ...prev.sessions.get('session-1')!, sessionKind, agentBackedTransient: sessionKind === 'miniapp',
+    }) }));
     const reload = vi.spyOn(store, 'loadSessionHistory').mockResolvedValue(undefined);
     const context = createFlowChatContext();
 
     handleSessionHistoryChanged(context, { sessionId: 'session-1', settledTurnId: null });
 
-    expect(reload).toHaveBeenCalledExactlyOnceWith('session-1', { includeInternal: false });
+    expect(reload).toHaveBeenCalledExactlyOnceWith('session-1', { includeInternal: sessionKind !== 'normal' });
     expect(context.pendingHistoryFenceSessions.has('session-1')).toBe(false);
   });
 

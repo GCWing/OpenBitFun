@@ -1406,6 +1406,24 @@ describe('ModelSelector provider levels', () => {
     expect(document.body.querySelector('[data-testid="model-selection-scope"]')).toBeNull();
   });
 
+  it('reads the host routing restriction for a MiniApp instead of losing its status to a visibility error', async () => {
+    flowChatStoreMocks.sessions.set('miniapp-session', {
+      sessionKind: 'miniapp', agentBackedTransient: true, isTransient: true,
+      config: { modelName: 'umbra-main' },
+    });
+    vi.mocked(agentAPI.getModelRoutingStatus).mockImplementation(async request => {
+      if (!request?.includeInternal) throw new Error('Session not found');
+      return { ...routingHost, ready: false, issue: 'Smart mode is unavailable for subagents' };
+    });
+    await renderSelector(CATALOG_MODELS, 'umbra-main', 'miniapp-session');
+    await openModeMenu();
+    expect(agentAPI.getModelRoutingStatus).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'miniapp-session', includeInternal: true,
+    }));
+    expect(modeAction('smart')?.dataset.tooltip).toBe('modelSelector.modes.smart · modelSelector.routing.configurationIssue');
+    expect(agentAPI.updateSessionModel).not.toHaveBeenCalled();
+  });
+
   it('keeps routing and billing configuration out of the all-models defaults', async () => {
     await act(async () => root.render(<DefaultModelConfig models={CATALOG_MODELS} defaultModels={{ primary: 'acme-fast' }}
       loading={false} disabled={false} onDefaultModelsChange={vi.fn()} />));

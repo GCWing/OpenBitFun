@@ -1329,7 +1329,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     identity: routingIdentity, epoch: deviceSurfaceScope.epoch,
     request: { sessionId, workspaceId: activeSession?.workspaceId || activeSession?.config.workspaceId,
       workspacePath: activeSession ? sessionProjectWorkspacePath(activeSession) : undefined,
-      remoteConnectionId: activeSession?.remoteConnectionId, remoteSshHost: activeSession?.remoteSshHost },
+      remoteConnectionId: activeSession?.remoteConnectionId, remoteSshHost: activeSession?.remoteSshHost,
+      includeInternal: shouldIncludeInternalModelSession(activeSession) },
     allowed: canConfigureNativeDefaults, open: dropdownOpen,
     draft: sessionDraft ? { mode: sessionDraft.modelRouting, onChange: mode => {
       if (!sessionId) return;

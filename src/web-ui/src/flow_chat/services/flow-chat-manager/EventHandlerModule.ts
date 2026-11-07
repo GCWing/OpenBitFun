@@ -1,6 +1,7 @@
 import { modelPoolAPI, supportsModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { sessionWorkspaceId, sessionProjectWorkspacePath } from '../../utils/sessionWorkspace';
+import { shouldIncludeInternalSession } from '../../utils/internalSession';
 /**
  * Event handling module
  * Initializes event listeners and handles various Agentic events
@@ -1712,7 +1713,7 @@ export function handleSessionHistoryChanged(context: FlowChatContext, event: any
     clearPromptSuggestion(sessionId);
     context.pendingHistoryFenceSessions.delete(sessionId);
     void context.flowChatStore.loadSessionHistory(sessionId, {
-      includeInternal: session.sessionKind === 'subagent',
+      includeInternal: shouldIncludeInternalSession(session),
     }).catch(error => {
       log.warn('Failed to reload changed session history', { sessionId, error });
     });
@@ -2488,7 +2489,7 @@ function handleModelRoundComplete(context: FlowChatContext, event: ModelRoundCom
     const selectionConfig = session.config;
     void modelPoolAPI.target({ sessionId, workspaceId: sessionWorkspaceId(session),
       workspacePath: sessionProjectWorkspacePath(session), remoteConnectionId: session.remoteConnectionId,
-      remoteSshHost: session.remoteSshHost, includeInternal: session.sessionKind === 'subagent' })
+      remoteSshHost: session.remoteSshHost, includeInternal: shouldIncludeInternalSession(session) })
       .then(target => {
         if (!scope.isCurrent() || store.getState().sessions.get(sessionId)?.config !== selectionConfig) return;
         if (target.selection.kind === 'pool') store.updateSessionModelPool(sessionId, target.selection.pool_id, target.binding);

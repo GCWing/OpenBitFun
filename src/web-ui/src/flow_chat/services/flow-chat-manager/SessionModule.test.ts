@@ -1906,13 +1906,14 @@ describe('SessionModule historical session coordination', () => {
     });
   });
 
-  it('restores view-restored subagent sessions as internal coordinator sessions before send', async () => {
+  it.each(['subagent', 'miniapp'] as const)('restores view-restored %s sessions as internal coordinator sessions before send', async sessionKind => {
     const { context } = createContext(createSession({
       isHistorical: false,
       historyState: 'ready',
       contextRestoreState: 'pending',
       dialogTurns: [{ id: 'turn-1' } as any],
-      sessionKind: 'subagent',
+      sessionKind,
+      agentBackedTransient: sessionKind === 'miniapp',
       parentSessionId: 'parent-1',
       subagentType: 'GeneralPurpose',
     } as any));

@@ -4363,7 +4363,7 @@ describe('FlowChatStore historical session hydration state', () => {
     expect(stateMachineManagerMock.reset).not.toHaveBeenCalled();
   });
 
-  it('merges restored model and reasoning selections into an existing subagent shell', async () => {
+  it.each(['subagent', 'miniapp'] as const)('restores an internal %s shell without requiring callers to repeat its visibility', async sessionKind => {
     apiMocks.restoreSessionView.mockResolvedValueOnce({
       session: {
         sessionId: 'subagent-1',
@@ -4382,7 +4382,8 @@ describe('FlowChatStore historical session hydration state', () => {
       sessions: new Map([
         ['subagent-1', createSession({
           sessionId: 'subagent-1',
-          sessionKind: 'subagent',
+          sessionKind,
+          agentBackedTransient: sessionKind === 'miniapp',
           mode: 'Explore',
           config: { agentType: 'Explore' },
           workspacePath: 'D:/workspace/OpenBitFun',
@@ -4391,7 +4392,10 @@ describe('FlowChatStore historical session hydration state', () => {
       activeSessionId: 'parent-1',
     }));
 
-    await flowChatStore.loadSessionHistory('subagent-1', { includeInternal: true });
+    await flowChatStore.loadSessionHistory('subagent-1');
+    expect(apiMocks.restoreSessionView).toHaveBeenCalledWith(
+      'subagent-1', expect.any(String), expect.any(String), true, expect.any(Number),
+    );
 
     expect(flowChatStore.getState().sessions.get('subagent-1')?.config.modelName)
       .toBe('model-subagent');
@@ -6433,7 +6437,7 @@ describe('FlowChatStore historical session hydration state', () => {
     });
   });
 
-  it('seeds the restored tail, deduplicates target loads, and merges adjacent ranges', async () => {
+  it.each(['normal', 'miniapp'] as const)('seeds the %s tail, deduplicates target loads, and merges adjacent ranges', async sessionKind => {
     const catalog = createTurnCatalog(15);
     apiMocks.restoreSessionView.mockResolvedValueOnce({
       session: {
@@ -6456,6 +6460,8 @@ describe('FlowChatStore historical session hydration state', () => {
         'history-1',
         createSession({
           sessionId: 'history-1',
+          sessionKind,
+          agentBackedTransient: sessionKind === 'miniapp',
           isHistorical: true,
           historyState: 'metadata-only',
         }),
@@ -6475,6 +6481,9 @@ describe('FlowChatStore historical session hydration state', () => {
     const firstLoad = flowChatStore.loadSessionTurnWindow('history-1', 3);
     const duplicateLoad = flowChatStore.loadSessionTurnWindow('history-1', 3);
     expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledTimes(1);
+    expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledWith(expect.objectContaining({
+      includeInternal: sessionKind === 'miniapp',
+    }));
     deferred.resolve({
       status: 'ready',
       catalogRevision: catalog.revision,
@@ -8165,8 +8174,11 @@ describe('FlowChatStore reconcile snapshot content safety', () => {
       .toBeCloseTo(expectedOutput / 4.25);
   });
 
-  it('repairs a settled local or Peer projection from the host tail', async () => {
+  it.each(['normal', 'miniapp', 'subagent'] as const)('repairs a settled %s projection from the host tail', async sessionKind => {
     await hydrateSessionWithContent();
+    flowChatStore.setState(prev => ({ sessions: new Map(prev.sessions).set('history-1', {
+      ...prev.sessions.get('history-1')!, sessionKind, agentBackedTransient: sessionKind === 'miniapp',
+    }) }));
     const completeContent = 'OpenBitFun is an agentic IDE… with a complete persisted response.';
     flowChatStore.addModelRoundItem('history-1', 'turn-0', {
       id: 'plan-display-test',
@@ -8201,7 +8213,7 @@ describe('FlowChatStore reconcile snapshot content safety', () => {
       'history-1',
       flowChatStore.getState().sessions.get('history-1')!.workspaceId,
       'settled-turn-turn-0',
-      false,
+      sessionKind !== 'normal',
       1,
     );
     expect(

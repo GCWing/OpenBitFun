@@ -38,13 +38,33 @@ describe('inheritReviewPermissionMode', () => {
       expect(getMode).toHaveBeenCalledWith({
         sessionId: 'parent', workspacePath: '/project/main',
         remoteConnectionId: 'ssh-1', remoteSshHost: 'host-1',
+        includeInternal: false,
       });
       expect(updateMode).toHaveBeenCalledWith({
         sessionId: 'child', workspacePath: '/project',
         remoteConnectionId: 'ssh-1', remoteSshHost: 'host-1', mode: 'auto_approve',
+        includeInternal: false,
       });
     },
   );
+
+  it('inherits a MiniApp parent override using the same internal scope as its composer', async () => {
+    getMode.mockImplementation(async request => {
+      if (!request.includeInternal) throw new Error('Session not found');
+      return { mode: 'ask' };
+    });
+    const parent = session({ sessionId: 'parent', sessionKind: 'miniapp', agentBackedTransient: true,
+      workspaceId: 'appdata-project', workspacePath: '/host/miniapp/topic',
+    });
+    const child = session({ workspaceId: 'review-project' });
+    await inheritReviewPermissionMode(child, new Map([['parent', parent]]), vi.fn());
+    expect(getMode).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'parent', workspaceId: 'appdata-project', includeInternal: true,
+    }));
+    expect(updateMode).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'child', workspaceId: 'review-project', includeInternal: false, mode: 'ask',
+    }));
+  });
 
   it('refreshes the selection and clears inherited access when the parent resets to default', async () => {
     getMode.mockResolvedValueOnce({ mode: 'full_access' })

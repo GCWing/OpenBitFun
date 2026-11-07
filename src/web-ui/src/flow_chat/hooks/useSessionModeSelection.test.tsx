@@ -22,10 +22,12 @@ vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
 function Probe({
   sessionId = 'session-1',
   draft = false,
+  internal = false,
   publish = mocks.publish,
 }: {
   sessionId?: string;
   draft?: boolean;
+  internal?: boolean;
   publish?: (modeId: string) => void;
 }) {
   const selection = useSessionModeSelection(
@@ -33,6 +35,7 @@ function Probe({
       sessionId,
       draft,
       workspacePath: 'D:/workspace/project',
+      ...(internal ? { workspaceId: 'miniapp-workspace', includeInternal: true } : {}),
     },
     publish,
     mocks.reportFailure,
@@ -67,6 +70,16 @@ describe('useSessionModeSelection', () => {
     act(() => root.unmount());
     container.remove();
     vi.clearAllMocks();
+  });
+
+  it('preserves the internal MiniApp workspace scope when changing its mode', async () => {
+    await act(async () => root.render(<Probe internal />));
+    await act(async () => container.querySelector<HTMLButtonElement>('button')!.click());
+    expect(mocks.updateSessionMode).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-1', workspaceId: 'miniapp-workspace', includeInternal: true, modeId: 'Standard',
+    }));
+    expect(mocks.publish).toHaveBeenCalledWith('Standard');
+    expect(mocks.reportFailure).not.toHaveBeenCalled();
   });
 
   it('keeps an explicit draft selection local until a host session exists', async () => {

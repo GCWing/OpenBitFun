@@ -30,9 +30,4 @@ export function shouldSyncSessionModelSelection<T extends SessionModelSelectionT
   return Boolean(session && !session.draft && !isBtwSessionDraft(session) && (!session.isTransient || session.agentBackedTransient));
 }
 
-/** Whether restoring the target requires access to internal runtime sessions. */
-export function shouldIncludeInternalModelSession(
-  session: SessionModelSelectionTarget | undefined,
-): boolean {
-  return Boolean(session?.sessionKind === 'subagent' || session?.agentBackedTransient);
-}
+export { shouldIncludeInternalSession as shouldIncludeInternalModelSession } from './internalSession';

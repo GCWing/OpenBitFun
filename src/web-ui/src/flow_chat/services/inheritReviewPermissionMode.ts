@@ -1,7 +1,7 @@
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import type { Session } from '../types/flow-chat';
 import { resolveSessionRelationship } from '../utils/sessionMetadata';
-import { sessionProjectWorkspacePath } from '../utils/sessionWorkspace';
+import { sessionPermissionModeScope } from '../utils/sessionPermissionMode';
 
 /** Refresh the review session's permission selection before submitting work. */
 export async function inheritReviewPermissionMode(
@@ -17,7 +17,7 @@ export async function inheritReviewPermissionMode(
   const parent = sessions.get(relationship.parentSessionId);
   const parentScope = {
     sessionId: relationship.parentSessionId,
-    workspacePath: parent?.workspacePath ?? sessionProjectWorkspacePath(child),
+    ...sessionPermissionModeScope(parent ?? child),
     remoteConnectionId: parent?.remoteConnectionId ?? child.remoteConnectionId,
     remoteSshHost: parent?.remoteSshHost ?? child.remoteSshHost,
   };
@@ -28,9 +28,7 @@ export async function inheritReviewPermissionMode(
   // Turn-only grants remain scoped to the parent's exact turn.
   await agentAPI.updateSessionPermissionMode({
     sessionId: child.sessionId,
-    workspacePath: child.workspacePath,
-    remoteConnectionId: child.remoteConnectionId,
-    remoteSshHost: child.remoteSshHost,
+    ...sessionPermissionModeScope(child),
     mode: mode ?? null,
   });
   assertCurrent();

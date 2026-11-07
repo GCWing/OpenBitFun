@@ -5,9 +5,11 @@ import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 export interface SessionModeSelectionTarget {
   draft?: boolean;
   sessionId: string;
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
+  includeInternal?: boolean;
 }
 
 interface ModeSelectionIntent {
@@ -59,9 +61,11 @@ export function useSessionModeSelection(
 
   const sessionId = target?.sessionId;
   const draft = target?.draft;
+  const workspaceId = target?.workspaceId;
   const workspacePath = target?.workspacePath;
   const remoteConnectionId = target?.remoteConnectionId;
   const remoteSshHost = target?.remoteSshHost;
+  const includeInternal = target?.includeInternal;
 
   const requestModeChange = useCallback((modeId: string) => {
     if (!sessionId || draft) {
@@ -73,9 +77,11 @@ export function useSessionModeSelection(
       request: {
         sessionId,
         modeId,
+        workspaceId,
         workspacePath,
         remoteConnectionId,
         remoteSshHost,
+        includeInternal,
       },
       publish: publishRef.current,
       reportFailure: failureRef.current,
@@ -118,7 +124,7 @@ export function useSessionModeSelection(
       }
     };
     void run(intent);
-  }, [draft, notifyQueueChanged, remoteConnectionId, remoteSshHost, sessionId, workspacePath]);
+  }, [draft, notifyQueueChanged, remoteConnectionId, remoteSshHost, sessionId, workspaceId, workspacePath, includeInternal]);
 
   return {
     isModeChangePending: Boolean(sessionId && sessionQueuesRef.current.has(sessionId)),
