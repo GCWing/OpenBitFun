@@ -135,6 +135,14 @@ insertion, 30 identical publications, text correction, deletion and completion;
 block counts must be 2, 3, 3, 3, 2, 2, with one visible answer. Verify compact,
 wide and live fold transitions, then return to normal `EntryAbility`.
 
+For chat Markdown tildes, escapes, streaming prefixes and plain/rich copy, run
+`node --test tools/tests/markdown-html-serializer.test.cjs tools/tests/streaming-markdown.test.cjs`.
+These host tests execute the production parser and serializer; they do not
+replace native rendering checks.
+For a parser-only ArkTS compile without packaging/signing, source
+`scripts/ohos-env.sh`, then run
+`"$HVIGORW" --mode module -p product=default -p module=entry@default 'default@CompileArkTS' --no-daemon`.
+
 For host shutdown/restart handling, run
 `node --test tools/tests/connection-health.test.cjs tools/tests/session-record.test.cjs tools/tests/host-stream.test.cjs`.
 In `durable-timeline`, **Host offline** must retain content and disable Stop;

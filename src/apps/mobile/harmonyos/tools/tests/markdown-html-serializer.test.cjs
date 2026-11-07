@@ -35,6 +35,37 @@ const { MarkdownParser } = parserModule;
 const { MarkdownHtmlSerializer } = serializerModule;
 const html = (text) => MarkdownHtmlSerializer.toHtml(text);
 
+test('chat tildes preserve ranges, escapes and code while only double pairs strike', () => {
+  const cases = [
+    ['24~30°C, rain 1~2mm; ~5 min; ~plain~', '24~30°C, rain 1~2mm; ~5 min; ~plain~', []],
+    ['~~removed~~', 'removed', ['removed']],
+    [String.raw`\~escaped\~; \~~literal\~~`, '~escaped~; ~~literal~~', []],
+    ['`~~code~~`', '~~code~~', []],
+    ['before ~~~literal~~~ after', 'before ~~~literal~~~ after', []],
+    ['~~ a~~; ~~b ~~; ~~unfinished', '~~ a~~; ~~b ~~; ~~unfinished', []],
+    [String.raw`~~a\~~b~~`, 'a~~b', ['a~~b']],
+  ];
+  for (const [source, text, deleted] of cases) {
+    const inlines = MarkdownParser.parseInlineText(source);
+    assert.equal(inlines.map(inline => inline.text).join(''), text, source);
+    assert.deepEqual(inlines.filter(inline => inline.type === 'delete').map(inline => inline.text), deleted, source);
+    assert.equal(MarkdownParser.formatInlineText(source), text, source);
+  }
+  assert.equal(html('24~30°C, rain 1~2mm; ~~removed~~'), '<p>24~30°C, rain 1~2mm; <del>removed</del></p>');
+});
+
+test('streaming tildes stay literal until the double pair closes', () => {
+  const cache = new parserModule.MarkdownParseCache();
+  const prefix = '24~30°C, rain 1~2mm; ';
+  for (const suffix of ['~', '~~', '~~removed', '~~removed~']) {
+    const block = cache.blocksFor(prefix + suffix)[0];
+    assert.equal(block.inlines.map(inline => inline.text).join(''), prefix + suffix);
+    assert.deepEqual(block.inlines.filter(inline => inline.type === 'delete'), []);
+  }
+  assert.equal(MarkdownHtmlSerializer.blocksToHtml(cache.blocksFor(prefix + '~~removed~~')),
+    `<p>${prefix}<del>removed</del></p>`);
+});
+
 test('empty and whitespace-only input produce no payload', () => {
   assert.equal(html(''), '');
   assert.equal(html('   '), '');

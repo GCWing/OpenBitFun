@@ -105,6 +105,13 @@ UiState or an Intent declared there, and no module above it is visible to them.
   same `commonTest` sources onto ART; they are not in CI, so run them by hand
   when touching either module.
 
+## Chat Markdown verification
+
+For chat Markdown ranges, double-tilde strikethrough, escapes and streaming
+prefixes, run from `shared/` with the Android guide's Java runtime:
+`./gradlew :core-feature:jvmTest --tests '*MarkdownParserTest*'`.
+Android and iOS share this parser; their native inline renderers own styles.
+
 ## Remote capability ownership
 
 For next-input suggestion replay, stale-turn retirement, host restart and session

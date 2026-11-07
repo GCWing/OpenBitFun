@@ -67,13 +67,11 @@ public object MarkdownParser {
         return blocks
     }
 
-    public fun formatInlineText(value: String): String = value
-        .replace(Regex("\\[([^]]+)]\\(([^)]+)\\)"), "$1 ($2)")
-        .replace(Regex("`([^`]+)`"), "$1")
-        .replace(Regex("\\*\\*([^*]+)\\*\\*"), "$1")
-        .replace(Regex("__([^_]+)__"), "$1")
-        .replace(Regex("\\*([^*]+)\\*"), "$1")
-        .replace(Regex("_([^_]+)_"), "$1")
+    public fun formatInlineText(value: String): String = plainInlineText(parseInlineText(value))
+
+    private fun plainInlineText(inlines: List<MarkdownInline>): String = inlines.joinToString("") {
+        if (it.type == "link" && it.text != it.url) "${it.text} (${it.url})" else it.text
+    }
 
     public fun parseInlineText(value: String): List<MarkdownInline> = parseInlineText(value, "inline")
 
@@ -83,10 +81,10 @@ public object MarkdownParser {
         while (index < value.length) {
             val next = nextInlineMarker(value, index)
             if (next < 0) {
-                pushInline(inlines, prefix, "text", value.substring(index), "")
+                pushInline(inlines, prefix, "text", unescapeText(value.substring(index)), "")
                 break
             }
-            if (next > index) pushInline(inlines, prefix, "text", value.substring(index, next), "")
+            if (next > index) pushInline(inlines, prefix, "text", unescapeText(value.substring(index, next)), "")
             val consumed = readInlineAt(value, next, prefix, inlines)
             if (consumed <= next) {
                 pushInline(inlines, prefix, "text", value[next].toString(), "")
@@ -144,7 +142,8 @@ public object MarkdownParser {
             val raw = lines[index].trim()
             val text = listText(raw)
             val id = "li-" + start + "-" + items.size
-            items += MarkdownListItem(id, listMarker(raw), formatInlineText(text), parseInlineText(text, id))
+            val inlines = parseInlineText(text, id)
+            items += MarkdownListItem(id, listMarker(raw), plainInlineText(inlines), inlines)
             index += 1
         }
         pushBlock(blocks, "list", 0, "", "", items)
@@ -197,14 +196,15 @@ public object MarkdownParser {
     ) {
         val id = "md-" + blocks.size + "-" + type
         val parseInline = shouldParseInline(type)
+        val inlines = if (parseInline) parseInlineText(text, id) else emptyList()
         blocks += MarkdownBlock(
             id = id,
             type = type,
             level = level,
             language = language,
-            text = if (parseInline) formatInlineText(text) else text,
+            text = if (parseInline) plainInlineText(inlines) else text,
             items = items,
-            inlines = if (parseInline) parseInlineText(text, id) else emptyList(),
+            inlines = inlines,
         )
     }
 
@@ -222,6 +222,17 @@ public object MarkdownParser {
             if (value.startsWith(marker, start)) {
                 val end = value.indexOf(marker, start + 2)
                 if (end > start + 2) return pushAndReturn(inlines, prefix, "strong", value.substring(start + 2, end), "", end + 2)
+            }
+        }
+        // Chat ranges use a single tilde. Only an unescaped double pair may
+        // strike text; longer runs and unfinished streaming markers stay literal.
+        if (isStrikeDelimiter(value, start, closing = false)) {
+            var end = value.indexOf("~~", start + 2)
+            while (end >= 0 && !isStrikeDelimiter(value, end, closing = true)) {
+                end = value.indexOf("~~", end + 2)
+            }
+            if (end > start + 2) {
+                return pushAndReturn(inlines, prefix, "delete", unescapeText(value.substring(start + 2, end)), "", end + 2)
             }
         }
         if (value[start] == '[') {
@@ -262,10 +273,46 @@ public object MarkdownParser {
     }
 
     private fun nextInlineMarker(value: String, start: Int): Int =
-        listOf("`", "**", "__", "[", "*", "_")
-            .map { value.indexOf(it, start) }
+        listOf("`", "**", "__", "~~", "[", "*", "_")
+            .map { marker ->
+                var index = value.indexOf(marker, start)
+                while (index >= 0 && isEscaped(value, index)) index = value.indexOf(marker, index + marker.length)
+                index
+            }
             .filter { it >= 0 }
             .minOrNull() ?: -1
+
+    private fun isStrikeDelimiter(value: String, index: Int, closing: Boolean): Boolean {
+        if (!value.startsWith("~~", index) || value.getOrNull(index - 1) == '~' ||
+            value.getOrNull(index + 2) == '~' || isEscaped(value, index)
+        ) return false
+        val before = value.getOrNull(index - 1)
+        val after = value.getOrNull(index + 2)
+        val beforeSpace = before == null || before.isWhitespace()
+        val afterSpace = after == null || after.isWhitespace()
+        val beforePunctuation = before != null && PUNCTUATION.matches(before.toString())
+        val afterPunctuation = after != null && PUNCTUATION.matches(after.toString())
+        return if (closing) !beforeSpace && (!beforePunctuation || afterSpace || afterPunctuation)
+        else !afterSpace && (!afterPunctuation || beforeSpace || beforePunctuation)
+    }
+
+    private fun isEscaped(value: String, index: Int): Boolean {
+        var cursor = index - 1
+        while (cursor >= 0 && value[cursor] == '\\') cursor -= 1
+        return (index - cursor - 1) % 2 == 1
+    }
+
+    private fun unescapeText(value: String): String = buildString {
+        var index = 0
+        while (index < value.length) {
+            if (value[index] == '\\' && index + 1 < value.length && value[index + 1] in ESCAPABLE) index += 1
+            append(value[index])
+            index += 1
+        }
+    }
+
+    private const val ESCAPABLE = "\\`*{}[]()#+-.!_>~|"
+    private val PUNCTUATION = Regex("[\\p{P}\\p{S}]")
 
     private fun pushInline(
         inlines: MutableList<MarkdownInline>,
