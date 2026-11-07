@@ -110,7 +110,12 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
   const groupRevealGate = useMemo(() => ({ ...revealGate, report }), [revealGate, report]);
   const allItems = useMemo(() => recordedItems.filter(isFlowItemVisible), [recordedItems]);
   const parallelRows = useMemo(() => getConcurrentCapsuleRows(allItems), [allItems]);
-  const renderSegments = useMemo(() => buildFlowGroupRenderSegments(allItems), [allItems]);
+  const previousRenderSegmentsRef = useRef<readonly import('./flowGroupRenderSegments').FlowGroupRenderSegment[]>([]);
+  const renderSegments = useMemo(() => {
+    const next = buildFlowGroupRenderSegments(allItems, previousRenderSegmentsRef.current);
+    previousRenderSegmentsRef.current = next;
+    return next;
+  }, [allItems]);
   const toolItemCount = useMemo(() => allItems.filter(item => item.type === 'tool').length, [allItems]);
   const filePath = category === 'file-edit' ? fileEditTarget(allItems.find(item => item.type === 'tool')) : undefined;
   const fileStatus = useMemo(() => fileEditGroupStatus(category === 'file-edit' ? allItems : []), [category, allItems]);
