@@ -233,7 +233,6 @@ it('offers retry after a failed read and opens the desktop card settings section
   const emptyStateLines = container.querySelectorAll('.overview-desktop-cards__empty > p');
   expect(Array.from(emptyStateLines, line => line.textContent)).toEqual([
     'desktopCards.empty',
-    'desktopCards.emptyHint',
   ]);
 
   await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="personal-overview-desktop-card-settings"]')!.click());

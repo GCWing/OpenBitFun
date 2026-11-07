@@ -160,7 +160,6 @@ export function OverviewDesktopCardsSection({ isActive }: { isActive: boolean })
             ) : cards.length === 0 ? (
               <div className="overview-desktop-cards__empty">
                 <p className="personal-overview__catalog-empty">{t('desktopCards.empty')}</p>
-                <p className="personal-overview__catalog-empty">{t('desktopCards.emptyHint')}</p>
               </div>
             ) : (
               <ul className="overview-desktop-cards" data-testid="personal-overview-desktop-card-list">
