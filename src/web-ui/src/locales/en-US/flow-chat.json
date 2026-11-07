@@ -3866,7 +3866,7 @@
       "composerNotEmpty": "Send or clear the current input and attachments before editing this queued message",
       "sendNowFailed": "Send now failed; please try again"
     },
-    "reorder": "Drag to reorder, or use Up and Down arrow keys",
+    "reorder": "Drag to reorder",
     "moveUp": "Move up",
     "moveDown": "Move down",
     "orderChanged": "The queue changed. Refresh it and try moving the message again.",

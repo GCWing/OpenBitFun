@@ -197,8 +197,11 @@ test("ChatComposer queue keeps four message rows visible before scrolling", asyn
     (maxBlockSize.match(/--openbitfun-control-height-sm/g) ?? []).length,
     4,
   );
+  assert.match(maxBlockSize, /var\(--openbitfun-space-1\)\s*\*\s*8/);
   assert.match(listRule, /gap:\s*0;/);
   assert.match(styles, /\.item\s*\{[^}]*min-block-size:\s*var\(--openbitfun-control-height-sm\)/s);
+  assert.match(styles, /\.item\s*\{[^}]*margin:\s*0;[^}]*padding-block:\s*var\(--openbitfun-space-1\);/s);
+  assert.doesNotMatch(styles, /\.status\s*\{[^}]*padding-block-end:/s);
   assert.match(listRule, /overflow-y:\s*auto/);
   assert.match(listRule, /overscroll-behavior-y:\s*contain/);
 });

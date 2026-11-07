@@ -92,8 +92,8 @@ the phone, or leaving the session does not stop host-side dispatch.
   still render steering inline within the active turn. The turn-scoped SDK
   steering API used by CLI/Dispatch retains its inline contract; this handoff
   belongs to host queue promotion.
-- **Reorder** uses the drag handle, Up/Down while the handle is focused, or
-  Move up/down in **More**. The host confirms the new execution order before
+- **Reorder** uses the drag handle or Move up/down in **More**.
+  Arrow keys do not change the queue order. The host confirms the new execution order before
   the list changes. A concurrent update cancels a drag and asks you to retry
   against the refreshed list. Older queue hosts without `supportsReorder`
   retain Send now and Remove, with a clear sorting-unavailable message.

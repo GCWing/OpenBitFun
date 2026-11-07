@@ -56,18 +56,25 @@ it('host revision changes invalidate the entire gesture', () => {
   pointer('pointerdown', 20); pointer('pointermove', 110); render(2); pointer('pointerup', 110);
   expect(move).not.toHaveBeenCalled();
 });
-it('arrow keys expose reorder without dragging and unsupported hosts disable the handles', () => {
-  act(() => container.querySelector('button')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
-  expect(move).toHaveBeenCalledExactlyOnceWith('a', 'c');
-  move.mockClear(); render(1, false);
+it.each(['ArrowUp', 'ArrowDown'])('passes %s through without changing the queue', key => {
+  const handle = container.querySelectorAll('button')[1];
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+  act(() => { handle.focus(); handle.dispatchEvent(event); });
+  expect(move).not.toHaveBeenCalled();
+  expect(event.defaultPrevented).toBe(false);
+  expect(document.activeElement).toBe(handle);
+});
+it('unsupported hosts disable the handles', () => {
+  render(1, false);
   expect(container.querySelector('button')!.disabled).toBe(true);
   pointer('pointerdown', 20); pointer('pointermove', 110); pointer('pointerup', 110);
   expect(move).not.toHaveBeenCalled();
 });
 
-it('restores keyboard focus after a host mutation disables and then re-enables the grip', () => {
+it('restores focus after a drag mutation disables and then re-enables the grip', () => {
   const handle = container.querySelector('button')!;
-  act(() => { handle.focus(); handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })); });
+  pointer('pointerdown', 20); pointer('pointermove', 85); pointer('pointerup', 85);
+  expect(move).toHaveBeenCalledExactlyOnceWith('a', 'c');
   render(1, false);
   act(() => handle.blur());
   render(2, true);

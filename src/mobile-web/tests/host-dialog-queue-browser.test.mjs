@@ -171,10 +171,11 @@ test('touch-sized queue handles reorder real component rows and overflow removes
   assert.deepEqual(geometry, {gap: 0, firstLine: '1px', lastBottom: 'none', outerBorder: '0px'});
   const handles = await page.$$('.host-message-queue__handle');
   assert.ok((await handles[0].boundingBox()).width >= 44);
+  assert.equal(await handles[0].evaluate(el => el.hasAttribute('title')), false);
   const before = await page.$$eval('.host-message-queue__preview', nodes => nodes.map(n => n.textContent));
   await handles[2].focus(); await page.keyboard.press('ArrowUp');
-  await page.waitForFunction(first => document.querySelectorAll('.host-message-queue__preview')[1].textContent === first, {}, before[2]);
-  assert.deepEqual(await page.$$eval('.host-message-queue__preview', nodes => nodes.map(n => n.textContent)), [before[0], before[2], before[1]]);
+  await handles[0].focus(); await page.keyboard.press('ArrowDown');
+  assert.deepEqual(await page.$$eval('.host-message-queue__preview', nodes => nodes.map(n => n.textContent)), before);
   const first = await page.$('.host-message-queue__handle'); const box = await first.boundingBox();
   const last = await page.$eval('.host-message-queue__row:last-child', el => { const r=el.getBoundingClientRect();return {y:r.bottom-3}; });
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2); await page.mouse.down();

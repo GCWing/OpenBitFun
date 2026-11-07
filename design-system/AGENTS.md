@@ -107,7 +107,7 @@ Use a pre-change reference commit when testing an already committed change.
 The native fixture runs outside performance windows. Geometry equivalence does
 not establish pixel-identical rasterization or coverage on other WebView engines.
 
-For shared queue pointer/keyboard interaction, cancellation and focus retention:
+For shared queue dragging, arrow-key pass-through, cancellation and focus retention:
 
 ```bash
 pnpm --dir src/web-ui exec vitest run src/flow_chat/components/useQueueReorder.test.tsx

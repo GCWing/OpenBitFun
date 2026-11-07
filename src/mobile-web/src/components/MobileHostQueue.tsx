@@ -51,7 +51,7 @@ export function MobileHostQueue({ queue, onRestore }: { queue: HostDialogQueue; 
       <ul id={listId} hidden={!expanded && !items.some(item => item.status === 'blocked') && !view.pending.length} className="host-message-queue__list">
         {items.filter(item => expanded || item.status === 'blocked').map(item => <li key={item.turnId} className="host-message-queue__row" {...reorder.rowProps(item.turnId)}>
           {item.status === 'queued' && view.snapshot?.supportsReorder && <MobileIconButton appearance="plain" size="sm" className="host-message-queue__handle"
-            aria-label={t('queue.reorder')} title={t('queue.reorder')} icon={<GripVertical size={16} aria-hidden="true" />} {...reorder.handleProps(item.turnId)} />}
+            aria-label={t('queue.reorder')} icon={<GripVertical size={16} aria-hidden="true" />} {...reorder.handleProps(item.turnId)} />}
           <div className="host-message-queue__message">
             <div className="host-message-queue__line"><p className="host-message-queue__preview">{item.displayContent}</p>
               {item.attachmentCount > 0 && <span className="host-message-queue__attachments" aria-label={t('queue.attachments', { count: item.attachmentCount })}>

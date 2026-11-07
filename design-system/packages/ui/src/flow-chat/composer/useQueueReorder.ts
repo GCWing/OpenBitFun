@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 
 type Drag = {
   id: string;
@@ -14,7 +14,7 @@ type Drag = {
   moved: boolean;
 };
 
-/** Pointer/keyboard presentation only. The caller owns authoritative ordering. */
+/** Pointer drag presentation only. The caller owns authoritative ordering. */
 export function useQueueReorder(ids: string[], enabled: boolean, revision: string | number,
   onMove: (id: string, beforeId: string | null) => void) {
   const rows = useRef(new Map<string, HTMLLIElement>());
@@ -133,13 +133,6 @@ export function useQueueReorder(ids: string[], enabled: boolean, revision: strin
         onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => { if (drag.current?.pointerId === event.pointerId) finish(true); },
         onPointerCancel: () => finish(false),
         onLostPointerCapture: () => finish(false),
-        onKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
-          if (!enabled || drag.current || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
-          event.preventDefault();
-          const index = ids.indexOf(id);
-          if (event.key === 'ArrowUp' && index > 0) requestMove(id, ids[index - 1]!);
-          if (event.key === 'ArrowDown' && index >= 0 && index < ids.length - 1) requestMove(id, ids[index + 2] ?? null);
-        },
       };
     },
   };
