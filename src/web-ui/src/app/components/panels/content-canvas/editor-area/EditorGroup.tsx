@@ -175,17 +175,20 @@ export const EditorGroup: React.FC<EditorGroupProps> = ({
     }
   }, [group.activeTabId, group.tabs, isKeepAliveTerminalTab]);
   
+  // Fast lookup set for cached tabs
+  const cachedTabs = cachedTabsRef.current;
+
   // Tabs to render (active + cached). Hidden terminal tabs stay mounted so
   // reopening a terminal reuses the xterm buffer instead of replaying history.
   // Child-session tabs retain only their lightweight wrapper; that wrapper
   // unmounts its transcript while inactive and owns reading state until close.
   const tabsToRender = useMemo(() => {
     const result = group.tabs.filter(t => 
-        (!t.isHidden && isCanvasTabVisibleForSession(t, activeSessionId) && (t.content.type === 'btw-session' || t.id === effectiveActiveTabId || cachedTabsRef.current.has(t.id))) ||
+        (!t.isHidden && isCanvasTabVisibleForSession(t, activeSessionId) && (t.content.type === 'btw-session' || t.id === effectiveActiveTabId || cachedTabs.has(t.id))) ||
       (t.isHidden && isKeepAliveTerminalTab(t))
     );
     return result;
-  }, [group.tabs, effectiveActiveTabId, activeSessionId, isKeepAliveTerminalTab]);
+  }, [group.tabs, effectiveActiveTabId, activeSessionId, isKeepAliveTerminalTab, cachedTabs]);
 
   const handleContentChange = useCallback((content: PanelContent | null) => {
     if (content && group.activeTabId) {
