@@ -84,13 +84,13 @@ pub struct SessionActivitySummary {
     pub pending_questions: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_turn: Option<super::types::SessionLastTurn>,
-    /// Admitted ingress of last_turn, including while a controller was offline.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_turn_source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unread_completion: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unread_turn: Option<super::types::SessionLastTurn>,
+    /// Durable read receipt, including results delivered through another surface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_turn: Option<super::types::SessionLastTurn>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -480,25 +480,18 @@ fn session_metadata_page_cursor(metadata: &SessionMetadata, revision: Option<Str
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn activity_source_is_optional_and_preserves_unknown_ingress_values() {
-        for source in [None, Some("bot"), Some("future_source")] {
-            let mut payload = serde_json::json!({
-                "sessionId": "session", "execution": "running",
-                "pendingApprovals": 0, "pendingQuestions": 0,
-                "lastTurn": {"turnId":"turn", "turnIndex":0, "status":"inprogress"}
-            });
-            if let Some(source) = source {
-                payload["lastTurnSource"] = serde_json::json!(source);
-            }
-            let summary: super::SessionActivitySummary =
-                serde_json::from_value(payload.clone()).unwrap();
-            assert_eq!(summary.last_turn_source.as_deref(), source);
-            assert_eq!(serde_json::to_value(summary).unwrap(), payload);
-        }
-    }
-
     use super::*;
+
+    #[test]
+    fn read_receipt_is_optional_in_legacy_activity_payloads() {
+        let mut legacy = serde_json::json!({"sessionId":"session", "execution":"idle", "pendingApprovals":0, "pendingQuestions":0});
+        let summary: SessionActivitySummary = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(summary.read_turn.is_none());
+        assert_eq!(serde_json::to_value(summary).unwrap(), legacy);
+        legacy["readTurn"] = serde_json::json!({"turnId":"turn", "turnIndex":0, "status":"completed", "executionGeneration":2});
+        let summary: SessionActivitySummary = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(serde_json::to_value(summary).unwrap(), legacy);
+    }
 
     #[test]
     fn legacy_page_round_trips_without_discovery_fields() {

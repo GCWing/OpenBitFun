@@ -162,11 +162,11 @@ export interface SessionActivitySummary {
   pendingApprovals: number;
   pendingQuestions: number;
   lastTurn?: SessionLastTurn;
-  /** Admitted ingress of lastTurn; omitted by older hosts. */
-  lastTurnSource?: string;
   unreadCompletion?: 'completed' | 'error' | 'interrupted';
   /** A quiet run can be newer than the unread user-facing result. */
   unreadTurn?: SessionLastTurn;
+  /** Durable acknowledgement from another delivery surface, such as IM. */
+  readTurn?: SessionLastTurn;
 }
 
 export interface ReviewActionPersistedState {

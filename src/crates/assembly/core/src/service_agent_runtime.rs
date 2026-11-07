@@ -3797,6 +3797,51 @@ impl RemoteSessionRuntimeHost for CoreRemoteSessionRuntimeHost {
             .map_err(|error| format!("Failed to restore session: {error}"))
     }
 
+    async fn acknowledge_session_result(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        completion_kind: Option<&str>,
+    ) -> Result<bool, String> {
+        let binding = CoreServiceAgentRuntime::resolve_session_workspace_binding(session_id)
+            .await
+            .ok_or_else(|| {
+                format!("Session workspace binding not available for session: {session_id}")
+            })?;
+        ensure_remote_binding_runtime_ownership(self.coordinator.as_ref(), &binding).await?;
+        let mut receipt = None;
+        self.coordinator
+            .get_session_manager()
+            .update_session_metadata(&binding.session_storage_dir(), session_id, |metadata| {
+                receipt = openbitfun_services_core::session::acknowledge_session_result(
+                    metadata,
+                    turn_id,
+                    completion_kind,
+                );
+            })
+            .await
+            .map_err(|error| error.to_string())?;
+        let Some(receipt) = receipt else {
+            return Ok(false);
+        };
+        let completion_kind = match receipt.status {
+            openbitfun_services_core::session::TurnStatus::Completed => "completed",
+            openbitfun_services_core::session::TurnStatus::Error => "error",
+            openbitfun_services_core::session::TurnStatus::Cancelled => "interrupted",
+            openbitfun_services_core::session::TurnStatus::InProgress => return Ok(false),
+        };
+        self.coordinator
+            .emit_event(AgenticEvent::SessionResultRead {
+                session_id: session_id.to_string(),
+                turn_id: receipt.turn_id,
+                execution_generation: receipt.execution_generation.unwrap_or(0),
+                completion_kind: completion_kind.to_string(),
+                recovery_pending: receipt.recovery_pending,
+            })
+            .await;
+        Ok(true)
+    }
+
     async fn update_session_title(&self, session_id: &str, title: &str) -> Result<String, String> {
         self.coordinator
             .update_session_title(session_id, title)

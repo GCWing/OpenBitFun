@@ -126,6 +126,16 @@ pub enum AgenticEvent {
         new_state: String,
     },
 
+    /// An owning host durably acknowledged a result through another surface.
+    SessionResultRead {
+        session_id: String,
+        turn_id: String,
+        execution_generation: u32,
+        completion_kind: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recovery_pending: Option<bool>,
+    },
+
     /// The authoritative visible history for a session changed outside the
     /// append-only turn lifecycle (for example, after restoring a checkpoint).
     /// Consumers should invalidate cached transcript projections for this
@@ -708,6 +718,7 @@ impl AgenticEvent {
             Self::SessionCreated { session_id, .. }
             | Self::SessionStateChanged { session_id, .. }
             | Self::SessionHistoryChanged { session_id, .. }
+            | Self::SessionResultRead { session_id, .. }
             | Self::SessionDeleted { session_id }
             | Self::SessionTitleGenerated { session_id, .. }
             | Self::PromptSuggestionGenerated { session_id, .. }
@@ -743,6 +754,7 @@ impl AgenticEvent {
     pub fn turn_id(&self) -> Option<&str> {
         match self {
             Self::DialogTurnStarted { turn_id, .. }
+            | Self::SessionResultRead { turn_id, .. }
             | Self::DialogTurnCompleted { turn_id, .. }
             | Self::DialogTurnCancelled { turn_id, .. }
             | Self::DialogTurnInterrupted { turn_id, .. }
@@ -777,6 +789,7 @@ impl AgenticEvent {
 
             Self::SessionStateChanged { .. }
             | Self::SessionHistoryChanged { .. }
+            | Self::SessionResultRead { .. }
             | Self::SessionTitleGenerated { .. }
             | Self::SessionModelFallbackApplied { .. }
             | Self::SessionReasoningPresetAutoCleared { .. }

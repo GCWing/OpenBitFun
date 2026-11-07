@@ -20,9 +20,10 @@ use std::time::Duration;
 use tokio::sync::{Mutex, Notify, RwLock};
 
 use super::command_router::{
-    complete_im_bot_pairing, current_bot_language, execute_forwarded_turn_with_submission,
-    handle_command, parse_command, welcome_message, BotChatState, BotInteractionHandler,
-    BotInteractiveRequest, BotMessageSender, HandleResult,
+    acknowledge_delivered_result, complete_im_bot_pairing, current_bot_language,
+    deliver_final_reply, execute_forwarded_turn_with_submission, handle_command, parse_command,
+    welcome_message, BotChatState, BotInteractionHandler, BotInteractiveRequest, BotMessageSender,
+    HandleResult,
 };
 use super::{
     load_bot_persistence, update_bot_persistence, BotConfig, BotRuntimeFence, SavedBotConnection,
@@ -77,6 +78,7 @@ const MAX_PROACTIVE_PUSH_BYTES: usize = weixin_provider::MAX_TEXT_CHUNK;
 struct PendingOutbound {
     id: String,
     session_id: String,
+    turn_id: Option<String>,
     text: String,
     queued_at: i64,
 }
@@ -204,8 +206,8 @@ fn bounded_proactive_text(text: &str) -> String {
 /// oldest outputs are dropped first, and when the newest output alone exceeds
 /// the cap its head is sent, because the newest answer is the one the user is
 /// waiting for.
-fn merge_pending(pending: &[PendingOutbound]) -> String {
-    let mut kept: Vec<&str> = Vec::new();
+fn merged_delivery(pending: &[PendingOutbound]) -> (String, Vec<&PendingOutbound>) {
+    let mut kept = Vec::new();
     let mut bytes = 0usize;
     // Walk newest first so the byte cap drops the oldest output.
     for item in pending.iter().rev() {
@@ -222,19 +224,29 @@ fn merge_pending(pending: &[PendingOutbound]) -> String {
             break;
         }
         bytes += separator + text.len();
-        kept.push(text);
+        kept.push(item);
     }
     if kept.is_empty() {
         return pending
             .iter()
             .rev()
-            .map(|item| item.text.trim())
-            .find(|text| !text.is_empty())
-            .map(bounded_proactive_text)
+            .find(|item| !item.text.trim().is_empty())
+            .map(|item| (bounded_proactive_text(&item.text), vec![item]))
             .unwrap_or_default();
     }
     kept.reverse();
-    kept.join(PENDING_SEPARATOR)
+    (
+        kept.iter()
+            .map(|item| item.text.trim())
+            .collect::<Vec<_>>()
+            .join(PENDING_SEPARATOR),
+        kept,
+    )
+}
+
+#[cfg(test)]
+fn merge_pending(pending: &[PendingOutbound]) -> String {
+    merged_delivery(pending).0
 }
 
 #[derive(Debug, Clone)]
@@ -459,8 +471,14 @@ impl WeixinBot {
             return;
         }
         for peer_id in self.peers_for_session(session_id).await {
-            self.queue_proactive(&peer_id, session_id, text, &format!("session {session_id}"))
-                .await;
+            self.queue_proactive(
+                &peer_id,
+                session_id,
+                None,
+                text,
+                &format!("session {session_id}"),
+            )
+            .await;
         }
     }
 
@@ -482,18 +500,32 @@ impl WeixinBot {
             return;
         }
         for peer_id in peers {
-            self.queue_proactive(&peer_id, &session_id, &text, &format!("turn {turn_id}"))
-                .await;
+            self.queue_proactive(
+                &peer_id,
+                &session_id,
+                Some(&turn_id),
+                &text,
+                &format!("turn {turn_id}"),
+            )
+            .await;
         }
     }
 
-    async fn queue_proactive(&self, peer_id: &str, session_id: &str, text: &str, source: &str) {
+    async fn queue_proactive(
+        &self,
+        peer_id: &str,
+        session_id: &str,
+        turn_id: Option<&str>,
+        text: &str,
+        source: &str,
+    ) {
         if text.trim().is_empty() {
             debug!("weixin: proactive push skipped for peer {peer_id}: {source} has no text");
             return;
         }
         info!("weixin: queueing proactive push for peer {peer_id} from {source}");
-        self.enqueue_outbound(peer_id, session_id, text).await;
+        self.enqueue_turn_outbound(peer_id, session_id, turn_id, text)
+            .await;
         self.outbound_wakeup.notify_one();
     }
 
@@ -552,7 +584,13 @@ impl WeixinBot {
         turns.iter().any(|tracked| tracked == turn_id)
     }
 
-    async fn enqueue_outbound(&self, peer_id: &str, session_id: &str, text: &str) {
+    async fn enqueue_turn_outbound(
+        &self,
+        peer_id: &str,
+        session_id: &str,
+        turn_id: Option<&str>,
+        text: &str,
+    ) {
         let now = chrono::Utc::now().timestamp();
         let dropped = {
             let mut pending = self.pending_outbound.lock().await;
@@ -562,6 +600,7 @@ impl WeixinBot {
                 PendingOutbound {
                     id: uuid::Uuid::new_v4().to_string(),
                     session_id: session_id.to_string(),
+                    turn_id: turn_id.map(str::to_owned),
                     text: bounded_proactive_text(text),
                     queued_at: now,
                 },
@@ -603,7 +642,7 @@ impl WeixinBot {
         if pending.is_empty() {
             return;
         }
-        let merged = merge_pending(&pending);
+        let (merged, delivered) = merged_delivery(&pending);
         if merged.trim().is_empty() {
             // Nothing deliverable in the backlog, so it is not worth a reply.
             self.confirm_pending_sent(peer_id, &pending).await;
@@ -627,6 +666,15 @@ impl WeixinBot {
                 );
             }
             return;
+        }
+        for item in delivered {
+            if let Some(turn_id) = item.turn_id.as_deref() {
+                if let Err(error) =
+                    acknowledge_delivered_result(&item.session_id, turn_id, None, None).await
+                {
+                    warn!("Failed to acknowledge proactive IM result for turn {turn_id}: {error}");
+                }
+            }
         }
         info!(
             "weixin: proactive push delivered to peer {peer_id} (one reply for {} queued message(s))",
@@ -1385,6 +1433,7 @@ impl WeixinBot {
             // hook from delivering the same answer a second time.
             self.mark_own_turn(&forward.turn_id).await;
             let output_session_id = forward.session_id.clone();
+            let output_turn_id = forward.turn_id.clone();
             let output_remote_target = forward.remote_target.clone();
             let output_identity_epoch = command_identity_epoch;
             let bot = self.clone();
@@ -1453,7 +1502,15 @@ impl WeixinBot {
                         .await;
                 }
                 if !turn_result.display_text.is_empty() {
-                    if let Err(err) = bot.send_text(&peer, &turn_result.display_text).await {
+                    if let Err(err) = deliver_final_reply(
+                        &output_session_id,
+                        &output_turn_id,
+                        output_remote_target.as_ref(),
+                        &turn_result,
+                        bot.send_text(&peer, &turn_result.display_text),
+                    )
+                    .await
+                    {
                         warn!("weixin: send final reply to peer {peer} failed: {err}");
                     }
                 }
@@ -1598,6 +1655,7 @@ mod tests {
         PendingOutbound {
             id: uuid::Uuid::new_v4().to_string(),
             session_id: "session".to_string(),
+            turn_id: None,
             text: text.to_string(),
             queued_at,
         }
@@ -1609,6 +1667,23 @@ mod tests {
             .enumerate()
             .map(|(index, text)| pending(*text, 1_000 + index as i64))
             .collect()
+    }
+
+    #[test]
+    fn merged_delivery_only_acknowledges_results_included_in_the_im_reply() {
+        let old = "a".repeat(MAX_PROACTIVE_PUSH_BYTES);
+        let mut pending = backlog(&[&old, "latest"]);
+        pending[0].turn_id = Some("old-turn".into());
+        pending[1].turn_id = Some("new-turn".into());
+        let (text, delivered) = merged_delivery(&pending);
+        assert_eq!(text, "latest");
+        assert_eq!(
+            delivered
+                .iter()
+                .filter_map(|item| item.turn_id.as_deref())
+                .collect::<Vec<_>>(),
+            vec!["new-turn"]
+        );
     }
 
     #[test]

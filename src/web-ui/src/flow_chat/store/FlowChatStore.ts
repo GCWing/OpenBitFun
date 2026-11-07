@@ -7423,10 +7423,16 @@ export class FlowChatStore {
     const session = this.state.sessions.get(sessionId);
     const turn = turnId ? session?.dialogTurns.find(candidate => candidate.id === turnId)
       : session && lastUserDialogTurn(session);
-    const activity = sessionActivityStore.get(sessionId)?.summary;
+    const summary = sessionActivityStore.get(sessionId)?.summary;
     const resultTurnId = turnId ?? turn?.id;
-    if (turn?.userMessage.metadata?.submissionSource === 'bot'
-      || (resultTurnId && activity?.lastTurn?.turnId === resultTurnId && activity.lastTurnSource === 'bot')) return;
+    const generation = Math.max(turn?.recovery?.executionGeneration ?? turn?.recoveryEpoch ?? 0,
+      summary?.lastTurn?.turnId === resultTurnId ? summary?.lastTurn?.executionGeneration ?? 0 : 0);
+    if (resultTurnId && summary?.readTurn?.turnId === resultTurnId
+      && (summary.readTurn.executionGeneration ?? 0) === (generation ?? 0)
+      && summary.readTurn.status === (completionKind === 'interrupted' ? 'cancelled' : completionKind)
+      && (summary.readTurn.recoveryPending === undefined || summary.lastTurn?.turnId !== resultTurnId
+        || summary.lastTurn.recoveryPending === undefined
+        || summary.readTurn.recoveryPending === summary.lastTurn.recoveryPending)) return;
 
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);

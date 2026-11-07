@@ -89,9 +89,79 @@ pub struct ForwardRequest {
 }
 
 pub struct ForwardedTurnResult {
+    pub completion_kind: Option<&'static str>,
+    pub turn_id: Option<String>,
     pub completed_remote_tools: Vec<String>,
     pub display_text: String,
     pub full_text: String,
+}
+
+pub(crate) async fn acknowledge_delivered_result(
+    session_id: &str,
+    turn_id: &str,
+    completion_kind: Option<&str>,
+    target: Option<&RemoteBotTarget>,
+) -> Result<bool, String> {
+    use openbitfun_services_integrations::remote_connect::{
+        RemoteSessionRuntimeHost, REMOTE_CAPABILITY_SESSION_RESULT_ACK_V1,
+    };
+    if let Some(target) = target {
+        let info = target
+            .rpc(serde_json::json!({"cmd":"get_workspace_info"}))
+            .await?;
+        if !info["capabilities"].as_array().is_some_and(|values| {
+            values
+                .iter()
+                .any(|value| value.as_str() == Some(REMOTE_CAPABILITY_SESSION_RESULT_ACK_V1))
+        }) {
+            return Err(
+                "Execution host does not support result acknowledgement; upgrade that device"
+                    .into(),
+            );
+        }
+        let reply = target
+            .rpc(serde_json::json!({
+                "cmd":"acknowledge_session_result", "session_id":session_id,
+                "turn_id":turn_id, "completion_kind":completion_kind,
+            }))
+            .await?;
+        if reply["resp"] != "session_result_acknowledged"
+            || reply["session_id"] != session_id
+            || reply["turn_id"] != turn_id
+        {
+            return Err("Invalid session result acknowledgement response".into());
+        }
+        return reply["acknowledged"]
+            .as_bool()
+            .ok_or_else(|| "Missing result acknowledgement".into());
+    }
+    crate::service_agent_runtime::CoreServiceAgentRuntime::remote_session_host()?
+        .acknowledge_session_result(session_id, turn_id, completion_kind)
+        .await
+}
+
+/// All provider chunks must succeed before acknowledging the final reply.
+/// A receipt failure never resends an already delivered IM message.
+pub(crate) async fn deliver_final_reply(
+    session_id: &str,
+    turn_id: &str,
+    target: Option<&RemoteBotTarget>,
+    result: &ForwardedTurnResult,
+    send: impl std::future::Future<Output = anyhow::Result<()>>,
+) -> anyhow::Result<()> {
+    if result.display_text.is_empty() {
+        return Ok(());
+    }
+    send.await?;
+    if let Some(kind) = result.completion_kind {
+        let turn_id = result.turn_id.as_deref().unwrap_or(turn_id);
+        if let Err(error) =
+            acknowledge_delivered_result(session_id, turn_id, Some(kind), target).await
+        {
+            warn!("Failed to acknowledge delivered IM result for session {session_id}, turn {turn_id}: {error}");
+        }
+    }
+    Ok(())
 }
 
 // ── BotCommand ─────────────────────────────────────────────────────
@@ -3529,6 +3599,8 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
 ) -> ForwardedTurnResult {
     if !runtime_fence.is_lifecycle_current() || runtime_fence.identity_epoch() != identity_epoch {
         return ForwardedTurnResult {
+            completion_kind: None,
+            turn_id: None,
             completed_remote_tools: Vec::new(),
             display_text: String::new(),
             full_text: String::new(),
@@ -3572,6 +3644,8 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
     if let Err(e) = submission {
         let msg = format!("{}{e}", s.send_failed_prefix);
         return ForwardedTurnResult {
+            completion_kind: None,
+            turn_id: None,
             completed_remote_tools: Vec::new(),
             display_text: msg.clone(),
             full_text: msg,
@@ -3678,6 +3752,8 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                         if turn_id == target_turn_id {
                             let msg = format!("{}{}", s.error_prefix, error);
                             return ForwardedTurnResult {
+                                completion_kind: Some("error"),
+                                turn_id: None,
                                 completed_remote_tools: Vec::new(),
                                 display_text: msg.clone(),
                                 full_text: msg,
@@ -3687,6 +3763,8 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                     TrackerEvent::TurnCancelled { turn_id } => {
                         if turn_id == target_turn_id {
                             return ForwardedTurnResult {
+                                completion_kind: Some("interrupted"),
+                                turn_id: None,
                                 completed_remote_tools: Vec::new(),
                                 display_text: s.task_cancelled.to_string(),
                                 full_text: s.task_cancelled.to_string(),
@@ -3738,6 +3816,8 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
         let display_text = full_text.clone();
 
         ForwardedTurnResult {
+            completion_kind: Some("completed"),
+            turn_id: None,
             completed_remote_tools: Vec::new(),
             display_text: if display_text.is_empty() {
                 s.no_response.to_string()
@@ -3750,6 +3830,8 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
     .await;
 
     result.unwrap_or_else(|_| ForwardedTurnResult {
+        completion_kind: None,
+        turn_id: None,
         completed_remote_tools: Vec::new(),
         display_text: s.timeout_one_hour.to_string(),
         full_text: String::new(),
@@ -3764,11 +3846,12 @@ async fn execute_remote_forward(
     submission_finished: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> ForwardedTurnResult {
     use openbitfun_services_integrations::remote_connect::bot::remote_turn::observe_turn;
-    use openbitfun_services_integrations::remote_connect::REMOTE_CAPABILITY_BOT_READ_RECEIPTS_V1;
     let s = strings_for(current_bot_language().await);
     let target = forward.remote_target.as_ref().unwrap();
     let current = || fence.is_lifecycle_current() && fence.identity_epoch() == epoch;
     let empty = || ForwardedTurnResult {
+        completion_kind: None,
+        turn_id: None,
         completed_remote_tools: Vec::new(),
         display_text: String::new(),
         full_text: String::new(),
@@ -3776,30 +3859,14 @@ async fn execute_remote_forward(
     if !current() {
         return empty();
     }
-    let mut command = serde_json::json!({
-        "cmd":"send_message", "session_id":target.session_id,
-        "content":forward.content, "turn_id":forward.turn_id,
-        "image_contexts":forward.image_contexts,
-    });
-    // Old hosts keep accepting messages with their existing receipt behavior.
-    // Only advertise bot ingress after the target confirms it can honor it.
-    if let Ok(info) = target
-        .rpc(serde_json::json!({"cmd":"get_workspace_info"}))
-        .await
-    {
-        if info["capabilities"].as_array().is_some_and(|capabilities| {
-            capabilities.iter().any(|capability| {
-                capability.as_str() == Some(REMOTE_CAPABILITY_BOT_READ_RECEIPTS_V1)
-            })
-        }) {
-            command["source"] = serde_json::json!("bot");
-        }
-    }
-    if !current() {
-        return empty();
-    }
     // Submission is never retried blindly: older peers need not deduplicate.
-    let sent = target.rpc(command).await;
+    let sent = target
+        .rpc(serde_json::json!({
+            "cmd":"send_message", "session_id":target.session_id,
+            "content":forward.content, "turn_id":forward.turn_id,
+            "image_contexts":forward.image_contexts,
+        }))
+        .await;
     drop(submission_finished);
     if !current() {
         return empty();
@@ -3812,6 +3879,8 @@ async fn execute_remote_forward(
                 Some(id) => id.to_string(),
                 None => {
                     return ForwardedTurnResult {
+                        completion_kind: None,
+                        turn_id: None,
                         completed_remote_tools: Vec::new(),
                         display_text: format!("{}Missing remote turn ID", s.send_failed_prefix),
                         full_text: String::new(),
@@ -3821,6 +3890,8 @@ async fn execute_remote_forward(
         }
         result => {
             return ForwardedTurnResult {
+                completion_kind: None,
+                turn_id: None,
                 completed_remote_tools: Vec::new(),
                 display_text: format!(
                     "{}{}",
@@ -3861,6 +3932,12 @@ async fn execute_remote_forward(
                                 _ => turn.text.clone(),
                             };
                             return ForwardedTurnResult {
+                                completion_kind: Some(match turn.status.as_str() {
+                                    "failed" | "error" => "error",
+                                    "cancelled" => "interrupted",
+                                    _ => "completed",
+                                }),
+                                turn_id: Some(turn_id.clone()),
                                 completed_remote_tools: shown.into_keys().collect(),
                                 display_text,
                                 full_text: turn.text,
@@ -3942,6 +4019,8 @@ async fn execute_remote_forward(
                 }
                 Ok(reply) => {
                     return ForwardedTurnResult {
+                        completion_kind: None,
+                        turn_id: None,
                         completed_remote_tools: Vec::new(),
                         display_text: format!(
                             "{}{}",
@@ -3959,6 +4038,8 @@ async fn execute_remote_forward(
                     ) || error.contains("HTTP 403")
                     {
                         return ForwardedTurnResult {
+                            completion_kind: None,
+                            turn_id: None,
                             completed_remote_tools: Vec::new(),
                             display_text: format!("{}{error}", s.error_prefix),
                             full_text: String::new(),
@@ -3974,6 +4055,8 @@ async fn execute_remote_forward(
     })
     .await;
     result.unwrap_or_else(|_| ForwardedTurnResult {
+        completion_kind: None,
+        turn_id: None,
         completed_remote_tools: Vec::new(),
         display_text: s.timeout_one_hour.to_string(),
         full_text: String::new(),
@@ -5126,8 +5209,15 @@ mod handle_chat_tests {
                             }
                         }
                         "get_workspace_info" => serde_json::json!({"resp":"workspace_info", "capabilities":
-                            if supports_interaction { vec!["user_question_interaction_v1", "session_attachments_v1", "bot_read_receipts_v1"] } else { vec![] }
+                            if supports_interaction { vec!["user_question_interaction_v1", "session_attachments_v1", "session_result_ack_v1"] } else { vec![] }
                         }),
+                        "acknowledge_session_result" => {
+                            assert!(supports_interaction);
+                            assert_eq!(command["session_id"], "session-a");
+                            assert_eq!(command["turn_id"], "accepted-turn");
+                            assert_eq!(command["completion_kind"], "completed");
+                            serde_json::json!({"resp":"session_result_acknowledged","session_id":"session-a","turn_id":"accepted-turn","acknowledged":true})
+                        }
                         "store_session_attachment" => {
                             assert!(supports_interaction);
                             assert_eq!(command["session_id"], "session-a");
@@ -5266,6 +5356,40 @@ mod handle_chat_tests {
             .await
             .unwrap();
         assert_eq!(result.full_text, "![image](result.png)");
+        let ack_count = || {
+            calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| call["cmd"] == "acknowledge_session_result")
+                .count()
+        };
+        assert_eq!(
+            ack_count(),
+            0,
+            "completion alone must not acknowledge delivery"
+        );
+        assert!(deliver_final_reply(
+            "session-a",
+            "requested-turn",
+            Some(&target),
+            &result,
+            async { Err(anyhow::anyhow!("provider rejected final chunk")) }
+        )
+        .await
+        .is_err());
+        assert_eq!(ack_count(), 0, "a partial or failed IM send stays unread");
+        deliver_final_reply(
+            "session-a",
+            "requested-turn",
+            Some(&target),
+            &result,
+            async { Ok(()) },
+        )
+        .await
+        .unwrap();
+        assert_eq!(ack_count(), usize::from(supports_interaction));
+
         assert_eq!(result.completed_remote_tools.len(), 2);
         assert!(result
             .completed_remote_tools
@@ -5290,17 +5414,6 @@ mod handle_chat_tests {
             1
         );
         let observed = calls.lock().unwrap();
-        assert_eq!(
-            observed
-                .iter()
-                .find(|call| call["cmd"] == "send_message")
-                .unwrap()["source"],
-            if supports_interaction {
-                serde_json::json!("bot")
-            } else {
-                Value::Null
-            }
-        );
         let activity = observed
             .iter()
             .position(|call| call["cmd"] == "start_question_interaction");

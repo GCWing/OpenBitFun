@@ -26,11 +26,11 @@ pub use memory_workspace::{
     MemoryWorkspaceDiff, MemoryWorkspaceGitError,
 };
 pub use metadata::{
-    apply_session_title_metadata, apply_session_unread_completion, build_session_index_snapshot,
-    build_session_metadata, estimate_turn_message_count, merge_session_custom_metadata,
-    normalized_session_relationship, refresh_session_metadata_from_turns,
-    remove_session_index_entry, set_deep_review_cache, set_deep_review_run_manifest,
-    set_review_target_evidence, set_session_relationship,
+    acknowledge_session_result, apply_session_title_metadata, apply_session_unread_completion,
+    build_session_index_snapshot, build_session_metadata, estimate_turn_message_count,
+    merge_session_custom_metadata, normalized_session_relationship, read_completion_target,
+    refresh_session_metadata_from_turns, remove_session_index_entry, set_deep_review_cache,
+    set_deep_review_run_manifest, set_review_target_evidence, set_session_relationship,
     try_refresh_session_metadata_for_saved_turn, unread_completion_target,
     upsert_session_index_entry, SessionMetadataBuildFacts,
 };

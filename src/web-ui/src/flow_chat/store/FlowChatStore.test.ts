@@ -797,6 +797,26 @@ describe('FlowChatStore metadata persistence callbacks', () => {
     });
   });
 
+  it.each(['ready', 'metadata-only'] as const)('honors a delivered IM receipt before a late completion with %s history', historyState => {
+    const session = { ...completedSession(), sessionId: `im-delivery-${historyState}`, historyState,
+      hasUnreadCompletion: undefined, unreadCompletionTurnId: undefined };
+    if (historyState === 'metadata-only') session.dialogTurns = [];
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
+    const persist = vi.fn();
+    flowChatStore.registerPersistUnreadCompletionCallback(persist);
+    const lastTurn = { turnId: 'finished-turn', turnIndex: 0, status: 'completed' as const, executionGeneration: 2 };
+    sessionActivityStore.applyRead(sessionActivityStore.beginRead(), [{
+      sessionId: session.sessionId, execution: 'idle', pendingApprovals: 1, pendingQuestions: 0,
+      lastTurn, readTurn: lastTurn,
+    }]);
+    flowChatStore.markSessionUnreadCompletion(session.sessionId, 'completed', 'finished-turn');
+    expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBeUndefined();
+    expect(persist).not.toHaveBeenCalled();
+    flowChatStore.markSessionUnreadCompletion(session.sessionId, 'completed', 'next-turn');
+    expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBe('completed');
+    expect(persist).toHaveBeenCalledOnce();
+  });
+
   it.each(['new', 'metadata-only', 'ready'] as const)(
     'explicitly acknowledges a %s session and keeps a refreshed result read', (historyState) => {
       const session = { ...completedSession(), sessionId: `explicit-read-${historyState}`, historyState };
@@ -842,42 +862,6 @@ describe('FlowChatStore metadata persistence callbacks', () => {
     expect(updated.unreadCompletionGeneration).toBe(2);
     expect(updated.unreadCompletionTurnId).toBe('finished-turn');
     expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBe('completed');
-  });
-
-  it('keeps a reconnecting bot completion read before its transcript is loaded', () => {
-    const session = createSession({ sessionId: 'bot-reconnect', dialogTurns: [], historyState: 'metadata-only' });
-    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
-    sessionActivityStore.applyRead(sessionActivityStore.beginRead(), [{
-      sessionId: session.sessionId, execution: 'running', pendingApprovals: 0, pendingQuestions: 0,
-      lastTurn: { turnId: 'bot', turnIndex: 0, status: 'inprogress' }, lastTurnSource: 'bot',
-    }]);
-    const persist = vi.fn();
-    flowChatStore.registerPersistUnreadCompletionCallback(persist);
-    flowChatStore.markSessionUnreadCompletion(session.sessionId, 'completed', 'bot');
-    expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBeUndefined();
-    expect(persist).not.toHaveBeenCalled();
-  });
-
-  it.each(['completed', 'error', 'interrupted'] as const)('keeps bot %s results read without persisting another receipt', (outcome) => {
-    const session = completedSession();
-    session.hasUnreadCompletion = undefined;
-    session.dialogTurns[0].userMessage.metadata = { submissionSource: 'bot' };
-    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
-    const persist = vi.fn();
-    flowChatStore.registerPersistUnreadCompletionCallback(persist);
-
-    flowChatStore.markSessionUnreadCompletion(session.sessionId, outcome, session.dialogTurns[0].id);
-    expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBeUndefined();
-    expect(persist).not.toHaveBeenCalled();
-
-    // A bot result cannot acknowledge an earlier desktop result in this session.
-    flowChatStore.applySessionActivityReceipt({
-      sessionId: session.sessionId, execution: 'idle', pendingApprovals: 0, pendingQuestions: 0,
-      unreadCompletion: 'completed', unreadTurn: { turnId: 'desktop', turnIndex: 0, status: 'completed' },
-    });
-    flowChatStore.markSessionUnreadCompletion(session.sessionId, outcome);
-    expect(flowChatStore.getState().sessions.get(session.sessionId)?.unreadCompletionTurnId).toBe('desktop');
-    expect(persist).not.toHaveBeenCalled();
   });
 
   it('attaches the completion to its owner when a follow-up turn already exists', () => {

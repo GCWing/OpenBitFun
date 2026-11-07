@@ -7240,9 +7240,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             default_permission_mode_from_global_config().await,
         );
         let mut metadata = Self::ensure_user_message_metadata_object(user_message_metadata.take());
-        // Stamp the admitted ingress so live observers and persisted receipts
-        // agree even when no desktop client is connected.
-        metadata["submissionSource"] = serde_json::json!(submission_policy.trigger_source);
         if submission_policy.trigger_source
             != openbitfun_runtime_ports::DialogTriggerSource::ScheduledJob
         {

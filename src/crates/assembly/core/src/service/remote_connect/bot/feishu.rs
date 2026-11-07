@@ -17,8 +17,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::command_router::{
-    complete_im_bot_pairing, current_bot_language, execute_forwarded_turn, handle_command,
-    parse_command, welcome_message, BotAction, BotChatState, BotInteractionHandler,
+    complete_im_bot_pairing, current_bot_language, deliver_final_reply, execute_forwarded_turn,
+    handle_command, parse_command, welcome_message, BotAction, BotChatState, BotInteractionHandler,
     BotInteractiveRequest, BotLanguage, BotMessageSender, HandleResult,
 };
 use super::{
@@ -605,6 +605,7 @@ impl FeishuBot {
 
         if let Some(forward) = result.forward_to_session {
             let output_session_id = forward.session_id.clone();
+            let output_turn_id = forward.turn_id.clone();
             let output_remote_target = forward.remote_target.clone();
             let output_identity_epoch = command_identity_epoch;
             let bot = self.clone();
@@ -671,7 +672,15 @@ impl FeishuBot {
                         .await;
                 }
                 if !result.display_text.is_empty() {
-                    if let Err(err) = bot.send_message(&cid, &result.display_text).await {
+                    if let Err(err) = deliver_final_reply(
+                        &output_session_id,
+                        &output_turn_id,
+                        output_remote_target.as_ref(),
+                        &result,
+                        bot.send_message(&cid, &result.display_text),
+                    )
+                    .await
+                    {
                         warn!("Failed to send Feishu final message to {cid}: {err}");
                     }
                 }

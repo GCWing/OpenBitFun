@@ -21,7 +21,7 @@ const sources = vi.hoisted(() => ({
   machineListeners: new Set<(sessionId: string, machine: SessionStateMachine) => void>(),
 }));
 vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({ agentAPI: Object.fromEntries([
-  'onSessionStateChanged', 'onSessionHistoryChanged', 'onSessionDeleted', 'onDialogTurnStarted',
+  'onSessionStateChanged', 'onSessionHistoryChanged', 'onSessionResultRead', 'onSessionDeleted', 'onDialogTurnStarted',
   'onDialogTurnCompleted', 'onDialogTurnFailed', 'onDialogTurnCancelled', 'onDialogTurnInterrupted', 'onDialogTurnRecovered', 'onToolEvent',
 ].map(name => [name, (callback: (event: unknown) => void) => {
   sources.events.set(name, callback);
@@ -285,7 +285,7 @@ describe('navigation status synchronization', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(sources.read).toHaveBeenCalledTimes(1);
     expect(sources.read.mock.calls[0][0].sessionIds).toHaveLength(40);
-    expect(sources.events.size).toBe(10);
+    expect(sources.events.size).toBe(11);
     for (const id of ids) {
       expect(sessionNavStatusService.getSnapshot(id).kind).toBe('running');
       expect(sources.sessions.get(id)?.dialogTurns).toHaveLength(0);
@@ -303,6 +303,23 @@ describe('navigation status synchronization', () => {
     sources.events.get('onDialogTurnCompleted')!({ sessionId: id, turnId: 'new' });
     expect(sessionNavStatusService.getSnapshot(id).kind).toBe('unread');
     expect(sources.sessions.get(id)?.unreadCompletionTurnId).toBe('new');
+  });
+
+  it('clears an unopened row only after the host confirms IM delivery', async () => {
+    const id = 'im-delivered';
+    sources.sessions.set(id, row(id));
+    sources.read.mockResolvedValue(response([activity(id, 'idle')]));
+    install(id);
+    await vi.advanceTimersByTimeAsync(100);
+    sources.events.get('onDialogTurnStarted')!({ sessionId: id, turnId: 'turn', userMessageMetadata: { submissionSource: 'bot' } });
+    sources.events.get('onDialogTurnCompleted')!({ sessionId: id, turnId: 'turn' });
+    expect(sessionNavStatusService.getSnapshot(id).kind).toBe('unread');
+    sources.events.get('onSessionResultRead')!({ sessionId: id, turnId: 'turn', executionGeneration: 0, completionKind: 'completed' });
+    expect(sessionNavStatusService.getSnapshot(id).kind).toBe('idle');
+    sources.events.get('onDialogTurnCompleted')!({ sessionId: id, turnId: 'turn' });
+    expect(sessionNavStatusService.getSnapshot(id).kind).toBe('idle');
+    expect(sources.sessions.get(id)?.hasUnreadCompletion).toBeUndefined();
+    expect(sources.sessions.get(id)?.dialogTurns).toHaveLength(0);
   });
 
   it('reconciles only the permission owner and delegated parent when their mailbox changes', async () => {

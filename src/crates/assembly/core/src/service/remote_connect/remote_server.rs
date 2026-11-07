@@ -642,7 +642,6 @@ mod tests {
         let command = RemoteCommand::SendMessage {
             session_id: "session-1".to_string(),
             content: "hello".to_string(),
-            source: None,
             display_content: None,
             turn_id: Some("harmony-turn-1".to_string()),
             agent_type: Some("code".to_string()),

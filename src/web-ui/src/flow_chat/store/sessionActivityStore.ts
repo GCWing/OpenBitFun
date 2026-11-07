@@ -61,10 +61,6 @@ export class SessionActivityStore {
       // Reads are ordered independently so a slower previous read cannot regress it.
       if (previous && (previous.eventVersion > read.eventVersion || previous.readSequence > read.sequence)) continue;
       const previousTurn = previous?.summary?.lastTurn;
-      if (summary.lastTurnSource === undefined && summary.lastTurn
-        && summary.lastTurn.turnId === previousTurn?.turnId) {
-        summary = { ...summary, lastTurnSource: previous?.summary?.lastTurnSource };
-      }
       if (summary.lastTurn && summary.lastTurn.recoveryPending === undefined && previousTurn
         && previousTurn.turnId === summary.lastTurn.turnId && previousTurn.status === summary.lastTurn.status
         && (previousTurn.executionGeneration ?? 0) === (summary.lastTurn.executionGeneration ?? 0)) {
@@ -152,17 +148,24 @@ export class SessionActivityStore {
     if (generation !== undefined && summary.lastTurn?.turnId === turnId
       && (summary.lastTurn?.executionGeneration ?? -1) > generation) return;
     const starting = eventName === 'agentic://dialog-turn-started' || eventName === 'agentic://dialog-turn-recovered';
-    const userMetadata = event.userMessageMetadata as Record<string, unknown> | undefined;
-    const turnSource = eventName === 'agentic://dialog-turn-started'
-      ? typeof userMetadata?.submissionSource === 'string' ? userMetadata.submissionSource : undefined
-      : turnId && summary.lastTurn?.turnId === turnId ? summary.lastTurnSource : undefined;
     const settling = ['agentic://dialog-turn-completed', 'agentic://dialog-turn-failed',
       'agentic://dialog-turn-cancelled', 'agentic://dialog-turn-interrupted'].includes(eventName);
     let newResult = false;
-    if (starting) {
+    if (eventName === 'agentic://session-result-read') {
+      if (!turnId || !['completed', 'error', 'interrupted'].includes(String(event.completionKind))) return;
+      const status = event.completionKind === 'interrupted' ? 'cancelled' : event.completionKind as 'completed' | 'error';
+      const unread = summary.unreadTurn ?? summary.lastTurn;
+      const matches = unread?.turnId === turnId && (unread.executionGeneration ?? 0) === (generation ?? 0)
+        && unread.status === status;
+      summary = { ...summary,
+        readTurn: { turnId, turnIndex: unread?.turnIndex ?? 0, status, executionGeneration: generation,
+          recoveryPending: typeof event.recoveryPending === 'boolean' ? event.recoveryPending : undefined },
+        unreadCompletion: matches ? undefined : summary.unreadCompletion,
+        unreadTurn: matches ? undefined : summary.unreadTurn,
+      };
+    } else if (starting) {
       summary = {
         ...summary, execution: 'running', activeTurnId: turnId, pendingApprovals: 0, pendingQuestions: 0,
-        lastTurnSource: turnSource,
         unreadTurn: summary.unreadCompletion ? summary.unreadTurn ?? summary.lastTurn : undefined,
         lastTurn: turnId ? {
           turnId, turnIndex: typeof event.turnIndex === 'number' ? event.turnIndex : summary.lastTurn?.turnIndex ?? 0,
@@ -182,11 +185,13 @@ export class SessionActivityStore {
       // Learning an optional recovery fact from a replay is not a new result.
       // A known paused -> cancelled transition is, even within one generation.
       newResult = (!sameOutcome || summary.lastTurn?.recoveryPending !== undefined)
-        && turnSource !== 'bot'
+        && !(turnId && summary.readTurn?.turnId === turnId
+          && (summary.readTurn.executionGeneration ?? 0) === (generation ?? summary.lastTurn?.executionGeneration ?? 0)
+          && summary.readTurn.status === (outcome === 'interrupted' ? 'cancelled' : outcome)
+          && (summary.readTurn.recoveryPending === undefined || summary.readTurn.recoveryPending === recoveryPending))
         && (outcome !== 'completed' || shouldDeliverBackgroundCompletion(event));
       summary = {
         ...summary, execution: outcome === 'error' ? 'error' : 'idle', activeTurnId: undefined,
-        lastTurnSource: turnSource,
         pendingApprovals: 0, pendingQuestions: 0, unreadCompletion: newResult ? outcome : summary.unreadCompletion,
         unreadTurn: newResult ? {
           turnId: turnId ?? '', turnIndex: typeof event.turnIndex === 'number' ? event.turnIndex : summary.lastTurn?.turnIndex ?? 0,

@@ -408,6 +408,18 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
                 "newState": new_state,
             }),
         )),
+        AgenticEvent::SessionResultRead {
+            session_id,
+            turn_id,
+            execution_generation,
+            completion_kind,
+            recovery_pending,
+        } => Some(AgenticFrontendEvent::new(
+            "agentic://session-result-read",
+            json!({ "sessionId": session_id, "turnId": turn_id,
+                "executionGeneration": execution_generation, "completionKind": completion_kind,
+                "recoveryPending": recovery_pending }),
+        )),
         AgenticEvent::SessionHistoryChanged {
             session_id,
             settled_turn_id,
@@ -892,6 +904,27 @@ mod tests {
                 "sourceTurnId": "turn-1",
                 "suggestion": "Run the tests",
             })
+        );
+    }
+
+    #[test]
+    fn result_read_projects_the_same_turn_identity_for_peer_and_local_consumers() {
+        let event = AgenticEvent::SessionResultRead {
+            session_id: "session".into(),
+            turn_id: "turn".into(),
+            execution_generation: 2,
+            completion_kind: "completed".into(),
+            recovery_pending: Some(false),
+        };
+        let event: AgenticEvent =
+            serde_json::from_value(serde_json::to_value(event).unwrap()).unwrap();
+        assert_eq!(event.session_id(), Some("session"));
+        assert_eq!(event.turn_id(), Some("turn"));
+        let projected = project_agentic_frontend_event(event).unwrap();
+        assert_eq!(projected.event_name, "agentic://session-result-read");
+        assert_eq!(
+            projected.payload,
+            json!({"sessionId":"session", "turnId":"turn", "executionGeneration":2, "completionKind":"completed", "recoveryPending":false})
         );
     }
 

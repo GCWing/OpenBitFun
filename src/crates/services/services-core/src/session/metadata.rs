@@ -346,16 +346,9 @@ fn refresh_latest_turn(metadata: &mut SessionMetadata, turn: &DialogTurnData) {
         && openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(turn.user_message.metadata.as_ref(), &turn.turn_id)
             .is_some_and(|delivery| delivery.execution_generation == turn.recovery_epoch.unwrap_or(0)
                 && delivery.disposition == openbitfun_core_types::background_delivery::BackgroundReportDisposition::Quiet && delivery.suppresses_report());
-    let source = turn
-        .user_message
-        .metadata
-        .as_ref()
-        .and_then(|metadata| metadata.get("submissionSource"))
-        .and_then(Value::as_str);
-    // IM is the reading surface for bot turns. Keep any earlier desktop result
-    // unread, but do not create another receipt for this turn on the host.
-    let bot = source == Some("bot");
     let mut unread_target = previous_unread_target;
+    let read =
+        read_completion_target(metadata).is_some_and(|receipt| same_completion(&receipt, &next));
     if !same_outcome && !quiet {
         if let Some(outcome) = match turn.status {
             TurnStatus::Completed => Some("completed"),
@@ -364,7 +357,7 @@ fn refresh_latest_turn(metadata: &mut SessionMetadata, turn: &DialogTurnData) {
             TurnStatus::InProgress => None,
         } {
             metadata.needs_user_attention = None;
-            if !bot {
+            if !read {
                 metadata.unread_completion = Some(outcome.to_string());
                 unread_target = Some(next.clone());
             }
@@ -374,14 +367,6 @@ fn refresh_latest_turn(metadata: &mut SessionMetadata, turn: &DialogTurnData) {
         .custom_metadata
         .get_or_insert_with(|| serde_json::json!({}));
     if let Some(object) = custom.as_object_mut() {
-        if let Some(source) = source {
-            object.insert(
-                "lastTurnSource".to_owned(),
-                Value::String(source.to_owned()),
-            );
-        } else {
-            object.remove("lastTurnSource");
-        }
         if let Some(delivery) =
             openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(
                 turn.user_message.metadata.as_ref(),
@@ -411,6 +396,167 @@ fn refresh_latest_turn(metadata: &mut SessionMetadata, turn: &DialogTurnData) {
 pub fn unread_completion_target(metadata: &SessionMetadata) -> Option<SessionLastTurn> {
     metadata.unread_completion.as_ref()?;
     receipt_target(metadata)
+}
+
+/// The most recent result acknowledged by a delivery surface. Kept on disk so
+/// delayed completion events and older UI writers cannot recreate its unread flag.
+pub fn read_completion_target(metadata: &SessionMetadata) -> Option<SessionLastTurn> {
+    metadata
+        .custom_metadata
+        .as_ref()?
+        .get("readCompletionTarget")
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
+}
+
+fn same_completion(left: &SessionLastTurn, right: &SessionLastTurn) -> bool {
+    left.turn_id == right.turn_id
+        && left.execution_generation.unwrap_or(0) == right.execution_generation.unwrap_or(0)
+        && left.status == right.status
+        && left
+            .recovery_pending
+            .zip(right.recovery_pending)
+            .is_none_or(|(a, b)| a == b)
+}
+
+#[cfg(test)]
+mod delivered_result_contracts {
+    use super::super::types::UserMessageData;
+    use super::*;
+
+    fn turn(id: &str, index: usize, status: TurnStatus) -> DialogTurnData {
+        let mut turn = DialogTurnData::new(
+            id.into(),
+            index,
+            "session".into(),
+            UserMessageData {
+                id: format!("{id}-input"),
+                content: "hello".into(),
+                timestamp: index as u64,
+                metadata: Some(serde_json::json!({"submissionSource":"bot"})),
+            },
+        );
+        turn.status = status;
+        turn
+    }
+
+    #[test]
+    fn only_successful_delivery_clears_a_result_and_survives_reload_and_old_writers() {
+        for (kind, status) in [
+            ("completed", TurnStatus::Completed),
+            ("error", TurnStatus::Error),
+            ("interrupted", TurnStatus::Cancelled),
+        ] {
+            let mut metadata = SessionMetadata::new(
+                "session".into(),
+                "Bot".into(),
+                "Standard".into(),
+                "model".into(),
+            );
+            let turn = turn("bot", 0, status);
+            refresh_latest_turn(&mut metadata, &turn);
+            assert_eq!(metadata.unread_completion.as_deref(), Some(kind));
+            let old_observer = metadata.clone();
+            assert!(acknowledge_session_result(&mut metadata, "bot", Some(kind)).is_some());
+            assert!(metadata.unread_completion.is_none());
+            let mut reloaded: SessionMetadata =
+                serde_json::from_value(serde_json::to_value(metadata).unwrap()).unwrap();
+            refresh_latest_turn(&mut reloaded, &turn);
+            apply_session_unread_completion(&mut reloaded, &old_observer);
+            assert!(reloaded.unread_completion.is_none());
+            assert!(acknowledge_session_result(&mut reloaded, "bot", Some(kind)).is_some());
+        }
+    }
+
+    #[test]
+    fn delivery_before_terminal_persistence_does_not_lose_the_receipt() {
+        let mut metadata = SessionMetadata::new(
+            "session".into(),
+            "Bot".into(),
+            "Standard".into(),
+            "model".into(),
+        );
+        let mut turn = turn("bot", 0, TurnStatus::InProgress);
+        refresh_latest_turn(&mut metadata, &turn);
+        assert!(acknowledge_session_result(&mut metadata, "bot", Some("completed")).is_some());
+        turn.status = TurnStatus::Completed;
+        refresh_latest_turn(&mut metadata, &turn);
+        assert!(metadata.unread_completion.is_none());
+        turn.recovery_epoch = Some(1);
+        refresh_latest_turn(&mut metadata, &turn);
+        assert_eq!(metadata.unread_completion.as_deref(), Some("completed"));
+    }
+
+    #[test]
+    fn delayed_delivery_does_not_clear_another_turn_or_pending_interaction() {
+        let mut metadata = SessionMetadata::new(
+            "session".into(),
+            "Mixed".into(),
+            "Standard".into(),
+            "model".into(),
+        );
+        refresh_latest_turn(&mut metadata, &turn("bot", 0, TurnStatus::Completed));
+        refresh_latest_turn(&mut metadata, &turn("desktop", 1, TurnStatus::Error));
+        metadata.needs_user_attention = Some("tool_confirm".into());
+        assert!(acknowledge_session_result(&mut metadata, "bot", Some("completed")).is_none());
+        assert_eq!(metadata.unread_completion.as_deref(), Some("error"));
+        assert_eq!(
+            metadata.needs_user_attention.as_deref(),
+            Some("tool_confirm")
+        );
+    }
+}
+
+/// Acknowledge only the delivered Turn, preserving another Turn's unread result.
+/// The terminal event can precede its metadata write. A known completion kind
+/// records that receipt first, and the subsequent save honors it.
+pub fn acknowledge_session_result(
+    metadata: &mut SessionMetadata,
+    turn_id: &str,
+    completion_kind: Option<&str>,
+) -> Option<SessionLastTurn> {
+    let unread = unread_completion_target(metadata);
+    let mut receipt = unread
+        .as_ref()
+        .filter(|turn| turn.turn_id == turn_id)
+        .or_else(|| {
+            metadata
+                .last_turn
+                .as_ref()
+                .filter(|turn| turn.turn_id == turn_id)
+        })?
+        .clone();
+    let status = match completion_kind {
+        Some("completed") => TurnStatus::Completed,
+        Some("error") => TurnStatus::Error,
+        Some("interrupted") => TurnStatus::Cancelled,
+        Some(_) => return None,
+        None => receipt.status.clone(),
+    };
+    if status == TurnStatus::InProgress
+        || (receipt.status != TurnStatus::InProgress && receipt.status != status)
+    {
+        return None;
+    }
+    receipt.status = status;
+    if receipt.status != TurnStatus::Cancelled {
+        receipt.recovery_pending = Some(false);
+    }
+    let should_clear = unread
+        .as_ref()
+        .is_some_and(|turn| same_completion(turn, &receipt));
+    let custom = metadata
+        .custom_metadata
+        .get_or_insert_with(|| serde_json::json!({}));
+    let object = custom.as_object_mut()?;
+    object.insert(
+        "readCompletionTarget".into(),
+        serde_json::to_value(&receipt).ok()?,
+    );
+    if should_clear {
+        metadata.unread_completion = None;
+        object.remove("unreadCompletionTarget");
+    }
+    Some(receipt)
 }
 
 fn receipt_target(metadata: &SessionMetadata) -> Option<SessionLastTurn> {
@@ -524,126 +670,39 @@ mod background_delivery_contracts {
     }
 }
 
-#[cfg(test)]
-mod bot_read_contracts {
-    use super::super::types::UserMessageData;
-    use super::*;
-
-    fn turn(id: &str, index: usize, source: Option<&str>) -> DialogTurnData {
-        let mut turn = DialogTurnData::new(
-            id.into(),
-            index,
-            "session".into(),
-            UserMessageData {
-                id: format!("{id}-input"),
-                content: "hello".into(),
-                timestamp: index as u64,
-                metadata: source.map(|source| serde_json::json!({ "submissionSource": source })),
-            },
-        );
-        turn.status = TurnStatus::Completed;
-        turn
-    }
-
-    #[test]
-    fn bot_results_stay_read_after_reload_and_legacy_observer_writes() {
-        for status in [
-            TurnStatus::Completed,
-            TurnStatus::Error,
-            TurnStatus::Cancelled,
-        ] {
-            let mut metadata = SessionMetadata::new(
-                "session".into(),
-                "Bot".into(),
-                "Standard".into(),
-                "model".into(),
-            );
-            let mut bot = turn("bot", 0, Some("bot"));
-            bot.status = status;
-            metadata.needs_user_attention = Some("tool_confirm".into());
-            refresh_latest_turn(&mut metadata, &bot);
-            assert!(metadata.unread_completion.is_none());
-            assert!(metadata.needs_user_attention.is_none());
-            assert_eq!(metadata.last_turn.as_ref().unwrap().turn_id, "bot");
-
-            let mut reloaded: SessionMetadata =
-                serde_json::from_value(serde_json::to_value(&metadata).unwrap()).unwrap();
-            let persisted: DialogTurnData =
-                serde_json::from_value(serde_json::to_value(&bot).unwrap()).unwrap();
-            refresh_latest_turn(&mut reloaded, &persisted);
-            let mut old_observer = reloaded.clone();
-            old_observer.unread_completion = Some("completed".into());
-            apply_session_unread_completion(&mut reloaded, &old_observer);
-            assert!(reloaded.unread_completion.is_none());
-
-            // Legacy turns without a source retain their unread semantics.
-            refresh_latest_turn(&mut reloaded, &turn("legacy", 1, None));
-            assert_eq!(reloaded.unread_completion.as_deref(), Some("completed"));
-            assert!(reloaded
-                .custom_metadata
-                .as_ref()
-                .unwrap()
-                .get("lastTurnSource")
-                .is_none());
-        }
-    }
-
-    #[test]
-    fn bot_turn_keeps_an_earlier_desktop_result_and_its_read_receipt() {
-        let mut metadata = SessionMetadata::new(
-            "session".into(),
-            "Mixed".into(),
-            "Standard".into(),
-            "model".into(),
-        );
-        refresh_latest_turn(&mut metadata, &turn("desktop", 0, Some("desktop_ui")));
-        let mut receipt = metadata.clone();
-        receipt.unread_completion = None;
-        let bot = turn("bot", 1, Some("bot"));
-        refresh_latest_turn(&mut metadata, &bot);
-        assert_eq!(
-            unread_completion_target(&metadata).unwrap().turn_id,
-            "desktop"
-        );
-        apply_session_unread_completion(&mut metadata, &receipt);
-        assert!(metadata.unread_completion.is_none());
-        refresh_latest_turn(&mut metadata, &bot);
-        assert!(metadata.unread_completion.is_none());
-    }
-}
-
 /// A delayed UI acknowledgement must not clear a newer completion. New clients
 /// name the rendered Turn/generation; old clients retain the finish-time guard.
 pub fn apply_session_unread_completion(current: &mut SessionMetadata, incoming: &SessionMetadata) {
     let current_target = unread_completion_target(current);
     let incoming_target = receipt_target(incoming);
-    // An older observer may still mark a quiet or bot completion as unread work.
-    // Read receipts remain client-owned, while the host owns result creation.
-    let bot_latest = current
-        .custom_metadata
-        .as_ref()
-        .and_then(|custom| custom.get("lastTurnSource"))
-        .and_then(Value::as_str)
-        == Some("bot");
-    let suppressed_latest = bot_latest
-        || current
-            .last_turn
+    if incoming.unread_completion.is_some()
+        && read_completion_target(current)
             .as_ref()
-            .and_then(|last| {
-                let value = current
-                    .custom_metadata
-                    .as_ref()?
-                    .get("lastBackgroundDelivery")?;
-                let delivery: openbitfun_core_types::background_delivery::BackgroundDelivery =
-                    serde_json::from_value(value.clone()).ok()?;
-                Some(
-                    delivery.run_id == last.turn_id
-                        && delivery.execution_generation == last.execution_generation.unwrap_or(0)
-                        && last.status == TurnStatus::Completed
-                        && delivery.suppresses_report(),
-                )
-            })
-            .unwrap_or(false);
+            .zip(incoming_target.as_ref())
+            .is_some_and(|(read, incoming)| same_completion(read, incoming))
+    {
+        return;
+    }
+    // An older observer may still mark a quiet completion as new unread work.
+    // Read receipts remain client-owned, while the host owns result creation.
+    let suppressed_latest = current
+        .last_turn
+        .as_ref()
+        .and_then(|last| {
+            let value = current
+                .custom_metadata
+                .as_ref()?
+                .get("lastBackgroundDelivery")?;
+            let delivery: openbitfun_core_types::background_delivery::BackgroundDelivery =
+                serde_json::from_value(value.clone()).ok()?;
+            Some(
+                delivery.run_id == last.turn_id
+                    && delivery.execution_generation == last.execution_generation.unwrap_or(0)
+                    && last.status == TurnStatus::Completed
+                    && delivery.suppresses_report(),
+            )
+        })
+        .unwrap_or(false);
     if current_target.is_none() && incoming.unread_completion.is_some() && suppressed_latest {
         return;
     }

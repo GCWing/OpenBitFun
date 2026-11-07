@@ -563,7 +563,7 @@ pub const REMOTE_FILE_MAX_READ_BYTES: u64 = 30 * 1024 * 1024;
 pub const REMOTE_FILE_MAX_CHUNK_BYTES: u64 = 3 * 1024 * 1024;
 pub const REMOTE_CAPABILITY_HARNESS_PROFILES_V1: &str = "harness_profiles_v1";
 pub const REMOTE_CAPABILITY_DIALOG_STEER_V1: &str = "dialog_steer_v1";
-pub const REMOTE_CAPABILITY_BOT_READ_RECEIPTS_V1: &str = "bot_read_receipts_v1";
+pub const REMOTE_CAPABILITY_SESSION_RESULT_ACK_V1: &str = "session_result_ack_v1";
 pub const REMOTE_CAPABILITY_USER_QUESTION_INTERACTION_V1: &str = "user_question_interaction_v1";
 pub const REMOTE_CAPABILITY_BACKGROUND_RESULT_DELIVERY_V1: &str = "background_result_delivery_v1";
 pub const REMOTE_CAPABILITY_SESSION_ROLLBACK_V1: &str = "session_rollback_v1";
@@ -581,7 +581,7 @@ fn remote_host_capabilities() -> Vec<String> {
         "workspace_id_references_v1".to_string(),
         REMOTE_CAPABILITY_HARNESS_PROFILES_V1.to_string(),
         REMOTE_CAPABILITY_DIALOG_STEER_V1.to_string(),
-        REMOTE_CAPABILITY_BOT_READ_RECEIPTS_V1.to_string(),
+        REMOTE_CAPABILITY_SESSION_RESULT_ACK_V1.to_string(),
         "dialog_queue_v1".to_string(),
         REMOTE_CAPABILITY_PLAN_BUILD_V1.to_string(),
         REMOTE_CAPABILITY_SESSION_ATTACHMENTS_V1.to_string(),
@@ -1521,6 +1521,14 @@ pub trait RemoteSessionRuntimeHost: Send + Sync {
     }
     async fn ensure_session_loaded(&self, session_id: &str) -> Result<(), String>;
     async fn update_session_title(&self, session_id: &str, title: &str) -> Result<String, String>;
+    async fn acknowledge_session_result(
+        &self,
+        _session_id: &str,
+        _turn_id: &str,
+        _completion_kind: Option<&str>,
+    ) -> Result<bool, String> {
+        Err("Host does not support session result acknowledgement".into())
+    }
     async fn resolve_session_storage_dir(&self, session_id: &str) -> Option<PathBuf>;
     async fn load_remote_chat_messages(
         &self,
@@ -1815,6 +1823,31 @@ where
                 .await
             {
                 Ok(default_models) => remote_model_defaults_updated_response(default_models),
+                Err(message) => RemoteResponse::Error { message },
+            }
+        }
+        RemoteCommand::AcknowledgeSessionResult {
+            session_id,
+            turn_id,
+            completion_kind,
+        } => {
+            if completion_kind
+                .as_deref()
+                .is_some_and(|kind| !matches!(kind, "completed" | "error" | "interrupted"))
+            {
+                return RemoteResponse::Error {
+                    message: "Invalid session completion kind".into(),
+                };
+            }
+            match host
+                .acknowledge_session_result(session_id, turn_id, completion_kind.as_deref())
+                .await
+            {
+                Ok(acknowledged) => RemoteResponse::SessionResultAcknowledged {
+                    session_id: session_id.clone(),
+                    turn_id: turn_id.clone(),
+                    acknowledged,
+                },
                 Err(message) => RemoteResponse::Error { message },
             }
         }
@@ -2945,6 +2978,13 @@ pub enum RemoteCommand {
         session_id: String,
         title: String,
     },
+    /// Idempotent acknowledgement of a result successfully delivered to a controller.
+    AcknowledgeSessionResult {
+        session_id: String,
+        turn_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        completion_kind: Option<String>,
+    },
     GetSessionMessages {
         session_id: String,
         limit: Option<usize>,
@@ -2953,10 +2993,6 @@ pub enum RemoteCommand {
     SendMessage {
         session_id: String,
         content: String,
-        /// Optional ingress hint retained by bot forwards across devices. Older
-        /// hosts ignore it; absent/unknown values keep the transport's source.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        source: Option<String>,
         #[serde(default)]
         display_content: Option<String>,
         /// Client-generated stable identity for the turn. Older clients omit it;
@@ -3205,6 +3241,11 @@ pub enum RemoteResponse {
     SessionList {
         sessions: Vec<SessionInfo>,
         has_more: bool,
+    },
+    SessionResultAcknowledged {
+        session_id: String,
+        turn_id: String,
+        acknowledged: bool,
     },
     SessionCreated {
         session_id: String,
@@ -3479,6 +3520,7 @@ where
         | RemoteCommand::SetSessionModel { .. }
         | RemoteCommand::SetModelDefaults { .. }
         | RemoteCommand::UpdateSessionTitle { .. }
+        | RemoteCommand::AcknowledgeSessionResult { .. }
         | RemoteCommand::GetSessionMessages { .. }
         | RemoteCommand::DeleteSession { .. }
         | RemoteCommand::RollbackSessionToTurn { .. } => host.handle_session_command(command).await,
@@ -3501,7 +3543,6 @@ where
         RemoteCommand::SendMessage {
             session_id,
             content,
-            source: ingress_source,
             display_content,
             turn_id,
             agent_type,
@@ -3527,13 +3568,7 @@ where
                     display_content: display_content.clone(),
                     agent_type: agent_type.clone(),
                     image_contexts: resolved_contexts,
-                    policy: RemoteDialogSubmissionPolicy::for_source(
-                        if ingress_source.as_deref() == Some("bot") {
-                            RemoteConnectSubmissionSource::Bot
-                        } else {
-                            source
-                        },
-                    ),
+                    policy: RemoteDialogSubmissionPolicy::for_source(source),
                     turn_id: turn_id.clone(),
                 })
                 .await,
@@ -5123,6 +5158,7 @@ mod tests {
 
     #[derive(Default)]
     struct FakeSessionHost {
+        read_receipts: Mutex<Vec<(String, String, Option<String>)>>,
         created_requests: Mutex<Vec<AgentSessionCreateRequest>>,
         list_identities: Mutex<Vec<RemoteSessionWorkspaceIdentity>>,
         model_updates: Mutex<Vec<(String, String, Option<Option<String>>)>>,
@@ -5138,6 +5174,33 @@ mod tests {
         removed_trackers: Mutex<Vec<String>>,
         history_error: Option<String>,
         rollback_requests: Mutex<Vec<(String, String, Option<usize>)>>,
+    }
+
+    #[tokio::test]
+    async fn delivered_result_ack_routes_the_named_turn_and_validates_completion_kind() {
+        let host = FakeSessionHost::default();
+        let payload = serde_json::json!({"cmd":"acknowledge_session_result", "session_id":"session", "turn_id":"delivered"});
+        let command: RemoteCommand = serde_json::from_value(payload.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&command).unwrap(), payload);
+        assert!(matches!(
+            handle_remote_session_command(&host, &command).await,
+            RemoteResponse::SessionResultAcknowledged {
+                acknowledged: true,
+                ..
+            }
+        ));
+        assert_eq!(
+            *host.read_receipts.lock().unwrap(),
+            vec![("session".into(), "delivered".into(), None)]
+        );
+        let invalid: RemoteCommand = serde_json::from_value(serde_json::json!({
+            "cmd":"acknowledge_session_result", "session_id":"session", "turn_id":"delivered", "completion_kind":"running"
+        })).unwrap();
+        assert!(matches!(
+            handle_remote_session_command(&host, &invalid).await,
+            RemoteResponse::Error { .. }
+        ));
+        assert_eq!(host.read_receipts.lock().unwrap().len(), 1);
     }
 
     fn fake_workspace(
@@ -5340,6 +5403,20 @@ mod tests {
                 image_generation: Some("device-image-generation".to_string()),
                 speech_recognition: Some("device-speech".to_string()),
             })
+        }
+
+        async fn acknowledge_session_result(
+            &self,
+            session_id: &str,
+            turn_id: &str,
+            completion_kind: Option<&str>,
+        ) -> Result<bool, String> {
+            self.read_receipts.lock().unwrap().push((
+                session_id.into(),
+                turn_id.into(),
+                completion_kind.map(str::to_owned),
+            ));
+            Ok(true)
         }
 
         async fn update_session_title(

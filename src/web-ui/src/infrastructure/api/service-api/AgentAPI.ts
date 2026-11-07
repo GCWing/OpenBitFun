@@ -1446,6 +1446,10 @@ export class AgentAPI {
     return api.listen<AgenticEvent>('agentic://session-history-changed', callback);
   }
 
+  onSessionResultRead(callback: (event: AgenticEvent) => void): () => void {
+    return api.listen<AgenticEvent>('agentic://session-result-read', callback);
+  }
+
   onSessionModelFallbackApplied(
     callback: (event: SessionModelFallbackAppliedEvent) => void
   ): () => void {

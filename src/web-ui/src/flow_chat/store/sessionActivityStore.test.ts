@@ -8,47 +8,50 @@ const summary = (execution = 'idle', id = 'session'): SessionActivitySummary => 
 });
 
 describe('session activity read projection', () => {
-  it('keeps a bot result read when reconnecting after its start event', () => {
-    const store = new SessionActivityStore();
-    const hostSummary = {
-      ...summary('running'), activeTurnId: 'bot', lastTurnSource: 'bot',
-      lastTurn: { turnId: 'bot', turnIndex: 0, status: 'inprogress' as const },
-    };
-    store.applyRead(store.beginRead('peer'), [hostSummary]);
-    store.observe('peer', 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'bot' });
-    expect(store.get('session', 'peer')?.summary?.unreadCompletion).toBeUndefined();
-    expect(store.get('session', 'peer')?.summary?.execution).toBe('idle');
-  });
-
-  it.each(['completed', 'failed', 'cancelled', 'interrupted'])('keeps bot %s results read on local and peer surfaces', (outcome) => {
-    for (const surface of ['local', 'peer']) {
+  it.each(['completed', 'error', 'interrupted'] as const)('keeps %s unread until successful IM delivery and accepts the receipt before completion', (kind) => {
+    for (const receiptFirst of [false, true]) {
       const store = new SessionActivityStore();
-      store.observe(surface, 'agentic://dialog-turn-started', {
-        sessionId: 'session', turnId: 'bot', userMessageMetadata: { submissionSource: 'bot' },
-      });
-      store.observe(surface, 'agentic://dialog-turn-' + outcome, { sessionId: 'session', turnId: 'bot' });
-      expect(store.get('session', surface)?.summary?.unreadCompletion).toBeUndefined();
-      expect(store.get('session', surface)?.summary?.lastTurn?.turnId).toBe('bot');
-      store.observe(surface, 'agentic://dialog-turn-started', { sessionId: 'session', turnId: 'desktop' });
-      store.observe(surface, 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'desktop' });
-      expect(store.get('session', surface)?.summary?.unreadCompletion).toBe('completed');
+      const terminal = kind === 'completed' ? 'completed' : kind === 'error' ? 'failed' : 'cancelled';
+      const complete = () => store.observe('peer', `agentic://dialog-turn-${terminal}`, { sessionId: 'session', turnId: 'bot', executionGeneration: 0 });
+      store.observe('peer', 'agentic://dialog-turn-started', { sessionId: 'session', turnId: 'bot', userMessageMetadata: { submissionSource: 'bot' } });
+      if (!receiptFirst) {
+        complete();
+        expect(store.get('session', 'peer')?.summary?.unreadCompletion).toBe(kind);
+      }
+      const stale = store.beginRead('peer');
+      store.observe('peer', 'agentic://session-result-read', { sessionId: 'session', turnId: 'bot', executionGeneration: 0, completionKind: kind });
+      complete();
+      store.applyRead(stale, [{ ...summary(), unreadCompletion: kind }]);
+      expect(store.get('session', 'peer')?.summary?.unreadCompletion).toBeUndefined();
+      const snapshot = store.get('session', 'peer')!.summary!;
+      const reconnected = new SessionActivityStore();
+      reconnected.applyRead(reconnected.beginRead('peer'), [snapshot]);
+      reconnected.observe('peer', `agentic://dialog-turn-${terminal}`, { sessionId: 'session', turnId: 'bot', executionGeneration: 0 });
+      expect(reconnected.get('session', 'peer')?.summary?.unreadCompletion).toBeUndefined();
+      reconnected.observe('peer', 'agentic://dialog-turn-recovered', { sessionId: 'session', turnId: 'bot', executionGeneration: 1 });
+      reconnected.observe('peer', 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'bot', executionGeneration: 1 });
+      expect(reconnected.get('session', 'peer')?.summary?.unreadCompletion).toBe('completed');
     }
   });
 
-  it('preserves earlier unread work across bot recovery and host refreshes', () => {
+  it('does not let an old IM receipt clear a newer result or a different device', () => {
     const store = new SessionActivityStore();
-    store.observe('peer', 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'desktop' });
-    store.observe('peer', 'agentic://dialog-turn-started', {
-      sessionId: 'session', turnId: 'bot', userMessageMetadata: { submissionSource: 'bot' },
-    });
-    store.applyRead(store.beginRead('peer'), [{ ...store.get('session', 'peer')!.summary!, lastTurnSource: undefined }]);
-    store.observe('peer', 'agentic://dialog-turn-recovered', { sessionId: 'session', turnId: 'bot', executionGeneration: 1 });
-    store.observe('peer', 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'bot', executionGeneration: 1 });
-    expect(store.get('session', 'peer')?.summary).toMatchObject({
-      unreadCompletion: 'completed', unreadTurn: { turnId: 'desktop' }, lastTurn: { turnId: 'bot' },
-    });
+    for (const surface of ['local', 'peer']) store.observe(surface, 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'desktop' });
+    store.observe('peer', 'agentic://session-result-read', { sessionId: 'session', turnId: 'bot', executionGeneration: 0, completionKind: 'completed' });
+    expect(store.get('session', 'peer')?.summary?.unreadCompletion).toBe('completed');
+    store.observe('peer', 'agentic://session-result-read', { sessionId: 'session', turnId: 'desktop', executionGeneration: 0, completionKind: 'completed' });
+    expect(store.get('session', 'peer')?.summary?.unreadCompletion).toBeUndefined();
+    expect(store.get('session', 'local')?.summary?.unreadCompletion).toBe('completed');
   });
 
+  it('keeps a cancellation unread after an interrupted checkpoint was delivered', () => {
+    const store = new SessionActivityStore();
+    store.observe('peer', 'agentic://dialog-turn-interrupted', { sessionId: 'session', turnId: 'turn', executionGeneration: 1 });
+    store.observe('peer', 'agentic://session-result-read', { sessionId: 'session', turnId: 'turn', executionGeneration: 1, completionKind: 'interrupted', recoveryPending: true });
+    expect(store.get('session', 'peer')?.summary?.unreadCompletion).toBeUndefined();
+    store.observe('peer', 'agentic://dialog-turn-cancelled', { sessionId: 'session', turnId: 'turn', executionGeneration: 1 });
+    expect(store.get('session', 'peer')?.summary?.unreadCompletion).toBe('interrupted');
+  });
   it('keeps a prior unread result across a newer quiet run and acknowledges its original identity', () => {
     activateSurface('local');
     const store = new SessionActivityStore();

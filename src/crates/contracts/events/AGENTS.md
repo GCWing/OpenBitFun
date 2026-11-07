@@ -21,6 +21,7 @@ It describes events; it does not own event delivery or product decisions.
 
 ```bash
 cargo check -p openbitfun-events
+cargo test --locked -p openbitfun-events --lib frontend_projection::tests::result_read_projects_the_same_turn_identity_for_peer_and_local_consumers
 node scripts/check-core-boundaries.mjs
 ```
 

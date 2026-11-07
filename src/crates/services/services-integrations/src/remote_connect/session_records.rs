@@ -23,9 +23,11 @@ pub fn session_event_publication(name: &str, payload: &Value) -> SessionEventPub
             persist_control: false,
         };
     }
-    // A next-input suggestion is not transcript content; its source turn was
-    // already synchronized by the completion event that precedes it.
-    if name == "agentic://prompt-suggestion" {
+    // Suggestions and read receipts are controls, not transcript mutations.
+    if matches!(
+        name,
+        "agentic://prompt-suggestion" | "agentic://session-result-read"
+    ) {
         return SessionEventPublication {
             synchronize_records: false,
             persist_control: true,
@@ -180,5 +182,15 @@ mod publication_tests {
         );
         assert!(!policy.synchronize_records);
         assert!(policy.persist_control);
+    }
+
+    #[test]
+    fn read_receipts_replay_without_rebuilding_transcripts() {
+        let policy = session_event_publication(
+            "agentic://session-result-read",
+            &json!({"sessionId":"session", "turnId":"turn"}),
+        );
+        assert!(policy.persist_control);
+        assert!(!policy.synchronize_records);
     }
 }

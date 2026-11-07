@@ -164,6 +164,7 @@ export function installSessionNavStatusService(): () => void {
   const events: Array<[string, (callback: (event: AgenticEvent) => void) => () => void]> = [
     ['agentic://session-state-changed', callback => agentAPI.onSessionStateChanged(callback)],
     ['agentic://session-history-changed', callback => agentAPI.onSessionHistoryChanged(callback)],
+    ['agentic://session-result-read', callback => agentAPI.onSessionResultRead(callback)],
     ['agentic://session-deleted', callback => agentAPI.onSessionDeleted(callback)],
     ['agentic://dialog-turn-started', callback => agentAPI.onDialogTurnStarted(callback)],
     ['agentic://dialog-turn-completed', callback => agentAPI.onDialogTurnCompleted(callback)],
