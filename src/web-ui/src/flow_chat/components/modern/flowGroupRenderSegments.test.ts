@@ -20,12 +20,14 @@ it('keeps thinking beside its continuation and existing segment identities stabl
   ]);
 });
 
-it('keeps native AgentWait segment boundaries stable as calls complete', () => {
-  const items = Array.from({ length: 20 }, (_, index) => read(index));
-  items[15] = { ...items[15], toolName: 'AgentWait', status: 'running' };
-  items[16] = { ...items[16], toolName: 'AgentWait', status: 'running' };
-  const before = buildFlowGroupRenderSegments(items);
-  const after = buildFlowGroupRenderSegments(items.map(item => ({ ...item, status: 'completed' })));
-  expect(before[0].items.at(-1)?.id).toBe('call-15');
-  expect(after.map(segment => segment.key)).toEqual(before.map(segment => segment.key));
+it('reuses closed segment object references when appending new items', () => {
+  const initialItems: FlowItem[] = Array.from({ length: 32 }, (_, index) => read(index));
+  const firstPass = buildFlowGroupRenderSegments(initialItems);
+  expect(firstPass.length).toBe(2);
+
+  const updatedItems = [...initialItems, read(32), read(33)];
+  const secondPass = buildFlowGroupRenderSegments(updatedItems, firstPass);
+  expect(secondPass[0]).toBe(firstPass[0]);
+  expect(secondPass[1]).toBe(firstPass[1]);
+  expect(secondPass.length).toBe(3);
 });
