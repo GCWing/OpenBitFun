@@ -78,7 +78,6 @@
     "loading": "Loading desktop cards…",
     "failed": "Could not load desktop cards. Try again.",
     "empty": "No cards yet",
-    "emptyHint": "Ask the agent to set a reminder or watch a PR.",
     "shown": "On desktop",
     "hidden": "Hidden",
     "show": "Show on desktop",
