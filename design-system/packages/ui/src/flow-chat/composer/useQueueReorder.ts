@@ -131,8 +131,8 @@ export function useQueueReorder(ids: string[], enabled: boolean, revision: strin
         },
         onPointerMove: update,
         onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => { if (drag.current?.pointerId === event.pointerId) finish(true); },
-        onPointerCancel: () => finish(false),
-        onLostPointerCapture: () => finish(false),
+        onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => { if (drag.current?.pointerId === event.pointerId) finish(false); },
+        onLostPointerCapture: (event: ReactPointerEvent<HTMLButtonElement>) => { if (drag.current?.pointerId === event.pointerId) finish(false); },
       };
     },
   };

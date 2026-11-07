@@ -24,6 +24,7 @@ function pointer(type: string, y: number, target = container.querySelector('butt
   act(() => target.dispatchEvent(event));
 }
 beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   move.mockClear();
   vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
   vi.stubGlobal('cancelAnimationFrame', vi.fn());
@@ -51,6 +52,13 @@ it.each(['Escape', 'blur', 'pointercancel', 'lostpointercapture'])('cancels with
   else pointer(event, 110);
   pointer('pointerup', 110);
   expect(move).not.toHaveBeenCalled();
+});
+it.each(['pointercancel', 'lostpointercapture'])('ignores %s from another pointer', event => {
+  pointer('pointerdown', 20); pointer('pointermove', 85);
+  pointer(event, 85, container.querySelector('button')!, 2);
+  expect(container.querySelector('[data-queue-dragging]')).not.toBeNull();
+  pointer('pointerup', 85);
+  expect(move).toHaveBeenCalledExactlyOnceWith('a', 'c');
 });
 it('host revision changes invalidate the entire gesture', () => {
   pointer('pointerdown', 20); pointer('pointermove', 110); render(2); pointer('pointerup', 110);
