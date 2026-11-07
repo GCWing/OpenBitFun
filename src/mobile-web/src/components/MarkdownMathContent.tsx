@@ -5,6 +5,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import 'katex/dist/katex.min.css';
+import { chatMarkdownGfmOptions } from './chatMarkdownGfm';
 
 export interface MarkdownMathContentProps {
   content: string;
@@ -24,7 +25,7 @@ export const MarkdownMathContent: React.FC<MarkdownMathContentProps> = ({
   <ReactMarkdown
     components={components}
     rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
-    remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+    remarkPlugins={[[remarkGfm, chatMarkdownGfmOptions], [remarkMath, { singleDollarTextMath: false }]]}
     urlTransform={urlTransform}
   >
     {content}

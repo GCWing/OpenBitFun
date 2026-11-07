@@ -9,6 +9,13 @@ This directory contains OpenBitFun’s **Web UI** (React + TypeScript). The same
 - **Desktop**: loaded via **Tauri**
 - **Server/Web**: built into static assets and served by the backend
 
+## Markdown in conversations
+
+Use `~~text~~` for strikethrough. Single tildes stay literal, so ranges such as
+`24~30°C` and `1~2mm` can appear in the same paragraph. Escaped tildes (`\~`)
+and tildes inside code stay literal too. This applies to streamed and completed
+replies, including replies containing math; saved message text is unchanged.
+
 ## Closing tabs with the keyboard
 
 In Desktop, **Ctrl+W** on Windows/Linux or **Cmd+W** on macOS closes the current

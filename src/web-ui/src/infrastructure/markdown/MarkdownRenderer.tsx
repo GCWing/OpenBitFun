@@ -10,6 +10,7 @@ import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useR
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import { Icon, IconButton, Tooltip } from '@openbitfun/ui';
 import remarkGfm from 'remark-gfm';
+import { markdownGfmOptions } from './markdownGfmOptions';
 import { remarkCachedParse } from './markdownParseCache';
 import { remarkAutolinkBoundaries } from './remarkAutolinkBoundaries';
 import { remarkStreamingTableLinks } from './remarkStreamingTableLinks';
@@ -1762,7 +1763,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
     const fragmentComponents = inline ? { ...components, p: InlineFragment } : components;
     const basicFragment = (
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
+        remarkPlugins={[[remarkGfm, markdownGfmOptions], remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
         rehypePlugins={[rehypeRaw, [rehypeWindowsDrivePaths, { markdownSource: fragment }], [rehypeSanitize, sanitizeSchema]]}
         urlTransform={markdownUrlTransform}
         components={fragmentComponents}
@@ -1784,7 +1785,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
   }, [components, isStreaming]);
   const basicMarkdownRenderer = (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, ...(!isStreaming ? [remarkCachedParse] : []), [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
+      remarkPlugins={[[remarkGfm, markdownGfmOptions], ...(!isStreaming ? [remarkCachedParse] : []), [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
       rehypePlugins={[rehypeRaw, [rehypeWindowsDrivePaths, { markdownSource: markdownContent }], [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], [rehypeImageThumbnails, { enabled: imageThumbnails }]]}
       urlTransform={markdownUrlTransform}
       components={components}

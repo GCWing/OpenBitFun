@@ -265,7 +265,7 @@ async function populateSessionAsync(sessionId: string, turnCount: number): Promi
       }
 
       // Force sync: get the UPDATED session from flowChatStore (with new dialogTurns ref)
-      // then push it to modernFlowChatStore so sessionToVirtualItems recalculates
+      // then push it to modernFlowChatStore so its owned projector recalculates
       const updatedSession = flowChatStore.getState().sessions.get(sid);
       if (updatedSession) {
         useModernFlowChatStore.getState().setActiveSession(updatedSession);

@@ -1,5 +1,6 @@
 import { modelPoolAPI, supportsModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { isRuntimeSessionProjectionStale } from '@/infrastructure/peer-device/runtimeSessionEventGate';
 import { sessionWorkspaceId, sessionProjectWorkspacePath } from '../../utils/sessionWorkspace';
 import { shouldIncludeInternalSession } from '../../utils/internalSession';
 /**
@@ -261,6 +262,11 @@ function logDroppedDataEvent(
   turnId: string | null,
   details: Record<string, unknown>
 ): void {
+  // Missing UI state does not identify an internal background session. Preserve
+  // the first replay gap, then coalesce repeated drops until it materializes.
+  if (details.reason === 'missing_state_machine'
+    && !FlowChatStore.getInstance().getState().sessions.has(sessionId)
+    && isRuntimeSessionProjectionStale(getActiveSurfaceScope().surfaceId, sessionId)) return;
   requestRuntimeProjectionRepair(sessionId);
   log.debug('Dropped agentic data event', {
     eventName,

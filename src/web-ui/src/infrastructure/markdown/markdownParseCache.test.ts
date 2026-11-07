@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
+import { markdownGfmOptions } from './markdownGfmOptions';
 import remarkRehype from 'remark-rehype';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import { remarkCachedParse } from './markdownParseCache';
 
 describe('immutable Markdown parse cache', () => {
-  const source = `# Cached document\n\n${'Paragraph with **emphasis**.\n\n'.repeat(90)}
+  const source = `# Cached document\n\n${'Paragraph with **emphasis**, 24~30°C, rain 1~2mm and ~~removed~~.\n\n'.repeat(90)}
 [reference][target] and footnote[^1]
 
 | a | b |
@@ -21,8 +22,8 @@ describe('immutable Markdown parse cache', () => {
 <script>alert(1)</script><img src="x" onerror="alert(1)">`;
 
   it('preserves whole-document GFM references, footnotes, positions and independent trees', () => {
-    const expected = unified().use(remarkParse).use(remarkGfm).parse(source);
-    const parse = () => unified().use(remarkParse).use(remarkGfm).use(remarkCachedParse).parse(source);
+    const expected = unified().use(remarkParse).use(remarkGfm, markdownGfmOptions).parse(source);
+    const parse = () => unified().use(remarkParse).use(remarkGfm, markdownGfmOptions).use(remarkCachedParse).parse(source);
     const first = parse();
     expect(first).toEqual(expected);
     first.children.length = 0;
@@ -30,7 +31,7 @@ describe('immutable Markdown parse cache', () => {
   });
 
   it('runs raw HTML handling and sanitization after a cache hit', () => {
-    const pipeline = () => unified().use(remarkParse).use(remarkGfm).use(remarkCachedParse)
+    const pipeline = () => unified().use(remarkParse).use(remarkGfm, markdownGfmOptions).use(remarkCachedParse)
       .use(remarkRehype, { allowDangerousHtml: true }).use(rehypeRaw).use(rehypeSanitize);
     const render = () => { const processor = pipeline(); return processor.runSync(processor.parse(source)); };
     const first = render();
@@ -90,8 +91,8 @@ describe('Markdown worker prewarming', () => {
     expect(workers).toHaveLength(1);
     expect(workers[0].terminate).toHaveBeenCalledOnce();
     expect(workers[0].postMessage).toHaveBeenCalledTimes(1);
-    const processor = unified().use(remarkParse).use(remarkGfm).use(cachedParse);
-    expect(processor.parse(text)).toEqual(unified().use(remarkParse).use(remarkGfm).parse(text));
+    const processor = unified().use(remarkParse).use(remarkGfm, markdownGfmOptions).use(cachedParse);
+    expect(processor.parse(text)).toEqual(unified().use(remarkParse).use(remarkGfm, markdownGfmOptions).parse(text));
   });
 
   it('does not retry a worker whose constructor throws', async () => {
@@ -117,10 +118,10 @@ describe('Markdown worker prewarming', () => {
 
   it('caches successful replies and can restart after normal idle termination', async () => {
     const { prewarmMarkdownParse, remarkCachedParse: cachedParse } = await import('./markdownParseCache');
-    const tree = unified().use(remarkParse).use(remarkGfm).parse(text);
+    const tree = unified().use(remarkParse).use(remarkGfm, markdownGfmOptions).parse(text);
     prewarmMarkdownParse(text);
     workers[0].onmessage!({ data: { tree } });
-    const processor = unified().use(remarkParse).use(remarkGfm).use(cachedParse);
+    const processor = unified().use(remarkParse).use(remarkGfm, markdownGfmOptions).use(cachedParse);
     expect(processor.parse(text)).toEqual(tree);
     prewarmMarkdownParse(text);
     expect(workers[0].postMessage).toHaveBeenCalledOnce();

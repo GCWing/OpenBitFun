@@ -2,6 +2,7 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { markdownGfmOptions } from './markdownGfmOptions';
 import { remarkAutolinkBoundaries } from './remarkAutolinkBoundaries';
 import { remarkStreamingTableLinks } from './remarkStreamingTableLinks';
 import remarkMath from 'remark-math';
@@ -40,7 +41,7 @@ export const MarkdownMathRenderer: React.FC<MarkdownMathRendererProps> = ({
 }) => {
   const content = (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath, [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkComputerFileLinks]}
+      remarkPlugins={[[remarkGfm, markdownGfmOptions], remarkMath, [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkComputerFileLinks]}
       rehypePlugins={[rehypeRaw, [rehypeWindowsDrivePaths, { markdownSource: markdownContent }], [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], rehypeKatex, [rehypeImageThumbnails, { enabled: imageThumbnails }]]}
       urlTransform={urlTransform}
       components={components}

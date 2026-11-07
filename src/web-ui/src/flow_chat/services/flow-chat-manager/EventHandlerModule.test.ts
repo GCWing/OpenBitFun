@@ -24,11 +24,16 @@ import { markOptimisticDispatchTurnMetadata } from '@/features/dispatch/optimist
 import { interruptedTurnRecoveryGate } from '../interruptedTurnRecoveryGate';
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import { localSessionDriver } from '../../session-drivers/local/LocalSessionDriver';
+import * as peerSessionRefresh from './PeerSessionRefreshModule';
 import { chatInputSessionSubscriptionKey } from '../../utils/chatInputSessionSubscription';
 import { selectInterruptedTurnRecovery } from '../../utils/interruptedTurnRecovery';
 import { promptSuggestionKey, usePromptSuggestionStore } from '../../store/promptSuggestionStore';
 import { clearAgentCanvasForPeerSwitch, switchAgentCanvasScope, useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
+import {
+  isRuntimeSessionProjectionStale,
+  resetRuntimeSessionEventGateForTest,
+} from '@/infrastructure/peer-device/runtimeSessionEventGate';
 import { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
 import {
   isManualCompactionPending,
@@ -1166,6 +1171,36 @@ describe('shouldProcessEvent', () => {
     expect(
       shouldProcessEvent(mockSessionId, mockTurnId, 'data', 'TextChunk'),
     ).toBe(false);
+  });
+
+  it.each(['local', 'peer-review'])('preserves replay repair for an unmaterialized session on %s', surfaceId => {
+    resetRuntimeSessionEventGateForTest();
+    activateSurface(surfaceId);
+    try {
+      expect(FlowChatStore.getInstance().getState().sessions.has(mockSessionId)).toBe(false);
+      expect(shouldProcessEvent(mockSessionId, mockTurnId, 'data', 'TextChunk')).toBe(false);
+      expect(isRuntimeSessionProjectionStale(surfaceId, mockSessionId)).toBe(true);
+    } finally {
+      activateSurface('local');
+      resetRuntimeSessionEventGateForTest();
+    }
+  });
+
+  it('coalesces an unknown session gap without suppressing repair after registration', () => {
+    resetRuntimeSessionEventGateForTest();
+    const repair = vi.spyOn(peerSessionRefresh, 'requestRuntimeProjectionRepair');
+    try {
+      expect(shouldProcessEvent('session-1', 'turn-1', 'data', 'TextChunk')).toBe(false);
+      expect(shouldProcessEvent('session-1', 'turn-1', 'data', 'TextChunk')).toBe(false);
+      expect(repair).toHaveBeenCalledTimes(1);
+      expect(isRuntimeSessionProjectionStale('local', 'session-1')).toBe(true);
+      createSessionWithTurn(createFinishingTurn());
+      expect(shouldProcessEvent('session-1', 'turn-1', 'data', 'TextChunk')).toBe(false);
+      expect(repair).toHaveBeenCalledTimes(2);
+    } finally {
+      repair.mockRestore();
+      resetRuntimeSessionEventGateForTest();
+    }
   });
 
   it('returns true for state_sync event even when no state machine exists', () => {

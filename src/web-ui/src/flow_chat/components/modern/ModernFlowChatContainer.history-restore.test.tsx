@@ -33,9 +33,10 @@ vi.mock('../../store/FlowChatStore', () => ({ flowChatStore: {
 } }));
 vi.mock('../../store/modernFlowChatStore', async importOriginal => {
   const original = await importOriginal<typeof import('../../store/modernFlowChatStore')>();
+  const projectSession = original.createSessionVirtualItemProjector();
   return { ...original,
     useActiveSession: () => fixture.session,
-    useVirtualItems: () => original.sessionToVirtualItems(fixture.session!),
+    useVirtualItems: () => projectSession(fixture.session!),
     useVisibleTurnInfo: () => null,
   };
 });

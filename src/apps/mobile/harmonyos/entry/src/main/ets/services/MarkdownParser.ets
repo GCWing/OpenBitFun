@@ -114,16 +114,13 @@ export class MarkdownParser {
   }
 
   static formatInlineText(value: string): string {
-    let text = value;
-    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
-    text = text.replace(/<(https?:\/\/|computer:\/\/|file:\/\/)([^\s<>]+)>/g, '$1$2');
-    text = text.replace(/`([^`]+)`/g, '$1');
-    text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
-    text = text.replace(/__([^_]+)__/g, '$1');
-    text = text.replace(/~~([^~]+)~~/g, '$1');
-    text = text.replace(/\*([^*]+)\*/g, '$1');
-    text = text.replace(/_([^_]+)_/g, '$1');
-    return text;
+    return MarkdownParser.plainInlineText(MarkdownParser.parseInlineText(value));
+  }
+
+  private static plainInlineText(inlines: ParsedMarkdownInline[]): string {
+    return inlines.map((inline: ParsedMarkdownInline) => {
+      return inline.type === 'link' && inline.text !== inline.url ? `${inline.text} (${inline.url})` : inline.text;
+    }).join('');
   }
 
   private static readCodeBlock(lines: string[], start: number, blocks: ParsedMarkdownBlock[]): number {
@@ -198,11 +195,12 @@ export class MarkdownParser {
         text += ' ' + continuationTrimmed;
         nextIndex += 1;
       }
+      const inlines = MarkdownParser.parseInlineText(text, `li-${start}-${items.length}`);
       const item: ParsedMarkdownListItem = {
         id: `li-${start}-${items.length}`,
         marker,
-        text: MarkdownParser.formatInlineText(text),
-        inlines: MarkdownParser.parseInlineText(text, `li-${start}-${items.length}`),
+        text: MarkdownParser.plainInlineText(inlines),
+        inlines,
         depth: MarkdownParser.listDepth(raw),
         checked: taskMatch ? (taskMatch[1].toLowerCase() === 'x' ? 1 : 0) : -1
       };
@@ -268,8 +266,8 @@ export class MarkdownParser {
     tableRows: ParsedMarkdownTableRow[] = []
   ): void {
     const id = `md-${blocks.length}-${type}`;
-    const normalizedText = MarkdownParser.shouldParseInline(type) ? MarkdownParser.formatInlineText(text) : text;
     const inlines = MarkdownParser.shouldParseInline(type) ? MarkdownParser.parseInlineText(text, id) : [];
+    const normalizedText = MarkdownParser.shouldParseInline(type) ? MarkdownParser.plainInlineText(inlines) : text;
     const block: ParsedMarkdownBlock = {
       id,
       renderKey: '',
@@ -389,10 +387,13 @@ export class MarkdownParser {
         return end + 2;
       }
     }
-    if (value.slice(start, start + 2) === '~~') {
-      const end = value.indexOf('~~', start + 2);
+    if (MarkdownParser.isStrikeDelimiter(value, start, false)) {
+      let end = value.indexOf('~~', start + 2);
+      while (end >= 0 && !MarkdownParser.isStrikeDelimiter(value, end, true)) {
+        end = value.indexOf('~~', end + 2);
+      }
       if (end > start + 2) {
-        MarkdownParser.pushInline(inlines, prefix, 'delete', value.slice(start + 2, end), '');
+        MarkdownParser.pushInline(inlines, prefix, 'delete', MarkdownParser.unescapeText(value.slice(start + 2, end)), '');
         return end + 2;
       }
     }
@@ -446,6 +447,22 @@ export class MarkdownParser {
       }
     });
     return next;
+  }
+
+  private static isStrikeDelimiter(value: string, index: number, closing: boolean): boolean {
+    // Single tildes are chat ranges; runs longer than two are literal inlines.
+    if (value.slice(index, index + 2) !== '~~' || value.charAt(index - 1) === '~' ||
+      value.charAt(index + 2) === '~' || MarkdownParser.isEscaped(value, index)) {
+      return false;
+    }
+    const before = value.charAt(index - 1);
+    const after = value.charAt(index + 2);
+    const beforeSpace = before.length === 0 || /\s/.test(before);
+    const afterSpace = after.length === 0 || /\s/.test(after);
+    const beforePunctuation = /[\p{P}\p{S}]/u.test(before);
+    const afterPunctuation = /[\p{P}\p{S}]/u.test(after);
+    return closing ? !beforeSpace && (!beforePunctuation || afterSpace || afterPunctuation) :
+      !afterSpace && (!afterPunctuation || beforeSpace || beforePunctuation);
   }
 
   private static pushInline(
@@ -755,10 +772,11 @@ export class MarkdownParser {
     for (let column = 0; column < columnCount; column += 1) {
       const text = column < values.length ? values[column] : '';
       const id = `table-${start}-${rowIndex}-${column}`;
+      const inlines = MarkdownParser.parseInlineText(text, id);
       cells.push({
         id,
-        text: MarkdownParser.formatInlineText(text),
-        inlines: MarkdownParser.parseInlineText(text, id),
+        text: MarkdownParser.plainInlineText(inlines),
+        inlines,
         alignment: column < alignments.length ? alignments[column] : 'left'
       });
     }

@@ -20,6 +20,15 @@ and platform adapters. Product logic and stable contracts should remain in the
 platform-agnostic Rust layers and be exposed to these apps through explicit
 interfaces.
 
+## Chat Markdown
+
+Android, iOS and HarmonyOS keep single tildes literal in chat, matching the
+desktop and mobile-web renderers: `24~30°C`, `1~2mm` and `~5 min` remain plain
+text. Use `~~removed~~` for strikethrough. Escaped tildes (`\~`) and inline code
+keep their literal text; unfinished double pairs remain literal while streaming.
+This rendering policy applies to existing transcripts without changing the
+host's saved Markdown or requiring a protocol upgrade.
+
 ## Image messages
 
 All three apps can send images with or without text. Camera photos are decoded

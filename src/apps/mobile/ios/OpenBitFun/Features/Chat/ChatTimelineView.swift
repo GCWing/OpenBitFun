@@ -1008,6 +1008,7 @@ private func markdownInlineString(
         switch inline.type {
         case "strong": part.inlinePresentationIntent = .stronglyEmphasized
         case "emphasis": part.inlinePresentationIntent = .emphasized
+        case "delete": part.inlinePresentationIntent = .strikethrough
         case "code":
             part.inlinePresentationIntent = .code
             part.backgroundColor = OpenBitFunTheme.soft

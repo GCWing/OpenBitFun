@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flowChatStore, mergeModelRoundAttemptDiagnostics } from './FlowChatStore';
-import { sessionToVirtualItems } from './modernFlowChatStore';
+import { createSessionVirtualItemProjector } from './modernFlowChatStore';
 import { getTurnOutputDurationMs, getTurnUsageMetrics } from '../utils/turnUsageMetrics';
 import { buildModelRoundItemGroups } from '../components/modern/modelRoundItemGrouping';
 import { getVirtualItemFlowGroups } from '../grouping/selectors';
@@ -36,6 +36,9 @@ import {
   askUserQuestionDraftKey,
   askUserQuestionDraftStore,
 } from './askUserQuestionDraftStore';
+
+let projectSession: ReturnType<typeof createSessionVirtualItemProjector>;
+beforeEach(() => { projectSession = createSessionVirtualItemProjector(); });
 
 vi.mock('@/shared/notification-system', () => ({
   notificationService: { error: vi.fn(), warning: vi.fn() },
@@ -1406,7 +1409,7 @@ describe('FlowChatStore round attempts', () => {
       }], { supersedeMatchingAttempts: true }));
     flowChatStore.addModelRoundItem(session.sessionId, 'turn-1', tool('recovered', 2), 'retry');
 
-    const groups = () => sessionToVirtualItems(flowChatStore.getState().sessions.get(session.sessionId)!)
+    const groups = () => projectSession(flowChatStore.getState().sessions.get(session.sessionId)!)
       .flatMap(getVirtualItemFlowGroups);
     expect(groups().map(group => group.allItems.map(item => item.id))).toEqual([['before-call'], ['recovered']]);
     const owner = groups()[1].groupId;
@@ -1448,7 +1451,7 @@ describe('FlowChatStore round attempts', () => {
     const reloaded = restore(JSON.parse(JSON.stringify(convertDialogTurnToBackendFormat(restored, 0))));
     for (const turn of [restored, reloaded]) {
       const session = createSession({ dialogTurns: [turn] });
-      const groups = sessionToVirtualItems(session).flatMap(getVirtualItemFlowGroups);
+      const groups = projectSession(session).flatMap(getVirtualItemFlowGroups);
       expect(groups.map(group => group.allItems.map(item => item.id))).toEqual(source ? [] : [['read', 'read-next']]);
       expect(turn.modelRounds[0].attempts).toHaveLength(2);
       expect(turn.modelRounds[0].attempts[0].diagnostic.rawError).toBe('Connection reset');
@@ -2935,7 +2938,7 @@ describe('FlowChatStore historical session hydration state', () => {
         attemptId: scenario === 'diagnostic' ? 'runtime-interaction:round-live' : 'attempt-live', isParamsStreaming: false }),
     ]));
     expect(round().items).toEqual(round().attempts!.flatMap(entry => entry.items));
-    const visibleRound = sessionToVirtualItems(flowChatStore.getState().sessions.get('history-1')!)
+    const visibleRound = projectSession(flowChatStore.getState().sessions.get('history-1')!)
       .find(item => item.type === 'model-round');
     expect(visibleRound?.type).toBe('model-round');
     if (visibleRound?.type === 'model-round') {
@@ -8766,9 +8769,9 @@ describe('FlowChatStore device surfaces', () => {
           expect(result.composerText).toBe('test2');
         }
         expect(turnIds(sessionId)).toEqual(['turn-0']);
-        expect(sessionToVirtualItems(flowChatStore.getState().sessions.get(sessionId)!))
+        expect(projectSession(flowChatStore.getState().sessions.get(sessionId)!))
           .toEqual(expect.arrayContaining([expect.objectContaining({ turnId: 'turn-0' })]));
-        expect(sessionToVirtualItems(flowChatStore.getState().sessions.get(sessionId)!)
+        expect(projectSession(flowChatStore.getState().sessions.get(sessionId)!)
           .some(item => item.turnId === 'turn-1' || item.turnId === 'turn-2')).toBe(false);
         expect(apiMocks.restoreSessionView).not.toHaveBeenCalled();
       },

@@ -235,6 +235,30 @@ describe('Markdown file links', () => {
     vi.clearAllMocks();
   });
 
+  it.each([false, true])('keeps range tildes literal with streaming=%s and after completion', async isStreaming => {
+    const content = String.raw`24~30°C, rain 1~2mm; \~escaped\~; ~~removed~~; \~~literal\~~; ` + '`~code~`';
+    for (const streaming of [isStreaming, false]) {
+      await act(async () => root.render(<MarkdownRenderer content={content} isStreaming={streaming} />));
+      expect([...container.querySelectorAll('del')].map(node => node.textContent)).toEqual(['removed']);
+      expect(container.textContent).toContain('24~30°C, rain 1~2mm; ~escaped~; removed; ~~literal~~; ~code~');
+    }
+  });
+
+  it('uses the same tilde rules for math Markdown and thinking', async () => {
+    const { MarkdownMathRenderer } = await vi.importActual<typeof import('./MarkdownMathRenderer')>('./MarkdownMathRenderer');
+    const content = '24~30°C, rain 1~2mm; ~~removed~~';
+    await act(async () => root.render(<MarkdownMathRenderer markdownContent={`${content}; $x^2$`}
+      components={{}} sanitizeSchema={{}} remarkAutolinkComputerFileLinks={() => {}} urlTransform={value => value} />));
+    expect([...container.querySelectorAll('del')].map(node => node.textContent)).toEqual(['removed']);
+    expect(container.textContent).toContain('24~30°C, rain 1~2mm');
+    expect(container.querySelector('.katex')).not.toBeNull();
+    for (const isStreaming of [true, false]) {
+      await act(async () => root.render(<ThinkingMarkdownRenderer content={content} isStreaming={isStreaming} singleLinePreview />));
+      expect([...container.querySelectorAll('del')].every(node => node.textContent === 'removed')).toBe(true);
+      expect(container.textContent).toContain('24~30°C, rain 1~2mm');
+    }
+  });
+
   it('isolates a mixed reply at its text leaf while retaining hidden bodies and native cross-message ranges', async () => {
     const styles = document.createElement('style');
     styles.textContent = compile(resolve('src/flow_chat/components/FlowTextBlock.scss')).css

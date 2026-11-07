@@ -756,7 +756,8 @@ export function useFlowChatVirtualizer<T>({
       const key = keys[index] ?? getItemKeyRef.current(item);
       const knownHeight = getKnownItemHeightPx(item);
       if (knownHeight !== undefined) next.set(key, knownHeight);
-      if (knownHeight === undefined && !previous.has(key)) continue;
+      const prevHeight = previous.get(key);
+      if (knownHeight === prevHeight) continue;
 
       // A mounted row has real geometry. An unmounted row must have its old
       // key-based measurement replaced now; otherwise virtual padding keeps
@@ -809,20 +810,31 @@ export function useFlowChatVirtualizer<T>({
   }, [toVirtualIndex]);
   const measuredOriginRef = useRef(endOrigin);
   useLayoutEffect(() => {
-    const scroller = scrollerRef.current;
     const originChanged = measuredOriginRef.current !== endOrigin;
     measuredOriginRef.current = endOrigin;
-    // Stable DOM rows keep their chronological index while an origin handoff
-    // changes the library index. ResizeObserver must see the new mapping too.
-    const mountedRows = [...(scroller?.querySelectorAll<HTMLElement>('[data-virtual-index]') ?? [])]
-      .filter(element => element.closest('[data-flowchat-virtual-viewport]') === scroller);
-    for (const element of mountedRows) {
-      element.setAttribute('data-flowchat-measure-index', String(toVirtualIndex(Number(element.getAttribute('data-virtual-index')))));
+    for (const element of attachingRowsRef.current) {
+      if (!element.isConnected) attachingRowsRef.current.delete(element);
     }
-    const attached = originChanged ? mountedRows : [...attachingRowsRef.current].filter(element => element.isConnected);
-    attachingRowsRef.current.clear();
+    const connectedRows = new Set([...virtualizer.elementsCache.values(), ...attachingRowsRef.current]
+      .filter(element => element.isConnected));
+    // A surviving keyed row does not reattach when insertion changes its
+    // index. Refresh observer addresses on every commit, without measuring
+    // existing rows or scanning nested transcript DOM.
+    for (const element of connectedRows) {
+      const index = String(toVirtualIndex(Number(element.getAttribute('data-virtual-index'))));
+      if (element.getAttribute('data-flowchat-measure-index') !== index) {
+        element.setAttribute('data-flowchat-measure-index', index);
+      }
+    }
+    const attached = originChanged ? [...connectedRows]
+      : [...attachingRowsRef.current].filter(element => element.isConnected);
+    // A shrinking window can detach rows without attaching any replacements.
+    // Cleanup must still unobserve and release those DOM nodes.
     virtualizer.measureElement(null);
     if (!attached.length || isViewportSuspendedRef.current()) return;
+    // Suspended mounts have not entered elementsCache or its observer yet.
+    // Keep their attachment pending until a resumed commit can register them.
+    attachingRowsRef.current.clear();
     // Read before any viewport shift or size-cache notification can write.
     measurementBatchRef.current = new Map(attached.map(element => [element, measureRowHeight(element)]));
     try {

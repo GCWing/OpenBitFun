@@ -4,6 +4,11 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const sourceDirectory = path.resolve(testDirectory, '../src');
@@ -333,7 +338,7 @@ test('mobile chat markdown lazily loads katex plugins and keeps mobile display s
   assert.match(math, /import rehypeKatex from 'rehype-katex';/);
   assert.match(math, /import remarkMath from 'remark-math';/);
   assert.match(math, /import 'katex\/dist\/katex\.min\.css';/);
-  assert.match(math, /remarkPlugins=\{\[remarkGfm,\s*\[remarkMath,\s*\{\s*singleDollarTextMath:\s*false\s*\}\]\]\}/);
+  assert.match(math, /remarkPlugins=\{\[\[remarkGfm,\s*chatMarkdownGfmOptions\],\s*\[remarkMath,\s*\{\s*singleDollarTextMath:\s*false\s*\}\]\]\}/);
   assert.match(math, /rehypePlugins=\{\[\[rehypeKatex,\s*\{\s*strict:\s*false,\s*throwOnError:\s*false\s*\}\]\]\}/);
   assert.match(markdown, /import\('\.\/MarkdownMathContent'\)/);
   assert.match(markdown, /mayContainMarkdownMath\(content\)/);
@@ -347,6 +352,37 @@ test('mobile chat markdown lazily loads katex plugins and keeps mobile display s
   assert.match(markdownStyles, /\.katex\s*\{[\s\S]*?font-size:\s*var\(--openbitfun-type-body-lg-font-size\);/);
   assert.match(markdownStyles, /\.katex\s*\{[\s\S]*?line-height:\s*var\(--openbitfun-type-modifier-leading-dense-line-height\);/);
   assert.match(markdownStyles, /\.katex-error\s*\{[\s\S]*?color:\s*var\(--openbitfun-color-status-danger-content\);/);
+});
+
+test('mobile chat markdown keeps single tildes literal in both renderers, like desktop chat', async () => {
+  const markdown = await readFile(path.join(sourceDirectory, 'components/ChatMarkdown.tsx'), 'utf8');
+  const math = await readFile(path.join(sourceDirectory, 'components/MarkdownMathContent.tsx'), 'utf8');
+  const options = await readFile(path.join(sourceDirectory, 'components/chatMarkdownGfm.ts'), 'utf8');
+  const code = ts.transpileModule(options, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
+  const { chatMarkdownGfmOptions } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+  for (const renderer of [markdown, math]) {
+    assert.match(renderer, /import \{ chatMarkdownGfmOptions \} from '\.\/chatMarkdownGfm';/);
+    assert.match(renderer, /\[remarkGfm,\s*chatMarkdownGfmOptions\]/);
+    assert.doesNotMatch(renderer, /remarkPlugins=\{\[remarkGfm[,\]]/);
+  }
+  const cases = [
+    ['24~30°C, rain 1~2mm; ~5 min; ~plain~', '24~30°C, rain 1~2mm; ~5 min; ~plain~'],
+    ['~~removed~~', '<del>removed</del>'],
+    [String.raw`\~escaped\~; \~~literal\~~`, '~escaped~; ~~literal~~'],
+    ['`~~code~~`', '<code>~~code~~</code>'],
+    ['before ~~~literal~~~ after', 'before ~~~literal~~~ after'],
+    ['~~ a~~; ~~b ~~; ~~unfinished', '~~ a~~; ~~b ~~; ~~unfinished'],
+    [String.raw`~~a\~~b~~`, '<del>a~~b</del>'],
+    ['24~30°C; ~~removed~', '24~30°C; ~~removed~'],
+  ];
+  for (const extraPlugins of [[], [[remarkMath, { singleDollarTextMath: false }]]]) {
+    for (const [source, expected] of cases) {
+      const html = renderToStaticMarkup(React.createElement(ReactMarkdown, {
+        remarkPlugins: [[remarkGfm, chatMarkdownGfmOptions], ...extraPlugins],
+      }, source));
+      assert.equal(html, `<p>${expected}</p>`, source);
+    }
+  }
 });
 
 test('math activation ignores currency-only dollar pairs', async () => {

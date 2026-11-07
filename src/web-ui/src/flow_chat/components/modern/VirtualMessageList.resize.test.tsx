@@ -9,7 +9,7 @@ import type { VirtualItem } from '../../store/modernFlowChatStore';
 import type { Session } from '../../types/flow-chat';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({ items: [] as VirtualItem[], session: null as Session | null }));
+const state = vi.hoisted(() => ({ items: [] as VirtualItem[], session: null as Session | null, processing: false }));
 vi.mock('../../store/modernFlowChatStore', () => {
   const store = Object.assign((select: (state: unknown) => unknown) => select({ visibleTurnInfo: null }),
     { getState: () => ({ setVisibleTurnInfo() {} }) });
@@ -21,7 +21,7 @@ vi.mock('../../timeline/useConversationTimeline', async () => {
   const reader = new FlowChatReaderState();
   return { useConversationTimeline: (items: VirtualItem[]) => ({ items, reader }) };
 });
-vi.mock('../../hooks/useActiveSessionState', () => ({ useActiveSessionState: () => ({ isProcessing: false }) }));
+vi.mock('../../hooks/useActiveSessionState', () => ({ useActiveSessionState: () => ({ isProcessing: state.processing }) }));
 vi.mock('../../store/chatInputStateStore', () => ({ useChatInputState: (select: (state: unknown) => unknown) => select({ inputHeight: 100 }) }));
 vi.mock('../../hooks/useScrollToTurnHeader', () => ({ useScrollToTurnHeader: () => ({ shouldShowButton: false, handleClick() {} }) }));
 vi.mock('./RuntimeStatusSlot', () => ({ RuntimeStatusSlot: () => null }));
@@ -42,6 +42,7 @@ describe('settled transcript resizing (real controllers, supplied DOM geometry)'
   let frames: Map<number, FrameRequestCallback>, frameId: number, now: number;
   let observers: Array<{ callback: ResizeObserverCallback; targets: Set<Element>; sizes: WeakMap<Element, string> }>;
   let columnWidth = 900;
+  let viewportHeight = 600;
   let containerFirst = false;
   const heights = new Map<string, number>();
   const offsets = new WeakMap<HTMLElement, number>();
@@ -57,7 +58,7 @@ describe('settled transcript resizing (real controllers, supplied DOM geometry)'
     return result;
   }
   function measureHeight(element: HTMLElement, measured: WeakMap<HTMLElement, number>): number {
-    if (element.hasAttribute('data-flowchat-scroller')) return 600;
+    if (element.hasAttribute('data-flowchat-scroller')) return viewportHeight;
     if (element.dataset.virtualItemKey) return heights.get(element.dataset.virtualItemKey) ?? 100;
     if (element.style.height) return px(element.style.height);
     const scroller = element.closest<HTMLElement>('[data-flowchat-scroller]');
@@ -123,7 +124,8 @@ describe('settled transcript resizing (real controllers, supplied DOM geometry)'
   const latest = () => host.querySelector<HTMLElement>('[data-virtual-item-key="model-round:latest:answer-latest"]');
 
   beforeEach(() => {
-    activateSurface('local'); columnWidth = 900; containerFirst = false;
+    activateSurface('local'); columnWidth = 900; viewportHeight = 600; containerFirst = false;
+    state.processing = false;
     frames = new Map(); frameId = 0; now = 0; observers = []; heights.clear();
     vi.useFakeTimers();
     vi.spyOn(performance, 'now').mockImplementation(() => now);
@@ -166,6 +168,37 @@ describe('settled transcript resizing (real controllers, supplied DOM geometry)'
   afterEach(() => {
     act(() => root.unmount()); host.remove(); activateSurface('local');
     vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
+  });
+
+  it.each(['local', 'peer-resume'].flatMap(surface => [false, true].map(live => ({ surface, live }))))(
+    'observes suspended mounts after same-size resume without output or scroll on $surface (live=$live)', ({ surface, live }) => {
+    activateSurface(surface);
+    state.processing = live;
+    const completedItems = turn('latest', 180);
+    state.items = completedItems.slice(0, 1);
+    render();
+    for (let frame = 0; frame < 60; frame++) { resize(); tick(); }
+    expect(host.querySelector('[data-open-viewport-settled="true"]')).not.toBeNull();
+
+    viewportHeight = 0;
+    resize();
+    // The final answer mounts while minimized. No more output follows it.
+    state.items = completedItems;
+    state.processing = false;
+    render();
+    for (let frame = 0; frame < 4; frame++) tick();
+    const row = latest()!;
+    expect(row).not.toBeNull();
+    expect(observers.some(observer => observer.targets.has(row))).toBe(false);
+
+    viewportHeight = 600;
+    resize();
+    // Positive geometry schedules recovery, but measurements stay suspended
+    // until that frame. Neither the viewport dimensions nor props changed.
+    expect(observers.some(observer => observer.targets.has(row))).toBe(false);
+    tick();
+    expect(latest()).toBe(row);
+    expect(observers.some(observer => observer.targets.has(row))).toBe(true);
   });
 
   it.each(['local', 'peer-resize'].flatMap(surface => [false, true].map(first => ({ surface, first }))))(

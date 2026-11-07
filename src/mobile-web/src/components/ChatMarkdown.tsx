@@ -31,6 +31,7 @@ import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
 import { MobileButton, MobileIconButton, MobileLink } from '@openbitfun/ui/mobile';
 import { useI18n } from '../i18n';
 import { useTheme } from '../theme';
+import { chatMarkdownGfmOptions } from './chatMarkdownGfm';
 import { mayContainMarkdownMath, normalizeMathDelimiters } from './chatMarkdownMath';
 import type { MarkdownMathContentProps } from './MarkdownMathContent';
 import { RemoteArtifactImage } from './RemoteArtifactImage';
@@ -530,7 +531,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, onFil
       ) : (
         <ReactMarkdown
           components={components}
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={[[remarkGfm, chatMarkdownGfmOptions]]}
           urlTransform={markdownUrlTransform}
         >
           {content}
