@@ -6,6 +6,7 @@ export interface BtwPanelViewState {
   expandedToolCapsules?: ReadonlySet<string>;
   restoredReviewLocation?: string;
   restoring: boolean;
+  projectSession?: (session: any) => any;
 }
 
 export function createBtwPanelViewState(): BtwPanelViewState {

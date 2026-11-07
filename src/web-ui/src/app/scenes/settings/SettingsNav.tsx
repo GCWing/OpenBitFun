@@ -61,13 +61,18 @@ function resolvePhrases(i18n: I18nApi, phrases: readonly SettingsSearchPhrase[])
   return parts.join(' ');
 }
 
+const searchIndexCache = new WeakMap<I18nApi, SettingsSearchRow[]>();
+
 function buildSettingsSearchIndex(t: SettingsT, i18n: I18nApi): SettingsSearchRow[] {
+  const cached = searchIndexCache.get(i18n);
+  if (cached) return cached;
+
   const categoryLabels = new Map(SETTINGS_CATEGORIES.map((category) => [
     category.id,
     translateString(t, category.labelKey, category.id),
   ]));
 
-  return SETTINGS_PAGE_MANIFESTS.flatMap((page) => {
+  const rows = SETTINGS_PAGE_MANIFESTS.flatMap((page) => {
     const categoryLabel = categoryLabels.get(page.categoryId) ?? page.categoryId;
     const pageLabel = translateString(t, page.labelKey, page.id);
     const description = translateString(t, page.descriptionKey, '');
@@ -106,6 +111,9 @@ function buildSettingsSearchIndex(t: SettingsT, i18n: I18nApi): SettingsSearchRo
       }),
     ];
   });
+
+  searchIndexCache.set(i18n, rows);
+  return rows;
 }
 
 function highlightFirstMatch(text: string, query: string): React.ReactNode {
