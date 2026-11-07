@@ -250,51 +250,53 @@ const SceneBar: React.FC<SceneBarProps> = ({
   };
 
     // Each tab names its device through the label that opens its group.
-  let groupLabel: string | undefined;
-  const tabItems = shownTabs.reduce<TabGroupItem[]>((items, tab) => {
-    const group = groupStarts.get(tab.id);
-    if (group) groupLabel = `${groupLabelId}-${group.order}`;
-    const def = tabDefs.find(candidate => candidate.id === tab.id);
-    if (!def) return items;
+  const tabItems = useMemo<TabGroupItem[]>(() => {
+    let groupLabel: string | undefined;
+    return shownTabs.reduce<TabGroupItem[]>((items, tab) => {
+      const group = groupStarts.get(tab.id);
+      if (group) groupLabel = `${groupLabelId}-${group.order}`;
+      const def = tabDefs.find(candidate => candidate.id === tab.id);
+      if (!def) return items;
 
-    const translatedLabel = def.labelKey ? t(def.labelKey) : def.label;
-    const sessionLabel = sessionLabels[tab.id];
-    const displayLabel = sessionLabel?.title || translatedLabel;
-    const closeLabel = t('sceneBar.closeTab', { label: sessionLabel?.number ? `${displayLabel} ${sessionLabel.number}` : displayLabel });
-    const closable = isSceneTabClosable(def);
+      const translatedLabel = def.labelKey ? t(def.labelKey) : def.label;
+      const sessionLabel = sessionLabels[tab.id];
+      const displayLabel = sessionLabel?.title || translatedLabel;
+      const closeLabel = t('sceneBar.closeTab', { label: sessionLabel?.number ? `${displayLabel} ${sessionLabel.number}` : displayLabel });
+      const closable = isSceneTabClosable(def);
 
-    items.push({
-      value: tab.id,
-      label: displayLabel,
-      tabProps: groupLabel ? { 'aria-describedby': groupLabel } : undefined,
-      labelSuffix: sessionLabel?.number || tab.pinned || (tab.contentId && (resources[tab.contentId]?.isDirty || resources[tab.contentId]?.fileMissing)) ? <>
-        {sessionLabel?.number && <SessionTitleNumber number={sessionLabel.number} />}
-        {tab.pinned && <Pin size={12} aria-label={tComponents('tabs.unpin')} />}
-        {tab.contentId && resources[tab.contentId]?.isDirty && <span aria-label={tComponents('tabs.unsaved')}>•</span>}
-        {tab.contentId && resources[tab.contentId]?.fileMissing && <CircleAlert size={12} aria-label={tComponents('tabs.fileDeleted')} />}
-      </> : undefined,
-      labelTransitionKey: tab.session?.sessionId,
-      // Keep the close hit target stationary between pointer down and up;
-      // shrinking it can retarget the click at the button edge (issue #2210).
-      endAction: closable ? (
-        <button
-          type="button"
-          aria-label={closeLabel}
-          data-motion="none"
-          data-scene-bar-part="closeTab"
-          data-scene-id={tab.id}
-          onClick={(event) => {
-            event.stopPropagation();
-            closeScene(tab.id);
-          }}
-          tabIndex={-1}
-        >
-          <Icon name="xmark" size="xs" aria-hidden="true" />
-        </button>
-      ) : undefined,
-    });
-    return items;
-  }, []);
+      items.push({
+        value: tab.id,
+        label: displayLabel,
+        tabProps: groupLabel ? { 'aria-describedby': groupLabel } : undefined,
+        labelSuffix: sessionLabel?.number || tab.pinned || (tab.contentId && (resources[tab.contentId]?.isDirty || resources[tab.contentId]?.fileMissing)) ? <>
+          {sessionLabel?.number && <SessionTitleNumber number={sessionLabel.number} />}
+          {tab.pinned && <Pin size={12} aria-label={tComponents('tabs.unpin')} />}
+          {tab.contentId && resources[tab.contentId]?.isDirty && <span aria-label={tComponents('tabs.unsaved')}>•</span>}
+          {tab.contentId && resources[tab.contentId]?.fileMissing && <CircleAlert size={12} aria-label={tComponents('tabs.fileDeleted')} />}
+        </> : undefined,
+        labelTransitionKey: tab.session?.sessionId,
+        // Keep the close hit target stationary between pointer down and up;
+        // shrinking it can retarget the click at the button edge (issue #2210).
+        endAction: closable ? (
+          <button
+            type="button"
+            aria-label={closeLabel}
+            data-motion="none"
+            data-scene-bar-part="closeTab"
+            data-scene-id={tab.id}
+            onClick={(event) => {
+              event.stopPropagation();
+              closeScene(tab.id);
+            }}
+            tabIndex={-1}
+          >
+            <Icon name="xmark" size="xs" aria-hidden="true" />
+          </button>
+        ) : undefined,
+      });
+      return items;
+    }, []);
+  }, [closeScene, groupLabelId, groupStarts, resources, sessionLabels, shownTabs, t, tComponents, tabDefs]);
 
   return (
     <div data-openbitfun-component="scene-bar" data-openbitfun-part="root"
