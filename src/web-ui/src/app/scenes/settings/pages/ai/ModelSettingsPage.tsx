@@ -93,6 +93,7 @@ import {
   getProviderGroupKey,
   getProviderInstanceId,
   getProviderTemplateId,
+  groupModelConfigsByProvider,
   PROVIDER_INSTANCE_METADATA_KEY,
   removeProviderModelConfigs,
 } from '@/infrastructure/config/services/modelConfigs';
@@ -2647,23 +2648,18 @@ const ModelSettingsPage: React.FC = () => {
     && editingModalHasUnsavedChanges;
 
   const providerGroups = useMemo<ProviderGroup[]>(() => {
-    const grouped = aiModels.reduce<Map<string, ProviderGroup>>((map, model) => {
-      const groupKey = getProviderGroupKey(model);
-      const providerName = getProviderDisplayName(model);
-      const existingGroup = map.get(groupKey);
-      if (existingGroup) {
-        existingGroup.models.push(model);
-        return map;
-      }
-
-      map.set(groupKey, {
+    const grouped = groupModelConfigsByProvider<AIModelConfigType, ProviderGroup>(
+      aiModels,
+      (_model, groupKey, providerName, providerId) => ({
         key: groupKey,
         providerName,
-        providerId: getProviderTemplateId(model),
-        models: [model],
-      });
-      return map;
-    }, new Map());
+        providerId,
+        models: [],
+      }),
+      (group, model) => {
+        group.models.push(model);
+      },
+    );
 
     return Array.from(grouped.values()).sort((a, b) => {
       const indexA = a.providerId ? providerOrder.indexOf(a.providerId) : -1;
