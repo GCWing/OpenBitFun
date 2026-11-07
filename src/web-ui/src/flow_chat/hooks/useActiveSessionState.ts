@@ -38,10 +38,23 @@ export const useActiveSessionState = (): ActiveSessionState => {
     };
   }, [surfaceId, sessionId]);
   const subscribe = useCallback((notify: () => void) => {
-    const stopStore = flowChatStore.subscribe(notify);
-    const stopMachine = stateMachineManager.subscribeGlobal(notify);
+    // Only wake when target session entity or activeSessionId reference changes,
+    // avoiding re-evaluation on unrelated background sessions' stream flushes.
+    const stopStore = flowChatStore.subscribeSelector(
+      state => {
+        const targetId = sessionId !== undefined && surfaceId !== undefined
+          ? (surfaceId === getActiveSurfaceId() ? sessionId : undefined)
+          : state.activeSessionId ?? '';
+        return targetId ? state.sessions.get(targetId) : undefined;
+      },
+      () => notify(),
+    );
+    const stopMachine = stateMachineManager.subscribeGlobal((changedSessionId) => {
+      const activeId = sessionId ?? flowChatStore.getState().activeSessionId;
+      if (!activeId || changedSessionId === activeId) notify();
+    });
     const stopSurface = onSurfaceActivated(notify);
     return () => { stopStore(); stopMachine(); stopSurface(); };
-  }, []);
+  }, [surfaceId, sessionId]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
