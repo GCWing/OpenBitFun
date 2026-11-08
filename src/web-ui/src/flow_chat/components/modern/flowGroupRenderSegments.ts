@@ -37,50 +37,68 @@ export function buildFlowGroupRenderSegments(
   previous?: readonly FlowGroupRenderSegment[],
 ): FlowGroupRenderSegment[] {
   const segments: FlowGroupRenderSegment[] = [];
+  const previousSegments = previous ?? [];
   let start = 0;
 
   const append = (end: number) => {
     const members = items.slice(start, end);
     const segIdx = segments.length;
-    const reusable = previous?.[segIdx];
+    const reusable = previousSegments[segIdx];
+    const memberCount = members.length;
+    const firstMember = members[0];
 
-    // Case 1: Closed settled segment where member items are completely unchanged by reference
-    if (
-      reusable &&
-      reusable.startIndex === start &&
-      reusable.key === members[0]?.id &&
-      reusable.items.length === members.length &&
-      reusable.items.every((it, idx) => it === members[idx])
-    ) {
-      segments.push(reusable);
+    if (reusable && reusable.startIndex === start && reusable.key === (firstMember?.id ?? `seg-${start}`)) {
+      const prevItems = reusable.items;
+      const prevCount = prevItems.length;
+
+      // Case 1: Closed settled segment where member items are completely unchanged by reference
+      if (prevCount === memberCount) {
+        let identical = true;
+        for (let i = 0; i < memberCount; i += 1) {
+          if (prevItems[i] !== members[i]) { identical = false; break; }
+        }
+        if (identical) {
+          segments.push(reusable);
+          start = end;
+          return;
+        }
+        // Case 2a: Same length, only the streaming tail object replaced.
+        let prefixIdentical = true;
+        for (let i = 0; i < memberCount - 1; i += 1) {
+          if (prevItems[i] !== members[i]) { prefixIdentical = false; break; }
+        }
+        if (prefixIdentical) {
+          reusable.items = members;
+          reusable.estimatedHeightPx = estimateFlowGroupItemsHeight(members);
+          segments.push(reusable);
+          start = end;
+          return;
+        }
+      }
+      // Case 2b: Growing by appended items — reuse cached height and add only the delta.
+      else if (prevCount < memberCount) {
+        let prefixIdentical = true;
+        for (let i = 0; i < prevCount; i += 1) {
+          if (prevItems[i] !== members[i]) { prefixIdentical = false; break; }
+        }
+        if (prefixIdentical) {
+          reusable.items = members;
+          reusable.estimatedHeightPx = reusable.estimatedHeightPx
+            + estimateFlowGroupItemsHeight(members.slice(prevCount));
+          segments.push(reusable);
+          start = end;
+          return;
+        }
+      }
     }
-    // Case 2: Live/growing trailing segment where items share the same key & prefix
-    else if (
-      reusable &&
-      reusable.startIndex === start &&
-      reusable.key === members[0]?.id &&
-      (
-        // Either identical length with replaced streaming tail object
-        (reusable.items.length === members.length &&
-          reusable.items.slice(0, -1).every((it, idx) => it === members[idx])) ||
-        // Or growing by appended items
-        (reusable.items.length <= members.length &&
-          reusable.items.every((it, idx) => it === members[idx]))
-      )
-    ) {
-      reusable.items = members;
-      reusable.estimatedHeightPx = estimateFlowGroupItemsHeight(members);
-      segments.push(reusable);
-    }
+
     // Case 3: Fresh segment
-    else {
-      segments.push({
-        key: members[0]?.id ?? `seg-${start}`,
-        items: members,
-        startIndex: start,
-        estimatedHeightPx: estimateFlowGroupItemsHeight(members),
-      });
-    }
+    segments.push({
+      key: firstMember?.id ?? `seg-${start}`,
+      items: members,
+      startIndex: start,
+      estimatedHeightPx: estimateFlowGroupItemsHeight(members),
+    });
     start = end;
   };
 
