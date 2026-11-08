@@ -35,6 +35,7 @@ const SkillCard: React.FC<SkillCardProps> = ({
       {...rootProps}
       className={['skills-card', shadowed && 'is-shadowed', globallyDisabled && 'is-globally-disabled', className].filter(Boolean).join(' ')}
       role="listitem"
+      data-openbitfun-reading-surface="self"
       data-openbitfun-component="skill-card"
       data-openbitfun-part="root"
       data-openbitfun-variant={iconKind}

@@ -70,7 +70,8 @@ export function RemovedExternalSessions({ ecosystemId, refreshVersion, onBusyCha
     }
   }
 
-  return <section className="ecosystem-compatibility__section" aria-labelledby={titleId}>
+  return <section className="ecosystem-compatibility__section" data-openbitfun-reading-surface="before" aria-labelledby={titleId}
+    data-openbitfun-product-component="config-page" data-openbitfun-product-part="sectionBody" data-openbitfun-paint-layer="before">
     <div className="ecosystem-compatibility__section-heading">
       <h2 id={titleId}>{t('sessions.removed.title')}</h2>
       <p>{t('sessions.removed.description')}</p>

@@ -49,6 +49,7 @@ import { createPlanDisplayAppearanceDescriptor } from '@/flow_chat/tool-cards/Cr
 import { editorConfigAppearanceDescriptor } from '@/app/scenes/settings/pages/development/EditorSettingsPage.appearance';
 import { appearanceSettingsAppearanceDescriptor } from '@/app/scenes/settings/pages/application/AppearanceSettingsPage.appearance';
 import { configAppearanceDescriptor } from '@/infrastructure/config/appearance';
+import { configPageAppearanceDescriptor } from '@/infrastructure/config/components/common/ConfigPageLayout.appearance';
 import { fontPreferenceAppearanceDescriptor } from '@/infrastructure/font-preference/appearance';
 import { languageSelectorAppearanceDescriptor } from '@/infrastructure/i18n/appearance';
 import { peerDeviceAppearanceDescriptor } from '@/infrastructure/peer-device/appearance';
@@ -319,6 +320,7 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(editorConfigAppearanceDescriptor)
     .registerComponent(appearanceSettingsAppearanceDescriptor)
     .registerComponent(configAppearanceDescriptor)
+    .registerComponent(configPageAppearanceDescriptor)
     .registerComponent(fontPreferenceAppearanceDescriptor)
     .registerComponent(languageSelectorAppearanceDescriptor)
     .registerComponent(peerDeviceAppearanceDescriptor)

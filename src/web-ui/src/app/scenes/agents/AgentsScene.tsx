@@ -862,7 +862,7 @@ const AgentsHomeView: React.FC = () => {
             </Button>
           )}
         >
-          <div className="openbitfun-agents-scene__catalog-toolbar" data-openbitfun-scene="agents" data-openbitfun-part="filters">
+          <div className="openbitfun-agents-scene__catalog-toolbar" data-openbitfun-reading-surface="before" data-openbitfun-scene="agents" data-openbitfun-part="filters">
             <SearchField
               className="openbitfun-agents-scene__search"
               value={searchQuery}

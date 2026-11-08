@@ -410,6 +410,16 @@ $todos-compact-breakpoint: 600px;
     max-width: 100%;
   }
 
+  // Group weekday labels and dates under one paint owner. Keep the same
+  // inter-row gap and intrinsic grid sizing as the original calendar children.
+  &__calendar-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-3);
+    min-width: 0;
+    flex: 0 0 auto;
+  }
+
   &__calendar-weekdays {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));

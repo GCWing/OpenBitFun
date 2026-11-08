@@ -73,3 +73,13 @@
     display: none;
   }
 }
+
+// ActionCard forwards arbitrary attributes to its inner button. Its existing
+// rounded outer surface owns the material; painting that button exposes corners.
+:root[data-openbitfun-skin-id] .miniapp-installed-card__surface {
+  background-color: var(--openbitfun-color-surface-panel);
+
+  &:is(:hover, :focus-within) {
+    background-color: color-mix(in srgb, var(--openbitfun-color-surface-panel) 92%, var(--openbitfun-color-content-primary) 8%);
+  }
+}
