@@ -279,3 +279,13 @@ describe('AgentAPI', () => {
   });
 
 });
+
+
+describe('optional catalog projection', () => {
+  it('requests counts without changing the workspace identity or requiring them on legacy hosts', async () => {
+    const modes = [{ id: 'Cowork', manageableSubagentCount: 2 }];
+    invokeMock.mockResolvedValueOnce(modes);
+    await expect(agentAPI.getAvailableModes({ workspaceId: 'remote-workspace-id', includeSubagentCounts: true })).resolves.toEqual(modes);
+    expect(invokeMock).toHaveBeenLastCalledWith('get_available_modes', { request: { workspaceId: 'remote-workspace-id', includeSubagentCounts: true } });
+  });
+});
