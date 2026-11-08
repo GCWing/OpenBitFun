@@ -1,13 +1,20 @@
 import type { ReviewPlatformRemote } from '@/infrastructure/api';
 
 export interface PullRequestLinkTarget {
-  webUrl: string;
-  host: string;
-  projectPath: string;
-  pullRequestId: string;
+  readonly webUrl: string;
+  readonly host: string;
+  readonly projectPath: string;
+  readonly pullRequestId: string;
 }
 
+const BACKSLASH_PATTERN = /\\/g;
+const GIT_SUFFIX_PATTERN = /\.git$/i;
+const EDGE_SLASHES_PATTERN = /^\/+|\/+$/g;
+
 function cleanSegment(segment: string): string {
+  if (segment.indexOf('%') === -1) {
+    return segment;
+  }
   try {
     return decodeURIComponent(segment);
   } catch {
@@ -17,21 +24,39 @@ function cleanSegment(segment: string): string {
 
 function normalizeProjectPath(value: string): string {
   return value
-    .replace(/\\/g, '/')
-    .replace(/\.git$/i, '')
-    .replace(/^\/+|\/+$/g, '')
+    .replace(BACKSLASH_PATTERN, '/')
+    .replace(GIT_SUFFIX_PATTERN, '')
+    .replace(EDGE_SLASHES_PATTERN, '')
     .toLowerCase();
 }
 
+const PARSE_CACHE_LIMIT = 256;
+const parseCache = new Map<string, PullRequestLinkTarget | null>();
+
 export function parsePullRequestUrl(value: string): PullRequestLinkTarget | null {
+  const cached = parseCache.get(value);
+  if (cached !== undefined) {
+    return cached;
+  }
+
   let url: URL;
   try {
     url = new URL(value);
   } catch {
+    if (parseCache.size >= PARSE_CACHE_LIMIT) {
+      const oldestKey = parseCache.keys().next().value;
+      if (oldestKey !== undefined) parseCache.delete(oldestKey);
+    }
+    parseCache.set(value, null);
     return null;
   }
 
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    if (parseCache.size >= PARSE_CACHE_LIMIT) {
+      const oldestKey = parseCache.keys().next().value;
+      if (oldestKey !== undefined) parseCache.delete(oldestKey);
+    }
+    parseCache.set(value, null);
     return null;
   }
 
@@ -40,6 +65,8 @@ export function parsePullRequestUrl(value: string): PullRequestLinkTarget | null
     .map(cleanSegment)
     .filter(Boolean);
 
+  let target: PullRequestLinkTarget | null = null;
+
   const mergeRequestIndex = segments.findIndex(segment => segment === 'merge_requests');
   if (mergeRequestIndex >= 0 && segments[mergeRequestIndex + 1]) {
     const projectEnd = segments[mergeRequestIndex - 1] === '-'
@@ -47,30 +74,39 @@ export function parsePullRequestUrl(value: string): PullRequestLinkTarget | null
       : mergeRequestIndex;
     const projectPath = segments.slice(0, projectEnd).join('/');
     if (projectPath) {
-      return {
+      target = Object.freeze({
         webUrl: url.toString(),
         host: url.host.toLowerCase(),
         projectPath,
         pullRequestId: segments[mergeRequestIndex + 1],
-      };
+      });
     }
   }
 
-  const pullIndex = segments.findIndex(segment => segment === 'pull' || segment === 'pulls');
-  if (pullIndex >= 0 && segments[pullIndex + 1]) {
-    const projectPath = segments.slice(0, pullIndex).join('/');
-    if (projectPath) {
-      return {
-        webUrl: url.toString(),
-        host: url.host.toLowerCase(),
-        projectPath,
-        pullRequestId: segments[pullIndex + 1],
-      };
+  if (!target) {
+    const pullIndex = segments.findIndex(segment => segment === 'pull' || segment === 'pulls');
+    if (pullIndex >= 0 && segments[pullIndex + 1]) {
+      const projectPath = segments.slice(0, pullIndex).join('/');
+      if (projectPath) {
+        target = Object.freeze({
+          webUrl: url.toString(),
+          host: url.host.toLowerCase(),
+          projectPath,
+          pullRequestId: segments[pullIndex + 1],
+        });
+      }
     }
   }
 
-  return null;
+  if (parseCache.size >= PARSE_CACHE_LIMIT) {
+    const oldestKey = parseCache.keys().next().value;
+    if (oldestKey !== undefined) parseCache.delete(oldestKey);
+  }
+  parseCache.set(value, target);
+  return target;
 }
+
+const remoteNormalizedPathCache = new WeakMap<ReviewPlatformRemote, string>();
 
 export function remoteMatchesPullRequestLink(remote: ReviewPlatformRemote, target: PullRequestLinkTarget): boolean {
   if (remote.host.toLowerCase() !== target.host) {
@@ -78,16 +114,19 @@ export function remoteMatchesPullRequestLink(remote: ReviewPlatformRemote, targe
   }
 
   const targetProject = normalizeProjectPath(target.projectPath);
-  const remoteProject = normalizeProjectPath(remote.projectPath);
-  if (targetProject === remoteProject) {
-    return true;
+  let remoteProject = remoteNormalizedPathCache.get(remote);
+  if (remoteProject === undefined) {
+    remoteProject = normalizeProjectPath(remote.projectPath);
+    if (!remoteProject) {
+      try {
+        const remoteUrl = new URL(remote.webUrl || remote.url);
+        remoteProject = normalizeProjectPath(remoteUrl.pathname);
+      } catch {
+        remoteProject = '';
+      }
+    }
+    remoteNormalizedPathCache.set(remote, remoteProject);
   }
 
-  try {
-    const remoteUrl = new URL(remote.webUrl || remote.url);
-    const remoteUrlProject = normalizeProjectPath(remoteUrl.pathname);
-    return targetProject === remoteUrlProject;
-  } catch {
-    return false;
-  }
+  return Boolean(targetProject && remoteProject && targetProject === remoteProject);
 }
