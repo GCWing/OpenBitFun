@@ -28,7 +28,7 @@ const emptyExternalSnapshot = () => EMPTY_EXTERNAL_REQUESTS;
 // `Object.is` bail-out happens per slice, so churn in unrelated snapshot fields
 // (pending replies, transport state, other mailboxes) no longer re-renders the
 // consumers of this hook.
-const getLiveSurfaceId = (): string | undefined =>
+const getLiveSurfaceId = (): string =>
   liveSessionInteractionStore.getActiveSnapshot().surfaceId;
 
 const getLiveRequests = (): PermissionRequest[] =>
