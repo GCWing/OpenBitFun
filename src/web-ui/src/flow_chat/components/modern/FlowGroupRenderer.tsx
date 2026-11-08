@@ -28,7 +28,7 @@ import { isToolCapsule } from '../../tool-cards/toolCardMetadata';
 import { getConcurrentCapsuleRows, type ConcurrentCapsuleRow } from '../../tool-cards/toolCapsuleLayout';
 import { useFlowChatContext, useFlowChatVolatileContext } from './FlowChatContext';
 import { FileEditGroupView } from './FileEditGroupView';
-import { buildFlowGroupRenderSegments, estimateFlowGroupItemsHeight } from './flowGroupRenderSegments';
+import { buildFlowGroupRenderSegments, estimateFlowGroupItemsHeight, type FlowGroupRenderSegment } from './flowGroupRenderSegments';
 import './ExploreRegion.scss';
 import { useFlowChatReaderValue } from '../../timeline/readerState';
 
@@ -110,10 +110,10 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
   const groupRevealGate = useMemo(() => ({ ...revealGate, report }), [revealGate, report]);
   const allItems = useMemo(() => recordedItems.filter(isFlowItemVisible), [recordedItems]);
   const parallelRows = useMemo(() => getConcurrentCapsuleRows(allItems), [allItems]);
-  const previousRenderSegmentsRef = useRef<readonly import('./flowGroupRenderSegments').FlowGroupRenderSegment[]>([]);
+  const prevSegmentsRef = useRef<readonly FlowGroupRenderSegment[]>([]);
   const renderSegments = useMemo(() => {
-    const next = buildFlowGroupRenderSegments(allItems, previousRenderSegmentsRef.current);
-    previousRenderSegmentsRef.current = next;
+    const next = buildFlowGroupRenderSegments(allItems, prevSegmentsRef.current);
+    prevSegmentsRef.current = next;
     return next;
   }, [allItems]);
   const toolItemCount = useMemo(() => allItems.filter(item => item.type === 'tool').length, [allItems]);
