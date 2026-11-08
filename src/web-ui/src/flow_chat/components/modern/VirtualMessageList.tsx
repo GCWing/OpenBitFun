@@ -550,7 +550,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   }, [viewportOwner]);
   const isExpandingSearchSourceRef = useRef(false);
   const readerInteractionRef = useRef<(kind: TimelineReaderInteraction) => void>(() => {});
-  const interactionKeys = useTimelineInteraction(scrollerElementRef, reader, () => viewportOwner.currentOwner() === 'follow-output', undefined, kind => readerInteractionRef.current(kind));
+  const interactionKeys = useTimelineInteraction(scrollerElementRef, reader, () => viewportOwner.currentOwner() === 'follow-output', undefined, kind => readerInteractionRef.current(kind), isViewportActive);
   const displayedTailTurnId = virtualItems.at(-1)?.turnId;
   const displayedTailStart = useMemo(() => virtualItems.findIndex(item => item.turnId === displayedTailTurnId),
     [virtualItems, displayedTailTurnId]);
