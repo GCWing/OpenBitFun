@@ -1604,8 +1604,8 @@ function createRenderer(doc, uid, S, G) {
   const defs = mk("defs", {}, svg);
   // cutout 用 mask / 非 cutout 用 clipPath（morph 模式）
   const mask = mk("mask", { id: `${uid}-holes`, maskUnits: "userSpaceOnUse", x: 0, y: 0, width: S, height: S }, defs);
-  mk("rect", { width: S, height: S, fill: "#fff" }, mask);
-  const maskEyes = mk("path", { fill: "#000" }, mask);
+  mk("rect", { width: S, height: S, fill: "#ffffff" }, mask);
+  const maskEyes = mk("path", { fill: "#000000" }, mask);
   const clip = mk("clipPath", { id: `${uid}-body` }, defs);
   const clipBody = mk("path", {}, clip);
   // glow 渐变（懒创建）
