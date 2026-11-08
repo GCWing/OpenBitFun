@@ -1,4 +1,6 @@
 import JSZip from 'jszip';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { VisualSkinPackageParser } from './parser';
 
@@ -103,6 +105,24 @@ describe('VisualSkinPackageParser', () => {
     zip.file('unexpected.txt', 'not part of the package');
     const source = await zip.generateAsync({ type: 'arraybuffer' });
     await expect(parser.parse(source)).rejects.toThrow('Undeclared visual skin archive file');
+  });
+
+  it('imports the bundled example using the current public token and MIME names', async () => {
+    const directory = join(process.cwd(), '../crates/assembly/core/builtin_skills/create-visual-theme/examples/aurora-paper');
+    const zip = new JSZip();
+    const manifest = JSON.parse(readFileSync(join(directory, 'skin.json'), 'utf8'));
+    zip.file('skin.json', JSON.stringify(manifest));
+    for (const asset of Object.values(manifest.assets) as { source: { path: string } }[]) {
+      zip.file(asset.source.path, readFileSync(join(directory, asset.source.path)));
+    }
+    const skin = await parser.parse(await zip.generateAsync({ type: 'arraybuffer' }));
+    expect(skin.modes.light?.tokens).toMatchObject({
+      'color.accent.default': '#3E4A92',
+      'color.accent.secondary': '#82D8C4',
+      'color.content.primary': '#202636',
+    });
+    expect(skin.assets['brand.mark'].dataUrl).toMatch(/^data:image\/svg\+xml;base64,/);
+    expect(skin.surfaces?.[0].baseToken).toBe('color.surface.canvas');
   });
 
   it('rejects token aliases rather than translating them into public tokens', async () => {

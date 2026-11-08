@@ -73,6 +73,10 @@ pub(super) const BUILTIN_SKILL_SPECS: &[BuiltinSkillSpec] = &[
         group: BuiltinSkillGroup::Creation,
     },
     BuiltinSkillSpec {
+        dir_name: "create-visual-theme",
+        group: BuiltinSkillGroup::Creation,
+    },
+    BuiltinSkillSpec {
         dir_name: "ppt-design",
         group: BuiltinSkillGroup::Office,
     },
