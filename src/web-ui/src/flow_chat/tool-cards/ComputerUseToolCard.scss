@@ -49,6 +49,8 @@
 
 .computer-use-tool-card__content pre {
   margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .computer-use-tool-card__permission-denied {
