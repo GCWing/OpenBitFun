@@ -13,6 +13,7 @@ import {
 import { useAppearance } from '@/infrastructure/appearance';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useI18n } from '@/infrastructure/i18n';
+import { skinRuntime, useVisualSkin } from '@/infrastructure/visual-skin';
 
 const DENSITY: DensityMode = 'compact';
 const HIGH_CONTRAST_MEDIA_QUERY = '(prefers-contrast: more), (forced-colors: active)';
@@ -44,9 +45,16 @@ function useHighContrastPreference(): boolean {
  * system.
  */
 export function OpenBitFunDesignSystemProvider({ children }: PropsWithChildren) {
-  const colorScheme: ColorScheme = useAppearance().current?.mode ?? 'light';
+  const appearance = useAppearance();
+  const currentAppearance = appearance.current;
+  const colorScheme: ColorScheme = currentAppearance?.mode ?? 'light';
   const contrast: ContrastMode = useHighContrastPreference() ? 'high' : 'standard';
   const { currentLanguage, t } = useI18n('components');
+  const { status: skinStatus } = useVisualSkin();
+
+  useEffect(() => {
+    void skinRuntime.initialize();
+  }, []);
 
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -71,6 +79,11 @@ export function OpenBitFunDesignSystemProvider({ children }: PropsWithChildren) 
       });
     };
   }, [colorScheme, contrast]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-openbitfun-skin-status', skinStatus);
+    return () => document.documentElement.removeAttribute('data-openbitfun-skin-status');
+  }, [skinStatus]);
 
   return (
     <DesignSystemProvider

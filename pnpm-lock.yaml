@@ -486,6 +486,9 @@ importers:
       '@xterm/xterm':
         specifier: ^6.1.0-beta.101
         version: 6.1.0-beta.141(patch_hash=8ab0d019d70c3dcedc9134feeaf1f6bf370e0ec7319f0e34acf19b183cbf0d23)
+      '@zip.js/zip.js':
+        specifier: 2.8.23
+        version: 2.8.23
       decode-named-character-reference:
         specifier: 1.3.0
         version: 1.3.0
