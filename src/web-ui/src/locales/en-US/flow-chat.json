@@ -773,11 +773,15 @@
       "clipboardPathsUnavailable": "The clipboard reported files, but their local paths could not be read.",
       "dropPathsUnavailable": "This file drop did not expose local paths. Copy the files and paste them into the composer instead.",
       "partialFailure": "Added {{added}} item(s); {{failed}} item(s) were unavailable or unsupported.",
+      "controllerDirectoryUnsupported": "Folders from this device cannot be attached to a session that runs on another host. Attach the files inside instead.",
+      "controllerFileTooLarge": "{{name}} is larger than {{limit}} MB and cannot be sent to the executing host.",
+      "controllerUploading": "Sending {{count}} file(s) to the executing host...",
+      "controllerUploadFailed": "Could not send {{name}} to the executing host: {{error}}",
       "unsupported": {
         "web": "This web session cannot reference local files. Use a Desktop local session.",
-        "remote-workspace": "This remote workspace cannot reference files from this device.",
-        "peer-device": "A peer-device session cannot reference files from the controller device.",
-        "detached-dispatch": "A detached task cannot depend on files from the submitting device."
+        "remote-workspace": "This remote workspace cannot reference files from this device. Images can still be attached.",
+        "peer-device": "Update the peer device to attach files from this device. Images can still be attached.",
+        "detached-dispatch": "A detached task cannot depend on files from the submitting device. Images can still be attached."
       }
     },
     "removeImage": "Remove image",

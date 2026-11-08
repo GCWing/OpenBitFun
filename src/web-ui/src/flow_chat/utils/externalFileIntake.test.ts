@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { FileMetadata } from '@/infrastructure/api/service-api/WorkspaceAPI';
 import type { ContextItem } from '@/shared/types/context';
+import type { ImageContext } from '@/shared/types/context';
 import {
+  buildControllerFileContexts,
   buildExternalFileContexts,
+  controllerAttachmentFileName,
   normalizeExternalFilePath,
   partitionExternalDropFiles,
   resolveExternalFileIntakeAvailability,
@@ -186,5 +189,112 @@ describe('buildExternalFileContexts', () => {
     expect(shouldAttemptNativeClipboardImageRead(['Files'])).toBe(false);
     expect(shouldAttemptNativeClipboardImageRead(['text/plain'])).toBe(false);
     expect(shouldAttemptNativeClipboardImageRead(['Files', 'text/plain'])).toBe(false);
+  });
+});
+
+describe('buildControllerFileContexts', () => {
+  const inlineImage = (name: string): ImageContext => ({
+    id: `img-${name}`,
+    type: 'image',
+    imagePath: '',
+    imageName: name,
+    fileSize: 3,
+    mimeType: 'image/png',
+    source: 'file',
+    isLocal: false,
+    dataUrl: 'data:image/png;base64,YQ==',
+    timestamp: 1,
+    metadata: {},
+  });
+  const buildController = (
+    paths: string[],
+    overrides: Partial<Parameters<typeof buildControllerFileContexts>[0]> = {},
+  ) => buildControllerFileContexts({
+    source: 'drop',
+    paths,
+    existingContexts: [],
+    maxImageCount: 2,
+    maxFileBytes: 100,
+    loadMetadata: async (path: string) => metadata(path.endsWith('folder'), path.endsWith('big.bin') ? 101 : 12),
+    readImage: async (_path: string, name: string) => inlineImage(name),
+    uploadFile: async (_path: string, name: string) => `openbitfun://runtime/ws-1/attachments/u1/${name}`,
+    ...overrides,
+  });
+
+  it('sends images as pixels and never references a controller path', async () => {
+    const result = await buildController(['/Users/me/shot.png']);
+    expect(result.contexts).toHaveLength(1);
+    expect(result.contexts[0]).toMatchObject({
+      type: 'image',
+      isLocal: false,
+      imagePath: '',
+      dataUrl: 'data:image/png;base64,YQ==',
+      metadata: { controllerSourcePath: '/Users/me/shot.png', externalFileSource: 'drop' },
+    });
+  });
+
+  it('stages other files on the execution host and references the host path', async () => {
+    const uploadFile = vi.fn(async (_path: string, name: string) => `openbitfun://runtime/ws-1/attachments/u1/${name}`);
+    const result = await buildController(['C:\\Users\\me\\notes.md'], { uploadFile });
+    expect(uploadFile).toHaveBeenCalledWith('C:\\Users\\me\\notes.md', 'notes.md', expect.any(Object));
+    expect(result.contexts[0]).toMatchObject({
+      type: 'file',
+      fileName: 'notes.md',
+      filePath: 'openbitfun://runtime/ws-1/attachments/u1/notes.md',
+      relativePath: undefined,
+      metadata: { controllerSourcePath: 'C:\\Users\\me\\notes.md', controllerUpload: true },
+    });
+  });
+
+  it('reports explicit reasons for folders, oversize files, and hosts that cannot receive files', async () => {
+    const withUpload = await buildController(['/tmp/folder', '/tmp/big.bin', '/tmp/a.txt']);
+    expect(withUpload.contexts.map(context => context.type)).toEqual(['file']);
+    expect(withUpload.failures.map(failure => failure.reason)).toEqual(['directory', 'too-large']);
+
+    const withoutUpload = await buildController(['/tmp/a.txt', '/tmp/b.png'], { uploadFile: undefined });
+    expect(withoutUpload.contexts.map(context => context.type)).toEqual(['image']);
+    expect(withoutUpload.failures).toEqual([{ path: '/tmp/a.txt', reason: 'file-unsupported' }]);
+  });
+
+  it('treats non-inline image formats as files', async () => {
+    const readImage = vi.fn(async (_path: string, name: string) => inlineImage(name));
+    const result = await buildController(['/tmp/scan.bmp'], { readImage });
+    expect(readImage).not.toHaveBeenCalled();
+    expect(result.contexts[0]).toMatchObject({ type: 'file', fileName: 'scan.bmp' });
+  });
+
+  it('de-duplicates by the controller source path and keeps upload errors', async () => {
+    const existingContexts = [{
+      id: 'f', type: 'file', filePath: 'openbitfun://runtime/ws-1/attachments/u0/a.txt', fileName: 'a.txt',
+      timestamp: 0, metadata: { controllerSourcePath: '/tmp/a.txt' },
+    }] satisfies ContextItem[];
+    const result = await buildController(['/tmp/a.txt', '/tmp/b.txt'], {
+      existingContexts,
+      uploadFile: async () => { throw new Error('host offline'); },
+    });
+    expect(result.duplicateCount).toBe(1);
+    expect(result.failures).toEqual([{ path: '/tmp/b.txt', reason: 'upload', detail: 'host offline' }]);
+  });
+
+  it('enforces the image limit and stops once the target changes', async () => {
+    const limited = await buildController(['/tmp/a.png', '/tmp/b.png', '/tmp/c.png']);
+    expect(limited.contexts).toHaveLength(2);
+    expect(limited.failures).toEqual([{ path: '/tmp/c.png', reason: 'image-limit' }]);
+
+    let current = true;
+    const uploadFile = vi.fn(async (_path: string, name: string) => {
+      current = false;
+      return `openbitfun://runtime/ws-1/attachments/u1/${name}`;
+    });
+    const stopped = await buildController(['/tmp/a.txt', '/tmp/b.txt'], { uploadFile, isCurrent: () => current });
+    expect(uploadFile).toHaveBeenCalledTimes(1);
+    expect(stopped.contexts).toHaveLength(1);
+  });
+
+  it('builds runtime-safe attachment names', () => {
+    expect(controllerAttachmentFileName('report v2.pdf')).toBe('report v2.pdf');
+    expect(controllerAttachmentFileName('a/b\\c:d*?.txt')).toBe('a_b_c_d__.txt');
+    expect(controllerAttachmentFileName('..secret')).toBe('_secret');
+    expect(controllerAttachmentFileName('   ')).toBe('attachment');
   });
 });

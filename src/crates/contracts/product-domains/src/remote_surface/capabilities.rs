@@ -33,6 +33,10 @@ pub enum PeerHostCapability {
     IdempotentDialogSubmit,
     /// Inline imageContexts are durably prepared by the receiving Runtime.
     InlineImageAttachmentsV1,
+    /// `workspace_file_upload` accepts `openbitfun://runtime/<workspace>/attachments/...`
+    /// targets and creates their runtime-owned parents, so a controller can
+    /// attach its own local files to a session executing on this host.
+    RuntimeAttachmentUploadV1,
     /// `btw_ask_stream` applies initial model and reasoning selection before the first turn.
     BtwInitialModelSelectionV1,
     /// BTW accepts typed initial model/pool choices and retains inherited bindings.
@@ -129,6 +133,7 @@ impl PeerHostCapability {
         Self::DialogQueueV1,
         Self::IdempotentDialogSubmit,
         Self::InlineImageAttachmentsV1,
+        Self::RuntimeAttachmentUploadV1,
         Self::BtwInitialModelSelectionV1,
         Self::BtwModelPoolSelectionV1,
         Self::ControlConversationV1,
@@ -180,6 +185,7 @@ impl PeerHostCapability {
             Self::DialogQueueV1 => "dialog_queue_v1",
             Self::IdempotentDialogSubmit => "idempotent_dialog_submit",
             Self::InlineImageAttachmentsV1 => "inline_image_attachments_v1",
+            Self::RuntimeAttachmentUploadV1 => "runtime_attachment_upload_v1",
             Self::ControlConversationV1 => "control_conversation_v1",
             Self::ControlConversationResetV1 => "control_conversation_reset_v1",
             Self::BtwInitialModelSelectionV1 => "btw_initial_model_selection_v1",
@@ -238,6 +244,7 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::DialogQueueV1,
     PeerHostCapability::IdempotentDialogSubmit,
     PeerHostCapability::InlineImageAttachmentsV1,
+    PeerHostCapability::RuntimeAttachmentUploadV1,
     PeerHostCapability::BtwInitialModelSelectionV1,
     PeerHostCapability::BtwModelPoolSelectionV1,
     PeerHostCapability::ControlConversationV1,
@@ -289,6 +296,7 @@ const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::ControlConversationResetV1,
     PeerHostCapability::IdempotentDialogSubmit,
     PeerHostCapability::InlineImageAttachmentsV1,
+    PeerHostCapability::RuntimeAttachmentUploadV1,
     PeerHostCapability::BtwInitialModelSelectionV1,
     PeerHostCapability::BtwModelPoolSelectionV1,
     PeerHostCapability::TargetedSessionRollback,

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:f622fe54e98d2ae1",
+  "digest": "fnv1a64:416c934dda520065",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -16,6 +16,7 @@
       "dialog_queue_v1",
       "idempotent_dialog_submit",
       "inline_image_attachments_v1",
+      "runtime_attachment_upload_v1",
       "btw_initial_model_selection_v1",
       "btw_model_pool_selection_v1",
       "control_conversation_v1",
@@ -64,6 +65,7 @@
       "dialog_queue_v1",
       "idempotent_dialog_submit",
       "inline_image_attachments_v1",
+      "runtime_attachment_upload_v1",
       "btw_initial_model_selection_v1",
       "btw_model_pool_selection_v1",
       "control_conversation_v1",
@@ -112,6 +114,7 @@
       "control_conversation_reset_v1",
       "idempotent_dialog_submit",
       "inline_image_attachments_v1",
+      "runtime_attachment_upload_v1",
       "btw_initial_model_selection_v1",
       "btw_model_pool_selection_v1",
       "targeted_session_rollback",

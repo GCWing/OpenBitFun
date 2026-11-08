@@ -44,6 +44,12 @@ export interface PeerHostCapabilities {
   readonly idempotentDialogSubmit: boolean;
   /** Only true after explicit negotiation; older hosts need the upload API. */
   readonly inlineImageAttachmentsV1?: boolean;
+  /**
+   * `workspace_file_upload` accepts runtime `attachments/` targets, so the
+   * controller can attach its own local files. Older hosts keep the explicit
+   * unsupported reply.
+   */
+  readonly runtimeAttachmentUploadV1?: boolean;
   readonly btwInitialModelSelectionV1?: boolean;
   readonly btwModelPoolSelectionV1?: boolean;
   /** Terminal output arrives as replay pages announced on the host stream. */
@@ -195,6 +201,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   backgroundResultDeliveryV1: false,
   idempotentDialogSubmit: false,
   inlineImageAttachmentsV1: false,
+  runtimeAttachmentUploadV1: false,
   btwInitialModelSelectionV1: false,
   btwModelPoolSelectionV1: false,
   terminalCursorReplayV1: false,
@@ -563,6 +570,7 @@ export class PeerConnectionManager {
       idempotentDialogSubmit: caps?.idempotent_dialog_submit === true,
       backgroundResultDeliveryV1: caps?.background_result_delivery_v1 === true,
       inlineImageAttachmentsV1: caps?.inline_image_attachments_v1 === true,
+      runtimeAttachmentUploadV1: caps?.runtime_attachment_upload_v1 === true,
       btwInitialModelSelectionV1: caps?.btw_initial_model_selection_v1 === true,
       btwModelPoolSelectionV1: caps?.btw_model_pool_selection_v1 === true,
       terminalCursorReplayV1: caps?.terminal_cursor_replay_v1 === true,
@@ -832,6 +840,7 @@ function capabilitiesEqual(
   return a.idempotentDialogSubmit === b.idempotentDialogSubmit &&
     a.backgroundResultDeliveryV1 === b.backgroundResultDeliveryV1 &&
     a.inlineImageAttachmentsV1 === b.inlineImageAttachmentsV1 &&
+    a.runtimeAttachmentUploadV1 === b.runtimeAttachmentUploadV1 &&
     a.btwInitialModelSelectionV1 === b.btwInitialModelSelectionV1 &&
     a.btwModelPoolSelectionV1 === b.btwModelPoolSelectionV1 &&
     a.controlConversationV1 === b.controlConversationV1 &&
