@@ -53,6 +53,7 @@ import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
 import { useI18n } from '@/infrastructure/i18n';
+import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
 import { useAccountIdentity } from '@/infrastructure/account-identity';
 import { useNotification } from '@/shared/notification-system';
 import { isRemoteWorkspace } from '@/shared/types';
@@ -429,6 +430,12 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
 
   const preparePackageImport = useCallback(async (path: string) => {
     if (!path.toLowerCase().endsWith('.bfminiapp')) return;
+    // The package path belongs to this controller; a rendered peer would
+    // resolve it against its own filesystem.
+    if (isPeerDeviceModeActive()) {
+      notification.warning(t('market.import.peerUnsupported'));
+      return;
+    }
     try {
       const inspection = await miniAppMarketAPI.inspectPackage(path);
       setPendingPackage({ path, inspection });
@@ -439,6 +446,10 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
   }, [notification, t]);
 
   const handleAddPackage = async () => {
+    if (isPeerDeviceModeActive()) {
+      notification.warning(t('market.import.peerUnsupported'));
+      return;
+    }
     const selected = await open({
       directory: false,
       multiple: false,

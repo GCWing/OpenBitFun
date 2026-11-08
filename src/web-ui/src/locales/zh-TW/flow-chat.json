@@ -773,11 +773,16 @@
       "clipboardPathsUnavailable": "剪貼簿中包含檔案，但無法讀取其本機路徑。",
       "dropPathsUnavailable": "此次拖放未提供本機路徑，請複製這些檔案後貼到輸入框。",
       "partialFailure": "已新增 {{added}} 項；另有 {{failed}} 項已失效或不受支援。",
+      "controllerDirectoryUnsupported": "在其他主機上執行的工作階段無法引用此裝置上的資料夾，請改為新增其中的檔案。",
+      "controllerFilesNeedWorkspace": "請先為此工作階段開啟工作區，才能引用此裝置上的檔案；圖片仍可新增。",
+      "controllerFileTooLarge": "{{name}} 超過 {{limit}} MB，無法傳送到執行主機。",
+      "controllerUploading": "正在將 {{count}} 個檔案傳送到執行主機...",
+      "controllerUploadFailed": "無法將 {{name}} 傳送到執行主機：{{error}}",
       "unsupported": {
         "web": "Web 工作階段無法引用本機檔案，請使用 Desktop 本機工作階段。",
-        "remote-workspace": "遠端工作區無法引用此裝置上的本機檔案。",
-        "peer-device": "Peer Device 工作階段無法引用控制端裝置上的檔案。",
-        "detached-dispatch": "Detached 任務不能依賴提交裝置上的本機檔案。"
+        "remote-workspace": "遠端工作區無法引用此裝置上的本機檔案，圖片仍可新增。",
+        "peer-device": "請先更新被控裝置，才能引用此裝置上的檔案；圖片仍可新增。",
+        "detached-dispatch": "Detached 任務不能依賴提交裝置上的本機檔案，圖片仍可新增。"
       }
     },
     "removeImage": "移除圖片",

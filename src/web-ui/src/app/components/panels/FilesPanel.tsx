@@ -55,6 +55,7 @@ import {
   pasteClipboardFilesToWorkspaceDirectory,
   resolvePasteTargetDirectory,
   type TransferProgressState,
+  type WorkspaceTransferResult,
 } from '@/tools/file-system/services/workspaceFileTransfer';
 import { useWorkspaceFileDrop } from '@/tools/file-system/hooks/useWorkspaceFileDrop';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
@@ -909,13 +910,28 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
     setFileDropHighlight(overPanel);
   }, []);
 
-  const handleFileDropComplete = useCallback((targetDirectory: string) => {
+  const handleFileDropComplete = useCallback((
+    targetDirectory: string,
+    _transferId: string,
+    result: WorkspaceTransferResult,
+  ) => {
     setFileDropHighlight(false);
     void loadFileTree(workspacePath || '', true);
     if (workspacePath && !pathsEquivalentFs(targetDirectory, workspacePath)) {
       expandFolder(targetDirectory, true);
     }
-  }, [workspacePath, loadFileTree, expandFolder]);
+    // Items that were refused or failed must not disappear silently.
+    if (result.failedFiles.length > 0) {
+      const failedNames = result.failedFiles.map((entry) => {
+        const name = entry.path.split(/[/\\]/).pop() || entry.path;
+        return `${name}: ${entry.error}`;
+      }).join('\n');
+      notification.error(
+        t('notifications.pasteFailed', { count: result.failedFiles.length }) + `:\n${failedNames}`,
+        { duration: 5000 },
+      );
+    }
+  }, [workspacePath, loadFileTree, expandFolder, notification, t]);
 
   const handleFileDropError = useCallback((
     error: unknown,

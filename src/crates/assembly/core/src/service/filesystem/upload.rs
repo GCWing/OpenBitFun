@@ -58,6 +58,9 @@ pub async fn workspace_file_upload(
         request.remote_connection_id.as_deref(),
     )
     .await?;
+    if request.action == "begin" && is_runtime_attachment_uri(&request.path) {
+        ensure_runtime_attachment_parent(&target).await?;
+    }
     let scope = TransferScope {
         account_id,
         target_id,
@@ -118,6 +121,49 @@ pub async fn workspace_file_upload(
     result.map_err(|error| error.to_string())
 }
 
+/// Top-level runtime directory that holds controller-supplied attachments.
+const RUNTIME_ATTACHMENTS_DIR: &str = "attachments";
+
+/// Whether `path` names a file below `openbitfun://runtime/<workspace>/attachments/`.
+///
+/// A controller that does not share this host's filesystem (Peer Device Mode)
+/// stages its local files there; agent tools resolve the same URI on this host.
+fn is_runtime_attachment_uri(path: &str) -> bool {
+    use crate::agentic::tools::workspace_paths::{
+        is_openbitfun_runtime_uri, parse_openbitfun_runtime_uri,
+    };
+    if !is_openbitfun_runtime_uri(path) {
+        return false;
+    }
+    parse_openbitfun_runtime_uri(path).is_ok_and(|parsed| {
+        let mut segments = parsed.relative_path.split('/');
+        segments.next() == Some(RUNTIME_ATTACHMENTS_DIR) && segments.count() >= 2
+    })
+}
+
+/// Create the runtime-owned parent of an attachment upload.
+///
+/// Workspace uploads deliberately require an existing parent. Attachment
+/// directories are unique per upload and owned by this runtime, so they are
+/// created here, confined to the resolved runtime root.
+async fn ensure_runtime_attachment_parent(
+    target: &openbitfun_services_integrations::remote_connect::file_projection::SessionFileTarget,
+) -> Result<(), String> {
+    if target.remote {
+        return Err("Runtime attachments must resolve to the executing host".into());
+    }
+    let root = std::path::Path::new(&target.root);
+    let parent = std::path::Path::new(&target.path)
+        .parent()
+        .ok_or("Upload destination has no parent")?;
+    if !parent.starts_with(root) || parent == root {
+        return Err("Runtime attachment is outside its runtime root".into());
+    }
+    tokio::fs::create_dir_all(parent)
+        .await
+        .map_err(|error| format!("Failed to create runtime attachment directory: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +179,25 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.contains("workspace identity is required"), "{error}");
+    }
+
+    #[test]
+    fn runtime_attachment_uri_requires_an_attachments_file() {
+        assert!(is_runtime_attachment_uri(
+            "openbitfun://runtime/ws-1/attachments/abc/report.pdf"
+        ));
+        assert!(!is_runtime_attachment_uri(
+            "openbitfun://runtime/ws-1/attachments/report.pdf"
+        ));
+        assert!(!is_runtime_attachment_uri(
+            "openbitfun://runtime/ws-1/plans/abc/plan.md"
+        ));
+        assert!(!is_runtime_attachment_uri(
+            "openbitfun://runtime/ws-1/attachments/../plans/x.md"
+        ));
+        assert!(!is_runtime_attachment_uri(
+            "/tmp/attachments/abc/report.pdf"
+        ));
     }
 
     #[tokio::test]

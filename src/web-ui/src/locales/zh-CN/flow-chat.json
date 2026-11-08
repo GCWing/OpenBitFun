@@ -773,11 +773,16 @@
       "clipboardPathsUnavailable": "剪贴板中包含文件，但无法读取其本机路径。",
       "dropPathsUnavailable": "此次拖放未提供本机路径，请复制这些文件后粘贴到输入框。",
       "partialFailure": "已添加 {{added}} 项；另有 {{failed}} 项已失效或不受支持。",
+      "controllerDirectoryUnsupported": "在其他主机上运行的会话无法引用此设备上的文件夹，请改为添加其中的文件。",
+      "controllerFilesNeedWorkspace": "请先为此会话打开工作区，才能引用此设备上的文件；图片仍可添加。",
+      "controllerFileTooLarge": "{{name}} 超过 {{limit}} MB，无法发送到执行主机。",
+      "controllerUploading": "正在将 {{count}} 个文件发送到执行主机...",
+      "controllerUploadFailed": "无法将 {{name}} 发送到执行主机：{{error}}",
       "unsupported": {
         "web": "Web 会话无法引用本机文件，请使用 Desktop 本地会话。",
-        "remote-workspace": "远程工作区无法引用此设备上的本机文件。",
-        "peer-device": "Peer Device 会话无法引用控制端设备上的文件。",
-        "detached-dispatch": "Detached 任务不能依赖提交设备上的本机文件。"
+        "remote-workspace": "远程工作区无法引用此设备上的本机文件，图片仍可添加。",
+        "peer-device": "请先更新被控设备，才能引用此设备上的文件；图片仍可添加。",
+        "detached-dispatch": "Detached 任务不能依赖提交设备上的本机文件，图片仍可添加。"
       }
     },
     "removeImage": "移除图片",
