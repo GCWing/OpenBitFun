@@ -36,5 +36,22 @@
     "nativeDescription": "Choose a built-in theme",
     "builtinTheme": "Built-in theme",
     "description": "Adjust themes and font size"
+  },
+  "skin": {
+    "title": "Visual skin packs",
+    "description": "Import a skin pack generated from a reference image. It changes the visual language across the workspace while keeping the product structure intact.",
+    "import": "Import skin pack",
+    "importing": "Importing…",
+    "empty": "No imported skin packs yet.",
+    "generated": "Generated visual theme",
+    "previewAlt": "Preview of {{name}}",
+    "preview": "Preview",
+    "previewing": "Previewing",
+    "cancelPreview": "Cancel preview",
+    "activate": "Use skin",
+    "active": "Active",
+    "remove": "Remove skin",
+    "error": "Skin operation failed: {{message}}",
+    "invalidRecord": "Invalid skin record: {{key}}"
   }
 }

@@ -36,5 +36,22 @@
     "nativeDescription": "选择内置主题",
     "builtinTheme": "内置主题",
     "description": "调整主题与字体大小"
+  },
+  "skin": {
+    "title": "视觉皮肤包",
+    "description": "导入由参考图生成的皮肤包，在保留产品结构的同时，将视觉语言应用到整个工作区。",
+    "import": "导入皮肤包",
+    "importing": "正在导入…",
+    "empty": "还没有导入皮肤包。",
+    "generated": "生成的视觉主题",
+    "previewAlt": "{{name}} 的预览",
+    "preview": "预览",
+    "previewing": "预览中",
+    "cancelPreview": "取消预览",
+    "activate": "使用皮肤",
+    "active": "当前使用",
+    "remove": "移除皮肤",
+    "error": "皮肤操作失败：{{message}}",
+    "invalidRecord": "无效皮肤记录：{{key}}"
   }
 }

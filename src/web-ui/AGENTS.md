@@ -129,6 +129,18 @@ locale's `scenes/capabilities.json`; the catalog generator does not write these
 resources. The shared search acceptance corpus exercises both the Playbook and
 Web UI, including the matched sub-capability.
 
+For visual-skin storage, projection, painting, and settings regressions:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/visual-skin src/infrastructure/config/components/common/ConfigPageLayout.skin.test.tsx src/infrastructure/config/components/VisualSkinConfigSection.test.tsx src/app/scenes/session/ChatPane.composer-layout.test.tsx
+```
+
+The paint tests run the production SCSS/runtime output in an available headless
+Chrome/Edge/Chromium, or skip that browser case explicitly when unavailable.
+Set `OPENBITFUN_TEST_BROWSER` to select an executable. These are local DOM and
+browser fixtures, not native WebView or live remote verification. Authoring
+helper commands are documented in the core assembly guide and the Skill.
+
 For Agent creation, hidden internal IDs, editing, and surface-switch draft fences:
 
 ```bash

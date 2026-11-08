@@ -1,5 +1,6 @@
 import '@/app/scenes/settings/pages/application/AppearanceSettingsPage.scss';
 import { AppearancePackageConfigSection } from '@/infrastructure/config/components/AppearancePackageConfigSection';
+import { VisualSkinConfigSection } from '@/infrastructure/config/components/VisualSkinConfigSection';
 import {
   ConfigPageContent,
   ConfigPageHeader,
@@ -30,6 +31,7 @@ const AppearanceSettingsPage: React.FC = () => {
       >
         <ConfigPageSectionStack data-testid="appearance-settings">
           <AppearancePackageConfigSection />
+          <VisualSkinConfigSection />
           <FontPreferencePanel />
           <SidebarSettingsSection />
           <FlowChatWidthSettingsSection />

@@ -36,5 +36,22 @@
     "nativeDescription": "選擇內建主題",
     "builtinTheme": "內建主題",
     "description": "調整主題與字體大小"
+  },
+  "skin": {
+    "title": "視覺皮膚包",
+    "description": "匯入由參考圖產生的皮膚包，在保留產品結構的同時，將視覺語言套用到整個工作區。",
+    "import": "匯入皮膚包",
+    "importing": "正在匯入…",
+    "empty": "尚未匯入皮膚包。",
+    "generated": "產生的視覺主題",
+    "previewAlt": "{{name}} 的預覽",
+    "preview": "預覽",
+    "previewing": "預覽中",
+    "cancelPreview": "取消預覽",
+    "activate": "使用皮膚",
+    "active": "目前使用",
+    "remove": "移除皮膚",
+    "error": "皮膚操作失敗：{{message}}",
+    "invalidRecord": "無效皮膚記錄：{{key}}"
   }
 }
