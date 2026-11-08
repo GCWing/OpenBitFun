@@ -1582,7 +1582,9 @@ $_section-header-height: 22px;
   background: var(--openbitfun-color-surface-raised);
   // Switch state color once. Interpolating an inherited custom property forces
   // style recalculation throughout the card on every animation frame.
-  animation: openbitfun-nav-popover-in 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  // Release the opening transform instead of retaining a transformed clipping
+  // ancestor around the independently moving device artwork.
+  animation: openbitfun-nav-popover-in 150ms cubic-bezier(0.23, 1, 0.32, 1) backwards;
 
   &[data-control-state='active'] {
     --_device-overview-light: var(--openbitfun-color-status-success-content);

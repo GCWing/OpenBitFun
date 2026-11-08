@@ -150,7 +150,7 @@ function installPreviewAnimations() {
   return {
     records,
     finishPhase: async () => {
-      const phase = records.slice(-3);
+      const phase = records.slice(-1);
       await act(async () => { phase.forEach(animation => animation.finish()); });
     },
   };
@@ -480,72 +480,90 @@ describe('device status card', () => {
     expect(element('device-sidebar-visibility').dataset.deviceSurface).toBe('local');
   });
 
-  it('hands off artwork, name, pagination and actions together without invoking the old device', async () => {
+  it('commits artwork, name, pagination and actions together without a blank exit', async () => {
     const { next } = await renderBrowseableDevices();
     const motion = installPreviewAnimations();
     const total = element('nav-device-status-total');
     act(() => next.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })));
-    expect(element('nav-device-status-name').textContent).toBe('Current host');
-    expect(element('nav-device-status-pagination').textContent).toBe('2 / 4');
-    expect((element('device-sidebar-visibility') as HTMLButtonElement).disabled).toBe(true);
-    act(() => { element('device-sidebar-visibility').click(); element('nav-device-usage-status').click(); });
-    expect(state.disconnectDevice).not.toHaveBeenCalled();
-    expect(motion.records).toHaveLength(3);
-    expect(motion.records.every(animation => !animation.element.contains(total))).toBe(true);
-    expect(motion.records[0].options.duration).toBe(80);
-    expect(motion.records[0].keyframes[1].transform).toBe('translateX(calc(4px * -1))');
 
-    await motion.finishPhase();
+    // The new device is usable before any animation completes. No stale action
+    // or disabled-color flash is needed to bridge an asynchronous content swap.
     expect(element('nav-device-status-name').textContent).toBe('Another host');
     expect(element('nav-device-status-pagination').textContent).toBe('3 / 4');
     expect(element('nav-device-status-total')).toBe(total);
-    expect(total.textContent).toBe('4');
     expect(document.querySelector('[data-artwork="linux"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="nav-device-usage-status"]')).toBeNull();
-    expect(motion.records).toHaveLength(6);
-    expect(motion.records[3].options.duration).toBe(140);
-    expect(motion.records[3].keyframes[0].transform).toBe('translateX(calc(4px * 2))');
-    expect((element('device-sidebar-visibility') as HTMLButtonElement).disabled).toBe(true);
-    act(() => element('device-sidebar-visibility').click());
-    expect(state.switchToDevice).not.toHaveBeenCalled();
-    await motion.finishPhase();
     expect((element('device-sidebar-visibility') as HTMLButtonElement).disabled).toBe(false);
-    await act(async () => element('device-sidebar-visibility').click());
+    act(() => element('device-sidebar-visibility').click());
     expect(useDeviceVisibilityPreferences.getState().hidden['peer-2']).toBe(true);
+    expect(useDeviceVisibilityPreferences.getState().hidden['peer-1']).toBeUndefined();
+
+    expect(motion.records).toHaveLength(1);
+    expect(motion.records[0].element.classList.contains('openbitfun-device-overview__device-scene')).toBe(true);
+    expect(motion.records[0].keyframes).toEqual([
+      { transform: 'translateX(calc(4px * 2))' }, { transform: 'none' },
+    ]);
+    expect(motion.records[0].options).toMatchObject({ duration: 140, fill: 'backwards' });
+    await motion.finishPhase();
+    expect(element('nav-device-status-name').textContent).toBe('Another host');
+    expect(element('nav-device-status-popover').hasAttribute('data-preview-motion')).toBe(false);
     expect(state.switchToDevice).not.toHaveBeenCalled();
     expect(state.disconnectDevice).not.toHaveBeenCalled();
   });
 
-  it('coalesces rapid clicks and interrupts an entrance from its current frame', async () => {
+  it('keeps rapid browsing current and ignores completions from interrupted motion', async () => {
     const { next, previous } = await renderBrowseableDevices();
     const motion = installPreviewAnimations();
-    const styles = vi.spyOn(globalThis, 'getComputedStyle');
-    act(() => { next.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })); next.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })); });
-    expect(motion.records).toHaveLength(3);
-    expect(styles).toHaveBeenCalledTimes(1);
-    await motion.finishPhase();
-    expect(styles).toHaveBeenCalledTimes(1);
-    styles.mockRestore();
+    act(() => {
+      next.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      next.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    expect(motion.records).toHaveLength(1);
     expect(element('nav-device-status-name').textContent).toBe('Third host');
     expect(element('nav-device-status-pagination').textContent).toBe('4 / 4');
     expect(document.querySelector('[data-artwork="server"]')).not.toBeNull();
 
-    const interrupted = motion.records.slice(-3);
-    const scene = motion.records[0].element;
-    scene.style.opacity = '0.35';
+    const interrupted = motion.records[0];
+    const scene = interrupted.element;
     scene.style.transform = 'translateX(2px)';
     act(() => previous.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })));
-    expect(interrupted.every(animation => animation.cancel.mock.calls.length === 1)).toBe(true);
-    expect(motion.records[6].keyframes[0]).toEqual({ opacity: '0.35', transform: 'translateX(2px)' });
-    scene.style.removeProperty('opacity');
-    scene.style.removeProperty('transform');
-    await act(async () => { interrupted.forEach(animation => animation.finish()); });
-    expect(element('nav-device-status-name').textContent).toBe('Third host');
-    await motion.finishPhase();
+    expect(interrupted.cancel).toHaveBeenCalledOnce();
     expect(element('nav-device-status-name').textContent).toBe('Another host');
+    expect(motion.records[1].keyframes[0]).toEqual({ transform: 'translateX(2px)' });
+    scene.style.removeProperty('transform');
+    await act(async () => { interrupted.finish(); });
+    expect(element('nav-device-status-name').textContent).toBe('Another host');
+    expect(element('nav-device-status-popover').dataset.previewMotion).toBe('true');
     await motion.finishPhase();
-    expect((element('device-sidebar-visibility') as HTMLButtonElement).disabled).toBe(false);
+    expect(element('nav-device-status-popover').hasAttribute('data-preview-motion')).toBe(false);
     expect(state.switchToDevice).not.toHaveBeenCalled();
+  });
+
+  it('keeps the selected device usable if the browser cannot start an animation', async () => {
+    const { next } = await renderBrowseableDevices();
+    installPreviewAnimations();
+    const scene = document.querySelector<HTMLElement>('.openbitfun-device-overview__device-scene')!;
+    scene.animate = () => { throw new Error('Animation unavailable'); };
+    act(() => next.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })));
+    expect(element('nav-device-status-name').textContent).toBe('Another host');
+    expect(element('nav-device-status-popover').hasAttribute('data-preview-motion')).toBe(false);
+    expect((element('device-sidebar-visibility') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('cancels decorative motion when the rendered device changes externally', async () => {
+    const { next } = await renderBrowseableDevices();
+    const motion = installPreviewAnimations();
+    act(() => next.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })));
+    expect(element('nav-device-status-name').textContent).toBe('Another host');
+    await act(async () => {
+      state.overview = overview();
+      render();
+    });
+    expect(element('nav-device-status-name').textContent).toBe('Workstation');
+    expect(motion.records[0].cancel).toHaveBeenCalledOnce();
+    await motion.finishPhase();
+    expect(element('nav-device-status-name').textContent).toBe('Workstation');
+    expect(element('nav-device-status-popover').hasAttribute('data-preview-motion')).toBe(false);
   });
 
   it('settles directly when reduced motion is preferred or enabled during a transition', async () => {
@@ -557,7 +575,7 @@ describe('device status card', () => {
     expect(element('nav-device-status-name').textContent).toBe('Another host');
     setReduced(false);
     act(() => next.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })));
-    expect(motion.records).toHaveLength(3);
+    expect(motion.records).toHaveLength(1);
     setReduced(true);
     expect(element('nav-device-status-name').textContent).toBe('Third host');
     expect((element('device-sidebar-visibility') as HTMLButtonElement).disabled).toBe(false);
