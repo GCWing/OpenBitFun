@@ -409,7 +409,11 @@ pub enum PendingAction {
         has_more: bool,
     },
     SelectModel {
+        /// `(model selection, display label)` in menu order: the `primary`
+        /// alias first, then `fast` when configured, then concrete models.
         options: Vec<(String, String)>,
+        /// The session's selection when the menu opened, for re-rendering.
+        current_model_id: Option<String>,
     },
     AskUserQuestion {
         tool_id: String,
