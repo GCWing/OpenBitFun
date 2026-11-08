@@ -62,9 +62,12 @@ describe('composer image file intake', () => {
     expect(component).toMatch(
       /inputElement\.addEventListener\('paste', handlePasteFallback\);/,
     );
+    // The clipboard belongs to the controller even when a peer renders the
+    // session, so the read must not go through the rendered transport.
     expect(component).toMatch(
-      /const image = await workspaceAPI\.getClipboardImage\(\);/,
+      /const image = await getControllerClipboardImage\(\);/,
     );
+    expect(component).not.toContain('workspaceAPI.getClipboardImage(');
   });
 
   it('reads clipboard files first and widens the type gate on Linux', () => {

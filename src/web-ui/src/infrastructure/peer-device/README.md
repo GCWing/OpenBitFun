@@ -364,6 +364,16 @@ notification metadata.
     covers remote workspaces (local build uploads) and detached dispatch
     (images only).
 
+    The Files panel follows the same rule for drops and OS-clipboard paste:
+    `uploadLocalPathsToWorkspaceDirectory` publishes controller bytes with
+    `workspace_file_upload` into the peer workspace (local-paste `name (1)`
+    naming, never replacing a file) instead of `paste_files` or SSH upload,
+    which would resolve the controller path on the peer. Folders are refused
+    because the controller explorer listing filters entries, and a cut
+    clipboard behaves as a copy. Controller-path imports without a byte
+    transport, such as `.bfminiapp` packages, are refused while a peer is
+    rendered.
+
 ### Workspace HTML resources
 
 The controller keeps HTML preview HTTP listeners and native browser views local.

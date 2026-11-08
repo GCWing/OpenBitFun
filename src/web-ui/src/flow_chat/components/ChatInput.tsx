@@ -5121,7 +5121,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const notifyExternalFileFailures = useCallback((
     failures: ExternalFileIntakeFailure[],
     addedCount: number,
-    availability: ExternalFileIntakeRequest['availability'],
+    fileUnsupportedMessage?: string,
   ) => {
     if (failures.length === 0) return;
     const only = (reason: ExternalFileIntakeFailure['reason']) =>
@@ -5133,8 +5133,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       message = t('input.maxImagesWarning', { count: maxImageCount });
     } else if (only('directory')) {
       message = t('input.externalFiles.controllerDirectoryUnsupported');
-    } else if (only('file-unsupported') && !availability.supported) {
-      message = t(`input.externalFiles.unsupported.${availability.reason}`);
+    } else if (only('file-unsupported') && fileUnsupportedMessage) {
+      message = fileUnsupportedMessage;
     } else if (failures.length === 1 && first.reason === 'too-large') {
       message = t('input.externalFiles.controllerFileTooLarge', {
         name: firstName,
@@ -5168,9 +5168,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     if (scope.epoch !== request.surfaceEpoch) return;
     const reason = request.availability.supported ? undefined : request.availability.reason;
     const workspaceId = request.executionWorkspaceId;
-    const uploadable = reason !== 'detached-dispatch'
-      && Boolean(workspaceId)
-      && canUploadControllerFiles(scope);
+    // Why non-image files cannot be staged, checked in the order a user can act on.
+    const fileUnsupportedMessage = reason === 'detached-dispatch'
+      ? t('input.externalFiles.unsupported.detached-dispatch')
+      : !workspaceId
+        ? t('input.externalFiles.controllerFilesNeedWorkspace')
+        : !canUploadControllerFiles(scope)
+          ? t('input.externalFiles.unsupported.peer-device')
+          : undefined;
+    const uploadable = fileUnsupportedMessage === undefined;
     const isCurrent = () => isExternalFileIntakeRequestCurrent(request);
     let announcedUpload = false;
 
@@ -5212,7 +5218,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         richTextInputRef.current?.insertTag?.(context);
       }
     }
-    notifyExternalFileFailures(result.failures, result.contexts.length, request.availability);
+    notifyExternalFileFailures(result.failures, result.contexts.length, fileUnsupportedMessage);
   }, [
     addContext,
     contextStore,
@@ -5265,7 +5271,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       }
     }
 
-    notifyExternalFileFailures(result.failures, result.contexts.length, request.availability);
+    notifyExternalFileFailures(result.failures, result.contexts.length);
   }, [
     addContext,
     addControllerFiles,
@@ -5285,7 +5291,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
    */
   const readPastedClipboardFiles = useCallback(async (request: ExternalFileIntakeRequest) => {
     try {
-      const files = await getControllerClipboardFiles();
+      const { files } = await getControllerClipboardFiles();
       if (!isExternalFileIntakeRequestCurrent(request)) return false;
       if (files.length === 0) return false;
       await addExternalPaths(request, 'clipboard', files);
@@ -5314,7 +5320,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         if (request.availability.reason !== 'web') {
           // The clipboard of this controller, not of the rendered device.
           try {
-            const files = await getControllerClipboardFiles();
+            const { files } = await getControllerClipboardFiles();
             if (!isExternalFileIntakeRequestCurrent(request)) return;
             if (files.length > 0) {
               await addControllerFiles(request, 'clipboard', files);
@@ -5335,7 +5341,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       }
 
       try {
-        const { files } = await workspaceAPI.getClipboardFiles();
+        const { files } = await getControllerClipboardFiles();
         if (!isExternalFileIntakeRequestCurrent(request)) return;
         if (files.length > 0) {
           await addExternalPaths(request, 'clipboard', files);

@@ -6,6 +6,7 @@ import {
   resolveDropTargetDirectoryFromDragPosition,
   uploadLocalPathsToWorkspaceDirectory,
   type TransferProgressState,
+  type WorkspaceTransferResult,
 } from '@/tools/file-system/services/workspaceFileTransfer';
 
 const log = createLogger('useWorkspaceFileDrop');
@@ -19,7 +20,8 @@ export interface UseWorkspaceFileDropOptions {
   enabled?: boolean;
   onProgress: (state: TransferProgressState | null, transferId: string) => void;
   onDragOver?: (overPanel: boolean) => void;
-  onComplete: (targetDirectory: string, transferId: string) => void;
+  /** `result` lists items that were not transferred so they can be reported. */
+  onComplete: (targetDirectory: string, transferId: string, result: WorkspaceTransferResult) => void;
   onError: (error: unknown, transferId: string) => void;
 }
 
@@ -156,7 +158,7 @@ export function useWorkspaceFileDrop({
           // sending an id no transfer ever registered.
           const transferId = crypto.randomUUID();
           try {
-            await uploadLocalPathsToWorkspaceDirectory(
+            const result = await uploadLocalPathsToWorkspaceDirectory(
               paths,
               targetDir,
               currentWorkspace,
@@ -164,7 +166,7 @@ export function useWorkspaceFileDrop({
               undefined,
               transferId
             );
-            onComplete(targetDir, transferId);
+            onComplete(targetDir, transferId, result);
           } catch (error) {
             log.error('Failed to upload dropped files', error);
             onError(error, transferId);
