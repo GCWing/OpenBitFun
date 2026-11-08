@@ -4,9 +4,11 @@
 
 use super::builtin::ensure_builtin_skills_installed;
 use super::mode_overrides::{
-    load_disabled_mode_skills_local, load_disabled_mode_skills_remote,
-    load_globally_disabled_project_skills, load_globally_disabled_user_skills,
-    load_user_mode_skill_overrides, SkillPolicyWorkspace, UserModeSkillOverrides,
+    get_disabled_mode_skills_from_document, load_disabled_mode_skills_local,
+    load_disabled_mode_skills_remote, load_globally_disabled_project_skills,
+    load_globally_disabled_user_skills, load_project_mode_skills_document_local,
+    load_project_mode_skills_document_remote, load_user_mode_skill_overrides,
+    load_user_mode_skill_overrides_batch, SkillPolicyWorkspace, UserModeSkillOverrides,
 };
 use super::runtime_settings::apply_builtin_runtime_settings;
 #[cfg(feature = "file-watch")]
@@ -337,13 +339,13 @@ mod local_skill_scan_tests {
             .find(|item| item.unsupported_field.is_some())
             .unwrap();
         assert_eq!(unsupported.unsupported_field.as_deref(), Some("context"));
-        assert!(unsupported.path.ends_with("guard/SKILL.md"));
+        assert!(Path::new(&unsupported.path).ends_with(Path::new("guard").join("SKILL.md")));
         let failure = scan
             .diagnostics
             .iter()
             .find(|item| item.unsupported_field.is_none())
             .unwrap();
-        assert!(failure.path.ends_with("broken/SKILL.md"));
+        assert!(Path::new(&failure.path).ends_with(Path::new("broken").join("SKILL.md")));
         assert!(failure.message.contains("description"));
     }
 
@@ -1860,41 +1862,72 @@ impl SkillRegistry {
         workspace: Option<SkillPolicyWorkspace<'_>>,
         mode_id: &str,
     ) -> SkillScanReport<ModeSkillInfo> {
+        self.get_mode_skill_scan_reports_for_workspace(workspace, &[mode_id.to_owned()])
+            .await
+            .remove(mode_id)
+            .expect("The requested mode is included in the scan")
+    }
+
+    /// Resolve several mode policies against one discovery snapshot. Catalog
+    /// counts must not scan the same workspace once per displayed Agent.
+    pub async fn get_mode_skill_scan_reports_for_workspace(
+        &self,
+        workspace: Option<SkillPolicyWorkspace<'_>>,
+        mode_ids: &[String],
+    ) -> HashMap<String, SkillScanReport<ModeSkillInfo>> {
         let workspace_root = workspace.map(|workspace| workspace.root);
         let scan = self
             .scan_skill_candidates_with_diagnostics_for_workspace(workspace_root)
             .await;
         let candidates = scan.candidates;
         let all_skills = sort_skills(annotate_shadowed_skills(candidates.clone()));
-        let user_overrides = load_user_mode_skill_overrides(mode_id)
+        let globally_disabled_user_skills = Self::globally_disabled_skill_keys(workspace).await;
+        let mut user_overrides_by_mode = load_user_mode_skill_overrides_batch(mode_ids)
             .await
-            .unwrap_or_else(|_| UserModeSkillOverrides::default());
-        let disabled_project = match workspace_root {
-            Some(root) => load_disabled_mode_skills_local(root, mode_id)
+            .unwrap_or_default();
+        let project_document = match workspace_root {
+            Some(root) => load_project_mode_skills_document_local(root)
                 .await
                 .unwrap_or_default(),
-            None => Vec::new(),
+            None => Default::default(),
         };
-        let disabled_project: HashSet<String> =
-            normalize_skill_keys(disabled_project).into_iter().collect();
-        let globally_disabled_user_skills = Self::globally_disabled_skill_keys(workspace).await;
-        let filtered = Self::filter_globally_disabled_candidates(
-            filter_candidates_for_mode(candidates, mode_id, &user_overrides, &disabled_project),
-            &globally_disabled_user_skills,
-        );
-        let resolved = resolve_visible_skills(filtered);
-
-        SkillScanReport {
-            skills: build_mode_skill_infos(
-                all_skills,
-                resolved,
-                mode_id,
-                &user_overrides,
-                &disabled_project,
+        let mut reports = HashMap::new();
+        for mode_id in mode_ids {
+            if reports.contains_key(mode_id) {
+                continue;
+            }
+            let user_overrides = user_overrides_by_mode.remove(mode_id).unwrap_or_default();
+            let disabled_project =
+                get_disabled_mode_skills_from_document(&project_document, mode_id);
+            let disabled_project: HashSet<String> =
+                normalize_skill_keys(disabled_project).into_iter().collect();
+            let filtered = Self::filter_globally_disabled_candidates(
+                filter_candidates_for_mode(
+                    candidates.clone(),
+                    mode_id,
+                    &user_overrides,
+                    &disabled_project,
+                ),
                 &globally_disabled_user_skills,
-            ),
-            diagnostics: scan.diagnostics,
+            );
+            let resolved = resolve_visible_skills(filtered);
+
+            reports.insert(
+                mode_id.clone(),
+                SkillScanReport {
+                    skills: build_mode_skill_infos(
+                        all_skills.clone(),
+                        resolved,
+                        mode_id,
+                        &user_overrides,
+                        &disabled_project,
+                        &globally_disabled_user_skills,
+                    ),
+                    diagnostics: scan.diagnostics.clone(),
+                },
+            );
         }
+        reports
     }
 
     pub async fn get_mode_skill_infos_for_remote_workspace(
@@ -1914,37 +1947,71 @@ impl SkillRegistry {
         remote_root: &str,
         mode_id: &str,
     ) -> SkillScanReport<ModeSkillInfo> {
+        self.get_mode_skill_scan_reports_for_remote_workspace(
+            fs,
+            remote_root,
+            &[mode_id.to_owned()],
+        )
+        .await
+        .remove(mode_id)
+        .expect("The requested mode is included in the scan")
+    }
+
+    pub async fn get_mode_skill_scan_reports_for_remote_workspace(
+        &self,
+        fs: &dyn WorkspaceFileSystem,
+        remote_root: &str,
+        mode_ids: &[String],
+    ) -> HashMap<String, SkillScanReport<ModeSkillInfo>> {
         let scan = self
             .scan_skill_candidates_with_diagnostics_for_remote_workspace(fs, remote_root)
             .await;
         let candidates = scan.candidates;
         let all_skills = sort_skills(annotate_shadowed_skills(candidates.clone()));
-        let user_overrides = load_user_mode_skill_overrides(mode_id)
-            .await
-            .unwrap_or_else(|_| UserModeSkillOverrides::default());
-        let disabled_project = load_disabled_mode_skills_remote(fs, remote_root, mode_id)
+        let globally_disabled_user_skills = Self::globally_disabled_skill_keys(None).await;
+        let mut user_overrides_by_mode = load_user_mode_skill_overrides_batch(mode_ids)
             .await
             .unwrap_or_default();
-        let disabled_project: HashSet<String> =
-            normalize_skill_keys(disabled_project).into_iter().collect();
-        let globally_disabled_user_skills = Self::globally_disabled_skill_keys(None).await;
-        let filtered = Self::filter_globally_disabled_candidates(
-            filter_candidates_for_mode(candidates, mode_id, &user_overrides, &disabled_project),
-            &globally_disabled_user_skills,
-        );
-        let resolved = resolve_visible_skills(filtered);
-
-        SkillScanReport {
-            skills: build_mode_skill_infos(
-                all_skills,
-                resolved,
-                mode_id,
-                &user_overrides,
-                &disabled_project,
+        let project_document = load_project_mode_skills_document_remote(fs, remote_root)
+            .await
+            .unwrap_or_default();
+        let mut reports = HashMap::new();
+        for mode_id in mode_ids {
+            if reports.contains_key(mode_id) {
+                continue;
+            }
+            let user_overrides = user_overrides_by_mode.remove(mode_id).unwrap_or_default();
+            let disabled_project =
+                get_disabled_mode_skills_from_document(&project_document, mode_id);
+            let disabled_project: HashSet<String> =
+                normalize_skill_keys(disabled_project).into_iter().collect();
+            let filtered = Self::filter_globally_disabled_candidates(
+                filter_candidates_for_mode(
+                    candidates.clone(),
+                    mode_id,
+                    &user_overrides,
+                    &disabled_project,
+                ),
                 &globally_disabled_user_skills,
-            ),
-            diagnostics: scan.diagnostics,
+            );
+            let resolved = resolve_visible_skills(filtered);
+
+            reports.insert(
+                mode_id.clone(),
+                SkillScanReport {
+                    skills: build_mode_skill_infos(
+                        all_skills.clone(),
+                        resolved,
+                        mode_id,
+                        &user_overrides,
+                        &disabled_project,
+                        &globally_disabled_user_skills,
+                    ),
+                    diagnostics: scan.diagnostics.clone(),
+                },
+            );
         }
+        reports
     }
 
     pub async fn find_skill_by_key_for_workspace(
@@ -2547,6 +2614,7 @@ mod remote_scan_tests {
         installation_lock: Option<String>,
         pi_settings: Option<String>,
         claude_hooks: bool,
+        mode_profiles: Option<String>,
     }
 
     impl DelayedFs {
@@ -2566,6 +2634,12 @@ mod remote_scan_tests {
         }
         async fn read_file_text(&self, path: &str) -> anyhow::Result<String> {
             self.round_trip().await;
+            if path.ends_with("/agent_profiles.json") {
+                return self
+                    .mode_profiles
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("missing profiles"));
+            }
             if path.ends_with("/.pi/settings.json") {
                 assert_eq!(path, "/remote/project/.pi/settings.json");
                 return self
@@ -2597,6 +2671,9 @@ mod remote_scan_tests {
             anyhow::bail!("read-only fixture")
         }
         async fn exists(&self, path: &str) -> anyhow::Result<bool> {
+            if path.ends_with("/agent_profiles.json") {
+                return Ok(self.mode_profiles.is_some());
+            }
             if path.ends_with("/.pi/settings.json") {
                 return Ok(self.pi_settings.is_some());
             }
@@ -2629,6 +2706,98 @@ mod remote_scan_tests {
                 })
                 .collect())
         }
+    }
+
+    #[tokio::test]
+    async fn batch_mode_reports_scan_remote_skills_once_and_preserve_single_mode_policy() {
+        let registry = SkillRegistry::new();
+        let initial = registry
+            .get_mode_skill_scan_report_for_remote_workspace(
+                &DelayedFs::default(),
+                "/remote/project",
+                "Cowork",
+            )
+            .await;
+        let key = initial
+            .skills
+            .iter()
+            .find(|skill| {
+                skill.skill.level == super::SkillLocation::Project && skill.effective_enabled
+            })
+            .unwrap()
+            .skill
+            .key
+            .clone();
+        let mut document =
+            crate::service::config::agent_profile_project_store::ProjectAgentProfilesDocument::new(
+            );
+        crate::service::config::agent_profile_project_store::set_disabled_project_skills(
+            &mut document,
+            &crate::agentic::agents::resolve_mode_config_profile_id("Cowork"),
+            vec![key.clone()],
+        );
+        let contents = serde_json::to_string(&document).unwrap();
+        let single_fs = DelayedFs {
+            mode_profiles: Some(contents.clone()),
+            ..Default::default()
+        };
+        let first = registry
+            .get_mode_skill_scan_report_for_remote_workspace(
+                &single_fs,
+                "/remote/project",
+                "Cowork",
+            )
+            .await;
+        let single_calls = single_fs.calls.load(Ordering::SeqCst);
+        let batch_fs = DelayedFs {
+            mode_profiles: Some(contents.clone()),
+            ..Default::default()
+        };
+        let reports = registry
+            .get_mode_skill_scan_reports_for_remote_workspace(
+                &batch_fs,
+                "/remote/project",
+                &["Cowork".into(), "review".into(), "Cowork".into()],
+            )
+            .await;
+        assert_eq!(reports.len(), 2);
+        assert!(
+            !reports["Cowork"]
+                .skills
+                .iter()
+                .find(|skill| skill.skill.key == key)
+                .unwrap()
+                .effective_enabled
+        );
+        assert!(
+            reports["review"]
+                .skills
+                .iter()
+                .find(|skill| skill.skill.key == key)
+                .unwrap()
+                .effective_enabled
+        );
+        assert_eq!(
+            serde_json::to_value(&first).unwrap(),
+            serde_json::to_value(&reports["Cowork"]).unwrap()
+        );
+        // Discovery and project policy are each read once for the entire batch.
+        assert!(batch_fs.calls.load(Ordering::SeqCst) <= single_calls);
+        let review_fs = DelayedFs {
+            mode_profiles: Some(contents),
+            ..Default::default()
+        };
+        let review = registry
+            .get_mode_skill_scan_report_for_remote_workspace(
+                &review_fs,
+                "/remote/project",
+                "review",
+            )
+            .await;
+        assert_eq!(
+            serde_json::to_value(review).unwrap(),
+            serde_json::to_value(&reports["review"]).unwrap()
+        );
     }
 
     #[tokio::test]

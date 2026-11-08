@@ -128,28 +128,70 @@ pub(crate) async fn get_skill_configs(args: &Value) -> Result<Value, String> {
 pub(crate) async fn get_mode_skill_configs(args: &Value) -> Result<Value, String> {
     let request = request_value(args);
     let mode_id = get_string(request, "modeId")?;
+    let summary_ids = request
+        .get("summaryModeIds")
+        .filter(|value| !value.is_null())
+        .map(|value| {
+            serde_json::from_value::<Vec<String>>(value.clone())
+                .map_err(|error| format!("Invalid summaryModeIds: {error}"))
+        })
+        .transpose()?;
+    let include_diagnostics = optional_bool(request, "includeDiagnostics").unwrap_or(false);
+    let summary = include_diagnostics && summary_ids.is_some();
+    let mut mode_ids = if summary {
+        summary_ids.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    if !mode_ids.contains(&mode_id) {
+        mode_ids.push(mode_id.clone());
+    }
     let workspace = resolve_workspace(request).await?;
     let registry = SkillRegistry::global();
     if optional_bool(request, "forceRefresh").unwrap_or(false) {
         registry.refresh().await;
     }
-    let report = if let Some((root, fs)) = remote_workspace_fs(workspace.as_ref()).await? {
+    let mut reports = if let Some((root, fs)) = remote_workspace_fs(workspace.as_ref()).await? {
         within_remote_deadline(
-            registry.get_mode_skill_scan_report_for_remote_workspace(&fs, &root, &mode_id),
+            registry.get_mode_skill_scan_reports_for_remote_workspace(&fs, &root, &mode_ids),
         )
         .await?
     } else {
         registry
-            .get_mode_skill_scan_report_for_workspace(
+            .get_mode_skill_scan_reports_for_workspace(
                 workspace.as_ref().map(SkillPolicyWorkspace::from_record),
-                &mode_id,
+                &mode_ids,
             )
             .await
     };
-    scan_response(
-        report,
-        optional_bool(request, "includeDiagnostics").unwrap_or(false),
-    )
+    let counts: std::collections::HashMap<String, usize> = reports
+        .iter()
+        .map(|(id, report)| {
+            (
+                id.clone(),
+                report
+                    .skills
+                    .iter()
+                    .filter(|skill| skill.effective_enabled)
+                    .count(),
+            )
+        })
+        .collect();
+    let report = reports
+        .remove(&mode_id)
+        .expect("The anchor mode is included in the summary");
+    let mut response = scan_response(report, include_diagnostics)?;
+    if summary {
+        let object = response
+            .as_object_mut()
+            .expect("Diagnostics responses are objects");
+        object.insert("skillCountsVersion".into(), Value::from(1));
+        object.insert(
+            "enabledSkillCounts".into(),
+            serde_json::to_value(counts).map_err(|error| error.to_string())?,
+        );
+    }
+    Ok(response)
 }
 
 /// Read-only availability settings. Version 0 tells the controller that direct
@@ -187,6 +229,42 @@ mod tests {
     async fn mode_skill_configs_require_a_mode() {
         let error = get_mode_skill_configs(&json!({})).await.unwrap_err();
         assert!(error.contains("modeId"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn invalid_summary_ids_fail_before_discovery() {
+        let error = get_mode_skill_configs(
+            &json!({"modeId":"Cowork","includeDiagnostics":true,"summaryModeIds":[1]}),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("summaryModeIds"));
+    }
+
+    #[tokio::test]
+    async fn mode_summary_preserves_legacy_payloads() {
+        let legacy = get_mode_skill_configs(&json!({"modeId":"Cowork"}))
+            .await
+            .unwrap();
+        let diagnostic =
+            get_mode_skill_configs(&json!({"modeId":"Cowork","includeDiagnostics":true}))
+                .await
+                .unwrap();
+        assert_eq!(legacy, diagnostic["skills"]);
+        assert!(diagnostic.get("skillCountsVersion").is_none());
+        let summary = get_mode_skill_configs(&json!({"modeId":"Cowork","includeDiagnostics":true,"summaryModeIds":["Cowork","review","Cowork"]})).await.unwrap();
+        assert_eq!(legacy, summary["skills"]);
+        assert_eq!(summary["skillCountsVersion"], 1);
+        assert_eq!(
+            summary["enabledSkillCounts"]["Cowork"].as_u64().unwrap(),
+            legacy
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|skill| skill["effectiveEnabled"] == true)
+                .count() as u64
+        );
+        assert!(summary["enabledSkillCounts"]["review"].is_number());
     }
 
     #[test]

@@ -606,6 +606,9 @@ export interface SkillScanDiagnostic {
 }
 
 export interface SkillScanReport<T = SkillInfo> {
+  /** Optional projection; absent on hosts that only support individual reads. */
+  skillCountsVersion?: number;
+  enabledSkillCounts?: Record<string, number>;
   /** Negotiated host support for durable external copies and identity-checked undo. */
   importOperationsVersion?: number;
   skills: T[];
