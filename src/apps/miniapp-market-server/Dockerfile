@@ -46,6 +46,10 @@ RUN apt-get update \
 
 COPY Cargo.toml Cargo.lock ./
 COPY third_party/eioc/ third_party/eioc/
+# Cargo resolves `[patch.crates-io]` path entries from the root manifest even for
+# a service-only build, so the vendored engine patches must be present.
+COPY third_party/tao/ third_party/tao/
+COPY third_party/wry/ third_party/wry/
 COPY src/ src/
 
 RUN --mount=type=cache,id=openbitfun-market-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \

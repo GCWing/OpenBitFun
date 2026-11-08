@@ -7,6 +7,10 @@
 !third_party/eioc/Cargo.toml
 !third_party/eioc/src/
 !third_party/eioc/src/**
+!third_party/tao/
+!third_party/tao/**
+!third_party/wry/
+!third_party/wry/**
 !package.json
 !pnpm-lock.yaml
 !pnpm-workspace.yaml

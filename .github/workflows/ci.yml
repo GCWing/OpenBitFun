@@ -100,6 +100,9 @@ jobs:
       - name: Validate Relay deployment and packaging contracts
         run: node --test scripts/relay/*.test.mjs
 
+      - name: Validate market image build contexts
+        run: node --test scripts/market/*.test.mjs
+
       - name: Verify minisign download fallback
         run: |
           set -euo pipefail
