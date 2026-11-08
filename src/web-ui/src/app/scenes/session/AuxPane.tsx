@@ -47,10 +47,21 @@ interface AuxPaneProps {
 const AuxPane = forwardRef<AuxPaneRef, AuxPaneProps>(
   ({ workspacePath, externalToolbar = false, isSceneActive = true, terminalResizeSuspended = false, resizeSuspended = false, isFullscreen = false, onToggleFullscreen }, ref) => {
     const { t } = useI18n('components');
+    // Fine-grained subscription: only re-render when activeSessionId identity changes.
+    const subscribeActiveSessionId = useCallback((onStoreChange: () => void) => {
+      let last = flowChatStore.getState().activeSessionId;
+      return flowChatStore.subscribe(state => {
+        if (state.activeSessionId !== last) {
+          last = state.activeSessionId;
+          onStoreChange();
+        }
+      });
+    }, []);
+    const getActiveSessionId = useCallback(() => flowChatStore.getState().activeSessionId, []);
     const activeSessionId = useSyncExternalStore(
-      flowChatStore.subscribe.bind(flowChatStore),
-      () => flowChatStore.getState().activeSessionId,
-      () => flowChatStore.getState().activeSessionId,
+      subscribeActiveSessionId,
+      getActiveSessionId,
+      getActiveSessionId,
     );
 
     // Fine-grained selectors so unrelated store changes do not re-render.
