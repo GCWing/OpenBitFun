@@ -22,7 +22,7 @@ export class FlowChatReaderState {
     this.set(`interaction:${turn}`, true);
     return () => {
       if (!owners.delete(lease)) return;
-      if (!owners.size) {
+      if (!owners.size && this.turnInteractions.get(turn) === owners) {
         this.turnInteractions.delete(turn);
         this.set(`interaction:${turn}`, false);
       }
@@ -57,13 +57,15 @@ export class FlowChatReaderState {
     this.notifyProjection();
     return () => {
       if (!owners.delete(owner)) return;
-      if (!owners.size) this.groupHolds.delete(id);
+      if (!owners.size && this.groupHolds.get(id) === owners) this.groupHolds.delete(id);
       this.notifyProjection();
     };
   }
   private notifyProjection() {
     this.revision++;
-    this.projectionListeners.forEach(listener => listener());
+    // for..of avoids allocating a closure per notification; Set iteration is
+    // mutation-tolerant, so listeners may unsubscribe during dispatch.
+    for (const listener of this.projectionListeners) listener();
   }
 
   get<T extends ReaderValue>(key: string, fallback: T): T {
@@ -73,18 +75,27 @@ export class FlowChatReaderState {
   set<T extends ReaderValue>(key: string, value: T): void {
     if (this.values.get(key) === value) return;
     this.values.set(key, value);
-    this.listeners.get(key)?.forEach(listener => listener());
+    // for..of over the live Set avoids allocating a dispatch closure per write
+    // and stays correct if a listener unsubscribes mid-dispatch.
+    const bucket = this.listeners.get(key);
+    if (bucket) for (const listener of bucket) listener();
     if (key.startsWith('group:') || key === 'navigation:whole-text') {
       this.notifyProjection();
     }
   }
   subscribe = (key: string, listener: Listener) => {
-    const listeners = this.listeners.get(key) ?? new Set();
-    listeners.add(listener);
-    this.listeners.set(key, listeners);
+    let listeners = this.listeners.get(key);
+    if (listeners) {
+      listeners.add(listener);
+    } else {
+      listeners = new Set([listener]);
+      this.listeners.set(key, listeners);
+    }
+    // Identity-guarded cleanup: a stale unsubscribe closure must never evict a
+    // newer listener bucket that happens to share the same key.
     return () => {
-      listeners.delete(listener);
-      if (!listeners.size) this.listeners.delete(key);
+      if (!listeners.delete(listener)) return;
+      if (!listeners.size && this.listeners.get(key) === listeners) this.listeners.delete(key);
     };
   };
   subscribeProjection = (listener: Listener) => {
@@ -98,10 +109,17 @@ export class FlowChatReaderState {
 // hold their own store; the bounded registry only owns inactive view snapshots.
 const views = new Map<string, FlowChatReaderState>();
 const MAX_REMEMBERED_VIEWS = 24;
+// Fast path for the common case: the scope being resolved is already the most
+// recently used one. Map#set on an existing key does not reorder, so the
+// delete+set LRU bump can be skipped whenever nothing has churned in between.
+let mostRecentScope: string | null = null;
 export function getFlowChatReaderState(scope: string): FlowChatReaderState {
-  const store = views.get(scope) ?? new FlowChatReaderState();
-  views.delete(scope);
+  const existing = views.get(scope);
+  if (mostRecentScope === scope && existing) return existing;
+  const store = existing ?? new FlowChatReaderState();
+  if (existing) views.delete(scope);
   views.set(scope, store);
+  mostRecentScope = scope;
   while (views.size > MAX_REMEMBERED_VIEWS) views.delete(views.keys().next().value!);
   return store;
 }
