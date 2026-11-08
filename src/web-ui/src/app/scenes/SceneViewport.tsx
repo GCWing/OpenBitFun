@@ -135,6 +135,21 @@ interface SceneViewportProps {
   paned?: boolean;
 }
 
+interface SceneContentProps {
+  sceneId: SceneTabId;
+  workspacePath?: string;
+  isEntering?: boolean;
+  isActive: boolean;
+}
+
+// Keep retained scenes subscribed to their own data/context, without rendering
+// every open scene again for each navigation and transition phase in the deck.
+const SceneContent = React.memo(function SceneContent({
+  sceneId, workspacePath, isEntering, isActive,
+}: SceneContentProps) {
+  return renderScene(sceneId, workspacePath, isEntering, isActive);
+});
+
 const SceneViewport: React.FC<SceneViewportProps> = ({ workspacePath, isEntering = false, paned = false }) => {
   const {
     openTabs,
@@ -258,7 +273,7 @@ const SceneViewport: React.FC<SceneViewportProps> = ({ workspacePath, isEntering
                   }
                 >
                   <SceneReadyBoundary sceneId={tabId} onReady={transition.markSceneReady}>
-                    {renderScene(tabId, workspacePath, isEntering, isActive)}
+                    <SceneContent sceneId={tabId} workspacePath={workspacePath} isEntering={isEntering} isActive={isActive} />
                   </SceneReadyBoundary>
                 </Suspense>
               )}

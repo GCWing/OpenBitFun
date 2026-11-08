@@ -275,7 +275,7 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
                   />
                   <OverviewSplitCardSection title={t('miniApps.installed')}>
                     {miniApps.status === 'ready' ? miniAppItems.length > 0 ? (
-                      <OverviewMiniAppLogos apps={miniAppItems} onDetails={openMiniAppDetails}
+                      <OverviewMiniAppLogos apps={miniAppItems} isActive={isActive} onDetails={openMiniAppDetails}
                         onLaunch={appId => useSceneStore.getState().openScene(`miniapp:${appId}`)}
                         onViewAll={() => useSceneStore.getState().openScene('miniapps')} />
                     ) : <p className="personal-overview__catalog-empty">{t('miniApps.empty')}</p> : (

@@ -515,15 +515,20 @@ pnpm --dir src/web-ui run test:run src/infrastructure/workspace-icons/workspaceI
 
 These fixtures exercise DOM behavior and simulated device switching, not live remote hosts.
 
-For retained scene visibility, Todos display-clock suspension and immediate return
+For retained scene visibility, content render isolation, overview layout suspension,
+Todos display-clock suspension and immediate return
 catch-up (including midnight and document visibility), run:
 
 ```bash
-pnpm --dir src/web-ui run test:run src/app/scenes/SceneViewport.test.tsx src/app/scenes/todos/useTodoClock.test.tsx src/app/scenes/personal-overview/usePersonalOverview.test.tsx
+pnpm --dir src/web-ui run test:run src/app/scenes/SceneViewport.test.tsx src/app/scenes/todos/useTodoClock.test.tsx src/app/scenes/personal-overview/usePersonalOverview.test.tsx src/app/scenes/personal-overview/OverviewMiniAppLogos.test.tsx
 ```
 
 These local DOM fixtures do not establish native rendering or live remote behavior.
 The Todos display clock must not gate job subscriptions or scheduler execution.
+Retained scene content may skip unchanged deck renders, but must keep its own
+state/context subscriptions and receive activity/workspace changes. Suspend
+overview sizing observers while inactive and remeasure on reveal; do not change
+the scene host lifetime or transcript viewport ownership to save rendering work.
 For scene-readiness-only changes, run the SceneViewport test file alone. Readiness
 must follow the committed tree: a closed or Suspense-hidden tree cannot leave a
 ready id that reveals a newly suspended reopening. Native non-editor close/reopen

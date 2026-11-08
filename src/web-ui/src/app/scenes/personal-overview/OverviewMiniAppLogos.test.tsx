@@ -12,6 +12,7 @@ vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({
 let root: Root;
 let container: HTMLDivElement;
 let width: number;
+let rowLayoutReads: number;
 const resizeListeners = new Set<() => void>();
 const details = vi.fn();
 const launch = vi.fn();
@@ -23,6 +24,7 @@ const resize = (nextWidth: number) => act(() => { width = nextWidth; resizeListe
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   width = 136;
+  rowLayoutReads = 0;
   vi.clearAllMocks();
   resizeListeners.clear();
   vi.stubGlobal('ResizeObserver', class {
@@ -31,7 +33,9 @@ beforeEach(() => {
     disconnect() { resizeListeners.delete(this.listener); }
   });
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function () {
-    return this.classList.contains('overview-miniapp-logos') ? width + 4 : 0;
+    if (!this.classList.contains('overview-miniapp-logos')) return 0;
+    rowLayoutReads += 1;
+    return width + 4;
   });
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function () {
     return this.classList.contains('overview-miniapp-logos__probe') ? 40 : 0;
@@ -50,7 +54,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-const render = () => act(async () => { root.render(<OverviewMiniAppLogos apps={apps} onDetails={details} onLaunch={launch} onViewAll={viewAll} />); });
+const render = (isActive = true) => act(async () => { root.render(<OverviewMiniAppLogos apps={apps} isActive={isActive} onDetails={details} onLaunch={launch} onViewAll={viewAll} />); });
 
 it('fits complete logos to the measured width and reserves an overflow entry', async () => {
   await render();
@@ -82,4 +86,21 @@ it('keeps details and launch independent and restores focus when a focused app i
   container.querySelector<HTMLButtonElement>('[data-miniapp-id="app-1"]')!.focus();
   resize(88);
   expect(document.activeElement).toBe(container.querySelector('[data-testid="personal-overview-more-miniapps"]'));
+});
+
+it('retains fitted logos while inactive and measures the current width again on reveal', async () => {
+  await render(false);
+  expect(rowLayoutReads).toBe(0);
+  await render();
+  expect(visibleIds()).toEqual(['app-0', 'app-1']);
+  const oldDelivery = [...resizeListeners];
+  await render(false);
+  const previousReads = rowLayoutReads;
+  resize(232);
+  act(() => oldDelivery.forEach(deliver => deliver()));
+  expect(rowLayoutReads).toBe(previousReads);
+  expect(visibleIds()).toEqual(['app-0', 'app-1']);
+  await render();
+  expect(visibleIds()).toEqual(apps.map(app => app.id));
+  expect(rowLayoutReads).toBeGreaterThan(previousReads);
 });
