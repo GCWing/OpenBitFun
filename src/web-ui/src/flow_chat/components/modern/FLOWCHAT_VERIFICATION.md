@@ -16,6 +16,7 @@ each missing what the other had.
 
 | Test | Contract it holds |
 |---|---|
+| `flowItemRhythm.test.ts`, `../../../tools/generative-ui/genUISpacing.test.ts` | mixed agent-card full-row children and exact generated-content gap matching through nested stacks, hidden children and insert/remove snapshots; native invalidation and performance are verified separately |
 | `../../store/modernFlowChatStore.test.ts`, `../../grouping/selectors.test.ts`, `../../grouping/activityGrouping.test.ts`, `../../../shared/utils/resourceBudget.test.ts` | cached/full projection equivalence across repeated thinking/tool-parameter streams, interior updates, rollback, completion and legacy retry/recovery; alternating live/history/side projections, completed-row reuse on append, same-store clear/reopen invalidation, warm equal-ID source isolation, group alias restoration and group-position independence; interrupted-prefix and shared-reference byte accounting |
 | `useFlowChatVirtualizer.initial-window.test.tsx`, `useFlowChatSearch.test.ts` | delayed observer delivery after live prepend / history tail insertion resizes the surviving key; suspended mounts are observed on resume with or without origin handoff; closing one search releases its match cache without affecting another view |
 | `../../perf/longRoundPerfHarness.test.tsx` | deterministic settled-row/block identity reuse, including interleaved history and side projections, plus diagnostic stage timings; supplied DOM fixtures, not native frame-rate or live remote evidence |

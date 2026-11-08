@@ -15,7 +15,13 @@
 
 :is([data-flow-item-stack], .explore-region__content, .flow-group-content-segment):has(
   > .flowchat-flow-item > .flow-tool-card-wrapper [data-openbitfun-tool-card='agent-control']
-) > * {
+) > :where(.flowchat-flow-item, .flow-text-block, .flow-thinking-item,
+  .subagent-projection-text--truncated, .flowchat-capsule-row-break,
+  .explore-region, .flow-group-content-segment, .model-round-item__meta,
+  .model-round-item__continuation, .model-round-item__retry-history, .model-round-item__footer) {
+  /* The stack renderers own these children. An unqualified child after :has()
+     registered subtree invalidation on unrelated shell ancestors during row
+     recycling. :where() keeps the original rule's specificity and geometry. */
   flex: 0 0 100%;
   min-inline-size: 0;
 }

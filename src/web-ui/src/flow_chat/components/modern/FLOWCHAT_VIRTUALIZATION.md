@@ -118,6 +118,14 @@ following and while reading. It does not establish native paint or live transpor
 
 ## Large text and decoration residency
 
+Globally loaded styles also affect virtualization cost. Universal sibling rules
+in the GenUI spacing sheets and an unqualified child after the shared agent-card
+`:has()` selector invalidated unrelated shell subtrees when rows were recycled.
+Spacing keeps its element-child matching and specificity; agent-row sizing names
+the stack renderers' owned children inside `:where()`. New direct stack child
+kinds must retain that sizing contract. Native invalidation/Selector Stats traces
+identify the cause; ordinary uninstrumented runs establish the performance change.
+
 `markdownSections` uses the existing streaming parser's block tokenizer to find
 semantic boundaries. It does not perform inline parsing or replace the product
 Markdown renderer/sanitizer. Live and historical replies project roughly 3,000-character
