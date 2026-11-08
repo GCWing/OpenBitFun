@@ -229,8 +229,6 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const artworkRef = useRef<HTMLDivElement>(null);
-  const headingRef = useRef<HTMLDivElement>(null);
-  const actionsRef = useRef<HTMLDivElement>(null);
   const selectPreview = useCallback((deviceId: string) => {
     setPreviewId(deviceId);
   }, []);
@@ -238,8 +236,6 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
     scope: JSON.stringify([open, accountId, activePeerId, carouselDeviceIds]),
     surfaceRef: popoverRef,
     artworkRef,
-    headingRef,
-    actionsRef,
     onSelect: selectPreview,
   });
   const browseDevice = (direction: -1 | 1, animate: boolean) => {
@@ -546,7 +542,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                       <span data-testid="nav-device-status-total">{formatNumber(previewDevices.length)}</span>
                     </span>
                   )}
-                  <div className="openbitfun-device-overview__device-heading" ref={headingRef} data-overflow-trigger aria-live="polite" aria-atomic="true">
+                  <div className="openbitfun-device-overview__device-heading" data-overflow-trigger aria-live="polite" aria-atomic="true">
                     {/* The system is drawn, not written: the same mark the trigger and
                         the device rows use. State is drawn after the name. */}
                     <span className="openbitfun-device-overview__device-mark" aria-hidden="true">
@@ -619,12 +615,11 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                     )}
                   </div>
                 </div>
-                <div className="openbitfun-device-overview__device-actions" ref={actionsRef}>
+                <div className="openbitfun-device-overview__device-actions">
                   {displayedSurfaceId && !['mobile', 'watch'].includes(displayedAccountDevice?.device_kind?.trim().toLowerCase() ?? '') && (
                     <DeviceVisibilityButton
                       surfaceId={displayedSurfaceId}
                       name={displayedDevice.name}
-                      disabled={previewMotion.isTransitioning}
                     />
                   )}
                 </div>

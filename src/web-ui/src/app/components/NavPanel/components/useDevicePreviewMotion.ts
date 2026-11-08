@@ -5,151 +5,102 @@ interface DevicePreviewMotionOptions {
   scope: string;
   surfaceRef: RefObject<HTMLElement | null>;
   artworkRef: RefObject<HTMLElement | null>;
-  headingRef: RefObject<HTMLElement | null>;
-  actionsRef: RefObject<HTMLElement | null>;
   onSelect: (deviceId: string) => void;
 }
 
-interface PreviewTarget {
-  deviceId: string;
-  direction: -1 | 1;
+interface PreviewEntrance {
+  scope: string;
+  transform: string;
+  duration: number;
+  easing: string;
 }
 
-function readDuration(style: CSSStyleDeclaration, token: string): number {
-  const value = style.getPropertyValue(token).trim();
-  const duration = Number.parseFloat(value) * (value.endsWith('ms') ? 1 : 1000);
-  return Number.isFinite(duration) && duration > 0 ? duration : 0;
-}
-
-/** Manual browsing owns motion; hydration and surface changes always settle directly. */
+/**
+ * Commit the device in one render, then move only its artwork. Fading the old
+ * scene to zero before committing left a blank frame and mutated masked artwork,
+ * text and button paint underneath retained opacity animations in WebKit.
+ */
 export function useDevicePreviewMotion({
-  scope, surfaceRef, artworkRef, headingRef, actionsRef, onSelect,
+  scope, surfaceRef, artworkRef, onSelect,
 }: DevicePreviewMotionOptions) {
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [entrance, setEntrance] = useState<{ target: PreviewTarget; generation: number } | null>(null);
-  const animationsRef = useRef<Animation[]>([]);
-  const generationRef = useRef(0);
-  const phaseRef = useRef<'idle' | 'exit' | 'enter'>('idle');
-  const pendingTargetRef = useRef<PreviewTarget | null>(null);
-  const previousScopeRef = useRef(scope);
+  const [entrance, setEntrance] = useState<PreviewEntrance | null>(null);
+  const animationRef = useRef<Animation | null>(null);
+  const pendingDeviceRef = useRef<string | null>(null);
 
-  const cancelAnimations = useCallback(() => {
-    generationRef.current += 1;
-    animationsRef.current.forEach(animation => animation.cancel());
-    animationsRef.current = [];
+  const cancelAnimation = useCallback(() => {
+    const animation = animationRef.current;
+    animationRef.current = null;
+    animation?.cancel();
   }, []);
 
-  const settle = useCallback((selectPending: boolean) => {
-    const target = pendingTargetRef.current;
-    cancelAnimations();
-    pendingTargetRef.current = null;
-    phaseRef.current = 'idle';
+  const settle = useCallback(() => {
+    cancelAnimation();
+    pendingDeviceRef.current = null;
     setEntrance(null);
-    setIsTransitioning(false);
-    if (selectPending && target) onSelect(target.deviceId);
-  }, [cancelAnimations, onSelect]);
-
-  const readMotion = useCallback(() => {
-    const surface = surfaceRef.current;
-    // Pagination is visually hidden; it only needs the new accessible text.
-    const elements = [artworkRef.current, headingRef.current, actionsRef.current]
-      .filter((element): element is HTMLElement => element !== null);
-    if (!surface || isReducedMotionPreferred() || elements.length !== 3
-      || elements.some(element => typeof element.animate !== 'function')) return null;
-    const style = getComputedStyle(surface);
-    const exitDuration = readDuration(style, '--openbitfun-motion-duration-instant');
-    const enterDuration = readDuration(style, '--openbitfun-motion-duration-fast');
-    const easing = style.getPropertyValue('--openbitfun-motion-easing-standard').trim();
-    const distance = style.getPropertyValue('--openbitfun-motion-distance-sm').trim();
-    if (!exitDuration || !enterDuration || !easing || !distance) return null;
-    return { elements, exitDuration, enterDuration, easing, distance };
-  }, [actionsRef, artworkRef, headingRef, surfaceRef]);
-  const motionRef = useRef<ReturnType<typeof readMotion>>(null);
+  }, [cancelAnimation]);
 
   const navigateTo = useCallback((deviceId: string, direction: -1 | 1, animate = true) => {
-    pendingTargetRef.current = { deviceId, direction };
-    if (!animate || isReducedMotionPreferred()) { settle(true); return; }
-    // Repeated clicks during the short exit only change its destination.
-    // Do this before any style read, so a burst of clicks cannot force layout.
-    if (phaseRef.current === 'exit') return;
-    const motion = readMotion();
-    if (!motion) { settle(true); return; }
-    motionRef.current = motion;
-
-    // Interrupted entrances leave from their actual frame, without snapping back.
-    const starts = motion.elements.map(element => {
-      if (phaseRef.current !== 'enter') return { opacity: '1', transform: 'none' };
-      const style = getComputedStyle(element);
-      return { opacity: style.opacity || '1', transform: style.transform || 'none' };
-    });
-    cancelAnimations();
-    const generation = generationRef.current;
-    phaseRef.current = 'exit';
-    setEntrance(null);
-    setIsTransitioning(true);
-    try {
-      motion.elements.forEach((element, index) => animationsRef.current.push(element.animate([
-        starts[index],
-        { opacity: 0, transform: element === artworkRef.current
-          ? `translateX(calc(${motion.distance} * ${-direction}))` : 'none' },
-      ], { duration: motion.exitDuration, easing: motion.easing, fill: 'forwards' })));
-      void Promise.all(animationsRef.current.map(animation => animation.finished)).then(() => {
-        const target = pendingTargetRef.current;
-        if (generation !== generationRef.current || !target) return;
-        phaseRef.current = 'enter';
-        onSelect(target.deviceId);
-        setEntrance({ target, generation });
-      }).catch(() => {
-        if (generation === generationRef.current) settle(true);
-      });
-    } catch {
-      settle(true);
+    let nextEntrance: PreviewEntrance | null = null;
+    const surface = surfaceRef.current;
+    const artwork = artworkRef.current;
+    if (animate && !isReducedMotionPreferred() && surface && artwork
+      && typeof artwork.animate === 'function') {
+      const style = getComputedStyle(surface);
+      const value = style.getPropertyValue('--openbitfun-motion-duration-fast').trim();
+      const duration = Number.parseFloat(value) * (value.endsWith('ms') ? 1 : 1000);
+      const easing = style.getPropertyValue('--openbitfun-motion-easing-standard').trim();
+      const distance = style.getPropertyValue('--openbitfun-motion-distance-sm').trim();
+      if (Number.isFinite(duration) && duration > 0 && easing && distance) {
+        // Retarget rapid browsing from the visible position, before cancellation.
+        const transform = animationRef.current
+          ? getComputedStyle(artwork).transform
+          : `translateX(calc(${distance} * ${direction * 2}))`;
+        nextEntrance = { scope, transform, duration, easing };
+      }
     }
-  }, [artworkRef, cancelAnimations, onSelect, readMotion, settle]);
+    cancelAnimation();
+    pendingDeviceRef.current = deviceId;
+    // Content and controls change together, without waiting on animation.finished.
+    onSelect(deviceId);
+    setEntrance(nextEntrance);
+  }, [artworkRef, cancelAnimation, onSelect, scope, surfaceRef]);
+
+  useLayoutEffect(() => { settle(); }, [scope, settle]);
+
+  useLayoutEffect(() => { pendingDeviceRef.current = null; });
 
   useLayoutEffect(() => {
-    if (previousScopeRef.current === scope) return;
-    previousScopeRef.current = scope;
-    settle(false);
-  }, [scope, settle]);
-
-  useLayoutEffect(() => {
-    if (!entrance || entrance.generation !== generationRef.current) return;
-    // Reuse the parameters read before exit. Reading styles after swapping the
-    // artwork would synchronously flush its new layout in the hand-off frame.
-    const motion = motionRef.current;
-    if (!motion || isReducedMotionPreferred()) { settle(true); return; }
-    cancelAnimations();
-    const generation = generationRef.current;
+    if (!entrance || entrance.scope !== scope) return;
+    const artwork = artworkRef.current;
+    if (!artwork || isReducedMotionPreferred()) { settle(); return; }
     try {
-      motion.elements.forEach(element => animationsRef.current.push(element.animate([
-        { opacity: 0, transform: element === artworkRef.current
-          ? `translateX(calc(${motion.distance} * ${entrance.target.direction * 2}))` : 'none' },
-        { opacity: 1, transform: 'none' },
-      ], { duration: motion.enterDuration, easing: motion.easing, fill: 'both' })));
-      void Promise.all(animationsRef.current.map(animation => animation.finished)).then(() => {
-        if (generation === generationRef.current) settle(false);
-      }).catch(() => {
-        if (generation === generationRef.current) settle(true);
-      });
+      const animation = artwork.animate([
+        { transform: entrance.transform },
+        { transform: 'none' },
+      ], { duration: entrance.duration, easing: entrance.easing, fill: 'backwards' });
+      animationRef.current = animation;
+      const finish = () => {
+        if (animationRef.current === animation) settle();
+      };
+      void animation.finished.then(finish, finish);
     } catch {
-      settle(true);
+      settle();
     }
-  }, [artworkRef, cancelAnimations, entrance, settle]);
+  }, [artworkRef, entrance, scope, settle]);
 
   useEffect(() => {
     const preference = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
     if (!preference) return;
-    const finish = () => { if (preference.matches) settle(true); };
+    const finish = () => { if (preference.matches) settle(); };
     preference.addEventListener('change', finish);
     return () => preference.removeEventListener('change', finish);
   }, [settle]);
 
-  useEffect(() => () => { cancelAnimations(); }, [cancelAnimations]);
+  useEffect(() => () => { cancelAnimation(); }, [cancelAnimation]);
 
   return {
     navigateTo,
-    isTransitioning,
-    pendingDeviceId: () => pendingTargetRef.current?.deviceId ?? null,
+    isTransitioning: entrance !== null && entrance.scope === scope,
+    pendingDeviceId: () => pendingDeviceRef.current,
   };
 }
