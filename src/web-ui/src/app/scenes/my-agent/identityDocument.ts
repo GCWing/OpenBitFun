@@ -86,25 +86,34 @@ export function joinMarkdownFrontmatter(
   return `---\n${normalizedFrontmatter}\n---\n\n${normalizedBody}`.trimEnd() + '\n';
 }
 
+const parsedDocCache = new Map<string, IdentityDocument>();
+
 export function parseIdentityDocument(content: string): IdentityDocument {
+  const cached = parsedDocCache.get(content);
+  if (cached) return cached;
+
   const sections = splitMarkdownFrontmatter(content);
+  let doc: IdentityDocument;
   if (!sections.hasFrontmatter) {
-    return {
+    doc = {
       ...EMPTY_IDENTITY_DOCUMENT,
       body: sections.body.trim(),
     };
+  } else {
+    const parsed = (yaml.parse(sections.frontmatter) || {}) as Record<string, unknown>;
+    doc = {
+      name: normalizeShortField(parsed.name),
+      creature: normalizeShortField(parsed.creature),
+      vibe: normalizeShortField(parsed.vibe),
+      avatar: normalizeShortField(parsed.avatar),
+      emoji: normalizeShortField(parsed.emoji),
+      body: sections.body,
+    };
   }
 
-  const parsed = (yaml.parse(sections.frontmatter) || {}) as Record<string, unknown>;
-
-  return {
-    name: normalizeShortField(parsed.name),
-    creature: normalizeShortField(parsed.creature),
-    vibe: normalizeShortField(parsed.vibe),
-    avatar: normalizeShortField(parsed.avatar),
-    emoji: normalizeShortField(parsed.emoji),
-    body: sections.body,
-  };
+  if (parsedDocCache.size > 256) parsedDocCache.clear();
+  parsedDocCache.set(content, doc);
+  return doc;
 }
 
 export function serializeIdentityDocument(document: IdentityDocument): string {

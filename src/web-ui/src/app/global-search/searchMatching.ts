@@ -23,22 +23,41 @@ export function parseGlobalSearchQuery(
   return { query: trimmed, scope: selectedScope, scopeForcedByPrefix: false };
 }
 
+const tokensCache = new Map<string, string[]>();
+
 function queryTokens(query: string): string[] {
-  return query
+  const cached = tokensCache.get(query);
+  if (cached) return cached;
+  const tokens = query
     .split(WORD_BOUNDARY)
     .map(token => token.trim())
     .filter(token => token.length >= 2 || CJK.test(token));
+  if (tokensCache.size > 256) tokensCache.clear();
+  tokensCache.set(query, tokens);
+  return tokens;
+}
+
+const wordsCache = new Map<string, { words: string[]; acronym: string }>();
+
+function getFieldWords(field: string): { words: string[]; acronym: string } {
+  const cached = wordsCache.get(field);
+  if (cached) return cached;
+  const words = field.split(WORD_BOUNDARY).filter(Boolean);
+  const acronym = words.map(word => word[0]).join('');
+  const entry = { words, acronym };
+  if (wordsCache.size > 512) wordsCache.clear();
+  wordsCache.set(field, entry);
+  return entry;
 }
 
 function scoreSingleTerm(query: string, field: string): number {
   if (field === query) return 100;
   if (field.startsWith(query)) return 94;
 
-  const words = field.split(WORD_BOUNDARY).filter(Boolean);
+  const { words, acronym } = getFieldWords(field);
   if (words.some(word => word.startsWith(query))) return 88;
   if (field.includes(query)) return 80;
 
-  const acronym = words.map(word => word[0]).join('');
   // Require consecutive initials so long workflow prose does not gain
   // unrelated capability-name matches from arbitrary skipped words.
   if (query.length > 1 && acronym.includes(query)) return 66;
@@ -53,6 +72,9 @@ export function scoreTextMatch(query: string, fields: Array<string | null | unde
   const normalizedQuery = query.trim().toLocaleLowerCase();
   if (!normalizedQuery) return 70;
 
+  const tokens = queryTokens(normalizedQuery);
+  const multiToken = tokens.length > 1;
+
   let best = 0;
   const normalizedFields: string[] = [];
   for (const rawField of fields) {
@@ -61,15 +83,13 @@ export function scoreTextMatch(query: string, fields: Array<string | null | unde
     normalizedFields.push(field);
     best = Math.max(best, scoreSingleTerm(normalizedQuery, field));
 
-    const tokens = queryTokens(normalizedQuery);
-    if (tokens.length > 1 && tokens.every(token => field.includes(token))) {
+    if (multiToken && tokens.every(token => field.includes(token))) {
       best = Math.max(best, 74);
     }
   }
 
-  const tokens = queryTokens(normalizedQuery);
   if (
-    tokens.length > 1
+    multiToken
     && tokens.every(token => normalizedFields.some(field => field.includes(token)))
   ) {
     best = Math.max(best, 72);
@@ -79,7 +99,7 @@ export function scoreTextMatch(query: string, fields: Array<string | null | unde
   // near-synonyms (for example "pet companion mascot"). Treat those tokens as
   // evidence that accumulates instead of an all-or-nothing AND expression.
   // Exact/full-query matches above still outrank partial token coverage.
-  if (tokens.length > 1) {
+  if (multiToken) {
     const tokenScores = tokens.map(token => Math.max(
       0,
       ...normalizedFields.map(field => scoreSingleTerm(token, field)),

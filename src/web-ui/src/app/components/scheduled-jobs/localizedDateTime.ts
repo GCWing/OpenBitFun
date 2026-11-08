@@ -33,16 +33,32 @@ function pad(value: number, length = 2): string {
   return String(value).padStart(length, '0');
 }
 
+const FORMAT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/;
+const DIGIT_PATTERN = /\d+/g;
+const formatCache = new Map<string, string>();
+const parseCache = new Map<string, string | null>();
+
 /** Renders a native datetime-local value as localized display text. */
 export function formatDateTimeText(value: string, order: DateFieldOrder): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value.trim());
-  if (!match) return '';
+  const cacheKey = `${order}:${value}`;
+  const cached = formatCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const match = FORMAT_PATTERN.exec(value.trim());
+  if (!match) {
+    if (formatCache.size > 256) formatCache.clear();
+    formatCache.set(cacheKey, '');
+    return '';
+  }
 
   const [, year, month, day, hour, minute] = match;
   const date = order === 'year-first'
     ? `${year}/${month}/${day}`
     : `${month}/${day}/${year}`;
-  return `${date} ${hour}:${minute}`;
+  const result = `${date} ${hour}:${minute}`;
+  if (formatCache.size > 256) formatCache.clear();
+  formatCache.set(cacheKey, result);
+  return result;
 }
 
 /**
@@ -55,8 +71,17 @@ export function formatDateTimeText(value: string, order: DateFieldOrder): string
  * Returns null when the text cannot be read as a complete date and time.
  */
 export function parseDateTimeText(text: string, order: DateFieldOrder): string | null {
-  const groups = text.match(/\d+/g);
-  if (!groups || groups.length < 5) return null;
+  const cacheKey = `${order}:${text}`;
+  const cached = parseCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  DIGIT_PATTERN.lastIndex = 0;
+  const groups = text.match(DIGIT_PATTERN);
+  if (!groups || groups.length < 5) {
+    if (parseCache.size > 256) parseCache.clear();
+    parseCache.set(cacheKey, null);
+    return null;
+  }
 
   const [a, b, c, hourText, minuteText] = groups;
 
@@ -80,17 +105,25 @@ export function parseDateTimeText(text: string, order: DateFieldOrder): string |
   const hour = Number(hourText);
   const minute = Number(minuteText);
 
-  if (![year, month, day, hour, minute].every(Number.isFinite)) return null;
-  if (year < 1970 || year > 9999) return null;
-  if (month < 1 || month > 12) return null;
-  if (day < 1) return null;
-  if (hour > 23 || minute > 59) return null;
+  if (![year, month, day, hour, minute].every(Number.isFinite) || year < 1970 || year > 9999) {
+    if (parseCache.size > 256) parseCache.clear();
+    parseCache.set(cacheKey, null);
+    return null;
+  }
+  if (month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59) {
+    if (parseCache.size > 256) parseCache.clear();
+    parseCache.set(cacheKey, null);
+    return null;
+  }
 
   // Clamp rather than reject: someone typing 31 in a 30-day month means the end
   // of that month, and rolling into the next one would be a silent wrong date.
   const clampedDay = Math.min(day, daysInMonth(year, month));
 
-  return `${pad(year, 4)}-${pad(month)}-${pad(clampedDay)}T${pad(hour)}:${pad(minute)}`;
+  const result = `${pad(year, 4)}-${pad(month)}-${pad(clampedDay)}T${pad(hour)}:${pad(minute)}`;
+  if (parseCache.size > 256) parseCache.clear();
+  parseCache.set(cacheKey, result);
+  return result;
 }
 
 /** Example string used as the field placeholder, in the locale's own order. */
