@@ -228,6 +228,7 @@ export const ListboxOption = forwardRef<HTMLButtonElement, ListboxOptionProps>(
         data-active={active ? "true" : "false"}
         data-overflow-active={active ? "true" : undefined}
         data-openbitfun-listbox-option=""
+        data-openbitfun-component="listbox-option"
         data-openbitfun-part="option"
         data-selected={selected ? "true" : "false"}
         data-value={value}

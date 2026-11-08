@@ -1620,7 +1620,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
     table({ children }: any) {
       return (
         <div className="table-wrapper" data-openbitfun-component="markdown" data-openbitfun-part="table">
-          <table>{children}</table>
+          <table data-openbitfun-component="markdown" data-openbitfun-part="tableSurface">{children}</table>
         </div>
       );
     },
@@ -1685,6 +1685,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
     th({ node: _node, children, className, align, style, ...props }: any) {
       return (
         <th {...props} className={['markdown-header-cell', className].filter(Boolean).join(' ')}
+          data-openbitfun-component="markdown" data-openbitfun-part="tableHeadingCell"
           style={align ? { ...style, textAlign: align } : style}>
           <div className="markdown-table-cell-content">
             <div className="markdown-table-cell-body">{children}</div>

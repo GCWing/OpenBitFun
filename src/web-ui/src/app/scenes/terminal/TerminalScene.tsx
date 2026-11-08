@@ -1,3 +1,4 @@
+import { VisualSkinSurfacePaint } from '@/infrastructure/visual-skin/VisualSkinSurfacePaint';
 import { Icon as CatalogIcon } from '@openbitfun/ui';
 /**
  * TerminalScene — renders a ConnectedTerminal for the session selected
@@ -36,8 +37,11 @@ const TerminalScene: React.FC<TerminalSceneProps> = ({ isActive = true }) => {
       data-testid="shell-panel"
       data-openbitfun-scene="terminal"
       data-openbitfun-part="root"
+      data-openbitfun-surface="terminal"
+      data-openbitfun-skin-slot="terminal-background"
       data-openbitfun-state={isActive ? undefined : 'inactive'}
     >
+      <VisualSkinSurfacePaint />
       {activeSessionId ? (
         <ConnectedTerminal
           key={activeSessionId}

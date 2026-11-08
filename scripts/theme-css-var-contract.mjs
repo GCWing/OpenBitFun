@@ -114,6 +114,7 @@ export const CONTRACT_VAR_DEFINITION_PATH_PARTS = [
   'design-system/packages/design-tokens/src',
   'design-system/packages/theme-openbitfun/src',
   'infrastructure/appearance',
+  'infrastructure/visual-skin',
   'src/mobile-web/src/styles/global.scss',
   'tools/generative-widget/appearancePayload.ts',
 ];
@@ -321,9 +322,24 @@ export const SURFACE_TOKEN_RENAME_CONTRACTS = [];
 
 export const DYNAMIC_VAR_FAMILY_CONTRACTS = [
   {
+    prefix: '--openbitfun-skin-asset-',
+    owner: 'src/web-ui/src/infrastructure/visual-skin/part-paint.ts',
+    reason: 'Validated component material images are declared once per package instead of duplicating base64 bytes for every control and interaction state.',
+  },
+  {
     prefix: '--openbitfun-appearance-asset-',
     owner: 'src/web-ui/src/infrastructure/appearance/compiler/AppearanceCompiler.ts; src/web-ui/src/infrastructure/appearance/runtime/AppearanceRuntime.ts',
     reason: 'Appearance package image ids are validated by the package schema, then projected to host-created blob URL variables for registered component parts.',
+  },
+  {
+    prefix: '--openbitfun-skin-slot-',
+    owner: 'src/web-ui/src/infrastructure/visual-skin/runtime.ts; src/web-ui/src/app/styles/visual-skin.scss',
+    reason: 'Imported visual skin packages project validated slot values into a fixed product-owned CSS variable family; the runtime and projection stylesheet are the only owners.',
+  },
+  {
+    prefix: '--openbitfun-skin-surface-',
+    owner: 'src/web-ui/src/infrastructure/visual-skin/runtime.ts; src/web-ui/src/app/styles/visual-skin.scss; src/web-ui/src/app/layout/WorkspaceBody.scss',
+    reason: 'Imported visual skin packages project validated backdrop, scrim, and radius values into a fixed paint layer family; workspace layout consumes its resolved underlay radius to cover exposed scene corners without covering the whole workbench.',
   },
   {
     prefix: '--openbitfun-font-size-',

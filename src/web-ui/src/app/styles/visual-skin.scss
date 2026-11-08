@@ -1,0 +1,322 @@
+/**
+ * Fixed visual-skin projections. Imported packages can provide values for
+ * these named slots, but they cannot inject selectors or layout rules. The
+ * selectors below are product-owned and are deliberately kept small so a
+ * generated skin can affect the application shell without changing product
+ * structure or interaction behavior.
+ */
+@layer openbitfun.base {
+  @mixin surface-slot($slot) {
+    :root[data-openbitfun-skin-id] [data-openbitfun-skin-slot='#{$slot}'] {
+      background-color: var(--openbitfun-skin-slot-#{$slot}-background-color, revert-layer);
+      background-image: var(--openbitfun-skin-slot-#{$slot}-background-image, revert-layer);
+      background-position: var(--openbitfun-skin-slot-#{$slot}-background-position, revert-layer);
+      background-repeat: var(--openbitfun-skin-slot-#{$slot}-background-repeat, revert-layer);
+      background-size: var(--openbitfun-skin-slot-#{$slot}-background-size, revert-layer);
+      color: var(--openbitfun-skin-slot-#{$slot}-foreground, revert-layer);
+      border-color: var(--openbitfun-skin-slot-#{$slot}-border, revert-layer);
+      box-shadow: var(--openbitfun-skin-slot-#{$slot}-shadow, revert-layer);
+    }
+  }
+
+  // Paint is an explicit child, so component pseudo-elements, shadows, and
+  // overflow geometry remain product-owned. Only this plane clips artwork.
+  [data-openbitfun-skin-paint] { display: none; }
+
+  @mixin surface-layer($surface) {
+    :root[data-openbitfun-skin-id] [data-openbitfun-surface='#{$surface}'][data-openbitfun-skin-surface='#{$surface}'] {
+      isolation: isolate;
+      background-clip: padding-box;
+      --openbitfun-skin-surface-background-image: none;
+      --openbitfun-skin-surface-background-position: center;
+      --openbitfun-skin-surface-background-size: cover;
+      --openbitfun-skin-surface-background-opacity: 0;
+      --openbitfun-skin-surface-scrim-color: transparent;
+      --openbitfun-skin-surface-scrim-opacity: 0;
+
+      > [data-openbitfun-skin-paint] {
+        display: block;
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        overflow: hidden;
+        border-radius: inherit;
+        pointer-events: none;
+
+        &::before,
+        &::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+        }
+
+        &::before {
+          background-image: var(--openbitfun-skin-surface-background-image);
+          background-position: var(--openbitfun-skin-surface-background-position);
+          background-repeat: no-repeat;
+          background-size: var(--openbitfun-skin-surface-background-size);
+          opacity: var(--openbitfun-skin-surface-background-opacity);
+        }
+
+        &::after {
+          background: var(--openbitfun-skin-surface-scrim-color);
+          opacity: var(--openbitfun-skin-surface-scrim-opacity);
+        }
+      }
+    }
+  }
+
+  @include surface-slot('shell-background');
+  @include surface-slot('workbench-background');
+  @include surface-slot('workbench-content-background');
+  @include surface-slot('navigation-background');
+  @include surface-slot('chat-background');
+  @include surface-slot('editor-background');
+  @include surface-slot('terminal-background');
+  @include surface-slot('empty-state');
+
+  @include surface-layer('shell');
+  @include surface-layer('workbench');
+  @include surface-layer('workbench-content');
+  @include surface-layer('navigation');
+  @include surface-layer('chat');
+  @include surface-layer('editor');
+  @include surface-layer('terminal');
+  @include surface-layer('empty-state');
+
+  // Keep fixed product copy legible over inherited artwork without painting a
+  // banner or dimming the whole image. The skin supplies the semantic scrim color.
+  :root[data-openbitfun-skin-id] [data-openbitfun-skin-artwork='true'] .welcome-scene__greeting {
+    text-shadow: 0 1px 4px var(--openbitfun-color-overlay-scrim);
+  }
+
+  // The conversation canvas owns chat artwork; the transcript wrapper must
+  // not cover it with a second opaque scene fill. Cards and inputs keep theirs.
+  :root[data-openbitfun-skin-id] [data-openbitfun-surface='chat'][data-openbitfun-skin-artwork='true'] [data-openbitfun-component='modern-flow-chat'][data-openbitfun-part='root'] {
+    background-color: transparent !important;
+  }
+
+  // Only the editor's known paint chain becomes transparent, and only while
+  // the runtime has materialized visible artwork. Menus, dialogs, selections,
+  // widgets, headers and other panel types retain their product backgrounds.
+  :root[data-openbitfun-skin-id] [data-openbitfun-surface='editor'][data-openbitfun-skin-artwork='true'] {
+    .openbitfun-flexible-panel:has([data-openbitfun-component='editor-tool']) {
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+    :is(.canvas-editor-group, .openbitfun-flexible-panel, .openbitfun-flexible-panel__content):has([data-openbitfun-component='editor-tool']),
+    .canvas-editor-group__empty,
+    [data-openbitfun-component='editor-tool'][data-openbitfun-part='root'],
+    [data-openbitfun-component='editor-tool'] :is(.monaco-editor, .monaco-editor-background, .monaco-editor .margin) {
+      background-color: transparent !important;
+    }
+  }
+
+  // Monaco's built-in theme may otherwise leave a white rectangle inside a
+  // custom reading surface. Its known paint chain inherits that surface's fill;
+  // completion widgets and other floating editor UI retain their own materials.
+  :root[data-openbitfun-skin-id] [data-openbitfun-surface='editor']:not([data-openbitfun-skin-artwork='true']) {
+    :is(.canvas-editor-group, .openbitfun-flexible-panel, .openbitfun-flexible-panel__content):has([data-openbitfun-component='editor-tool']),
+    [data-openbitfun-component='editor-tool'][data-openbitfun-part='root'],
+    [data-openbitfun-component='editor-tool'] :is(.monaco-editor, .monaco-editor-background, .monaco-editor .margin) {
+      background-color: inherit !important;
+    }
+  }
+
+  // Reading surfaces do not inherit transparency from shell artwork. A skin
+  // may explicitly style a surface; otherwise its semantic base stays readable.
+  @mixin reading-base($surface, $base) {
+    :root[data-openbitfun-skin-id] [data-openbitfun-surface='#{$surface}']:not([data-openbitfun-skin-surface]) {
+      background-color: $base !important;
+    }
+  }
+  @include reading-base('navigation', var(--openbitfun-color-surface-chrome));
+  @include reading-base('workbench-content', var(--openbitfun-color-surface-scene));
+  @include reading-base('chat', var(--openbitfun-color-surface-scene));
+  @include reading-base('editor', var(--openbitfun-color-surface-canvas));
+  @include reading-base('terminal', var(--openbitfun-color-surface-scene));
+  @include reading-base('empty-state', var(--openbitfun-color-surface-scene));
+
+  // Window/tab controls belong to chrome, including the compact navigation
+  // toolbar. Keep their material consistent with navigation's corner underlay.
+  :root[data-openbitfun-skin-id] .openbitfun-scene-top-bar {
+    background-color: var(--openbitfun-color-surface-chrome) !important;
+  }
+
+  // An explicit shared frame reveals the existing shell once. It owns the
+  // toolbar/viewport paint chain; nested readers, fields and overlays keep
+  // their own independent materials and their original geometry.
+  :root[data-openbitfun-skin-id] [data-openbitfun-surface='workbench-content'][data-openbitfun-skin-background-source='shell'] {
+    .openbitfun-scene-top-bar {
+      background-color: transparent !important;
+      background-image: none !important;
+      // The frame's existing foreground paint owns image contrast. IconButton
+      // otherwise replaces it with the page's primary text color in light mode.
+      :is(.openbitfun-scene-top-bar__actions, .openbitfun-scene-top-bar__panel-region) [data-openbitfun-component='icon-button']:not(:disabled):not([aria-disabled='true']) {
+        color: inherit !important;
+      }
+    }
+    // SessionScene is a structural host above ChatPane's own reading material.
+    // Painting the same translucent scene token twice hides the environment.
+    .openbitfun-session-scene:has([data-openbitfun-surface='chat'][data-openbitfun-skin-background-source='shell']) {
+      background-color: transparent !important;
+    }
+  }
+
+  // These sidebar destinations have structural scene canvases of their own.
+  // Reveal the active frame only when its artwork is actually materialized;
+  // cards, fields, menus, loading panels and plugin documents keep their bases.
+  :root[data-openbitfun-skin-id] [data-openbitfun-surface='workbench-content'][data-openbitfun-skin-artwork='true'] {
+    :is(.personal-overview, .openbitfun-agents-scene, .miniapp-gallery-scene,
+        .miniapp-gallery-pane, .nursery-gallery, .nursery-page, .gallery-page-header) {
+      background-color: transparent !important;
+    }
+
+    // Exposed headings remain text-only. A small semantic halo protects their
+    // glyphs against mixed artwork without adding a slab or changing text metrics.
+    :is(.personal-overview__name, .personal-overview__handle,
+        .personal-overview__section-title, .personal-overview__section-action,
+        .gallery-page-header__title, .gallery-page-header__subtitle,
+        .gallery-zone__title, .gallery-zone__subtitle,
+        .skills-scene__title, .openbitfun-todos__title, .openbitfun-todos__subtitle,
+        .openbitfun-todos__pane-title, .openbitfun-todos__list-title,
+        .insights-scene__header-title, .insights-scene__header-subtitle,
+        .insights-scene__control-label, .insights-scene__history-label,
+        .openbitfun-todos__month-label,
+        .personal-overview__device-sign-in) {
+      text-shadow: -1px 0 1px var(--openbitfun-color-surface-panel),
+        1px 0 1px var(--openbitfun-color-surface-panel),
+        0 -1px 1px var(--openbitfun-color-surface-panel),
+        0 1px 1px var(--openbitfun-color-surface-panel);
+    }
+  }
+
+  // With navigation hidden there is no navigation material to extend into
+  // the scene curve. Preserve its radius and reveal the shell underneath.
+  :root[data-openbitfun-skin-id] .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area > .openbitfun-workspace-body__corner-underlay {
+    background-color: transparent !important;
+  }
+
+  // These are structural planes, not reading material. Only the explicitly
+  // selected frame's own artwork may clear the viewport between it and content.
+  :root[data-openbitfun-skin-id] [data-openbitfun-skin-artwork='true'] [data-openbitfun-surface='workbench']:not([data-openbitfun-skin-surface]) {
+    background-color: transparent !important;
+  }
+  :root[data-openbitfun-skin-id] [data-openbitfun-surface='workbench-content'][data-openbitfun-skin-artwork='true'] {
+    .openbitfun-scene-top-bar,
+    .openbitfun-scene-viewport,
+    .openbitfun-scene-viewport__scene { background-color: transparent !important; }
+  }
+
+  // The product already marks the no-tab landing viewport as empty. Retained
+  // hidden welcome scenes cannot clear a settings, conversation or editor page.
+  :root[data-openbitfun-skin-id] [data-openbitfun-skin-artwork='true'] {
+    [data-openbitfun-surface='workbench-content']:not([data-openbitfun-skin-surface]):has(.openbitfun-scene-viewport[data-openbitfun-state='empty']) {
+      background-color: transparent !important;
+    }
+    .openbitfun-scene-viewport[data-openbitfun-state='empty'],
+    .openbitfun-scene-viewport[data-openbitfun-state='empty'] .openbitfun-scene-viewport__scene--empty,
+    .welcome-scene[data-openbitfun-surface='empty-state']:not([data-openbitfun-skin-surface]) {
+      background-color: transparent !important;
+    }
+
+    // A landing page shares the shell's image coordinate space through its
+    // chrome. Reading pages retain their opaque toolbar and content material.
+    [data-openbitfun-surface='workbench-content']:not([data-openbitfun-skin-surface]):has(.openbitfun-scene-viewport[data-openbitfun-state='empty']) .openbitfun-scene-top-bar {
+      background-color: transparent !important;
+      background-image: none !important;
+      // Contrast follows the glyph, never a rectangular backing over artwork.
+      // The opposing semantic tone outlines icons without changing hit geometry.
+      [data-openbitfun-part='trailing'] button:not(:hover):not(:active) svg {
+        filter: drop-shadow(0 1px 0 var(--openbitfun-color-surface-chrome))
+          drop-shadow(0 -1px 0 var(--openbitfun-color-surface-chrome))
+          drop-shadow(1px 0 0 var(--openbitfun-color-surface-chrome))
+          drop-shadow(-1px 0 0 var(--openbitfun-color-surface-chrome));
+      }
+    }
+  }
+
+  // The collapsed navigation control floats over the same landing artwork as
+  // the right caption controls. Its root delegates paint to that scene plane.
+  :root[data-openbitfun-skin-id] [data-openbitfun-skin-artwork='true'] [data-openbitfun-surface='workbench']:has(.openbitfun-scene-viewport[data-openbitfun-state='empty']) .openbitfun-workspace-body__collapsed-nav button:not(:hover):not(:active) svg {
+    filter: drop-shadow(0 1px 0 var(--openbitfun-color-surface-chrome))
+      drop-shadow(0 -1px 0 var(--openbitfun-color-surface-chrome))
+      drop-shadow(1px 0 0 var(--openbitfun-color-surface-chrome))
+      drop-shadow(-1px 0 0 var(--openbitfun-color-surface-chrome));
+  }
+
+  // A skin supplies navigation's existing base through its corner underlay.
+  // Disable the extra glass sheet without changing any component geometry.
+  :root[data-openbitfun-skin-id] .openbitfun-workspace-body__material {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+}
+
+// Image-backed settings still need local reading material. Subtle FieldGroups
+// otherwise reuse a low-alpha fill designed for a plain canvas. Custom settings
+// blocks opt into the same existing sectionBody paint owner. Keep flush layout
+// groups delegated, and leave authored runtime recipes (important) in control.
+:root[data-openbitfun-skin-id] .openbitfun-config-page-layout :is(
+  [data-openbitfun-component='field-group'][data-appearance='subtle'],
+  [data-openbitfun-component='alert'],
+  [data-openbitfun-product-component='config-page'][data-openbitfun-product-part='sectionBody']
+):not([data-openbitfun-paint-layer='none']) {
+  &:not([data-openbitfun-paint-layer='before']) {
+    background-color: var(--openbitfun-color-surface-panel);
+  }
+  &[data-openbitfun-paint-layer='before']::before {
+    background-color: var(--openbitfun-color-surface-panel);
+  }
+  &:not([data-openbitfun-component='alert']) {
+    color: var(--openbitfun-color-content-primary);
+    text-shadow: none;
+  }
+}
+
+// Local material protects text over artwork without washing out scene gaps.
+// Self uses existing card geometry; before extends into existing block spacing.
+// No blur, observer, layout measurement or extra DOM is needed.
+:root[data-openbitfun-skin-id] [data-openbitfun-reading-surface='self'] {
+  background-color: var(--openbitfun-color-surface-panel);
+}
+
+:root[data-openbitfun-skin-id] {
+  [data-openbitfun-reading-surface='before'],
+  .openbitfun-config-page-layout [data-openbitfun-component='disclosure'] > [data-openbitfun-part='header'] {
+    position: relative;
+    isolation: isolate;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: calc(-1 * var(--openbitfun-space-2)) calc(-1 * var(--openbitfun-space-4));
+      z-index: -1;
+      border-radius: var(--openbitfun-layout-field-group-radius);
+      background-color: var(--openbitfun-color-surface-panel);
+      pointer-events: none;
+    }
+  }
+}
+
+:root[data-openbitfun-skin-id] {
+  // These padded/closely spaced regions already reserve their own paint area.
+  .insights-scene__empty::before {
+    inset: 0;
+  }
+}
+
+// Preserve the skill row's hover/focus feedback on top of its readable base.
+:root[data-openbitfun-skin-id] .skills-card[data-openbitfun-reading-surface='self']:is(:hover, :focus-within) {
+  background-color: color-mix(in srgb, var(--openbitfun-color-surface-panel) 92%, var(--openbitfun-color-content-primary) 8%);
+}
+
+// A calendar is one reading region. Its header/actions stay transparent, while
+// weekday labels and dates share a continuous plane. Extend paint into the
+// existing scene gutter so date cells and focus rings have breathing room.
+:root[data-openbitfun-skin-id] .openbitfun-todos__calendar-body::before {
+  inset-inline: calc(-1 * var(--openbitfun-space-3));
+}

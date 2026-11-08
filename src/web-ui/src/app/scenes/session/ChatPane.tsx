@@ -1,3 +1,4 @@
+import { VisualSkinSurfacePaint } from '@/infrastructure/visual-skin/VisualSkinSurfacePaint';
 /**
  * ChatPane — AI Agent scene left pane.
  * Hosts FlowChat conversation panel.
@@ -133,12 +134,14 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
 
   return (
     <div data-openbitfun-component="chat-pane" data-openbitfun-part="root"
+      data-openbitfun-surface="chat" data-openbitfun-skin-slot="chat-background"
       ref={fileDropTargetRef}
       className="openbitfun-chat-pane__content"
       data-shortcut-scope="chat"
       data-fullscreen={isFullscreen}
       data-testid="chat-pane"
     >
+      <VisualSkinSurfacePaint />
       <FlowChatContainer
         className="openbitfun-chat-pane__chat-container"
         isViewportActive={isSceneActive}
