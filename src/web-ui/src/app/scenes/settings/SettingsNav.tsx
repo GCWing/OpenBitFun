@@ -61,11 +61,13 @@ function resolvePhrases(i18n: I18nApi, phrases: readonly SettingsSearchPhrase[])
   return parts.join(' ');
 }
 
-const searchIndexCache = new WeakMap<I18nApi, SettingsSearchRow[]>();
+// The i18next instance survives a locale switch, so the cache has to remember
+// which language produced these rows; every label and haystack is translated.
+const searchIndexCache = new WeakMap<I18nApi, { language: string; rows: SettingsSearchRow[] }>();
 
 function buildSettingsSearchIndex(t: SettingsT, i18n: I18nApi): SettingsSearchRow[] {
   const cached = searchIndexCache.get(i18n);
-  if (cached) return cached;
+  if (cached && cached.language === i18n.language) return cached.rows;
 
   const categoryLabels = new Map(SETTINGS_CATEGORIES.map((category) => [
     category.id,
@@ -112,7 +114,7 @@ function buildSettingsSearchIndex(t: SettingsT, i18n: I18nApi): SettingsSearchRo
     ];
   });
 
-  searchIndexCache.set(i18n, rows);
+  searchIndexCache.set(i18n, { language: i18n.language, rows });
   return rows;
 }
 

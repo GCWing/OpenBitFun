@@ -15,6 +15,8 @@ const parser = getMarkdown('flowchat-section-boundaries', {
 // Streaming state: the last computed source and its sections. During streaming the
 // source only grows, so the settled prefix (all sections except the last, still
 // growing one) can be reused by strict reference identity (`===`).
+// This is a single-document fast path: an interleaved call for another document
+// only loses the reuse, never correctness.
 let lastSource = '';
 let lastSections: readonly MarkdownSection[] = [];
 // Cached line-start offsets for `lastSource`, so growing chunks never re-scan
@@ -22,8 +24,8 @@ let lastSections: readonly MarkdownSection[] = [];
 let lastOffsets: number[] = [0];
 // Cached top-level block start offsets (absolute) for `lastSource`.
 let lastStarts: number[] = [];
-// Cached "unsafe" verdict (references/footnotes/raw HTML) for `lastSource`.
-let lastUnsafe = false;
+// The two tables above only describe `lastSource` while this stays true.
+let hasScanState = false;
 
 const LINE_ENDINGS = /\r\n|\r|\n/g;
 const UNSAFE_INLINE = /<|\]\s*\[|\[\^/;
@@ -45,7 +47,7 @@ export function markdownSections(source: string): readonly MarkdownSection[] {
 
   // Fast path: streaming append. The previous source is a strict prefix of the
   // new one, so the settled prefix sections and their boundaries are unchanged.
-  const streaming = lastSource.length > 0 && source.length > lastSource.length
+  const streaming = hasScanState && lastSource.length > 0 && source.length > lastSource.length
     && source.startsWith(lastSource);
   const baseLength = streaming ? lastSource.length : 0;
 
@@ -61,6 +63,8 @@ export function markdownSections(source: string): readonly MarkdownSection[] {
   }
   if (unsafe || environment.references || environment.footnotes) {
     sections = [{ start: 0, end: source.length }];
+    // A whole-document verdict carries no offsets/blocks for future appends.
+    hasScanState = false;
   } else {
     // Rebuild line-start offsets, reusing the cached prefix when streaming.
     let offsets: number[];
@@ -69,7 +73,15 @@ export function markdownSections(source: string): readonly MarkdownSection[] {
       // Drop offsets that fall beyond the previous source length (none should,
       // but keep the invariant exact), then scan only the appended tail.
       while (offsets.length > 1 && offsets[offsets.length - 1] > baseLength) offsets.pop();
-      LINE_ENDINGS.lastIndex = baseLength;
+      // A trailing CR may pair with the first appended character to form CRLF,
+      // so the previous chunk's final offset must be re-scanned, not counted
+      // twice: an extra offset shifts every later line by one.
+      let scanFrom = baseLength;
+      if (source.charCodeAt(baseLength - 1) === 13 && offsets[offsets.length - 1] === baseLength) {
+        offsets.pop();
+        scanFrom = baseLength - 1;
+      }
+      LINE_ENDINGS.lastIndex = scanFrom;
       let match: RegExpExecArray | null;
       while ((match = LINE_ENDINGS.exec(source))) offsets.push(match.index + match[0].length);
     } else {
@@ -105,25 +117,20 @@ export function markdownSections(source: string): readonly MarkdownSection[] {
       const start = boundaries[i];
       const end = boundaries[i + 1] ?? source.length;
       const prev = reusable[i];
-      if (prev && prev.start === start && prev.end === end) {
-        next.push(prev);
-      } else if (prev && prev.start === start && i === boundaries.length - 1) {
-        // Active/growing tail: mutate in place to preserve object identity.
-        prev.end = end;
-        next.push(prev);
-      } else {
-        next.push({ start, end });
-      }
+      // Settled sections never change again, so their object stays shared with
+      // older cached results. A grown section is a new object: cached arrays for
+      // shorter sources must keep describing their own source.
+      next.push(prev && prev.start === start && prev.end === end ? prev : { start, end });
     }
     sections = next;
 
     lastOffsets = offsets;
     lastStarts = starts;
+    hasScanState = true;
   }
 
   lastSource = source;
   lastSections = sections;
-  lastUnsafe = unsafe;
 
   cache.set(source, sections, source.length * 2 + sections.length * 32);
   if (started !== undefined) startupTrace.markPhase('flowchat_markdown_sections', {

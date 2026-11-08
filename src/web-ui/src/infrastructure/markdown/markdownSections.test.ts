@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
@@ -37,5 +37,31 @@ describe('Markdown presentation sections', () => {
   ])('retains whole-document dependencies: %s', dependent => {
     const source = prefix + dependent + '\n\n' + prefix;
     expect(markdownSections(source)).toEqual([{ start: 0, end: source.length }]);
+  });
+
+  it('keeps append-only streaming sections identical to a full scan across a split CRLF', async () => {
+    const document = (prefix + prefix).replace(/\n/g, '\r\n');
+    const crlf = document.indexOf('\r\n', 4000);
+    // `crlf + 1` ends on a bare CR; the next cut completes the CRLF pair.
+    const cuts = [3500, crlf + 1, crlf + 2, crlf + 900, document.length - 4000, document.length];
+    let sections = markdownSections(document.slice(0, cuts[0]));
+    for (const cut of cuts.slice(1)) sections = markdownSections(document.slice(0, cut));
+
+    const source = document.slice(0, cuts[cuts.length - 1]);
+    expect(sections.map(section => source.slice(section.start, section.end)).join('')).toBe(source);
+    vi.resetModules();
+    const fresh = await import('./markdownSections');
+    expect(sections).toEqual(fresh.markdownSections(source));
+  });
+
+  it('keeps a cached result describing its own source while a longer text streams', () => {
+    const document = prefix + prefix;
+    const short = document.slice(0, 4000);
+    const cached = markdownSections(short);
+    markdownSections(document.slice(0, 6000));
+    const again = markdownSections(short);
+    expect(again).toBe(cached);
+    expect(again[again.length - 1].end).toBeLessThanOrEqual(short.length);
+    expect(again.map(section => short.slice(section.start, section.end)).join('')).toBe(short);
   });
 });

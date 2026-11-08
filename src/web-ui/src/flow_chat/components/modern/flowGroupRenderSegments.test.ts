@@ -29,3 +29,16 @@ it('keeps native AgentWait segment boundaries stable as calls complete', () => {
   expect(before[0].items.at(-1)?.id).toBe('call-15');
   expect(after.map(segment => segment.key)).toEqual(before.map(segment => segment.key));
 });
+
+it('keeps incremental heights equal to a full estimate when the trailing member stops being last', () => {
+  const items: FlowItem[] = Array.from({ length: 15 }, (_, index) => read(index));
+  // A settled thought only contributes height while it ends the run.
+  items.push({ id: 'thought', type: 'thinking', status: 'completed' } as FlowItem);
+
+  const before = buildFlowGroupRenderSegments(items);
+  const grown = [...items, read(16)];
+  const incremental = buildFlowGroupRenderSegments(grown, before);
+  expect(incremental[0].estimatedHeightPx)
+    .toBe(buildFlowGroupRenderSegments(grown)[0].estimatedHeightPx);
+  expect(incremental[0]).toBe(before[0]);
+});

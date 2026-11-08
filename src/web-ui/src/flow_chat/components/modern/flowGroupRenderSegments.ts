@@ -15,16 +15,24 @@ export interface FlowGroupRenderSegment {
 
 const isCapsule = (item: FlowItem) => item.type === 'tool' && isToolCapsule(getEffectiveToolName(item as FlowToolItem));
 
+/** Height one member contributes inside a segment. Only the trailing member
+ * carries different copy, so callers must say whether the member ends the run. */
+function contributionHeight(item: FlowItem, isLast: boolean): number {
+  if (item.type === 'thinking' && !isFlowGroupMemberActive(item) && !isLast) return 0;
+  // Settled ambient rows use about 22px of content plus a 12px paragraph gap.
+  // This is an estimate,
+  // never rendered typography; actual content takes over on activation.
+  if (item.type === 'tool' && !isFlowGroupMemberActive(item)
+    && getToolItemCardConfig(item as FlowToolItem).attention === 'ambient' && !isCapsule(item)) return 34;
+  return estimateFlowItemHeight(item as AnyFlowItem).heightPx;
+}
+
 export function estimateFlowGroupItemsHeight(items: readonly FlowItem[]): number {
-  return items.reduce((total, item, index) => {
-    if (item.type === 'thinking' && !isFlowGroupMemberActive(item) && index < items.length - 1) return total;
-    // Settled ambient rows use about 22px of content plus a 12px paragraph gap.
-    // This is an estimate,
-    // never rendered typography; actual content takes over on activation.
-    if (item.type === 'tool' && !isFlowGroupMemberActive(item)
-      && getToolItemCardConfig(item as FlowToolItem).attention === 'ambient' && !isCapsule(item)) return total + 34;
-    return total + estimateFlowItemHeight(item as AnyFlowItem).heightPx;
-  }, 0);
+  let total = 0;
+  for (let index = 0; index < items.length; index += 1) {
+    total += contributionHeight(items[index], index === items.length - 1);
+  }
+  return total;
 }
 
 /**
@@ -82,9 +90,16 @@ export function buildFlowGroupRenderSegments(
           if (prevItems[i] !== members[i]) { prefixIdentical = false; break; }
         }
         if (prefixIdentical) {
+          // The member that stopped being last changes its own contribution, so
+          // a plain sum over the appended tail would drift away from a full
+          // estimate. Apply that swap and then the appended members only.
+          const formerTrailing = members[prevCount - 1];
+          let delta = contributionHeight(formerTrailing, false) - contributionHeight(formerTrailing, true);
+          for (let i = prevCount; i < memberCount; i += 1) {
+            delta += contributionHeight(members[i], i === memberCount - 1);
+          }
           reusable.items = members;
-          reusable.estimatedHeightPx = reusable.estimatedHeightPx
-            + estimateFlowGroupItemsHeight(members.slice(prevCount));
+          reusable.estimatedHeightPx += delta;
           segments.push(reusable);
           start = end;
           return;

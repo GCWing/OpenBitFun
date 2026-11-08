@@ -812,13 +812,16 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
         sessionNavStatusService.getSortTimestamp,
       );
 
+    // The hierarchy result is shared (memoized) by other callers, so sort into
+    // fresh lists instead of rewriting the map we were handed.
+    const sortedChildrenByParent = new Map<string, Session[]>();
     for (const [pid, list] of childMap) {
-      childMap.set(pid, [...list].sort(compareForCurrentView));
+      sortedChildrenByParent.set(pid, [...list].sort(compareForCurrentView));
     }
 
     return {
       topLevelSessions: [...parents].sort(compareForCurrentView),
-      childrenByParent: childMap,
+      childrenByParent: sortedChildrenByParent,
     };
   }, [flowChatState.sessions, orderingRevision, runningSessionIds, sessionOrdering, sessionShow, workspaceId, workspaceScopes]);
 
