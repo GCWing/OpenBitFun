@@ -37,6 +37,11 @@ This directory follows `src/web-ui/AGENTS.md`.
 
 ## Focused verification
 
+During first Monaco creation, resolve computed typography after asynchronous
+configuration/library loading and before model/view writes. Keep late configuration
+updates and retained document/view state; repeated style reads across those writes
+can synchronously lay out the surrounding workbench.
+
 Document-backed code editors may suspend inactive Monaco views after 30 seconds;
 at most three inactive views stay warm across hosts. Visible views and active IME
 composition are protected. Find/replace widgets and nonempty queries also keep
