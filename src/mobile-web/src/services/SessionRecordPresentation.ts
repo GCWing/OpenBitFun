@@ -2,7 +2,7 @@ import type { ChatMessage, ChatMessageItem, RemoteToolStatus } from './RemoteSes
 
 /** Rendering accepts rich records without narrowing their stored protocol data. */
 export interface MobileStoredTurn {
-  turnId: string; turnIndex: number; status: string; timestamp: number;
+  turnId: string; turnIndex: number; status: string; timestamp: number; endTime?: number;
   userMessage: { id: string; content: string; timestamp: number; metadata?: unknown };
   modelRounds: Array<{ roundIndex: number; textItems: RichText[]; thinkingItems?: RichText[]; toolItems: RichTool[] }>;
   error?: string;
@@ -48,6 +48,6 @@ export function presentSessionTurn(turn: MobileStoredTurn): ChatMessage[] {
   });
   return [
     {id:turn.userMessage.id,turn_id:turn.turnId,turn_index:turn.turnIndex,role:'user',content:turn.userMessage.content,timestamp:String(turn.userMessage.timestamp),metadata:turn.userMessage.metadata,images:presentUserMessageImages(turn.userMessage.metadata)},
-    {id:`${turn.turnId}_assistant`,turn_id:turn.turnId,role:'assistant',content:items.filter(i=>i.type==='text').map(i=>i.content??'').join(''),thinking:items.filter(i=>i.type==='thinking').map(i=>i.content??'').join(''),items,tools:items.flatMap(i=>i.tool?[i.tool]:[]),status:turn.status==='inprogress'?'streaming':turn.status,error:turn.error,timestamp:String(turn.timestamp)},
+    {id:`${turn.turnId}_assistant`,turn_id:turn.turnId,role:'assistant',content:items.filter(i=>i.type==='text').map(i=>i.content??'').join(''),thinking:items.filter(i=>i.type==='thinking').map(i=>i.content??'').join(''),items,tools:items.flatMap(i=>i.tool?[i.tool]:[]),status:turn.status==='inprogress'?'streaming':turn.status,error:turn.error,timestamp:String(turn.endTime ?? turn.timestamp)},
   ];
 }
