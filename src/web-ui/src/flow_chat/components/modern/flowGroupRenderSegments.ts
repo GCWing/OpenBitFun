@@ -29,11 +29,8 @@ export function estimateFlowGroupItemsHeight(items: readonly FlowItem[]): number
 
 /**
  * Stable append boundaries keep reasoning beside its successor and capsule runs together.
- *
- * Streaming ingress only ever appends to the tail, so a previous segment list is
- * reused verbatim for every boundary that is already closed. Only the trailing
- * segment is re-sliced and re-estimated, which keeps chunk cost proportional to
- * the tail instead of the whole collection.
+ * When `previous` segments are provided, settled prefix segments are reused verbatim by reference,
+ * and the growing trailing segment is incrementally updated, enabling high-frequency streaming reuse.
  */
 export function buildFlowGroupRenderSegments(
   items: readonly FlowItem[],
@@ -41,69 +38,64 @@ export function buildFlowGroupRenderSegments(
 ): FlowGroupRenderSegment[] {
   const segments: FlowGroupRenderSegment[] = [];
   let start = 0;
-  // Reuse the longest prefix of previous segments whose members are unchanged.
-  // The trailing segment is always rebuilt: it is the one streaming grows.
-  if (previous && previous.length > 0) {
-    const reusable = previous.length - 1;
-    for (let index = 0; index < reusable; index += 1) {
-      const segment = previous[index];
-      const members = segment.items;
-      if (segment.startIndex !== start || start + members.length > items.length) break;
-      let same = true;
-      for (let offset = 0; offset < members.length; offset += 1) {
-        if (items[start + offset] !== members[offset]) { same = false; break; }
-      }
-      if (!same) break;
-      segments.push(segment);
-      start += members.length;
-    }
-  }
-  // The tail is rebuilt in place so its identity survives a streaming chunk:
-  // only its members and height estimate change, never the segment object.
-  const previousTail = previous && previous.length > 0 ? previous[previous.length - 1] : undefined;
-  const tail = previousTail && previousTail.startIndex === start ? previousTail : undefined;
+
   const append = (end: number) => {
     const members = items.slice(start, end);
-    if (tail && segments.length === previous!.length - 1) {
-      tail.items = members;
-      tail.estimatedHeightPx = estimateFlowGroupItemsHeight(members);
-      segments.push(tail);
-    } else {
-      segments.push({ key: members[0].id, items: members, startIndex: start,
+    const segIdx = segments.length;
+    const reusable = previous?.[segIdx];
+
+    // Case 1: Closed settled segment where member items are completely unchanged by reference
+    if (
+      reusable &&
+      reusable.startIndex === start &&
+      reusable.key === members[0]?.id &&
+      reusable.items.length === members.length &&
+      reusable.items.every((it, idx) => it === members[idx])
+    ) {
+      segments.push(reusable);
+    }
+    // Case 2: Live/growing trailing segment where items share the same key & prefix
+    else if (
+      reusable &&
+      reusable.startIndex === start &&
+      reusable.key === members[0]?.id &&
+      (
+        // Either identical length with replaced streaming tail object
+        (reusable.items.length === members.length &&
+          reusable.items.slice(0, -1).every((it, idx) => it === members[idx])) ||
+        // Or growing by appended items
+        (reusable.items.length <= members.length &&
+          reusable.items.every((it, idx) => it === members[idx]))
+      )
+    ) {
+      reusable.items = members;
+      reusable.estimatedHeightPx = estimateFlowGroupItemsHeight(members);
+      segments.push(reusable);
+    }
+    // Case 3: Fresh segment
+    else {
+      segments.push({
+        key: members[0]?.id ?? `seg-${start}`,
+        items: members,
+        startIndex: start,
         estimatedHeightPx: estimateFlowGroupItemsHeight(members),
       });
     }
     start = end;
   };
-  // A reused prefix may end exactly on a boundary; the next segment starts there.
-  for (let index = start + 1; index < items.length; index += 1) {
-    if (index - start >= SEGMENT_ITEMS && items[index - 1].type !== 'thinking'
-      && !(isCapsule(items[index - 1]) && isCapsule(items[index]))) append(index);
+
+  for (let index = 1; index < items.length; index += 1) {
+    if (
+      index - start >= SEGMENT_ITEMS &&
+      items[index - 1].type !== 'thinking' &&
+      !(isCapsule(items[index - 1]) && isCapsule(items[index]))
+    ) {
+      append(index);
+    }
   }
-  if (start < items.length) append(items.length);
+  if (start < items.length) {
+    append(items.length);
+  }
+
   return segments;
-}
-
-/**
- * Memoized segment compilation for a single collection.
- *
- * Streaming re-renders hand the same item array back on every chunk that does
- * not change the projection, and the previous segment list is reused for the
- * closed prefix. Keeping the last result per item array makes those renders
- * free instead of re-walking the collection.
- */
-const segmentCache = new WeakMap<readonly FlowItem[], {
-  previous: readonly FlowGroupRenderSegment[];
-  result: FlowGroupRenderSegment[];
-}>();
-
-export function getFlowGroupRenderSegments(
-  items: readonly FlowItem[],
-  previous?: readonly FlowGroupRenderSegment[],
-): FlowGroupRenderSegment[] {
-  const cached = segmentCache.get(items);
-  if (cached && cached.previous === previous) return cached.result;
-  const result = buildFlowGroupRenderSegments(items, previous);
-  segmentCache.set(items, { previous: previous ?? [], result });
-  return result;
 }
