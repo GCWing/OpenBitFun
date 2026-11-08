@@ -85,6 +85,16 @@ describe('AgentCompanionDesktopPet styles', () => {
     }
   });
 
+  it('scrolls overflowing bubbles without drawing a scrollbar beside them', () => {
+    const source = readSource();
+    const bubbles = source.slice(
+      source.indexOf('<ScrollArea'),
+      source.indexOf('openbitfun-agent-companion-window__bubbles'),
+    );
+
+    expect(bubbles).toContain('scrollbarVisibility="hidden"');
+  });
+
   it('delegates context-menu foregrounds and interaction states to the public menu item', () => {
     const source = readSource();
     const stylesheet = readStylesheet();

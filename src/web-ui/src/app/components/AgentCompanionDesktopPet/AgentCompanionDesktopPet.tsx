@@ -1102,6 +1102,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
           {visibleTasks.length > 0 && (
             <ScrollArea
               ref={bubblesRef}
+              scrollbarVisibility="hidden"
               className={`openbitfun-agent-companion-window__bubbles${isSingleTask ? ' openbitfun-agent-companion-window__bubbles--single' : ''}`}
               aria-live="polite"
               onDoubleClick={event => event.stopPropagation()}
