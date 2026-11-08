@@ -138,6 +138,15 @@ pnpm --dir src/web-ui run test:run src/app/scenes/agents/components/CreateAgentD
 These DOM fixtures cover local forms and simulated Peer surface switches;
 they do not establish native rendering or live remote behavior.
 
+For retained gallery refresh, empty snapshots, pagination and stale workspace/Peer reads:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/hooks/useGallerySceneAutoRefresh.test.tsx src/app/scenes/agents/hooks/useAgentsList.test.tsx src/app/scenes/skills/hooks/useInstalledSkills.test.tsx src/app/scenes/skills/hooks/useSkillMarket.test.tsx src/app/scenes/miniapps/views/MiniAppLibraryView.navigation.test.tsx src/app/scenes/personal-overview/usePersonalOverview.test.tsx
+```
+
+These hook and DOM fixtures exercise background updates and simulated surface
+activation; they do not establish native timing or live remote behavior.
+
 For startup logo handoff, welcome typing, reduced motion, and interrupted startup exits:
 
 ```bash

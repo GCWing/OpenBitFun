@@ -63,7 +63,15 @@ export function usePersonalOverview(timeZone: string, isActive: boolean) {
     if (!isActive) return;
     let cancelled = false;
     const current = () => !cancelled && scope.isCurrent();
-    setSnapshot({ key, usage: loading, agents: loading, miniApps: loading, skills: loading });
+    // Keep independent, successful sections visible while revalidating the same
+    // surface/workspace. Failed sections still enter loading for a real retry.
+    setSnapshot(state => state?.key === key ? {
+      ...state,
+      usage: state.usage.status === 'ready' ? state.usage : loading,
+      agents: state.agents.status === 'ready' ? state.agents : loading,
+      miniApps: state.miniApps.status === 'ready' ? state.miniApps : loading,
+      skills: state.skills.status === 'ready' ? state.skills : loading,
+    } : { key, usage: loading, agents: loading, miniApps: loading, skills: loading });
     void tokenUsageStatisticsApi.getStatistics({
       timeRange: 'all', granularity: 'day', timeZone, includeSubagent: true,
     }).then(stats => {

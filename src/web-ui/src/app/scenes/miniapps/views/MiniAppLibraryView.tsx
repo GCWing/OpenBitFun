@@ -142,7 +142,7 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
   const [cachedPage] = useState(() => miniAppMarketAPI.getCachedPage({ query: '', category: 'all', sort: 'downloads', limit: 30 }));
   const [marketItems, setMarketItems] = useState<MarketListingSummary[]>(cachedPage?.items ?? []);
   const [nextCursor, setNextCursor] = useState<string | undefined>(cachedPage?.nextCursor);
-  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogLoading, setCatalogLoading] = useState(!cachedPage);
   const [loadingMore, setLoadingMore] = useState(false);
   const [catalogError, setCatalogError] = useState<string>();
   const [detail, setDetail] = useState<MarketListingDetail>();
@@ -167,6 +167,7 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
   const importTriggerRef = useRef<HTMLButtonElement>(null);
   const importMenuRef = useRef<HTMLDivElement>(null);
   const catalogRequestRef = useRef(0);
+  const loadedCatalogKeyRef = useRef<string | null>(cachedPage ? JSON.stringify(['', 'all', 'downloads']) : null);
   const animateList = useRef(true);
   const detailRequestRef = useRef(0);
   const catalogContentRef = useRef<HTMLDivElement>(null);
@@ -275,12 +276,13 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
     />
   );
 
-  const fetchCatalog = useCallback(async (cursor?: string, append = false) => {
+  const fetchCatalog = useCallback(async (cursor?: string, append = false, background = false) => {
     if (!surfaceScope.isCurrent()) return;
     const requestId = ++catalogRequestRef.current;
+    const catalogKey = JSON.stringify([query, category, sort]);
     if (append) setLoadingMore(true);
     else {
-      setCatalogLoading(true);
+      setCatalogLoading(!(background && loadedCatalogKeyRef.current === catalogKey));
       setLoadingMore(false);
     }
     setCatalogError(undefined);
@@ -296,6 +298,7 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
       if (requestId !== catalogRequestRef.current) return;
       setMarketItems((current) => append ? [...current, ...page.items] : page.items);
       setNextCursor(page.nextCursor);
+      loadedCatalogKeyRef.current = catalogKey;
     } catch (loadError) {
       if (requestId !== catalogRequestRef.current) return;
       log.error('Failed to load MiniApp marketplace catalog', loadError);
@@ -311,7 +314,7 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      void fetchCatalog(undefined, false);
+      void fetchCatalog(undefined, false, true);
     }, 250);
     return () => {
       window.clearTimeout(timeout);
@@ -322,7 +325,8 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
 
   const refetchMiniAppLibrary = useCallback(async () => {
     if (!surfaceScope.isCurrent()) return;
-    setLoading(true);
+    // The startup catalog owner manages initial loading. A return refresh must
+    // neither replace a valid empty view nor clear another owner's pending load.
     try {
       const [refreshed, running, origins] = await Promise.all([
         miniAppAPI.listMiniApps(),
@@ -337,13 +341,11 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({
       if (!surfaceScope.isCurrent()) return;
       log.error('Failed to refresh MiniApp library', error);
       return;
-    } finally {
-      if (surfaceScope.isCurrent()) setLoading(false);
     }
     // Installed entries are ready independently of the network catalog. Keep
     // refreshing marketplace metadata without extending the local loading state.
-    await fetchCatalog(undefined, false);
-  }, [fetchCatalog, setApps, setLoading, setMarketOrigins, setRunningWorkerIds, surfaceScope]);
+    await fetchCatalog(undefined, false, true);
+  }, [fetchCatalog, setApps, setMarketOrigins, setRunningWorkerIds, surfaceScope]);
 
   useGallerySceneAutoRefresh({
     sceneId: 'miniapps',

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { SceneTabId } from '@/app/components/SceneBar/types';
-import { useSceneManager } from './useSceneManager';
+import { useSceneStore } from '@/app/stores/sceneStore';
 
 export interface UseGallerySceneAutoRefreshOptions {
   /** Tab id from SceneBar (e.g. skills, agents, miniapps). */
@@ -23,8 +23,7 @@ export function useGallerySceneAutoRefresh({
   refetch,
   enabled = true,
 }: UseGallerySceneAutoRefreshOptions): void {
-  const { activeTabId } = useSceneManager();
-  const isActive = activeTabId === sceneId;
+  const isActive = useSceneStore(state => state.activeTabId === sceneId);
   const refetchRef = useRef(refetch);
   refetchRef.current = refetch;
 
@@ -53,7 +52,7 @@ export function useGallerySceneAutoRefresh({
       if (document.visibilityState !== 'visible') {
         return;
       }
-      if (activeTabId !== sceneId) {
+      if (!isActive) {
         return;
       }
       void Promise.resolve(refetchRef.current());
@@ -61,5 +60,5 @@ export function useGallerySceneAutoRefresh({
 
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [enabled, activeTabId, sceneId]);
+  }, [enabled, isActive]);
 }

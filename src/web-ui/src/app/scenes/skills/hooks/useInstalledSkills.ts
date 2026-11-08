@@ -67,6 +67,7 @@ export function useInstalledSkills({
   const [isValidating, setIsValidating] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const loadRequestIdRef = useRef(0);
+  const loadedContextKeyRef = useRef<string | null>(null);
   const lastScanFeedbackKeyRef = useRef<string | null>(null);
   const validationRequestIdRef = useRef(0);
   const capabilityKey = scope.key(scope.epoch, String(enabled), workspace?.id, String(isRemoteWorkspace));
@@ -96,7 +97,7 @@ export function useInstalledSkills({
     capabilityRef.current.enabled && capabilityRef.current.epoch === epoch
   ), []);
 
-  const loadSkills = useCallback(async (forceRefresh?: boolean) => {
+  const loadSkills = useCallback(async (forceRefresh?: boolean, options?: { background?: boolean }) => {
     const capabilityEpoch = currentCapabilityEpoch();
     if (capabilityEpoch === null) {
       return;
@@ -104,7 +105,7 @@ export function useInstalledSkills({
     const requestId = ++loadRequestIdRef.current;
 
     try {
-      setLoading(true);
+      setLoading(!(options?.background && loadedContextKeyRef.current === capabilityRef.current.key));
       setError(null);
       const [list, globalSettings] = await Promise.all([
         configAPI.getSkillScanReport({
@@ -122,6 +123,7 @@ export function useInstalledSkills({
         return;
       }
       setLoadedContextKey(capabilityRef.current.key);
+      loadedContextKeyRef.current = capabilityRef.current.key;
       setSkills(list.skills);
       setDiagnostics(list.diagnostics);
       setDiagnosticsAvailable(list.diagnosticsAvailable);
@@ -202,6 +204,7 @@ export function useInstalledSkills({
     setIsValidating(false);
     setIsAdding(false);
     if (!enabled) {
+      loadedContextKeyRef.current = null;
       setSkills([]);
       setDiagnostics([]);
       setDiagnosticsAvailable(true);
