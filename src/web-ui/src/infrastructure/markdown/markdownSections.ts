@@ -37,8 +37,20 @@ export function markdownSections(source: string): readonly MarkdownSection[] {
     const starts = tokens.filter(token => token.level === 0 && token.map && token.nesting !== -1)
       .map(token => offsets[token.map![0]]).filter((value): value is number => value !== undefined);
     const boundaries = [0];
+    // Streaming coalesces blank lines; journal records retain the original
+    // source. Budget in the same coordinates while returning exact raw ranges.
+    const blankRuns = source.matchAll(/\n{3,}/g);
+    let blankRun = blankRuns.next(), removed = 0, normalizedBoundary = 0;
     for (const start of starts) {
-      if (start - boundaries[boundaries.length - 1] >= SECTION_CHARS) boundaries.push(start);
+      while (!blankRun.done && blankRun.value.index + blankRun.value[0].length <= start) {
+        removed += blankRun.value[0].length - 2;
+        blankRun = blankRuns.next();
+      }
+      const normalizedStart = start - removed;
+      if (normalizedStart - normalizedBoundary >= SECTION_CHARS) {
+        boundaries.push(start);
+        normalizedBoundary = normalizedStart;
+      }
     }
     sections = boundaries.map((start, index) => ({ start, end: boundaries[index + 1] ?? source.length }));
   }
