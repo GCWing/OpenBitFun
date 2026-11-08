@@ -42,8 +42,8 @@ export function FileRevisionSummary({ file, itemCount, expanded, onToggle, conte
           <span className={styles.disclosure}><Icon name={expanded ? 'chevron-down' : 'chevron-right'} size="sm" /></span>
         </span>
         <span className={styles.subject} data-openbitfun-component={component} data-openbitfun-part="summary">
-          {prefixLabel && <span className={styles.count}>{prefixLabel}</span>}
-          <OverflowText className={styles.filename} title={file.path}>{file.label}</OverflowText>
+          {prefixLabel && <OverflowText className={styles.count}>{prefixLabel}</OverflowText>}
+          <OverflowText behavior="marquee" className={styles.filename} title={file.path}>{file.label}</OverflowText>
         </span>
         {(file.status || file.statusLabel || (!expanded && file.changeSummary)) && <span className={styles.metadata} data-has-status={Boolean(file.status || file.statusLabel)}>
           {(file.status || file.statusLabel) && <span className={styles.result} data-status={file.status}>

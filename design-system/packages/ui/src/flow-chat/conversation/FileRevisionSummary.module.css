@@ -66,6 +66,7 @@
     color: var(--openbitfun-color-content-primary);
     font-family: var(--openbitfun-type-body-sm-font-family);
     font-size: var(--openbitfun-type-body-sm-font-size);
+    font-variant-numeric: proportional-nums;
     font-weight: var(--openbitfun-type-body-sm-font-weight);
     line-height: var(--openbitfun-type-body-sm-line-height);
     text-align: start;
@@ -81,13 +82,27 @@
     position: relative;
     display: inline-flex;
     flex: 0 0 auto;
+    /* Match the prominent tool card's leading slot, including the hover glyph. */
+    inline-size: var(--openbitfun-space-5);
+    block-size: var(--openbitfun-space-5);
+    min-inline-size: var(--openbitfun-font-size-xl);
+    min-block-size: var(--openbitfun-font-size-xl);
+    align-items: center;
+    justify-content: center;
     color: var(--openbitfun-color-content-secondary);
+  }
+
+  .icon [data-openbitfun-component='icon'] {
+    inline-size: var(--openbitfun-font-size-xl);
+    block-size: var(--openbitfun-font-size-xl);
   }
 
   .disclosure {
     position: absolute;
     inset: 0;
     display: inline-flex;
+    align-items: center;
+    justify-content: center;
     opacity: 0;
     background: var(--openbitfun-color-surface-panel);
   }
