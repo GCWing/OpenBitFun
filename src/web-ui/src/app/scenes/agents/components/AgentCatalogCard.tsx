@@ -45,8 +45,9 @@ const AgentCatalogCard: React.FC<AgentCatalogCardProps> = ({ agent, onOpenDetail
 export interface AgentCatalogMetricsProps extends React.HTMLAttributes<HTMLDivElement> {
   agent: AgentWithCapabilities;
   toolCount?: number;
-  skillCount?: number;
-  subagentCount?: number;
+  skillCount?: number | null;
+  subagentCount?: number | null;
+  countsLoading?: boolean;
 }
 
 export const AgentCatalogMetrics: React.FC<AgentCatalogMetricsProps> = ({
@@ -54,6 +55,7 @@ export const AgentCatalogMetrics: React.FC<AgentCatalogMetricsProps> = ({
   toolCount,
   skillCount = 0,
   subagentCount = 0,
+  countsLoading = false,
   ...props
 }) => {
   const { t } = useI18n('scenes/agents');
@@ -66,10 +68,10 @@ export const AgentCatalogMetrics: React.FC<AgentCatalogMetricsProps> = ({
   ];
 
   return (
-    <div {...props} className="agent-catalog-card__metrics">
+    <div {...props} className="agent-catalog-card__metrics" data-agent-counts-loading={(skillCount === null || subagentCount === null) && countsLoading || undefined} aria-busy={(skillCount === null || subagentCount === null) && countsLoading || undefined}>
       {metrics.map(({ key, label, value }) => (
         <span key={key} className="agent-catalog-card__metric">
-          <span className="agent-catalog-card__metric-value">{value}</span>
+          <span className="agent-catalog-card__metric-value">{value ?? (countsLoading ? "…" : "—")}</span>
           <span>{label}</span>
         </span>
       ))}

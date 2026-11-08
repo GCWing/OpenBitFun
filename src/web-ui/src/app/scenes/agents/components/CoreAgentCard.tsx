@@ -9,8 +9,9 @@ import './AgentCatalogCard.scss';
 interface CoreAgentCardProps {
   agent: AgentWithCapabilities;
   toolCount?: number;
-  skillCount?: number;
-  subagentCount?: number;
+  skillCount?: number | null;
+  subagentCount?: number | null;
+  countsLoading?: boolean;
   onOpenDetails: (agent: AgentWithCapabilities) => void;
   /** Replaces the connected status when the capability is off in Settings. */
   disabledReason?: string;
