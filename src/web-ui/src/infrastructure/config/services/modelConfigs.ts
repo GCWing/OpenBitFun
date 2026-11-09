@@ -80,7 +80,7 @@ export function removeProviderModelConfigs<T extends ProviderConfigLike>(
 }
 
 function inferProviderTemplate(config: ProviderConfigLike): ProviderTemplate | undefined {
-  if (config.metadata?.model_source === 'magpie') return PROVIDER_TEMPLATES.magpie;
+  if (config.metadata?.model_source === 'magpie') return BUILTIN_PROVIDER_TEMPLATES.magpie;
   const matchedCatalogItem = matchProviderCatalogItemByBaseUrl(config.base_url);
   // A loopback address alone cannot identify Magpie. Keep the earlier named
   // preset readable; new connections carry explicit source metadata.
