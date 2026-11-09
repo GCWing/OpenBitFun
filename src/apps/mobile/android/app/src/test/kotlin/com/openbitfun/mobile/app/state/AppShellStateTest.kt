@@ -30,26 +30,79 @@ class AppShellStateTest {
         shell.openRemoteConnect()
         shell.openRemoteSession("session")
         assertEquals("session", shell.remoteSessionId)
+        assertEquals("session", shell.pendingRemoteSessionId)
         assertFalse(shell.remoteConnectOpen)
+    }
+
+    @Test fun pendingSessionRoutesBeforeItAppearsInTheCommittedList() {
+        val shell = state()
+        shell.openRemoteSession("workspace-session")
+
+        assertEquals(
+            "workspace-session",
+            resolveRoutedRemoteSessionId(
+                pendingSessionId = shell.pendingRemoteSessionId,
+                requestedSessionId = shell.remoteSessionId,
+                committedSessionIds = emptySet(),
+                selectedSessionId = "previous-session",
+            ),
+        )
+
+        shell.observeRemoteSessionOpen("workspace-session", "previous-session", busy = false)
+        assertEquals("workspace-session", shell.pendingRemoteSessionId)
+        shell.observeRemoteSessionOpen("workspace-session", "previous-session", busy = true)
+        shell.observeRemoteSessionOpen("workspace-session", "previous-session", busy = false)
+        assertEquals(null, shell.pendingRemoteSessionId)
+        assertEquals(
+            "previous-session",
+            resolveRoutedRemoteSessionId(
+                pendingSessionId = shell.pendingRemoteSessionId,
+                requestedSessionId = shell.remoteSessionId,
+                committedSessionIds = emptySet(),
+                selectedSessionId = "previous-session",
+            ),
+        )
+    }
+
+    @Test fun successfulPendingOpenFallsBackToTheStoreSelection() {
+        val shell = state()
+        shell.openRemoteSession("workspace-session")
+        shell.observeRemoteSessionOpen("workspace-session", "workspace-session", busy = false)
+
+        assertEquals(null, shell.pendingRemoteSessionId)
+        assertEquals(
+            "workspace-session",
+            resolveRoutedRemoteSessionId(
+                pendingSessionId = shell.pendingRemoteSessionId,
+                requestedSessionId = shell.remoteSessionId,
+                committedSessionIds = emptySet(),
+                selectedSessionId = "workspace-session",
+            ),
+        )
     }
 
     @Test fun restoreAcceptsOldSavedStateAndRetainsNewConnectionRoute() {
         val legacy = listOf("REMOTE", false, "GENERAL", false, false, false, "", null, false, false)
         assertFalse(AppShellState.Saver.restore(legacy)!!.remoteConnectOpen)
-        // Older builds saved a scanner request at index 9 and nothing after it;
-        // that request meant the connect sheet was open.
-        val legacyScanner = legacy.dropLast(1) + true
-        assertTrue(AppShellState.Saver.restore(legacyScanner)!!.remoteConnectOpen)
+        // Older builds saved a retired connection-overlay request at index 9
+        // and nothing after it; the request meant the account device sheet was
+        // open.
+        val legacyConnectionOverlay = legacy.dropLast(1) + true
+        assertTrue(AppShellState.Saver.restore(legacyConnectionOverlay)!!.remoteConnectOpen)
         // A build that also wrote index 10 is read from index 10.
         val legacyBoth = legacy + false
-        val closedWithScanFlag = legacyBoth.toMutableList().also { it[9] = true }
-        assertFalse(AppShellState.Saver.restore(closedWithScanFlag)!!.remoteConnectOpen)
+        val closedWithLegacyOverlay = legacyBoth.toMutableList().also { it[9] = true }
+        assertFalse(AppShellState.Saver.restore(closedWithLegacyOverlay)!!.remoteConnectOpen)
 
         val shell = state().apply { openRemoteConnect() }
         val saved = with(AppShellState.Saver) { scope.save(shell) }!!
-        assertEquals(11, (saved as List<*>).size)
+        assertEquals(12, (saved as List<*>).size)
         assertEquals(false, saved[9])
         assertTrue(AppShellState.Saver.restore(saved)!!.remoteConnectOpen)
+
+        val pending = state().apply { openRemoteSession("workspace-session") }
+        val savedPending = with(AppShellState.Saver) { scope.save(pending) }!!
+        assertEquals("workspace-session", AppShellState.Saver.restore(savedPending)!!.pendingRemoteSessionId)
     }
 
     @Test fun restoreMapsTheRetiredRemoteSettingsPageToTheOneSettingsPage() {

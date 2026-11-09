@@ -1,10 +1,5 @@
 package com.openbitfun.mobile.app.ui.remote
 
-import android.app.Activity
-import android.content.Intent
-import android.speech.RecognizerIntent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -47,6 +42,7 @@ import com.openbitfun.mobile.core.feature.session.HarnessProfilePolicy
 import com.openbitfun.mobile.core.feature.session.HarnessProfile
 import com.openbitfun.mobile.app.R
 import com.openbitfun.mobile.app.ui.chat.ComposerBar
+import com.openbitfun.mobile.app.ui.chat.rememberComposerVoiceInput
 import com.openbitfun.mobile.app.ui.common.CircleControl
 import com.openbitfun.mobile.core.feature.connection.ConnectionPhase
 import com.openbitfun.mobile.core.feature.session.ChatComposerCapabilities
@@ -185,13 +181,10 @@ internal fun CreateSessionScreen(
     }
     val selectedChoice = WorkspaceChoice(workspacePath, "", workspaceConnectionId, workspaceSshHost, workspaceId)
 
-    val voiceInput = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
-            if (text.isNotBlank()) {
-                draft = listOf(draft.trim(), text.trim()).filter(String::isNotEmpty).joinToString(" ")
-            }
-        }
+    val voiceInput = rememberComposerVoiceInput(
+        org.json.JSONArray(listOf(deviceId, workspaceConnectionId, workspacePath)).toString(),
+    ) { text ->
+        draft = listOf(draft.trim(), text.trim()).filter(String::isNotEmpty).joinToString(" ")
     }
 
     Column(modifier = modifier.fillMaxSize().testTag(CREATE_SESSION_TEST_TAG)) {
@@ -338,16 +331,7 @@ internal fun CreateSessionScreen(
             onAttach = {},
             onOpenModels = {},
             onSelectModel = { selectedModelId = it },
-            onVoice = {
-                voiceInput.launch(
-                    Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                        putExtra(
-                            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
-                        )
-                    },
-                )
-            },
+            onVoice = voiceInput,
             onSend = {
                 if (CreateSessionPresenter.canSubmit(draft, deviceId, busy)) {
                     onIntent(

@@ -19,7 +19,17 @@ internal fun decodeInlineImage(dataUrl: String): Bitmap? {
     if (payload.isEmpty()) return null
     return runCatching {
         val bytes = Base64.decode(payload, Base64.DEFAULT)
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        // The encoded size says nothing about decoded pixel memory. History may
+        // contain full-resolution photos from another client; these are thumbnails.
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        if (options.outWidth <= 0 || options.outHeight <= 0) return null
+        options.inSampleSize = 1
+        while (maxOf(options.outWidth, options.outHeight) / options.inSampleSize > 512) {
+            options.inSampleSize *= 2
+        }
+        options.inJustDecodeBounds = false
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
     }.getOrNull()
 }
 

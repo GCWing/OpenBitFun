@@ -598,24 +598,37 @@ public class RemoteSessionStore internal constructor(
 
     private fun publishCommittedCreate(session: RemoteSession, previous: RemoteSessionUiState.Ready?): Long {
         projectConfirmedCreatedSession(session)
-        if (_state.value !is RemoteSessionUiState.Ready) {
-            publishAuthorityReady(RemoteSessionUiState.Ready(
-                sessions = listOf(session),
-                selectedSessionId = session.id,
-                timeline = null,
-                busy = true,
-                permissionMode = previous?.permissionMode,
-                permissionModeFailure = previous?.permissionModeFailure,
-                query = previous?.query.orEmpty(),
-                agentFilter = previous?.agentFilter ?: SessionAgentFilter.ALL,
-                hasMore = previous?.hasMore ?: false,
-                hasMoreMessages = false,
-                modelCatalog = modelCatalog ?: previous?.modelCatalog,
-                modelCatalogFailure = modelCatalogFailure ?: previous?.modelCatalogFailure,
-                draft = "",
-            ))
-        }
-        return (_state.value as RemoteSessionUiState.Ready).revision
+        val current = _state.value as? RemoteSessionUiState.Ready
+        return publishAuthorityReady(
+            if (current != null) {
+                current.copy(
+                    selectedSessionId = session.id,
+                    timeline = null,
+                    busy = true,
+                    hasMoreMessages = false,
+                    draft = "",
+                    lastSentMessage = null,
+                    historyLoadState = HistoryLoadState.IDLE,
+                    promptSuggestion = null,
+                )
+            } else {
+                RemoteSessionUiState.Ready(
+                    sessions = listOf(session),
+                    selectedSessionId = session.id,
+                    timeline = null,
+                    busy = true,
+                    permissionMode = previous?.permissionMode,
+                    permissionModeFailure = previous?.permissionModeFailure,
+                    query = previous?.query.orEmpty(),
+                    agentFilter = previous?.agentFilter ?: SessionAgentFilter.ALL,
+                    hasMore = previous?.hasMore ?: false,
+                    hasMoreMessages = false,
+                    modelCatalog = modelCatalog ?: previous?.modelCatalog,
+                    modelCatalogFailure = modelCatalogFailure ?: previous?.modelCatalogFailure,
+                    draft = "",
+                )
+            },
+        )
     }
 
     private fun publishAuthorityReady(ready: RemoteSessionUiState.Ready): Long {
@@ -1432,13 +1445,36 @@ public class RemoteSessionStore internal constructor(
                 if (!succeedCreate(requestId, generation, confirmedSession, commitRevision)) return@launch
                 activeCreateGeneration = null
 
-                intent.modelId?.trim()?.takeIf(String::isNotEmpty)?.let { modelId ->
-                    transport.send<SetSessionModelResponse>(
-                        RemoteCommand(cmd = "set_session_model", sessionId = sessionId, modelId = modelId),
-                    )
-                    if (!isCurrentWork(operationToken)) return@launch
+                val modelSelection = intent.modelId?.trim()?.takeIf(String::isNotEmpty)?.let { modelId ->
+                    async {
+                        try {
+                            Result.success(
+                                transport.send<SetSessionModelResponse>(
+                                    RemoteCommand(cmd = "set_session_model", sessionId = sessionId, modelId = modelId),
+                                ),
+                            )
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Throwable) {
+                            Result.failure(error)
+                        }
+                    }
                 }
                 val opened = openSession(sessionId, operationToken) ?: return@launch
+                if (!isCurrentWork(operationToken)) return@launch
+                // Hydration may finish before model selection. Publish the transcript
+                // now, retaining typing and mailbox updates received while waiting.
+                val hydrated = _state.value as? RemoteSessionUiState.Ready ?: return@launch
+                publishAuthorityReady(hydrated.copy(
+                    timeline = timelineStore.snapshot(),
+                    permissionMode = opened.permission.mode,
+                    permissionModeFailure = opened.permission.failure,
+                    hasMoreMessages = opened.hasMoreMessages,
+                ))
+                modelSelection?.await()?.getOrThrow()?.let { response ->
+                    if (!isCurrentWork(operationToken)) return@launch
+                    timelineStore.setSelectedModelId(response.modelId ?: intent.modelId.orEmpty())
+                }
                 intent.instruction.trim().takeIf(String::isNotEmpty)?.let { instruction ->
                     val sent = transport.send<SendMessageResponse>(
                         RemoteCommand(
@@ -1455,20 +1491,12 @@ public class RemoteSessionStore internal constructor(
                 val page = listSessions(0, current?.query.orEmpty(), current?.agentFilter ?: SessionAgentFilter.ALL)
                 if (!isCurrentWork(operationToken)) return@launch
                 commitSessionPage(page)
-                publishAuthorityReady(RemoteSessionUiState.Ready(
+                val ready = _state.value as? RemoteSessionUiState.Ready ?: return@launch
+                publishAuthorityReady(ready.copy(
                     sessions = page.sessions,
-                    selectedSessionId = sessionId,
                     timeline = timelineStore.snapshot(),
                     busy = false,
-                    permissionMode = opened.permission.mode,
-                    permissionModeFailure = opened.permission.failure,
-                    query = current?.query.orEmpty(),
-                    agentFilter = current?.agentFilter ?: SessionAgentFilter.ALL,
                     hasMore = page.hasMore,
-                    hasMoreMessages = opened.hasMoreMessages,
-                    modelCatalog = modelCatalog ?: current?.modelCatalog,
-                    modelCatalogFailure = modelCatalogFailure ?: current?.modelCatalogFailure,
-                    draft = "",
                 ))
                 markConnected()
                 refreshModelCatalog()

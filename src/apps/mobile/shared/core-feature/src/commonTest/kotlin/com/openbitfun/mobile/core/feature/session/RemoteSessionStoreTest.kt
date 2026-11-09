@@ -1039,11 +1039,61 @@ class RemoteSessionStoreTest {
         val committed = assertIs<CreateSessionOperationState.Succeeded>(store.createOperation.value)
         assertEquals("s-new", committed.createdSessionId)
         val committedReady = assertIs<RemoteSessionUiState.Ready>(store.state.value)
-        assertEquals(committed.commitRevision, committedReady.revision)
+        assertTrue(committed.commitRevision <= committedReady.revision)
         assertTrue(committedReady.sessions.any { it.id == committed.createdSessionId })
+        assertEquals(committed.createdSessionId, committedReady.selectedSessionId)
+        assertEquals(committed.createdSessionId, committedReady.timeline?.sessionId)
+        assertTrue(committedReady.busy)
         store.stop()
         runCurrent()
         assertIs<CreateSessionOperationState.Succeeded>(store.createOperation.value)
+    }
+
+    @Test
+    fun createModelFailureDoesNotCancelSessionHydration() = runTest {
+        val transport = FakeSessionTransport().apply {
+            modelSelectionFailure = RelayFailure.NetworkUnreachable
+        }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.CreateSessionOperation("model-failed", "code", "", "", "model-primary", "/repo"))
+        runCurrent()
+
+        assertIs<CreateSessionOperationState.Succeeded>(store.createOperation.value)
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("s-new", ready.selectedSessionId)
+        assertEquals("s-new", ready.timeline?.sessionId)
+        store.stop()
+    }
+
+    @Test
+    fun createHydrationAndModelSelectionPreserveNewTypingAndOrderTheInitialMessage() = runTest {
+        val transport = FakeSessionTransport()
+        val modelGate = CompletableDeferred<Unit>()
+        val historyGate = CompletableDeferred<Unit>()
+        transport.commandGates["set_session_model"] = modelGate
+        transport.initialHistoryGate = historyGate
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.CreateSessionOperation("create-with-model", "code", "", "first instruction", "model-primary", "/repo"))
+        runCurrent()
+        store.dispatch(RemoteSessionIntent.UpdateDraft("typed during history"))
+        historyGate.complete(Unit)
+        runCurrent()
+
+        val hydrated = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("s-new", hydrated.timeline?.sessionId)
+        assertEquals("typed during history", hydrated.draft)
+        assertTrue(hydrated.busy)
+        assertTrue(transport.commands.none { it.cmd == "send_message" })
+
+        store.dispatch(RemoteSessionIntent.UpdateDraft("next question"))
+        modelGate.complete(Unit)
+        runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("next question", ready.draft)
+        assertEquals("model-primary", ready.timeline?.selectedModelId)
+        assertFalse(ready.busy)
+        assertEquals("first instruction", transport.commands.single { it.cmd == "send_message" }.content)
+        store.stop()
     }
 
     @Test
@@ -1745,6 +1795,11 @@ class RemoteSessionStoreTest {
         assertFalse(failed.busy)
 
         transport.sendMessageFailure = null
+        // A failed network send gates retries until the host stream reconnects.
+        assertEquals(ConnectionPhase.RECONNECTING, store.connectionPhase.value)
+        requireNotNull(transport.streamCaughtUp).invoke()
+        runCurrent()
+        assertEquals(ConnectionPhase.CONNECTED, store.connectionPhase.value)
         val gate = CompletableDeferred<Unit>()
         transport.commandGates["send_message"] = gate
         store.dispatch(RemoteSessionIntent.SendMessage("s-code", "look", images))
