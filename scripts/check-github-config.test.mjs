@@ -429,8 +429,8 @@ test('keeps Rust CI independent, restore-only on PRs, and target-focused', () =>
   );
   assert.deepEqual(
     rustJob.strategy.matrix.os,
-    ['ubuntu-latest', 'macos-15-intel', 'windows-latest'],
-    'Rust validation must retain the reviewed Linux, macOS, and Windows matrix',
+    ['ubuntu-latest', 'macos-15', 'windows-latest'],
+    'Rust validation must retain the reviewed Linux, Apple Silicon macOS, and Windows matrix',
   );
   assert.equal(
     rustJob.steps.some((step) => step.uses?.startsWith('actions/download-artifact@')),
@@ -469,23 +469,30 @@ test('keeps Rust CI independent, restore-only on PRs, and target-focused', () =>
       /github\.base_ref \|\| github\.ref_name/,
       `${jobName} must not mix main and explore build outputs`,
     );
+    if (jobName === 'rust-build-check') {
+      assert.match(
+        cache?.with?.['shared-key'] ?? '',
+        /runner\.arch/,
+        'Rust validation caches must stay isolated by architecture',
+      );
+    }
   }
 
   const cliJob = workflow.jobs['cli-test'];
   assert.deepEqual(
     cliJob.strategy.matrix.include.map((entry) => entry.os),
     rustJob.strategy.matrix.os,
-    'CLI and Rust validation must exercise the same Linux, Intel macOS, and Windows hosts',
+    'CLI and Rust validation must exercise the same Linux, Apple Silicon macOS, and Windows hosts',
   );
   assert.equal(
-    cliJob.strategy.matrix.include.find((entry) => entry.os === 'macos-15-intel').cache_key,
-    'macos-intel',
+    cliJob.strategy.matrix.include.find((entry) => entry.os === 'macos-15').cache_key,
+    'macos-arm64',
   );
   assert.equal(cliJob['timeout-minutes'], '${{ matrix.timeout_minutes }}');
   assert.deepEqual(
     cliJob.strategy.matrix.include.map((entry) => entry.timeout_minutes),
     [30, 75, 30],
-    'Only the cold Intel macOS CLI build needs a longer job budget',
+    'Only the cold macOS CLI build needs a longer job budget',
   );
   assert.ok(
     cliJob.strategy.matrix.include.some((entry) => entry.os === 'windows-latest'),

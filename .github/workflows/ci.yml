@@ -133,11 +133,11 @@ jobs:
           - os: ubuntu-latest
             cache_key: ubuntu
             timeout_minutes: 30
-          # Pin the Intel pool for macOS OS-contract validation; release jobs
-          # select their Apple Silicon / Intel targets independently.
-          - os: macos-15-intel
-            cache_key: macos-intel
-            # A cold Intel build can still be compiling the CLI at 30 minutes.
+          # Keep the blocking macOS validation on Apple Silicon for predictable
+          # PR latency; release and Nightly matrices retain both architectures.
+          - os: macos-15
+            cache_key: macos-arm64
+            # Keep headroom for a cold macOS CLI build.
             timeout_minutes: 75
           - os: windows-latest
             cache_key: windows
@@ -220,7 +220,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-15-intel
+          - macos-15
           - windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -279,7 +279,7 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          shared-key: "ci-check-v6-${{ github.base_ref || github.ref_name }}-${{ runner.os }}-no-cargo-bin"
+          shared-key: "ci-check-v6-${{ github.base_ref || github.ref_name }}-${{ runner.os }}-${{ runner.arch }}-no-cargo-bin"
           cache-bin: false
           # PR caches are scoped to merge refs; trusted main pushes own shared
           # refreshes and retain completed dependency builds after late test failures.
