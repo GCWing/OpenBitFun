@@ -2121,7 +2121,7 @@ pub async fn remote_connect_start(
     };
     let result = async {
         let current_url = read_account_context().await.ok().map(|(_, url)| url);
-        if current_url.as_deref() != Some(relay_url.as_str()) {
+        if relay_requires_account_login(current_url.as_deref(), &relay_url) {
             login_account_on_relay(relay_url).await?;
         }
         account_connect_devices().await?;
@@ -2381,6 +2381,18 @@ async fn persist_account_session(device_id: Option<&str>) -> Result<(), String> 
 #[tauri::command]
 pub async fn account_login(_request: AccountAuthRequest) -> Result<AccountLoginResult, String> {
     login_account_on_relay(openbitfun_product_domains::account::DEFAULT_RELAY_URL.to_string()).await
+}
+
+/// Whether showing an invitation must sign in again on `target`.
+///
+/// A restored session keeps the endpoint base while the prepared official
+/// endpoint also announces `?v=`. The version is not part of the endpoint
+/// identity, and an unneeded login rotates the token and drops device routing.
+fn relay_requires_account_login(current: Option<&str>, target: &str) -> bool {
+    current.map(openbitfun_product_domains::account::relay_endpoint_base)
+        != Some(openbitfun_product_domains::account::relay_endpoint_base(
+            target,
+        ))
 }
 
 async fn login_account_on_relay(relay_url: String) -> Result<AccountLoginResult, String> {
@@ -3983,4 +3995,40 @@ pub async fn account_unsubscribe_session(request: UnsubscribeSessionRequest) -> 
             .remove(&request.subscription_id);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod relay_account_login_tests {
+    use super::relay_requires_account_login;
+
+    #[test]
+    fn version_parameter_does_not_change_the_endpoint_identity() {
+        let official = "https://remote.openbitfun.com/relay?v=1.0.9";
+        for current in [
+            "https://remote.openbitfun.com/relay",
+            "https://remote.openbitfun.com/relay/",
+            "https://remote.openbitfun.com/relay?v=1.0.8",
+            official,
+        ] {
+            assert!(
+                !relay_requires_account_login(Some(current), official),
+                "{current}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_or_different_endpoint_requires_login() {
+        let official = "https://remote.openbitfun.com/relay?v=1.0.9";
+        assert!(relay_requires_account_login(None, official));
+        // The legacy alias migrates to the current endpoint through one login.
+        assert!(relay_requires_account_login(
+            Some("https://remote.openbitfun.com/v/1.0.2"),
+            official
+        ));
+        assert!(relay_requires_account_login(
+            Some("http://192.168.1.2:9700"),
+            official
+        ));
+    }
 }
