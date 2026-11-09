@@ -400,3 +400,18 @@ image model. It does not discover or invoke a chat model. Saved legacy
 ```bash
 cargo test --locked -p openbitfun-ai-adapters --features image-generation,subscription-auth --lib client::image_generation::tests::probe_codex_subscription_image_generation -- --ignored --exact --nocapture
 ```
+
+## Magpie gateway discovery
+
+Magpie discovery is identity plus catalog IO only, never inference or credential
+file discovery. Preserve gateway-prefixed URLs, bounded reads, redirect refusal,
+and distinct offline/authentication/catalog states. Hosts supply proxy settings.
+Loopback discovery and model requests connect directly on the inference host;
+remote URLs retain configured proxy policy. Match the effective request URL,
+including custom overrides, and do not follow redirects with a direct client.
+Verify with `cargo test --locked -p openbitfun-ai-adapters --lib magpie::tests`
+and `cargo test --locked -p openbitfun-ai-adapters --lib client::http::tests`.
+The ignored `magpie::tests::live_local_gateway_catalog` reads only the default
+loopback gateway, without inference. Set `OPENBITFUN_LIVE_MAGPIE_PROXY` to verify
+discovery while an explicit outbound proxy is configured. It proves local catalog access, not remote
+transport or model generation.

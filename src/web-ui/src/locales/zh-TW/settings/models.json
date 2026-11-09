@@ -237,7 +237,55 @@
     "urlHint": "已預填官方 API 地址，如使用代理或私有部署可修改",
     "formatHint": "已根據提供商自動選擇，通常無需修改"
   },
+  "magpie": {
+    "description": "連接 Magpie，新增模型。",
+    "connect": "偵測 Magpie",
+    "keyHint": "本機連接用預設值；遠端或 Docker 連接填 Magpie 金鑰。",
+    "manage": "管理模型",
+    "addConnection": "連接其他閘道",
+    "address": "閘道位址",
+    "key": "閘道金鑰",
+    "detect": "偵測",
+    "refresh": "重新整理模型",
+    "manual": "手動設定",
+    "hostHint": "localhost 指目前連接的遠端裝置。",
+    "search": "搜尋 Magpie 模型",
+    "imported": "已新增",
+    "routingGroup": "Magpie 路由群組",
+    "missing": "暫時無法使用",
+    "missingHint": "這些模型暫未出現在 Magpie 中，現有設定仍會保留。",
+    "poolHint": "新增後可設為預設模型，或加入模型池。",
+    "importSelected": "新增 {{count}} 個模型",
+    "saveConnection": "儲存連線",
+    "close": "收合",
+    "states": {
+      "idle": "尚未偵測",
+      "checking": "連接中…",
+      "ready": "偵測成功",
+      "empty": "偵測成功，暫無模型。在 Magpie 中啟用模型後重新整理。",
+      "unreachable": "未偵測到 Magpie，請確認已啟動。",
+      "accessDenied": "存取遭拒，請檢查金鑰和 Magpie 的共用設定。",
+      "unrecognized": "這個位址不是 Magpie 服務。",
+      "catalogError": "已偵測到 Magpie，但模型清單載入失敗。請重試。",
+      "invalidAddress": "請輸入 http:// 或 https:// 位址，不含帳號、密碼或查詢參數。",
+      "unsupported": "目前裝置不支援偵測，可升級 OpenBitFun 或手動設定。",
+      "failed": "操作失敗，請重新開啟模型設定後重試。",
+      "saved": "已儲存。"
+    },
+    "contextTooSmall": "上下文至少需要 32,000 token",
+    "invalidLimits": "模型參數超出支援範圍",
+    "discard": "取消"
+  },
   "providers": {
+    "magpie": {
+      "name": "Magpie",
+      "description": "使用 Magpie 閘道中的模型和路由群組",
+      "urlOptions": {
+        "openai": "Magpie 閘道",
+        "responses": "Magpie 閘道",
+        "anthropic": "Magpie 閘道"
+      }
+    },
     "opencode-zen": {
       "name": "OpenCode Zen",
       "description": "OpenCode 模型服務，支援免費模型和按量付費 API Key。"
@@ -741,7 +789,7 @@
   "editSettingsTitle": "模型參數",
   "editProviderSettingsTitle": "服務連線",
   "sections": {
-    "acquisition": "新增或匯入模型",
+    "acquisition": "模型來源",
     "selectionModes": "智慧模式",
     "pool": "全部模型",
     "more": "更多設定"

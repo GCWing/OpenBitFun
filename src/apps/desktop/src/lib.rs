@@ -1508,6 +1508,7 @@ pub async fn run() {
             test_ai_config_connection,
             test_image_generation_service,
             list_ai_models_by_config,
+            probe_magpie_gateway,
             list_subscription_accounts,
             list_subscription_account_instances,
             get_subscription_account_quota,

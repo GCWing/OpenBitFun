@@ -77,6 +77,7 @@ export interface PeerHostCapabilities {
   readonly sessionTrajectoryV1?: boolean;
   readonly modelRoutingV1?: boolean;
   readonly modelPoolSelectionV1?: boolean;
+  readonly magpieDiscoveryV1?: boolean;
   readonly computerUseSharingV1?: boolean;
   /** Typed ProductControl HostInvoke, including shared config read-back. */
   readonly productControlV1?: boolean;
@@ -224,6 +225,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   sessionTrajectoryV1: false,
   modelRoutingV1: false,
   modelPoolSelectionV1: false,
+  magpieDiscoveryV1: false,
   computerUseSharingV1: false,
   productControlV1: false,
   remoteConnectControlV1: false,
@@ -489,6 +491,7 @@ export class PeerConnectionManager {
       supportsGenUiLibrariesV1: entry.capabilities.genUiLibrariesV1,
       supportsModelRoutingV1: entry.capabilities.modelRoutingV1,
       supportsModelPoolSelectionV1: entry.capabilities.modelPoolSelectionV1,
+      supportsMagpieDiscoveryV1: entry.capabilities.magpieDiscoveryV1,
       supportsBtwModelPoolSelectionV1: entry.capabilities.btwModelPoolSelectionV1,
       supportsComputerUseSharingV1: entry.capabilities.computerUseSharingV1,
       supportsProductControlV1: entry.capabilities.productControlV1,
@@ -594,6 +597,7 @@ export class PeerConnectionManager {
       genUiLibrariesV1: caps?.gen_ui_libraries_v1 === true,
       modelRoutingV1: caps?.model_routing_v1 === true,
       modelPoolSelectionV1: caps?.model_pool_selection_v1 === true,
+      magpieDiscoveryV1: caps?.magpie_discovery_v1 === true,
       computerUseSharingV1: caps?.computer_use_sharing_v1 === true,
       productControlV1: caps?.product_control_v1 === true,
       remoteConnectControlV1: caps?.remote_connect_control_v1 === true,
@@ -702,6 +706,7 @@ export class PeerConnectionManager {
         supportsGenUiLibrariesV1: capabilities.genUiLibrariesV1,
         supportsModelRoutingV1: capabilities.modelRoutingV1,
         supportsModelPoolSelectionV1: capabilities.modelPoolSelectionV1,
+        supportsMagpieDiscoveryV1: capabilities.magpieDiscoveryV1,
         supportsBtwModelPoolSelectionV1: capabilities.btwModelPoolSelectionV1,
         supportsComputerUseSharingV1: capabilities.computerUseSharingV1,
         supportsProductControlV1: capabilities.productControlV1,
@@ -864,6 +869,7 @@ function capabilitiesEqual(
     a.genUiLibrariesV1 === b.genUiLibrariesV1 &&
     a.modelRoutingV1 === b.modelRoutingV1 &&
     a.modelPoolSelectionV1 === b.modelPoolSelectionV1 &&
+    a.magpieDiscoveryV1 === b.magpieDiscoveryV1 &&
     a.computerUseSharingV1 === b.computerUseSharingV1 &&
     a.cancelTool === b.cancelTool &&
     a.toolCatalog === b.toolCatalog &&

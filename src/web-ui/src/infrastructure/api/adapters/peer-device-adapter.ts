@@ -355,6 +355,7 @@ export interface PeerDeviceTransportHooks {
   supportsGenUiLibrariesV1?: boolean;
   supportsModelRoutingV1?: boolean;
   supportsModelPoolSelectionV1?: boolean;
+  supportsMagpieDiscoveryV1?: boolean;
   supportsBtwModelPoolSelectionV1?: boolean;
   supportsComputerUseSharingV1?: boolean;
   /** Enables the versioned typed ProductControl HostInvoke contract. */
@@ -502,6 +503,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       | 'supportsGenUiLibrariesV1'
       | 'supportsModelRoutingV1'
       | 'supportsModelPoolSelectionV1'
+      | 'supportsMagpieDiscoveryV1'
       | 'supportsBtwModelPoolSelectionV1'
       | 'supportsComputerUseSharingV1'
       | 'supportsProductControlV1'
@@ -573,6 +575,10 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     if ((action === 'get_model_routing_status' || (action === 'update_session_model' && params?.request?.routingMode !== undefined))
       && this.hooks.supportsModelRoutingV1 !== true) {
       throw new PeerProductCommandError('model_routing_v1_unsupported: The connected Peer host does not support smart routing');
+    }
+
+    if (action === 'probe_magpie_gateway' && this.hooks.supportsMagpieDiscoveryV1 !== true) {
+      throw new PeerProductCommandError('magpie_discovery_v1_unsupported: This host does not support Magpie discovery');
     }
 
     if (['retry_model_pool_member', 'get_model_pools', 'save_model_pool', 'delete_model_pool', 'get_model_pool_status',
