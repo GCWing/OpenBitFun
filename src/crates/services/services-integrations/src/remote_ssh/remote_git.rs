@@ -40,6 +40,27 @@ where
     parts.join(" ")
 }
 
+/// Counts porcelain records on the workspace host. Porcelain quotes embedded
+/// newlines. The trailing blank record proves Git exited successfully without
+/// requiring the remote shell to support pipefail.
+pub fn build_remote_git_tracked_change_count_command(repository_path: &str) -> String {
+    let git = build_remote_git_command(
+        repository_path,
+        [
+            "--no-optional-locks",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=no",
+            "--ignore-submodules=untracked",
+            "--renames",
+        ],
+    );
+    format!(
+        "(GIT_NO_LAZY_FETCH=1 GIT_TERMINAL_PROMPT=0 {git} && printf '\\n') | \
+         awk '{{ complete = ($0 == \"\") }} END {{ if (!complete) exit 1; print NR - 1 }}'"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

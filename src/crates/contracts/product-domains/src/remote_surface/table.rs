@@ -409,6 +409,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("git_get_repository_basic",                                   Routed,      Proxied,          HANDLED),
     op("git_get_repository_trust",                                   Routed,      Proxied,          HANDLED),
     op("git_get_status",                                             Routed,      Proxied,          HANDLED),
+    op("git_get_tracked_change_count",                               Routed,      Proxied,          HANDLED),
     op("git_is_repository",                                          Routed,      Proxied,          HANDLED),
     op("git_list_worktrees",                                         Unsupported, Proxied,          CLI_NOT_IMPLEMENTED),
     op("git_pull",                                                   Routed,      Proxied,          CLI_NOT_IMPLEMENTED),

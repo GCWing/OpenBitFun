@@ -120,6 +120,8 @@ interface FilesPanelProps {
   /** Hide the in-explorer floating toolbar; parent can render equivalent actions (e.g. file viewer nav header). */
   hideExplorerToolbar?: boolean;
   onExplorerToolbarApi?: (api: FileExplorerToolbarHandlers | null) => void;
+  revealDirectoryPath?: string;
+  onRevealHandled?: () => void;
 }
 
 const FilesPanel: React.FC<FilesPanelProps> = ({
@@ -133,6 +135,8 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
   onViewModeChange,
   hideExplorerToolbar = false,
   onExplorerToolbarApi,
+  revealDirectoryPath,
+  onRevealHandled,
 }) => {
   const { t } = useTranslation('panels/files');
   const { t: tComponents } = useI18n('components');
@@ -142,10 +146,11 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
   // Identity is (surface, workspace ID). The path and connection are IO
   // projections that downstream openers still record for legacy tab data.
   const currentWorkspaceId = currentWorkspace?.id;
+  const ownerRoot = currentWorkspace?.rootPath ?? workspacePath;
   const resourceScope = useMemo(() => ({
     surfaceId: surface.surfaceId, workspaceId: currentWorkspaceId,
-    workspacePath, remoteConnectionId: currentWorkspace?.connectionId,
-  }), [surface.surfaceId, currentWorkspaceId, currentWorkspace?.connectionId, workspacePath]);
+    workspacePath: ownerRoot, remoteConnectionId: currentWorkspace?.connectionId,
+  }), [surface.surfaceId, currentWorkspaceId, currentWorkspace?.connectionId, ownerRoot]);
   
   const panelRef = useRef<HTMLDivElement>(null);
   const navigationRequestRef = useRef(0);
@@ -394,12 +399,11 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
       openFileInBestTarget({
         filePath: data.path,
         scope: resourceScope,
-        workspacePath,
         ...(data.line ? { jumpToLine: data.line } : {}),
         ...(data.column ? { jumpToColumn: data.column } : {}),
       }, { source: 'project-nav' });
     });
-  }, [workspacePath, shouldOpenLargeFile, surface, resourceScope]);
+  }, [shouldOpenLargeFile, surface, resourceScope]);
 
   const handleNewFile = useCallback((data: { parentPath: string }) => {
     setInputDialog({
@@ -643,6 +647,12 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
     })();
   }, [workspacePath, isRemoteCurrentWorkspace, expandFolderEnsure, selectFile]);
 
+  useEffect(() => {
+    if (!revealDirectoryPath || viewMode !== 'tree' || loading || !fileTree.length) return;
+    onRevealHandled?.();
+    handleNavigateToPath({ path: revealDirectoryPath, scrollIntoView: true });
+  }, [revealDirectoryPath, viewMode, loading, fileTree.length, onRevealHandled, handleNavigateToPath]);
+
   const findNode = useCallback((nodes: FileSystemNode[], path: string): FileSystemNode | null => {
     for (const node of nodes) {
       if (pathsEquivalentFs(node.path, path)) return node;
@@ -837,7 +847,6 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
     globalEventBus.on('file:decompress', handleDecompress);
     globalEventBus.on('file:paste', handlePasteFromContextMenu);
     globalEventBus.on('file-tree:refresh', handleFileTreeRefresh);
-    globalEventBus.on('file-explorer:navigate', handleNavigateToPath);
 
     return () => {
       globalEventBus.off('file:open', handleOpenFile);
@@ -850,9 +859,8 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
       globalEventBus.off('file:decompress', handleDecompress);
       globalEventBus.off('file:paste', handlePasteFromContextMenu);
       globalEventBus.off('file-tree:refresh', handleFileTreeRefresh);
-      globalEventBus.off('file-explorer:navigate', handleNavigateToPath);
     };
-  }, [handleOpenFile, handleNewFile, handleNewFolder, handleStartRename, handleDelete, handleFileDownload, handleCompress, handleDecompress, handlePasteFromContextMenu, handleFileTreeRefresh, handleNavigateToPath]);
+  }, [handleOpenFile, handleNewFile, handleNewFolder, handleStartRename, handleDelete, handleFileDownload, handleCompress, handleDecompress, handlePasteFromContextMenu, handleFileTreeRefresh]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -968,12 +976,11 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
         openFileInBestTarget({
           filePath,
           fileName,
-          workspacePath,
           scope: resourceScope,
         }, { source: 'project-nav' });
       });
     }
-  }, [selectFile, onFileSelect, workspacePath, fileTree, findNode, shouldOpenLargeFile, surface, resourceScope]);
+  }, [selectFile, onFileSelect, fileTree, findNode, shouldOpenLargeFile, surface, resourceScope]);
 
   const handleFileDoubleClick = useCallback((filePath: string) => {
     onFileDoubleClick?.(filePath);

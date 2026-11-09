@@ -230,6 +230,12 @@ export interface GitTrustOutcome {
 }
 
 export class GitAPI {
+  async getTrackedChangeCount(workspaceId: string): Promise<number | null> {
+    return invokePrepared('git_get_tracked_change_count', async () => ({
+      request: { workspaceId },
+    }), { timeout: 8_000 });
+  }
+
   private repositoryProbeCache = new Map<string, {
     value: boolean;
     expiresAt: number;

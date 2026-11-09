@@ -224,6 +224,7 @@ pub(crate) fn dispatch<'a>(
         "git_get_repository"
         | "git_get_repository_basic"
         | "git_get_status"
+        | "git_get_tracked_change_count"
         | "git_get_branches"
         | "git_get_enhanced_branches"
         | "git_get_commits"
@@ -374,6 +375,7 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "git_get_repository",
     "git_get_repository_basic",
     "git_get_status",
+    "git_get_tracked_change_count",
     "git_get_branches",
     "git_get_enhanced_branches",
     "git_get_commits",

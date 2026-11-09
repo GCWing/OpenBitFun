@@ -25,6 +25,7 @@ import type { WorkspaceInfo } from '@/shared/types';
 export interface ResourceWorkspaceTarget {
   surfaceId: string;
   workspaceId: string;
+  directoryPath?: string;
 }
 
 /** An explicit browse target never falls back to another workspace or device. */
@@ -45,7 +46,7 @@ interface NavSceneState {
   navigationMotion: InteractionMotion;
   navigationSequence: number;
   openNavScene: (id: SceneTabId) => void;
-  openWorkspaceResources: (workspaceId: string) => void;
+  openWorkspaceResources: (workspaceId: string, directoryPath?: string) => void;
   closeNavScene: () => void;
   goBack: () => void;
   goForward: () => void;
@@ -64,10 +65,10 @@ export const useNavSceneStore = create<NavSceneState>((set) => ({
     navigationMotion: getInteractionMotion(),
     navigationSequence: state.navigationSequence + 1,
   })),
-  openWorkspaceResources: (workspaceId) => set(state => ({
+  openWorkspaceResources: (workspaceId, directoryPath) => set(state => ({
     showSceneNav: true,
     navSceneId: 'file-viewer',
-    resourceWorkspace: { surfaceId: getActiveSurfaceId(), workspaceId },
+    resourceWorkspace: { surfaceId: getActiveSurfaceId(), workspaceId, ...(directoryPath !== undefined && { directoryPath }) },
     navigationMotion: getInteractionMotion(),
     navigationSequence: state.navigationSequence + 1,
   })),

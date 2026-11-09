@@ -121,6 +121,8 @@ pub enum PeerHostCapability {
     /// on the `terminal-<id>` host stream instead of `terminal_event` fan-out.
     /// This selects a delivery path, so only a host using that path advertises it.
     TerminalCursorReplayV1,
+    /// `git_get_tracked_change_count` returns a workspace-scoped count.
+    GitTrackedChangeCountV1,
 }
 
 impl PeerHostCapability {
@@ -173,6 +175,7 @@ impl PeerHostCapability {
         Self::UserQuestionInteractionV1,
         Self::SshNoneAuthV1,
         Self::TerminalCursorReplayV1,
+        Self::GitTrackedChangeCountV1,
     ];
 
     /// The key used in the `peer_mode_ping` `capabilities` object.
@@ -225,6 +228,7 @@ impl PeerHostCapability {
             Self::UserQuestionInteractionV1 => "user_question_interaction_v1",
             Self::SshNoneAuthV1 => "ssh_none_auth_v1",
             Self::TerminalCursorReplayV1 => "terminal_cursor_replay_v1",
+            Self::GitTrackedChangeCountV1 => "git_tracked_change_count_v1",
         }
     }
 
@@ -283,6 +287,7 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::UserQuestionResponse,
     PeerHostCapability::UserQuestionInteractionV1,
     PeerHostCapability::SshNoneAuthV1,
+    PeerHostCapability::GitTrackedChangeCountV1,
 ];
 
 /// The CLI peer host has no MiniApp runtime, WSL or SSH connection setup,
@@ -314,6 +319,7 @@ const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::UserQuestionResponse,
     PeerHostCapability::UserQuestionInteractionV1,
     PeerHostCapability::TerminalCursorReplayV1,
+    PeerHostCapability::GitTrackedChangeCountV1,
 ];
 
 /// The capabilities a peer host of the given kind publishes.

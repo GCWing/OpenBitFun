@@ -9,7 +9,7 @@ export function ProjectDirectoriesSection({ workspace, fileAccess, onBrowse, onM
   canReveal, onReveal, revealingPath, error }: {
   workspace: WorkspaceInfo;
   fileAccess: boolean;
-  onBrowse: () => void;
+  onBrowse: (directoryPath?: string) => void;
   onManage: () => void;
   onAdd: () => void;
   onRemove: (path: string, trigger?: HTMLElement) => void;
@@ -44,8 +44,9 @@ export function ProjectDirectoriesSection({ workspace, fileAccess, onBrowse, onM
       resetKey={JSON.stringify([workspace.id, ...directories.map(directory => directory.path)])}>
       {directories.map((directory, index) => <li className="project-resource-cards__cell" key={`${index}:${directory.path}`}>
         <ActionCard className="project-resource-cards__card" triggerClassName="project-resource-cards__trigger" actionPlacement="floating"
-            disabled={directory.primary ? !fileAccess : !!removingPath} onClick={directory.primary ? onBrowse : onManage}
-            aria-label={t(directory.primary ? 'directories.openDirectory' : 'directories.editDirectory', { name: directory.name })}
+            disabled={!fileAccess || (!directory.primary && !!removingPath)}
+            onClick={() => onBrowse(directory.primary ? undefined : directory.path)}
+            aria-label={t('directories.openDirectory', { name: directory.name })}
             actions={[{ id: 'reveal', label: t('directories.revealDirectory', { name: directory.name }),
               tooltip: t(canReveal ? 'directories.reveal' : 'directories.revealUnavailable'),
               icon: <Icon glyph={FolderOpen} size="sm" />, disabled: !canReveal || !!revealingPath || !!removingPath,

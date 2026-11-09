@@ -5,23 +5,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Menu, MenuItem } from '@openbitfun/ui';
 import { activateSurface, resetDeviceSurfaceForTest } from '@/infrastructure/peer-device/deviceSurface';
 
-const mocks = vi.hoisted(() => ({ delete: vi.fn(), error: vi.fn(), confirm: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  delete: vi.fn(), archive: vi.fn(), error: vi.fn(), confirm: vi.fn(),
+  notifyError: vi.fn(), notifySuccess: vi.fn(),
+  sessions: new Map<string, { config: { dispatchJobId: string } }>(),
+}));
 vi.mock('@/flow_chat/services/FlowChatManager', () => ({
-  flowChatManager: { deleteChatSession: mocks.delete },
+  flowChatManager: { deleteChatSession: mocks.delete, archiveChatSession: mocks.archive },
+}));
+vi.mock('@/flow_chat/store/FlowChatStore', () => ({
+  flowChatStore: { getState: () => ({ sessions: mocks.sessions }) },
 }));
 vi.mock('@/infrastructure/services/business/workspaceManager', () => ({ workspaceManager: {} }));
-vi.mock('@/shared/notification-system', () => ({ notificationService: {} }));
+vi.mock('@/shared/notification-system', () => ({
+  notificationService: { error: mocks.notifyError, success: mocks.notifySuccess },
+}));
 vi.mock('@/shared/utils/logger', () => ({
   createLogger: () => ({ error: mocks.error, warn: vi.fn(), info: vi.fn(), debug: vi.fn() }),
 }));
 vi.mock('@/infrastructure/confirm-dialog', () => ({ confirmDanger: mocks.confirm }));
 vi.mock('@/infrastructure/i18n', async () => {
   const { createTestI18nT } = await import('@/test/i18nTestUtils');
-  return { useI18n: () => ({ t: createTestI18nT('common') }) };
+  const t = createTestI18nT('common');
+  return { i18nService: { t }, useI18n: () => ({ t }) };
 });
 
 import SessionDeleteMenuItem from './SessionDeleteMenuItem';
-import { deleteSessionRow } from './sessionRowActions';
+import { archiveSessionRow, deleteSessionRow } from './sessionRowActions';
 
 describe('session menu inline deletion confirmation', () => {
   let container: HTMLDivElement;
@@ -32,7 +42,7 @@ describe('session menu inline deletion confirmation', () => {
   const render = async (open = true, sessionId = 'session-one') => {
     await act(async () => root.render(open ? (
       <Menu>
-        <MenuItem>Archive</MenuItem>
+        <MenuItem data-testid="archive" onClick={() => void archiveSessionRow(sessionId, key => key)}>Archive</MenuItem>
         <SessionDeleteMenuItem
           sessionId={sessionId} label="Delete" description={description} testId="delete"
           onConfirm={() => deleteSessionRow(sessionId)}
@@ -45,6 +55,7 @@ describe('session menu inline deletion confirmation', () => {
     vi.resetAllMocks();
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     resetDeviceSurfaceForTest();
+    mocks.sessions.clear();
     mocks.delete.mockResolvedValue(undefined);
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -69,6 +80,26 @@ describe('session menu inline deletion confirmation', () => {
     expect(container.querySelector('[role="dialog"], [role="alertdialog"]')).toBeNull();
     await click('confirm');
     expect(mocks.delete).toHaveBeenCalledExactlyOnceWith('session-one');
+    expect(mocks.archive).not.toHaveBeenCalled();
+  });
+
+  it('archives immediately through the archive action', async () => {
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="archive"]')!.click());
+    expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('session-one');
+    expect(mocks.delete).not.toHaveBeenCalled();
+    expect(mocks.confirm).not.toHaveBeenCalled();
+  });
+
+  it('refuses to archive or delete an observer projection as if it were a stored session', async () => {
+    await click();
+    // The observer can bind the job while confirmation is open.
+    mocks.sessions.set('session-one', { config: { dispatchJobId: 'job-one' } });
+    await click('confirm');
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="archive"]')!.click());
+    expect(mocks.delete).not.toHaveBeenCalled();
+    expect(mocks.archive).not.toHaveBeenCalled();
+    expect(mocks.notifyError).toHaveBeenCalledTimes(2);
+    expect(mocks.notifyError).toHaveBeenCalledWith('Archive or delete this session on the device that owns the task.');
   });
 
   it('restores the delete row and focus when Cancel is selected', async () => {

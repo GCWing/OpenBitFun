@@ -16,7 +16,12 @@ use openbitfun_core::service::git::{
 use openbitfun_core::service::remote_ssh::{
     build_remote_git_command as build_remote_git_command_shared, normalize_remote_workspace_path,
 };
-use openbitfun_core::service::workspace::WorktreeTopologyFreshness;
+use openbitfun_core::service::workspace::{
+    WorkspaceInfo, WorkspaceKind, WorktreeTopologyFreshness,
+};
+use openbitfun_services_integrations::remote_ssh::{
+    build_remote_git_tracked_change_count_command, SSHCommandOptions,
+};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tauri::State;
@@ -67,7 +72,14 @@ async fn resolve_remote_git_target(
         .require_workspace(workspace_id)
         .await
         .map_err(|e| e.to_string())?;
-    if workspace.workspace_kind != openbitfun_core::service::workspace::WorkspaceKind::Remote {
+    remote_git_target_for_workspace(&workspace, repository_path)
+}
+
+fn remote_git_target_for_workspace(
+    workspace: &WorkspaceInfo,
+    repository_path: &str,
+) -> Result<Option<RemoteGitTarget>, String> {
+    if workspace.workspace_kind != WorkspaceKind::Remote {
         return Ok(None);
     }
     let connection_id = workspace
@@ -429,6 +441,12 @@ pub struct GitRepositoryRequest {
     pub workspace_id: Option<String>,
     #[serde(default)]
     pub repository_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitTrackedChangeCountRequest {
+    pub workspace_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -995,6 +1013,59 @@ pub async fn git_resolve_revision(
     GitService::resolve_revision(&request.repository_path, revision)
         .await
         .map_err(|e| git_error_message("Failed to resolve Git revision", &e))
+}
+
+#[tauri::command]
+pub async fn git_get_tracked_change_count(
+    state: State<'_, AppState>,
+    request: GitTrackedChangeCountRequest,
+) -> Result<Option<usize>, String> {
+    let workspace = openbitfun_core::service::workspace::get_global_workspace_service()
+        .ok_or("Workspace service is unavailable")?
+        .require_workspace(&request.workspace_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    if let Some(target) =
+        remote_git_target_for_workspace(&workspace, &workspace.root_path.to_string_lossy())?
+    {
+        let manager = state
+            .get_ssh_manager_async()
+            .await
+            .map_err(|e| e.to_string())?;
+        let command = build_remote_git_tracked_change_count_command(&target.repository_path);
+        let output = manager
+            .execute_command_with_options(
+                &target.connection_id,
+                &command,
+                SSHCommandOptions {
+                    timeout_ms: Some(5_000),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        if output.timed_out || output.interrupted {
+            return Err("Remote Git change count was interrupted".into());
+        }
+        if output.exit_code != 0 {
+            if trust::is_missing_repository_message(&output.stderr) {
+                return Ok(None);
+            }
+            return Err(remote_git_error_message(
+                &target.repository_path,
+                format!("Failed to count tracked changes: {}", output.stderr.trim()),
+            ));
+        }
+        return output
+            .stdout
+            .trim()
+            .parse()
+            .map(Some)
+            .map_err(|_| "Invalid remote Git change count".into());
+    }
+    GitService::get_tracked_change_count(&workspace.root_path)
+        .await
+        .map_err(|error| git_error_message("Failed to count tracked changes", &error))
 }
 
 #[tauri::command]

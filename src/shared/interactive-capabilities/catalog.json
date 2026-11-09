@@ -1980,6 +1980,7 @@
           },
           "evidence": [
             "command:git_get_status",
+            "command:git_get_tracked_change_count",
             "command:git_get_changed_files",
             "command:git_get_diff",
             "command:git_get_repository",

@@ -33,7 +33,6 @@
     "primary": "Primary directory",
     "related": "Associated directory",
     "openDirectory": "Open directory {{name}}",
-    "editDirectory": "Edit directory {{name}}",
     "scrollPrevious": "Previous directories",
     "scrollNext": "Next directories",
     "add": "Add directory",

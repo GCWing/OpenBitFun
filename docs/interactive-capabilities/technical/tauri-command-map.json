@@ -2,10 +2,10 @@
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
   "catalogDigest": "8a02be2b328791ebb823e4b7a956bf0371c523caa7f881a6c778cbaa42d72575",
-  "commandCount": 705,
+  "commandCount": 706,
   "coverage": {
-    "commandCount": 705,
-    "documentedCommandCount": 644,
+    "commandCount": 706,
+    "documentedCommandCount": 645,
     "implementationCommandCount": 61,
     "implementationDigest": "fdb6f78b009b95270d26834349aade36e0987553167f325a9c674a085b876a2d"
   },
@@ -4804,6 +4804,22 @@
       "rustPath": "git_get_status",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
       "signature": "fn git_get_status( state: State<'_, AppState>, mut request: GitRepositoryRequest, ) -> Result<GitStatus, String>",
+      "remoteWorkspacePolicy": "RemoteRouted"
+    },
+    {
+      "id": "git_get_tracked_change_count",
+      "moduleId": "git",
+      "capabilityId": "feature.git",
+      "capabilityIds": [
+        "feature.git"
+      ],
+      "documentedItemIds": [
+        "feature.git:status-diff"
+      ],
+      "visibility": "documented",
+      "rustPath": "git_get_tracked_change_count",
+      "sourceFile": "src/apps/desktop/src/api/git_api.rs",
+      "signature": "fn git_get_tracked_change_count( state: State<'_, AppState>, request: GitTrackedChangeCountRequest, ) -> Result<Option<usize>, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {

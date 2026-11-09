@@ -526,6 +526,7 @@
   &__inline-item-menu-popover {
     position: fixed;
     z-index: var(--openbitfun-layer-popover);
+    max-block-size: min(var(--openbitfun-overlay-menu-max-block-size), calc(100vh - 16px));
   }
 
   &__inline-item-edit {

@@ -50,6 +50,11 @@ fn resolved_repository_path(
 /// repository so an SSH workspace can never fall back to a same-named local path.
 pub(crate) async fn read(command: &str, args: &Value) -> Result<Value, String> {
     let request = request_value(args);
+    if command == "git_get_tracked_change_count"
+        && optional_string(request, "workspaceId").is_none()
+    {
+        return Err("Workspace ID is required".into());
+    }
     let path = repository_path_for_workspace(request).await?;
     read_at_path(command, &path, request).await
 }
@@ -80,6 +85,9 @@ async fn read_at_path(command: &str, path: &str, request: &Value) -> Result<Valu
             git_result(command, GitService::get_repository_basic(path).await)
         }
         "git_get_status" => git_result(command, GitService::get_status(path).await),
+        "git_get_tracked_change_count" => {
+            git_result(command, GitService::get_tracked_change_count(path).await)
+        }
         "git_get_branches" | "git_get_enhanced_branches" => {
             let options: BranchOptions = serde_json::from_value(request.clone())
                 .map_err(|error| format!("Invalid Git branch request: {error}"))?;
@@ -211,6 +219,10 @@ mod tests {
             .unwrap();
         assert_eq!(status["unstaged"][0]["path"], "tracked.txt");
         assert_eq!(status["untracked"][0], "untracked.txt");
+        let count = read_at_path("git_get_tracked_change_count", path, &json!({}))
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
         for command in ["git_get_branches", "git_get_enhanced_branches"] {
             let branches = read_at_path(command, path, &json!({"includeRemote": false}))
                 .await

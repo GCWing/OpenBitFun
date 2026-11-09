@@ -3504,6 +3504,8 @@
     }
   },
   "welcome": {
+    "workspaceChanges_one": "工作區有動靜，<number>{{fileCount}}</number> 個檔案改了還沒提交。",
+    "workspaceChanges_other": "工作區有動靜，<number>{{fileCount}}</number> 個檔案改了還沒提交。",
     "openingWorkspace": "在 <workspace>{{workspace}}</workspace>，開工。",
     "openingMorning": "早安，今天由你開場。",
     "openingAfternoon": "下午好，給今天加點意思。",

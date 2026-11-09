@@ -6678,7 +6678,7 @@ describe('FlowChatStore historical session hydration state', () => {
     expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['local', 'ssh'])('opens %s history with one Turn and warms an adjacent range only after paint without replacing the tail', async location => {
+  it.each(['local', 'ssh'])('opens %s history with one Turn and shares the post-paint warm-up with older paging', async location => {
     const catalog = createTurnCatalog(100);
     const session = createSession({ sessionId: 'history-1', isHistorical: true, historyState: 'metadata-only',
       ...(location === 'ssh' ? { remoteConnectionId: 'ssh-host', remoteSshHost: 'host.example' } : {}),
@@ -6690,8 +6690,8 @@ describe('FlowChatStore historical session hydration state', () => {
     });
     apiMocks.loadSessionTurnWindow.mockResolvedValueOnce({
       status: 'ready', catalogRevision: catalog.revision, totalTurnCount: 100,
-      startOrdinal: 98, endOrdinalExclusive: 100, targetTurnId: 'turn-98',
-      turns: [98, 99].map(index => createPersistedTurn(index)),
+      startOrdinal: 94, endOrdinalExclusive: 99, targetTurnId: 'turn-98',
+      turns: [94, 95, 96, 97, 98].map(index => createPersistedTurn(index)),
     });
     flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: session.sessionId }));
     await flowChatStore.loadSessionHistory(session.sessionId);
@@ -6700,9 +6700,13 @@ describe('FlowChatStore historical session hydration state', () => {
     const tail = flowChatStore.getState().sessions.get(session.sessionId)!.dialogTurns;
     expect(tail.map(turn => turn.id)).toEqual(['turn-99']);
     flowChatStore.releaseSessionHistoryCompletionAfterInitialPaint(session.sessionId);
+    await expect(flowChatStore.loadPreviousSessionTurnWindow(session.sessionId, 98)).resolves.toMatchObject({
+      status: 'ready',
+      range: { startOrdinal: 94, endOrdinalExclusive: 100 },
+    });
     await flushAsyncWork();
     expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledTimes(1);
-    expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledWith(expect.objectContaining({ targetStorageTurnIndex: 98, before: 0, after: 1 }));
+    expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledWith(expect.objectContaining({ targetStorageTurnIndex: 98, before: 12, after: 1 }));
     expect(flowChatStore.getState().sessions.get(session.sessionId)!.dialogTurns).toBe(tail);
     expect(flowChatStore.getSessionHistoryViewState(session.sessionId)?.activeRange).toBeNull();
     expect(flowChatStore.hasPendingSessionHistoryCompletion(session.sessionId)).toBe(false);

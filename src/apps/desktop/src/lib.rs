@@ -1683,6 +1683,7 @@ pub async fn run() {
             review_platform_update_auth_token,
             review_platform_clear_auth_token,
             git_get_status,
+            git_get_tracked_change_count,
             git_get_branches,
             git_get_enhanced_branches,
             git_get_commits,

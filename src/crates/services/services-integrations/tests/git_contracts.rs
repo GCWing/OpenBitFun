@@ -239,6 +239,82 @@ async fn git_service_preserves_repository_status_contract() {
 }
 
 #[tokio::test]
+async fn tracked_change_count_excludes_untracked_and_counts_each_file_once() {
+    let repo_dir = TempRepoDir::new("tracked change count");
+    let root = repo_dir.path();
+    assert_eq!(
+        GitService::get_tracked_change_count(root).await.unwrap(),
+        None
+    );
+    #[cfg(all(unix, feature = "remote-ssh"))]
+    assert!(!run_remote_tracked_change_count(root).status.success());
+    run_git(root, &["init"]);
+    run_git(root, &["config", "user.name", "OpenBitFun Tests"]);
+    run_git(root, &["config", "user.email", "tests@openbitfun.dev"]);
+    fs::write(root.join("both.txt"), "base\n").unwrap();
+    fs::write(root.join("old.txt"), "rename me\n").unwrap();
+    run_git(root, &["add", "--", "both.txt", "old.txt"]);
+    assert_tracked_change_count(root, 2).await;
+    run_git(root, &["commit", "-m", "base"]);
+
+    fs::create_dir(root.join("untracked")).unwrap();
+    fs::write(root.join("untracked/file.txt"), "ignored by count\n").unwrap();
+    assert_tracked_change_count(root, 0).await;
+
+    fs::write(root.join("both.txt"), "staged\n").unwrap();
+    run_git(root, &["add", "--", "both.txt"]);
+    fs::write(root.join("both.txt"), "staged and unstaged\n").unwrap();
+    run_git(root, &["mv", "old.txt", "renamed.txt"]);
+    assert_tracked_change_count(root, 2).await;
+
+    let worktree = TempRepoDir::new("tracked-change-count-worktree");
+    run_git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "--detach",
+            worktree.path().to_str().unwrap(),
+        ],
+    );
+    assert_tracked_change_count(worktree.path(), 0).await;
+    fs::remove_file(worktree.path().join("both.txt")).unwrap();
+    assert_tracked_change_count(worktree.path(), 1).await;
+}
+
+async fn assert_tracked_change_count(root: &std::path::Path, expected: usize) {
+    assert_eq!(
+        GitService::get_tracked_change_count(root).await.unwrap(),
+        Some(expected)
+    );
+    #[cfg(all(unix, feature = "remote-ssh"))]
+    {
+        let output = run_remote_tracked_change_count(root);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            expected.to_string()
+        );
+    }
+}
+
+#[cfg(all(unix, feature = "remote-ssh"))]
+fn run_remote_tracked_change_count(root: &std::path::Path) -> std::process::Output {
+    let command =
+        openbitfun_services_integrations::remote_ssh::build_remote_git_tracked_change_count_command(
+            &root.to_string_lossy(),
+        );
+    openbitfun_services_core::process_manager::create_command("sh")
+        .args(["-c", &command])
+        .output()
+        .unwrap()
+}
+
+#[tokio::test]
 async fn workspace_diff_port_reports_staged_unstaged_and_untracked_changes() {
     let repo_dir = TempRepoDir::new("workspace-diff-port");
     run_git(repo_dir.path(), &["init"]);
@@ -420,6 +496,7 @@ async fn workspace_diff_port_marks_conflicts_without_projecting_an_incomplete_pa
         .iter()
         .find(|file| file.path == "conflict.txt")
         .expect("conflicted file");
+    assert_tracked_change_count(repo_dir.path(), 1).await;
 
     assert_eq!(conflict.status, WorkspaceDiffFileStatus::Conflicted);
     assert!(matches!(

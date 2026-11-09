@@ -58,14 +58,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('keeps the primary directory first and routes browsing and related-directory editing separately', async () => {
+it('opens each directory from its card and opens the editor from Manage', async () => {
   await render();
   expect(track().querySelectorAll('.project-resource-cards__cell')).toHaveLength(5);
   expect(track().firstElementChild?.textContent).toContain('/repodirectories.primary');
   await act(async () => button('directories.openDirectory:Project')!.click());
-  expect(browse).toHaveBeenCalledOnce();
-  await act(async () => button('directories.editDirectory:0')!.click());
-  expect(manage).toHaveBeenCalledOnce();
+  await act(async () => button('directories.openDirectory:0')!.click());
+  expect(browse.mock.calls).toEqual([[undefined], ['/related/0']]);
+  expect(manage).not.toHaveBeenCalled();
   expect(button('directories.removeDirectory:Project')).toBeNull();
   const revealButton = button('directories.revealDirectory:Project')!;
   expect(revealButton.getAttribute('data-openbitfun-variant')).toBe('glass');
@@ -73,25 +73,29 @@ it('keeps the primary directory first and routes browsing and related-directory 
   await act(async () => revealButton.click());
   await act(async () => button('directories.revealDirectory:0')!.click());
   expect(reveal.mock.calls).toEqual([['/repo'], ['/related/0']]);
-  expect(browse).toHaveBeenCalledOnce();
-  expect(manage).toHaveBeenCalledOnce();
+  expect(browse).toHaveBeenCalledTimes(2);
   const deleteButton = button('directories.removeDirectory:0')!;
   expect(deleteButton.getAttribute('data-openbitfun-variant')).toBe('glass');
   expect(deleteButton.getAttribute('data-openbitfun-shape')).toBe('circle');
   await act(async () => deleteButton.click());
   expect(remove).toHaveBeenCalledExactlyOnceWith('/related/0', deleteButton);
-  expect(manage).toHaveBeenCalledOnce();
+  expect(manage).not.toHaveBeenCalled();
   expect(container.querySelector('.project-resource-cards__add')).toBeNull();
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.project-resources__section-actions button')]
     .find(button => button.textContent === 'directories.add')!.click());
   expect(add).toHaveBeenCalledOnce();
+  const manageButton = [...container.querySelectorAll<HTMLButtonElement>('.project-resources__section-actions button')]
+    .find(button => button.textContent === 'directories.manage')!;
+  await act(async () => manageButton.click());
+  expect(manage).toHaveBeenCalledOnce();
   await render(workspace, false);
   expect(button('directories.openDirectory:Project')?.disabled).toBe(true);
-  expect(button('directories.editDirectory:0')?.disabled).toBe(false);
+  expect(button('directories.openDirectory:0')?.disabled).toBe(true);
+  expect(manageButton.disabled).toBe(false);
   await render(workspace, true, false);
   expect(button('directories.revealDirectory:Project')?.disabled).toBe(true);
   expect(button('directories.revealDirectory:0')?.disabled).toBe(true);
-  expect(button('directories.editDirectory:0')?.disabled).toBe(false);
+  expect(button('directories.openDirectory:0')?.disabled).toBe(false);
 });
 
 it('supports bounded card navigation, keyboard and reduced motion, and updates overflow when resized or edited', async () => {
