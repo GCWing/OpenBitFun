@@ -629,12 +629,36 @@ jobs:
       - name: Check core boundaries
         run: pnpm run check:core-boundaries
 
+      - name: Resolve Bun executable cache
+        id: bun-cache-target
+        if: needs.build-impact.outputs.frontend_required != 'false'
+        run: node scripts/ci/bun-cache-target.mjs 1.3.14
+
+      - name: Restore Bun executable
+        id: bun-executable-cache
+        if: needs.build-impact.outputs.frontend_required != 'false'
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ steps.bun-cache-target.outputs.path }}
+          key: ${{ steps.bun-cache-target.outputs.key }}
+
       - name: Setup Bun for package resource preflight
         if: needs.build-impact.outputs.frontend_required != 'false'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
+          # Cache reads and writes are separate so PRs remain restore-only.
           no-cache: true
+
+      - name: Save Bun executable
+        if: >-
+          github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+          needs.build-impact.outputs.frontend_required != 'false' &&
+          steps.bun-executable-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.bun-cache-target.outputs.path }}
+          key: ${{ steps.bun-cache-target.outputs.key }}
 
       - name: Setup Rust for release projection preflight
         if: needs.build-impact.outputs.frontend_required != 'false'

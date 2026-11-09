@@ -15,6 +15,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
+import { bunCacheTarget } from './ci/bun-cache-target.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const scriptPath = path.join(repoRoot, 'scripts/check-github-config.mjs');
@@ -1190,6 +1192,147 @@ test('PR-capable release builds cannot save repository caches or upload CI packa
   );
   assert.equal(node.with.cache, undefined);
   assert.equal(node.with['package-manager-cache'], false);
+});
+
+test('Bun executable caches isolate versions, platforms, architectures, and AVX2 requirements', () => {
+  const targets = [
+    ['linux', 'x64', 'flags: avx2', 'linux-x64', '/home/runner/.bun/bin/bun'],
+    ['linux', 'x64', 'flags: sse2', 'linux-x64-baseline', '/home/runner/.bun/bin/bun'],
+    ['linux', 'arm64', '', 'linux-aarch64', '/home/runner/.bun/bin/bun'],
+    ['darwin', 'x64', '', 'darwin-x64', '/home/runner/.bun/bin/bun'],
+    ['darwin', 'arm64', '', 'darwin-aarch64', '/home/runner/.bun/bin/bun'],
+    ['win32', 'x64', '', 'windows-x64', 'C:\\Users\\runner\\.bun\\bin\\bun.exe'],
+    ['win32', 'arm64', '', 'windows-aarch64', 'C:\\Users\\runner\\.bun\\bin\\bun.exe'],
+  ];
+  const keys = new Set();
+  for (const [platform, arch, cpuInfo, artifact, executable] of targets) {
+    const options = {
+      version: '1.3.14', platform, arch, cpuInfo,
+      home: platform === 'win32' ? 'C:\\Users\\runner' : '/home/runner',
+    };
+    const target = bunCacheTarget(options);
+    assert.equal(target.key, `bun-executable-v1-1.3.14-${artifact}`);
+    assert.equal(target.path, executable, 'cache only the executable, not credentials or dependencies');
+    assert.notEqual(target.key, bunCacheTarget({ ...options, version: '1.3.15' }).key);
+    keys.add(target.key);
+  }
+  assert.equal(keys.size, targets.length);
+  assert.equal(bunCacheTarget({
+    version: '1.3.14', platform: 'linux', arch: 'x64', home: '/home/runner',
+  }).key, 'bun-executable-v1-1.3.14-linux-x64-baseline', 'unknown CPU capabilities use the baseline');
+  for (const version of ['latest', 'canary', '1.3.x', '1.3.14\npath=other']) {
+    assert.throws(() => bunCacheTarget({ version }), /pinned release/);
+  }
+  assert.throws(() => bunCacheTarget({
+    version: '1.3.14', platform: 'linux', arch: 'ia32',
+  }), /Unsupported Bun cache target/);
+});
+
+test('Bun cache target CLI appends GitHub outputs without installing or downloading Bun', (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'openbitfun-bun-cache-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const outputPath = path.join(root, 'outputs');
+  writeFileSync(outputPath, 'previous=value\n');
+  const result = spawnSync(process.execPath, ['scripts/ci/bun-cache-target.mjs', '1.3.14'], {
+    cwd: repoRoot,
+    env: { ...process.env, GITHUB_OUTPUT: outputPath },
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const outputs = Object.fromEntries(readFileSync(outputPath, 'utf8').trim().split('\n')
+    .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
+  assert.equal(outputs.previous, 'value');
+  assert.match(outputs.key, /^bun-executable-v1-1\.3\.14-/);
+  assert.ok(path.isAbsolute(outputs.path));
+  assert.equal(path.basename(outputs.path), process.platform === 'win32' ? 'bun.exe' : 'bun');
+});
+
+test('Bun caches restore before setup and save only on a permitted cache miss', () => {
+  const cases = [
+    ['ci.yml', 'frontend-build', 'main'],
+    ['nightly-artifacts.yml', 'package', 'caller'],
+    ['linux-binaries.yml', 'build', 'caller'],
+    ['desktop-package.yml', 'package', 'release'],
+  ];
+  for (const [file, jobId, policy] of cases) {
+    const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows', file), 'utf8'));
+    const steps = workflow.jobs[jobId].steps;
+    const target = steps.find((step) => step.id === 'bun-cache-target');
+    const restore = steps.find((step) => step.id === 'bun-executable-cache');
+    const setup = steps.find((step) => step.uses === 'oven-sh/setup-bun@v2');
+    const save = steps.find((step) => step.name === 'Save Bun executable');
+    const node = steps.find((step) => step.uses?.startsWith('actions/setup-node@'));
+    assert.ok(target.run.includes(`node scripts/ci/bun-cache-target.mjs ${setup.with['bun-version']}`));
+    assert.equal(restore.uses, 'actions/cache/restore@v5');
+    assert.equal(restore.with.path, '${{ steps.bun-cache-target.outputs.path }}');
+    assert.equal(restore.with.key, '${{ steps.bun-cache-target.outputs.key }}');
+    assert.equal(restore.with['restore-keys'], undefined, 'never restore another version or CPU variant');
+    assert.equal(restore.with['fail-on-cache-miss'], undefined, 'a cold cache must proceed to setup');
+    assert.equal(setup.with['no-cache'], true, 'setup-bun must not save implicitly');
+    assert.equal(setup.if, target.if);
+    if (policy === 'main') assert.equal(setup.if, restore.if);
+    else assert.equal(restore.if, "steps.bun-cache-target.outputs.key != ''");
+    assert.equal(save.uses, 'actions/cache/save@v5');
+    assert.deepEqual(save.with, restore.with);
+    for (const [before, after] of [[node, target], [target, restore], [restore, setup], [setup, save]]) {
+      assert.ok(steps.indexOf(before) < steps.indexOf(after), `${file}: cache/setup ordering`);
+    }
+    const build = steps.find((step) => step.name === 'Build plugin Host resources' || step.name === 'Build desktop app');
+    assert.ok(steps.indexOf(save) < steps.indexOf(build), 'save the installed tool before repository build commands use it');
+
+    // Evaluate the actual workflow condition, including a PR caller trying to
+    // opt into writes and the cold-cache empty-string output from restore.
+    const expression = save.if
+      .replaceAll('steps.bun-cache-target.outputs.key', 'cacheKey')
+      .replaceAll('steps.bun-executable-cache.outputs.cache-hit', 'cacheHit')
+      .replaceAll('needs.build-impact.outputs.frontend_required', 'frontendRequired');
+    const allows = (event, { ref = 'refs/heads/main', write = true, hit = '', frontend = 'true', key = 'bun-key' } = {}) =>
+      runInNewContext(expression, {
+        github: { event_name: event, ref }, inputs: { cache_write: write },
+        cacheHit: hit, frontendRequired: frontend, cacheKey: key,
+      });
+    for (const event of ['pull_request', 'pull_request_target']) {
+      assert.equal(allows(event), false, `${file}: PRs cannot save, even if cache_write is true`);
+    }
+    const writerEvent = policy === 'release' ? 'release' : 'push';
+    assert.equal(allows(writerEvent), true, `${file}: permitted builds fill a cold cache`);
+    assert.equal(allows(writerEvent, { hit: 'false' }), true);
+    assert.equal(allows(writerEvent, { hit: 'true' }), false, `${file}: exact hits are not re-uploaded`);
+    if (policy === 'caller') assert.equal(allows('push', { write: false }), false);
+    if (policy === 'main') {
+      assert.equal(allows('push', { ref: 'refs/heads/feature' }), false);
+      assert.equal(allows('workflow_dispatch'), false);
+      assert.equal(allows('push', { frontend: 'false' }), false);
+    } else assert.equal(allows(writerEvent, { key: '' }), false, 'older sources have no cache target');
+    if (policy === 'release') {
+      assert.equal(allows('workflow_dispatch'), true);
+      assert.equal(allows('push'), false);
+    }
+  }
+});
+
+test('packaging older source revisions skips Bun caching without skipping installation', (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'openbitfun-old-source-bun-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const [file, jobId] of [
+    ['nightly-artifacts.yml', 'package'], ['linux-binaries.yml', 'build'], ['desktop-package.yml', 'package'],
+  ]) {
+    const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows', file), 'utf8'));
+    const steps = workflow.jobs[jobId].steps;
+    const target = steps.find((step) => step.id === 'bun-cache-target');
+    const setup = steps.find((step) => step.uses === 'oven-sh/setup-bun@v2');
+    assert.equal(target.shell, 'bash');
+    const output = path.join(root, 'outputs');
+    writeFileSync(output, '');
+    const result = spawnSync('bash', ['-c', target.run], {
+      cwd: root, env: { ...process.env, GITHUB_OUTPUT: output }, encoding: 'utf8', windowsHide: true,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /::notice::Bun caching is unavailable/);
+    assert.equal(readFileSync(output, 'utf8'), '');
+    assert.equal(setup.if, undefined, 'cache availability must not gate Bun installation');
+  }
 });
 
 test('nightly publishes and verifies the Relay image in the current repository owner scope', () => {
