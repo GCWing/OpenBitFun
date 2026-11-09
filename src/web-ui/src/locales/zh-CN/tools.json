@@ -119,6 +119,20 @@
       "exitFullscreen": "退出全屏",
       "imageUrlEmpty": "图片URL为空"
     },
+    "latexEditor": {
+      "preview": "PDF 预览",
+      "engine": "LaTeX 引擎",
+      "compile": "保存并编译",
+      "compiling": "正在编译…",
+      "autoCompile": "自动编译",
+      "autoCompileHint": "停顿时自动保存并编译当前源码。请在信任的项目中开启。",
+      "resize": "调整 LaTeX 源码和 PDF 预览的宽度",
+      "empty": "打开主 .tex 文件并编译，即可预览排版后的 PDF。工作区所在机器需要安装 latexmk 和所选的 TeX 引擎。",
+      "unavailable": "LaTeX 编译需要支持此功能的 OpenBitFun 桌面宿主，以及已打开的工作区。",
+      "compileFailed": "编译失败，查看日志",
+      "stalePreview": "编译失败，正在显示上次成功的 PDF",
+      "saveFailed": "源码保存未完成。请保存修改后再编译。"
+    },
     "pdfViewer": {
       "loading": "正在加载 PDF...",
       "filePathEmpty": "文件路径为空",

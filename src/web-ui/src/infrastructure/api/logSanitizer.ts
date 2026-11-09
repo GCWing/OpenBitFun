@@ -12,7 +12,7 @@ const SENSITIVE_KEY_PATTERNS = [
   'set-cookie',
   'token',
 ];
-const OPAQUE_VALUE_KEYS = new Set(['body']);
+const OPAQUE_VALUE_KEYS = new Set(['body', 'pdfbase64']);
 const MAX_LOG_STRING_LENGTH = 500;
 const MAX_LOG_ARRAY_ITEMS = 10;
 const MAX_LOG_OBJECT_KEYS = 30;

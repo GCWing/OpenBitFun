@@ -108,6 +108,12 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
             SubagentVisibilityPolicy::default(),
         ),
         builtin_agent_spec(
+            "PaperWriting",
+            Mode,
+            "primary",
+            SubagentVisibilityPolicy::default(),
+        ),
+        builtin_agent_spec(
             "Ultimate",
             Mode,
             "primary",
@@ -210,7 +216,7 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
 pub fn default_model_id_for_builtin_agent(agent_type: &str) -> &'static str {
     match agent_type {
         "OpenBitFun" | "Minimal" | "Standard" | "Cowork" | "Creative" | "ComputerUse" | "Claw"
-        | "DeepResearch" | "Ultimate" => "primary",
+        | "DeepResearch" | "PaperWriting" | "Ultimate" => "primary",
         "MemoryPhase2" => "primary",
         "ResearchSpecialist"
         | "DeepReview"

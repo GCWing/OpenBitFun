@@ -318,6 +318,9 @@
       "html_preview_read_resource",
       "html_preview_release"
     ],
+    "latexPreview": [
+      "compile_workspace_latex"
+    ],
     "githubDeviceRouting": [
       "account_get_credential_hint",
       "account_login",
@@ -10180,6 +10183,9 @@
       "capabilityId": "feature.browser"
     },
     "html_preview": {
+      "capabilityId": "feature.files-editor"
+    },
+    "latex": {
       "capabilityId": "feature.files-editor"
     },
     "tool": {

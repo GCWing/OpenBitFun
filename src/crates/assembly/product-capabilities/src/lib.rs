@@ -1044,7 +1044,7 @@ const DEEP_REVIEW_AGENT_IDS: &[&str] = &[
     "CodeReview",
     "DeepReview",
 ];
-const DEEP_RESEARCH_AGENT_IDS: &[&str] = &["DeepResearch", "ResearchSpecialist"];
+const DEEP_RESEARCH_AGENT_IDS: &[&str] = &["DeepResearch", "ResearchSpecialist", "PaperWriting"];
 const CREATION_AGENT_IDS: &[&str] = &["Creative"];
 const NO_PRODUCT_AGENTS: &[&str] = &[];
 

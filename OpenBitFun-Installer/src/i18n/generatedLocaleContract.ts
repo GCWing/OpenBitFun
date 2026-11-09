@@ -82,6 +82,7 @@ export const SHARED_TERMS_BY_APP_LANGUAGE = {
       "Claw": "Assistant",
       "Cowork": "Cowork",
       "DeepResearch": "Deep Research",
+      "PaperWriting": "Paper Writing",
       "ComputerUse": "Computer Use",
       "default": "Default Assistant"
     },
@@ -144,6 +145,7 @@ export const SHARED_TERMS_BY_APP_LANGUAGE = {
       "Claw": "助理",
       "Cowork": "办公协作",
       "DeepResearch": "深度研究",
+      "PaperWriting": "论文写作",
       "ComputerUse": "电脑操作",
       "default": "默认助手"
     },
@@ -206,6 +208,7 @@ export const SHARED_TERMS_BY_APP_LANGUAGE = {
       "Claw": "助理",
       "Cowork": "辦公協作",
       "DeepResearch": "深度研究",
+      "PaperWriting": "論文寫作",
       "ComputerUse": "電腦操作",
       "default": "預設助手"
     },

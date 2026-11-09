@@ -171,6 +171,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("clear_web_search_credential",                                Agnostic,    Proxied,          HANDLED),
     op("close_workspace",                                            Routed,      Proxied,          CLI_NOT_IMPLEMENTED),
     op("compact_session",                                            Routed,      Proxied,          CLI_NOT_IMPLEMENTED),
+    op("compile_workspace_latex",                                    Routed,      Proxied,          CLI_NOT_IMPLEMENTED),
     op("compress_path",                                              Routed,      Proxied,          CLI_NOT_IMPLEMENTED),
     op("compute_diff",                                               Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
     op("computer_use_control_preview",                               LocalOnly,   Proxied,          CLI_NO_BROWSER_OR_OS_AUTOMATION),

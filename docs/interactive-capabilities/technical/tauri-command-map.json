@@ -2,12 +2,12 @@
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
   "catalogDigest": "8a02be2b328791ebb823e4b7a956bf0371c523caa7f881a6c778cbaa42d72575",
-  "commandCount": 707,
+  "commandCount": 708,
   "coverage": {
-    "commandCount": 707,
+    "commandCount": 708,
     "documentedCommandCount": 646,
-    "implementationCommandCount": 61,
-    "implementationDigest": "fdb6f78b009b95270d26834349aade36e0987553167f325a9c674a085b876a2d"
+    "implementationCommandCount": 62,
+    "implementationDigest": "39288402985a24c84852570c8137b888b15b3d9e1b40448d974085b25c0fcf46"
   },
   "commands": [
     {
@@ -1314,6 +1314,20 @@
       "rustPath": "api::agentic_api::compact_session",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
       "signature": "fn compact_session( coordinator: State<'_, Arc<ConversationCoordinator>>, request: CompactSessionRequest, ) -> Result<CompactSessionResponse, String>",
+      "remoteWorkspacePolicy": "RemoteRouted"
+    },
+    {
+      "id": "compile_workspace_latex",
+      "moduleId": "latex",
+      "capabilityId": "feature.files-editor",
+      "capabilityIds": [
+        "feature.files-editor"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::latex_api::compile_workspace_latex",
+      "sourceFile": "src/apps/desktop/src/api/latex_api.rs",
+      "signature": "fn compile_workspace_latex( request: CompileWorkspaceLatexRequest, ) -> Result<CompileWorkspaceLatexResponse, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {

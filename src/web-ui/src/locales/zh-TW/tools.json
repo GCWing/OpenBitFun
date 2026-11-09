@@ -119,6 +119,20 @@
       "exitFullscreen": "退出全屏",
       "imageUrlEmpty": "圖片URL為空"
     },
+    "latexEditor": {
+      "preview": "PDF 預覽",
+      "engine": "LaTeX 引擎",
+      "compile": "儲存並編譯",
+      "compiling": "正在編譯…",
+      "autoCompile": "自動編譯",
+      "autoCompileHint": "停頓時自動儲存並編譯目前的原始碼。請在信任的專案中開啟。",
+      "resize": "調整 LaTeX 原始碼和 PDF 預覽的寬度",
+      "empty": "開啟主 .tex 檔案並編譯，即可預覽排版後的 PDF。工作區所在的裝置需要安裝 latexmk 和選取的 TeX 引擎。",
+      "unavailable": "LaTeX 編譯需要支援此功能的 OpenBitFun 桌面主機，以及已開啟的工作區。",
+      "compileFailed": "編譯失敗，查看記錄",
+      "stalePreview": "編譯失敗，正在顯示上次成功的 PDF",
+      "saveFailed": "原始碼尚未儲存。請儲存變更後再編譯。"
+    },
     "pdfViewer": {
       "loading": "正在載入 PDF...",
       "filePathEmpty": "檔案路徑為空",

@@ -1184,6 +1184,7 @@
       "Cowork": "$t(shared:agents.Cowork)",
       "ComputerUse": "$t(shared:agents.ComputerUse)",
       "DeepResearch": "$t(shared:agents.DeepResearch)",
+      "PaperWriting": "$t(shared:agents.PaperWriting)",
       "Standard": "$t(shared:agents.Standard)",
       "Ultimate": "$t(shared:agents.Ultimate)",
       "Minimal": "$t(shared:agents.Minimal)",

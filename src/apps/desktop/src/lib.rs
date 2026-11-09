@@ -2012,6 +2012,7 @@ pub async fn run() {
             api::html_preview_api::html_preview_create,
             api::html_preview_api::html_preview_read_resource,
             api::html_preview_api::html_preview_release,
+            api::latex_api::compile_workspace_latex,
             // Browser Control API (CDP-based user browser control)
             api::browser_control_api::browser_control_list_browsers,
             api::browser_control_api::browser_control_get_status,

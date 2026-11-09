@@ -27,6 +27,7 @@ const BUILTIN_NAME_KEYS: Readonly<Record<string, string>> = {
   Claw: 'shared:agents.Claw',
   Cowork: 'shared:agents.Cowork',
   DeepResearch: 'shared:agents.DeepResearch',
+  PaperWriting: 'shared:agents.PaperWriting',
   ComputerUse: 'shared:agents.ComputerUse',
 };
 

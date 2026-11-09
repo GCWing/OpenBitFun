@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:8b695d77ffe4587b",
+  "digest": "fnv1a64:697c80a6c8436cae",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -50,6 +50,7 @@
       "workspace_icon_v1",
       "workspace_id_references_v1",
       "workspace_html_preview_v1",
+      "workspace_latex_preview_v1",
       "whole_session_copy_v1",
       "session_trajectory_v1",
       "session_reference_browse_v1",
@@ -101,6 +102,7 @@
       "workspace_icon_v1",
       "workspace_id_references_v1",
       "workspace_html_preview_v1",
+      "workspace_latex_preview_v1",
       "whole_session_copy_v1",
       "session_trajectory_v1",
       "session_reference_browse_v1",
@@ -1091,6 +1093,18 @@
     },
     {
       "id": "compact_session",
+      "surface": "tauri_command",
+      "remoteWorkspace": "RemoteRouted",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "compile_workspace_latex",
       "surface": "tauri_command",
       "remoteWorkspace": "RemoteRouted",
       "peer": {

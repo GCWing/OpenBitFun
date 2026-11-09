@@ -303,6 +303,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   const navigationSettleFrameRef = useRef<number | null>(null);
   const filePathRef = useRef<string>(filePath);
   const saveFileContentRef = useRef<() => Promise<void>>();
+  const saveInFlightRef = useRef<Promise<void>>();
   const latestEditorConfigRef = useRef<Partial<EditorConfigType> | null>(null);
   const delayedFontApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userLanguageOverrideRef = useRef(false);
@@ -1649,7 +1650,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   ]);
 
   // Save file content
-  const saveFileContent = useCallback(async () => {
+  const persistFileContent = useCallback(async () => {
     if (!filePath) return;
     if (isMemoryContent) return;
     
@@ -1743,6 +1744,15 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     t,
     workspacePath,
   ]);
+
+  const saveFileContent = useCallback(() => {
+    if (!saveInFlightRef.current) {
+      saveInFlightRef.current = persistFileContent().finally(() => {
+        saveInFlightRef.current = undefined;
+      });
+    }
+    return saveInFlightRef.current;
+  }, [persistFileContent]);
   
   useEffect(() => {
     saveFileContentRef.current = saveFileContent;
