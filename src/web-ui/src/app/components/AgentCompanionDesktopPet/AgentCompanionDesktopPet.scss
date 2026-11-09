@@ -463,8 +463,7 @@
     font-weight: var(--openbitfun-type-label-selected-font-weight);
   }
 
-  /* The words behind the glyph stay for assistive tech; sighted users get
-     them in the bubble's tooltip. */
+  /* The words behind the glyph stay for assistive tech. */
   &__bubble-status {
     position: absolute;
     width: 1px;

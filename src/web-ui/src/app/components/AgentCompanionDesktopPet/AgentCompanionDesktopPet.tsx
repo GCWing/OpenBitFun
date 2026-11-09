@@ -114,7 +114,7 @@ function menuAnchorFromEvent(event: React.MouseEvent): MenuAnchor {
   };
 }
 
-/** A bubble states its task with a glyph; the words stay for tooltips and assistive tech. */
+/** A bubble states its task with a glyph; the words stay for assistive tech. */
 const TASK_STATE_GLYPHS: Record<AgentCompanionTaskState, LucideIcon> = {
   running: LucideLoaderCircle,
   waiting: LucideHourglass,
@@ -1128,7 +1128,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
                         strokeWidth={2.25}
                         aria-hidden="true"
                       />
-                      {/* The bubble's own tooltip carries title and status together. */}
+                      {/* Bubbles show no tooltip; an overflowing title scrolls on hover instead. */}
                       <OverflowText className="openbitfun-agent-companion-window__bubble-title" title="" data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="bubbleTitle">
                         {task.title}
                       </OverflowText>
@@ -1215,7 +1215,6 @@ export const AgentCompanionDesktopPet: React.FC = () => {
                       <button
                         type="button"
                         className={bubbleClassName}
-                        title={`${task.title} · ${statusLabel}`}
                         onClick={() => void openTaskSession(task)}
                         data-openbitfun-component="agent-companion-desktop-pet"
                         data-openbitfun-part="bubble"
