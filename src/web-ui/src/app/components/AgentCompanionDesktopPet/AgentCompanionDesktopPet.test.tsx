@@ -632,6 +632,21 @@ describe('AgentCompanionDesktopPet', () => {
     );
   });
 
+  it('shows no tooltip on a session bubble while keeping its status for assistive tech', () => {
+    pushActivity({
+      mood: 'working',
+      tasks: [task()],
+      sequence: 1,
+      emittedAt: 1,
+    });
+
+    const bubble = query('.openbitfun-agent-companion-window__bubble');
+
+    expect(bubble?.hasAttribute('title')).toBe(false);
+    expect(query('.openbitfun-agent-companion-window__bubble-title')?.getAttribute('data-overflow-tooltip')).toBeNull();
+    expect(bubble?.querySelector('.openbitfun-agent-companion-window__bubble-status')?.textContent).toBeTruthy();
+  });
+
   it('hides the composer entry for sessions that cannot be replied to directly', () => {
     pushActivity({
       mood: 'working',
