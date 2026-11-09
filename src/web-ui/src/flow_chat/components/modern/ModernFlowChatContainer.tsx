@@ -123,10 +123,9 @@ import {
   canRetainContinuousHistoryProjection,
 } from './continuousHistoryProjection';
 import {
-  canonicalSessionTurns,
   projectedSessionTurnCount,
-  resolveTurnOrdinal,
 } from '../../utils/flowChatTurnIdentity';
+import { createFlowChatTurnSummaryProjector, type FlowChatTurnSummary } from './flowChatTurnSummaries';
 import type { FlowChatViewportSnapshot } from './flowChatViewportSnapshot';
 import { peekConversationViewTransfer, registerConversationReader, takeConversationViewTransfer } from './flowChatViewHandoff';
 import { getSubmittedMessagePreviews, subscribeSubmittedMessagePreviews } from '../../services/submittedMessagePresentation';
@@ -151,12 +150,6 @@ interface ModernFlowChatContainerProps {
   onFileViewRequest?: (filePath: string, fileName: string, lineRange?: LineRange) => void;
   onTabOpen?: (tabInfo: any, sessionId?: string, panelType?: string) => void;
   onOpenVisualization?: (type: string, data: any) => void;
-}
-
-interface FlowChatTurnSummary {
-  turnId: string;
-  turnIndex: number;
-  storageTurnIndex?: number;
 }
 
 interface FlowChatHistoryPresentationState extends SessionHistoryPresentation {
@@ -1060,31 +1053,16 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     searchCurrentMatch,
   ]);
 
-  const turnSummaries = useMemo<FlowChatTurnSummary[]>(() => {
-    if (!activeSession) {
-      return [];
-    }
-    return canonicalSessionTurns(activeSession).map((turn, index) => ({
-        turnId: turn.id,
-        turnIndex: (resolveTurnOrdinal(activeSession, turn) ?? index) + 1,
-        storageTurnIndex: turn.storageTurnIndex ?? turn.backendTurnIndex,
-      }));
-  }, [activeSession]);
   const renderedTurns = useMemo(
     () => renderedHistoryPresentation
       ? renderedHistoryPresentation.turns
       : activeSession?.dialogTurns ?? [],
     [activeSession?.dialogTurns, renderedHistoryPresentation],
   );
-  const renderedTurnSummaries = useMemo<FlowChatTurnSummary[]>(() => {
-    return renderedTurns
-      .filter(turn => turn.userMessage?.metadata?.usageReportProvisional !== true)
-      .map((turn, index) => ({
-        turnId: turn.id,
-        turnIndex: index + 1,
-        storageTurnIndex: turn.storageTurnIndex ?? turn.backendTurnIndex,
-      }));
-  }, [renderedTurns]);
+  const [projectTurnSummaries] = useState(createFlowChatTurnSummaryProjector);
+  const { turnSummaries, renderedTurnSummaries, absoluteRenderedTurnSummaries } = projectTurnSummaries(
+    activeSession, renderedTurns, renderedHistoryPresentation?.range.startOrdinal,
+  );
   const activeTurnCatalog = activeSession?.turnCatalog;
   const turnCatalog = activeTurnCatalog?.sessionId === activeSession?.sessionId
     ? activeTurnCatalog
@@ -1092,24 +1070,6 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const sessionTotalTurnCount = activeSession
     ? projectedSessionTurnCount(activeSession)
     : 0;
-  const absoluteRenderedTurnSummaries = useMemo<FlowChatTurnSummary[]>(() => {
-    if (renderedHistoryPresentation) {
-      return renderedTurnSummaries.map((turn, index) => ({
-        ...turn,
-        turnIndex: renderedHistoryPresentation.range.startOrdinal + index + 1,
-      }));
-    }
-    return renderedTurnSummaries.map(turn => ({
-      ...turn,
-      turnIndex: activeSession
-        ? (resolveTurnOrdinal(activeSession, turn.turnId) ?? turn.turnIndex - 1) + 1
-        : turn.turnIndex,
-    }));
-  }, [
-    activeSession,
-    renderedHistoryPresentation,
-    renderedTurnSummaries,
-  ]);
   const absoluteRenderedTurnSummaryById = useMemo(() => {
     return new Map(absoluteRenderedTurnSummaries.map(turn => [turn.turnId, turn]));
   }, [absoluteRenderedTurnSummaries]);
