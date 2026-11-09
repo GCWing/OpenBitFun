@@ -1277,7 +1277,7 @@
     "stateHandshaking": "握手中…",
     "stateVerifying": "驗證中…",
     "stateConnected": "已連接",
-    "cancelInvitation": "取消邀請",
+    "cancelInvitation": "收起邀請",
     "accountConnectedHint": "手機或瀏覽器已透過帳號連線。取消邀請或關閉此視窗不會中斷該連線。",
     "statusUnavailable": "連線狀態暫時無法取得",
     "statusChecking": "正在檢查連線…",

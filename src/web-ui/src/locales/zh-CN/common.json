@@ -1277,7 +1277,7 @@
     "stateHandshaking": "握手中…",
     "stateVerifying": "验证中…",
     "stateConnected": "已连接",
-    "cancelInvitation": "取消邀请",
+    "cancelInvitation": "收起邀请",
     "accountConnectedHint": "手机或浏览器已通过账号连接。取消邀请或关闭此窗口不会断开该连接。",
     "statusUnavailable": "连接状态暂不可用",
     "statusChecking": "正在检查连接…",

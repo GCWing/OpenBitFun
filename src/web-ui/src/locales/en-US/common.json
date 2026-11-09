@@ -1277,7 +1277,7 @@
     "stateHandshaking": "Handshaking…",
     "stateVerifying": "Verifying…",
     "stateConnected": "Connected",
-    "cancelInvitation": "Cancel invitation",
+    "cancelInvitation": "Hide invitation",
     "accountConnectedHint": "This phone or browser is connected through your account. Cancelling the invitation or closing this window keeps that connection active.",
     "statusUnavailable": "Connection status is unavailable",
     "statusChecking": "Checking connection…",
