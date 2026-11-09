@@ -95,6 +95,14 @@ Search caches only match metadata for an active query in its owning view. Cleari
 search drops that cache, and unmounting drops the matcher. Lowercase transcript
 text exists only during a cache miss and is not retained beside the source body.
 
+Turn navigation summaries use a reader-owned `createFlowChatTurnSummaryProjector`.
+It retains only scalar Turn/catalog identities, ordinals and storage indexes.
+Body-only streaming updates compare those identities and reuse the summary arrays;
+structural changes rebuild one ordinal lookup shared by live and rendered
+summaries. Catalog corrections, partial-tail offsets, provisional usage reports
+and explicit history-window offsets keep their existing precedence. No Session,
+Turn body, viewport position or editor state is retained by this cache.
+
 ### Settled record identity
 
 Live text/thinking items can have client-generated IDs, while the host's settled
