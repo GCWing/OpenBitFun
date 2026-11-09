@@ -7,11 +7,12 @@ import { pickLocalizedString } from '../miniapps/utils/pickLocalizedString';
 import { renderMiniAppIcon } from '../miniapps/utils/miniAppIcons';
 import './OverviewMiniAppLogos.scss';
 
-export function OverviewMiniAppLogos({ apps, onDetails, onLaunch, onViewAll }: {
+export function OverviewMiniAppLogos({ apps, onDetails, onLaunch, onViewAll, isActive = true }: {
   apps: MiniAppMeta[];
   onDetails: (app: MiniAppMeta) => void;
   onLaunch: (appId: string) => void;
   onViewAll: () => void;
+  isActive?: boolean;
 }) {
   const { t, currentLanguage, formatNumber } = useI18n('scenes/personal-overview');
   const rowRef = useRef<HTMLDivElement>(null);
@@ -21,10 +22,13 @@ export function OverviewMiniAppLogos({ apps, onDetails, onLaunch, onViewAll }: {
   const [visibleCount, setVisibleCount] = useState<number | null>(null);
 
   useLayoutEffect(() => {
+    if (!isActive) return;
     const row = rowRef.current;
     const probe = probeRef.current;
     if (!row || !probe) return;
+    let disposed = false;
     const measure = () => {
+      if (disposed) return;
       const style = getComputedStyle(row);
       const width = row.clientWidth - (Number.parseFloat(style.paddingInlineStart) || 0) - (Number.parseFloat(style.paddingInlineEnd) || 0);
       const size = probe.offsetWidth;
@@ -43,8 +47,8 @@ export function OverviewMiniAppLogos({ apps, onDetails, onLaunch, onViewAll }: {
     const observer = new ResizeObserver(measure);
     observer.observe(row);
     observer.observe(probe);
-    return () => observer.disconnect();
-  }, [apps.length]);
+    return () => { disposed = true; observer.disconnect(); };
+  }, [apps.length, isActive]);
 
   useLayoutEffect(() => {
     if (!restoreFocus.current) return;

@@ -113,7 +113,7 @@ vi.mock('@/app/components/GalleryLayout', () => ({
 }));
 
 vi.mock('./hooks/useAgentsList', () => ({
-  useAgentsList: () => useAgentsListMock(),
+  useAgentsList: (options: unknown) => useAgentsListMock(options),
 }));
 
 function mockAgentsList(overrides: Record<string, unknown> = {}) {
@@ -125,6 +125,8 @@ function mockAgentsList(overrides: Record<string, unknown> = {}) {
     availableTools: [],
     toolCatalogStatus: 'available',
     getModeProfile: () => null,
+    getAgentSkillCount: (id: string) => ((overrides.getAgentSkills as ((id: string) => { effectiveEnabled: boolean }[]) | undefined)?.(id) ?? []).filter(skill => skill.effectiveEnabled).length,
+    getAgentSubagentCount: (id: string) => ((overrides.allAgents as {id: string;visibleSubagentCount?: number}[] | undefined)?.find(agent => agent.id === id)?.visibleSubagentCount ?? 0),
     getAgentSkills: () => [],
     getModeManageableSubagents: () => [],
     counts: { builtin: 0, user: 0, project: 0, mode: 0, subagent: 0 },
@@ -197,7 +199,7 @@ describeWithJsdom('AgentsScene', () => {
   let container: HTMLDivElement;
   let root: Root;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dom = new JSDOMCtor!('<!doctype html><html><body></body></html>', {
       pretendToBeVisual: true,
       url: 'http://localhost',
@@ -229,7 +231,10 @@ describeWithJsdom('AgentsScene', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-  });
+    // Transform the scene after DOM setup, outside the interaction deadline.
+    // A cold module import must not outlive a test and mutate the next DOM.
+    await import('./AgentsScene');
+  }, 60000);
 
   afterEach(() => {
     act(() => {
@@ -375,6 +380,7 @@ describeWithJsdom('AgentsScene', () => {
     });
     expect(document.querySelector('[data-testid="agent-detail-panel"]')).toBeNull();
     expect(preview.dataset.detailView).toBe('transitioning');
+    expect(useAgentsListMock).toHaveBeenLastCalledWith(expect.objectContaining({ selectedAgentId: 'Standard' }));
     expect(preview.dataset.state).toBe('open');
     expect(document.querySelectorAll('[data-openbitfun-component="dialog"][data-openbitfun-part="overlay"]')).toHaveLength(1);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });

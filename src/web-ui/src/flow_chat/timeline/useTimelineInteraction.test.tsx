@@ -5,6 +5,89 @@ import { expect, it, vi } from 'vitest';
 import { FlowChatReaderState } from './readerState';
 import { useTimelineInteraction } from './useTimelineInteraction';
 
+it('retains interaction leases without layout reads while inactive and reconciles them on reveal', () => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), reader = new FlowChatReaderState(), release = vi.fn();
+  vi.spyOn(reader, 'holdGroup').mockReturnValue(release);
+  const frames = new Map<number, FrameRequestCallback>();
+  let nextFrame = 1, reads = 0, deliver = () => {};
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    const id = nextFrame++; frames.set(id, callback); return id;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+  vi.stubGlobal('MutationObserver', class {
+    constructor(callback: () => void) { deliver = callback; }
+    observe() {} disconnect() {}
+  });
+  const tick = () => { const queued = [...frames.values()]; frames.clear(); queued.forEach(callback => callback(16)); };
+  function View({ active }: { active: boolean }) {
+    const ref = useRef<HTMLDivElement>(null);
+    const pinned = useTimelineInteraction(ref, reader, () => true, undefined, undefined, active);
+    return <div ref={ref} data-pinned={[...pinned].join(',')}><div className="virtual-item-wrapper"
+      data-virtual-item-key="row" data-timeline-kind="group-members" data-timeline-group-id="group">Text</div></div>;
+  }
+  try {
+    act(() => root.render(<View active />));
+    Object.defineProperties(host.firstElementChild!, {
+      clientHeight: { get: () => { reads++; return 800; } },
+      clientWidth: { get: () => { reads++; return 600; } },
+    });
+    const range = document.createRange(); range.selectNodeContents(host.querySelector('.virtual-item-wrapper')!);
+    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+    act(() => document.dispatchEvent(new Event('selectionchange')));
+    expect(host.firstElementChild?.getAttribute('data-pinned')).toBe('row');
+    expect(reader.holdGroup).toHaveBeenCalledWith('group', 'reader');
+    act(() => root.render(<View active={false} />)); reads = 0;
+    selection.removeAllRanges();
+    act(() => { document.dispatchEvent(new Event('selectionchange')); deliver(); tick(); });
+    expect(reads).toBe(0); expect(release).not.toHaveBeenCalled();
+    expect(host.firstElementChild?.getAttribute('data-pinned')).toBe('row');
+    act(() => root.render(<View active />));
+    expect(frames.size).toBe(1);
+    act(tick);
+    expect(reads).toBe(2); expect(release).toHaveBeenCalledTimes(1);
+    expect(host.firstElementChild?.getAttribute('data-pinned')).toBe('');
+  } finally { act(() => root.unmount()); host.remove(); window.getSelection()?.removeAllRanges(); vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});
+
+it('coalesces mutation delivery without reading layout until the frame and ignores late delivery after disposal', () => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), reader = new FlowChatReaderState();
+  const frames = new Map<number, FrameRequestCallback>();
+  let nextFrame = 1, reads = 0, deliver = () => {};
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    const id = nextFrame++; frames.set(id, callback); return id;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+  vi.stubGlobal('MutationObserver', class {
+    constructor(callback: () => void) { deliver = callback; }
+    observe() {} disconnect() {}
+  });
+  function View() {
+    const ref = useRef<HTMLDivElement>(null);
+    useTimelineInteraction(ref, reader, () => true);
+    return <div ref={ref}><div className="virtual-item-wrapper" data-virtual-item-key="row">Text</div></div>;
+  }
+  try {
+    act(() => root.render(<View />));
+    Object.defineProperties(host.firstElementChild!, {
+      clientHeight: { get: () => { reads++; return 800; } },
+      clientWidth: { get: () => { reads++; return 600; } },
+    });
+    act(() => { deliver(); deliver(); window.dispatchEvent(new Event('resize')); });
+    expect(reads).toBe(0);
+    expect(frames.size).toBe(1);
+    act(() => { const queued = [...frames.values()]; frames.clear(); queued.forEach(callback => callback(16)); });
+    expect(reads).toBe(2);
+    act(() => { deliver(); root.unmount(); });
+    expect(frames.size).toBe(0);
+    deliver();
+    expect(frames.size).toBe(0);
+  } finally { if (host.firstChild) act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
+});
+
 it('takes reading ownership before manual disclosure, leaving automatic state changes alone', () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   const host = document.createElement('div'); document.body.append(host);

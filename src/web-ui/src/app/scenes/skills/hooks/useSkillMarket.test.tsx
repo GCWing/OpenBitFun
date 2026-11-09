@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SkillMarketItem } from '@/infrastructure/config/types';
 import { useSkillMarket } from './useSkillMarket';
+import { activateSurface, resetDeviceSurfaceForTest } from '@/infrastructure/peer-device/deviceSurface';
 
 const listSkillMarketMock = vi.hoisted(() => vi.fn());
 const searchSkillMarketMock = vi.hoisted(() => vi.fn());
@@ -68,6 +69,7 @@ describe('useSkillMarket', () => {
   let root: Root;
 
   beforeEach(() => {
+    resetDeviceSurfaceForTest();
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -85,6 +87,7 @@ describe('useSkillMarket', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    resetDeviceSurfaceForTest();
   });
 
   it('refreshes when marketplace configuration changes and ignores the old response', async () => {
@@ -106,6 +109,57 @@ describe('useSkillMarket', () => {
     expect(currentMarket?.marketSkills).toEqual([item]);
     expect(currentMarket?.sourceErrors).toEqual(['Private: SkillHub authentication failed']);
     expect(currentMarket?.marketError).toBeNull();
+  });
+
+  it('retains the current page and loaded range during a background refresh', async () => {
+    const items = Array.from({ length: 40 }, (_, index) => ({
+      id: `skill-${index}`, installId: `source@skill-${index}`, name: `Skill ${index}`, source: 'source',
+    })) as SkillMarketItem[];
+    listSkillMarketMock.mockResolvedValueOnce(items.slice(0, 20)).mockResolvedValueOnce(items);
+    await act(async () => root.render(<Harness enabled />));
+    await act(async () => { await currentMarket!.goToPage(2); });
+    expect(currentMarket?.currentPage).toBe(2);
+    const previous = currentMarket!.marketSkills;
+    let finish!: (skills: SkillMarketItem[]) => void;
+    listSkillMarketMock.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    let refresh!: Promise<void>;
+    await act(async () => { refresh = currentMarket!.refresh({ background: true }); });
+    expect(currentMarket?.marketLoading).toBe(false);
+    expect(currentMarket?.currentPage).toBe(2);
+    expect(currentMarket?.marketSkills).toEqual(previous);
+    expect(listSkillMarketMock).toHaveBeenLastCalledWith(undefined, 40);
+    await act(async () => { finish(items.map(item => ({ ...item, description: 'Updated' }))); await refresh; });
+    expect(currentMarket?.currentPage).toBe(2);
+    expect(currentMarket?.marketSkills[0].description).toBe('Updated');
+  });
+
+  it('retains a valid empty background snapshot and still reports refresh failures', async () => {
+    await act(async () => root.render(<Harness enabled />));
+    let fail!: (error: Error) => void;
+    listSkillMarketMock.mockReturnValueOnce(new Promise((_, reject) => { fail = reject; }));
+    let refresh!: Promise<void>;
+    await act(async () => { refresh = currentMarket!.refresh({ background: true }); });
+    expect(currentMarket?.marketLoading).toBe(false);
+    expect(currentMarket?.marketSkills).toEqual([]);
+    await act(async () => { fail(new Error('Market offline')); await refresh; });
+    expect(currentMarket?.marketError).toBe('Market offline');
+  });
+
+  it('does not reuse a background snapshot or late response on another peer with the same workspace ID', async () => {
+    const item = { id: 'private', installId: 'source@private', name: 'Private', source: 'source' } as SkillMarketItem;
+    listSkillMarketMock.mockResolvedValueOnce([item]);
+    await act(async () => root.render(<Harness enabled />));
+    let finishOld!: (skills: SkillMarketItem[]) => void;
+    listSkillMarketMock.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve; }));
+    let oldRefresh!: Promise<void>;
+    await act(async () => { oldRefresh = currentMarket!.refresh({ background: true }); });
+    listSkillMarketMock.mockReturnValue(new Promise(() => {}));
+    await act(async () => { activateSurface('peer-b'); });
+    expect(currentMarket?.marketLoading).toBe(true);
+    expect(currentMarket?.marketSkills).toEqual([]);
+    await act(async () => { finishOld([item]); await oldRefresh; });
+    expect(currentMarket?.marketSkills).toEqual([]);
+    expect(currentMarket?.marketLoading).toBe(true);
   });
 
   it('prioritizes only the installed repository when market skills share a name', async () => {

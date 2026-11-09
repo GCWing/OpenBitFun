@@ -150,6 +150,7 @@ Run the smallest checks matching the changed path:
 cargo check -p openbitfun-cli
 cargo test -p openbitfun-cli
 cargo test -p openbitfun-cli --bin openbitfun peer_host::
+cargo test --locked -p openbitfun-cli --bin openbitfun peer_host::commands::skills::tests
 cargo test -p openbitfun-cli --bin openbitfun system_info_home_contract
 ```
 

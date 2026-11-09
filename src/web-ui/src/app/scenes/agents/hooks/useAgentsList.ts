@@ -3,7 +3,7 @@ import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { modelPoolAPI, readableModelPools, supportsModelPools, type ModelPoolDefinition } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { primaryAgentKind, agentName } from '@/shared/agents/identity';
 import { isPrimaryAgent, isOrdinaryAgent } from '../agentVisibility';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { TFunction } from 'i18next';
 import { agentAPI, type ModeInfo } from '@/infrastructure/api/service-api/AgentAPI';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
@@ -30,6 +30,7 @@ import { isRemoteWorkspace } from '@/shared/types';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { canQueryToolCatalogOnSurface } from '@/infrastructure/peer-device/peerCapabilityResolution';
 import { createLogger } from '@/shared/utils/logger';
+import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 
 const toolLog = createLogger('useAgentsList');
 
@@ -43,6 +44,7 @@ export type FilterType = 'all' | 'agent' | 'subagent';
  * empty list. See PR #2428 #5.
  */
 export type ToolCatalogStatus =
+  | 'loading'
   | 'available'
   | 'unsupported'
   | 'failed'
@@ -61,6 +63,7 @@ interface ToolCatalogLoadResult {
 }
 
 interface UseAgentsListOptions {
+  selectedAgentId?: string | null;
   searchQuery: string;
   filterLevel: FilterLevel;
   filterType: FilterType;
@@ -187,6 +190,7 @@ function subagentModelDisplayName(
 
 export function useAgentsList({
   searchQuery,
+  selectedAgentId = null,
   filterLevel,
   filterType,
   t,
@@ -194,6 +198,7 @@ export function useAgentsList({
   const notification = useNotification();
   const { workspace, workspacePath } = useCurrentWorkspace();
   const peerDevice = usePeerDeviceModeOptional();
+  const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   // Identity of the rendered surface: null on the controller, otherwise the
   // peer device id. Part of the catalog-load deps so A→B (same workspacePath,
   // same capability) still reloads — otherwise the UI keeps A's catalog while
@@ -216,175 +221,228 @@ export function useAgentsList({
   const [allAgents, setAllAgents] = useState<AgentWithCapabilities[]>([]);
   const [loading, setLoading] = useState(true);
   const [availableTools, setAvailableTools] = useState<ToolInfo[]>([]);
-  const [toolCatalogStatus, setToolCatalogStatus] = useState<ToolCatalogStatus>('available');
+  const [toolCatalogStatus, setToolCatalogStatus] = useState<ToolCatalogStatus>('loading');
+  const [modelCatalogReady, setModelCatalogReady] = useState(false);
   const [modelPools, setModelPools] = useState<ModelPoolDefinition[]>([]);
   const [configuredModels, setConfiguredModels] = useState<AIModelConfig[]>([]);
   const [modeProfiles, setModeProfiles] = useState<Record<string, ModeProfileEntry>>({});
   const [agentSkills, setAgentSkills] = useState<Record<string, ModeSkillInfo[]>>({});
+  const [skillCounts, setSkillCounts] = useState<Record<string, number>>({});
+  const [subagentCounts, setSubagentCounts] = useState<Record<string, number>>({});
+  const [countsLoading, setCountsLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [countsError, setCountsError] = useState<string | null>(null);
   const [modeConfigs, setModeConfigs] = useState<Record<string, AgentProfileConfigItem>>({});
   const [modeManageableSubagents, setModeManageableSubagents] = useState<Record<string, SubagentInfo[]>>({});
-  const [hiddenAgentIds, setHiddenAgentIds] = useState<ReadonlySet<string>>(
-    () => new Set(HIDDEN_AGENT_IDS),
-  );
+  const [hiddenAgentIds, setHiddenAgentIds] = useState<ReadonlySet<string>>(() => new Set(HIDDEN_AGENT_IDS));
+  const [, setDetailRevision] = useState(0);
   const loadRequestIdRef = useRef(0);
+  const catalogContextKey = scope.key(scope.epoch, renderedPeerDeviceId, workspace?.id, String(canQueryToolCatalog));
+  const loadedContextKeyRef = useRef<string | null>(null);
+  const translateRef = useRef(t);
+  translateRef.current = t;
+  const selectedIdRef = useRef(selectedAgentId);
+  selectedIdRef.current = selectedAgentId;
+  const catalogRef = useRef<{
+    key: string; modes: ModeInfo[]; subagents: SubagentInfo[];
+    profiles: Record<string, ModeProfileEntry>;
+    configs: Record<string, AgentProfileConfigItem>;
+  } | null>(null);
+  const catalogFlight = useRef<{ key: string; promise: Promise<void> } | null>(null);
+  const toolsFlight = useRef<{ key: string; promise: Promise<ToolCatalogLoadResult> } | null>(null);
+  const details = useRef(new Map<string, { loaded: boolean; pending?: Promise<void>; error?: string; generation: number }>());
+  const detailLoaderRef = useRef<(id: string, force?: boolean) => Promise<void>>(async () => {});
 
-  const loadAgents = useCallback(async () => {
-    const requestId = ++loadRequestIdRef.current;
-    setLoading(true);
-    // `renderedPeerDeviceId` is read here so a surface switch (A→B) recreates
-    // this callback even when canQueryToolCatalog/workspacePath are unchanged;
-    // the requestId guard then drops the previous surface's in-flight result.
-    // See PR #2428 #3.
-    const surfaceTag = renderedPeerDeviceId ?? 'controller';
-
-    const fetchTools = async (): Promise<ToolCatalogLoadResult> => {
-      if (!canQueryToolCatalog) {
-        toolLog.info('Tool catalog unsupported on the current peer host; leaving the list empty', { surface: surfaceTag });
-        return { tools: [], status: 'unsupported' };
-      }
-      try {
-        const tools = await api.invoke<ToolInfo[]>('get_all_tools_info');
-        return {
-          tools,
-          status: tools.length > 0 ? 'available' : 'empty',
-        };
-      } catch (error) {
-        toolLog.error('Failed to load tool catalog', { error });
-        return { tools: [], status: 'failed' };
-      }
+  const loadAgentDetails = useCallback((agentId: string, force = false): Promise<void> => {
+    const catalog = catalogRef.current;
+    if (!catalog || catalog.key !== catalogContextKey || !scope.isCurrent()) return Promise.resolve();
+    const mode = catalog.modes.find(item => item.id === agentId);
+    const subagent = catalog.subagents.find(item => item.id === agentId);
+    if (!mode && !subagent) return Promise.resolve();
+    const profile = mode ? catalog.profiles[modeProfileIdFor(mode)] : undefined;
+    const profileId = profile?.profileId ?? agentId;
+    const targetId = profile?.representativeModeId ?? agentId;
+    const key = `${catalogContextKey}:${profileId}`;
+    const previous = details.current.get(key);
+    if (previous?.pending) return previous.pending;
+    if (previous?.loaded && !force) return Promise.resolve();
+    const entry = { loaded: previous?.loaded ?? false, generation: (previous?.generation ?? 0) + 1 } as {
+      loaded: boolean; generation: number; pending?: Promise<void>; error?: string;
     };
-
-    try {
-      const [modes, subagents, toolCatalog, configs, reviewTeamDefinition, modelConfigs, poolDocument] = await Promise.all([
-        agentAPI.getAvailableModes({ workspaceId: workspace?.id }).catch(() => []),
-        SubagentAPI.listSubagents({ workspaceId: workspace?.id }).catch(() => []),
-        fetchTools(),
-        configAPI.getAgentProfileConfigs().catch(() => ({})),
-        loadDefaultReviewTeamDefinition().catch(() => undefined),
-        configAPI.getConfigs([
-          'ai.models',
-          'ai.default_models',
-          modelSelectionsConfigPath(),
-        ]).catch((): Record<string, unknown> => ({})),
-        supportsModelPools() ? modelPoolAPI.list() : Promise.resolve(undefined),
-      ]);
-
-      const profileMap = buildProfileMap(modes);
-      const profileEntries = Object.values(profileMap);
-
-      const skillTargets = [
-        ...profileEntries.map((profile) => ({
-          cacheKey: profile.profileId,
-          agentId: profile.representativeModeId,
-        })),
-        ...subagents
-          .filter((subagent) => subagent.defaultTools.includes('Skill'))
-          .map((subagent) => ({
-            cacheKey: subagent.id,
-            agentId: subagent.id,
-          })),
-      ];
-      const skillEntries = await Promise.all(
-        skillTargets.map(async ({ cacheKey, agentId }) => [
-          cacheKey,
-          await configAPI.getModeSkillConfigs({
-            modeId: agentId,
-            workspaceId: workspace?.id,
-          }).catch(() => []),
-        ] as const),
-      );
-      const manageableSubagentEntries = await Promise.all(
-        profileEntries.map(async (profile) => [
-          profile.profileId,
-          await SubagentAPI.listManageableSubagents({
-            parentAgentType: profile.representativeModeId,
-            workspaceId: workspace?.id,
-          }).catch(() => []),
-        ] as const),
-      );
-
-      if (requestId !== loadRequestIdRef.current) {
-        return;
-      }
-
-      const manageableSubagentsByProfile = Object.fromEntries(manageableSubagentEntries);
-      const models = (modelConfigs['ai.models'] as AIModelConfig[] | undefined) ?? [];
-      const defaultModels = (
-        modelConfigs['ai.default_models'] as DefaultModelsConfig | undefined
-      ) ?? {};
-      const builtinOverrides = effectiveModelSelections(modelConfigs[modelSelectionsConfigPath()] as AgentModelDefaultsConfig | undefined).subagents.builtin;
-      const pools = poolDocument ? readableModelPools(poolDocument) : [];
-      setModelPools(pools);
-
-      const modeAgents: AgentWithCapabilities[] = modes.map((mode) =>
-        enrichCapabilities({
-          key: `mode::${mode.id}`,
-          id: mode.id,
-          name: agentName(mode, t),
-          description: mode.description,
-          isReadonly: mode.isReadonly,
-          toolCount: mode.toolCount,
-          defaultTools: mode.defaultTools ?? [],
-          source: mode.source,
-          path: mode.path,
-          model: mode.model,
-          promptCacheScopeKey: mode.promptCacheScopeKey,
-          configProfileId: mode.configProfileId,
-          configProfileLabel: mode.configProfileLabel,
-          configProfileMemberModeIds: mode.configProfileMemberModeIds,
-          visibleSubagentCount: manageableSubagentsByProfile[mode.configProfileId]
-            ?.filter((subagent) => subagent.effectiveEnabled).length ?? 0,
-          capabilities: [],
-          agentKind: primaryAgentKind(mode),
-        }),
-      );
-
-      const subAgents: AgentWithCapabilities[] = subagents.map((subagent) => {
-        const modelOverride = subagentModelOverride(subagent, builtinOverrides);
-
-        return enrichCapabilities({
-          ...subagent,
-          name: agentName(subagent, t),
-          capabilities: [],
-          agentKind: 'subagent',
-          subagentModelOverride: modelOverride,
-          subagentModelDisplayName: modelOverride?.kind === 'pool' ? pools.find(pool => pool.id === modelOverride.pool_id)?.name ?? modelOverride.pool_id : subagentModelDisplayName(modelOverride, models, defaultModels),
+    details.current.set(key, entry);
+    setDetailRevision(value => value + 1);
+    const current = () => scope.isCurrent() && catalogRef.current?.key === catalogContextKey && details.current.get(key) === entry;
+    const fetchTools = (): Promise<ToolCatalogLoadResult> => {
+      if (toolsFlight.current?.key === catalogContextKey) return toolsFlight.current.promise;
+      const promise = !canQueryToolCatalog
+        ? Promise.resolve<ToolCatalogLoadResult>({ tools: [], status: 'unsupported' })
+        : api.invoke<ToolInfo[]>('get_all_tools_info').then(tools => ({ tools, status: tools.length ? 'available' : 'empty' } as ToolCatalogLoadResult)).catch(error => {
+          toolLog.error('Failed to load tool catalog', { error });
+          return { tools: [], status: 'failed' } as ToolCatalogLoadResult;
         });
-      });
-
-      setAllAgents([...modeAgents, ...subAgents]);
+      toolsFlight.current = { key: catalogContextKey, promise };
+      return promise;
+    };
+    const configuredTools = mode
+      ? catalog.configs[profileId]?.enabled_tools ?? mode.defaultTools ?? []
+      : subagent?.defaultTools ?? [];
+    entry.pending = Promise.all([
+      fetchTools(),
+      configuredTools.includes('Skill') ? configAPI.getModeSkillConfigs({ modeId: targetId, workspaceId: workspace?.id }) : Promise.resolve([] as ModeSkillInfo[]),
+      mode ? SubagentAPI.listManageableSubagents({ parentAgentType: targetId, workspaceId: workspace?.id }) : Promise.resolve([] as SubagentInfo[]),
+    ]).then(([toolCatalog, skills, manageable]) => {
+      if (!current()) return;
       setAvailableTools(toolCatalog.tools);
       setToolCatalogStatus(toolCatalog.status);
-      setConfiguredModels(models);
-      setModeProfiles(profileMap);
-      setAgentSkills(Object.fromEntries(skillEntries));
-      setModeConfigs(buildModeConfigsByProfile(modes, configs as Record<string, AgentProfileConfigItem>));
-      setModeManageableSubagents(manageableSubagentsByProfile);
-      setHiddenAgentIds(new Set([
-        ...HIDDEN_AGENT_IDS,
-        ...(reviewTeamDefinition?.hiddenAgentIds ?? []),
-      ]));
-    } finally {
-      if (requestId === loadRequestIdRef.current) {
-        setLoading(false);
+      // A failed tool read is explicit and is retried on the next detail open.
+      if (toolCatalog.status === 'failed') toolsFlight.current = null;
+      setAgentSkills(state => ({ ...state, [profileId]: skills }));
+      setSkillCounts(state => ({ ...state, [profileId]: skills.filter(skill => skill.effectiveEnabled).length }));
+      if (mode) {
+        setModeManageableSubagents(state => ({ ...state, [profileId]: manageable }));
+        setSubagentCounts(state => ({ ...state, [profileId]: manageable.filter(agent => agent.effectiveEnabled).length }));
       }
+      entry.loaded = true;
+    }).catch(error => {
+      if (!current()) return;
+      entry.error = error instanceof Error ? error.message : String(error);
+      toolLog.error('Failed to load Agent detail capabilities', { agentId, error });
+    }).finally(() => {
+      if (!current()) return;
+      entry.pending = undefined;
+      setDetailRevision(value => value + 1);
+    });
+    return entry.pending;
+  }, [canQueryToolCatalog, catalogContextKey, scope, workspace?.id]);
+  detailLoaderRef.current = loadAgentDetails;
+
+  const loadAgents = useCallback((options?: { background?: boolean; force?: boolean }): Promise<void> => {
+    const existing = catalogFlight.current;
+    if (!options?.force && existing?.key === catalogContextKey) return existing.promise;
+    const requestId = ++loadRequestIdRef.current;
+    const current = () => requestId === loadRequestIdRef.current && scope.isCurrent();
+    const retained = loadedContextKeyRef.current === catalogContextKey;
+    setLoading(!(options?.background && retained));
+    setCatalogError(null);
+    if (!retained) {
+      setSkillCounts({}); setSubagentCounts({}); setAgentSkills({});
+      setModeManageableSubagents({}); setAvailableTools([]); setToolCatalogStatus('loading');
+      setConfiguredModels([]); setModelPools([]); setModelCatalogReady(false);
     }
-  }, [canQueryToolCatalog, workspace?.id, renderedPeerDeviceId, t]);
+    const flight = { key: catalogContextKey, promise: Promise.resolve() };
+    catalogFlight.current = flight;
+    flight.promise = (async () => {
+      try {
+        const [modes, subagents, configs, reviewTeam] = await Promise.all([
+          agentAPI.getAvailableModes({ workspaceId: workspace?.id, includeSubagentCounts: true }),
+          SubagentAPI.listSubagents({ workspaceId: workspace?.id }),
+          configAPI.getAgentProfileConfigs(),
+          loadDefaultReviewTeamDefinition().catch(() => undefined),
+        ]);
+        if (!current()) return;
+        const profiles = buildProfileMap(modes);
+        const byProfile = buildModeConfigsByProfile(modes, configs);
+        for (const [key, detail] of details.current) {
+          if (key.startsWith(catalogContextKey + ':')) details.current.set(key, { ...detail, pending: undefined });
+        }
+        catalogRef.current = { key: catalogContextKey, modes, subagents, profiles, configs: byProfile };
+        setModeProfiles(profiles); setModeConfigs(byProfile);
+        setHiddenAgentIds(new Set([...HIDDEN_AGENT_IDS, ...(reviewTeam?.hiddenAgentIds ?? [])]));
+        const initialCounts: Record<string, number> = {};
+        for (const mode of modes) if (typeof mode.manageableSubagentCount === 'number') initialCounts[modeProfileIdFor(mode)] = mode.manageableSubagentCount;
+        setSubagentCounts(state => retained ? { ...state, ...initialCounts } : initialCounts);
+        const modeAgents = modes.map(mode => enrichCapabilities({
+          key: `mode::${mode.id}`, id: mode.id, name: agentName(mode, translateRef.current),
+          description: mode.description, isReadonly: mode.isReadonly, toolCount: mode.toolCount,
+          defaultTools: mode.defaultTools ?? [], source: mode.source, path: mode.path, model: mode.model,
+          promptCacheScopeKey: mode.promptCacheScopeKey, configProfileId: mode.configProfileId,
+          configProfileLabel: mode.configProfileLabel, configProfileMemberModeIds: mode.configProfileMemberModeIds,
+          visibleSubagentCount: initialCounts[modeProfileIdFor(mode)], capabilities: [], agentKind: primaryAgentKind(mode),
+        }));
+        const subAgents = subagents.map(agent => enrichCapabilities({ ...agent, name: agentName(agent, translateRef.current), capabilities: [], agentKind: 'subagent' as const }));
+        setAllAgents([...modeAgents, ...subAgents]);
+        loadedContextKeyRef.current = catalogContextKey;
+        setLoading(false);
+        setCountsLoading(true); setCountsError(null);
+        toolsFlight.current = null;
+        // An already-open editor keeps its mounted content while capabilities
+        // are revalidated. Opening a closed detail is handled by its own effect.
+        if (selectedIdRef.current) void detailLoaderRef.current(selectedIdRef.current, true);
+        const skillTargets = [
+          ...Object.values(profiles).map(profile => ({ key: profile.profileId, id: profile.representativeModeId })),
+          ...subagents.filter(agent => agent.defaultTools.includes('Skill')).map(agent => ({ key: agent.id, id: agent.id })),
+        ];
+        const missingCounts = Object.values(profiles).filter(profile => initialCounts[profile.profileId] === undefined);
+        const [skillResult, subagentResult, modelResult] = await Promise.allSettled([
+          configAPI.getModeSkillCounts(skillTargets.map(target => target.id), workspace?.id),
+          Promise.all(missingCounts.map(async profile => [profile.profileId, (await SubagentAPI.listManageableSubagents({ parentAgentType: profile.representativeModeId, workspaceId: workspace?.id })).filter(agent => agent.effectiveEnabled).length] as const)),
+          Promise.all([
+            configAPI.getConfigs(['ai.models', 'ai.default_models', modelSelectionsConfigPath()]),
+            supportsModelPools() ? modelPoolAPI.list() : Promise.resolve(undefined),
+          ]),
+        ]);
+        if (!current()) return;
+        const failures: string[] = [];
+        if (skillResult.status === 'fulfilled') {
+          setSkillCounts(Object.fromEntries(skillTargets.map(target => [target.key, skillResult.value[target.id]])));
+        } else failures.push(String(skillResult.reason));
+        if (subagentResult.status === 'fulfilled') {
+          setSubagentCounts(state => ({ ...state, ...Object.fromEntries(subagentResult.value) }));
+        } else failures.push(String(subagentResult.reason));
+        if (modelResult.status === 'fulfilled') {
+          const [modelConfigs, document] = modelResult.value;
+          const models = (modelConfigs['ai.models'] as AIModelConfig[] | undefined) ?? [];
+          const defaults = (modelConfigs['ai.default_models'] as DefaultModelsConfig | undefined) ?? {};
+          const overrides = effectiveModelSelections(modelConfigs[modelSelectionsConfigPath()] as AgentModelDefaultsConfig | undefined).subagents.builtin;
+          const pools = document ? readableModelPools(document) : [];
+          setModelPools(pools); setConfiguredModels(models); setModelCatalogReady(true);
+          const projected = new Map(subagents.map(agent => {
+            const selection = subagentModelOverride(agent, overrides);
+            return [agent.id, { subagentModelOverride: selection, subagentModelDisplayName: selection?.kind === 'pool' ? pools.find(pool => pool.id === selection.pool_id)?.name ?? selection.pool_id : subagentModelDisplayName(selection, models, defaults) }];
+          }));
+          setAllAgents(state => state.map(agent => agent.agentKind === 'subagent' ? { ...agent, ...projected.get(agent.id) } : agent));
+        } else failures.push(String(modelResult.reason));
+        if (failures.length) {
+          setCountsError(failures.join('\n'));
+          toolLog.error('Failed to load Agent catalog summaries', { errors: failures });
+        }
+      } catch (error) {
+        if (current()) {
+          setCatalogError(error instanceof Error ? error.message : String(error));
+          toolLog.error('Failed to load Agent catalog', { error });
+        }
+      } finally {
+        if (current()) { setLoading(false); setCountsLoading(false); }
+        if (catalogFlight.current === flight) catalogFlight.current = null;
+      }
+    })();
+    return flight.promise;
+  }, [catalogContextKey, scope, workspace?.id]);
 
+  useEffect(() => { void loadAgents(); }, [loadAgents]);
   useEffect(() => {
-    void loadAgents();
+    const refresh = () => { void loadAgents({ background: true, force: true }); };
+    globalEventBus.on('custom-agent:updated', refresh);
+    return () => globalEventBus.off('custom-agent:updated', refresh);
   }, [loadAgents]);
-
   useEffect(() => {
-    const handleCustomAgentUpdated = () => {
-      void loadAgents();
-    };
+    if (selectedAgentId) void loadAgentDetails(selectedAgentId, true);
+  }, [selectedAgentId, loadAgentDetails]);
 
-    globalEventBus.on('custom-agent:updated', handleCustomAgentUpdated);
-    return () => {
-      globalEventBus.off('custom-agent:updated', handleCustomAgentUpdated);
-    };
-  }, [loadAgents]);
+  const profileForCount = (agentId: string) => {
+    const mode = catalogRef.current?.modes.find(mode => mode.id === agentId);
+    return mode ? modeProfileIdFor(mode) : agentId;
+  };
+  const getAgentSkillCount = (agentId: string): number | null => skillCounts[profileForCount(agentId)] ?? null;
+  const getAgentSubagentCount = (agentId: string): number | null => subagentCounts[profileForCount(agentId)] ?? null;
+  const detailMode = catalogRef.current?.modes.find(mode => mode.id === selectedAgentId);
+  const detailKey = `${catalogContextKey}:${detailMode ? modeProfileIdFor(detailMode) : selectedAgentId}`;
+  const selectedDetail = details.current.get(detailKey);
+  const detailsLoading = Boolean(selectedAgentId && !selectedDetail?.loaded && !selectedDetail?.error);
+  const detailsError = selectedDetail?.error ?? null;
+  // Changing only the language reprojects labels, without restarting requests.
+  const localizedAgents = useMemo(() => allAgents.map(agent => ({ ...agent, name: agentName(agent, t) })), [allAgents, t]);
+  const catalogOwned = loadedContextKeyRef.current === catalogContextKey;
 
   const getModeProfile = useCallback((agentId: string): ModeProfileEntry | null => {
     const agent = allAgents.find((item) => item.id === agentId && isPrimaryAgent(item));
@@ -442,6 +500,7 @@ export function useAgentsList({
     const updated = { ...config, ...updates };
     await configAPI.setAgentProfileConfig(profile.representativeModeId, updated);
     setModeConfigs((prev) => ({ ...prev, [profile.profileId]: updated }));
+    void loadAgents({ background: true, force: true });
 
     try {
       const { globalEventBus } = await import('@/infrastructure/event-bus');
@@ -449,7 +508,7 @@ export function useAgentsList({
     } catch {
       // ignore
     }
-  }, [getModeConfig, getModeProfile]);
+  }, [getModeConfig, getModeProfile, loadAgents]);
 
   const handleSetTools = useCallback(async (agentId: string, toolNames: string[]) => {
     try {
@@ -474,6 +533,8 @@ export function useAgentsList({
       const modes = await agentAPI.getAvailableModes().catch(() => []);
       setModeConfigs(buildModeConfigsByProfile(modes, updated as Record<string, AgentProfileConfigItem>));
       setAgentSkills((prev) => ({ ...prev, [profile.profileId]: updatedSkills }));
+      setSkillCounts(state => ({ ...state, [profile.profileId]: updatedSkills.filter(skill => skill.effectiveEnabled).length }));
+      void loadAgents({ background: true, force: true });
       notification.success(t('agentsOverview.toolsResetSuccess'));
 
       try {
@@ -485,7 +546,7 @@ export function useAgentsList({
     } catch {
       notification.error(t('agentsOverview.toolsResetFailed'));
     }
-  }, [getModeProfile, notification, t, workspace?.id]);
+  }, [getModeProfile, loadAgents, notification, t, workspace?.id]);
 
   const handleSetSkills = useCallback(async (agentId: string, enabledSkillKeys: string[]) => {
     const profile = getModeProfile(agentId);
@@ -504,6 +565,8 @@ export function useAgentsList({
         workspaceId: workspace?.id,
       });
       setAgentSkills((prev) => ({ ...prev, [cacheKey]: updatedSkills }));
+      setSkillCounts(state => ({ ...state, [cacheKey]: updatedSkills.filter(skill => skill.effectiveEnabled).length }));
+      void loadAgents({ background: true, force: true });
 
       try {
         const { globalEventBus } = await import('@/infrastructure/event-bus');
@@ -516,7 +579,7 @@ export function useAgentsList({
       notification.error(t('agentsOverview.skillToggleFailed'));
       return false;
     }
-  }, [getModeProfile, notification, t, workspace?.id]);
+  }, [getModeProfile, loadAgents, notification, t, workspace?.id]);
 
   const handleResetSkills = useCallback(async (agentId: string) => {
     const profile = getModeProfile(agentId);
@@ -534,6 +597,8 @@ export function useAgentsList({
         workspaceId: workspace?.id,
       });
       setAgentSkills((prev) => ({ ...prev, [cacheKey]: updatedSkills }));
+      setSkillCounts(state => ({ ...state, [cacheKey]: updatedSkills.filter(skill => skill.effectiveEnabled).length }));
+      void loadAgents({ background: true, force: true });
 
       try {
         const { globalEventBus } = await import('@/infrastructure/event-bus');
@@ -546,7 +611,7 @@ export function useAgentsList({
       notification.error(t('agentsOverview.skillToggleFailed'));
       return false;
     }
-  }, [getModeProfile, notification, t, workspace?.id]);
+  }, [getModeProfile, loadAgents, notification, t, workspace?.id]);
 
   const handleSetSubagentEnabled = useCallback(async (
     agentId: string,
@@ -567,8 +632,10 @@ export function useAgentsList({
       const updatedSubagents = await SubagentAPI.listManageableSubagents({
         parentAgentType: profile.representativeModeId,
         workspaceId: workspace?.id,
-      }).catch(() => []);
+      });
 
+      setSubagentCounts(state => ({ ...state, [profile.profileId]: updatedSubagents.filter(agent => agent.effectiveEnabled).length }));
+      void loadAgents({ background: true, force: true });
       setModeManageableSubagents((prev) => ({
         ...prev,
         [profile.profileId]: updatedSubagents,
@@ -591,7 +658,7 @@ export function useAgentsList({
     } catch {
       notification.error(t('agentsOverview.subagentToggleFailed'));
     }
-  }, [getModeProfile, notification, t, workspace?.id]);
+  }, [getModeProfile, loadAgents, notification, t, workspace?.id]);
 
   const handleSetSubagentModel = useCallback(async (
     subagentId: string,
@@ -610,13 +677,13 @@ export function useAgentsList({
           workspaceId: workspace?.id,
         });
       }
-      await loadAgents();
+      await loadAgents({ background: true, force: true });
     } catch {
       notification.error(t('agentCard.modelSelector.updateFailed'));
     }
   }, [allAgents, loadAgents, notification, t, workspace?.id]);
 
-  const filteredAgents = useMemo(() => allAgents.filter((agent) => {
+  const filteredAgents = useMemo(() => localizedAgents.filter((agent) => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       if (!agent.name.toLowerCase().includes(query) && !agent.description.toLowerCase().includes(query)) {
@@ -635,11 +702,11 @@ export function useAgentsList({
     }
 
     return true;
-  }), [allAgents, filterLevel, filterType, searchQuery]);
+  }), [localizedAgents, filterLevel, filterType, searchQuery]);
 
   const overviewAgents = useMemo(
-    () => allAgents.filter((agent) => !hiddenAgentIds.has(agent.id) && agent.agentKind !== 'harness'),
-    [allAgents, hiddenAgentIds],
+    () => localizedAgents.filter((agent) => !hiddenAgentIds.has(agent.id) && agent.agentKind !== 'harness'),
+    [localizedAgents, hiddenAgentIds],
   );
 
   const counts = useMemo(() => ({
@@ -653,16 +720,21 @@ export function useAgentsList({
   }), [overviewAgents]);
 
   return {
+    catalogContextKey,
     workspacePath,
     workspaceId: workspace?.id,
     workspaceIsRemote: isRemoteWorkspace(workspace),
-    allAgents,
-    filteredAgents,
-    loading,
+    allAgents: catalogOwned ? localizedAgents : [],
+    filteredAgents: catalogOwned ? filteredAgents : [],
+    loading: (loading || !catalogOwned) && !catalogError,
+    countsLoading, catalogError, countsError,
+    detailsLoading, detailsLoaded: Boolean(selectedDetail?.loaded), detailsError, loadAgentDetails,
+    getAgentSkillCount, getAgentSubagentCount,
     availableTools,
     toolCatalogStatus,
     configuredModels,
     modelPools,
+    modelCatalogReady,
     getModeProfile,
     getAgentSkills,
     getModeManageableSubagents,

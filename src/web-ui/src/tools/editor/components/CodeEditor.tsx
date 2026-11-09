@@ -676,12 +676,12 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         }
         
         let createFontSize = DEFAULT_EDITOR_FONT_SIZE;
-        let createFontFamily = resolveEditorFontFamily(editorConfigRuntimeRef.current.font_family);
+        let createFontFamilyOption = editorConfigRuntimeRef.current.font_family;
         let createFontWeight = editorConfigRuntimeRef.current.font_weight || DEFAULT_EDITOR_FONT_WEIGHT;
         let createLineHeight = 0;
         const applyFontConfig = (c: Partial<EditorConfigType>) => {
           createFontSize = c.font_size ?? DEFAULT_EDITOR_FONT_SIZE;
-          createFontFamily = resolveEditorFontFamily(c.font_family);
+          createFontFamilyOption = c.font_family;
           createFontWeight = c.font_weight || createFontWeight;
           createLineHeight = c.line_height ? Math.round(createFontSize * c.line_height) : 0;
         };
@@ -697,6 +697,12 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         
         const monacoRuntime = await monacoInitManager.initialize();
         if (cancelled) return;
+
+        // Resolve typography together after async configuration/library loading,
+        // before model/view writes. Reading it on both sides of those writes
+        // repeatedly flushed the entire workbench during first editor creation.
+        const createFontFamily = resolveEditorFontFamily(createFontFamilyOption);
+        const createInlayFontFamily = resolveEditorFontFamily();
 
         model = monacoModelManager.getOrCreateModel(
           filePath,
@@ -773,7 +779,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           inlayHints: {
             enabled: initialLargeFileMode ? 'off' : 'on',
             fontSize: DEFAULT_EDITOR_INLAY_FONT_SIZE,
-            fontFamily: resolveEditorFontFamily(),
+            fontFamily: createInlayFontFamily,
             padding: false
           },
 

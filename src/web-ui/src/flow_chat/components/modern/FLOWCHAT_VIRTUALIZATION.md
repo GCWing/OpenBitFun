@@ -105,6 +105,13 @@ regression observed a 92px downward displacement followed by an eased return.
 narrative handoff inside the same Turn and model round. Types, attempts and
 content must agree (allowing coalesced blank lines and a recovered suffix);
 insertions, removals, unrelated prose and replaced tools do not qualify.
+Native settled records can omit the first attempt's item-level metadata. An
+explicit settled `attemptCount: 1` permits that handoff from `attemptIndex: 1`;
+missing counts, multiple attempts and conflicting explicit identities do not.
+Markdown section budgets use coalesced blank-line coordinates so that journal
+whitespace cannot move a semantic boundary. View-local section aliases retain
+the original display offsets while section ranges and bookmarks continue to
+use the unmodified host source. No viewport writer or follow policy changes.
 Unchanged source arrays skip item reconciliation, retired sources are released,
 and aliases are weakly keyed by the source item objects.
 
@@ -118,6 +125,14 @@ following and while reading. It does not establish native paint or live transpor
 
 ## Large text and decoration residency
 
+Globally loaded styles also affect virtualization cost. Universal sibling rules
+in the GenUI spacing sheets and an unqualified child after the shared agent-card
+`:has()` selector invalidated unrelated shell subtrees when rows were recycled.
+Spacing keeps its element-child matching and specificity; agent-row sizing names
+the stack renderers' owned children inside `:where()`. New direct stack child
+kinds must retain that sizing contract. Native invalidation/Selector Stats traces
+identify the cause; ordinary uninstrumented runs establish the performance change.
+
 `markdownSections` uses the existing streaming parser's block tokenizer to find
 semantic boundaries. It does not perform inline parsing or replace the product
 Markdown renderer/sanitizer. Live and historical replies project roughly 3,000-character
@@ -126,8 +141,10 @@ not truncation: an individual fence, table, list or quote remains whole. Raw HTM
 reference/footnote dependencies and structured research protocols keep their
 whole-document path. Canonical text and export/copy payloads stay unchanged.
 
-The first section retains its previous block key; later keys include the raw
-source offset. Thinking stays with the first section. Search translates whole
+The first section retains its previous block key; later keys initially include
+the raw source offset, retained as a display alias during settled whitespace
+handoff. Canonical bookmarks always use the current raw offset. Thinking stays
+with the first section. Search translates whole
 message occurrence counts into section-local counts, including Unicode case
 folding. Section indexes and search boundary counts each have a 2 MiB/64-entry
 budget under the shared derived-resource budget. They retain neither DOM nor

@@ -23,6 +23,35 @@ const agent = (id: string, toolName = 'AgentSpawn', status: FlowToolItem['status
 });
 
 describe('desktop conversation document', () => {
+  it('retains live reading rows when a single settled attempt omits item metadata and restores blank lines', () => {
+    const raw = Array.from({ length: 300 }, (_, index) => `\n\nStream paragraph ${index}: ${'Readable **text**. '.repeat(24)}`
+      + (index % 8 === 7 ? '\n\n```typescript\nexport const streamed = true;\n```\n' : '')).join('');
+    const clean = raw.replace(/\n{3,}/g, '\n\n');
+    const text = { id: 'live', type: 'text', content: clean.slice(0, clean.lastIndexOf('\n\nStream paragraph 240:')),
+      attemptId: 'first-attempt', attemptIndex: 1, isMarkdown: true, isStreaming: true, status: 'streaming' } as FlowItem;
+    const projection = new ConversationDocumentProjection(), opts = options();
+    const live = projection.project([source([text])], opts).filter(row => row.timeline?.markdownSection);
+    const durable = { ...text, id: 'journal-text', content: raw, attemptId: undefined, attemptIndex: undefined,
+      isStreaming: false, status: 'completed' } as FlowItem;
+    const incoming = source([durable]); incoming.data.attemptCount = 1;
+    const settled = projection.project([incoming], opts).filter(row => row.timeline?.markdownSection);
+    expect(settled.slice(0, live.length).map(row => row.timeline?.key)).toEqual(live.map(row => row.timeline?.key));
+    expect(settled.map(row => raw.slice(row.timeline!.markdownSection!.start, row.timeline!.markdownSection!.end)).join('')).toBe(raw);
+    expect(settled.every(row => row.type === 'model-round' && row.data.items[0] === durable)).toBe(true);
+    const reopened = new ConversationDocumentProjection().project([incoming], options()).filter(row => row.timeline?.markdownSection);
+    expect(reopened.map(getVirtualItemBookmarkKey)).toEqual(settled.map(getVirtualItemBookmarkKey));
+    expect(settled.some((row, index) => index > 0 && row.timeline?.key !== `turn:live:markdown:${row.timeline?.markdownSection?.start}`)).toBe(true);
+  });
+
+  it.each([undefined, 2])('does not guess missing attempt identity with attempt count %s', attemptCount => {
+    const text = { id: 'live', type: 'text', content: 'Answer', attemptId: 'first-attempt', attemptIndex: 1, status: 'completed' } as FlowItem;
+    const projection = new ConversationDocumentProjection(), opts = options();
+    projection.project([source([text])], opts);
+    const incoming = source([{ ...text, id: 'journal', attemptId: undefined, attemptIndex: undefined } as FlowItem]);
+    incoming.data.attemptCount = attemptCount;
+    expect(projection.project([incoming], opts)[0].timeline?.key).toBe('turn:journal');
+  });
+
   it('keeps measured section keys while adopting durable narrative IDs and a missing suffix', () => {
     const content = 'A paragraph with some text.\n\n'.repeat(600);
     const thought = { id: 'thinking-live', type: 'thinking', content: 'Reasoning.\n\nMore.', status: 'completed' } as FlowItem;

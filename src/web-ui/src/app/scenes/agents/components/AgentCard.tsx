@@ -9,8 +9,9 @@ import './AgentCatalogCard.scss';
 interface AgentCardProps {
   agent: AgentWithCapabilities;
   toolCount?: number;
-  skillCount?: number;
-  subagentCount?: number;
+  skillCount?: number | null;
+  subagentCount?: number | null;
+  countsLoading?: boolean;
   disabledReason?: string;
   onOpenDetails: (agent: AgentWithCapabilities) => void;
 }

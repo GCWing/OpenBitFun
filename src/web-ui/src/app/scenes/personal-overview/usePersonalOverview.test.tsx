@@ -138,6 +138,39 @@ describe('personal overview data isolation', () => {
     expect(mocks.usage).toHaveBeenCalledTimes(2);
   });
 
+  it('retains successful sections during re-entry and commits independently refreshed data', async () => {
+    await render();
+    const previous = latest;
+    const usage = deferred<UsageStatistics>();
+    const apps = deferred<MiniAppMeta[]>();
+    const skills = deferred<SkillScanReport>();
+    mocks.usage.mockReturnValueOnce(usage.promise);
+    mocks.miniApps.mockReturnValueOnce(apps.promise);
+    mocks.skills.mockReturnValueOnce(skills.promise);
+    await render(false);
+    await render(true);
+    expect(latest.usage).toBe(previous.usage);
+    expect(latest.miniApps).toBe(previous.miniApps);
+    expect(latest.skills).toBe(previous.skills);
+    await act(async () => { usage.resolve(statistics(50)); });
+    expect(latest.usage.status === 'ready' && latest.usage.data.stats.totalTokens).toBe(50);
+    expect(latest.miniApps).toBe(previous.miniApps);
+    await act(async () => {
+      apps.resolve([]);
+      skills.resolve({ skills: [], diagnostics: [], diagnosticsAvailable: false });
+    });
+    expect(latest.skills).toEqual({ status: 'ready', data: { skills: [], diagnostics: [], diagnosticsAvailable: false } });
+  });
+
+  it('reports background failures instead of presenting a retained snapshot as current success', async () => {
+    await render();
+    mocks.usage.mockRejectedValueOnce(new Error('Usage unavailable'));
+    await render(false);
+    await render(true);
+    expect(latest.usage.status).toBe('failed');
+    expect(latest.miniApps.status).toBe('ready');
+  });
+
   it('does not present failed MiniApp or Skill reads as empty catalogs, and retries independently of usage', async () => {
     mocks.miniApps.mockRejectedValue(new Error('Peer offline'));
     mocks.skills.mockRejectedValue(new Error('Remote workspace unavailable'));

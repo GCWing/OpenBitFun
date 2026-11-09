@@ -11,12 +11,16 @@ export function useTimelineInteraction(
   isFollowing: () => boolean,
   rowSelector = '.virtual-item-wrapper[data-virtual-item-key]',
   onReaderInteraction?: (kind: TimelineReaderInteraction) => void,
+  isViewportActive = true,
 ) {
   const [pinnedKeys, setPinnedKeys] = useState<ReadonlySet<string>>(() => new Set());
   const followingRef = useRef(isFollowing);
   followingRef.current = isFollowing;
   const readerInteractionRef = useRef(onReaderInteraction);
   readerInteractionRef.current = onReaderInteraction;
+  const activeRef = useRef(isViewportActive);
+  activeRef.current = isViewportActive;
+  const scheduleRef = useRef<() => void>(() => {});
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
@@ -46,7 +50,7 @@ export function useTimelineInteraction(
         || (field && !['Tab', 'Shift', 'Control', 'Alt', 'Meta', 'Escape'].includes(event.key))) activate(event);
     };
     const update = () => {
-      if (!scroller.clientHeight || !scroller.clientWidth) return;
+      if (!activeRef.current || !scroller.clientHeight || !scroller.clientWidth) return;
       const pinned = new Set<string>();
       const rowFor = (node: Node | null) => {
         const element = node instanceof Element ? node : node?.parentElement;
@@ -80,6 +84,7 @@ export function useTimelineInteraction(
       for (const group of groups) if (!holds.has(group)) holds.set(group, reader.holdGroup(group, 'reader'));
     };
     const selectionChanged = () => {
+      if (!activeRef.current) return;
       const selection = window.getSelection();
       const anchor = selection?.anchorNode;
       const anchorElement = anchor instanceof Element ? anchor : anchor?.parentElement;
@@ -94,10 +99,14 @@ export function useTimelineInteraction(
       update();
     };
     let frame = 0;
+    let disposed = false;
     const schedule = () => {
-      cancelAnimationFrame(frame);
-      if (scroller.clientHeight && scroller.clientWidth) frame = requestAnimationFrame(update);
+      if (disposed || frame || !activeRef.current) return;
+      // Mutation delivery runs before layout. Coalesce first; update keeps the
+      // existing visibility and residency checks in the scheduled frame.
+      frame = requestAnimationFrame(() => { frame = 0; update(); });
     };
+    scheduleRef.current = schedule;
     scroller.addEventListener('scroll', schedule, { passive: true });
     // Capture before React changes geometry. Programmatic completion/reveal has
     // no activation event and therefore keeps its existing follow ownership.
@@ -116,6 +125,8 @@ export function useTimelineInteraction(
     mutations.observe(scroller, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-flowchat-retain-instance'] });
     update();
     return () => {
+      disposed = true;
+      scheduleRef.current = () => {};
       cancelAnimationFrame(frame); window.removeEventListener('resize', schedule); mutations.disconnect();
       scroller.removeEventListener('scroll', schedule); scroller.removeEventListener('focusin', update);
       scroller.removeEventListener('click', activate, true); scroller.removeEventListener('keydown', keyActivation, true);
@@ -125,5 +136,8 @@ export function useTimelineInteraction(
       holds.forEach(release => release());
     };
   }, [reader, scrollerRef, rowSelector]);
+  useEffect(() => {
+    if (isViewportActive) scheduleRef.current();
+  }, [isViewportActive]);
   return pinnedKeys;
 }

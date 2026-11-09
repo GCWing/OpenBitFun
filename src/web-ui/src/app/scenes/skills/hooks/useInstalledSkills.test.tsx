@@ -184,6 +184,43 @@ describe('useInstalledSkills', () => {
     expect(currentInstalled?.counts.all).toBe(0);
   });
 
+  it.each([{ entries: [] }, { entries: [{ key: 'review', name: 'Review', level: 'user', path: '/skills/review' }] }])('keeps a successful snapshot during forced background scans: $entries.length entries', async ({ entries }) => {
+    getSkillConfigsMock.mockResolvedValueOnce(entries);
+    await act(async () => root.render(<Harness enabled />));
+    let finish!: (skills: typeof entries) => void;
+    getSkillConfigsMock.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    let refresh!: Promise<void>;
+    await act(async () => { refresh = currentInstalled!.loadSkills(true, { background: true }); });
+    expect(currentInstalled?.loading).toBe(false);
+    expect(currentInstalled?.skills).toEqual(entries);
+    expect(getSkillConfigsMock).toHaveBeenLastCalledWith({ forceRefresh: true, workspaceId: 'workspace-id' });
+    const updated = [{ key: 'updated', name: 'Updated', level: 'user', path: '/skills/updated' }];
+    await act(async () => { finish(updated); await refresh; });
+    expect(currentInstalled?.skills).toEqual(updated);
+  });
+
+  it('keeps background scan failures visible and fences a later workspace switch', async () => {
+    await act(async () => root.render(<Harness enabled />));
+    getSkillConfigsMock.mockRejectedValueOnce(new Error('Scan failed'));
+    await act(async () => { await currentInstalled!.loadSkills(true, { background: true }); });
+    expect(currentInstalled?.error).toBe('Scan failed');
+    getSkillConfigsMock.mockReturnValue(new Promise(() => {}));
+    workspaceMock.id = 'workspace-b';
+    await act(async () => root.render(<Harness enabled />));
+    await act(async () => { void currentInstalled!.loadSkills(true, { background: true }); });
+    expect(currentInstalled?.loading).toBe(true);
+    expect(currentInstalled?.skills).toEqual([]);
+  });
+
+  it('requires a new snapshot after disabling and re-enabling the catalog', async () => {
+    await act(async () => root.render(<Harness enabled />));
+    await act(async () => root.render(<Harness enabled={false} />));
+    getSkillConfigsMock.mockReturnValue(new Promise(() => {}));
+    await act(async () => root.render(<Harness enabled />));
+    await act(async () => { void currentInstalled!.loadSkills(true, { background: true }); });
+    expect(currentInstalled?.loading).toBe(true);
+  });
+
   it('reports unsupported skill capabilities without claiming a scan failure', async () => {
     diagnosticsMock.items = [{
       path: '/skills/guard/SKILL.md', sourceId: 'claude-code',

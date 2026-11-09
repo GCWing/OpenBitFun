@@ -172,8 +172,11 @@ async fn install_builtin_skills_to_staging(
 
 pub async fn ensure_builtin_skills_installed() -> OpenBitFunResult<()> {
     let pm = get_path_manager_arc();
-    let user_skills_root = pm.user_skills_dir();
-    let dest_root = pm.builtin_skills_dir();
+    ensure_builtin_skills_installed_at(&pm.user_skills_dir()).await
+}
+
+async fn ensure_builtin_skills_installed_at(user_skills_root: &Path) -> OpenBitFunResult<()> {
+    let dest_root = user_skills_root.join(".system");
 
     // Create the parent user skills directory before taking the shared install
     // lock so every contender points at the same stable path.
@@ -194,23 +197,21 @@ pub async fn ensure_builtin_skills_installed() -> OpenBitFunResult<()> {
         }
     }
 
-    let staging_root = builtin_skills_staging_root(&user_skills_root);
-    if let Err(error) = fs::remove_dir_all(&staging_root).await {
-        if error.kind() != std::io::ErrorKind::NotFound {
-            return Err(error.into());
-        }
-    }
-    fs::create_dir_all(&staging_root).await?;
+    let staging_root = builtin_skills_staging_root(user_skills_root);
+    fs::create_dir(&staging_root).await?;
+    // A packaged Windows parent can virtualize a newly created AppData child
+    // onto another volume even when the logical parent already exists on C:.
+    // Publish both paths through the created directory's physical parent.
+    let staging_root = fs::canonicalize(&staging_root).await?;
+    let publish_parent = staging_root.parent().ok_or_else(|| {
+        crate::util::errors::OpenBitFunError::io("Built-in skills staging parent is unavailable")
+    })?;
+    let dest_root = publish_parent.join(".system");
 
     let publish_result = async {
         let (installed, updated) = install_builtin_skills_to_staging(&staging_root).await?;
 
-        if let Err(error) = fs::remove_dir_all(&dest_root).await {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                return Err(error.into());
-            }
-        }
-        fs::rename(&staging_root, &dest_root).await?;
+        publish_staged_skills(&staging_root, &dest_root).await?;
 
         if installed > 0 || updated > 0 {
             debug!(
@@ -236,6 +237,57 @@ pub async fn ensure_builtin_skills_installed() -> OpenBitFunResult<()> {
     }
 
     publish_result
+}
+
+async fn publish_staged_skills(staging_root: &Path, dest_root: &Path) -> OpenBitFunResult<()> {
+    // Only replace the managed bundle, with a rollback copy on the same volume.
+    let parent = staging_root.parent().ok_or_else(|| {
+        crate::util::errors::OpenBitFunError::io("Built-in skills staging parent is unavailable")
+    })?;
+    if !staging_root.is_absolute() || dest_root != parent.join(".system") {
+        return Err(crate::util::errors::OpenBitFunError::validation(
+            "Built-in skills publication paths do not share the managed parent".to_string(),
+        ));
+    }
+    if let Ok(metadata) = fs::symlink_metadata(dest_root).await {
+        if metadata.file_type().is_symlink() {
+            return Err(crate::util::errors::OpenBitFunError::validation(
+                "The managed built-in skills directory must not be a symbolic link".to_string(),
+            ));
+        }
+    }
+    let name = staging_root.file_name().ok_or_else(|| {
+        crate::util::errors::OpenBitFunError::io("Built-in skills staging name is unavailable")
+    })?;
+    let backup = parent.join(format!("{}.previous", name.to_string_lossy()));
+    let previous = match fs::rename(dest_root, &backup).await {
+        Ok(()) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+    if let Err(error) = fs::rename(staging_root, dest_root).await {
+        if previous {
+            if let Err(restore_error) = fs::rename(&backup, dest_root).await {
+                error!(
+                    "Failed to restore built-in skills bundle: backup={}, destination={}, error={}",
+                    backup.display(),
+                    dest_root.display(),
+                    restore_error
+                );
+            }
+        }
+        return Err(error.into());
+    }
+    if previous {
+        if let Err(error) = fs::remove_dir_all(&backup).await {
+            warn!(
+                "Failed to remove previous built-in skills bundle: path={}, error={}",
+                backup.display(),
+                error
+            );
+        }
+    }
+    Ok(())
 }
 
 #[derive(Default)]
@@ -316,6 +368,59 @@ async fn desired_file_content(
 mod tests {
     use super::BUILTIN_SKILLS_DIR;
     use openbitfun_agent_runtime::skills::{SkillData, SkillLocation};
+
+    #[tokio::test]
+    async fn installation_reuses_a_complete_manifest_without_rewriting_the_bundle() {
+        let root = tempfile::tempdir().unwrap();
+        super::ensure_builtin_skills_installed_at(root.path())
+            .await
+            .unwrap();
+        let installed = root.path().join(".system");
+        let marker = installed.join("cache-reuse-marker");
+        tokio::fs::write(&marker, b"retained").await.unwrap();
+        super::ensure_builtin_skills_installed_at(root.path())
+            .await
+            .unwrap();
+        assert_eq!(tokio::fs::read(marker).await.unwrap(), b"retained");
+        assert!(installed.join("create-agent/SKILL.md").is_file());
+        assert_eq!(
+            super::read_installed_manifest(&installed)
+                .await
+                .unwrap()
+                .unwrap()
+                .bundle_hash,
+            super::builtin_skills_bundle_hash()
+        );
+    }
+
+    #[tokio::test]
+    async fn publication_replaces_retired_files_and_preserves_the_old_bundle_on_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let parent = tokio::fs::canonicalize(root.path()).await.unwrap();
+        let dest = parent.join(".system");
+        tokio::fs::create_dir(&dest).await.unwrap();
+        tokio::fs::write(dest.join("old"), b"old bundle")
+            .await
+            .unwrap();
+        let missing = parent.join(".system.tmp.missing");
+        assert!(super::publish_staged_skills(&missing, &dest).await.is_err());
+        assert_eq!(
+            tokio::fs::read(dest.join("old")).await.unwrap(),
+            b"old bundle"
+        );
+        let staging = parent.join(".system.tmp.new");
+        tokio::fs::create_dir(&staging).await.unwrap();
+        tokio::fs::write(staging.join("new"), b"new bundle")
+            .await
+            .unwrap();
+        super::publish_staged_skills(&staging, &dest).await.unwrap();
+        assert_eq!(
+            tokio::fs::read(dest.join("new")).await.unwrap(),
+            b"new bundle"
+        );
+        assert!(!dest.join("old").exists());
+        assert!(!parent.join(".system.tmp.new.previous").exists());
+    }
 
     fn embedded_skill_text(path: &str) -> &'static str {
         BUILTIN_SKILLS_DIR

@@ -236,7 +236,11 @@ const SkillsScene: React.FC = () => {
   }, [coverageSourceBySkillKey, installed, market.isRemoteWorkspace, t]);
 
   const refetchSkillsScene = useCallback(async () => {
-    await Promise.all([installed.loadSkills(true), market.refresh(), skillGroups.reload()]);
+    await Promise.all([
+      installed.loadSkills(true, { background: true }),
+      market.refresh({ background: true }),
+      skillGroups.reload(),
+    ]);
   }, [installed, market, skillGroups]);
 
   useGallerySceneAutoRefresh({

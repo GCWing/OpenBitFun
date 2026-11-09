@@ -235,7 +235,8 @@ export class ConversationDocumentProjection {
           && options.reader.get('navigation:whole-text', '') !== identity
           && !parseDeepResearchContent(text.content).hasProtocol ? markdownSections(text.content) : undefined;
         if (!sections) { add(kind, this.itemIdentity.key(run[0]), run, extra); return; }
-        sections.forEach((section, index) => add(kind, index === 0 ? this.itemIdentity.key(run[0]) : `${this.itemIdentity.key(text!)}:markdown:${section.start}`, index === 0 ? run : [text!], {
+        const displayOffsets = this.itemIdentity.sectionOffsets(text!, sections);
+        sections.forEach((section, index) => add(kind, index === 0 ? this.itemIdentity.key(run[0]) : `${this.itemIdentity.key(text!)}:markdown:${displayOffsets[index]}`, index === 0 ? run : [text!], {
           ...extra, first: extra.first && index === 0, last: extra.last && index === sections.length - 1,
           markdownSection: section,
         }));

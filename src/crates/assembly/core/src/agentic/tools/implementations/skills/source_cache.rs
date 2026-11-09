@@ -39,12 +39,20 @@ struct CachedSnapshot<T> {
     value: T,
 }
 
+struct CompletedUncachedSnapshot<T> {
+    generation: u64,
+    completion: u64,
+    value: T,
+}
+
 /// A lazy, single-flight snapshot that cannot publish a value observed across
 /// an invalidation boundary.
 pub(super) struct VersionedSnapshotCache<T> {
     invalidator: SnapshotInvalidator,
     snapshot: RwLock<Option<CachedSnapshot<T>>>,
     load_gate: Mutex<()>,
+    completed_loads: AtomicU64,
+    uncached_completion: RwLock<Option<CompletedUncachedSnapshot<T>>>,
 }
 
 impl<T: Clone> VersionedSnapshotCache<T> {
@@ -53,6 +61,8 @@ impl<T: Clone> VersionedSnapshotCache<T> {
             invalidator: SnapshotInvalidator::new(),
             snapshot: RwLock::new(None),
             load_gate: Mutex::new(()),
+            completed_loads: AtomicU64::new(0),
+            uncached_completion: RwLock::new(None),
         }
     }
 
@@ -69,6 +79,7 @@ impl<T: Clone> VersionedSnapshotCache<T> {
         F: FnMut() -> Fut,
         Fut: Future<Output = (T, bool)>,
     {
+        let observed_completion = self.completed_loads.load(Ordering::Acquire);
         let mut attempts = 0usize;
         loop {
             let generation = self.invalidator.current();
@@ -81,9 +92,24 @@ impl<T: Clone> VersionedSnapshotCache<T> {
             if let Some(value) = self.value_for_generation(generation).await {
                 return value;
             }
+            // Concurrent readers share even an unhealthy scan, including its
+            // diagnostics. A reader arriving after completion retries normally;
+            // this is not a persistent cache of a failed/partial discovery.
+            if let Some(completed) = self.uncached_completion.read().await.as_ref() {
+                if completed.generation == generation && completed.completion > observed_completion
+                {
+                    return completed.value.clone();
+                }
+            }
 
             let (value, cacheable) = load().await;
             if !cacheable {
+                let completion = self.completed_loads.fetch_add(1, Ordering::AcqRel) + 1;
+                *self.uncached_completion.write().await = Some(CompletedUncachedSnapshot {
+                    generation,
+                    completion,
+                    value: value.clone(),
+                });
                 return value;
             }
             if self.invalidator.current() != generation {
@@ -98,6 +124,8 @@ impl<T: Clone> VersionedSnapshotCache<T> {
                 generation,
                 value: value.clone(),
             });
+            self.completed_loads.fetch_add(1, Ordering::AcqRel);
+            *self.uncached_completion.write().await = None;
             return value;
         }
     }
@@ -512,6 +540,58 @@ mod tests {
             assert_eq!(value, expected);
         }
 
+        assert_eq!(loads.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn concurrent_uncacheable_readers_share_one_scan_but_a_later_read_retries() {
+        let cache = VersionedSnapshotCache::new();
+        let loads = AtomicUsize::new(0);
+        let mut leader = Box::pin(cache.get_or_load(|| async {
+            loads.fetch_add(1, Ordering::SeqCst);
+            ("unhealthy".to_owned(), false)
+        }));
+        // Hold the load gate while every follower has observed this flight.
+        let gate = cache.load_gate.lock().await;
+        assert!(
+            std::future::poll_fn(|cx| std::task::Poll::Ready(std::future::Future::poll(
+                leader.as_mut(),
+                cx
+            )))
+            .await
+            .is_pending()
+        );
+        let mut followers = (0..8)
+            .map(|_| {
+                Box::pin(cache.get_or_load(|| async {
+                    loads.fetch_add(1, Ordering::SeqCst);
+                    ("unexpected rescan".to_owned(), false)
+                }))
+            })
+            .collect::<Vec<_>>();
+        for follower in &mut followers {
+            assert!(
+                std::future::poll_fn(|cx| std::task::Poll::Ready(std::future::Future::poll(
+                    follower.as_mut(),
+                    cx
+                )))
+                .await
+                .is_pending()
+            );
+        }
+        drop(gate);
+        assert_eq!(leader.await, "unhealthy");
+        for follower in followers {
+            assert_eq!(follower.await, "unhealthy");
+        }
+        assert_eq!(loads.load(Ordering::SeqCst), 1);
+        let retry = cache
+            .get_or_load(|| async {
+                loads.fetch_add(1, Ordering::SeqCst);
+                ("repaired".to_owned(), true)
+            })
+            .await;
+        assert_eq!(retry, "repaired");
         assert_eq!(loads.load(Ordering::SeqCst), 2);
     }
 
