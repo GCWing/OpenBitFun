@@ -93,8 +93,13 @@
 
   // The conversation canvas owns chat artwork; the transcript wrapper must
   // not cover it with a second opaque scene fill. Cards and inputs keep theirs.
-  :root[data-openbitfun-skin-id] [data-openbitfun-surface='chat'][data-openbitfun-skin-artwork='true'] [data-openbitfun-component='modern-flow-chat'][data-openbitfun-part='root'] {
-    background-color: transparent !important;
+  :root[data-openbitfun-skin-id] [data-openbitfun-surface='chat'][data-openbitfun-skin-artwork='true'] {
+    [data-openbitfun-component='modern-flow-chat'][data-openbitfun-part='root'],
+    .history-session-loading__overlay {
+      // Loading still hides and blocks the old transcript while its viewport
+      // settles. Reveal the same chat paint instead of flashing a scene fill.
+      background-color: transparent !important;
+    }
   }
 
   // Only the editor's known paint chain becomes transparent, and only while

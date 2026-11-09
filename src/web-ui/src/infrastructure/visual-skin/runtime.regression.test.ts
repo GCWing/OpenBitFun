@@ -283,6 +283,80 @@ it('removes owned paint before releasing image URLs on disposal without changing
 });
 
 describe('interaction refresh work', () => {
+  it('keeps one attached stylesheet and unchanged artwork through streamed part mounts and mode changes', async () => {
+    const storage = new TestStorage(), skin = source('a');
+    skin.modes.dark = { tokens: { 'color.content.primary': '#eeeeee' } };
+    skin.assets = { art: { mimeType: 'image/svg+xml', source: { kind: 'data', data: 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg"/>') } } };
+    skin.surfaces = [{ surface: 'shell', backgroundAssetId: 'art' }, { surface: 'chat', backgroundSource: 'shell' }];
+    skin.components = [{ component: 'button', slots: { root: { assetId: 'art', backgroundPosition: '30% 40%' } } }];
+    await install(storage, skin);
+    document.body.innerHTML = '<main data-openbitfun-surface="shell"><section data-openbitfun-surface="chat"></section></main>';
+    const runtime = createRuntime(storage); await runtime.activate('a'); await tick();
+    const style = document.querySelector('style[data-openbitfun-skin-runtime]')!;
+    const initialCss = style.textContent;
+    const writes: MutationRecord[] = [];
+    const observer = new MutationObserver(records => writes.push(...records));
+    observer.observe(document, { subtree: true, childList: true, attributes: true,
+      attributeFilter: ['data-openbitfun-skin-surface', 'data-openbitfun-skin-artwork', 'data-openbitfun-skin-background-source'] });
+    try {
+      const chat = document.querySelector('section')!;
+      for (let i = 0; i < 4; i++) {
+        const button = document.createElement('button');
+        button.setAttribute('data-openbitfun-component', 'button');
+        button.setAttribute('data-openbitfun-part', 'root');
+        chat.append(button); await tick();
+        expect(getComputedStyle(button).backgroundPosition).toBe('30% 40%');
+        expect(document.querySelector('style[data-openbitfun-skin-runtime]')).toBe(style);
+        expect(style.textContent).not.toBe(initialCss);
+        button.remove(); await tick();
+      }
+      document.documentElement.setAttribute('data-color-scheme', 'dark'); await tick();
+      expect(document.querySelector('style[data-openbitfun-skin-runtime]')).toBe(style);
+      expect(style.textContent).toContain('--openbitfun-color-content-primary:#eeeeee');
+      expect(writes.filter(record => record.type === 'attributes')).toHaveLength(0);
+      expect(writes.flatMap(record => [...record.removedNodes]).filter(node => node === style)).toHaveLength(0);
+    } finally { observer.disconnect(); }
+  });
+
+  it('reconciles changed surface ownership, mode dependencies, preview and disposal without stale markers', async () => {
+    const storage = new TestStorage(), skin = source('a');
+    skin.assets = { art: { mimeType: 'image/svg+xml', source: { kind: 'data', data: 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg"/>') } } };
+    skin.surfaces = [{ surface: 'shell', backgroundAssetId: 'art' }, { surface: 'chat', backgroundSource: 'shell' }];
+    skin.modes.dark = { surfaces: [{ surface: 'shell', backgroundOpacity: 0 }] };
+    for (const value of [skin, source('b')]) await install(storage, value);
+    document.body.innerHTML = '<main data-openbitfun-surface="shell"><section data-openbitfun-surface="chat"></section></main>';
+    const runtime = createRuntime(storage); await runtime.activate('a'); await tick();
+    const shell = document.querySelector('main')!, chat = document.querySelector('section')!;
+    const style = document.querySelector('style[data-openbitfun-skin-runtime]');
+    const writes: MutationRecord[] = [];
+    const observer = new MutationObserver(records => writes.push(...records));
+    observer.observe(shell, { attributes: true });
+    try {
+      chat.setAttribute('data-openbitfun-surface', 'editor'); await tick();
+      expect(chat.hasAttribute('data-openbitfun-skin-surface')).toBe(false);
+      expect(chat.hasAttribute('data-openbitfun-skin-artwork')).toBe(false);
+      expect(chat.hasAttribute('data-openbitfun-skin-background-source')).toBe(false);
+      expect(writes).toHaveLength(0);
+      chat.setAttribute('data-openbitfun-surface', 'chat'); await tick();
+      expect(chat.getAttribute('data-openbitfun-skin-background-source')).toBe('shell');
+      document.documentElement.setAttribute('data-color-scheme', 'dark'); await tick();
+      expect(chat.getAttribute('data-openbitfun-skin-surface')).toBe('chat');
+      expect(chat.hasAttribute('data-openbitfun-skin-artwork')).toBe(false);
+      expect(chat.hasAttribute('data-openbitfun-skin-background-source')).toBe(false);
+      document.documentElement.setAttribute('data-color-scheme', 'light'); await tick();
+      expect(chat.getAttribute('data-openbitfun-skin-background-source')).toBe('shell');
+      await runtime.preview('b');
+      expect(document.querySelector('[data-openbitfun-skin-surface]')).toBeNull();
+      await runtime.cancelPreview();
+      expect(document.querySelector('style[data-openbitfun-skin-runtime]')).toBe(style);
+      expect(chat.getAttribute('data-openbitfun-skin-background-source')).toBe('shell');
+      runtime.dispose();
+      expect(document.querySelector('style[data-openbitfun-skin-runtime]')).toBeNull();
+      expect(document.querySelector('[data-openbitfun-skin-surface],[data-openbitfun-skin-artwork],[data-openbitfun-skin-background-source]')).toBeNull();
+      expect(storage.selection).toBe('a');
+    } finally { observer.disconnect(); }
+  });
+
   it('computes interaction diagnostics only for a visible watcher and releases the subscription', async () => {
     const storage = new TestStorage(), skin = source('a');
     skin.components = [{ component: 'button', states: { selected: { tokens: { 'color.content.primary': '#333333' } } } }];

@@ -246,6 +246,14 @@ A named part may be the component root or an owned descendant. A nested
 component or surface starts a new ownership boundary, so an ancestor's
 interaction state cannot decorate a nested instance's same-named part.
 
+Ownership and mode changes update the attached runtime stylesheet in place.
+Surface markers are reconciled by value, so mounting a decorated component
+does not clear and restore unchanged background artwork. Text-only streaming
+does not trigger paint compilation. Chat history loading over materialized
+artwork reveals the existing chat surface while the transcript remains hidden
+and interaction stays guarded until viewport settlement. Unskinned and
+non-artwork loading surfaces retain their normal opaque fill.
+
 The existing Appearance runtime remains responsible for renderer adapters
 (Monaco, xterm, Mermaid, widgets, and canvas); the skin overlay only supplies
 the shared semantic visual layer and fixed decorative projections.

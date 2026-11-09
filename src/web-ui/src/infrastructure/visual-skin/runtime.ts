@@ -610,7 +610,9 @@ export class VisualSkinRuntime {
   private replaceStyle(cssText: string): void {
     const existing = document.querySelector<HTMLStyleElement>(`style[${STYLE_ATTRIBUTE}]`);
     if (existing?.textContent === cssText) return;
-    existing?.remove();
+    // Keep the stylesheet attached while owners mount or stream new parts.
+    // Removing it invalidates the artwork and all surface paint together.
+    if (existing) { existing.textContent = cssText; return; }
     const style = document.createElement('style');
     style.setAttribute(STYLE_ATTRIBUTE, 'true');
     style.textContent = cssText;
@@ -628,20 +630,30 @@ export class VisualSkinRuntime {
   }
 
   private syncSurfaceMarkers(skin: StoredVisualSkin | null): void {
-    document.querySelectorAll(`[${SURFACE_ATTRIBUTE}]`).forEach(node => node.removeAttribute(SURFACE_ATTRIBUTE));
-    document.querySelectorAll(`[${ARTWORK_ATTRIBUTE}]`).forEach(node => node.removeAttribute(ARTWORK_ATTRIBUTE));
-    document.querySelectorAll(`[${BACKGROUND_SOURCE_ATTRIBUTE}]`).forEach(node => node.removeAttribute(BACKGROUND_SOURCE_ATTRIBUTE));
-    if (!skin) return;
-    resolveSkinSurfaces(skin, currentMode()).selected.map(entry => entry.surface).filter(surface => isVisualSkinSurfaceId(surface.surface)).forEach(profile => {
+    const attributes = [SURFACE_ATTRIBUTE, ARTWORK_ATTRIBUTE, BACKGROUND_SOURCE_ATTRIBUTE];
+    const desired = new Map<Element, Record<string, string>>();
+    if (skin) resolveSkinSurfaces(skin, currentMode()).selected.map(entry => entry.surface).filter(surface => isVisualSkinSurfaceId(surface.surface)).forEach(profile => {
       const asset = profile.backgroundAssetId ? skin.assets[profile.backgroundAssetId] : undefined;
       const sharedBackdrop = profile.backgroundSource === 'shell' && hasShellArtwork(skin, currentMode());
       const hasArtwork = sharedBackdrop || Boolean(asset?.dataUrl && (profile.backgroundOpacity ?? 1) > 0);
       document.querySelectorAll(`[data-openbitfun-surface="${cssEscape(profile.surface)}"]`).forEach(node => {
-        node.setAttribute(SURFACE_ATTRIBUTE, profile.surface);
-        if (hasArtwork) node.setAttribute(ARTWORK_ATTRIBUTE, 'true');
-        if (sharedBackdrop) node.setAttribute(BACKGROUND_SOURCE_ATTRIBUTE, 'shell');
+        desired.set(node, {
+          [SURFACE_ATTRIBUTE]: profile.surface,
+          ...(hasArtwork ? { [ARTWORK_ATTRIBUTE]: 'true' } : {}),
+          ...(sharedBackdrop ? { [BACKGROUND_SOURCE_ATTRIBUTE]: 'shell' } : {}),
+        });
       });
     });
+    // Reconcile stale owners too, without clearing unchanged artwork markers.
+    const nodes = new Set([...document.querySelectorAll(attributes.map(name => `[${name}]`).join(',')), ...desired.keys()]);
+    for (const node of nodes) {
+      for (const name of attributes) {
+        const value = desired.get(node)?.[name] ?? null;
+        if (node.getAttribute(name) === value) continue;
+        if (value === null) node.removeAttribute(name);
+        else node.setAttribute(name, value);
+      }
+    }
   }
 
   private setSnapshot(patch: Partial<VisualSkinSnapshot>): void {
