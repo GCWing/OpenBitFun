@@ -312,7 +312,7 @@ describe('sceneStore transition snapshots', () => {
     expect(state.navCursor).toBe(-1);
   });
 
-  it('keeps the session tab first while allowing it to close back to another scene', () => {
+  it('keeps the session tab first while entering welcome when it is the active last session', () => {
     useSceneStore.getState().openScene('settings');
     useSceneStore.getState().openSessionScene(sessionTarget);
 
@@ -325,8 +325,26 @@ describe('sceneStore transition snapshots', () => {
 
     const state = useSceneStore.getState();
     expect(state.openTabs.map(tab => tab.id)).toEqual(['settings']);
+    expect(state.activeTabId).toBeNull();
+    expect(state.paneSelections.primary).toEqual({ kind: 'empty' });
+    expect(state.navHistory).toEqual([]);
+    expect(state.navCursor).toBe(-1);
+
+    useSceneStore.getState().activateScene('settings');
+    expect(useSceneStore.getState().activeTabId).toBe('settings');
+  });
+
+  it('keeps the settings scene selected when closing a background session', () => {
+    useSceneStore.getState().openSessionScene(sessionTarget);
+    useSceneStore.getState().openScene('settings');
+
+    useSceneStore.getState().closeScene(sessionTabId);
+
+    const state = useSceneStore.getState();
+    expect(state.openTabs.map(tab => tab.id)).toEqual(['settings']);
     expect(state.activeTabId).toBe('settings');
-    expect(state.navHistory).not.toContain(sessionTabId);
+    expect(state.paneSelections.primary).toEqual({ kind: 'scene', tabId: 'settings' });
+    expect(state.navHistory).toEqual(['settings']);
   });
 
   it('preserves close fallback and history navigation across many open tabs', () => {

@@ -365,6 +365,15 @@ const SceneBar: React.FC<SceneBarProps> = ({
               data-scene-tab-id={tabId}
               data-pending={pendingTabId === tabId || undefined}
               data-canvas-drop-position={activeCanvasDrop?.target?.tabId === tabId ? activeCanvasDrop.target.placement : undefined}
+              onClick={event => {
+                // TabGroup falls back to its first item when the controlled
+                // value is empty. In the shell idle state that fallback must
+                // not swallow clicks on a retained background tab.
+                if (selectedTabId !== null) return;
+                if (event.target instanceof Element
+                  && event.target.closest('[data-scene-bar-part="closeTab"]')) return;
+                activateScene(tabId);
+              }}
               onContextMenu={event => handleContextMenu(event, tabId)}
               onPointerEnter={event => {
                 const item = event.currentTarget;

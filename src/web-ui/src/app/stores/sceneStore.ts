@@ -418,13 +418,34 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       const contentId = openTabs.find(tab => tab.id === id)?.contentId;
       return navigateWorkbench(current => {
         if (!current.openTabs.some(tab => tab.id === id)) return null;
-        let panes = reconcilePaneState({ ...current, openTabs: current.openTabs.filter(tab => tab.id !== id) });
-        if (panes.paneSelections[panes.focusedPane].kind === 'empty'
+        const closingActiveSession = isSessionSceneId(id) && id === current.activeTabId;
+        // A background session close must not steal the currently viewed scene.
+        // Only the active session can leave the shell idle, and only when no
+        // session remains on the rendered surface.
+        const hasRemainingSurfaceSession = current.openTabs.some(tab => tab.id !== id
+          && tab.session?.surfaceId === getActiveSurfaceId());
+        const enterIdleState = closingActiveSession && !hasRemainingSurfaceSession;
+        const remainingTabs = current.openTabs.filter(tab => tab.id !== id);
+        const nextState = enterIdleState
+          ? {
+              ...current,
+              openTabs: remainingTabs,
+              paneSelections: {
+                ...current.paneSelections,
+                [current.focusedPane]: vacantSelection(current.focusedPane, current.canvasPane),
+              },
+            }
+          : { ...current, openTabs: remainingTabs };
+        let panes = reconcilePaneState(nextState);
+        if (!enterIdleState && panes.paneSelections[panes.focusedPane].kind === 'empty'
           && selectedScene(panes.paneSelections[otherPane(panes.focusedPane)])) {
           panes = { ...panes, focusedPane: otherPane(panes.focusedPane) };
         }
+        const history = enterIdleState
+          ? { navHistory: [], navCursor: -1 }
+          : removeFromHistory(current.navHistory, current.navCursor, id, focusedScene(panes));
         return { panes, reveal: id === current.activeTabId ? [panes.focusedPane] : [],
-          history: removeFromHistory(current.navHistory, current.navCursor, id, focusedScene(panes)) };
+          history };
       }, { guardSettings: false, onCommitted: () => {
         if (contentId) useContentResourceStore.getState().remove(contentId);
       } }).then(activated => {
