@@ -19,6 +19,7 @@ export {
   type DialogPreset,
   type DialogProps,
   type DialogSize,
+  type DialogTitleProps,
   type SheetPlacement,
   type SheetProps,
   type SheetSize,

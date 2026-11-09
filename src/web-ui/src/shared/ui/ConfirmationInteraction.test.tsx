@@ -25,12 +25,18 @@ describe('confirmation at the action origin', () => {
     await act(async () => root.unmount()); host.remove(); trigger.remove(); vi.restoreAllMocks();
   });
 
-  it('places a compact confirmation next to its trigger and focuses Cancel', () => {
+  it('places a compact confirmation under its trigger, end-aligned, and focuses Cancel', () => {
+    const triggerRect = trigger.getBoundingClientRect();
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      return this.getAttribute('role') === 'alertdialog' ? new DOMRect(0, 0, 200, 120) : new DOMRect();
+    });
+    vi.mocked(trigger.getBoundingClientRect).mockReturnValue(triggerRect);
     act(() => root.render(<ConfirmDialog open anchor={captureConfirmationAnchor(trigger)} title="Delete record?"
       message="This cannot be undone." cancelText="Cancel" confirmText="Delete" onConfirm={vi.fn()} onOpenChange={vi.fn()} />));
     expect(surface().dataset.presentation).toBe('anchored');
     expect(surface().getAttribute('aria-modal')).toBe('false');
-    expect(surface().style.left).toBe('240px');
+    // The surface's right edge meets the trigger's right edge (288 - 200).
+    expect(surface().style.left).toBe('88px');
     expect(surface().style.top).toBe('216px');
     expect(document.activeElement).toBe(button('Cancel'));
     expect(document.querySelector('[data-openbitfun-overlay-modal="true"]')).toBeNull();
@@ -40,7 +46,8 @@ describe('confirmation at the action origin', () => {
     const anchor = captureConfirmationAnchor(trigger);
     trigger.remove();
     act(() => root.render(<ConfirmDialog open anchor={anchor} title="Delete?" onConfirm={vi.fn()} onOpenChange={vi.fn()} />));
-    expect(surface().style.left).toBe('240px');
+    // jsdom gives the surface no width, so its end edge lands on the captured right edge.
+    expect(surface().style.left).toBe('288px');
     expect(surface().style.top).toBe('216px');
   });
 
@@ -53,7 +60,7 @@ describe('confirmation at the action origin', () => {
     vi.mocked(trigger.getBoundingClientRect).mockReturnValue(new DOMRect(940, 560, 40, 32));
     act(() => root.render(<ConfirmDialog open anchor={captureConfirmationAnchor(trigger)} title="Delete?" onConfirm={vi.fn()} onOpenChange={vi.fn()} />));
     expect(surface().dataset.placement).toBe('top');
-    expect(surface().style.left).toBe('672px');
+    expect(surface().style.left).toBe('660px');
     expect(surface().style.top).toBe('396px');
   });
 
