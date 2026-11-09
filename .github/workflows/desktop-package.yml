@@ -331,11 +331,39 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Resolve Bun executable cache
+        id: bun-cache-target
+        shell: bash
+        run: |
+          if [[ -f scripts/ci/bun-cache-target.mjs ]]; then
+            node scripts/ci/bun-cache-target.mjs 1.3.14
+          else
+            echo "::notice::Bun caching is unavailable for this older source revision; setup-bun will install it normally."
+          fi
+
+      - name: Restore Bun executable
+        id: bun-executable-cache
+        if: steps.bun-cache-target.outputs.key != ''
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ steps.bun-cache-target.outputs.path }}
+          key: ${{ steps.bun-cache-target.outputs.key }}
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
           no-cache: true
+
+      - name: Save Bun executable
+        if: >-
+          (github.event_name == 'release' || github.event_name == 'workflow_dispatch') &&
+          steps.bun-cache-target.outputs.key != '' &&
+          steps.bun-executable-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.bun-cache-target.outputs.path }}
+          key: ${{ steps.bun-cache-target.outputs.key }}
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
