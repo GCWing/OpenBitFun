@@ -140,6 +140,24 @@ describe('SceneViewport transitions', () => {
     expect(container.querySelector('[role="tab"]')).toBeNull();
   });
 
+  it('renders the welcome surface when only a background scene tab remains', () => {
+    sceneHarness.state = {
+      openTabs: [{ id: 'settings', lastUsed: 1 }],
+      activeTabId: null,
+      navigationMotion: 'instant',
+      navigationSequence: 1,
+    };
+
+    act(() => root.render(<SceneViewport />));
+
+    expect(visibleScenes().map(scene => scene.getAttribute('data-scene-id'))).toEqual(['__empty-scene__']);
+    expect(container.querySelector('[data-testid="welcome-scene"]')).not.toBeNull();
+    expect(container.querySelector('[data-scene-id="settings"]')).not.toBeNull();
+    expect(container.querySelector('[data-scene-id="settings"]')?.classList.contains(
+      'openbitfun-scene-viewport__scene--visible',
+    )).toBe(false);
+  });
+
   it('shares one mounted Session host across workspace tab identities', () => {
     sceneHarness.state.openTabs = [
       { id: 'session:workspace-a', lastUsed: 1 },
