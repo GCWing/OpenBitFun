@@ -180,6 +180,18 @@ impl RetainedCachedTarget {
         )
     }
 
+    /// A text control rendered inside a web area. AXPress and AXFocused move
+    /// only the page's DOM focus there; the window's first responder stays
+    /// put, so directed keys vanish while the call reports success.
+    pub(crate) fn is_web_text_input(&self) -> bool {
+        (self.is_text_input() || self.role().as_deref() == Some("AXComboBox"))
+            && unsafe { has_web_area_ancestor(self.0 .0) }
+    }
+
+    pub(crate) fn same_element(&self, other: AxRef) -> bool {
+        !other.0.is_null() && unsafe { CFEqual(self.0 .0 as CFTypeRef, other.0 as CFTypeRef) != 0 }
+    }
+
     /// Only controls whose primary activation is independent of the exact
     /// point can replace a plain coordinate click with AXPress. Text, sliders,
     /// containers and custom canvases retain their coordinate semantics.
@@ -234,6 +246,33 @@ pub(crate) fn validate_bound_target(pid: i32, target: AxRef) -> OpenBitFunResult
     }
     super::control_session::target_allowed(&format!("pid:{pid}/window:{bound}"))
         .map_err(OpenBitFunError::tool)
+}
+
+const WEB_AREA_ANCESTOR_LIMIT: usize = 64;
+
+/// Whether a parent chain reaches a web area within the depth bound. An
+/// unreadable parent ends the chain and counts as native content.
+fn role_chain_reaches_web_area(mut next_role: impl FnMut() -> Option<String>) -> bool {
+    (0..WEB_AREA_ANCESTOR_LIMIT)
+        .map_while(|_| next_role())
+        .any(|role| role == "AXWebArea")
+}
+
+unsafe fn has_web_area_ancestor(element: AXUIElementRef) -> bool {
+    let mut current: Option<CFTypeRef> = None;
+    let found = role_chain_reaches_web_area(|| unsafe {
+        let child = current.map_or(element, |owned| owned as AXUIElementRef);
+        let parent = ax_copy_attr(child, "AXParent");
+        if let Some(owned) = current.take() {
+            ax_release(owned);
+        }
+        current = parent;
+        read_cf_string_attr(current? as AXUIElementRef, "AXRole")
+    });
+    if let Some(owned) = current {
+        unsafe { ax_release(owned) };
+    }
+    found
 }
 
 pub(crate) fn element_window_id(target: AxRef) -> Option<u32> {
@@ -1141,7 +1180,7 @@ fn render_tree_text(nodes: &[AxNode]) -> String {
         }
         if let Some(v) = &n.value {
             if !v.is_empty() {
-                out.push_str(&format!(" value={}", quote_clip(v, 120)));
+                out.push_str(&format!(" value={}", quote_clip(v, value_clip_chars(n))));
             }
         }
         if let Some(id) = &n.identifier {
@@ -1178,8 +1217,8 @@ fn render_tree_text(nodes: &[AxNode]) -> String {
         }
         match n.expanded {
             Some(true) => out.push_str(" [expanded]"),
-            Some(false) => out.push_str(" [collapsed]"),
-            None => {}
+            Some(false) if expansion_is_meaningful(&n.role) => out.push_str(" [collapsed]"),
+            _ => {}
         }
         // Surface non-trivial AX actions inline so the model can pick
         // AXShowMenu / AXIncrement / AXDecrement etc. without re-querying.
@@ -1187,7 +1226,12 @@ fn render_tree_text(nodes: &[AxNode]) -> String {
             .actions
             .iter()
             .map(String::as_str)
-            .filter(|a| !matches!(*a, "AXPress" | "AXShowAlternateUI" | "AXShowDefaultUI"))
+            .filter(|a| {
+                !matches!(
+                    *a,
+                    "AXPress" | "AXShowAlternateUI" | "AXShowDefaultUI" | "AXScrollToVisible"
+                )
+            })
             .collect();
         if !extra.is_empty() {
             out.push_str(&format!(" actions=[{}]", extra.join(",")));
@@ -1200,6 +1244,38 @@ fn render_tree_text(nodes: &[AxNode]) -> String {
         }
     }
     out
+}
+
+/// The caller verifies a draft against the focused field before sending it,
+/// so that one value keeps enough text to read to the end.
+fn value_clip_chars(node: &AxNode) -> usize {
+    const VALUE_CHARS: usize = 120;
+    const FOCUSED_TEXT_VALUE_CHARS: usize = 4000;
+    if node.focused
+        && matches!(
+            node.role.as_str(),
+            "AXTextField" | "AXTextArea" | "AXSearchField"
+        )
+    {
+        FOCUSED_TEXT_VALUE_CHARS
+    } else {
+        VALUE_CHARS
+    }
+}
+
+/// Chromium reports `AXExpanded = false` on nearly every web node. Rendering
+/// it for structural roles only adds noise; the digest still covers the state.
+fn expansion_is_meaningful(role: &str) -> bool {
+    !matches!(
+        role,
+        "AXGroup"
+            | "AXStaticText"
+            | "AXImage"
+            | "AXWebArea"
+            | "AXHeading"
+            | "AXTextField"
+            | "AXTextArea"
+    )
 }
 
 /// Compose a Codex-style label: prefer humanised role description, fall
@@ -1232,6 +1308,52 @@ fn quote_clip(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_area_ancestor_decides_the_text_focus_route() {
+        let walk = |roles: &[&str]| {
+            let mut roles = roles.iter().map(|role| role.to_string());
+            role_chain_reaches_web_area(|| roles.next())
+        };
+        assert!(walk(&["AXGroup", "AXGroup", "AXWebArea", "AXGroup"]));
+        assert!(!walk(&["AXGroup", "AXWindow", "AXApplication"]));
+        assert!(!walk(&[]));
+        let mut steps = 0;
+        assert!(!role_chain_reaches_web_area(|| {
+            steps += 1;
+            Some("AXGroup".to_string())
+        }));
+        assert_eq!(steps, WEB_AREA_ANCESTOR_LIMIT);
+    }
+
+    #[test]
+    fn only_the_focused_text_field_keeps_its_full_value() {
+        let text = "\u{4e2d}".repeat(300);
+        let node = |role: &str, focused: bool| AxNode {
+            role: role.to_string(),
+            focused,
+            value: Some(text.clone()),
+            ..n(0, None, role, None)
+        };
+        let rendered = |focused| render_tree_text(&[node("AXTextArea", focused)]);
+        assert!(rendered(true).contains(&format!("value=\"{text}\"")));
+        assert!(rendered(false).contains('\u{2026}'));
+        assert!(render_tree_text(&[node("AXStaticText", true)]).contains('\u{2026}'));
+    }
+
+    #[test]
+    fn structural_collapsed_state_and_scroll_action_are_not_rendered() {
+        let node = |role: &str| AxNode {
+            role: role.to_string(),
+            expanded: Some(false),
+            actions: vec!["AXShowMenu".to_string(), "AXScrollToVisible".to_string()],
+            ..n(0, None, role, None)
+        };
+        let group = render_tree_text(&[node("AXGroup")]);
+        assert!(!group.contains("[collapsed]"));
+        assert!(group.contains("actions=[AXShowMenu]"));
+        assert!(render_tree_text(&[node("AXComboBox")]).contains("[collapsed]"));
+    }
 
     #[test]
     fn optional_point_hit_read_failure_preserves_directed_input_route() {
