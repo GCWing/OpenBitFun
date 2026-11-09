@@ -1,5 +1,5 @@
 /** Hosted Relay service version announced by the official endpoint. */
-export const RELAY_SERVICE_VERSION: string = '1.0.9';
+export const RELAY_SERVICE_VERSION: string = '1.0.10';
 
 const OFFICIAL_RELAY_ORIGIN: string = 'https://remote.openbitfun.com';
 

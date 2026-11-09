@@ -9,8 +9,8 @@ import {
 
 describe('relay endpoint identity', () => {
   it('carries the service version as a query parameter', () => {
-    expect(OFFICIAL_RELAY_URL).toBe('https://remote.openbitfun.com/relay?v=1.0.9');
-    expect(relayEndpointVersion(OFFICIAL_RELAY_URL)).toBe('1.0.9');
+    expect(OFFICIAL_RELAY_URL).toBe('https://remote.openbitfun.com/relay?v=1.0.10');
+    expect(relayEndpointVersion(OFFICIAL_RELAY_URL)).toBe('1.0.10');
   });
 
   it('strips the version so paths are never appended to a query', () => {
@@ -45,7 +45,7 @@ describe('relay endpoint identity', () => {
 
   it('keeps the version before the fragment in user-facing links', () => {
     expect(relayPageUrl(OFFICIAL_RELAY_URL, '#/pair?did=abc')).toBe(
-      'https://remote.openbitfun.com/relay/?v=1.0.9#/pair?did=abc',
+      'https://remote.openbitfun.com/relay/?v=1.0.10#/pair?did=abc',
     );
     expect(relayPageUrl('https://remote.openbitfun.com/v/1.0.2', '#/pair?did=abc')).toBe(
       'https://remote.openbitfun.com/v/1.0.2/#/pair?did=abc',

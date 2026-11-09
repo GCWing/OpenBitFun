@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This is the *service* release the client targets, not the product build
 /// version. Keep it in sync with `relay-service/Cargo.toml`.
-pub const RELAY_SERVICE_VERSION: &str = "1.0.9";
+pub const RELAY_SERVICE_VERSION: &str = "1.0.10";
 
 /// Endpoint paths served by the same deployed Relay and the same account
 /// database. `?v=` replaced the path segment as the client-facing version, but
@@ -20,7 +20,7 @@ pub const LIVE_RELAY_ENDPOINT_PATHS: &[&str] = &["/relay", "/v/1.0.2"];
 /// The version travels as a GET parameter so a release no longer needs a new
 /// proxy location, while `remote.openbitfun.com` keeps one root page. Callers
 /// must join API paths onto [`relay_endpoint_base`], never onto this string.
-pub const DEFAULT_RELAY_URL: &str = "https://remote.openbitfun.com/relay?v=1.0.9";
+pub const DEFAULT_RELAY_URL: &str = "https://remote.openbitfun.com/relay?v=1.0.10";
 
 /// Strip the version query and any fragment so the endpoint can be joined with
 /// an API path. A trailing slash is removed so `{base}/api/...` stays correct.

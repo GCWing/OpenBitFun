@@ -10,7 +10,7 @@ deploy a server. Older clients can remain on the GitHub-only authorization flow.
 For connection choices, internet requirements, privacy, service limits, and
 self-hosting, see the user FAQ: [English](FAQ.md) / [中文](FAQ.zh-CN.md).
 
-The official endpoint is `https://remote.openbitfun.com/relay?v=1.0.9`: the
+The official endpoint is `https://remote.openbitfun.com/relay?v=1.0.10`: the
 service version travels as a `v` query parameter so a release no longer needs
 its own proxy location, and the bare origin is the account controller. The
 older `https://remote.openbitfun.com/v/1.0.2/` path stays live on the same

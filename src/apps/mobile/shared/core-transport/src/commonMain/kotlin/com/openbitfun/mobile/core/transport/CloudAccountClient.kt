@@ -55,7 +55,7 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.time.TimeSource
 
 /** Hosted Relay service version announced by the official endpoint. */
-public const val RELAY_SERVICE_VERSION: String = "1.0.9"
+public const val RELAY_SERVICE_VERSION: String = "1.0.10"
 
 /**
  * Identity of the official Relay: no version query, no fragment, no trailing
