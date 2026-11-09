@@ -99,7 +99,8 @@
     "loadingFileTree": "Loading file tree..."
   },
   "empty": {
-    "selectWorkspace": "File tree will be displayed after selecting a workspace"
+    "selectWorkspace": "File tree will be displayed after selecting a workspace",
+    "directoryUnavailable": "The selected directory is unavailable."
   },
   "dialog": {
     "newFile": {

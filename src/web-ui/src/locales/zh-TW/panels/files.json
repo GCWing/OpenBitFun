@@ -99,7 +99,8 @@
     "loadingFileTree": "正在載入檔案樹..."
   },
   "empty": {
-    "selectWorkspace": "選擇工作區後將顯示檔案樹"
+    "selectWorkspace": "選擇工作區後將顯示檔案樹",
+    "directoryUnavailable": "所選目錄無法使用。"
   },
   "dialog": {
     "newFile": {

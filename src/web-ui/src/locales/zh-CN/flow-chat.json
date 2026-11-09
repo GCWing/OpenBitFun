@@ -3505,6 +3505,8 @@
   },
   "welcome": {
     "openingWorkspace": "在 <workspace>{{workspace}}</workspace>，开工。",
+    "workspaceChanges_one": "工作区有动静，<number>{{fileCount}}</number> 个文件改了还没提交。",
+    "workspaceChanges_other": "工作区有动静，<number>{{fileCount}}</number> 个文件改了还没提交。",
     "openingMorning": "早安，今天由你开场。",
     "openingAfternoon": "下午好，给今天加点意思。",
     "openingEvening": "晚上好，按你的节奏来。",

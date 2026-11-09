@@ -47,7 +47,9 @@ mod ssh_config_loader;
 
 pub use file_name_search::{search_remote_file_names, RemoteFileNameSearch};
 pub use paths::*;
-pub use remote_git::{build_remote_git_command, shell_quote_posix};
+pub use remote_git::{
+    build_remote_git_command, build_remote_git_tracked_change_count_command, shell_quote_posix,
+};
 #[cfg(feature = "remote-ssh-concrete")]
 pub use transport::{
     WorkspaceProcessCompletion, WorkspaceProcessControl, WorkspaceProcessExit,

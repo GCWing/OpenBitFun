@@ -113,6 +113,7 @@ export interface PeerHostCapabilities {
   readonly sessionReferenceBrowseV1?: boolean;
   readonly workspaceIconV1?: boolean;
   readonly workspaceIdReferencesV1?: boolean;
+  readonly gitTrackedChangeCountV1?: boolean;
   /**
    * Host implements `submit_user_answers` for Runtime-owned
    * AskUserQuestion interactions. Older Desktop hosts already implemented the
@@ -606,6 +607,7 @@ export class PeerConnectionManager {
       sessionReferenceBrowseV1: caps?.session_reference_browse_v1 === true,
       workspaceIconV1: caps?.workspace_icon_v1 === true,
       workspaceIdReferencesV1: caps?.workspace_id_references_v1 === true,
+      gitTrackedChangeCountV1: caps?.git_tracked_change_count_v1 === true,
       userQuestionResponse,
       userQuestionInteraction: caps?.user_question_interaction_v1 === true,
       dialogQueueV1: caps?.dialog_queue_v1 === true,
@@ -870,6 +872,7 @@ function capabilitiesEqual(
     a.sessionReferenceBrowseV1 === b.sessionReferenceBrowseV1 &&
     a.workspaceIconV1 === b.workspaceIconV1 &&
     a.workspaceIdReferencesV1 === b.workspaceIdReferencesV1 &&
+    a.gitTrackedChangeCountV1 === b.gitTrackedChangeCountV1 &&
     a.userQuestionResponse === b.userQuestionResponse &&
     a.userQuestionInteraction === b.userQuestionInteraction &&
     a.dialogQueueV1 === b.dialogQueueV1 &&

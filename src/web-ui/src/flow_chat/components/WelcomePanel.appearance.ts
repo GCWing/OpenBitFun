@@ -12,6 +12,7 @@ export const welcomePanelAppearanceDescriptor: AppearanceSurfaceDescriptor = {
     { id: 'modeOption', propertyProfile: 'control', visualRole: 'control' },
     { id: 'modeName', propertyProfile: 'paint', visualRole: 'content' },
     { id: 'heading', propertyProfile: 'paint', visualRole: 'content' },
+    { id: 'workspaceChanges', propertyProfile: 'paint', visualRole: 'content' },
     { id: 'tagline', propertyProfile: 'paint', visualRole: 'content' },
     { id: 'divider', propertyProfile: 'paint', visualRole: 'divider' },
     { id: 'narrative', propertyProfile: 'paint', visualRole: 'content' },

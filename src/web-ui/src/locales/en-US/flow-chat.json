@@ -3504,6 +3504,8 @@
     }
   },
   "welcome": {
+    "workspaceChanges_one": "The workspace is stirring. <number>{{fileCount}}</number> changed file hasn’t been committed.",
+    "workspaceChanges_other": "The workspace is stirring. <number>{{fileCount}}</number> changed files haven’t been committed.",
     "openingWorkspace": "Let's get to work in <workspace>{{workspace}}</workspace>.",
     "openingMorning": "Good morning. The day starts with you.",
     "openingAfternoon": "Good afternoon. Let's make today a little more interesting.",

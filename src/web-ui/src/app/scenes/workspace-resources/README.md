@@ -12,8 +12,9 @@ popped out from its menu or dragged onto the top tab bar. There is no File View
 content scene or intermediate container in the main tab bar.
 
 Resource navigation owns an explicit `(device surface, workspace id)` browse target
-in `navSceneStore`. The folder action updates only that target; it never activates
-the global workspace, initializes/selects a chat, or creates an empty session.
+in `navSceneStore`. A related-directory card also supplies the directory path as
+the file-tree root. Workspace search returns to the project root. Folder actions
+leave the active workspace and conversation selection intact.
 Back/forward navigation retains the target. A closed target
 or another device cannot fall back to the active workspace. Legacy untargeted entry
 points still use the current workspace.
@@ -107,7 +108,7 @@ mobile Remote Control, or Detached Dispatch end-to-end behavior.
 ## Focused verification
 
 ```bash
-pnpm --dir src/web-ui run test:run src/tools/terminal/services/terminalWorkspaceScope.test.ts src/tools/terminal/services/manualTerminalProfileService.test.ts src/tools/file-system/utils/fileTreeReveal.test.ts src/app/scenes/workspace-resources/workspaceResources.test.ts src/app/scenes/workspace-resources/terminalViewLifecycle.test.tsx
+pnpm --dir src/web-ui run test:run src/tools/terminal/services/terminalWorkspaceScope.test.ts src/tools/terminal/services/manualTerminalProfileService.test.ts src/tools/file-system/utils/fileTreeReveal.test.ts src/app/scenes/workspace-resources
 pnpm --dir src/web-ui run test:run src/app/scenes/terminal/TerminalActionBridge.test.tsx src/tools/file-explorer/controller/ExplorerController.test.ts src/infrastructure/api/service-api/WorkspaceAPI.test.ts src/shared/context-menu-system/core/ContextResolver.resourceScope.test.ts src/shared/context-menu-system/commands/builtin/file/RevealInExplorerCommand.test.ts
 cargo test -p terminal-core --lib workspace_origin_contract_tests
 pnpm run check:web

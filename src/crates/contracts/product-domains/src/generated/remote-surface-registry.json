@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:416c934dda520065",
+  "digest": "fnv1a64:a7e5f2b6b738cb96",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -55,7 +55,8 @@
       "user_question_response",
       "user_question_interaction_v1",
       "ssh_none_auth_v1",
-      "terminal_cursor_replay_v1"
+      "terminal_cursor_replay_v1",
+      "git_tracked_change_count_v1"
     ],
     "desktop": [
       "gen_ui_libraries_v1",
@@ -103,7 +104,8 @@
       "session_reference_browse_v1",
       "user_question_response",
       "user_question_interaction_v1",
-      "ssh_none_auth_v1"
+      "ssh_none_auth_v1",
+      "git_tracked_change_count_v1"
     ],
     "cli": [
       "model_routing_v1",
@@ -131,7 +133,8 @@
       "workspace_html_preview_v1",
       "user_question_response",
       "user_question_interaction_v1",
-      "terminal_cursor_replay_v1"
+      "terminal_cursor_replay_v1",
+      "git_tracked_change_count_v1"
     ]
   },
   "operations": [
@@ -3816,6 +3819,17 @@
     },
     {
       "id": "git_get_status",
+      "surface": "tauri_command",
+      "remoteWorkspace": "RemoteRouted",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
+      }
+    },
+    {
+      "id": "git_get_tracked_change_count",
       "surface": "tauri_command",
       "remoteWorkspace": "RemoteRouted",
       "peer": {

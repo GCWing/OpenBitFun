@@ -30,7 +30,6 @@ import {
 } from '../workspaces/pendingWorkspaceAction';
 import { sessionSceneWorkspaceKey } from '@/app/services/sessionSceneTarget';
 import type { SidebarDeviceSlot } from './useSidebarDevices';
-import type { Session } from '@/flow_chat/types/flow-chat';
 import { isNonLocalDispatchTarget } from '@/features/dispatch/types';
 import { sessionAPI } from '@/infrastructure/api/service-api/SessionAPI';
 import { peerConnectionManager } from '@/infrastructure/peer-device/PeerConnectionManager';
@@ -195,23 +194,6 @@ export type DeviceSessionAction =
   | { kind: 'archive' }
   | { kind: 'delete' };
 
-/**
- * Render `slot`'s device and return the session as the rendered surface knows
- * it, or null when a newer switch won. A session the host no longer lists
- * fails loudly instead of acting on a stale catalog row.
- */
-export async function activateDeviceForSession(
-  peer: PeerDeviceContextValue | null,
-  slot: SidebarDeviceSlot,
-  sessionId: string,
-): Promise<Session | null> {
-  if (await activateDeviceSlot(peer, slot) !== 'activated') return null;
-  await flowChatStore.promoteSeededSessions(sessionId);
-  const session = flowChatStore.getState().sessions.get(sessionId);
-  if (!session) throw new Error(i18nService.t('common:nav.devices.sessionUnavailable'));
-  return session;
-}
-
 /** Whole-session copy is negotiated per host; this machine always has it. */
 function deviceCanCopySessions(slot: SidebarDeviceSlot): boolean {
   if (slot.isLocal) return true;
@@ -232,8 +214,13 @@ export async function runDeviceSessionAction(
   action: DeviceSessionAction,
   t: SessionRowTranslate,
 ): Promise<void> {
-  const session = await activateDeviceForSession(peer, slot, sessionId);
-  if (!session) return;
+  if (await activateDeviceSlot(peer, slot) !== 'activated') return;
+  const scope = getActiveSurfaceScope();
+  if (scope.surfaceId !== slot.surfaceId) return;
+  await flowChatStore.promoteSeededSessions(sessionId);
+  if (!scope.isCurrent()) return;
+  const session = flowChatStore.getState().sessions.get(sessionId);
+  if (!session) throw new Error(i18nService.t('common:nav.devices.sessionUnavailable'));
   const dispatched = isNonLocalDispatchTarget(session.config.dispatchTarget);
   switch (action.kind) {
     case 'rename':

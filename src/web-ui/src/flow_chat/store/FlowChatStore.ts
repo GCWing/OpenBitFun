@@ -3716,6 +3716,18 @@ export class FlowChatStore {
     }
   }
 
+  public loadPreviousSessionTurnWindow(
+    sessionId: string,
+    targetOrdinal: number,
+  ): Promise<SessionTurnWindowLoadResult> {
+    // The tail warm-up and the older boundary must share the same request.
+    return this.loadSessionTurnWindow(sessionId, targetOrdinal, {
+      source: 'prefetch',
+      before: 12,
+      after: 1,
+    });
+  }
+
   public async loadSessionTurnWindow(
     sessionId: string,
     targetOrdinal: number,
@@ -3917,6 +3929,8 @@ export class FlowChatStore {
       request.workspaceId ? '' : request.remoteSshHost ?? '',
       request.targetStorageTurnIndex,
       request.catalog.revision,
+      request.originalTargetTurnId ?? '',
+      request.includeInternal ? 'internal' : 'public',
       request.before,
       request.after,
     );
@@ -4103,7 +4117,7 @@ export class FlowChatStore {
       const first = canonicalSessionTurns(session)[0];
       const firstOrdinal = session.turnCatalog.entries.find(entry => entry.turnId === first?.id)?.ordinal;
       if (firstOrdinal !== undefined && firstOrdinal > 0) {
-        void this.loadSessionTurnWindow(sessionId, firstOrdinal - 1, { before: 0, after: 1, source: 'prefetch' })
+        void this.loadPreviousSessionTurnWindow(sessionId, firstOrdinal - 1)
           .catch(error => {
             if (!isSurfaceChangedError(error)) log.debug('Adjacent session history prefetch stopped', { sessionId, error });
           });
