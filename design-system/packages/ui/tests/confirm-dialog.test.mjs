@@ -11,7 +11,7 @@ test("ConfirmDialog composes semantic content and actions on Dialog", async () =
   assert.match(source, /<Dialog/);
   assert.match(source, /role="alertdialog"/);
   assert.match(source, /<DialogHeader>/);
-  assert.match(source, /<DialogTitle>\{title\}<\/DialogTitle>/);
+  assert.match(source, /<DialogTitle lines=\{anchored \? ANCHORED_TITLE_LINES : undefined\}>\{title\}<\/DialogTitle>/);
   assert.match(source, /<DialogBody>/);
   assert.match(source, /<DialogFooter>/);
   assert.match(source, /data-openbitfun-component="confirm-dialog" data-openbitfun-part="content"/);

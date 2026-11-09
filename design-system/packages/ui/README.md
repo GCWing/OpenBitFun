@@ -790,7 +790,8 @@ completion does not close the newly opened menu.
 Use `ConfirmDialog anchor={captureConfirmationAnchor(event.currentTarget)}`
 when a single-item action needs a short explanation beside its trigger. Capture
 the anchor before awaiting work or closing a menu. It retains the trigger's
-rectangle and overlay owner, flips within the viewport, and restores focus to
+rectangle and overlay owner, lines its end edge up with the trigger's end edge
+(right in LTR), flips within the viewport, and restores focus to
 the trigger or its surviving owner. Without an anchor the dialog remains modal;
 keep this presentation for bulk deletion, overwrite, reset, and permission
 decisions. Confirmations focus Cancel first when it is available.
