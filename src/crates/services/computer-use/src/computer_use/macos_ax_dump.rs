@@ -184,7 +184,12 @@ impl RetainedCachedTarget {
     /// only the page's DOM focus there; the window's first responder stays
     /// put, so directed keys vanish while the call reports success.
     pub(crate) fn is_web_text_input(&self) -> bool {
-        self.is_text_input() && unsafe { has_web_area_ancestor(self.0 .0) }
+        (self.is_text_input() || self.role().as_deref() == Some("AXComboBox"))
+            && unsafe { has_web_area_ancestor(self.0 .0) }
+    }
+
+    pub(crate) fn same_element(&self, other: AxRef) -> bool {
+        !other.0.is_null() && unsafe { CFEqual(self.0 .0 as CFTypeRef, other.0 as CFTypeRef) != 0 }
     }
 
     /// Only controls whose primary activation is independent of the exact

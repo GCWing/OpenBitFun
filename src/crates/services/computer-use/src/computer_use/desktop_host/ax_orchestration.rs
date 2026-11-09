@@ -166,7 +166,8 @@ fn resolve_macos_node_click(
     let target = crate::computer_use::macos_ax_dump::retained_cached_target(pid, idx)
         .ok_or_else(|| OpenBitFunError::tool(format!("AX_NODE_STALE: idx={idx} is not in the observed app snapshot; observe the app again")))?;
     crate::computer_use::macos_ax_dump::validate_bound_target(pid, target.reference())?;
-    if semantic && !target.is_web_text_input() {
+    let web_text_field = semantic && target.is_web_text_input();
+    if semantic && !web_text_field {
         match crate::computer_use::macos_ax_write::try_ax_press(target.reference()) {
             crate::computer_use::macos_ax_write::AxWriteOutcome::Ok => return Ok(None),
             // kAXErrorActionUnsupported guarantees no semantic action was sent.
@@ -181,7 +182,59 @@ fn resolve_macos_node_click(
             "AX_NODE_STALE: idx={idx} no longer has a readable frame; observe the app again"
         ))
     })?;
+    if web_text_field {
+        require_visible_web_text_field(pid, idx, frame)?;
+    }
     observed_node_center(frame).map(Some)
+}
+
+/// A web text field takes a real click instead of AXPress, and that click
+/// needs a visible point. Chromium clips a scrolled-away node's frame to the
+/// viewport edge, leaving under one pixel. Web content can still cover the
+/// point: its synchronous AX hit test ignores stacking, so it cannot tell.
+#[cfg(target_os = "macos")]
+fn require_visible_web_text_field(
+    pid: i32,
+    idx: u32,
+    (field_left, field_top, field_width, field_height): (f64, f64, f64, f64),
+) -> OpenBitFunResult<()> {
+    let (x, y) = (
+        field_left + field_width / 2.0,
+        field_top + field_height / 2.0,
+    );
+    let window =
+        crate::computer_use::macos_capture::bound_window_id(pid).map_err(OpenBitFunError::tool)?;
+    let [left, top, width, height] = crate::computer_use::macos_capture::window_bounds(pid, window)
+        .map_err(OpenBitFunError::tool)?;
+    if field_width < 1.0
+        || field_height < 1.0
+        || x < left
+        || y < top
+        || x >= left + width
+        || y >= top + height
+    {
+        return Err(OpenBitFunError::tool(format!("TARGET_COORDINATES_OUTSIDE_WINDOW: Text field idx={idx} is not visible in the window; no click was sent. Scroll it into view and observe again")));
+    }
+    Ok(())
+}
+
+/// Remember the field a real click just focused, so a later focus request on
+/// it does not click again and lose the caret or selection.
+#[cfg(target_os = "macos")]
+fn remember_web_text_click(pid: i32, target: &ClickTarget, x: f64, y: f64) -> OpenBitFunResult<()> {
+    let element = match target {
+        ClickTarget::NodeIdx { idx } => {
+            crate::computer_use::macos_ax_dump::retained_cached_target(pid, *idx)
+        }
+        ClickTarget::ImageXy { .. } => {
+            crate::computer_use::macos_ax_dump::retained_target_at_point(pid, x, y)?
+        }
+        _ => None,
+    };
+    if let Some(element) = element.filter(|element| element.is_web_text_input()) {
+        crate::computer_use::macos_input_focus::note_web_text_click(pid, element);
+    }
+    Ok(())
 }
 
 #[cfg(any(test, target_os = "macos"))]
@@ -548,6 +601,18 @@ impl NativeComputerUseHost {
                 })
                 .await
                 .map_err(|e| OpenBitFunError::tool(e.to_string()))??;
+                if is_plain_activation_click(
+                    &params.mouse_button,
+                    params.click_count,
+                    &params.modifier_keys,
+                ) {
+                    let target = params.target.clone();
+                    // Read-only bookkeeping: without it the next focus request clicks again.
+                    let _ = crate::computer_use::control_session::spawn_blocking(move || {
+                        macos::catch_objc_local(|| remember_web_text_click(pid, &target, x, y))
+                    })
+                    .await;
+                }
             }
             let settle_ms = params.wait_ms_after.unwrap_or(0);
             if settle_ms > 0 {
@@ -679,7 +744,12 @@ impl NativeComputerUseHost {
             } else { None };
             let Some(element) = element else { return Ok(false); };
             crate::computer_use::macos_ax_dump::validate_bound_target(pid, element.reference())?;
-            if !element.is_text_input() || element.is_web_text_input() { return Ok(false); }
+            if element.is_web_text_input() {
+                // Text goes through the directed keyboard. Focus needs a real
+                // click unless an earlier click already gave this field focus.
+                return Ok(insertion.is_none() && crate::computer_use::macos_input_focus::holds_web_text_focus(pid, &element));
+            }
+            if !element.is_text_input() { return Ok(false); }
             if let Some(text) = insertion.as_deref() {
                 return crate::computer_use::macos_ax_write::insert_selected_text(element.reference(), text);
             }

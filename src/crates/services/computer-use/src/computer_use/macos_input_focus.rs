@@ -5,6 +5,8 @@
 //! pair is addressed outside that window's frame; no content is clicked. The
 //! requested gesture retains its original modifiers and target. Delivery is
 //! reported as submitted; the next observation verifies the application result.
+use super::macos_ax_dump::RetainedCachedTarget;
+use super::macos_bg_input::BgModifier;
 use core_graphics::event::{CGEvent, CGEventFlags, CGEventType, CGMouseButton};
 use core_graphics::geometry::CGPoint;
 use foreign_types::ForeignType;
@@ -83,6 +85,83 @@ impl Focus {
 }
 static FOCUS: Mutex<Option<Focus>> = Mutex::new(None);
 
+/// The conditions under which a click's keyboard focus was established.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FocusWitness {
+    pid: i32,
+    window: u32,
+    generation: u64,
+    foreground: i32,
+    activation_epoch: u64,
+    loss_epoch: u64,
+}
+impl FocusWitness {
+    /// Background focus can only be trusted while its loss observer reports.
+    fn still_holds(self, current: Self) -> bool {
+        self == current && (current.loss_epoch != 0 || current.foreground == current.pid)
+    }
+}
+struct WebTextFocus {
+    witness: FocusWitness,
+    element: RetainedCachedTarget,
+}
+static WEB_TEXT_FOCUS: Mutex<Option<WebTextFocus>> = Mutex::new(None);
+
+fn focus_witness(pid: i32) -> Option<FocusWitness> {
+    let window = super::macos_capture::bound_window_id(pid).ok()?;
+    let foreground = super::macos_bg_input::frontmost_pid_macos()?;
+    let generation = super::control_session::snapshot().generation;
+    let loss_epoch = FOCUS
+        .lock()
+        .ok()?
+        .filter(|focus| focus.pid == pid && focus.window == window)
+        .map_or(0, |focus| focus.observed_loss_epoch(false));
+    Some(FocusWitness {
+        pid,
+        window,
+        generation,
+        foreground,
+        activation_epoch: super::macos_capture::activation_epoch(),
+        loss_epoch,
+    })
+}
+
+pub(super) fn note_web_text_click(pid: i32, element: RetainedCachedTarget) {
+    let witness = focus_witness(pid);
+    if let Ok(mut state) = WEB_TEXT_FOCUS.lock() {
+        *state = witness.map(|witness| WebTextFocus { witness, element });
+    }
+}
+
+/// Whether an earlier real click gave this field keyboard focus and nothing
+/// known has moved it. AXFocused cannot answer this for web content.
+pub(super) fn holds_web_text_focus(pid: i32, element: &RetainedCachedTarget) -> bool {
+    let current = focus_witness(pid);
+    WEB_TEXT_FOCUS.lock().is_ok_and(|state| {
+        state.as_ref().is_some_and(|held| {
+            element.same_element(held.element.reference())
+                && current.is_some_and(|current| held.witness.still_holds(current))
+        })
+    })
+}
+
+pub(super) fn forget_web_text_focus() {
+    if let Ok(mut state) = WEB_TEXT_FOCUS.lock() {
+        state.take();
+    }
+}
+
+/// Plain editing keys stay in the field. Tab and application shortcuts may
+/// move focus, so the next focus request clicks again.
+pub(super) fn chord_keeps_text_focus(modifiers: &[BgModifier], key: u16) -> bool {
+    const TAB: u16 = 48;
+    // Carbon virtual keycodes for A, Z, X, C and V.
+    const EDIT_COMMANDS: [u16; 5] = [0, 6, 7, 8, 9];
+    let only_shift = modifiers.iter().all(|m| *m == BgModifier::Shift);
+    let only_command = !modifiers.is_empty() && modifiers.iter().all(|m| *m == BgModifier::Command);
+    (only_shift && key != TAB) || (only_command && EDIT_COMMANDS.contains(&key))
+}
+
 fn cleanup(focus: Focus) {
     // A user may have deliberately switched to the target in the meantime.
     // Never deactivate that real foreground application. Also reject PID reuse.
@@ -94,6 +173,7 @@ fn cleanup(focus: Focus) {
 }
 
 pub(super) fn stop() {
+    forget_web_text_focus();
     if let Ok(mut state) = FOCUS.lock() {
         if let Some(focus) = state.take() {
             focus.stop_observer();
@@ -281,6 +361,79 @@ mod tests {
             loss_epoch: 0,
             ..prepared
         }));
+    }
+
+    #[test]
+    fn web_text_focus_survives_only_unchanged_conditions() {
+        let witness = super::FocusWitness {
+            pid: 11,
+            window: 22,
+            generation: 1,
+            foreground: 33,
+            activation_epoch: 4,
+            loss_epoch: 1,
+        };
+        assert!(witness.still_holds(witness));
+        for changed in [
+            super::FocusWitness {
+                window: 23,
+                ..witness
+            },
+            super::FocusWitness {
+                generation: 2,
+                ..witness
+            },
+            super::FocusWitness {
+                foreground: 34,
+                ..witness
+            },
+            super::FocusWitness {
+                activation_epoch: 5,
+                ..witness
+            },
+            super::FocusWitness {
+                loss_epoch: 2,
+                ..witness
+            },
+        ] {
+            assert!(!witness.still_holds(changed));
+        }
+        let unobserved = super::FocusWitness {
+            loss_epoch: 0,
+            ..witness
+        };
+        assert!(
+            !unobserved.still_holds(unobserved),
+            "background needs the loss observer"
+        );
+        let frontmost = super::FocusWitness {
+            loss_epoch: 0,
+            foreground: 11,
+            ..witness
+        };
+        assert!(
+            frontmost.still_holds(frontmost),
+            "the frontmost target has no private focus"
+        );
+    }
+
+    #[test]
+    fn only_editing_keys_keep_the_text_field_focus() {
+        use super::{chord_keeps_text_focus as keeps, BgModifier::*};
+        assert!(keeps(&[], 36), "Return");
+        assert!(keeps(&[], 51), "Delete");
+        assert!(keeps(&[Shift], 123), "selection by arrow");
+        for key in [0, 6, 7, 8, 9] {
+            assert!(keeps(&[Command], key));
+        }
+        assert!(!keeps(&[], 48), "Tab");
+        assert!(!keeps(&[Shift], 48), "Shift-Tab");
+        assert!(
+            !keeps(&[Command], 40),
+            "an application shortcut such as Cmd-K"
+        );
+        assert!(!keeps(&[Command, Shift], 0));
+        assert!(!keeps(&[Control], 0));
     }
 
     #[test]

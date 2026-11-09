@@ -61,6 +61,8 @@ fn can_write(target: AxRef) -> bool {
 }
 
 fn note_dispatched_input(target: AxRef) {
+    // A semantic action can move DOM focus without any pointer input.
+    super::macos_input_focus::forget_web_text_focus();
     let mut pid = 0;
     if unsafe { AXUIElementGetPid(target.0, &mut pid) } == 0 {
         super::macos_capture::note_input(pid);

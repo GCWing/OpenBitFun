@@ -154,8 +154,13 @@ Text controls inside an `AXWebArea` need a real directed click to become the
 keyboard destination. AXPress and AXFocused succeed there but move only DOM
 focus: the window's first responder stays elsewhere and later directed keys are
 lost while still reporting `submitted`. Route them through the pointer path and
-directed keyboard, without app-name rules. Verified on Chromium and Electron;
-native controls keep the AX path.
+directed keyboard, without app-name rules. Verified on Electron; native controls
+keep the AX path. A field scrolled out of view is an error; web
+content covering the center cannot be detected, because Chromium's synchronous
+AX hit test ignores stacking. A later focus request on a field that a real click
+already focused sends no click, which preserves its caret and selection; other
+pointer or semantic input, shortcuts that can move focus and focus-loss events
+end that state.
 
 The directed-input route can change a target application's internal
 focus without changing the human foreground application. Its window-addressed

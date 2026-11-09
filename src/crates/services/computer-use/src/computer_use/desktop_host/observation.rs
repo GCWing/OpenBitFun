@@ -1,7 +1,7 @@
 //! Observation lifecycle shared by AX, UIA and AT-SPI providers.
 use super::*;
 
-const UNPAINTED_WINDOW_NOTE: &str = "\n[note] WINDOW_NOT_REPAINTED: The window image is identical to the previous observation although the accessibility tree changed. The application has not repainted this window, which is common for covered Chromium and Electron windows. The tree is the current state; the image does not show whether the input took effect.\n";
+const UNPAINTED_WINDOW_NOTE: &str = "[note] WINDOW_NOT_REPAINTED: The window image is identical to the previous observation although the accessibility tree changed. The application may not have repainted this window, which is common for covered Chromium and Electron windows, or the change may not be visible. Use the tree for the current state; the image does not show whether the input took effect.\n";
 
 impl NativeComputerUseHost {
     pub(crate) async fn get_app_state_inner(
@@ -41,7 +41,8 @@ impl NativeComputerUseHost {
                 .observations
                 .record_frame(pid, pixels, &snapshot.digest)
             {
-                snapshot.tree_text.push_str(UNPAINTED_WINDOW_NOTE);
+                // First, because long trees are clipped at the end for the model.
+                snapshot.tree_text.insert_str(0, UNPAINTED_WINDOW_NOTE);
             }
         }
         // Native node indices were rebuilt, including same-content observations.
