@@ -196,23 +196,30 @@ export function nextStorageTurnIndex(
 function buildCatalogOrdinalMaps(session: TurnIdentitySession): {
   ordinalByTurnId: Map<string, TurnOrdinal>;
   ordinalByStorageIndex: Map<number, TurnOrdinal>;
+  storageIndexByTurnId: Map<string | undefined, number>;
 } {
   const ordinalByTurnId = new Map<string, TurnOrdinal>();
   const ordinalByStorageIndex = new Map<number, TurnOrdinal>();
+  const storageIndexByTurnId = new Map<string | undefined, number>();
   for (const entry of validSessionTurnCatalog(session)?.entries ?? []) {
     const ordinal = asTurnOrdinal(entry.ordinal);
     if (entry.turnId) {
       ordinalByTurnId.set(entry.turnId, ordinal);
     }
     ordinalByStorageIndex.set(entry.storageTurnIndex, ordinal);
+    // resolveStorageTurnIndex uses the first matching catalog entry. Preserve
+    // that legacy fallback without scanning the catalog for every loaded Turn.
+    if (!storageIndexByTurnId.has(entry.turnId)) {
+      storageIndexByTurnId.set(entry.turnId, entry.storageTurnIndex);
+    }
   }
-  return { ordinalByTurnId, ordinalByStorageIndex };
+  return { ordinalByTurnId, ordinalByStorageIndex, storageIndexByTurnId };
 }
 
 export function createTurnOrdinalResolver(
   session: TurnIdentitySession,
 ): (localIndex: LocalTurnIndex | number) => TurnOrdinal | undefined {
-  const { ordinalByTurnId, ordinalByStorageIndex } = buildCatalogOrdinalMaps(session);
+  const { ordinalByTurnId, ordinalByStorageIndex, storageIndexByTurnId } = buildCatalogOrdinalMaps(session);
   const canonicalTurns = canonicalSessionTurns(session);
   const fallbackStartOrdinal = session.isPartial === true
     ? Math.max(0, projectedSessionTurnCount(session) - canonicalTurns.length)
@@ -228,7 +235,8 @@ export function createTurnOrdinalResolver(
       return undefined;
     }
 
-    const storageTurnIndex = resolveStorageTurnIndex(session, turn);
+    const storageTurnIndex = turn.storageTurnIndex ?? turn.backendTurnIndex
+      ?? storageIndexByTurnId.get(turn.id);
     return ordinalByTurnId.get(turn.id)
       ?? (storageTurnIndex !== undefined
         ? ordinalByStorageIndex.get(storageTurnIndex)
