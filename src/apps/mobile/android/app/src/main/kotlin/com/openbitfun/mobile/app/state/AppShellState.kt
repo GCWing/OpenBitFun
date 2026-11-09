@@ -41,6 +41,7 @@ internal class AppShellState(
     remoteSessionId: String? = null,
     remoteCreating: Boolean = false,
     remoteConnectOpen: Boolean = false,
+    pendingRemoteSessionId: String? = null,
 ) {
     internal var surface: MobileSurface by mutableStateOf(surface)
         private set
@@ -63,6 +64,11 @@ internal class AppShellState(
     internal var remoteSessionId: String? by mutableStateOf(remoteSessionId)
         private set
 
+    internal var pendingRemoteSessionId: String? by mutableStateOf(pendingRemoteSessionId)
+        private set
+
+    private var pendingRemoteSessionObservedBusy = false
+
     internal var remoteCreating: Boolean by mutableStateOf(remoteCreating)
         private set
 
@@ -82,6 +88,23 @@ internal class AppShellState(
         surface = MobileSurface.REMOTE
         remoteCreating = false
         remoteSessionId = sessionId
+        pendingRemoteSessionId = sessionId
+        pendingRemoteSessionObservedBusy = false
+    }
+
+    internal fun observeRemoteSessionOpen(sessionId: String, selectedSessionId: String?, busy: Boolean) {
+        if (pendingRemoteSessionId != sessionId) return
+        when {
+            selectedSessionId == sessionId -> completeRemoteSessionOpen(sessionId)
+            busy -> pendingRemoteSessionObservedBusy = true
+            pendingRemoteSessionObservedBusy -> completeRemoteSessionOpen(sessionId)
+        }
+    }
+
+    private fun completeRemoteSessionOpen(sessionId: String) {
+        if (pendingRemoteSessionId != sessionId) return
+        pendingRemoteSessionId = null
+        pendingRemoteSessionObservedBusy = false
     }
 
     internal fun createRemoteSession() {
@@ -89,12 +112,16 @@ internal class AppShellState(
         surface = MobileSurface.REMOTE
         remoteCreating = true
         remoteSessionId = null
+        pendingRemoteSessionId = null
+        pendingRemoteSessionObservedBusy = false
     }
 
     internal fun closeRemoteSession() {
         closeRemoteConnect()
         remoteCreating = false
         remoteSessionId = null
+        pendingRemoteSessionId = null
+        pendingRemoteSessionObservedBusy = false
     }
 
     /**
@@ -109,6 +136,8 @@ internal class AppShellState(
         surface = MobileSurface.REMOTE
         remoteCreating = false
         remoteSessionId = null
+        pendingRemoteSessionId = null
+        pendingRemoteSessionObservedBusy = false
     }
 
     /**
@@ -191,11 +220,12 @@ internal class AppShellState(
                     it.sidebarQuery,
                     it.remoteSessionId,
                     it.remoteCreating,
-                    // Index 9 held the retired scanner request. It stays a
-                    // placeholder so the positions older builds wrote still
-                    // line up with what [restore] reads.
+                    // Index 9 held a retired connection-overlay request. It
+                    // stays a placeholder so the positions older builds wrote
+                    // still line up with what [restore] reads.
                     false,
                     it.remoteConnectOpen,
+                    it.pendingRemoteSessionId,
                 )
             },
             restore = {
@@ -211,14 +241,25 @@ internal class AppShellState(
                     remoteSessionId = it.getOrNull(7) as String?,
                     remoteCreating = it.getOrNull(8) as? Boolean ?: false,
                     // A state saved before index 10 existed only knew the
-                    // scanner request, which opened the connect sheet.
+                    // retired connection-overlay request, which opened the
+                    // account device sheet.
                     remoteConnectOpen = it.getOrNull(10) as? Boolean
                         ?: (it.getOrNull(9) as? Boolean ?: false),
+                    pendingRemoteSessionId = it.getOrNull(11) as? String?,
                 )
             },
         )
     }
 }
+
+internal fun resolveRoutedRemoteSessionId(
+    pendingSessionId: String?,
+    requestedSessionId: String?,
+    committedSessionIds: Set<String>,
+    selectedSessionId: String?,
+): String? = pendingSessionId
+    ?: requestedSessionId?.takeIf { it in committedSessionIds || it == selectedSessionId }
+    ?: selectedSessionId
 
 @Composable
 internal fun rememberAppShellState(): AppShellState = rememberSaveable(saver = AppShellState.Saver) {

@@ -49,6 +49,14 @@ export DEVELOPER_DIR="$HOME/Downloads/Xcode.app/Contents/Developer"
 ./Testing/run-pure-swift-tests.sh
 ```
 
+This also covers dictation draft ownership (partial-result corrections and
+manual edits) and ImageIO thumbnail decoding (large photos, camera rotation,
+full-screen bounds, and invalid bytes). Chat previews decode off the UI thread
+at up to 1024 pixels on the long edge; the full-screen viewer uses up to 2560.
+Typing during dictation keeps the manual edit and stops the recognition attempt,
+including while authorization is pending. Recognition callbacks also check the active
+surface, session, and remote target generation before updating a draft.
+
 After changing shared Kotlin code, regenerate the framework with the same compatible
 toolchain before building the Xcode project. Xcode links the existing XCFramework;
 its build does not rebuild Kotlin. Compiling a Kotlin target alone also does not

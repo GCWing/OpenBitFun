@@ -497,4 +497,6 @@
     <string name="queue_more">消息操作</string>
     <string name="queue_remove">从队列移除</string>
     <string name="queue_unsupported">升级执行端后可调整消息顺序。</string>
+    <string name="chat_voice_input_unavailable">此设备暂时无法使用语音输入，请使用文字输入。</string>
+    <string name="chat_photo_picker_unavailable">暂时无法打开照片选择器，请重试或使用其他照片应用。</string>
 </resources>

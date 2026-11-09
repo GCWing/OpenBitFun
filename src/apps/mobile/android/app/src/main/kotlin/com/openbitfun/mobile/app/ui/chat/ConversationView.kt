@@ -21,9 +21,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import com.openbitfun.mobile.app.ui.theme.generated.MobileDesignGeometry
 import com.openbitfun.mobile.app.ui.theme.generated.MobileDesignTypography
-import android.app.Activity
-import android.content.Intent
-import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -55,6 +52,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.coroutines.launch
 import com.openbitfun.mobile.app.platform.prepareComposerImage
+import com.openbitfun.mobile.app.platform.launchComposerActivity
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -139,8 +137,8 @@ internal fun ConversationView(
     /**
      * Where this transcript is running — a desktop name, or the brand and the
      * branch. Built by `ConversationHeaderPresenter` at the call site, because
-     * only the screen knows whether it reached this session through a pairing
-     * or through an account device.
+     * only the screen knows whether it reached this session through the
+     * selected account device.
      */
     contextTitle: String,
     /** A file the agent named, taken from a markdown link. Path, then label. */
@@ -228,6 +226,8 @@ internal fun ConversationView(
                             images = images + prepared
                         }
                     }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                     if (currentAttachmentKey == targetSession) {
                         Toast.makeText(context, R.string.chat_image_prepare_failed, Toast.LENGTH_LONG).show()
@@ -244,13 +244,8 @@ internal fun ConversationView(
         if (uri != null) importPhotos(listOf(uri))
     }
 
-    val voiceInput = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
-            if (text.isNotBlank()) {
-                onIntent(RemoteSessionIntent.UpdateDraft(mergeComposerDraft(state.draft, text)))
-            }
-        }
+    val voiceInput = rememberComposerVoiceInput(attachmentKey) { text ->
+        onIntent(RemoteSessionIntent.UpdateDraft(mergeComposerDraft(state.draft, text)))
     }
 
     androidx.compose.runtime.CompositionLocalProvider(
@@ -388,21 +383,14 @@ internal fun ConversationView(
                     onAttach = {
                         pickerOwner = attachmentKey
                         val remaining = MAX_COMPOSER_IMAGES - images.size
-                        if (remaining == 1) singlePhotoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        else if (remaining > 1) photoPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly, maxItems = remaining),
-                        )
-                    },
-                    onVoice = {
-                        voiceInput.launch(
-                            Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                putExtra(
-                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                        if (!launchComposerActivity(context, R.string.chat_photo_picker_unavailable) {
+                                if (remaining == 1) singlePhotoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                else if (remaining > 1) photoPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly, maxItems = remaining),
                                 )
-                            },
-                        )
+                            }) pickerOwner = null
                     },
+                    onVoice = voiceInput,
                     onSend = {
                         submittedDraft = draft
                         keyboard?.hide()
