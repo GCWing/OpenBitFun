@@ -1128,7 +1128,8 @@ private struct FullScreenTimelineImage: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             OpenBitFunTheme.mediaBackground.ignoresSafeArea()
-            AsyncDecodedImage(dataURL: image.dataURL).ignoresSafeArea()
+            AsyncDecodedImage(dataURL: image.dataURL, maximumPixelSize: ChatImageThumbnail.fullScreenMaximumPixelSize)
+                .ignoresSafeArea()
             Button { dismiss() } label: {
                 Image(systemName: "xmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(OpenBitFunTheme.contentOnAction)
                     .frame(width: 44, height: 44).background(OpenBitFunTheme.mediaControlBackground).clipShape(Circle())
@@ -1143,9 +1144,10 @@ struct AsyncDecodedImage: View {
     var data: Data? = nil
     var dataURL: String? = nil
     var fill = false
+    var maximumPixelSize = ChatImageThumbnail.maximumPixelSize
     @State private var image: UIImage?
     @State private var loading = true
-    private struct Source: Equatable { let data: Data?; let url: String? }
+    private struct Source: Equatable { let data: Data?; let url: String?; let maximumPixelSize: Int }
     var body: some View {
         Group {
             if let image {
@@ -1156,19 +1158,20 @@ struct AsyncDecodedImage: View {
                 Image(systemName: "photo").foregroundStyle(OpenBitFunTheme.muted)
             }
         }
-        .task(id: Source(data: data, url: dataURL)) {
+        .task(id: Source(data: data, url: dataURL, maximumPixelSize: maximumPixelSize)) {
             image = nil
             loading = true
             let bytes = data
             let url = dataURL
+            let pixelSize = maximumPixelSize
             let decoded = await Task.detached(priority: .userInitiated) {
                 let source: Data?
                 if let bytes { source = bytes }
                 else if let url, let marker = url.range(of: "base64,") {
                     source = Data(base64Encoded: String(url[marker.upperBound...]))
                 } else { source = nil }
-                guard let source, let original = UIImage(data: source) else { return nil as UIImage? }
-                return original.preparingForDisplay() ?? original
+                guard let source, let thumbnail = ChatImageThumbnail.decode(source, maximumPixelSize: pixelSize) else { return nil as UIImage? }
+                return UIImage(cgImage: thumbnail)
             }.value
             guard !Task.isCancelled else { return }
             image = decoded

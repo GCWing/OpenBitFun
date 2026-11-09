@@ -105,9 +105,9 @@ class CloudAccountClientTest {
      */
     @Test
     fun theOfficialEndpointCarriesTheVersionWithoutTakingItIntoAnIdentity() {
-        assertEquals("1.0.9", RELAY_SERVICE_VERSION)
+        assertEquals("1.0.10", RELAY_SERVICE_VERSION)
         assertEquals("https://remote.openbitfun.com/relay", DEFAULT_CLOUD_RELAY_URL)
-        assertEquals("https://remote.openbitfun.com/relay?v=1.0.9", OFFICIAL_CLOUD_RELAY_URL)
+        assertEquals("https://remote.openbitfun.com/relay?v=1.0.10", OFFICIAL_CLOUD_RELAY_URL)
         // One deployment answers on both live paths, so a token or master key
         // saved by either build keeps working across the change.
         assertTrue(sameRelayDeployment(DEFAULT_CLOUD_RELAY_URL, OFFICIAL_CLOUD_RELAY_URL))

@@ -606,7 +606,21 @@ mod tests {
     #[test]
     fn overlay_is_valid_and_keeps_product_endpoint_decisions() {
         let overlay = parse_overlay().expect("valid overlay");
-        assert_eq!(overlay.providers.len(), 17);
+        assert_eq!(overlay.providers.len(), 18);
+        let magpie = overlay
+            .providers
+            .iter()
+            .find(|provider| provider.id == "magpie")
+            .expect("Magpie gateway preset");
+        assert!(!magpie.requires_api_key);
+        assert!(magpie.catalog_provider_ids.is_empty());
+        assert!(magpie.model_policy.curated_models.is_empty());
+        assert_eq!(magpie.endpoints[0].base_url, "http://127.0.0.1:3425/v1");
+        assert_eq!(magpie.endpoints[0].api_format, "openai");
+        assert!(magpie
+            .endpoints
+            .iter()
+            .all(|endpoint| !endpoint.trusted_for_auto_detection));
         let go = overlay
             .providers
             .iter()
@@ -849,7 +863,13 @@ mod tests {
             "bundle".to_string(),
             ProviderCatalogSource::Bundle,
         );
-        assert_eq!(resolved.providers.len(), 17);
+        assert_eq!(resolved.providers.len(), 18);
+        let magpie = resolved
+            .providers
+            .iter()
+            .find(|provider| provider.id == "magpie")
+            .expect("Magpie models must come from its live gateway");
+        assert!(magpie.models.is_empty());
         let go = resolved
             .providers
             .iter()

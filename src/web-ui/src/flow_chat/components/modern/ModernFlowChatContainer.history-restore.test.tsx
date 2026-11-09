@@ -29,6 +29,7 @@ vi.mock('../../store/FlowChatStore', () => ({ flowChatStore: {
   releaseSessionHistoryCompletionAfterInitialPaint: () => false,
   extendSessionHistoryWindow: () => null,
   loadSessionTurnWindow: (...args: unknown[]) => fixture.loadTurnWindow(...args),
+  loadPreviousSessionTurnWindow: (...args: unknown[]) => fixture.loadTurnWindow(...args),
   activateSessionHistoryWindow: () => fixture.cached,
 } }));
 vi.mock('../../store/modernFlowChatStore', async importOriginal => {

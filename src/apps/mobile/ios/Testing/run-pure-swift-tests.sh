@@ -43,8 +43,6 @@ xcrun --sdk macosx swiftc \
   -o "$OUTPUT_DIR/mobile-process-group-tests"
 "$OUTPUT_DIR/mobile-process-group-tests"
 
-printf '%s\n' 'iOS pure Swift focused tests passed.'
-
 xcrun --sdk macosx swiftc \
   "$IOS_DIR/OpenBitFun/Infrastructure/StartupRevealPreference.swift" \
   "$SCRIPT_DIR/StartupRevealPreferenceTests.swift" \
@@ -56,3 +54,17 @@ xcrun --sdk macosx swiftc \
   "$SCRIPT_DIR/HistoryPageArrivalTrackerTests.swift" \
   -o "$OUTPUT_DIR/history-page-arrival-tracker-tests"
 "$OUTPUT_DIR/history-page-arrival-tracker-tests"
+
+xcrun --sdk macosx swiftc \
+  "$IOS_DIR/OpenBitFun/Infrastructure/DictationDraftSession.swift" \
+  "$SCRIPT_DIR/DictationDraftSessionTests.swift" \
+  -o "$OUTPUT_DIR/dictation-draft-session-tests"
+"$OUTPUT_DIR/dictation-draft-session-tests"
+
+xcrun --sdk macosx swiftc \
+  "$IOS_DIR/OpenBitFun/Infrastructure/ChatImageThumbnail.swift" \
+  "$SCRIPT_DIR/ChatImageThumbnailTests.swift" \
+  -o "$OUTPUT_DIR/chat-image-thumbnail-tests"
+"$OUTPUT_DIR/chat-image-thumbnail-tests"
+
+printf '%s\n' 'iOS pure Swift focused tests passed.'

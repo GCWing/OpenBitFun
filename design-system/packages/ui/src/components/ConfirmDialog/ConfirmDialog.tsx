@@ -56,6 +56,8 @@ export interface ConfirmDialogProps {
   type?: ConfirmDialogType;
 }
 
+const ANCHORED_TITLE_LINES = 3;
+
 const defaultIcons: Record<ConfirmDialogType, ReactNode> = {
   error: <Icon glyph={AlertCircle} />,
   info: <Icon name="info" />,
@@ -103,6 +105,9 @@ export const ConfirmDialog = forwardRef<HTMLDivElement, ConfirmDialogProps>(
     const secondaryAtStart = hasSecondary && secondaryActionPlacement === "start";
     const resolvedCancelText = cancelText ?? designSystem.messages.confirmCancel;
     const resolvedConfirmText = confirmText ?? designSystem.messages.confirmAction;
+    // Anchored confirmations are compact popovers beside their trigger.
+    const anchored = Boolean(anchor);
+    const buttonSize = anchored ? "sm" : undefined;
 
     useEffect(() => {
       mountedRef.current = true;
@@ -139,7 +144,7 @@ export const ConfirmDialog = forwardRef<HTMLDivElement, ConfirmDialogProps>(
     }, [busy, onOpenChange]);
 
     const cancelButton = showCancel ? (
-      <Button ref={cancelButtonRef} disabled={busy} onClick={() => requestClose("cancel-button")} variant="fill">
+      <Button ref={cancelButtonRef} disabled={busy} onClick={() => requestClose("cancel-button")} size={buttonSize} variant="fill">
         {resolvedCancelText}
       </Button>
     ) : null;
@@ -149,6 +154,7 @@ export const ConfirmDialog = forwardRef<HTMLDivElement, ConfirmDialogProps>(
         labelBehavior={secondaryAtStart ? "static" : undefined}
         loading={pendingAction === "secondary"}
         onClick={() => void runAction("secondary", onSecondary)}
+        size={buttonSize}
         variant={secondaryAtStart ? "text" : "outline"}
       >
         {secondaryText}
@@ -160,6 +166,7 @@ export const ConfirmDialog = forwardRef<HTMLDivElement, ConfirmDialogProps>(
         loading={pendingAction === "confirm"}
         onClick={() => void runAction("confirm", onConfirm)}
         ref={confirmButtonRef}
+        size={buttonSize}
         tone={confirmDanger || type === "error" ? "danger" : "neutral"}
         variant="primary"
       >
@@ -182,7 +189,7 @@ export const ConfirmDialog = forwardRef<HTMLDivElement, ConfirmDialogProps>(
       >
         <DialogHeader>
           <DialogHeading>
-            <DialogTitle>{title}</DialogTitle>
+            <DialogTitle lines={anchored ? ANCHORED_TITLE_LINES : undefined}>{title}</DialogTitle>
           </DialogHeading>
           {showCloseButton ? <DialogClose disabled={busy} /> : null}
         </DialogHeader>

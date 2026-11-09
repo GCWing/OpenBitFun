@@ -237,7 +237,55 @@
     "urlHint": "Official API URL pre-filled, modify if using proxy or private deployment",
     "formatHint": "Automatically selected based on provider, usually no need to change"
   },
+  "magpie": {
+    "description": "Connect to Magpie and add models.",
+    "connect": "Detect Magpie",
+    "keyHint": "Keep the default for local connections. Use a Magpie key for remote or Docker connections.",
+    "manage": "Manage models",
+    "addConnection": "Another gateway",
+    "address": "Gateway address",
+    "key": "Gateway key",
+    "detect": "Detect",
+    "refresh": "Refresh models",
+    "manual": "Configure manually",
+    "hostHint": "localhost refers to the connected remote device.",
+    "search": "Search Magpie models",
+    "imported": "Added",
+    "routingGroup": "Magpie routing group",
+    "missing": "Unavailable",
+    "missingHint": "These models are missing from Magpie. Your saved settings are kept.",
+    "poolHint": "Added models can be set as defaults or included in model pools.",
+    "importSelected": "Add {{count}} models",
+    "saveConnection": "Save connection",
+    "close": "Collapse",
+    "states": {
+      "idle": "Not checked",
+      "checking": "Connecting…",
+      "ready": "Magpie detected",
+      "empty": "Magpie detected, but no models yet. Enable models in Magpie, then refresh.",
+      "unreachable": "Magpie not detected. Make sure it is running.",
+      "accessDenied": "Access denied. Check the key and Magpie sharing settings.",
+      "unrecognized": "This address is not a Magpie service.",
+      "catalogError": "Magpie detected, but the model list failed to load. Try again.",
+      "invalidAddress": "Enter an http:// or https:// address without credentials or query parameters.",
+      "unsupported": "Detection is unavailable on this device. Update OpenBitFun or configure manually.",
+      "failed": "The operation failed. Reopen model settings and try again.",
+      "saved": "Saved."
+    },
+    "contextTooSmall": "Requires at least 32,000 context tokens",
+    "invalidLimits": "Unsupported model limits",
+    "discard": "Cancel"
+  },
   "providers": {
+    "magpie": {
+      "name": "Magpie",
+      "description": "Models and routing groups from your Magpie gateway",
+      "urlOptions": {
+        "openai": "Magpie gateway",
+        "responses": "Magpie gateway",
+        "anthropic": "Magpie gateway"
+      }
+    },
     "opencode-zen": {
       "name": "OpenCode Zen",
       "description": "OpenCode models with free access and pay-as-you-go API keys."
@@ -741,7 +789,7 @@
   "editSettingsTitle": "Model parameters",
   "editProviderSettingsTitle": "Service connection",
   "sections": {
-    "acquisition": "Add or import models",
+    "acquisition": "Model sources",
     "selectionModes": "Smart mode",
     "pool": "All models",
     "more": "More settings"

@@ -18,6 +18,7 @@ pub(super) struct ObservationCache<G> {
     application: Option<(i32, String)>,
     images: VecDeque<(String, G)>,
     latest: Option<G>,
+    last_frame: Option<(i32, u64, String)>,
 }
 
 impl<G> Default for ObservationCache<G> {
@@ -29,6 +30,7 @@ impl<G> Default for ObservationCache<G> {
             application: None,
             images: VecDeque::new(),
             latest: None,
+            last_frame: None,
         }
     }
 }
@@ -46,12 +48,25 @@ impl<G: Copy> ObservationCache<G> {
     pub(super) fn clear(&mut self) {
         self.scope = None;
         self.application = None;
+        self.last_frame = None;
         self.clear_images();
     }
 
     pub(super) fn clear_images(&mut self) {
         self.images.clear();
         self.latest = None;
+    }
+
+    /// Record an image-bearing observation. True when the accessibility tree
+    /// moved on since the previous one while the window image did not, which
+    /// means the application has not repainted what the tree already reports.
+    pub(super) fn record_frame(&mut self, pid: i32, pixels: u64, digest: &str) -> bool {
+        let unpainted = self
+            .last_frame
+            .as_ref()
+            .is_some_and(|(p, hash, previous)| *p == pid && *hash == pixels && previous != digest);
+        self.last_frame = Some((pid, pixels, digest.to_owned()));
+        unpainted
     }
 
     pub(super) fn record_image(&mut self, id: String, geometry: G) {
@@ -112,6 +127,18 @@ mod tests {
             target_revision: revision,
             target: Some("pid:12/window:34".into()),
         }
+    }
+
+    #[test]
+    fn unpainted_window_requires_same_pixels_with_a_changed_tree() {
+        let mut cache = ObservationCache::<u8>::default();
+        assert!(!cache.record_frame(12, 1, "a"), "no previous frame");
+        assert!(!cache.record_frame(12, 1, "a"), "nothing changed");
+        assert!(cache.record_frame(12, 1, "b"), "tree moved, pixels did not");
+        assert!(!cache.record_frame(12, 2, "c"), "both moved");
+        assert!(!cache.record_frame(13, 2, "d"), "another process");
+        cache.clear();
+        assert!(!cache.record_frame(13, 2, "e"), "cleared with the scope");
     }
 
     #[test]

@@ -99,7 +99,8 @@
     "loadingFileTree": "正在加载文件树..."
   },
   "empty": {
-    "selectWorkspace": "选择工作区后将显示文件树"
+    "selectWorkspace": "选择工作区后将显示文件树",
+    "directoryUnavailable": "所选目录不可用。"
   },
   "dialog": {
     "newFile": {
@@ -131,6 +132,10 @@
     "cancelled": "传输已取消",
     "failed": "文件传输失败：{{error}}",
     "dropHint": "将文件拖放到此处以上传",
+    "peerMissingWorkspace": "无法识别被控设备上的工作区，请重新打开后重试。",
+    "peerFolderUnsupported": "暂不支持将此设备上的文件夹上传到被控设备，请改为上传其中的文件。",
+    "peerNotAFile": "只能将普通文件上传到被控设备。",
+    "peerFileTooLarge": "超过 {{limit}} MB 的文件无法上传到被控设备。",
     "stop": "停止"
   },
   "archive": {

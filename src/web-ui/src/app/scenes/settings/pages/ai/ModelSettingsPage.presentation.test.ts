@@ -23,7 +23,7 @@ describe('ModelSettingsPage presentation', () => {
     // Template and custom-provider editors share the required API URL row.
     expect(source.match(/<ConfigPageRow label=\{t\('form\.baseUrl'\)\} required/g)).toHaveLength(1);
     expect(source).toContain('const apiKeyRequired = !isOpenCodeZenApiKeyConfig(editingConfig);');
-    expect(source).toContain('<ConfigPageRow label={label} required={apiKeyRequired} align="center" wide>');
+    expect(source).toMatch(/<ConfigPageRow label=\{label\} required=\{apiKeyRequired\} align="center" wide\s+description=/);
     expect(source.match(/required=\{apiKeyRequired\}/g)).toHaveLength(2);
   });
 

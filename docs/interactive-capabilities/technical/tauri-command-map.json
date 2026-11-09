@@ -2,10 +2,10 @@
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
   "catalogDigest": "8a02be2b328791ebb823e4b7a956bf0371c523caa7f881a6c778cbaa42d72575",
-  "commandCount": 705,
+  "commandCount": 707,
   "coverage": {
-    "commandCount": 705,
-    "documentedCommandCount": 644,
+    "commandCount": 707,
+    "documentedCommandCount": 646,
     "implementationCommandCount": 61,
     "implementationDigest": "fdb6f78b009b95270d26834349aade36e0987553167f325a9c674a085b876a2d"
   },
@@ -4807,6 +4807,22 @@
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
+      "id": "git_get_tracked_change_count",
+      "moduleId": "git",
+      "capabilityId": "feature.git",
+      "capabilityIds": [
+        "feature.git"
+      ],
+      "documentedItemIds": [
+        "feature.git:status-diff"
+      ],
+      "visibility": "documented",
+      "rustPath": "git_get_tracked_change_count",
+      "sourceFile": "src/apps/desktop/src/api/git_api.rs",
+      "signature": "fn git_get_tracked_change_count( state: State<'_, AppState>, request: GitTrackedChangeCountRequest, ) -> Result<Option<usize>, String>",
+      "remoteWorkspacePolicy": "RemoteRouted"
+    },
+    {
       "id": "git_is_repository",
       "moduleId": "git",
       "capabilityId": "feature.git",
@@ -7159,6 +7175,22 @@
       "sourceFile": "src/apps/desktop/src/api/acp_client_api.rs",
       "signature": "fn probe_acp_client_requirements( state: State<'_, AppState>, startup_trace: State<'_, DesktopStartupTrace>, request: ProbeAcpClientRequirementsRequest, ) -> Result<Vec<AcpClientRequirementProbe>, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "probe_magpie_gateway",
+      "moduleId": "commands",
+      "capabilityId": "setting.ai.models",
+      "capabilityIds": [
+        "setting.ai.models"
+      ],
+      "documentedItemIds": [
+        "setting.ai.models:available-models"
+      ],
+      "visibility": "documented",
+      "rustPath": "probe_magpie_gateway",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn probe_magpie_gateway( state: State<'_, AppState>, request: openbitfun_core_types::magpie::MagpieProbeRequest, ) -> Result<openbitfun_core_types::magpie::MagpieProbeResult, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "product_control_invoke",

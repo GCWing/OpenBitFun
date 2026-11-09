@@ -196,6 +196,7 @@ cargo test --locked -p openbitfun-services-integrations --no-default-features --
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::host_stream::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::host_stream_subscriber::tests::
 cargo test -p openbitfun-services-integrations --no-default-features --features file-watch --test file_watch_contracts
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features git,remote-ssh --test git_contracts tracked_change_count
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features workspace-search --test workspace_search_contracts
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features deep-research --lib deep_research::tests::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features web-tools --lib web_tools::tests
@@ -205,6 +206,9 @@ pnpm run check:core-boundaries
 
 Other family-specific targets remain in `Cargo.toml`; add a guide command only
 for a recurring workflow, not to mirror every test target.
+
+The tracked-change count fixture exercises the SSH command through a local
+POSIX shell on Unix. It does not establish live SSH or container routing.
 
 For persistent public marketplace image caching (restart/offline reuse, URL
 boundaries, and bounded disk storage), run:

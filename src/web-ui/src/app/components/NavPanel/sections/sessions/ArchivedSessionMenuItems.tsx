@@ -100,7 +100,7 @@ export default function ArchivedSessionMenuItems({ session, title, workspaceName
     </MenuItem>
     <SessionDeleteMenuItem
       sessionId={session.sessionId}
-      label={t('nav.sessions.deleteArchived')}
+      label={t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSource' : 'nav.sessions.delete')}
       description={t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSourceConfirmMessage' : 'nav.sessions.deleteArchivedConfirmMessage', { name: title, workspace: workspaceName })}
       disabled={pending}
       testId="nav-session-menu-delete-archived"

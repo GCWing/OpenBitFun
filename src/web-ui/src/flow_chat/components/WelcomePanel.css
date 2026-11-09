@@ -267,6 +267,17 @@
   outline-offset: 2px;
 }
 
+.welcome-panel__workspace-changes {
+  grid-row: 3;
+  align-self: start;
+  margin: var(--openbitfun-space-3) 0 0;
+  text-align: center;
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+}
+
 .welcome-panel__details {
   grid-row: 3;
   align-self: start;

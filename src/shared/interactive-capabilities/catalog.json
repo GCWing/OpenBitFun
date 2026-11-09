@@ -1980,6 +1980,7 @@
           },
           "evidence": [
             "command:git_get_status",
+            "command:git_get_tracked_change_count",
             "command:git_get_changed_files",
             "command:git_get_diff",
             "command:git_get_repository",
@@ -7025,7 +7026,8 @@
           },
           "evidence": [
             "command:get_ai_model_catalog",
-            "command:list_ai_models_by_config"
+            "command:list_ai_models_by_config",
+            "command:probe_magpie_gateway"
           ]
         },
         {

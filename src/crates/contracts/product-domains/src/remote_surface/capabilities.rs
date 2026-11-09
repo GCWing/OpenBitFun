@@ -25,6 +25,7 @@ pub enum PeerHostCapability {
     GenUiLibrariesV1,
     ModelRoutingV1,
     ModelPoolSelectionV1,
+    MagpieDiscoveryV1,
     /// Versioned, execution-host-owned background report decisions are persisted and projected.
     BackgroundResultDeliveryV1,
     DialogQueueV1,
@@ -33,6 +34,10 @@ pub enum PeerHostCapability {
     IdempotentDialogSubmit,
     /// Inline imageContexts are durably prepared by the receiving Runtime.
     InlineImageAttachmentsV1,
+    /// `workspace_file_upload` accepts `openbitfun://runtime/<workspace>/attachments/...`
+    /// targets and creates their runtime-owned parents, so a controller can
+    /// attach its own local files to a session executing on this host.
+    RuntimeAttachmentUploadV1,
     /// `btw_ask_stream` applies initial model and reasoning selection before the first turn.
     BtwInitialModelSelectionV1,
     /// BTW accepts typed initial model/pool choices and retains inherited bindings.
@@ -117,6 +122,8 @@ pub enum PeerHostCapability {
     /// on the `terminal-<id>` host stream instead of `terminal_event` fan-out.
     /// This selects a delivery path, so only a host using that path advertises it.
     TerminalCursorReplayV1,
+    /// `git_get_tracked_change_count` returns a workspace-scoped count.
+    GitTrackedChangeCountV1,
 }
 
 impl PeerHostCapability {
@@ -125,10 +132,12 @@ impl PeerHostCapability {
         Self::GenUiLibrariesV1,
         Self::ModelRoutingV1,
         Self::ModelPoolSelectionV1,
+        Self::MagpieDiscoveryV1,
         Self::BackgroundResultDeliveryV1,
         Self::DialogQueueV1,
         Self::IdempotentDialogSubmit,
         Self::InlineImageAttachmentsV1,
+        Self::RuntimeAttachmentUploadV1,
         Self::BtwInitialModelSelectionV1,
         Self::BtwModelPoolSelectionV1,
         Self::ControlConversationV1,
@@ -168,6 +177,7 @@ impl PeerHostCapability {
         Self::UserQuestionInteractionV1,
         Self::SshNoneAuthV1,
         Self::TerminalCursorReplayV1,
+        Self::GitTrackedChangeCountV1,
     ];
 
     /// The key used in the `peer_mode_ping` `capabilities` object.
@@ -176,10 +186,12 @@ impl PeerHostCapability {
             Self::GenUiLibrariesV1 => "gen_ui_libraries_v1",
             Self::ModelRoutingV1 => "model_routing_v1",
             Self::ModelPoolSelectionV1 => "model_pool_selection_v1",
+            Self::MagpieDiscoveryV1 => "magpie_discovery_v1",
             Self::BackgroundResultDeliveryV1 => "background_result_delivery_v1",
             Self::DialogQueueV1 => "dialog_queue_v1",
             Self::IdempotentDialogSubmit => "idempotent_dialog_submit",
             Self::InlineImageAttachmentsV1 => "inline_image_attachments_v1",
+            Self::RuntimeAttachmentUploadV1 => "runtime_attachment_upload_v1",
             Self::ControlConversationV1 => "control_conversation_v1",
             Self::ControlConversationResetV1 => "control_conversation_reset_v1",
             Self::BtwInitialModelSelectionV1 => "btw_initial_model_selection_v1",
@@ -219,6 +231,7 @@ impl PeerHostCapability {
             Self::UserQuestionInteractionV1 => "user_question_interaction_v1",
             Self::SshNoneAuthV1 => "ssh_none_auth_v1",
             Self::TerminalCursorReplayV1 => "terminal_cursor_replay_v1",
+            Self::GitTrackedChangeCountV1 => "git_tracked_change_count_v1",
         }
     }
 
@@ -234,10 +247,12 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::GenUiLibrariesV1,
     PeerHostCapability::ModelRoutingV1,
     PeerHostCapability::ModelPoolSelectionV1,
+    PeerHostCapability::MagpieDiscoveryV1,
     PeerHostCapability::BackgroundResultDeliveryV1,
     PeerHostCapability::DialogQueueV1,
     PeerHostCapability::IdempotentDialogSubmit,
     PeerHostCapability::InlineImageAttachmentsV1,
+    PeerHostCapability::RuntimeAttachmentUploadV1,
     PeerHostCapability::BtwInitialModelSelectionV1,
     PeerHostCapability::BtwModelPoolSelectionV1,
     PeerHostCapability::ControlConversationV1,
@@ -276,6 +291,7 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::UserQuestionResponse,
     PeerHostCapability::UserQuestionInteractionV1,
     PeerHostCapability::SshNoneAuthV1,
+    PeerHostCapability::GitTrackedChangeCountV1,
 ];
 
 /// The CLI peer host has no MiniApp runtime, WSL or SSH connection setup,
@@ -283,12 +299,14 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = &[
 const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::ModelRoutingV1,
     PeerHostCapability::ModelPoolSelectionV1,
+    PeerHostCapability::MagpieDiscoveryV1,
     PeerHostCapability::BackgroundResultDeliveryV1,
     PeerHostCapability::DialogQueueV1,
     PeerHostCapability::ControlConversationV1,
     PeerHostCapability::ControlConversationResetV1,
     PeerHostCapability::IdempotentDialogSubmit,
     PeerHostCapability::InlineImageAttachmentsV1,
+    PeerHostCapability::RuntimeAttachmentUploadV1,
     PeerHostCapability::BtwInitialModelSelectionV1,
     PeerHostCapability::BtwModelPoolSelectionV1,
     PeerHostCapability::TargetedSessionRollback,
@@ -306,6 +324,7 @@ const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::UserQuestionResponse,
     PeerHostCapability::UserQuestionInteractionV1,
     PeerHostCapability::TerminalCursorReplayV1,
+    PeerHostCapability::GitTrackedChangeCountV1,
 ];
 
 /// The capabilities a peer host of the given kind publishes.

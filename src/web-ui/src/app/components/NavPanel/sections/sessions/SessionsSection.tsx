@@ -99,6 +99,7 @@ import {
 } from '@/features/dispatch/types';
 import { useDispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { resolveDispatchNavPresentation } from '@/features/dispatch/dispatchNavPresentation';
+import { resolveSessionDriverId } from '@/flow_chat/session-drivers/resolve';
 import {
   ensureCronJobCountsListener,
   getCronJobCountsSnapshot,
@@ -1444,6 +1445,10 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
           const showAssistantInTooltip = trimmedAssistant.length > 0;
           const dispatchTarget = session.config.dispatchTarget;
           const isDispatched = isNonLocalDispatchTarget(dispatchTarget);
+          const sessionMutationDisabledReason = openMenuSessionId === session.sessionId
+            && resolveSessionDriverId(session.sessionId, session) === 'dispatch'
+            ? t('nav.sessions.dispatchMutationUnsupported')
+            : undefined;
           const worktreeIsolated = isWorktreeIsolatedSession(session);
           const worktreeRootPath = sessionWorktreeRootPath(session) ?? '';
           const dispatchTargetLabel =
@@ -1925,6 +1930,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             type="button"
                             leading={<Icon glyph={Archive} size="sm" />}
                             onClick={e => { closeSessionMenu(); void handleArchive(e, session.sessionId); }}
+                            disabled={Boolean(sessionMutationDisabledReason)}
+                            title={sessionMutationDisabledReason}
                             data-testid="nav-session-menu-archive"
                             data-session-id={session.sessionId}
                           >
@@ -1934,7 +1941,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             sessionId={session.sessionId}
                             testId="nav-session-menu-delete"
                             label={t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSource' : 'nav.sessions.delete')}
-                            description={t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSourceConfirmMessage' : 'nav.sessions.deleteConfirmMessage', { name: sessionTitle })}
+                            disabled={Boolean(sessionMutationDisabledReason)}
+                            description={sessionMutationDisabledReason ?? t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSourceConfirmMessage' : 'nav.sessions.deleteConfirmMessage', { name: sessionTitle })}
                             onConfirm={() => { closeSessionMenu(); return deleteSessionRow(session.sessionId); }}
                           />
                         </>

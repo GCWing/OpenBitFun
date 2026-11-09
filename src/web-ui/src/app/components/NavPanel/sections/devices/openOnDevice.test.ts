@@ -212,6 +212,16 @@ describe('openOnDevice', () => {
       expect(mocks.deleteRow).not.toHaveBeenCalled();
     });
 
+    it.each(['archive', 'delete'] as const)('does not %s after switching devices during metadata promotion', async kind => {
+      mocks.sessions.set('s-1', seeded);
+      mocks.promote.mockImplementationOnce(async () => {
+        activateSurface(localSlot.surfaceId);
+      });
+      await runDeviceSessionAction(peerContext(), peerSlot, 's-1', { kind }, t);
+      expect(mocks.archiveRow).not.toHaveBeenCalled();
+      expect(mocks.deleteRow).not.toHaveBeenCalled();
+    });
+
     it.each(['archive', 'delete'] as const)('fails %s when the rendered device no longer has the session', async kind => {
       await expect(runDeviceSessionAction(peerContext(), peerSlot, 'gone', { kind }, t))
         .rejects.toThrow('common:nav.devices.sessionUnavailable');

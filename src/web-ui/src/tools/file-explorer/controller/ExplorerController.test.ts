@@ -206,4 +206,26 @@ describe('ExplorerController startup observability', () => {
     expect(unwatchSrc).toHaveBeenCalledTimes(1);
     expect(provider.watch).not.toHaveBeenCalled();
   });
+
+  it('does not restart watchers when a directory read finishes after leaving its tree', async () => {
+    let finishDirectory!: (nodes: Awaited<ReturnType<ExplorerFileSystemProvider['getChildren']>>) => void;
+    const unwatch = vi.fn();
+    const provider: ExplorerFileSystemProvider = {
+      getChildren: vi.fn(({ path }) => path === '/reference'
+        ? Promise.resolve([{ path: '/reference/docs', name: 'docs', isDirectory: true }])
+        : new Promise(resolve => { finishDirectory = resolve; })),
+      watch: vi.fn(() => unwatch),
+    };
+    const controller = new ExplorerController(provider);
+    await controller.configure({ rootPath: '/reference', workspaceId: 'project' });
+
+    const expansion = controller.expandFolderLazy('/reference/docs');
+    controller.dispose();
+    expect(unwatch).toHaveBeenCalled();
+    vi.mocked(provider.watch).mockClear();
+    finishDirectory([]);
+    await expansion;
+
+    expect(provider.watch).not.toHaveBeenCalled();
+  });
 });

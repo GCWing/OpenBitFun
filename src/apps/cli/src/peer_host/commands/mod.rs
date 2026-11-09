@@ -33,6 +33,7 @@ pub(crate) fn dispatch<'a>(
     state: &'a PeerHostState,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, String>> + Send + 'a>> {
     match command {
+        "probe_magpie_gateway" => Box::pin(models::probe_magpie_gateway(args)),
         "list_ai_models_by_config" => Box::pin(models::list_ai_models_by_config(args)),
         "list_visible_subagents" | "list_subagents" | "list_manageable_subagents" => Box::pin(tools::list_subagents(command, args)),
         "get_session_permission_mode" => Box::pin(permission::session_permission_mode(state, args, false, false)),
@@ -224,6 +225,7 @@ pub(crate) fn dispatch<'a>(
         "git_get_repository"
         | "git_get_repository_basic"
         | "git_get_status"
+        | "git_get_tracked_change_count"
         | "git_get_branches"
         | "git_get_enhanced_branches"
         | "git_get_commits"
@@ -321,6 +323,7 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "get_session_permission_mode",
     "list_visible_subagents",
     "list_ai_models_by_config",
+    "probe_magpie_gateway",
     "apply_external_source_control_action_command",
     "archive_session",
     "cancel_dialog_turn",
@@ -374,6 +377,7 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "git_get_repository",
     "git_get_repository_basic",
     "git_get_status",
+    "git_get_tracked_change_count",
     "git_get_branches",
     "git_get_enhanced_branches",
     "git_get_commits",

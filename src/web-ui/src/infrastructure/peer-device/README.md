@@ -351,6 +351,29 @@ notification metadata.
     switching, disconnecting, deleting its data or stopping its work. Activating
     a hidden device does not override that choice.
 
+22. **Composer attachments from the controller never travel as controller
+    paths.** A file dropped or pasted into a peer session is read on the
+    controller through its own Tauri host (`controllerFileTransfer.ts`, local
+    provider marker), never through the rendered transport, and so is the
+    clipboard. Supported images become inline image contexts. Other files are
+    staged with `workspace_file_upload` under
+    `openbitfun://runtime/<workspaceId>/attachments/<id>/`, which the host's
+    agent tools resolve, only when the peer negotiated
+    `runtime_attachment_upload_v1`. Older peers, folders and oversize files get
+    an explicit reply; there is no path-reference fallback. The same intake
+    covers remote workspaces (local build uploads) and detached dispatch
+    (images only).
+
+    The Files panel follows the same rule for drops and OS-clipboard paste:
+    `uploadLocalPathsToWorkspaceDirectory` publishes controller bytes with
+    `workspace_file_upload` into the peer workspace (local-paste `name (1)`
+    naming, never replacing a file) instead of `paste_files` or SSH upload,
+    which would resolve the controller path on the peer. Folders are refused
+    because the controller explorer listing filters entries, and a cut
+    clipboard behaves as a copy. Controller-path imports without a byte
+    transport, such as `.bfminiapp` packages, are refused while a peer is
+    rendered.
+
 ### Workspace HTML resources
 
 The controller keeps HTML preview HTTP listeners and native browser views local.

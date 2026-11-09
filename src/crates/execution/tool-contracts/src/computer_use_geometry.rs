@@ -129,7 +129,7 @@ impl CaptureGeometry {
             && y.checked_add(height)
                 .is_some_and(|bottom| bottom <= top + content_height);
         if !inside {
-            return Err("[INVALID_COORDINATES] Region must be a nonempty rectangle inside the captured image content".into());
+            return Err(format!("[INVALID_COORDINATES] Region must be a nonempty rectangle inside the captured image content: requested x={x} y={y} width={width} height={height}; content is x={left} y={top} width={content_width} height={content_height}"));
         }
         let scale_x = self.bounds[2] / f64::from(content_width);
         let scale_y = self.bounds[3] / f64::from(content_height);

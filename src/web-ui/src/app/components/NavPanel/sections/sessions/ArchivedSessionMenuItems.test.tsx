@@ -66,11 +66,12 @@ describe('archived session row menu', () => {
     await act(async () => container.querySelector<HTMLButtonElement>(`[data-testid="nav-session-menu-${action}"]`)!.click());
   };
 
-  it('offers exactly Restore and Delete for native and external archived sessions', async () => {
-    for (const overrides of [{}, { externalHistory: { mode: 'follow' as const }, importedSource: 'codex' as const }]) {
-      await render(overrides);
-      expect([...container.querySelectorAll('[role="menuitem"]')].map(item => item.textContent)).toEqual(['Restore', 'Delete']);
-    }
+  it('distinguishes deleting a session from removing an external source', async () => {
+    const menuLabels = () => [...container.querySelectorAll('[role="menuitem"]')].map(item => item.textContent);
+    await render();
+    expect(menuLabels()).toEqual(['Restore', 'Delete session']);
+    await render({ externalHistory: { mode: 'follow' }, importedSource: 'codex' });
+    expect(menuLabels()).toEqual(['Restore', 'Remove from OpenBitFun']);
   });
 
   it('restores immediately using the owning workspace and refreshes navigation', async () => {

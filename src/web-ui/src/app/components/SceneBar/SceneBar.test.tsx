@@ -396,6 +396,25 @@ describe('SceneBar overflow navigation', () => {
     expect(sceneHarness.activateScene).toHaveBeenCalledWith('settings');
   });
 
+  it('activates a retained background tab from the idle shell state', () => {
+    const previousTabs = sceneHarness.state.openTabs;
+    sceneHarness.state.activeTabId = null;
+    sceneHarness.state.openTabs = [
+      { id: 'settings', lastUsed: 1 },
+      { id: 'terminal', lastUsed: 2 },
+    ];
+    try {
+      renderSceneBar();
+
+      const settings = container.querySelector<HTMLButtonElement>('[role="tab"][data-openbitfun-value="settings"]')!;
+      act(() => settings.click());
+
+      expect(sceneHarness.activateScene).toHaveBeenCalledWith('settings');
+    } finally {
+      sceneHarness.state.openTabs = previousTabs;
+    }
+  });
+
   it('exposes overflow controls and translates a vertical wheel into horizontal movement', () => {
     renderSceneBar();
     const region = container.querySelector<HTMLElement>('[data-openbitfun-component="scene-bar"][data-openbitfun-part="tabs"]')!;

@@ -33,7 +33,6 @@
     "primary": "主目錄",
     "related": "關聯目錄",
     "openDirectory": "開啟目錄 {{name}}",
-    "editDirectory": "編輯目錄 {{name}}",
     "scrollPrevious": "查看前面的目錄",
     "scrollNext": "查看後面的目錄",
     "add": "新增目錄",

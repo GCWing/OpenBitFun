@@ -6,7 +6,7 @@
  * `relayEndpointBase`, and only user-facing links keep the parameter.
  */
 
-export const RELAY_SERVICE_VERSION = '1.0.9';
+export const RELAY_SERVICE_VERSION = '1.0.10';
 
 /** Paths served by the same deployed Relay and the same account database.
  * `/v/1.0.2` stays live for builds that predate the version parameter, so a

@@ -474,12 +474,16 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
     const unlisten = api.listen<{ logged_in: boolean; relay_url?: string }>(
       'account://login-state',
       () => {
-        // Invitations belong to the active account route.
+        // Invitations belong to the active account route, so only one issued
+        // before this event can be stale. A start in flight may publish this
+        // very login, and its result is issued for the new account context.
+        const invitationAtEvent = connectionResultRef.current;
         remoteConnectStatusSource.invalidate();
         void remoteConnectStatusSource.refresh().then((nextStatus) => {
           if (!nextStatus) return;
           if (!isOpenRef.current) return;
           applyStatus(nextStatus);
+          if (!invitationAtEvent || connectionResultRef.current !== invitationAtEvent) return;
           const invitationRoute = selectRemoteNetworkConnection(nextStatus, connectionResultRef.current);
           if (!invitationRoute.connected || invitationRoute.relayUrl !== invitationRelayUrl(connectionResultRef.current)) {
             pendingOwnerRef.current = null;
@@ -746,10 +750,9 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
         setError(e?.message || String(e));
       }
     } finally {
-      if (isCurrent()) {
-        if (!ownsConnection) pendingOwnerRef.current = null;
-        setLoading(false);
-      }
+      if (isCurrent() && !ownsConnection) pendingOwnerRef.current = null;
+      // The spinner belongs to this operation even if its owner was released.
+      if (operationGenerationRef.current === operationGeneration) setLoading(false);
     }
   }, [accountLoggedIn, activeView, networkTab, botTab, tgToken, feishuAppId, feishuAppSecret, weixinIlinkToken, weixinBaseUrl, weixinBotAccountId, selectedLanIp, startPolling, hasAgreedDisclaimer]);
 

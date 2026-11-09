@@ -218,24 +218,33 @@ void obf_focus_loss_stop(int32_t pid, uint32_t windowID, uint64_t generation,
     }
     return self;
 }
-- (void)fail:(NSString *)reason {
+- (BOOL)fail:(NSString *)reason {
     [self.condition lock];
+    if (self.stopped) {
+        [self.condition unlock];
+        return NO;
+    }
     self.stopped = YES;
     self.failure = reason ?: @"Capture stopped";
     self.pixels = nil;
     [self.condition broadcast];
     [self.condition unlock];
     obf_focus_loss_stop_matching(self.pid, self.windowID, self.generation, false, 0, 0);
+    return YES;
+}
+- (void)reportTerminalFailure:(NSString *)reason {
+    if (![self fail:reason]) return;
+    // A failed stream must also revoke its control binding. The owner tears
+    // down the matching stream asynchronously, outside the capture lock.
+    obf_control_native_stopped(self.generation, self.targetRevision, self.pid, self.windowID, reason.UTF8String);
 }
 - (void)stream:(SCStream *)stream didStopWithError:(NSError *)error {
-    [self fail:[NSString stringWithFormat:@"CAPTURE_STOPPED: %@", error.localizedDescription]];
-    obf_control_native_stopped(self.generation, self.targetRevision, self.pid, self.windowID, self.failure.UTF8String);
+    [self reportTerminalFailure:[NSString stringWithFormat:@"CAPTURE_STOPPED: %@", error.localizedDescription]];
 }
 // macOS 15.2+: a closed target must immediately revoke input, even if the
 // framework keeps the stream available for a later reopened window.
 - (void)streamDidBecomeInactive:(SCStream *)stream {
-    [self fail:@"TARGET_WINDOW_UNAVAILABLE: Shared window became inactive"];
-    obf_control_native_stopped(self.generation, self.targetRevision, self.pid, self.windowID, self.failure.UTF8String);
+    [self reportTerminalFailure:@"TARGET_WINDOW_UNAVAILABLE: Shared window became inactive"];
     [stream stopCaptureWithCompletionHandler:^(NSError *error) { (void)error; }];
 }
 - (void)stream:(SCStream *)stream didOutputSampleBuffer:(CMSampleBufferRef)sample ofType:(SCStreamOutputType)type {
@@ -548,8 +557,7 @@ void *obf_capture_start(int32_t pid, uint32_t requestedWindow, uint64_t generati
 int obf_capture_status(void *handle, char *error, size_t capacity) {
     OBFWindowCapture *session = (__bridge OBFWindowCapture *)handle;
     if (obf_session_locked()) {
-        [session fail:@"SESSION_LOCKED: Execution host screen is locked; start control again after unlocking"];
-        obf_control_native_stopped(session.generation, session.targetRevision, session.pid, session.windowID, session.failure.UTF8String);
+        [session reportTerminalFailure:@"SESSION_LOCKED: Execution host screen is locked; start control again after unlocking"];
         [session.stream stopCaptureWithCompletionHandler:^(NSError *e) { (void)e; }];
         obf_error(error, capacity, session.failure);
         return 0;
@@ -561,8 +569,7 @@ int obf_capture_status(void *handle, char *error, size_t capacity) {
     BOOL wasStopped = session.stopped;
     [session.condition unlock];
     if (!wasStopped && !valid) {
-        [session fail:@"TARGET_WINDOW_UNAVAILABLE: Original target window was closed"];
-        obf_control_native_stopped(session.generation, session.targetRevision, session.pid, session.windowID, session.failure.UTF8String);
+        [session reportTerminalFailure:@"TARGET_WINDOW_UNAVAILABLE: Original target window was closed"];
         [session.stream stopCaptureWithCompletionHandler:^(NSError *e) { (void)e; }];
     }
     [session.condition lock];
@@ -689,7 +696,7 @@ int obf_capture_frame(void *handle, uint8_t **bytes, size_t *length, uint32_t *w
     CGRect frame = CGRectZero;
     BOOL onScreen = NO;
     if (!obf_window_info(session.pid, session.windowID, &frame, &onScreen)) {
-        [session fail:@"TARGET_WINDOW_UNAVAILABLE: Original target window was closed"];
+        [session reportTerminalFailure:@"TARGET_WINDOW_UNAVAILABLE: Original target window was closed"];
     }
     [session.condition lock];
     if (session.stopped) {
@@ -710,7 +717,9 @@ int obf_capture_frame(void *handle, uint8_t **bytes, size_t *length, uint32_t *w
         SCStreamConfiguration *configuration = session.configuration;
         [session.condition unlock];
         [session.stream updateConfiguration:configuration completionHandler:^(NSError *updateError) {
-            if (updateError) [session fail:updateError.localizedDescription];
+            if (updateError) {
+                [session reportTerminalFailure:[NSString stringWithFormat:@"CAPTURE_STOPPED: Window capture resize failed: %@", updateError.localizedDescription]];
+            }
         }];
         [session.condition lock];
     }

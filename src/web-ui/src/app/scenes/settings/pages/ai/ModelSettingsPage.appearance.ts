@@ -4,6 +4,10 @@ export const modelSettingsAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'model-settings',
   parts: [
     { id: 'root' },
+    { id: 'magpieSource' },
+    { id: 'magpieActions' },
+    { id: 'magpieCatalog' },
+    { id: 'magpieModel' },
     { id: 'providerSelection' },
     { id: 'customOption' },
     { id: 'customOptionTitle' },

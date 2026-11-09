@@ -47,6 +47,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.openbitfun.mobile.app.R
 import com.openbitfun.mobile.app.platform.rememberWindowMetrics
 import com.openbitfun.mobile.app.state.MobileSurface
+import com.openbitfun.mobile.app.state.resolveRoutedRemoteSessionId
 import com.openbitfun.mobile.app.state.rememberAppShellState
 import com.openbitfun.mobile.app.ui.account.AccountLoginScreen
 import com.openbitfun.mobile.app.ui.common.AdaptiveModalSurface
@@ -183,12 +184,21 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
         RemoteControlSource.NONE -> RemoteSessionUiState.Idle
     }
     val committedRemoteSessions = (activeRemoteState as? RemoteSessionUiState.Ready)?.sessions.orEmpty()
-    // Shell navigation is only a transient request while the shared store
-    // catches up. Once a delete succeeds the row disappears, which invalidates
-    // a stale shell request and lets the store's selection take over.
-    val routedSessionId = shell.remoteSessionId
-        ?.takeIf { requested -> committedRemoteSessions.any { it.id == requested } }
-        ?: (activeRemoteState as? RemoteSessionUiState.Ready)?.selectedSessionId
+    val pendingRemoteSessionId = shell.pendingRemoteSessionId
+    LaunchedEffect(pendingRemoteSessionId, activeRemoteState) {
+        val pending = pendingRemoteSessionId ?: return@LaunchedEffect
+        val ready = activeRemoteState as? RemoteSessionUiState.Ready ?: return@LaunchedEffect
+        shell.observeRemoteSessionOpen(pending, ready.selectedSessionId, ready.busy)
+    }
+    // A pending open routes before the current session page knows about the ID.
+    // Once it settles, valid shell requests and the store selection take over;
+    // a deleted row no longer routes because neither contains its ID.
+    val routedSessionId = resolveRoutedRemoteSessionId(
+        pendingSessionId = pendingRemoteSessionId,
+        requestedSessionId = shell.remoteSessionId,
+        committedSessionIds = committedRemoteSessions.mapTo(mutableSetOf()) { it.id },
+        selectedSessionId = (activeRemoteState as? RemoteSessionUiState.Ready)?.selectedSessionId,
+    )
     val activeWorkspaceDirectory = when (controlSummary.source) {
         RemoteControlSource.ACCOUNT_DEVICE -> accountWorkspaceDirectory
         RemoteControlSource.NONE -> WorkspaceSessionDirectoryUiState(emptyList())

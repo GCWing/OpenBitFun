@@ -15,6 +15,8 @@ test("Dialog and Sheet compose the shared overlay kernel and compound anatomy", 
   assert.match(source, /useDismissibleLayer/);
   assert.match(source, /useFocusScope/);
   assert.match(source, /preventScroll=\{!anchored && preventScroll\}/);
+  // Anchored confirmations share the trigger's trailing edge.
+  assert.match(source, /useAnchoredLayer\(\{[^}]*align: "end"/);
   assert.match(source, /usePresence/);
   assert.match(source, /kind="dialog"/);
   assert.match(source, /kind="sheet"/);
@@ -111,4 +113,15 @@ test("dialog separators are explicit and do not leak native attributes", () => {
     assert.match(markup, /data-separator="true"/);
     assert.doesNotMatch(markup, / separator=/);
   }
+});
+
+test("anchored layers align their logical end edge to the anchor", async () => {
+  const source = await readFile(
+    new URL("../src/internal/useAnchoredLayer.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /align = "start"/);
+  assert.match(source, /alignToRight\(align, view\.getComputedStyle\(layer\)\.direction === "rtl"\)\s*\? rect\.right - box\.width\s*: rect\.left/);
+  assert.match(source, /return \(align === "end"\) !== rtl;/);
 });

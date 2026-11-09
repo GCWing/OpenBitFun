@@ -610,7 +610,7 @@ export class ExplorerController {
 
   private syncWatchers(): void {
     const rootPath = this.config.rootPath;
-    if (!rootPath || !this.config.enableAutoWatch) {
+    if (this.disposed || !rootPath || !this.config.enableAutoWatch) {
       this.stopWatchers();
       return;
     }
@@ -663,6 +663,6 @@ export class ExplorerController {
   }
 
   private isGenerationCurrent(generation: number, rootPath: string): boolean {
-    return generation === this.generation && pathsEquivalentFs(this.config.rootPath ?? '', rootPath);
+    return !this.disposed && generation === this.generation && pathsEquivalentFs(this.config.rootPath ?? '', rootPath);
   }
 }

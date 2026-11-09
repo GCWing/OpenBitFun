@@ -301,6 +301,7 @@
       "confirmMessage": "{{description}}\n\nPermissions: {{permissions}}\n\nSHA-256: {{sha256}}",
       "confirm": "Import",
       "imported": "Imported “{{name}}”.",
+      "peerUnsupported": "MiniApp packages on this device cannot be imported into a peer device yet. Switch to this device to import it.",
       "failed": "Import failed: {{error}}"
     },
     "submissions": {

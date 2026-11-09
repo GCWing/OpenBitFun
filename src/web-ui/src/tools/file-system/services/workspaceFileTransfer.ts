@@ -10,7 +10,14 @@ import {
   PeerDeviceTransportAdapter,
   type PeerDeviceCommandResponse,
 } from "@/infrastructure/api/adapters/peer-device-adapter";
+import {
+  getControllerClipboardFiles,
+  getControllerFileMetadata,
+  readControllerFileBytes,
+  uploadBytesToHost,
+} from "@/infrastructure/files/controllerFiles";
 import { i18nService } from "@/infrastructure/i18n";
+import { getActiveSurfaceScope } from "@/infrastructure/peer-device/deviceSurface";
 import { isRemoteWorkspace, type WorkspaceInfo } from "@/shared/types";
 import {
   dirnameAbsolutePath,
@@ -730,6 +737,170 @@ export async function downloadWorkspaceFileToDisk(
   }
 }
 
+/** Whole-file controller reads stay bounded; larger files need a local session. */
+export const MAX_PEER_UPLOAD_FILE_BYTES = 64 * 1024 * 1024;
+
+function peerUploadName(name: string, counter: number): string {
+  if (counter === 0) return name;
+  const dot = name.lastIndexOf(".");
+  return dot > 0
+    ? `${name.slice(0, dot)} (${counter})${name.slice(dot)}`
+    : `${name} (${counter})`;
+}
+
+/**
+ * First free `name`, `name (1)`, ... in a peer directory, matching local paste.
+ * A failed probe counts as free: the upload itself refuses to replace a file.
+ */
+async function freePeerDestination(
+  directory: string,
+  name: string,
+  workspaceId: string,
+  remote: boolean,
+  assertCurrent: () => void,
+): Promise<string> {
+  for (let counter = 0; counter < 1000; counter += 1) {
+    const candidate = joinWorkspaceTargetPath(directory, peerUploadName(name, counter), remote);
+    assertCurrent();
+    let exists = false;
+    try {
+      const metadata = await workspaceAPI.getWorkspaceFileMetadata(workspaceId, candidate);
+      exists = metadata.isFile || metadata.isDir;
+    } catch {
+      exists = false;
+    }
+    assertCurrent();
+    if (!exists) return candidate;
+  }
+  throw new Error(`No free destination name for '${name}'`);
+}
+
+/**
+ * Upload controller files into a directory of the peer's workspace.
+ *
+ * Every path here belongs to this controller. Bytes are read through the
+ * controller's own host and published by the peer's runtime-owned
+ * `workspace_file_upload`; `paste_files` / SSH upload would resolve the
+ * controller path on the peer instead. Folders are refused explicitly: the
+ * controller's directory listing applies explorer filters and would copy a
+ * silently incomplete tree. The controller source is never removed, so a cut
+ * clipboard behaves as a copy.
+ */
+async function uploadControllerPathsToPeerWorkspace(
+  localPaths: string[],
+  targetDirectory: string,
+  workspace: WorkspaceInfo | null,
+  onProgress: (state: TransferProgressState | null) => void,
+  transferId?: string,
+): Promise<WorkspaceTransferResult> {
+  const workspaceId = workspace?.id;
+  if (!workspaceId) {
+    throw new Error(i18nService.t("panels/files:transfer.peerMissingWorkspace"));
+  }
+  const scope = getActiveSurfaceScope();
+  const remote = isRemoteWorkspace(workspace);
+  const target = normalizeWorkspaceTargetDirectory(targetDirectory, workspace);
+  const assertCurrent = () => {
+    scope.assertCurrent("upload to peer workspace");
+    throwIfCancelled(transferId);
+  };
+  const failedFiles: WorkspaceTransferResult["failedFiles"] = [];
+  let successCount = 0;
+  let cancelled = false;
+  const total = localPaths.length;
+
+  try {
+    for (let i = 0; i < total; i += 1) {
+      if (isWorkspaceTransferCancelled(transferId)) break;
+      const localPath = localPaths[i]!;
+      const name = localPath.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? "";
+      const singleItem = total === 1;
+      onProgress({
+        phase: "upload",
+        current: i,
+        total,
+        label: singleItem ? name : `${name} (${i + 1}/${total})`,
+        indeterminate: true,
+        ...(transferId ? { transferId } : {}),
+      });
+      try {
+        if (!isSafePeerTransferEntryName(name)) {
+          throw new Error(`Unsafe file name '${name}'`);
+        }
+        const metadata = await getControllerFileMetadata(localPath);
+        if (metadata.isDir) {
+          throw new Error(i18nService.t("panels/files:transfer.peerFolderUnsupported"));
+        }
+        if (!metadata.isFile) {
+          throw new Error(i18nService.t("panels/files:transfer.peerNotAFile"));
+        }
+        if (metadata.size > MAX_PEER_UPLOAD_FILE_BYTES) {
+          throw new Error(i18nService.t("panels/files:transfer.peerFileTooLarge", {
+            limit: Math.round(MAX_PEER_UPLOAD_FILE_BYTES / (1024 * 1024)),
+          }));
+        }
+        assertCurrent();
+        const bytes = await readControllerFileBytes(localPath);
+        if (bytes.byteLength > MAX_PEER_UPLOAD_FILE_BYTES) {
+          throw new Error(i18nService.t("panels/files:transfer.peerFileTooLarge", {
+            limit: Math.round(MAX_PEER_UPLOAD_FILE_BYTES / (1024 * 1024)),
+          }));
+        }
+        const destination = await freePeerDestination(target, name, workspaceId, remote, assertCurrent);
+        await uploadBytesToHost({
+          bytes,
+          path: destination,
+          workspaceId,
+          assertCurrent,
+          onProgress: singleItem
+            ? (sent, totalBytes) => onProgress({
+                phase: "upload",
+                current: sent,
+                total: totalBytes,
+                label: name,
+                indeterminate: false,
+                bytesTransferred: sent,
+                bytesTotal: totalBytes,
+                ...(transferId ? { transferId } : {}),
+              })
+            : undefined,
+        });
+        successCount += 1;
+      } catch (error) {
+        // A device switch abandons the whole drop; nothing may land elsewhere.
+        if (!scope.isCurrent()) throw error;
+        if (isWorkspaceTransferCancelled(transferId)) break;
+        failedFiles.push({
+          path: localPath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  } finally {
+    cancelled = isWorkspaceTransferCancelled(transferId);
+    // The id only means something while this upload runs.
+    completeWorkspaceTransfer(transferId);
+    if (!cancelled && scope.isCurrent()) {
+      onProgress({
+        phase: "upload",
+        current: total,
+        total,
+        label: "",
+        indeterminate: false,
+        ...(transferId ? { transferId } : {}),
+      });
+    }
+    window.setTimeout(() => onProgress(null), 450);
+  }
+
+  if (successCount === 0 && failedFiles.length > 0 && !cancelled) {
+    throw new Error(
+      failedFiles.map((entry) => `${entry.path}: ${entry.error}`).join("; "),
+    );
+  }
+  return { successCount, directoryCount: 0, failedFiles, cancelled };
+}
+
 export async function uploadLocalPathsToWorkspaceDirectory(
   localPaths: string[],
   targetDirectory: string,
@@ -745,6 +916,17 @@ export async function uploadLocalPathsToWorkspaceDirectory(
   const normalizedLocalPaths = normalizeClipboardLocalPaths(localPaths);
   if (normalizedLocalPaths.length === 0) {
     return { successCount: 0, directoryCount: 0, failedFiles: [] };
+  }
+
+  // Local paths belong to this controller; the rendered peer cannot read them.
+  if (currentPeerAdapter()) {
+    return uploadControllerPathsToPeerWorkspace(
+      normalizedLocalPaths,
+      targetDirectory,
+      workspace,
+      onProgress,
+      transferId,
+    );
   }
 
   const remote = isRemoteWorkspace(workspace);
@@ -951,7 +1133,8 @@ export async function pasteClipboardFilesToWorkspaceDirectory(
   onProgress: (state: TransferProgressState | null) => void,
   transferId?: string,
 ): Promise<WorkspaceTransferResult> {
-  const { files, isCut } = await workspaceAPI.getClipboardFiles();
+  // The OS clipboard belongs to this controller, also while a peer is rendered.
+  const { files, isCut } = await getControllerClipboardFiles();
   return uploadLocalPathsToWorkspaceDirectory(
     files,
     targetDirectory,

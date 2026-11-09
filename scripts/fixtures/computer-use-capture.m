@@ -1,17 +1,25 @@
 #import <AppKit/AppKit.h>
 #import <CoreMedia/CoreMedia.h>
+#import <ScreenCaptureKit/ScreenCaptureKit.h>
+#import <objc/runtime.h>
 @interface NSObject (OBFCaptureTimingFixture)
 @property(nonatomic) CMTime lastObservedSample;
 @property(nonatomic) CMTime inputBarrier;
 @end
 #include <stdio.h>
 #include <stdatomic.h>
+// The native bridge distinguishes an unavailable surface from a stopped
+// stream. Only status 1 initializes the frame and bounds output parameters.
+static const int captureOK = 1;
+static const int captureNoSurface = 2;
 static atomic_bool stoppedWithIdentity;
 static atomic_uint stopCount;
 static uint32_t expectedWindow;
-static uint64_t expectedGeneration = 1;
+static atomic_uint_fast64_t expectedGeneration = 1;
+static atomic_uint_fast64_t expectedRevision = UINT64_MAX;
 extern uint32_t obf_capture_validate_target(int32_t, uint32_t, char *, size_t);
 extern void *obf_capture_start(int32_t, uint32_t, uint64_t, char *, size_t);
+extern void obf_capture_bind_revision(void *, uint64_t);
 extern void obf_capture_mark_input(void *);
 extern int obf_capture_bounds(void *, double *, char *, size_t);
 extern int obf_capture_frame(void *, uint8_t **, size_t *, uint32_t *, uint32_t *, uint32_t *, double *, uint64_t *, char *, size_t);
@@ -21,8 +29,23 @@ extern void obf_pointer_show(uint32_t, double, double, bool);
 extern void obf_pointer_hide(void);
 void obf_control_native_stopped(uint64_t generation, uint64_t revision, int32_t pid, uint32_t windowID, const char *reason) {
     atomic_fetch_add(&stopCount, 1);
-    if(generation == expectedGeneration && pid == getpid() && windowID == expectedWindow) atomic_store(&stoppedWithIdentity, true);
+    if (generation == expectedGeneration && revision == expectedRevision &&
+        pid == getpid() && windowID == expectedWindow) atomic_store(&stoppedWithIdentity, true);
     fprintf(stderr, "Stopped: %s\n", reason);
+}
+// Force an error from the reconfiguration completion while the real stream
+// is still live. The control owner must be notified before explicit Stop.
+static void rejectResize(id stream, SEL selector, SCStreamConfiguration *config, void (^completion)(NSError *)) {
+    completion([NSError errorWithDomain:@"OpenBitFunCaptureFixture" code:1
+        userInfo:@{NSLocalizedDescriptionKey: @"Fixture resize rejected"}]);
+}
+static BOOL windowIDStillExists(uint32_t windowID) {
+    CFArrayRef windows = CGWindowListCopyWindowInfo(kCGWindowListOptionAll, kCGNullWindowID);
+    for (NSDictionary *window in CFBridgingRelease(windows)) {
+        if ([window[(id)kCGWindowNumber] unsignedIntValue] == windowID &&
+            [window[(id)kCGWindowOwnerPID] intValue] == getpid()) return YES;
+    }
+    return NO;
 }
 // Opt-in diagnostic for a real application: only reads captured frames and
 // prints window identity/geometry. No pixels are persisted and no input is sent.
@@ -34,7 +57,7 @@ static void observeApp(pid_t pid) {
    int result=0; uint32_t bound=0;
    for(int i=0;i<20;i++){
      uint8_t *bytes=NULL;size_t length=0;uint32_t w=0,ht=0,wid=0;double bounds[4]={0};uint64_t sequence=0;
-     if(!obf_capture_frame(h,&bytes,&length,&w,&ht,&wid,bounds,&sequence,error,sizeof(error))){fprintf(stderr,"FRAME_ERROR %s\n",error);result=1;break;}
+     if(obf_capture_frame(h,&bytes,&length,&w,&ht,&wid,bounds,&sequence,error,sizeof(error)) != captureOK){fprintf(stderr,"FRAME_ERROR %s\n",error);result=1;break;}
      if(i==0)bound=wid;
      if(wid!=bound || atomic_load(&stopCount)){result=1;break;}
      obf_capture_free(bytes);
@@ -82,9 +105,10 @@ int main(int argc, const char **argv) { @autoreleasepool {
         return 0;
     }
     BOOL minimize = argc > 1 && strcmp(argv[1], "--minimized") == 0;
+    BOOL rejectConfiguration = argc > 1 && strcmp(argv[1], "--resize-error") == 0;
     NSApplication *app = NSApplication.sharedApplication;
     [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
-    NSWindow *target = [[NSWindow alloc] initWithContentRect:NSMakeRect(100,100,240,160) styleMask:(minimize ? NSWindowStyleMaskTitled | NSWindowStyleMaskMiniaturizable : NSWindowStyleMaskBorderless) backing:NSBackingStoreBuffered defer:NO];
+    __block NSWindow *target = [[NSWindow alloc] initWithContentRect:NSMakeRect(100,100,240,160) styleMask:(minimize ? NSWindowStyleMaskTitled | NSWindowStyleMaskMiniaturizable : NSWindowStyleMaskBorderless) backing:NSBackingStoreBuffered defer:NO];
     target.backgroundColor = NSColor.redColor;
     target.releasedWhenClosed = NO;
     [target orderFront:nil];
@@ -99,9 +123,29 @@ int main(int argc, const char **argv) { @autoreleasepool {
         void *handle = obf_capture_start(getpid(), targetID, 1, error, sizeof(error));
         int result = 1;
         if (!handle) fprintf(stderr,"FAIL start: %s\n",error);
-        else {
+        else if (rejectConfiguration) {
+            expectedRevision = 4;
+            obf_capture_bind_revision(handle, expectedRevision);
+            Method update = class_getInstanceMethod(SCStream.class, @selector(updateConfiguration:completionHandler:));
+            IMP original = method_setImplementation(update, (IMP)rejectResize);
+            dispatch_sync(dispatch_get_main_queue(), ^{
+                [target setFrame:NSMakeRect(100,100,280,190) display:YES];
+            });
+            [NSThread sleepForTimeInterval:0.15];
+            uint8_t *bytes = NULL; size_t length = 0;
+            uint32_t width = 0, height = 0, windowID = 0; uint64_t sequence = 0; double bounds[4] = {0};
+            int status = obf_capture_frame(handle, &bytes, &length, &width, &height, &windowID, bounds, &sequence, error, sizeof(error));
+            method_setImplementation(update, original);
+            if (status == 0 && !bytes && atomic_load(&stoppedWithIdentity) &&
+                strstr(error, "CAPTURE_STOPPED:") && strstr(error, "Fixture resize rejected")) {
+                puts("PASS failed resize revokes the live capture before explicit Stop");
+                result = 0;
+            } else fprintf(stderr, "FAIL resize failure did not revoke capture: status=%d error=%s\n", status, error);
+            obf_capture_free(bytes);
+            obf_capture_stop(handle);
+        } else {
             uint8_t *bytes = NULL; size_t length=0; uint32_t width=0,height=0,windowID=0; uint64_t sequence=0; double bounds[4]={0};
-            if (!obf_capture_frame(handle,&bytes,&length,&width,&height,&windowID,bounds,&sequence,error,sizeof(error))) fprintf(stderr,"FAIL frame: %s\n",error);
+            if (obf_capture_frame(handle,&bytes,&length,&width,&height,&windowID,bounds,&sequence,error,sizeof(error)) != captureOK) fprintf(stderr,"FAIL frame: %s\n",error);
             else {
                 size_t center = ((height/2)*width + width/2)*4;
                 printf("Frame %ux%u target=%u returned=%u sequence=%llu center RGBA=%u,%u,%u,%u bounds=%.0f,%.0f,%.0f,%.0f\n",width,height,targetID,windowID,sequence,bytes[center],bytes[center+1],bytes[center+2],bytes[center+3],bounds[0],bounds[1],bounds[2],bounds[3]);
@@ -116,8 +160,8 @@ int main(int argc, const char **argv) { @autoreleasepool {
                 uint8_t *fresh = NULL; size_t freshLength = 0;
                 uint32_t freshWidth = 0, freshHeight = 0, freshWindow = 0;
                 uint64_t freshSequence = 0; double freshBounds[4] = {0};
-                if (!obf_capture_frame(handle, &fresh, &freshLength, &freshWidth, &freshHeight,
-                                       &freshWindow, freshBounds, &freshSequence, error, sizeof(error)) ||
+                if (obf_capture_frame(handle, &fresh, &freshLength, &freshWidth, &freshHeight,
+                                      &freshWindow, freshBounds, &freshSequence, error, sizeof(error)) != captureOK ||
                     CMTimeCompare([(__bridge id)handle lastObservedSample], barrier) < 0) {
                     fprintf(stderr, "FAIL capture returned a pre-input sample: %s\n", error); result = 1;
                 } else puts("PASS post-input observation waits for a newer complete or idle sample");
@@ -132,8 +176,8 @@ int main(int argc, const char **argv) { @autoreleasepool {
                     uint8_t *repeat = NULL; size_t repeatLength = 0;
                     uint32_t repeatWidth = 0, repeatHeight = 0, repeatWindow = 0;
                     uint64_t repeatSequence = 0; double repeatBounds[4] = {0};
-                    if (!obf_capture_frame(handle, &repeat, &repeatLength, &repeatWidth, &repeatHeight,
-                                           &repeatWindow, repeatBounds, &repeatSequence, error, sizeof(error)) ||
+                    if (obf_capture_frame(handle, &repeat, &repeatLength, &repeatWidth, &repeatHeight,
+                                          &repeatWindow, repeatBounds, &repeatSequence, error, sizeof(error)) != captureOK ||
                         repeatWindow != targetID || atomic_load(&stoppedWithIdentity)) {
                         fprintf(stderr, "FAIL persistent observation %d: %s\n", observation, error); result = 1;
                     }
@@ -171,13 +215,13 @@ int main(int argc, const char **argv) { @autoreleasepool {
                 dispatch_sync(dispatch_get_main_queue(), ^{ [target setFrameOrigin:NSMakePoint(110,100)]; });
                 [NSThread sleepForTimeInterval:0.15]; // WindowServer commits the AppKit geometry asynchronously.
                 double inputBounds[4] = {0};
-                if (!obf_capture_bounds(handle, inputBounds, error, sizeof(error)) || inputBounds[0] != 110) {
+                if (obf_capture_bounds(handle, inputBounds, error, sizeof(error)) != captureOK || inputBounds[0] != 110) {
                     fprintf(stderr,"FAIL input-only geometry retained stale origin: %s\n",error); result=1;
                 } else puts("PASS input geometry updates after movement without copying or encoding a frame");
                 uint8_t *movedBytes = NULL; size_t movedLength = 0;
                 uint32_t movedWidth=0,movedHeight=0,movedWindow=0; uint64_t movedSequence=0; double movedBounds[4]={0};
                 int moved = obf_capture_frame(handle,&movedBytes,&movedLength,&movedWidth,&movedHeight,&movedWindow,movedBounds,&movedSequence,error,sizeof(error));
-                if (!moved || movedBounds[0] != 110) {
+                if (moved != captureOK || movedBounds[0] != 110) {
                     fprintf(stderr,"FAIL moved geometry not refreshed: %s\n",error); result=1;
                 } else puts("PASS moved window returns the new coordinate basis");
                 if(movedBytes) obf_capture_free(movedBytes);
@@ -185,7 +229,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
                 [NSThread sleepForTimeInterval:0.15];
                 movedBytes = NULL;
                 int resized = obf_capture_frame(handle,&movedBytes,&movedLength,&movedWidth,&movedHeight,&movedWindow,movedBounds,&movedSequence,error,sizeof(error));
-                if (!resized || movedWidth != 280 || movedHeight != 190 || movedBounds[2] != 280 || movedBounds[3] != 190) {
+                if (resized != captureOK || movedWidth != 280 || movedHeight != 190 || movedBounds[2] != 280 || movedBounds[3] != 190) {
                     fprintf(stderr,"FAIL resized stream did not produce matching pixels: %s\n",error); result=1;
                 } else puts("PASS resized window updates SCStream and waits for matching frame dimensions");
                 if(movedBytes) obf_capture_free(movedBytes);
@@ -196,9 +240,8 @@ int main(int argc, const char **argv) { @autoreleasepool {
                 uint8_t *hiddenBytes = NULL; size_t hiddenLength = 0;
                 uint32_t hiddenWidth=0,hiddenHeight=0,hiddenWindow=0; uint64_t hiddenSequence=0; double hiddenBounds[4]={0};
                 int hidden = obf_capture_frame(handle,&hiddenBytes,&hiddenLength,&hiddenWidth,&hiddenHeight,&hiddenWindow,hiddenBounds,&hiddenSequence,error,sizeof(error));
-                if (hidden) {
-                    size_t center = ((hiddenHeight/2)*hiddenWidth+hiddenWidth/2)*4;
-                    fprintf(stderr,"HIDDEN frame center after changing background to green: %u,%u,%u\n",hiddenBytes[center],hiddenBytes[center+1],hiddenBytes[center+2]);
+                if (hidden == captureOK || hiddenBytes) {
+                    fprintf(stderr,"FAIL hidden target returned a frame\n");
                     result = 1;
                     obf_capture_free(hiddenBytes);
                 } else if (!strstr(error,"TARGET_")) {
@@ -214,12 +257,17 @@ int main(int argc, const char **argv) { @autoreleasepool {
                 if(!handle) { fprintf(stderr,"FAIL restored target restart: %s\n",error); result=1; }
             }
             if (result == 0) {
-                dispatch_sync(dispatch_get_main_queue(), ^{ [target close]; });
+                // A retained NSWindow can keep its WindowServer ID after
+                // close. Release it so this exercises loss of the window.
+                dispatch_sync(dispatch_get_main_queue(), ^{ [target close]; target = nil; });
                 [NSThread sleepForTimeInterval:0.2];
                 uint8_t *closedBytes = NULL; size_t closedLength = 0;
                 uint32_t closedWidth=0,closedHeight=0,closedWindow=0; uint64_t closedSequence=0; double closedBounds[4]={0};
                 int closed = obf_capture_frame(handle,&closedBytes,&closedLength,&closedWidth,&closedHeight,&closedWindow,closedBounds,&closedSequence,error,sizeof(error));
-                if (closed || !atomic_load(&stoppedWithIdentity)) {
+                if (closed == captureNoSurface && !closedBytes &&
+                    strstr(error, "TARGET_SURFACE_UNAVAILABLE:") && windowIDStillExists(targetID)) {
+                    puts("PASS AppKit retained the closed window ID and capture returned no pixels");
+                } else if (closed != 0 || closedBytes || !atomic_load(&stoppedWithIdentity)) {
                     fprintf(stderr,"FAIL closed target did not revoke capture with its identity: %s\n",error); result=1;
                 } else puts("PASS closed window revokes capture with its original generation and target");
                 if(closedBytes) obf_capture_free(closedBytes);

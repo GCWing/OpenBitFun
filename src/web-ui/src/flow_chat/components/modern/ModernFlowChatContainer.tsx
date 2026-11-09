@@ -2143,11 +2143,13 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       setHistoryBoundaryState(previous => ({ ...previous, [direction]: 'loading' }));
       let viewportPreparationStarted = false;
       try {
-        const result = await flowChatStore.loadSessionTurnWindow(sessionId, targetOrdinal, {
-          source: 'prefetch',
-          before: direction === 'before' ? 12 : 4,
-          after: direction === 'after' ? 12 : 1,
-        });
+        const result = direction === 'before'
+          ? await flowChatStore.loadPreviousSessionTurnWindow(sessionId, targetOrdinal)
+          : await flowChatStore.loadSessionTurnWindow(sessionId, targetOrdinal, {
+            source: 'prefetch',
+            before: 4,
+            after: 12,
+          });
         if (!result.isCurrent || !isCurrent()) {
           recordHistoryPagingEvent(sessionId, 'outcome_cancelled', {
             direction,
@@ -2749,6 +2751,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
                     key={surfaceScope.key('welcome', surfaceScope.epoch,
                       activeSession?.sessionId ?? '', activeSession?.draft?.workspaceId ?? '')}
                     session={activeSession}
+                    isActive={isViewportActive}
                     onQuickAction={(command) => {
                       window.dispatchEvent(new CustomEvent('fill-chat-input', {
                         detail: { message: command, sessionId: activeSession?.sessionId }

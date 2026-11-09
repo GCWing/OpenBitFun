@@ -1166,3 +1166,20 @@ describe('background requests during a cross-device open', () => {
     expect(peerInvokePriorityFor('set_active_workspace')).toBe('high');
   });
 });
+
+
+describe('Magpie discovery capability', () => {
+  it('requires advertised support and forwards discovery only to the peer', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { status: 'empty', models: [] } }));
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc);
+    const args = { request: { base_url: 'http://127.0.0.1:3425/v1', api_key: 'magpie-openbitfun' } };
+    await expect(adapter.request('probe_magpie_gateway', args)).rejects.toThrow('magpie_discovery_v1_unsupported');
+    expect(rpc).not.toHaveBeenCalled();
+    adapter.setHostCapabilities({ supportsMagpieDiscoveryV1: true });
+    await expect(adapter.request('probe_magpie_gateway', args)).resolves.toMatchObject({ status: 'empty' });
+    expect(JSON.parse(rpc.mock.calls[0][1])).toMatchObject({ command: 'probe_magpie_gateway', args });
+    adapter.setHostCapabilities({ supportsMagpieDiscoveryV1: false });
+    await expect(adapter.request('probe_magpie_gateway', args)).rejects.toThrow('magpie_discovery_v1_unsupported');
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+});

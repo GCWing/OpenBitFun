@@ -9,6 +9,7 @@ pub mod ai;
 pub mod background_delivery;
 pub mod errors;
 pub mod installer_config_handoff;
+pub mod magpie;
 pub mod model;
 pub mod model_pool;
 pub mod product_identity;

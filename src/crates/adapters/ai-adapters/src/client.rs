@@ -102,7 +102,11 @@ impl AIClient {
         proxy_config: Option<ProxyConfig>,
         stream_options: StreamOptions,
     ) -> Self {
-        let client = http::create_http_client(proxy_config, config.skip_ssl_verify);
+        let client = http::create_model_http_client(
+            proxy_config,
+            config.skip_ssl_verify,
+            &config.request_url,
+        );
         Self {
             client,
             config,
@@ -870,6 +874,50 @@ mod tests {
             custom_request_body,
             custom_request_body_mode: None,
         })
+    }
+
+    #[tokio::test]
+    async fn loopback_model_request_override_works_with_outbound_proxy_enabled() {
+        let state = StreamRetryFixtureState {
+            attempts: Arc::new(AtomicUsize::new(1)),
+        };
+        let app = Router::new()
+            .route("/v1/chat/completions", post(malformed_stream_then_success))
+            .with_state(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!(
+            "http://{}/v1/chat/completions",
+            listener.local_addr().unwrap()
+        );
+        let gateway = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        // An invalid proxy cannot serve the request. The base URL is deliberately
+        // remote: the explicit request override is the actual transport target.
+        let mut config = make_test_client("openai", None).config;
+        config.request_url = endpoint;
+        let client = AIClient::new_with_proxy(
+            config,
+            Some(crate::types::ProxyConfig {
+                enabled: true,
+                url: "http://unavailable-proxy.invalid:8080".into(),
+                ..Default::default()
+            }),
+        );
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            client.send_message(vec![], None),
+        )
+        .await;
+        gateway.abort();
+        assert_eq!(
+            result
+                .expect("local gateway request timed out")
+                .unwrap()
+                .text,
+            "Recovered"
+        );
+        assert_eq!(state.attempts.load(Ordering::SeqCst), 2);
     }
 
     fn make_trim_test_client(format: &str) -> AIClient {

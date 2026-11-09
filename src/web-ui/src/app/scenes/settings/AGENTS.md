@@ -173,3 +173,13 @@ addition to the existing account-quota capability. Keep API-key model setup in
 the ordinary provider/custom model flow; MiniMax, Kimi Code and StepFun have no
 separate subscription importer or allowance UI. The existing OpenCode Go path
 retains its independently advertised capability.
+
+For inline Magpie identity/catalog detection, idempotent imports, retained missing
+models, unsupported peers and surface-switch isolation, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/ModelSettingsPage.loading.test.tsx src/infrastructure/config/services/magpieModels.test.ts src/infrastructure/api/adapters/peer-device-adapter.test.ts src/infrastructure/peer-device/PeerConnectionManager.test.ts
+```
+
+These fixtures do not establish live Peer, SSH, Remote Control or Detached Dispatch
+behavior. Imported models use the existing host configuration and selector paths.

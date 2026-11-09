@@ -3,6 +3,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export type LayerPlacement = "top" | "bottom" | "left" | "right";
+/** Cross-axis edge shared with the anchor for top/bottom placement; logical, so RTL mirrors it. */
+export type LayerAlign = "start" | "end";
 export type PortalTarget = Element | DocumentFragment | (() => Element | DocumentFragment | null) | null;
 
 /** Default portals stay inside the nearest theme scope; hosts may supply an overlay root. */
@@ -11,11 +13,12 @@ export function resolveLayerPortal(target: PortalTarget | undefined, anchor: HTM
   return target ?? anchor?.closest("[data-openbitfun-design-system-root]") ?? anchor?.ownerDocument.body ?? null;
 }
 
-export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "bottom", matchWidth = false, overlapAnchor = false, revision, point, fallbackRect }: {
+export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "bottom", align = "start", matchWidth = false, overlapAnchor = false, revision, point, fallbackRect }: {
   open: boolean;
   anchorRef: RefObject<HTMLElement | null>;
   layerRef: RefObject<HTMLElement | null>;
   placement?: LayerPlacement;
+  align?: LayerAlign;
   /** Match the anchor exactly, or use its width as the layer's minimum. */
   matchWidth?: boolean | "minimum";
   /** Position the layer over the anchor when the layer visually replaces it. */
@@ -79,7 +82,9 @@ export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "botto
         ? overlapAnchor
           ? (useBefore ? rect.right - box.width : rect.left)
           : (useBefore ? rect.left - box.width - resolvedGap : rect.right + resolvedGap)
-        : rect.left;
+        : alignToRight(align, view.getComputedStyle(layer).direction === "rtl")
+          ? rect.right - box.width
+          : rect.left;
       const top = horizontal
         ? rect.top
         : overlapAnchor
@@ -107,6 +112,10 @@ export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "botto
       view.visualViewport?.removeEventListener("resize", update);
       view.visualViewport?.removeEventListener("scroll", update);
     };
-  }, [open, anchorRef, layerRef, placement, matchWidth, overlapAnchor, revision, point?.x, point?.y, fallbackRect]);
+  }, [open, anchorRef, layerRef, placement, align, matchWidth, overlapAnchor, revision, point?.x, point?.y, fallbackRect]);
   return layout;
+}
+
+function alignToRight(align: LayerAlign, rtl: boolean) {
+  return (align === "end") !== rtl;
 }
