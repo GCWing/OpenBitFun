@@ -1595,7 +1595,7 @@ mod tests {
     #[test]
     fn retired_official_endpoint_does_not_capture_custom_relays() {
         let current = openbitfun_product_domains::account::DEFAULT_RELAY_URL;
-        assert_eq!(current, "https://remote.openbitfun.com/relay?v=1.0.9");
+        assert_eq!(current, "https://remote.openbitfun.com/relay?v=1.0.10");
         for old in [
             ["https://remote.openbitfun.com", "/v/1.0.0"].concat(),
             ["https://remote.openbitfun.com", "/v/1.0.1"].concat(),

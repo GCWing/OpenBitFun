@@ -1,5 +1,5 @@
 /** Service version announced by the official endpoint's `v` parameter. */
-export const RELAY_SERVICE_VERSION = '1.0.9';
+export const RELAY_SERVICE_VERSION = '1.0.10';
 /** Paths served by the same deployed Relay and account database. */
 const LIVE_RELAY_ENDPOINT_PATHS = ['/relay', '/v/1.0.2'];
 

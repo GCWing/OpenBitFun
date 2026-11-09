@@ -7,7 +7,7 @@
 No. Released clients use the official Relay for same-account device control.
 Sign in on the host and controller with the same OpenBitFun account and follow
 the Remote Connect invitation or device-selection flow. Keep the host running
-and reachable. The official endpoint is `https://remote.openbitfun.com/relay?v=1.0.9`;
+and reachable. The official endpoint is `https://remote.openbitfun.com/relay?v=1.0.10`;
 the version travels as a query parameter, and the older
 `https://remote.openbitfun.com/v/1.0.2/` path keeps working against the same
 account database;
