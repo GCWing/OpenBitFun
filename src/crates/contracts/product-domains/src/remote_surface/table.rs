@@ -561,6 +561,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("predownload_acp_client_adapter",                             Unaudited,   Proxied,          CLI_NO_ACP_CLIENT_HOST),
     op("preview_commit_message",                                     Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("probe_acp_client_requirements",                              Unaudited,   Proxied,          CLI_NO_ACP_CLIENT_HOST),
+    op("probe_magpie_gateway", Agnostic, Proxied, HANDLED),
     op("product_control_invoke",                                     Agnostic,    Proxied,          HANDLED),
     op("project_ai_model_reasoning_catalog",                         Agnostic,    Proxied,          HANDLED),
     op("quick_commit_message",                                       Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),

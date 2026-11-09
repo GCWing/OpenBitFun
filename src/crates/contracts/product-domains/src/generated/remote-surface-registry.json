@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:a7e5f2b6b738cb96",
+  "digest": "fnv1a64:8b695d77ffe4587b",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -12,6 +12,7 @@
       "gen_ui_libraries_v1",
       "model_routing_v1",
       "model_pool_selection_v1",
+      "magpie_discovery_v1",
       "background_result_delivery_v1",
       "dialog_queue_v1",
       "idempotent_dialog_submit",
@@ -62,6 +63,7 @@
       "gen_ui_libraries_v1",
       "model_routing_v1",
       "model_pool_selection_v1",
+      "magpie_discovery_v1",
       "background_result_delivery_v1",
       "dialog_queue_v1",
       "idempotent_dialog_submit",
@@ -110,6 +112,7 @@
     "cli": [
       "model_routing_v1",
       "model_pool_selection_v1",
+      "magpie_discovery_v1",
       "background_result_delivery_v1",
       "dialog_queue_v1",
       "control_conversation_v1",
@@ -5623,6 +5626,17 @@
       "cliPeer": {
         "kind": "unsupported",
         "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
+      }
+    },
+    {
+      "id": "probe_magpie_gateway",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
       }
     },
     {

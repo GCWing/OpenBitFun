@@ -237,7 +237,55 @@
     "urlHint": "已预填官方 API 地址，如使用代理或私有部署可修改",
     "formatHint": "已根据提供商自动选择，通常无需修改"
   },
+  "magpie": {
+    "description": "连接 Magpie，添加模型。",
+    "connect": "检测 Magpie",
+    "keyHint": "本机连接用默认值；远程或 Docker 连接填 Magpie 密钥。",
+    "manage": "管理模型",
+    "addConnection": "连接其他网关",
+    "address": "网关地址",
+    "key": "网关密钥",
+    "detect": "检测",
+    "refresh": "刷新模型",
+    "manual": "手动配置",
+    "hostHint": "localhost 指当前连接的远端设备。",
+    "search": "搜索 Magpie 模型",
+    "imported": "已添加",
+    "routingGroup": "Magpie 路由组",
+    "missing": "暂不可用",
+    "missingHint": "这些模型暂未出现在 Magpie 中，已有配置仍会保留。",
+    "poolHint": "添加后可设为默认模型，或加入模型池。",
+    "importSelected": "添加 {{count}} 个模型",
+    "saveConnection": "保存连接",
+    "close": "收起",
+    "states": {
+      "idle": "尚未检测",
+      "checking": "连接中…",
+      "ready": "检测通过",
+      "empty": "检测通过，暂无模型。在 Magpie 中启用模型后刷新。",
+      "unreachable": "未检测到 Magpie，请确认已启动。",
+      "accessDenied": "访问被拒绝，请检查密钥和 Magpie 的共享设置。",
+      "unrecognized": "这个地址不是 Magpie 服务。",
+      "catalogError": "检测到 Magpie，但模型列表加载失败。请重试。",
+      "invalidAddress": "请输入 http:// 或 https:// 地址，不带账号、密码或查询参数。",
+      "unsupported": "当前设备不支持检测，可升级 OpenBitFun 或手动配置。",
+      "failed": "操作失败，请重新打开模型设置后重试。",
+      "saved": "已保存。"
+    },
+    "contextTooSmall": "上下文至少需要 32,000 token",
+    "invalidLimits": "模型参数超出支持范围",
+    "discard": "取消"
+  },
   "providers": {
+    "magpie": {
+      "name": "Magpie",
+      "description": "使用 Magpie 网关中的模型和路由组",
+      "urlOptions": {
+        "openai": "Magpie 网关",
+        "responses": "Magpie 网关",
+        "anthropic": "Magpie 网关"
+      }
+    },
     "opencode-zen": {
       "name": "OpenCode Zen",
       "description": "OpenCode 模型服务，支持免费模型和按量付费 API Key。"
@@ -741,7 +789,7 @@
   "editSettingsTitle": "模型参数",
   "editProviderSettingsTitle": "服务连接",
   "sections": {
-    "acquisition": "添加或导入模型",
+    "acquisition": "模型来源",
     "selectionModes": "智能模式",
     "pool": "全部模型",
     "more": "更多设置"
