@@ -150,6 +150,13 @@ does nothing (WebKit). Select the existing directed-keyboard route before
 submission for these proxies; native controls retain AX insertion at the current
 selection. Never retry a submitted text write based only on unchanged AX state.
 
+Text controls inside an `AXWebArea` need a real directed click to become the
+keyboard destination. AXPress and AXFocused succeed there but move only DOM
+focus: the window's first responder stays elsewhere and later directed keys are
+lost while still reporting `submitted`. Route them through the pointer path and
+directed keyboard, without app-name rules. Verified on Chromium and Electron;
+native controls keep the AX path.
+
 The directed-input route can change a target application's internal
 focus without changing the human foreground application. Its window-addressed
 focus pair at local `(-8,-8)` must remain outside content; the requested gesture

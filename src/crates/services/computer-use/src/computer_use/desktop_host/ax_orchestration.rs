@@ -166,7 +166,7 @@ fn resolve_macos_node_click(
     let target = crate::computer_use::macos_ax_dump::retained_cached_target(pid, idx)
         .ok_or_else(|| OpenBitFunError::tool(format!("AX_NODE_STALE: idx={idx} is not in the observed app snapshot; observe the app again")))?;
     crate::computer_use::macos_ax_dump::validate_bound_target(pid, target.reference())?;
-    if semantic {
+    if semantic && !target.is_web_text_input() {
         match crate::computer_use::macos_ax_write::try_ax_press(target.reference()) {
             crate::computer_use::macos_ax_write::AxWriteOutcome::Ok => return Ok(None),
             // kAXErrorActionUnsupported guarantees no semantic action was sent.
@@ -679,7 +679,7 @@ impl NativeComputerUseHost {
             } else { None };
             let Some(element) = element else { return Ok(false); };
             crate::computer_use::macos_ax_dump::validate_bound_target(pid, element.reference())?;
-            if !element.is_text_input() { return Ok(false); }
+            if !element.is_text_input() || element.is_web_text_input() { return Ok(false); }
             if let Some(text) = insertion.as_deref() {
                 return crate::computer_use::macos_ax_write::insert_selected_text(element.reference(), text);
             }
