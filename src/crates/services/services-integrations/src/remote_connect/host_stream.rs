@@ -413,6 +413,9 @@ fn estimate_bytes(value: &Value) -> usize {
 struct HubState {
     streams: HashMap<String, StreamLog>,
     dirty: HashSet<String>,
+    /// Devices the relay has reported in presence at least once. Only these
+    /// take part in presence; other controllers are governed by their lease.
+    presence_participants: HashSet<String>,
 }
 
 /// Account-scoped owner of every host stream while account routing is alive.
@@ -431,6 +434,7 @@ impl HostStreamHub {
         let state = Arc::new(std::sync::Mutex::new(HubState {
             streams: HashMap::new(),
             dirty: HashSet::new(),
+            presence_participants: HashSet::new(),
         }));
         let wake = Arc::new(tokio::sync::Notify::new());
         let hub = Arc::new(Self {
@@ -792,15 +796,28 @@ impl HostStreamHub {
         }
     }
 
-    /// Presence is authoritative for who can still receive hints. A device that
-    /// went offline is dropped now; it resubscribes on its next read.
+    /// Presence is authoritative for who can still receive hints, but only for
+    /// devices that take part in it. The relay reports machine-scoped sockets
+    /// (Desktop, CLI); hidden controllers (mobile web, KMP, HarmonyOS) connect
+    /// user-scoped and never appear, so dropping every absent device would end
+    /// their subscriptions on any unrelated presence change and silence their
+    /// hints until the next renewal. A device that was reported online and is
+    /// now absent is dropped; it resubscribes on its next read. Others keep
+    /// their subscription until they unsubscribe or the read lease expires.
     pub fn retain_online(&self, online_device_ids: &[String]) {
-        let mut state = self.lock();
+        let mut guard = self.lock();
+        let state = &mut *guard;
+        state
+            .presence_participants
+            .extend(online_device_ids.iter().cloned());
+        let participants = &state.presence_participants;
+        let went_offline = |device: &str| {
+            participants.contains(device) && !online_device_ids.iter().any(|id| id == device)
+        };
         for log in state.streams.values_mut() {
-            log.subscribers
-                .retain(|device, _| online_device_ids.iter().any(|id| id == device));
+            log.subscribers.retain(|device, _| !went_offline(device));
             log.turn_snapshots
-                .retain(|_, snapshot| online_device_ids.contains(&snapshot.device));
+                .retain(|_, snapshot| !went_offline(&snapshot.device));
         }
     }
 
@@ -1461,6 +1478,36 @@ mod tests {
         hub.unsubscribe("phone", "s");
         assert_eq!(hub.subscriber_count("s"), 0);
         hub.retain_online(&[]);
+    }
+
+    #[tokio::test]
+    async fn presence_drops_only_devices_that_take_part_in_it() {
+        let recorder = Arc::new(Recorder(Default::default()));
+        let hub = HostStreamHub::start(recorder.clone());
+        hub.read("peer-desktop", &request(HOST_CATALOG_ID)).unwrap();
+        // Hidden controllers connect user-scoped and are never in presence.
+        hub.read("mobile-web", &request(HOST_CATALOG_ID)).unwrap();
+        hub.retain_online(&["peer-desktop".into(), "host".into()]);
+        assert_eq!(hub.subscriber_count(HOST_CATALOG_ID), 2);
+        // An unrelated presence change keeps the browser subscribed and drops
+        // only the device that was reported online and is now absent.
+        hub.retain_online(&["host".into()]);
+        assert_eq!(hub.subscriber_count(HOST_CATALOG_ID), 1);
+        hub.append(
+            HOST_CATALOG_ID.into(),
+            "host-catalog-changed".into(),
+            serde_json::json!({"sessionsRevision":1}),
+        )
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let hints = recorder.0.lock().unwrap().clone();
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].0, "mobile-web");
+        assert_eq!(hints[0].1["stream_id"], HOST_CATALOG_ID);
+        // An empty presence still keeps lease-governed controllers.
+        hub.retain_online(&[]);
+        assert_eq!(hub.subscriber_count(HOST_CATALOG_ID), 1);
     }
 
     #[tokio::test]
