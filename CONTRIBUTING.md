@@ -96,9 +96,8 @@ in end-user `release` builds.
 
 ## Code Standards and Architecture Constraints
 
-Use [`AGENTS.md`](AGENTS.md) as the canonical source for architecture-sensitive
-rules, module boundaries, and the verification matrix. In contributor-facing
-terms:
+Use [`AGENTS.md`](AGENTS.md) as the canonical source for repository-wide rules,
+layer boundaries, and how to choose verification. In contributor-facing terms:
 
 - Logs are English-only and should stay useful, not noisy.
 - User-visible copy should use the project i18n flow; do not share Web UI
@@ -109,7 +108,8 @@ terms:
 - Tauri commands use `snake_case` command names and structured `request`
   payloads.
 - Product architecture, feature-boundary, dependency-boundary, and build-speed
-  work must follow `docs/architecture/product-architecture.md`.
+  work must follow `docs/architecture/product-architecture.md` and
+  `docs/architecture/rust-build-dependency-boundaries.md`.
 - Feature-specific rules belong in the nearest module `AGENTS.md`.
 
 ## Key Contribution Focus Areas
@@ -190,7 +190,8 @@ Common local checks:
 | Mobile web | `pnpm --dir src/mobile-web run type-check` |
 | Rust shared runtime or services | Follow the nearest module `AGENTS.md`: one package/test target and the minimum required features |
 | Desktop/Tauri integration | `cargo check -p openbitfun-desktop` |
-| i18n resources or contract | use the matching i18n row in `AGENTS.md` |
+| i18n resources | `pnpm run i18n:audit` |
+| i18n contract or shared terms | `pnpm run i18n:generate && pnpm run i18n:contract:test && pnpm run i18n:audit` |
 
 For UI changes, include screenshots or a short recording when helpful. If you
 cannot run a relevant check, explain why in the PR and provide a lower-risk

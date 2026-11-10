@@ -80,7 +80,7 @@ pnpm run e2e:test
 `.openbitfun/desktop-dev/` 下。显式设置的数据目录环境变量仍优先生效；
 `--shared-data` 保留为默认模式的兼容写法。
 
-> 完整脚本列表见 [`package.json`](package.json)。agent 专用命令、验证与架构规则见 [`AGENTS.md`](AGENTS.md)。
+> 完整脚本列表见 [`package.json`](package.json)。agent 专用命令、验证与架构规则见 [`AGENTS-CN.md`](AGENTS-CN.md)。
 
 ### 桌面端调试工具
 
@@ -90,14 +90,15 @@ DevTools；`Cmd/Ctrl + Shift + I` 切换 OpenBitFun 元素检查器，`Cmd/Ctrl 
 
 ## 代码规范与架构约束
 
-架构敏感规则、模块边界和验证矩阵以 [`AGENTS.md`](AGENTS.md) 为准。面向贡献者只需把握：
+仓库级规则、分层边界和验证选择方式以 [`AGENTS-CN.md`](AGENTS-CN.md) 为准。面向贡献者只需把握：
 
 - 日志只使用英文，并保持必要、可读。
 - 用户可见文案走项目 i18n 流程；不要把 Web UI locale catalog 共享给较小产品形态。
 - shared core 必须保持平台无关；Desktop/Tauri 细节属于 app adapter，并通过类型化能力接口回流；需要事件投递时使用已有生产 transport adapter。
 - Tauri command 使用 `snake_case` 命令名和结构化 `request` 参数。
 - core 拆解、feature 边界、依赖边界和构建提速重构必须遵循
-  `docs/architecture/product-architecture.md`。
+  `docs/architecture/product-architecture.md` 和
+  `docs/architecture/rust-build-dependency-boundaries.md`。
 - 功能级规则应放在离代码最近的模块 `AGENTS.md` 中。
 
 ## 重点关注的贡献方向
@@ -174,7 +175,8 @@ Repository Object Sizes 检查会拒绝超过 5 MiB 的 Git 文件对象，包�
 | Mobile web | `pnpm --dir src/mobile-web run type-check` |
 | Rust 共享 runtime 或 services | 遵循最近模块的 `AGENTS.md`，选择单个包/测试目标和最小所需 feature |
 | Desktop/Tauri 集成 | `cargo check -p openbitfun-desktop` |
-| i18n 资源或契约 | 使用 `AGENTS.md` 中匹配的 i18n 验证行 |
+| i18n 资源 | `pnpm run i18n:audit` |
+| i18n 契约或共享术语 | `pnpm run i18n:generate && pnpm run i18n:contract:test && pnpm run i18n:audit` |
 
 UI 改动在有帮助时附截图或短录屏。无法运行相关检查时，在 PR 中说明原因，并提供风险更低的手动验证路径。
 

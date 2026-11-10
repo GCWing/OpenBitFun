@@ -100,6 +100,7 @@ in `config-contracts`. Focused verification:
 
 ```bash
 cargo test --locked -p openbitfun-agent-runtime --no-default-features --features agent-runtime --lib model_pool
+```
 
 `account_routing` owns pure fixed/ordered account selection and switch admission.
 Assembly injects immutable membership, host/model/policy/cache scope, current
@@ -132,6 +133,29 @@ Focused check:
 ```bash
 cargo test --locked -p openbitfun-agent-runtime --no-default-features --features account-routing --lib account_routing
 ```
+
+## Native Hooks
+
+`native_hooks` owns the portable hook engine: Codex-compatible settings
+parsing and validation, payload construction, command process execution,
+decision merging, the shared `RuntimeHookRegistry`, and `AgentHookEngine`
+dispatch. The hook contract and OpenBitFun's deviations from it are in
+`docs/features/agent-hooks.md`.
+
+- The engine is host-independent. It receives already-loaded settings layers
+  and fully built payloads and never resolves OpenBitFun config paths. Config
+  discovery, the `app.hooks` gates, and per-event dispatch helpers belong to
+  `openbitfun-core::native_hooks`.
+- Every executable hook registers through `RuntimeHookRegistry` under one
+  `RuntimeHookSource`: `Builtin`, `UserCommand`, `ProjectCommand`,
+  `ImportedCommand`, `SkillCommand`, or `Plugin`. The declaration order is the
+  stable source precedence. Sources share the registry and the engine but keep
+  distinct trust, configuration, contract, and execution-policy semantics.
+- `post_call_hooks` holds routing decisions for compiled-in hooks; it is not
+  user configuration.
+- The external hook catalog of other AI applications is read-only discovery
+  data owned by `openbitfun-product-domains`. It must not enter the executable
+  registry; this crate neither reads it nor registers from it.
 
 ## Test Target Layout
 

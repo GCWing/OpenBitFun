@@ -15,6 +15,7 @@ services.
 | `miniapp-ipc` | Private local launch records, bounded framing and discovery shared by Desktop and the lightweight MiniApp Shell; no execution owners | [AGENTS.md](miniapp-ipc/AGENTS.md) |
 | `ai-adapters` | AI provider request/response adapters and stream protocol glue | [AGENTS.md](ai-adapters/AGENTS.md) |
 | `opencode-adapter` | OpenCode source semantics for user Instructions plus the live Command, standalone Tool, Subagent, MCP, and static Hook providers; managed-package static preview | [AGENTS.md](opencode-adapter/AGENTS.md) |
+| `opencode-plugin-host` | Private framed loopback JSON-RPC transport to the OpenCode extension-host process, plus OpenCode Client route matching, wire DTOs, and protocol error mapping; no product configuration selection, workspace/session policy, or plugin trust decisions | [AGENTS.md](opencode-plugin-host/AGENTS.md) |
 | `dsh-adapter` | DeepSeek Harness (`dsh`) bundle/profile projection, static Hook bridge discovery and explicit MCP declarations | [AGENTS.md](dsh-adapter/AGENTS.md) |
 | `pi-adapter` | PI settings/package extension selection and static native event discovery; no execution | [AGENTS.md](pi-adapter/AGENTS.md) |
 | `claude-code-adapter` | Runtime-free Claude Code user Instructions, Command, Subagent, MCP, and Hook source semantics with redacted projection | [AGENTS.md](claude-code-adapter/AGENTS.md) |
