@@ -798,12 +798,12 @@ impl HostStreamHub {
 
     /// Presence is authoritative for who can still receive hints, but only for
     /// devices that take part in it. The relay reports machine-scoped sockets
-    /// (Desktop, CLI); browser controllers such as mobile web connect
+    /// (Desktop, CLI); hidden controllers (mobile web, KMP, HarmonyOS) connect
     /// user-scoped and never appear, so dropping every absent device would end
     /// their subscriptions on any unrelated presence change and silence their
     /// hints until the next renewal. A device that was reported online and is
     /// now absent is dropped; it resubscribes on its next read. Others keep
-    /// their subscription until the read lease expires.
+    /// their subscription until they unsubscribe or the read lease expires.
     pub fn retain_online(&self, online_device_ids: &[String]) {
         let mut guard = self.lock();
         let state = &mut *guard;
@@ -1485,7 +1485,7 @@ mod tests {
         let recorder = Arc::new(Recorder(Default::default()));
         let hub = HostStreamHub::start(recorder.clone());
         hub.read("peer-desktop", &request(HOST_CATALOG_ID)).unwrap();
-        // Browser controllers connect user-scoped and are never in presence.
+        // Hidden controllers connect user-scoped and are never in presence.
         hub.read("mobile-web", &request(HOST_CATALOG_ID)).unwrap();
         hub.retain_online(&["peer-desktop".into(), "host".into()]);
         assert_eq!(hub.subscriber_count(HOST_CATALOG_ID), 2);

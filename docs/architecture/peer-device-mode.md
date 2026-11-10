@@ -105,7 +105,12 @@ Permission and other control events remain separate from transcript content.
 The relay stores none of this. A controller opens a stream with the
 `read_stream` device RPC (`{stream_id, after|before, epoch, subscribe}`), which
 answers a `stream_page` with `epoch`, `cursor`, `events`, `has_more` and
-`oldest_seq`; `unsubscribe_stream` releases the hint lease. While subscribed,
+`oldest_seq`; `unsubscribe_stream` releases the hint lease. A subscribing read
+holds the lease for 10 minutes and controllers renew it with a keepalive read
+every 4 minutes. Account presence ends a lease early only for a device that
+presence has reported and that is now absent. Hidden (user-scoped) controllers
+such as mobile web, KMP and HarmonyOS never appear in presence, so they keep
+their lease until they unsubscribe or stop renewing. While subscribed,
 the host fans out an encrypted `host-stream-changed` device event naming only
 the stream id, epoch and newest sequence; controllers treat it as a nudge and
 read the missing range themselves. The catalog is the `@host/catalog` stream,
