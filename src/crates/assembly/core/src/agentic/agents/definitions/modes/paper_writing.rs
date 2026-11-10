@@ -38,6 +38,12 @@ impl Agent for PaperWritingAgent {
             "ExecControl",
             "WriteStdin",
             "AskUserQuestion",
+            // Every standard primary mode defaults to the thread-goal
+            // lifecycle, and the Desktop composer gates its goal affordance on
+            // the complete set.
+            "get_goal",
+            "create_goal",
+            "update_goal",
         ]
         .into_iter()
         .map(String::from)

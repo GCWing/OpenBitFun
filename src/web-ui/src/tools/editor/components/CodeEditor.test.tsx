@@ -192,6 +192,7 @@ beforeEach(() => {
   documents = [];
   mocks.read.mockReset().mockResolvedValue('disk');
   mocks.metadata.mockReset().mockResolvedValue(fileMetadata);
+  mocks.write.mockReset().mockResolvedValue(undefined);
   const runtime = createRuntime();
   setMonacoRuntime(runtime);
   mocks.initialize.mockResolvedValue(runtime);
@@ -297,6 +298,60 @@ describe('CodeEditor disk synchronization', () => {
     expect(model()).toBe(originalModel);
     expect(metadata().referenceCount).toBe(1);
     expect(model().getValue()).toBe('unsaved edit');
+  });
+
+  // "Save then compile" awaits document.save(), so a save request that lands
+  // while a write is in flight must still end with the newest buffer on disk
+  // instead of being dropped as a duplicate of the earlier write.
+  it('re-runs a save requested during an in-flight write and settles the newest edit', async () => {
+    await render();
+    const pendingWrite = deferred<void>();
+    const queuedWrite = deferred<void>();
+    mocks.write.mockReturnValueOnce(pendingWrite.promise).mockReturnValueOnce(queuedWrite.promise);
+    await act(async () => model().setValue('first edit'));
+    let firstSave: Promise<unknown> | undefined;
+    await act(async () => { firstSave = session.save?.(); });
+    await act(async () => model().setValue('second edit'));
+    const secondSave = session.save?.();
+    const secondSaveFinished = vi.fn();
+    void secondSave?.then(secondSaveFinished);
+    await act(async () => pendingWrite.resolve(undefined));
+    expect(mocks.write.mock.calls.map(call => call[2])).toEqual(['first edit', 'second edit']);
+    expect(secondSaveFinished).not.toHaveBeenCalled();
+    await act(async () => {
+      queuedWrite.resolve(undefined);
+      await Promise.all([firstSave, secondSave]);
+    });
+    expect(secondSaveFinished).toHaveBeenCalledOnce();
+    expect(session.snapshot).toMatchObject({ content: 'second edit', savedContent: 'second edit', isDirty: false });
+  });
+
+  it('saves each edit to its own file when the view switches during a write', async () => {
+    await render();
+    const pendingWrite = deferred<void>();
+    mocks.write.mockReturnValueOnce(pendingWrite.promise);
+    await act(async () => model().setValue('edit A'));
+    let firstSave: Promise<unknown> | undefined;
+    await act(async () => { firstSave = session.save?.(); });
+    expect(mocks.write).toHaveBeenCalledWith('test-workspace', path, 'edit A');
+
+    const nextPath = '/repo/b.txt';
+    const next = newDocument(nextPath);
+    await render(next, nextPath);
+    await act(async () => model(next).setValue('edit B'));
+    let secondSave: Promise<unknown> | undefined;
+    await act(async () => { secondSave = next.save?.(); });
+    await act(async () => {
+      pendingWrite.resolve(undefined);
+      await Promise.all([firstSave, secondSave]);
+    });
+
+    expect(mocks.write.mock.calls).toEqual([
+      ['test-workspace', path, 'edit A'],
+      ['test-workspace', nextPath, 'edit B'],
+    ]);
+    expect(session.snapshot?.content).toBe('edit A');
+    expect(next.snapshot).toMatchObject({ content: 'edit B', savedContent: 'edit B', isDirty: false });
   });
 
   it.each(['success', 'failure'])('keeps edits dirty after a delayed metadata %s', async outcome => {

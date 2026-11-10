@@ -6,7 +6,7 @@
  */
 
 import { Button } from '@openbitfun/ui';
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { AlertCircle } from 'lucide-react';
 import type * as monaco from 'monaco-editor';
 import { monacoInitManager } from '../services/MonacoInitManager';
@@ -207,6 +207,16 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   const standaloneFiles = useMemo(() => standaloneEditorFileAccess(workspaceId), [workspaceId]);
   const documentFiles: EditorFileAccess = documentSession?.files ?? standaloneFiles;
   const documentInvoke = documentSession?.invoke;
+  const isMemoryContent = initialContent !== undefined;
+  const saveTarget = useMemo(
+    () => ({ documentFiles, filePath, modelKey, workspacePath, isMemoryContent }),
+    [documentFiles, filePath, modelKey, workspacePath, isMemoryContent],
+  );
+  const currentSaveTargetRef = useRef<typeof saveTarget>();
+  useLayoutEffect(() => {
+    currentSaveTargetRef.current = saveTarget;
+    return () => { currentSaveTargetRef.current = undefined; };
+  }, [saveTarget]);
 
   const { t } = useI18n('tools');
   
@@ -259,7 +269,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     line_numbers: 'on',
     minimap: { enabled: showMinimap, side: 'right', size: 'proportional' }
   });
-  const isMemoryContent = initialContent !== undefined;
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
   const [selection, setSelection] = useState({ chars: 0, lines: 0 });
   const [statusBarPopover, setStatusBarPopover] = useState<null | 'position' | 'indent' | 'encoding' | 'language'>(null);
@@ -304,6 +313,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   const filePathRef = useRef<string>(filePath);
   const saveFileContentRef = useRef<() => Promise<void>>();
   const saveInFlightRef = useRef<Promise<void>>();
+  const queuedSaveRef = useRef<() => Promise<void>>();
   const latestEditorConfigRef = useRef<Partial<EditorConfigType> | null>(null);
   const delayedFontApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userLanguageOverrideRef = useRef(false);
@@ -1649,28 +1659,22 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     updateLargeFileMode,
   ]);
 
-  // Save file content
   const persistFileContent = useCallback(async () => {
-    if (!filePath) return;
-    if (isMemoryContent) return;
-    
-    // Read latest hasChanges state from ref to avoid closure issues
-    const currentHasChanges = hasChangesRef.current;
-    const currentContent = modelRef.current?.getValue() || '';
-    const savedVersion = modelRef.current?.getAlternativeVersionId();
-    
-    // Use ref value instead of state
-    if (!currentHasChanges) {
-      return;
-    }
+    const { documentFiles, filePath, modelKey, workspacePath, isMemoryContent } = saveTarget;
+    const model = modelRef.current;
+    const isCurrentSave = () => currentSaveTargetRef.current === saveTarget && modelRef.current === model
+      && (!documentSession || documentSession.isCurrent());
+    if (!filePath || isMemoryContent || !model || !isCurrentSave() || !hasChangesRef.current
+      || monacoModelManager.getModel(modelKey) !== model) return;
 
+    const currentContent = model.getValue();
+    const savedVersion = model.getAlternativeVersionId();
     setSaving(true);
     setError(null);
 
     try {
-      const workspaceAPI = documentFiles;
-
       const fileInfoPre = await fetchFileMetadata();
+      if (!isCurrentSave()) return;
       if (isFileMissingFromMetadata(fileInfoPre)) {
         reportFileMissingFromDisk(true);
       } else {
@@ -1688,31 +1692,32 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           cancelText: t('editor.codeEditor.reloadFromDisk'),
           confirmDanger: true,
         });
+        if (!isCurrentSave()) return;
         if (!overwrite) {
-          const diskContent = await workspaceAPI.readFileContent(filePath);
+          const diskContent = await documentFiles.readFileContent(filePath);
           const fileInfoAfter = await fetchFileMetadata();
-          const vAfter = diskVersionFromMetadata(fileInfoAfter);
-          applyDiskSnapshotToEditor(diskContent, vAfter);
+          if (isCurrentSave()) applyDiskSnapshotToEditor(diskContent, diskVersionFromMetadata(fileInfoAfter));
           return;
         }
       }
 
-      await workspaceAPI.writeFileContent(workspacePath || '', filePath, currentContent);
+      await documentFiles.writeFileContent(workspacePath || '', filePath, currentContent);
+      if (!isCurrentSave()) return;
 
       monacoModelManager.markAsSaved(modelKey, currentContent, savedVersion);
       originalContentRef.current = currentContent;
-      const latestContent = modelRef.current?.getValue() ?? currentContent;
+      const latestContent = model.getValue();
       const stillDirty = latestContent !== currentContent;
       setHasChanges(stillDirty);
       hasChangesRef.current = stillDirty;
-      if (savedVersion !== undefined) savedVersionIdRef.current = savedVersion;
+      savedVersionIdRef.current = savedVersion;
       documentSession?.capture(latestContent, stillDirty, currentContent);
       onSave?.(currentContent);
       onContentChangeRef.current?.(latestContent, stillDirty);
 
       try {
         const fileInfo = await fetchFileMetadata();
-        if (!isFileMissingFromMetadata(fileInfo)) {
+        if (isCurrentSave() && !isFileMissingFromMetadata(fileInfo)) {
           reportFileMissingFromDisk(false);
           const v = diskVersionFromMetadata(fileInfo);
           if (v) {
@@ -1725,34 +1730,35 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
 
       globalEventBus.emit('file-tree:refresh');
     } catch (err) {
+      if (!isCurrentSave()) return;
       const errorMsg = t('editor.common.saveFailedWithMessage', { message: String(err) });
       setError(errorMsg);
       log.error('Failed to save file', err);
     } finally {
-      setSaving(false);
+      if (currentSaveTargetRef.current) setSaving(false);
     }
-  }, [
-    applyDiskSnapshotToEditor,
-    documentFiles,
-    documentSession,
-    fetchFileMetadata,
-    filePath,
-    isMemoryContent,
-    modelKey,
-    onSave,
-    reportFileMissingFromDisk,
-    t,
-    workspacePath,
-  ]);
+  }, [applyDiskSnapshotToEditor, documentSession, fetchFileMetadata, onSave, reportFileMissingFromDisk, saveTarget, t]);
 
-  const saveFileContent = useCallback(() => {
+  const saveFileContent = useCallback(async () => {
+    if (currentSaveTargetRef.current !== saveTarget) return;
+    // Keep the requesting file's save callback: the view may switch to a
+    // different document before the in-flight write completes.
+    queuedSaveRef.current = persistFileContent;
     if (!saveInFlightRef.current) {
-      saveInFlightRef.current = persistFileContent().finally(() => {
-        saveInFlightRef.current = undefined;
-      });
+      saveInFlightRef.current = (async () => {
+        try {
+          while (queuedSaveRef.current) {
+            const save = queuedSaveRef.current;
+            queuedSaveRef.current = undefined;
+            await save();
+          }
+        } finally {
+          saveInFlightRef.current = undefined;
+        }
+      })();
     }
-    return saveInFlightRef.current;
-  }, [persistFileContent]);
+    await saveInFlightRef.current;
+  }, [persistFileContent, saveTarget]);
   
   useEffect(() => {
     saveFileContentRef.current = saveFileContent;

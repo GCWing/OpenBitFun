@@ -225,6 +225,7 @@ fn builtin_agent_definition_catalog_preserves_order_categories_models_and_visibi
             "Creative",
             "Claw",
             "DeepResearch",
+            "PaperWriting",
             "Ultimate",
             "SwarmPlanner",
             "SwarmWorker",
@@ -329,6 +330,7 @@ fn builtin_agent_definition_catalog_preserves_order_categories_models_and_visibi
             Some("Creative"),
             Some("Claw"),
             Some("DeepResearch"),
+            Some("PaperWriting"),
             Some("SwarmWorker"),
             Some("SwarmReviewer"),
         ] {
