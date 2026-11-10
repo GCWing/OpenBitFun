@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+import { browserFixtureFlags, cleanupBrowserFixture } from './browser-fixture.test-support';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -71,7 +72,7 @@ it.skipIf(!browser).each([
       document.getElementById('result').textContent=JSON.stringify(result);
       </script></html>`);
     const output = execFileSync(browser!, [
-      '--headless=new', '--disable-gpu', '--no-first-run', '--force-device-scale-factor=1',
+      ...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--no-first-run', '--force-device-scale-factor=1',
       '--window-size=1000,1100', '--virtual-time-budget=200',
       `--user-data-dir=${resolve(scratch, 'profile')}`, `--screenshot=${screenshot}`,
       '--dump-dom', pathToFileURL(html).href,
@@ -96,6 +97,6 @@ it.skipIf(!browser).each([
       expect([...data.subarray(offset, offset + 3)]).toEqual(mode === 'light' ? [252, 252, 252] : [36, 36, 36]);
     }
   } finally {
-    rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await cleanupBrowserFixture(scratch);
   }
 }, 30000);

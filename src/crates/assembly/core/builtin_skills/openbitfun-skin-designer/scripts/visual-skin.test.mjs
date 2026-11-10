@@ -231,7 +231,7 @@ test('supports actual mode slot properties and high-contrast patches without a s
 });
 
 test('CLI works outside the checkout, exports live contract, validates before writing, and refuses overwrite', async () => {
-  const project = resolve(dirname(script), ...Array(7).fill('..'));
+  const project = process.cwd();
   const run = args => execFileSync(process.execPath, [script, ...args, '--project', project], { cwd: scratch, windowsHide: true, encoding: 'utf8' });
   const contract = JSON.parse(run(['contract']));
   assert.equal(contract.tokens['color.surface.canvas'], product.VISUAL_SKIN_TOKEN_VARIABLES['color.surface.canvas']);

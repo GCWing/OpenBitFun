@@ -73,7 +73,7 @@ pub(super) const BUILTIN_SKILL_SPECS: &[BuiltinSkillSpec] = &[
         group: BuiltinSkillGroup::Creation,
     },
     BuiltinSkillSpec {
-        dir_name: "create-visual-theme",
+        dir_name: "openbitfun-skin-designer",
         group: BuiltinSkillGroup::Creation,
     },
     BuiltinSkillSpec {

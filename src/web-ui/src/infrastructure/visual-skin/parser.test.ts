@@ -108,7 +108,7 @@ describe('VisualSkinPackageParser', () => {
   });
 
   it('imports the bundled example using the current public token and MIME names', async () => {
-    const directory = join(process.cwd(), '../crates/assembly/core/builtin_skills/create-visual-theme/examples/aurora-paper');
+    const directory = join(process.cwd(), '../crates/assembly/core/builtin_skills/openbitfun-skin-designer/examples/aurora-paper');
     const zip = new JSZip();
     const manifest = JSON.parse(readFileSync(join(directory, 'skin.json'), 'utf8'));
     zip.file('skin.json', JSON.stringify(manifest));

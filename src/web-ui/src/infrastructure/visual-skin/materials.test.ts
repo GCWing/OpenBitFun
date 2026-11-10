@@ -1,5 +1,6 @@
+import { browserFixtureFlags, cleanupBrowserFixture } from './browser-fixture.test-support';
 // @vitest-environment jsdom
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -106,7 +107,10 @@ it('paints the native option owner rather than an ancestor scroll container', as
   expect(runtime.getSnapshot().projection?.entries.find(e=>e.path==='components[0].states.selected.slots.option')?.status).toBe('projected');
 });
 
-it.skipIf(!browser)('keeps a closable tab edge on its expanding surface and preserves Button borders', async () => {
+it.skipIf(!browser).each([
+  { input: 'mouse', pointer: 4, hover: 2, expands: true },
+  { input: 'touch', pointer: 2, hover: 1, expands: false },
+])('keeps a closable tab edge on its $input surface and preserves Button borders', async ({ pointer, hover, expands }) => {
   const published = await import(/* @vite-ignore */ pathToFileURL(resolve('../../design-system/packages/ui/dist/index.js')).href);
   document.body.innerHTML = renderToStaticMarkup(React.createElement('div', null,
     React.createElement(published.TabGroup, { id: 'tabs', items: [{ value: 'settings', label: 'Settings', endAction: React.createElement('button', { 'aria-label': 'Close', type: 'button' }, 'X') }] }),
@@ -125,24 +129,29 @@ it.skipIf(!browser)('keeps a closable tab edge on its expanding surface and pres
       const results=[];for(const mode of ['light','dark'])for(const expanded of [false,true]){
         document.documentElement.dataset.colorScheme=mode;if(expanded)group.dataset.openbitfunPreviewState='hover';else delete group.dataset.openbitfunPreviewState;
         const paint=geometry(),self=getComputedStyle(tab),edge=getComputedStyle(tab,'::before');
-        const state={mode,expanded,paint,border:self.borderColor,shadow:self.boxShadow,edgeBorder:edge.borderColor,edgeShadow:edge.boxShadow,edgeWidth:parseFloat(edge.width),buttonBorder:getComputedStyle(document.getElementById('plain-button')).borderColor};
+        const state={mode,expanded,desktop:matchMedia('(hover: hover) and (pointer: fine)').matches,paint,border:self.borderColor,shadow:self.boxShadow,edgeBorder:edge.borderColor,edgeShadow:edge.boxShadow,edgeWidth:parseFloat(edge.width),buttonBorder:getComputedStyle(document.getElementById('plain-button')).borderColor};
         document.documentElement.removeAttribute('data-openbitfun-skin-id');state.original=geometry();document.documentElement.dataset.openbitfunSkinId='material';results.push(state);
       }document.getElementById('result').textContent=JSON.stringify(results);
       }catch(error){document.getElementById('result').textContent=JSON.stringify({error:String(error),stack:error.stack});}})();
     </script></body></html>`);
-    const output = execFileSync(browser!, ['--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--virtual-time-budget=500','--dump-dom',pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
+    // Explicit input capabilities exercise both media-query branches on every host.
+    const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new','--disable-gpu','--no-first-run',`--blink-settings=primaryPointerType=${pointer},primaryHoverType=${hover}`,`--user-data-dir=${resolve(scratch,'profile')}`,'--virtual-time-budget=500','--dump-dom',pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
     const encoded = output.match(/<pre id="result">(.*?)<\/pre>/s)![1];
     const results = JSON.parse(encoded);
     expect(Array.isArray(results), JSON.stringify(results)).toBe(true);
     for (const result of results) {
+      expect(result.desktop).toBe(expands);
       expect(result.paint).toEqual(result.original);
       expect(result.border).toBe('rgba(0, 0, 0, 0)'); expect(result.shadow).toBe('none');
       expect(result.edgeBorder).toBe('rgb(204, 0, 0)'); expect(result.edgeShadow).toContain('rgb(0, 255, 0)');
       expect(Math.abs(result.edgeWidth - result.paint.item[2])).toBeLessThan(1);
       expect(result.buttonBorder).toBe('rgb(204, 0, 0)');
     }
-    expect(results[1].paint.item[2]).toBeGreaterThan(results[0].paint.item[2]);
-  } finally { rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+    for (const index of [0, 2]) {
+      if (expands) expect(results[index + 1].paint.item[2]).toBeGreaterThan(results[index].paint.item[2]);
+      else expect(results[index + 1].paint.item[2]).toBe(results[index].paint.item[2]);
+    }
+  } finally { await cleanupBrowserFixture(scratch); }
 }, 30000);
 
 it.skipIf(!browser)('composes image alpha on the real Button paint layer without fading content or changing geometry', async () => {
@@ -167,12 +176,12 @@ it.skipIf(!browser)('composes image alpha on the real Button paint layer without
       const track=document.querySelector('[data-openbitfun-part="track"]'),input=document.querySelector('input');result.checked=getComputedStyle(track).backgroundPosition;input.checked=false;result.unchecked=getComputedStyle(track).backgroundPosition;
       document.documentElement.removeAttribute('data-openbitfun-skin-id');result.original=measure();document.documentElement.setAttribute('data-openbitfun-skin-id','material');document.getElementById('result').textContent=JSON.stringify(result);
     </script></body></html>`);
-    const output = execFileSync(browser!, ['--headless=new','--disable-gpu','--hide-scrollbars','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--window-size=400,300','--force-device-scale-factor=1','--virtual-time-budget=500',`--screenshot=${screenshot}`,'--dump-dom',pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
+    const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new','--disable-gpu','--hide-scrollbars','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--window-size=400,300','--force-device-scale-factor=1','--virtual-time-budget=500',`--screenshot=${screenshot}`,'--dump-dom',pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
     const result = JSON.parse(output.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
     expect(result.paint).toEqual(result.original); expect(result.opacity).toBe('1'); expect(result.textOpacity).toBe('1'); expect(result.textColor).toBe('rgb(204, 0, 0)'); expect(result.image).toContain('linear-gradient');
     expect(result.checked).toBe('60% 60%'); expect(result.unchecked).toBe('10% 10%');
     const { data, info } = await sharp(readFileSync(screenshot)).removeAlpha().raw().toBuffer({ resolveWithObject: true });
     const pixel = [...data.subarray((26 * info.width + 100) * info.channels, (26 * info.width + 100) * info.channels + 3)];
     pixel.forEach((value, i) => expect(Math.abs(value - [191,191,255][i]), JSON.stringify({pixel,result})).toBeLessThanOrEqual(2));
-  } finally { rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+  } finally { await cleanupBrowserFixture(scratch); }
 }, 30000);

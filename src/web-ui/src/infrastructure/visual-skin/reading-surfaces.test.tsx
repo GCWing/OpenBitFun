@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
+import { browserFixtureFlags, cleanupBrowserFixture } from './browser-fixture.test-support';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -37,7 +38,7 @@ it('keeps disclosure and calendar actions functional with local reading material
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-it.skipIf(!browser).each(['light','dark'])('protects real settings, skill and calendar markup while retaining clear gaps and geometry in %s', mode => {
+it.skipIf(!browser).each(['light','dark'])('protects real settings, skill and calendar markup while retaining clear gaps and geometry in %s', async mode => {
   const scratch = mkdtempSync(resolve(tmpdir(), 'skin-material-'));
   try {
     const markup = renderToStaticMarkup(<main className="openbitfun-config-page-layout">
@@ -77,7 +78,7 @@ it.skipIf(!browser).each(['light','dark'])('protects real settings, skill and ca
       document.documentElement.removeAttribute('data-openbitfun-skin-id');
       document.getElementById('result').textContent=JSON.stringify({restingMaterial,focusedMaterial,toolbarColor,calendarPlanes,headingPlates,headingColor,shadow,before,after:targets.map(measure),paints,gap,disabled:targets.map(e=>getComputedStyle(e,'::before').content)});
       </script></body></html>`);
-    const out = execFileSync(browser!, ['--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--virtual-time-budget=200','--dump-dom',pathToFileURL(html).href], {encoding:'utf8',windowsHide:true,timeout:20000,stdio:'pipe'});
+    const out = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--virtual-time-budget=200','--dump-dom',pathToFileURL(html).href], {encoding:'utf8',windowsHide:true,timeout:20000,stdio:'pipe'});
     const result=JSON.parse(out.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
     expect(result.calendarPlanes).toEqual(['openbitfun-todos__calendar-body']);
     expect(result.paints.length).toBeGreaterThan(0);
@@ -90,5 +91,5 @@ it.skipIf(!browser).each(['light','dark'])('protects real settings, skill and ca
     result.headingPlates.forEach((plate:{background:string;content:string})=>{expect(plate.background).toBe('rgba(0, 0, 0, 0)');expect(['none','normal']).toContain(plate.content);});
     expect(result.headingColor).toBe('rgb(23, 37, 52)');expect(result.shadow).toContain('2px');
     expect(result.disabled.every((content:string)=>['none','normal'].includes(content))).toBe(true);
-  } finally { rmSync(scratch,{recursive:true,force:true,maxRetries:5,retryDelay:100}); }
+  } finally { await cleanupBrowserFixture(scratch); }
 }, 30000);

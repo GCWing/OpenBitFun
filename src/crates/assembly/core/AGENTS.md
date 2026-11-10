@@ -538,7 +538,7 @@ For visual-skin Skill authoring helpers and canonical example packaging (Node,
 prepared Web UI dependencies; no Rust build required):
 
 ```bash
-node --test src/crates/assembly/core/builtin_skills/create-visual-theme/scripts/visual-skin.test.mjs
+node --test src/crates/assembly/core/builtin_skills/openbitfun-skin-designer/scripts/visual-skin.test.mjs
 ```
 
 These exercise the real frontend parser and authoring CLI, not native rendering

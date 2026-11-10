@@ -56,7 +56,7 @@ mutations; discarded resources are released after paint replacement, and disposa
 removes owned paint before releasing URLs. Package files and stored image data
 remain unchanged; temporary display URLs are never persisted or exported.
 
-The create-visual-theme Skill requires a component/state material plan and actual
+The openbitfun-skin-designer Skill requires a component/state material plan and actual
 visual acceptance alongside package validation. Projected paths alone do not
 establish participation or readability.
 
@@ -260,7 +260,7 @@ the shared semantic visual layer and fixed decorative projections.
 
 For authoring instructions, evidence capture, accessibility checks, asset
 provenance, and the generated example, see
-`src/crates/assembly/core/builtin_skills/create-visual-theme/SKILL.md`.
+`src/crates/assembly/core/builtin_skills/openbitfun-skin-designer/SKILL.md`.
 
 The Skill includes `scripts/visual-skin.mjs` with `contract`, `init`, `validate`,
 and `pack` commands. It loads the target checkout's production parser and public

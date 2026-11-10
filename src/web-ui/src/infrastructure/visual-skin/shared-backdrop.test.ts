@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -8,7 +8,7 @@ import { compile } from 'sass';
 import { afterEach, expect, it } from 'vitest';
 import { VisualSkinPackageParser } from './parser';
 import { VisualSkinRuntime } from './runtime';
-import { rehostSkinImages } from './browser-fixture.test-support';
+import { browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
 import { validateVisualSkinPackage } from './validator';
 import type { VisualSkinPackage } from './types';
 
@@ -74,12 +74,12 @@ it.skipIf(!browser)('renders shared chrome, translucent reader and collapsed cor
     result.activeAlpha=alpha(style('frame').backgroundColor);document.getElementById('frame').dataset.openbitfunState='empty';result.emptyAlpha=alpha(style('frame').backgroundColor);delete document.getElementById('frame').dataset.openbitfunState;result.restoredAlpha=alpha(style('frame').backgroundColor);document.documentElement.removeAttribute('data-openbitfun-skin-id');result.original=rect();document.getElementById('result').textContent=JSON.stringify(result);
     </script></body></html>`;
     const file = resolve(scratch, 'shared.html'); writeFileSync(file, html);
-    const output = execFileSync(browser!, ['--headless=new', '--disable-gpu', '--no-first-run', `--user-data-dir=${resolve(scratch, 'profile')}`, '--dump-dom', pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
+    const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--no-first-run', `--user-data-dir=${resolve(scratch, 'profile')}`, '--dump-dom', pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
     const result = JSON.parse(output.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
     expect(result.activeAlpha).toBeCloseTo(0.5, 2); expect(result.emptyAlpha).toBe(0); expect(result.restoredAlpha).toBeCloseTo(0.5, 2);
     expect(result.expandedUnderlay).toBe('color(srgb 0.909804 0.862745 0.768627 / 0.8)');
     expect(result.control).toBe('rgb(240, 230, 210)'); expect(result.disabled).toBe('rgb(30, 40, 50)'); expect(result.frame).toEqual(result.original); expect(result.alpha).toBeCloseTo(0.94, 2); expect(result.opacity).toBe('1');
     for (const key of ['toolbar','viewport','underlay','text','session']) expect(result[key]).toBe('rgba(0, 0, 0, 0)');
     expect(result.menu).toBe('rgb(255, 252, 243)'); expect(result.card).toBe(result.menu);
-  } finally { rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+  } finally { await cleanupBrowserFixture(scratch); }
 }, 30000);

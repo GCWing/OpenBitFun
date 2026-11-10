@@ -1,5 +1,5 @@
 ---
-name: create-visual-theme
+name: openbitfun-skin-designer
 description: Create or update an importable OpenBitFun visual skin from reference images or an art brief, using the target product's actual paint contract and checking the result in the existing UI.
 ---
 

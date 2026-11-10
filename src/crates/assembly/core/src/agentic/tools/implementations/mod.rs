@@ -5,7 +5,6 @@ pub mod agent_list_tool;
 pub mod agent_wait_tool;
 #[cfg(feature = "tools-image-analysis")]
 pub mod analyze_image_tool;
-#[cfg(feature = "tools-miniapp")]
 pub mod ask_user_question_tool;
 pub mod code_review_tool;
 #[cfg(feature = "tools-computer-use")]
@@ -96,7 +95,6 @@ pub use agent_list_tool::AgentListTool;
 pub use agent_wait_tool::AgentWaitTool;
 #[cfg(feature = "tools-image-analysis")]
 pub use analyze_image_tool::AnalyzeImageTool;
-#[cfg(feature = "tools-miniapp")]
 pub use ask_user_question_tool::AskUserQuestionTool;
 pub use code_review_tool::CodeReviewTool;
 #[cfg(feature = "tools-computer-use")]

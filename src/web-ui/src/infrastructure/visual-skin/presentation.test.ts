@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { rehostSkinImages } from './browser-fixture.test-support';
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -72,13 +72,13 @@ it.skipIf(!browser).each([1000, 700])('keeps the real welcome brand centered wit
       document.getElementById('result').textContent=JSON.stringify({active,after:{x:after.x,y:after.y,width:after.width,height:after.height},background,logo:document.querySelector('.welcome-scene__logo').getBoundingClientRect().width,brand:document.getElementById('welcome-scene-title').textContent,heading:document.getElementById(root.getAttribute('aria-labelledby')).tagName});
     </script></body></html>`;
     const file=resolve(scratch,'welcome.html');writeFileSync(file,html);
-    const output=execFileSync(browser!,['--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--dump-dom',pathToFileURL(file).href],{windowsHide:true,encoding:'utf8',timeout:20000,stdio:'pipe'});
+    const output=execFileSync(browser!,[...browserFixtureFlags(), '--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--dump-dom',pathToFileURL(file).href],{windowsHide:true,encoding:'utf8',timeout:20000,stdio:'pipe'});
     const result=JSON.parse(output.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
     expect(result.heading).toBe('H1');expect(result.brand).toContain('OpenBitFun');expect(result.logo).toBe(56);
     expect(result.background).toBe('rgba(0, 0, 0, 0)');expect(result.active).toEqual(result.after);
     expect(result.active.x+result.active.width/2).toBeCloseTo(width/2,0);
     expect(result.active.y).toBeLessThan(300);expect(result.active.y).toBeGreaterThan(100);
-  } finally { rmSync(scratch,{recursive:true,force:true,maxRetries:5,retryDelay:100}); }
+  } finally { await cleanupBrowserFixture(scratch); }
 },30000);
 
 
@@ -94,8 +94,8 @@ it.skipIf(!browser)('retains readable settings, tables and overlays when a hidde
     document.getElementById('viewport').setAttribute('data-openbitfun-state','empty');result.landing=style('frame');result.landingToolbar=style('toolbar');document.getElementById('viewport').removeAttribute('data-openbitfun-state');result.restored=style('frame');document.getElementById('result').textContent=JSON.stringify(result);
     </script></body></html>`;
     const file=resolve(scratch,'reading.html');writeFileSync(file,html);
-    const output=execFileSync(browser!,['--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--dump-dom',pathToFileURL(file).href],{windowsHide:true,encoding:'utf8',timeout:20000,stdio:'pipe'});
+    const output=execFileSync(browser!,[...browserFixtureFlags(), '--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--dump-dom',pathToFileURL(file).href],{windowsHide:true,encoding:'utf8',timeout:20000,stdio:'pipe'});
     const result=JSON.parse(output.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
     expect(result).toEqual({frame:'rgb(250, 246, 235)',viewport:'rgb(250, 246, 235)',toolbar:'rgb(232, 220, 196)',card:'rgb(255, 252, 243)',menu:'rgb(255, 252, 243)',landing:'rgba(0, 0, 0, 0)',landingToolbar:'rgba(0, 0, 0, 0)',restored:'rgb(250, 246, 235)'});
-  } finally { runtime.dispose();rmSync(scratch,{recursive:true,force:true,maxRetries:5,retryDelay:100}); }
+  } finally { runtime.dispose();await cleanupBrowserFixture(scratch); }
 },30000);

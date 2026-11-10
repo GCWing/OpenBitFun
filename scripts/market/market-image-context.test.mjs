@@ -9,7 +9,7 @@ const read = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 const exists = (relativePath) => fs.existsSync(path.join(repoRoot, relativePath));
 
-// Both markets build from the repo root with a per-Dockerfile ignore file, so
+// Market images build from the repo root with a per-Dockerfile ignore file, so
 // the build context is a hand-maintained whitelist. Anything the Dockerfile
 // copies must be allowlisted there, otherwise the COPY resolves to nothing.
 const marketImages = [
@@ -17,11 +17,6 @@ const marketImages = [
     name: 'miniapp',
     dockerfile: 'src/apps/miniapp-market-server/Dockerfile',
     ignoreFile: 'src/apps/miniapp-market-server/Dockerfile.dockerignore',
-  },
-  {
-    name: 'skin',
-    dockerfile: 'src/apps/skin-market-server/Dockerfile',
-    ignoreFile: 'src/apps/skin-market-server/Dockerfile.dockerignore',
   },
 ];
 

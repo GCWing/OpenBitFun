@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { browserFixtureFlags } from './browser-fixture.test-support';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
@@ -26,7 +27,7 @@ function runBrowser(html:string) {
   const dir=mkdtempSync(resolve(tmpdir(),'skin-sidebar-')),file=resolve(dir,'fixture.html'),shot=resolve(dir,'fixture.png');
   writeFileSync(file,html);
   try {
-    const dom=execFileSync(browser!,['--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(dir,'profile')}`,'--force-device-scale-factor=1','--window-size=900,800','--virtual-time-budget=250',`--screenshot=${shot}`,'--dump-dom',pathToFileURL(file).href],{encoding:'utf8',windowsHide:true,timeout:20000,stdio:'pipe'});
+    const dom=execFileSync(browser!,[...browserFixtureFlags(), '--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(dir,'profile')}`,'--force-device-scale-factor=1','--window-size=900,800','--virtual-time-budget=250',`--screenshot=${shot}`,'--dump-dom',pathToFileURL(file).href],{encoding:'utf8',windowsHide:true,timeout:20000,stdio:'pipe'});
     return {result:JSON.parse(dom.match(/<pre id="result">(.*?)<\/pre>/s)![1]),pixels:readFileSync(shot)};
   } finally {rmSync(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 }

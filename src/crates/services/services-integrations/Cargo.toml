@@ -207,6 +207,7 @@ account-identity = [
 ]
 miniapp-market = [
     "account-identity",
+    "dep:openbitfun-product-domains",
     "openbitfun-services-core/tls-provider",
     "openbitfun-services-core/credential-vault",
     "openbitfun-services-core/product-identity",
