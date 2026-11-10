@@ -2387,6 +2387,7 @@ pub fn resolve_remote_agent_type(mobile_type: Option<&str>) -> &'static str {
         }
         Some("code") => "Standard",
         Some("cowork") | Some("Cowork") => "Cowork",
+        Some("PaperWriting") => "PaperWriting",
         Some("claw") | Some("Claw") | Some("assistant") | Some("chat") => "Claw",
         _ => "Standard",
     }

@@ -119,6 +119,20 @@
       "exitFullscreen": "Exit fullscreen",
       "imageUrlEmpty": "Image URL is empty"
     },
+    "latexEditor": {
+      "preview": "PDF preview",
+      "engine": "LaTeX engine",
+      "compile": "Save & compile",
+      "compiling": "Compiling…",
+      "autoCompile": "Auto compile",
+      "autoCompileHint": "Automatically save and compile this source when you pause. Enable for projects you trust.",
+      "resize": "Resize LaTeX source and PDF preview",
+      "empty": "Open the main .tex file and compile to see the typeset PDF. The workspace host needs latexmk and the selected TeX engine.",
+      "unavailable": "LaTeX compilation requires a supported OpenBitFun Desktop host and an opened workspace.",
+      "compileFailed": "Compilation failed. View log",
+      "stalePreview": "Compilation failed. Showing the last successful PDF",
+      "saveFailed": "The source could not be saved. Save your changes before compiling."
+    },
     "pdfViewer": {
       "loading": "Loading PDF...",
       "filePathEmpty": "File path is empty",

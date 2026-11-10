@@ -394,6 +394,7 @@
     "Cowork": "Office collaboration Agent: help with office and research tasks, confirming key steps with you.",
     "ComputerUse": "Computer use SubAgent: perform delegated work in browsers, desktop apps, and file systems.",
     "DeepResearch": "Deep research agent: conduct systematic investigation and analysis on complex topics",
+    "PaperWriting": "Draft and revise academic manuscripts in LaTeX, with bibliography, figures, and a compiled PDF.",
     "ResearchSpecialist": "Finds and evaluates web sources to deliver focused research with clear supporting evidence.",
     "GeneralPurpose": "Combines search, analysis, and coding to complete multi-step tasks independently.",
     "Explore": "Explore SubAgent: quickly browse the codebase to understand project structure and key files",

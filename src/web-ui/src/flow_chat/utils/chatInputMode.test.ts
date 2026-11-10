@@ -227,6 +227,7 @@ describe('ChatInput Agent projection', () => {
       resolveChatInputMainAgentModes([
         { id: 'Standard' },
         { id: 'Cowork' },
+        { id: 'PaperWriting' },
         { id: 'Multitask' },
         { id: 'Plan' },
         { id: 'Claw' },
@@ -236,6 +237,7 @@ describe('ChatInput Agent projection', () => {
       ]),
     ).toEqual([
       { id: 'Cowork' },
+      { id: 'PaperWriting' },
       { id: 'PlannerPlus' },
     ]);
   });

@@ -13,6 +13,7 @@ import type * as Monaco from 'monaco-editor';
 import { registerMermaidLanguage } from '../languages/mermaid.language';
 import { registerTomlLanguage } from '../languages/toml.language';
 import { registerCangjieLanguage } from '../languages/cangjie.language';
+import { registerLatexLanguage } from '../languages/latex.language';
 import { getMonacoPath, getMonacoWorkerPath, logMonacoResourceCheck } from '../utils/monacoPathHelper';
 import { setMonacoRuntime } from './monacoRuntime';
 import { createLogger } from '@/shared/utils/logger';
@@ -183,6 +184,7 @@ class MonacoInitManager {
       registerTomlLanguage(monaco);
       registerMermaidLanguage(monaco);
       registerCangjieLanguage(monaco);
+      registerLatexLanguage(monaco);
       log.debug('TOML language registered');
       log.debug('Mermaid language registered');
       log.debug('Cangjie language registered');

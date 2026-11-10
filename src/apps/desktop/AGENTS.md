@@ -433,3 +433,14 @@ adapter owns HTTP authentication, explicit-refresh headers and peer RPC wiring.
 Use `node tests/e2e/scripts/run-html-preview.mjs` after building Desktop and Web UI
 to verify CSS, JavaScript modules, images and concurrent preview cookies in native
 browser child views. The fixture uses isolated storage; see `tests/e2e/AGENTS.md`.
+
+For the LaTeX workspace compiler, run:
+
+```bash
+cargo test --locked -p openbitfun-desktop --no-default-features --lib latex_api::tests
+```
+
+Use `-- --include-ignored` with `latexmk`, pdfLaTeX, and XeLaTeX on PATH to
+exercise a multi-file paper build, error diagnostics, and temporary output.
+The POSIX build test checks the remote command in a local shell. Verify live
+SSH, container, and peer routing separately.

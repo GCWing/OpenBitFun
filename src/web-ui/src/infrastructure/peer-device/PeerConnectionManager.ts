@@ -115,6 +115,7 @@ export interface PeerHostCapabilities {
   readonly workspaceIconV1?: boolean;
   readonly workspaceIdReferencesV1?: boolean;
   readonly gitTrackedChangeCountV1?: boolean;
+  readonly workspaceLatexPreviewV1?: boolean;
   /**
    * Host implements `submit_user_answers` for Runtime-owned
    * AskUserQuestion interactions. Older Desktop hosts already implemented the
@@ -240,6 +241,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   sessionReferenceBrowseV1: false,
   workspaceIconV1: false,
   workspaceIdReferencesV1: false,
+  workspaceLatexPreviewV1: false,
   userQuestionResponse: null,
   // Host kind is unknown until the first `peer_mode_ping` resolves. Consumers
   // treat `null` optimistically. See PR #2428 round 5 #1.
@@ -612,6 +614,7 @@ export class PeerConnectionManager {
       workspaceIconV1: caps?.workspace_icon_v1 === true,
       workspaceIdReferencesV1: caps?.workspace_id_references_v1 === true,
       gitTrackedChangeCountV1: caps?.git_tracked_change_count_v1 === true,
+      workspaceLatexPreviewV1: caps?.workspace_latex_preview_v1 === true,
       userQuestionResponse,
       userQuestionInteraction: caps?.user_question_interaction_v1 === true,
       dialogQueueV1: caps?.dialog_queue_v1 === true,
@@ -879,6 +882,7 @@ function capabilitiesEqual(
     a.workspaceIconV1 === b.workspaceIconV1 &&
     a.workspaceIdReferencesV1 === b.workspaceIdReferencesV1 &&
     a.gitTrackedChangeCountV1 === b.gitTrackedChangeCountV1 &&
+    a.workspaceLatexPreviewV1 === b.workspaceLatexPreviewV1 &&
     a.userQuestionResponse === b.userQuestionResponse &&
     a.userQuestionInteraction === b.userQuestionInteraction &&
     a.dialogQueueV1 === b.dialogQueueV1 &&

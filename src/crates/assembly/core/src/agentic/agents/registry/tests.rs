@@ -280,6 +280,7 @@ fn top_level_modes_default_to_auto() {
         "Creative",
         "Claw",
         "DeepResearch",
+        "PaperWriting",
         "Ultimate",
     ] {
         assert_eq!(default_model_id_for_builtin_agent(agent_type), "primary");

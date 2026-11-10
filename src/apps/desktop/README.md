@@ -130,6 +130,25 @@ Both modes require the online identity service for sign-in. Same-network mode
 does not provide offline login. See the [Relay FAQ](../relay-server/FAQ.md) for
 privacy, service availability, and private-deployment requirements.
 
+## Writing a LaTeX paper
+
+Choose **Other agents → Paper Writing** in the session composer and ask the
+agent to draft or revise files in your workspace. Open the main `.tex` file
+from the file tree or its chat link. The editor shows source on the left and the
+typeset PDF on the right. Use **Save & compile** or turn on **Auto compile**
+to save and recompile the main source after you pause. A failed build keeps the
+last successful preview and shows the compiler log.
+
+Install `latexmk` and the selected pdfLaTeX or XeLaTeX engine on the machine that
+owns the workspace. For SSH, Docker, and WSL workspaces, compile in that
+environment. In Peer Device Mode the selected Desktop host must advertise
+LaTeX preview support. Mobile and bot surfaces can continue an existing writing
+session and receive PDF files saved to the workspace by the agent.
+
+Preview compilation uses temporary files and accepts PDFs up to 8 MiB.
+It disables shell escape and skips `latexmk` configuration scripts.
+Enable automatic compilation for projects you trust.
+
 ## Global agent instructions
 
 Put personal instructions for local OpenBitFun sessions in

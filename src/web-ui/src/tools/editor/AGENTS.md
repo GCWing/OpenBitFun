@@ -91,6 +91,15 @@ For UI, types, and theme contracts, also follow the parent guide's `check:web`
 command. Local DOM tests do not establish remote workspace, Remote Connect,
 Peer Device Mode, or Detached Dispatch behavior.
 
+For the LaTeX source and PDF split, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/tools/editor/components/LatexEditor.test.tsx src/tools/editor/components/PdfViewer.test.tsx src/infrastructure/api/service-api/LatexAPI.test.ts
+```
+
+The fixtures cover save ordering, coalesced rebuilds, last-successful preview,
+and the peer capability gate. Use the Desktop compiler tests for real TeX.
+
 For rich-text interaction changes, run the focused browser E2E from the root:
 
 ```bash

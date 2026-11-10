@@ -105,6 +105,8 @@ pub enum PeerHostCapability {
     WorkspaceIdReferencesV1,
     /// Workspace-confined static resources for controller-owned HTML preview.
     WorkspaceHtmlPreviewV1,
+    /// Compile a workspace's main TeX source on this Desktop host.
+    WorkspaceLatexPreviewV1,
     /// `copy_session` copies a whole session without a caller-selected turn id.
     WholeSessionCopyV1,
     /// Bounded session trajectory summaries and host-side body search.
@@ -170,6 +172,7 @@ impl PeerHostCapability {
         Self::WorkspaceIconV1,
         Self::WorkspaceIdReferencesV1,
         Self::WorkspaceHtmlPreviewV1,
+        Self::WorkspaceLatexPreviewV1,
         Self::WholeSessionCopyV1,
         Self::SessionTrajectoryV1,
         Self::SessionReferenceBrowseV1,
@@ -224,6 +227,7 @@ impl PeerHostCapability {
             Self::WorkspaceIconV1 => "workspace_icon_v1",
             Self::WorkspaceIdReferencesV1 => "workspace_id_references_v1",
             Self::WorkspaceHtmlPreviewV1 => "workspace_html_preview_v1",
+            Self::WorkspaceLatexPreviewV1 => "workspace_latex_preview_v1",
             Self::SessionTrajectoryV1 => "session_trajectory_v1",
             Self::SessionReferenceBrowseV1 => "session_reference_browse_v1",
             Self::WholeSessionCopyV1 => "whole_session_copy_v1",
@@ -285,6 +289,7 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::WorkspaceIconV1,
     PeerHostCapability::WorkspaceIdReferencesV1,
     PeerHostCapability::WorkspaceHtmlPreviewV1,
+    PeerHostCapability::WorkspaceLatexPreviewV1,
     PeerHostCapability::WholeSessionCopyV1,
     PeerHostCapability::SessionTrajectoryV1,
     PeerHostCapability::SessionReferenceBrowseV1,

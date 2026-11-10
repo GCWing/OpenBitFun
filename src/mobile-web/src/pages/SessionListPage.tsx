@@ -231,6 +231,8 @@ function agentLabel(agentType: string, t: (key: string) => string): string {
     case 'cowork':
     case 'Cowork':
       return t('sessions.agentCowork');
+    case 'PaperWriting':
+      return t('shared.agents.PaperWriting');
     case 'claw':
     case 'Claw':
       return t('shared.agents.Claw');

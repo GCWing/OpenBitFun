@@ -179,6 +179,7 @@ import { mcpResourceBrowserAppearanceDescriptor } from '@/infrastructure/config/
 import { editorStatusBarAppearanceDescriptor } from '@/tools/editor/components/EditorStatusBar.appearance';
 import { imageViewerAppearanceDescriptor } from '@/tools/editor/components/ImageViewer.appearance';
 import { pdfViewerAppearanceDescriptor } from '@/tools/editor/components/PdfViewer.appearance';
+import { latexEditorAppearanceDescriptor } from '@/tools/editor/components/LatexEditor.appearance';
 import { branchQuickSwitchAppearanceDescriptor } from '@/tools/git/components/BranchQuickSwitch.appearance';
 import { workspaceListSectionAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceListSection.appearance';
 import { navDeviceSectionAppearanceDescriptor } from '@/app/components/NavPanel/sections/devices/DeviceWorkspaceSections.appearance';
@@ -455,6 +456,7 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(editorStatusBarAppearanceDescriptor)
     .registerComponent(imageViewerAppearanceDescriptor)
     .registerComponent(pdfViewerAppearanceDescriptor)
+    .registerComponent(latexEditorAppearanceDescriptor)
     .registerComponent(branchQuickSwitchAppearanceDescriptor)
     .registerComponent(workspaceListSectionAppearanceDescriptor)
     .registerComponent(navDeviceSectionAppearanceDescriptor)
