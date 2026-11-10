@@ -3,7 +3,7 @@
  * SceneViewport until the user opens a scene.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { isReducedMotionPreferred } from '@/shared/utils/motionPreference';
 import { OpenBitFunMark } from '@openbitfun/ui/brand';
@@ -16,10 +16,22 @@ const DELETE_MS = 55;
 const PHRASE_HOLD_MS = 2200;
 const PHRASE_GAP_MS = 450;
 const YOUR_WORD_INDEX = 2;
+const COMPACT_MAX_WIDTH = 560;
+const TINY_MAX_WIDTH = 400;
+
+type WelcomeDensity = 'regular' | 'compact' | 'tiny';
+
+function densityForWidth(width: number): WelcomeDensity {
+  if (width <= TINY_MAX_WIDTH) return 'tiny';
+  if (width <= COMPACT_MAX_WIDTH) return 'compact';
+  return 'regular';
+}
 
 const WelcomeScene: React.FC = () => {
   const { t } = useI18n('common');
+  const sceneRef = useRef<HTMLElement>(null);
   const [text, setText] = useState('');
+  const [density, setDensity] = useState<WelcomeDensity>('regular');
   const [reducedMotion, setReducedMotion] = useState(isReducedMotionPreferred);
   const [startupEntry] = useState(isStartupOverlayPresent);
   const [startupPending, setStartupPending] = useState(startupEntry);
@@ -43,6 +55,30 @@ const WelcomeScene: React.FC = () => {
     ],
     [impossible, dreams, your, suffix, think, ideas, create, explore],
   );
+
+  // The type scale follows the scene width through a plain attribute instead of
+  // CSS container queries. WebKit resolves container queries inside layout and
+  // can keep stale inline positions for the `white-space: pre` brand text when
+  // the scene first lays out narrow (startup, window resize) and then widens:
+  // the glyphs repaint at the larger size while the tagline stays where the
+  // smaller text ended, so the two lines overlap. An attribute change goes
+  // through ordinary style invalidation before layout, which re-measures text.
+  useLayoutEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const apply = (width: number) => {
+      // A hidden or detached scene reports zero; keep the last real tier.
+      if (width > 0) setDensity(densityForWidth(width));
+    };
+    apply(scene.getBoundingClientRect().width);
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[entries.length - 1];
+      if (entry) apply(entry.contentRect.width);
+    });
+    observer.observe(scene);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!startupPending) return;
@@ -107,10 +143,12 @@ const WelcomeScene: React.FC = () => {
 
   return (
     <section
+      ref={sceneRef}
       className="welcome-scene"
       data-testid="welcome-scene"
       data-openbitfun-scene="welcome"
       data-openbitfun-part="root"
+      data-density={density}
       data-startup-entry={startupEntry ? '' : undefined}
       data-startup-pending={startupPending ? '' : undefined}
       aria-labelledby="welcome-scene-title"
