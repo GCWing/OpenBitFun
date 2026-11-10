@@ -4,6 +4,7 @@
 //! here until it can be split without changing tool, session, or review flows.
 
 // Core module
+pub(crate) mod context_normalization;
 pub mod core;
 pub mod events;
 pub mod persistence;

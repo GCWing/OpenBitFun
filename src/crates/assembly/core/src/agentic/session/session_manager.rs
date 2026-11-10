@@ -3,13 +3,13 @@
 //! Responsible for session CRUD, lifecycle management, and resource association
 
 use crate::agentic::agents::get_agent_registry;
+use crate::agentic::context_normalization::normalize_incomplete_tool_calls;
 use crate::agentic::core::{
     new_turn_id, CompressionContract, CompressionState, InternalReminderKind, Message,
     MessageContent, MessageRole, MessageSemanticKind, ProcessingPhase, Session,
     SessionAgentRouteOwner, SessionConfig, SessionKind, SessionModelBindingPolicy, SessionState,
     SessionSummary, ToolPresentationMode, TurnStats,
 };
-use crate::agentic::fork_agent::normalize_incomplete_tool_calls;
 use crate::agentic::image_analysis::ImageContextData;
 use crate::agentic::keyed_lock::{KeyedAsyncLock, KeyedAsyncLockGuard};
 use crate::agentic::memories::db::{MemoryDatabase, MEMORY_PHASE2_GLOBAL_JOB_KEY};
@@ -6594,6 +6594,36 @@ impl SessionManager {
                 messages.extend(Self::build_messages_from_turns(&delta_turns));
             }
         };
+
+        // A process can exit after the assistant tool-call message is persisted
+        // and before the tool result is appended. Providers reject that history
+        // shape, so close the final active round during ordinary restore. The
+        // repaired snapshot becomes the durable recovery boundary for the next
+        // process as well; no interrupted tool is re-executed here.
+        let repaired_incomplete_tool_calls = normalize_incomplete_tool_calls(
+            &mut messages,
+            "Tool execution was still in progress when the application closed; the result is unknown. Verify any external side effects before continuing.",
+        );
+        if repaired_incomplete_tool_calls {
+            let repaired_snapshot_turn_index = latest_turn_index
+                .into_iter()
+                .chain(persisted_turns.last().map(|turn| turn.turn_index))
+                .max();
+            if let Some(turn_index) = repaired_snapshot_turn_index {
+                self.persistence_manager
+                    .save_turn_context_snapshot(
+                        session_storage_path,
+                        session_id,
+                        turn_index,
+                        &messages,
+                    )
+                    .await?;
+                info!(
+                    "Normalized incomplete tool calls during session restore: session_id={}, turn_index={}",
+                    session_id, turn_index
+                );
+            }
+        }
 
         if messages.is_empty() {
             debug!(
@@ -18377,6 +18407,92 @@ mod tests {
             .context_store
             .get_context_messages(&session_id)
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn restore_session_repairs_and_persists_incomplete_tool_calls() {
+        let workspace = TestWorkspace::new();
+        let persistence_manager = Arc::new(
+            PersistenceManager::new(workspace.path_manager()).expect("persistence manager"),
+        );
+        let manager = test_manager(persistence_manager.clone());
+        let session_id = Uuid::new_v4().to_string();
+        let mut session = Session::new_with_id(
+            session_id.clone(),
+            "Interrupted tool call".to_string(),
+            "Standard".to_string(),
+            SessionConfig {
+                tool_presentation_mode: Default::default(),
+                workspace_path: Some(workspace.path().to_string_lossy().to_string()),
+                ..Default::default()
+            },
+        );
+        session.dialog_turn_ids = vec!["turn-1".to_string()];
+        persistence_manager
+            .save_session(workspace.path(), &session)
+            .await
+            .expect("session should save");
+
+        let mut turn = DialogTurnData::new(
+            "turn-1".to_string(),
+            0,
+            session_id.clone(),
+            UserMessageData {
+                id: "turn-1-user".to_string(),
+                content: "read the file".to_string(),
+                timestamp: 1,
+                metadata: None,
+            },
+        );
+        turn.mark_completed();
+        persistence_manager
+            .save_dialog_turn(workspace.path(), &turn)
+            .await
+            .expect("turn should save");
+
+        let assistant = Message::assistant_with_tools(
+            String::new(),
+            vec![ToolCall {
+                tool_id: "call-1".to_string(),
+                tool_name: "Read".to_string(),
+                arguments: json!({"path": "a.txt"}),
+                ..Default::default()
+            }],
+        )
+        .with_turn_id("turn-1".to_string())
+        .with_round_id("round-1".to_string());
+        persistence_manager
+            .save_turn_context_snapshot(workspace.path(), &session_id, 0, &[assistant])
+            .await
+            .expect("incomplete snapshot should save");
+
+        manager
+            .restore_session(workspace.path(), &session_id)
+            .await
+            .expect("session should restore");
+
+        let restored = manager
+            .get_context_messages(&session_id)
+            .await
+            .expect("context should load");
+        assert_eq!(restored.len(), 2);
+        assert!(matches!(
+            &restored[1].content,
+            MessageContent::ToolResult { tool_id, result, .. }
+                if tool_id == "call-1"
+                    && result == &json!("Tool execution was still in progress when the application closed; the result is unknown. Verify any external side effects before continuing.")
+        ));
+
+        let persisted = persistence_manager
+            .load_turn_context_snapshot(workspace.path(), &session_id, 0)
+            .await
+            .expect("repaired snapshot should load")
+            .expect("repaired snapshot should exist");
+        assert_eq!(persisted.len(), 2);
+        assert!(matches!(
+            &persisted[1].content,
+            MessageContent::ToolResult { tool_id, .. } if tool_id == "call-1"
+        ));
     }
 
     #[tokio::test]

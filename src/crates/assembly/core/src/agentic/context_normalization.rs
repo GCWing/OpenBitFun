@@ -1,3 +1,9 @@
+//! Model-context normalization at provider-history boundaries.
+//!
+//! Session restore, ordinary execution, interruption recovery, and forked
+//! execution all share the same invariant: every assistant tool call visible
+//! to a provider must have a corresponding tool result.
+
 use crate::agentic::core::{Message, MessageContent, ToolResult};
 
 /// Ensure a fork never carries an assistant tool call without a matching
@@ -23,15 +29,17 @@ pub(crate) fn normalize_fork_context_messages(mut messages: Vec<Message>) -> Vec
 /// malformed older history with an incomplete *earlier* round is not repaired
 /// by this fast path. Snapshots without round metadata are treated as legacy
 /// one-round contexts and use the same logic over the whole snapshot.
-pub(crate) fn normalize_incomplete_tool_calls(messages: &mut Vec<Message>, result_text: &str) {
+pub(crate) fn normalize_incomplete_tool_calls(
+    messages: &mut Vec<Message>,
+    result_text: &str,
+) -> bool {
     let Some(last_round_id) = messages
         .iter()
         .rev()
         .find_map(|message| message.metadata.round_id.as_deref())
         .map(str::to_string)
     else {
-        normalize_round_messages(messages, result_text, None);
-        return;
+        return normalize_round_messages(messages, result_text, None);
     };
 
     let last_index = messages
@@ -45,15 +53,16 @@ pub(crate) fn normalize_incomplete_tool_calls(messages: &mut Vec<Message>, resul
         start -= 1;
     }
     let mut round_messages = messages.split_off(start);
-    normalize_round_messages(&mut round_messages, result_text, Some(&last_round_id));
+    let changed = normalize_round_messages(&mut round_messages, result_text, Some(&last_round_id));
     messages.extend(round_messages);
+    changed
 }
 
 fn normalize_round_messages(
     messages: &mut Vec<Message>,
     result_text: &str,
     round_id: Option<&str>,
-) {
+) -> bool {
     let result_ids = messages
         .iter()
         .filter_map(|message| match &message.content {
@@ -62,6 +71,7 @@ fn normalize_round_messages(
         })
         .collect::<std::collections::HashSet<_>>();
     let mut normalized = Vec::with_capacity(messages.len());
+    let mut changed = false;
     for message in messages.drain(..) {
         let missing = match &message.content {
             MessageContent::Mixed { tool_calls, .. } => tool_calls
@@ -80,6 +90,7 @@ fn normalize_round_messages(
                 .collect::<Vec<_>>(),
             _ => Vec::new(),
         };
+        changed |= !missing.is_empty();
         normalized.push(message);
         normalized.extend(missing.into_iter().map(|result| {
             let message = Message::tool_result(result);
@@ -90,6 +101,7 @@ fn normalize_round_messages(
         }));
     }
     *messages = normalized;
+    changed
 }
 
 #[cfg(test)]
@@ -146,6 +158,21 @@ mod tests {
             Message::tool_result(result),
         ]);
 
+        assert_eq!(messages.len(), 2);
+    }
+
+    #[test]
+    fn normalization_reports_changes_and_is_idempotent() {
+        let call = ToolCall {
+            tool_id: "call-1".to_string(),
+            tool_name: "Read".to_string(),
+            arguments: serde_json::json!({}),
+            ..Default::default()
+        };
+        let mut messages = vec![Message::assistant_with_tools(String::new(), vec![call])];
+
+        assert!(normalize_incomplete_tool_calls(&mut messages, "unknown"));
+        assert!(!normalize_incomplete_tool_calls(&mut messages, "unknown"));
         assert_eq!(messages.len(), 2);
     }
 }
