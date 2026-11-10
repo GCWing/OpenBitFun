@@ -573,12 +573,14 @@ $todos-compact-breakpoint: 600px;
 
   // ── Task editor dialog ────────────────────────────────────────────────────
 
+  // A flex column, not a grid with `max-height: 100%` and a `minmax(0, 1fr)`
+  // row: the dialog body has no definite height, and older WebKit (macOS 14
+  // WKWebView) resolved that percentage/fr pair to a collapsed middle row, so
+  // the footer covered the form. Only the scrollable body may shrink.
   &__editor {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    display: flex;
+    flex-direction: column;
     width: 100%;
-    height: auto;
-    max-height: 100%;
     min-height: 0;
     flex: 1 1 auto;
     container: todo-editor / inline-size;
@@ -587,6 +589,7 @@ $todos-compact-breakpoint: 600px;
 
   &__editor-intro {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     gap: var(--openbitfun-space-4);
     min-width: 0;
@@ -631,6 +634,7 @@ $todos-compact-breakpoint: 600px;
 
   &__editor-body {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
     gap: var(--openbitfun-space-4);
     min-height: 0;
@@ -889,6 +893,7 @@ $todos-compact-breakpoint: 600px;
 
   &__editor-actions {
     display: flex;
+    flex: 0 0 auto;
     justify-content: flex-end;
     gap: var(--openbitfun-space-3);
     padding: var(--openbitfun-space-4) var(--openbitfun-space-6);
