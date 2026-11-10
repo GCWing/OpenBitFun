@@ -482,6 +482,7 @@ impl AuthService {
 mod tests {
     use super::*;
     use crate::{auth::DesktopAuthPollRequest, config::MarketConfig, db::Database};
+    use std::collections::HashSet;
     async fn setup() -> (tempfile::TempDir, AuthService) {
         let dir = tempfile::tempdir().unwrap();
         let config = MarketConfig {
@@ -497,6 +498,7 @@ mod tests {
             github_client_secret: Some("secret".into()),
             session_secret: "test-only-session-secret-at-least-24".into(),
             admin_github_ids: [42, 0].into_iter().collect(),
+            admin_emails: HashSet::new(),
             public_browse: true,
             web_submissions_enabled: false,
         };

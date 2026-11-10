@@ -235,11 +235,7 @@ impl AuthService {
     }
 
     pub(crate) fn is_admin(&self, user: &AuthenticatedUser) -> bool {
-        user.profile.github_id > 0
-            && self
-                .config
-                .admin_github_ids
-                .contains(&user.profile.github_id)
+        is_admin_identity(&self.config, user.profile.github_id, user.email.as_deref())
     }
 
     pub(crate) async fn start_web_oauth(&self, return_to: &str) -> MarketResult<String> {
@@ -857,6 +853,16 @@ pub(super) fn safe_return_to(value: &str) -> String {
     }
 }
 
+fn is_admin_identity(config: &MarketConfig, github_id: i64, email: Option<&str>) -> bool {
+    if github_id > 0 && config.admin_github_ids.contains(&github_id) {
+        return true;
+    }
+    // `email` only comes from `email_identities`, which records code-verified addresses.
+    email
+        .map(|value| value.trim().to_ascii_lowercase())
+        .is_some_and(|value| config.admin_emails.contains(&value))
+}
+
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(header::AUTHORIZATION)
@@ -903,6 +909,7 @@ mod tests {
             github_client_secret: Some("client-secret".to_string()),
             session_secret: "test-session-secret-at-least-24".to_string(),
             admin_github_ids: HashSet::from([24753352]),
+            admin_emails: HashSet::new(),
             public_browse: false,
             web_submissions_enabled: false,
         }
@@ -1393,5 +1400,23 @@ mod tests {
             .unwrap()
             .1;
         assert_eq!(second_family, first_family);
+    }
+
+    #[test]
+    fn administrators_are_matched_by_github_id_or_verified_email() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut config = test_config(temporary.path());
+        config.admin_emails = HashSet::from(["bob@example.com".to_string()]);
+
+        assert!(is_admin_identity(&config, 24753352, None));
+        assert!(is_admin_identity(&config, 0, Some("bob@example.com")));
+        assert!(is_admin_identity(&config, 0, Some(" Bob@Example.com ")));
+        assert!(!is_admin_identity(&config, 0, Some("someone@example.com")));
+        assert!(!is_admin_identity(&config, 0, None));
+        assert!(!is_admin_identity(
+            &config,
+            1234,
+            Some("someone@example.com")
+        ));
     }
 }

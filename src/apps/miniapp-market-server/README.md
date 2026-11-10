@@ -88,6 +88,7 @@ cargo run -p openbitfun-miniapp-market-server
 | `MARKET_GITHUB_CLIENT_SECRET` | GitHub OAuth App secret |
 | `MARKET_SESSION_SECRET` | 会话签名 secret，生产至少 24 字符并应使用强随机值 |
 | `MARKET_ADMIN_GITHUB_IDS` | 逗号分隔的 GitHub 数字 ID；留空表示没有管理员 |
+| `MARKET_ADMIN_EMAILS` | 逗号分隔的邮箱地址（大小写不敏感）；命中验证过的邮箱验证码身份时同样授予管理员，留空表示只认 GitHub ID |
 | `MARKET_PUBLIC_BROWSE` | 是否向匿名用户开放目录 |
 | `MARKET_WEB_SUBMISSIONS_ENABLED` | 是否允许 Web Cookie 会话投稿；默认及生产为 `false`，Desktop Bearer 投稿不受影响 |
 | `RUST_LOG` | 英文 JSON 日志过滤器 |
