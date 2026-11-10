@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Button, Checkbox, Input, SearchField, StatusPill } from '@openbitfun/ui';
+import { Button, Checkbox, Icon, IconButton, Input, SearchField, StatusPill, Tooltip } from '@openbitfun/ui';
 import { ConfigPageRow } from '@/infrastructure/config/components/common';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { useSettingsDraft } from '@/infrastructure/config/settingsDraftRegistry';
@@ -16,6 +16,7 @@ interface Props {
   ready: boolean;
   onModelsChange: (models: AIModelConfig[]) => void;
   onManual: () => void;
+  onRemoveModel: (model: AIModelConfig, trigger?: HTMLElement) => void;
 }
 
 export function MagpieSourceSection(props: Props) {
@@ -23,7 +24,7 @@ export function MagpieSourceSection(props: Props) {
   return <MagpieSourceEditor key={scope.epoch} {...props} />;
 }
 
-function MagpieSourceEditor({ models, ready, onModelsChange, onManual }: Props) {
+function MagpieSourceEditor({ models, ready, onModelsChange, onManual, onRemoveModel }: Props) {
   const { t, formatNumber } = useI18n('settings/models');
   const [scope] = useState(getActiveSurfaceScope);
   const panelId = useId();
@@ -46,10 +47,12 @@ function MagpieSourceEditor({ models, ready, onModelsChange, onManual }: Props) 
   const supported = useSyncExternalStore(
     listener => peerConnectionManager.subscribe(listener), supportsMagpieDiscovery, supportsMagpieDiscovery,
   );
-  const imported = new Set((connection?.models ?? models.filter(model =>
+  const activeConnection = connection ? connections.find(item => item.id === connection.id) : undefined;
+  const importedModels = activeConnection?.models ?? (connection ? [] : models.filter(model =>
     magpieGatewayUrl(model.base_url) === magpieGatewayUrl(baseUrl)
     && (model.api_key?.trim() || MAGPIE_APP_KEY) === (apiKey.trim() || MAGPIE_APP_KEY)
-    && (!model.auth || model.auth.type === 'api_key'))).map(model => model.model_name));
+    && (!model.auth || model.auth.type === 'api_key')));
+  const imported = new Set(importedModels.map(model => model.model_name));
   const catalogReady = result?.status === 'ready' || result?.status === 'empty';
   const credentialsChanged = baseUrl !== baseline.baseUrl || apiKey !== baseline.apiKey;
   const dirty = selected.length > 0 || credentialsChanged;
@@ -173,7 +176,27 @@ function MagpieSourceEditor({ models, ready, onModelsChange, onManual }: Props) 
                 label={model.display_name || model.id} description={model.id}
                 onChange={event => setSelected(previous => event.target.checked
                   ? [...previous, model.id] : previous.filter(id => id !== model.id))} />
-              {imported.has(model.id) && <StatusPill tone="neutral">{t('magpie.imported')}</StatusPill>}
+              {imported.has(model.id) && <>
+                <StatusPill tone="neutral">{t('magpie.imported')}</StatusPill>
+                <Tooltip content={t('providerSelection.removeModel')}>
+                  <IconButton
+                    size="xs"
+                    shape="circle"
+                    variant="quiet"
+                    tone="danger"
+                    aria-label={t('providerSelection.removeModelByName', { name: model.display_name || model.id })}
+                    data-testid="settings-magpie-remove-model"
+                    data-model-id={model.id}
+                    disabled={saving}
+                    icon={<Icon name="xmark" size="xs" />}
+                    onClick={event => {
+                      event.stopPropagation();
+                      const config = importedModels.find(item => item.model_name === model.id);
+                      if (config) onRemoveModel(config, event.currentTarget);
+                    }}
+                  />
+                </Tooltip>
+              </>}
               {model.id.startsWith('group/') && <StatusPill tone="info">{t('magpie.routingGroup')}</StatusPill>}
               {issue && <StatusPill tone="warning">{importIssues[issue]}</StatusPill>}
             </div>;

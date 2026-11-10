@@ -39,4 +39,8 @@
     flex: 0 0 auto;
     max-inline-size: 100%;
   }
+
+  > [data-openbitfun-component='tooltip-trigger'] {
+    flex: 0 0 auto;
+  }
 }

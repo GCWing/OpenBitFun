@@ -170,6 +170,8 @@ describe('ModelSettingsPage loading and provider actions', () => {
       base_url: base, api_key: key, provider: 'openai', capabilities: ['text_chat', 'function_calling'] });
     expect(inference).not.toHaveBeenCalled();
     expect(panel().querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(true);
+    expect(panel().querySelector<HTMLButtonElement>('[data-testid="settings-magpie-remove-model"]')?.dataset.modelId)
+      .toBe('provider/model-with-tools');
   });
 
   it.each(['empty', 'unreachable', 'access_denied', 'unrecognized', 'catalog_error'] as const)(
