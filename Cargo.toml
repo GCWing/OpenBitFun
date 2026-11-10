@@ -169,6 +169,7 @@ mime_guess = "2.0"
 notify = "8.2"
 dirs = "6.0"
 keyring-core = "1.0.0"
+apple-native-keyring-store = { version = "1.0.1", features = ["keychain"] }
 windows-native-keyring-store = "1.1.0"
 zbus-secret-service-keyring-store = { version = "1.0.0", features = ["crypto-rust"] }
 dark-light = "1.1"
