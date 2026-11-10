@@ -150,23 +150,23 @@ block-beta
   end
 
   block:AdaptersLayer
-    columns 7
-    AdaptersTitle["3 · Adapters"] RuntimeIPC["Runtime<br/>IPC"] AIAdapters["AI<br/>Adapters"] SourceAdapters["Source<br/>Adapters"] HookSupport["Hook<br/>Support"] Transport["Transport"] WebDriver["WebDriver"]
+    columns 9
+    AdaptersTitle["3 · Adapters"] RuntimeIPC["Runtime<br/>IPC"] MiniAppIPC["MiniApp<br/>IPC"] AIAdapters["AI<br/>Adapters"] SourceAdapters["Source<br/>Adapters"] PluginHost["Plugin<br/>Host"] HookSupport["Hook<br/>Support"] Transport["Transport"] WebDriver["WebDriver"]
   end
 
   block:ServicesLayer
-    columns 6
-    ServicesTitle["4 · Services"] CoreServices["Core<br/>Services"] Integrations["Integrations"] RelayService["Relay<br/>Service"] PageRuntime["Page<br/>Runtime"] Terminal["Terminal"]
+    columns 8
+    ServicesTitle["4 · Services"] CoreServices["Core<br/>Services"] Integrations["Integrations"] ComputerUse["Computer<br/>Use"] LegacyMigration["Legacy<br/>Migration"] RelayService["Relay<br/>Service"] PageRuntime["Page<br/>Runtime"] Terminal["Terminal"]
   end
 
   block:ExecutionLayer
     columns 10
-    ExecutionTitle["5 · Execution"] AgentRuntime["Agent<br/>Runtime"] AgentWorkflows["Agent<br/>Workflows"] AgentStream["Agent<br/>Stream"] PluginClient["Plugin<br/>Client"] RuntimeServices["Runtime<br/>Services"] ToolContracts["Tool<br/>Contracts"] ToolGroups["Tool<br/>Groups"] ToolExecution["Tool<br/>Execution"] JSONRepair["JSON<br/>Repair"]
+    ExecutionTitle["5 · Execution"] AgentRuntime["Agent<br/>Runtime"] AgentWorkflows["Agent<br/>Workflows"] AgentStream["Agent<br/>Stream"] PluginClient["Plugin<br/>Client"] RuntimeServices["Runtime<br/>Services"] ToolContracts["Tool<br/>Contracts"] ToolGroups["Tool<br/>Groups"] ToolExecution["Tool<br/>Execution"] OfficeDocuments["Office<br/>Documents"]
   end
 
   block:ContractsLayer
-    columns 5
-    ContractsTitle["6 · Contracts"] CoreTypes["Core Types"] Events["Events"] RuntimePorts["Runtime<br/>Ports"] ProductDomains["Product<br/>Domains"]
+    columns 6
+    ContractsTitle["6 · Contracts"] CoreTypes["Core Types"] ConfigContracts["Config<br/>Contracts"] Events["Events"] RuntimePorts["Runtime<br/>Ports"] ProductDomains["Product<br/>Domains"]
   end
 
   AppsLayer --> AssemblyLayer
@@ -177,7 +177,7 @@ block-beta
 
   classDef module fill:#ffffff,stroke:#737373,stroke-width:1.3px,color:#171717
   classDef sectionTitle fill:transparent,stroke:transparent,color:#171717,font-size:12px,font-weight:600
-  class ProductApps,WebUI,MobileUI,Interfaces,AgentContent,CoreAssembly,ExternalSources,ProductCaps,RuntimeIPC,AIAdapters,SourceAdapters,HookSupport,Transport,WebDriver,CoreServices,Integrations,RelayService,PageRuntime,Terminal,AgentRuntime,AgentWorkflows,AgentStream,PluginClient,RuntimeServices,ToolContracts,ToolGroups,ToolExecution,JSONRepair,CoreTypes,Events,RuntimePorts,ProductDomains module
+  class ProductApps,WebUI,MobileUI,Interfaces,AgentContent,CoreAssembly,ExternalSources,ProductCaps,RuntimeIPC,MiniAppIPC,AIAdapters,SourceAdapters,PluginHost,HookSupport,Transport,WebDriver,CoreServices,Integrations,ComputerUse,LegacyMigration,RelayService,PageRuntime,Terminal,AgentRuntime,AgentWorkflows,AgentStream,PluginClient,RuntimeServices,ToolContracts,ToolGroups,ToolExecution,OfficeDocuments,CoreTypes,ConfigContracts,Events,RuntimePorts,ProductDomains module
   class AppsTitle,AssemblyTitle,AdaptersTitle,ServicesTitle,ExecutionTitle,ContractsTitle sectionTitle
 
   style AppsLayer fill:#f8fafc,stroke:#334155,stroke-width:2px
@@ -192,32 +192,33 @@ block-beta
 
 | Development area | Repository scope | Current modules |
 |---|---|---|
-| Apps | `src/apps/*` | `desktop`、`cli`、`server`、`relay-server`、`sdk-host`、`miniapp-market-server`、`skin-market-server` |
-| Web and delivery | product roots | `src/web-ui`、`src/mobile-web`、`src/miniapp-market-web`、`src/skin-market-web`、`src/apps/mobile`、`OpenBitFun-Installer`、`tests/e2e` |
+| Apps | `src/apps/*` | `desktop`、`cli`、`server`、`relay-server`、`sdk-host`、`miniapp-shell`、`data-tools`、`miniapp-market-server`、`skin-market-server`、`extension-host`（Bun Plugin Host 进程） |
+| Web and delivery | product roots | `src/web-ui`、`src/mobile-web`、`src/miniapp-market-web`、`src/skin-market-web`、`src/apps/mobile`、`OpenBitFun-Installer`、`website`、`tests/e2e` |
 | SDK | `sdk/*` | `typescript` |
-| Shared frontend | `src/shared` | `shared` |
+| Shared frontend | `src/shared`、`packages/flow-chat-presentation` | `shared`、`flow-chat-presentation` |
+| Design system | `design-system/*` | `packages/design-tokens`、`packages/theme-openbitfun`、`packages/ui`、`tooling/package-contract`、`tooling/token-engine`、`apps/design-lab` |
 | Interfaces | `src/crates/interfaces/*` | `acp`、`app-server`、`app-server-client`、`app-server-protocol`、`sdk-host` |
 | Assembly | `src/crates/assembly/*` | `agent-content`、`core`、`external-sources`、`product-capabilities` |
-| Adapters | `src/crates/adapters/*` | `agent-runtime-ipc`、`ai-adapters`、`claude-code-adapter`、`codex-adapter`、`zcode-adapter`、`dsh-adapter`、`opencode-adapter`、`static-hook-support`、`transport`、`webdriver` |
-| Services | `src/crates/services/*` | `services-core`、`services-integrations`、`miniapp-market-service`、`skin-market-service`、`relay-service`、`page-function-runtime`、`terminal` |
-| Execution | `src/crates/execution/*` | `agent-runtime`、`agent-workflows`、`agent-stream`、`plugin-runtime-client`、`runtime-services`、`tool-contracts`、`tool-provider-groups`、`tool-execution` |
-| Contracts | `src/crates/contracts/*` | `core-types`、`events`、`runtime-ports`、`product-domains` |
+| Adapters | `src/crates/adapters/*` | `agent-runtime-ipc`、`miniapp-ipc`、`ai-adapters`、`opencode-adapter`、`opencode-plugin-host`、`dsh-adapter`、`pi-adapter`、`claude-code-adapter`、`codex-adapter`、`cursor-adapter`、`zcode-adapter`、`static-hook-support`、`transport`、`webdriver` |
+| Services | `src/crates/services/*` | `services-core`、`services-integrations`、`computer-use`、`legacy-migration`、`legacy-migration-adapters`、`miniapp-market-service`、`skin-market-service`、`relay-service`、`page-function-runtime`、`terminal` |
+| Execution | `src/crates/execution/*` | `agent-runtime`、`agent-workflows`、`agent-stream`、`plugin-runtime-client`、`runtime-services`、`tool-contracts`、`tool-provider-groups`、`tool-execution`、`office-documents` |
+| Contracts | `src/crates/contracts/*` | `core-types`、`config-contracts`、`events`、`runtime-ports`、`product-domains` |
 
-Installer、E2E 以及 MiniApp/Skin market server 和对应 service 在 Level 0 图中分别归入交付入口、测试范围或 Services 家族，不作为独立架构模块。
+图中子项与上表的对应：Product Apps 对应 Apps 行，Source Adapters 对应各外部生态来源 adapter，Legacy Migration 对应 `legacy-migration` 与 `legacy-migration-adapters`。Installer、E2E 以及 MiniApp/Skin market server 和对应 service 在 Level 0 图中分别归入交付入口、测试范围或 Services 家族，不作为独立架构模块；SDK、Shared frontend 与 Design system 在图中不单列。未进入 Cargo workspace 或 pnpm workspace 的其余目录（如 `packages/dsh-acp`、`extensions/`、`products/`、`MiniApp/`、`third_party/`）不计入本表。
 Logical 与 Development 的主要映射如下，映射是多对多关系：
 
 | Development area | Logical coverage |
 |---|---|
-| Apps & Interfaces | Application、Cross-platform 的宿主入口，Extensions 的用户控制面，以及 Desktop Computer Use 的平台实现 |
+| Apps & Interfaces | Application、Cross-platform 的宿主入口，Extensions 的用户控制面，以及 Computer Use 原生 provider 的宿主注入 |
 | Assembly | Application、Agent Core、Tools & Execution 和 Extensions 的能力选择、产品编排与装配 |
 | Adapters | Tool Protocols 和外部生态接入所需的协议转换；adapter 本身不是逻辑层 |
-| Services | Tools & Execution 的具体执行支持，以及 Cross-platform 的操作系统能力实现 |
+| Services | Tools & Execution 的具体执行支持（含 Computer Use 的原生平台实现），以及 Cross-platform 的操作系统能力实现 |
 | Execution | Agent Core、Tools & Execution 的可移植原语与 Computer Use 契约，以及 Custom Agents、Tool Extensions、Hooks 的运行支持 |
 | Contracts | 为多个逻辑职责提供稳定事实与 port；不构成独立逻辑模块 |
 
 Assembly 是唯一组装根，只选择下层能力和实现，不能反向依赖 app。每个生态 adapter 独立保留外部格式和顺序语义，再映射到 OpenBitFun owner；生态 adapter 之间不能形成兄弟依赖。
 
-Computer Use 的控制会话、系统共享提示、后台输入边界与 macOS / Windows / Ubuntu 原生实现见 [Computer Use control-session SPEC](computer-use-control.md)。平台资源由 Desktop 持有，模式、状态和动作契约保持可移植；共享 Core 通过 host port 管理任务结束与取消时的释放。
+Computer Use 的控制会话、系统共享提示、后台输入边界与 macOS / Windows / Ubuntu 原生实现见 [Computer Use control-session SPEC](computer-use-control.md)。原生实现归 `services/computer-use`，由 Desktop 与图形会话中的 CLI 注入同一个 `NativeComputerUseHost`；模式、状态和动作契约保持可移植；共享 Core 通过 host port 管理任务结束与取消时的释放。
 
 各层的静态职责按下表执行。层间只允许由上向下依赖；同层依赖必须有明确的单向 owner 关系，不能为了复用方便形成环。
 
