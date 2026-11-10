@@ -520,12 +520,14 @@ pub async fn apply_legacy_config_mutation_with_model_snapshot(
             .await
             .map_err(|error| error.to_string())?
     };
-    // Fields that keep legacy files unchanged omit their default value when
-    // serialized, so a successful write of that default leaves no leaf to
-    // read back. Report it as null, matching an optional read of the path.
+    // Some fields omit their default (or `None`) when serialized so legacy
+    // files stay unchanged, so a write that restores it leaves no leaf to read
+    // back. Report that as null, matching an optional read of the path. Only a
+    // write that changed the config qualifies: serde drops unknown fields
+    // without changing anything, and those writes must keep failing loudly.
     let effective_value = match config_service.get_config(Some(path)).await {
         Ok(value) => value,
-        Err(crate::util::errors::OpenBitFunError::NotFound(_)) => Value::Null,
+        Err(crate::util::errors::OpenBitFunError::NotFound(_)) if changed => Value::Null,
         Err(error) => return Err(error.to_string()),
     };
     Ok(AppliedLegacyProductConfig {
@@ -764,6 +766,30 @@ mod tests {
             serde_json::to_value(config.app.flow_chat.send_during_turn).unwrap(),
             json!("immediate")
         );
+
+        let cleared_path = "app.flow_chat.last_mode_id";
+        apply_legacy_config_mutation(&service, cleared_path, json!("Plan"))
+            .await
+            .expect("optional write");
+        let cleared = apply_legacy_config_mutation(&service, cleared_path, Value::Null)
+            .await
+            .expect("clearing an optional leaf must not fail its read-back");
+        assert!(cleared.changed);
+        assert_eq!(cleared.effective_value, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn legacy_mutation_still_rejects_paths_the_config_drops() {
+        let (service, _dir) = test_service("legacy-unknown-path").await;
+
+        let error = apply_legacy_config_mutation(
+            &service,
+            "app.flow_chat.not_a_known_field",
+            json!("queue"),
+        )
+        .await
+        .expect_err("a write that serde drops must not report success");
+        assert!(error.contains("not found"), "{error}");
     }
 
     #[tokio::test]
