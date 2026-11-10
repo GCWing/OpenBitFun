@@ -17,6 +17,7 @@ use crate::agentic::agents::{
     render_direct_tool_listing_body, PrependedPromptReminders, PromptBuilder, PromptBuilderContext,
     RuntimeContextNeeds, ToolListingSections, UserContextPolicy, UserContextSection,
 };
+use crate::agentic::context_normalization::normalize_incomplete_tool_calls;
 use crate::agentic::coordination::scheduler::agent_dialog_turn_image_contexts;
 use crate::agentic::core::{
     render_system_reminder, InternalReminderKind, Message, MessageContent, MessageHelper,
@@ -3270,7 +3271,7 @@ impl ExecutionEngine {
         start_time: std::time::Instant,
     ) -> OpenBitFunResult<ExecutionResult> {
         let dialog_turn_id = context.dialog_turn_id.clone();
-        let initial_count = initial_messages.len();
+        let mut initial_messages = initial_messages;
 
         debug!(
             "Executing dialog turn implementation: dialog_turn_id={}",
@@ -3310,6 +3311,24 @@ impl ExecutionEngine {
             .ok_or_else(|| {
                 OpenBitFunError::Session(format!("Session not found: {}", context.session_id))
             })?;
+
+        // A restored process may have persisted an assistant tool call after
+        // model output but before the tool result. Repair that boundary before
+        // constructing any provider request and persist the canonical context so
+        // every subsequent request sees a valid call/result pair.
+        if normalize_incomplete_tool_calls(
+            &mut initial_messages,
+            "Tool execution was still in progress when the application closed; the result is unknown. Verify any external side effects before continuing.",
+        ) {
+            self.session_manager
+                .replace_context_messages(&context.session_id, initial_messages.clone())
+                .await;
+            info!(
+                "Normalized incomplete tool calls before dialog execution: session_id={}, turn_id={}",
+                context.session_id, context.dialog_turn_id
+            );
+        }
+        let initial_count = initial_messages.len();
 
         if context.subagent_parent_info.is_none()
             && super::round_model_routing::configuration::session_eligible(&session)

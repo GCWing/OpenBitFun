@@ -11934,7 +11934,9 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .get_context_messages(parent_session_id)
             .await?;
         let context_messages =
-            crate::agentic::fork_agent::normalize_fork_context_messages(context_messages);
+            crate::agentic::context_normalization::normalize_fork_context_messages(
+                context_messages,
+            );
         ForkAgentContextSnapshot::from_parent_session(&parent_session, context_messages)
     }
 
