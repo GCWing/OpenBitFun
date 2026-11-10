@@ -20,6 +20,14 @@ OpenBitFun is a highly customizable, open-source agent workspace that keeps work
 
 [![Trendshift](https://trendshift.io/api/badge/repositories/44672)](https://trendshift.io/repositories/44672)
 
+## Join the community
+
+Scan the QR code with WeChat to add us and request to join the OpenBitFun community group.
+
+<a href="./png/openbitfun-community-wechat.png">
+  <img src="./png/openbitfun-community-wechat.png" alt="WeChat QR code for joining the OpenBitFun community" width="147" />
+</a>
+
 </div>
 
 ---
@@ -148,12 +156,6 @@ Desktop development supports frontend hot reload and automatic Rust rebuilds. Se
 </details>
 
 Core code is licensed under the [MIT License](./LICENSE). Third-party dependencies and assets retain their own licenses. Thanks to the open-source authors and contributors who make this work possible. To report a vulnerability, see the [security policy](./SECURITY.md).
-
-## Join the community
-
-Scan the QR code with WeChat to add us and request to join the OpenBitFun community group.
-
-<img src="./png/openbitfun-community-wechat.png" alt="WeChat QR code for joining the OpenBitFun community" width="360" />
 
 ## Star History
 

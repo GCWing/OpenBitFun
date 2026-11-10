@@ -20,6 +20,14 @@ OpenBitFun は、高度にカスタマイズできるオープンソースのエ
 
 [![Trendshift](https://trendshift.io/api/badge/repositories/44672)](https://trendshift.io/repositories/44672)
 
+## コミュニティに参加
+
+WeChat で QR コードを読み取って私たちを追加し、OpenBitFun のコミュニティグループへの参加を申請してください。
+
+<a href="./png/openbitfun-community-wechat.png">
+  <img src="./png/openbitfun-community-wechat.png" alt="OpenBitFun のコミュニティに参加するための WeChat の QR コード" width="147" />
+</a>
+
 </div>
 
 ---
@@ -148,12 +156,6 @@ pnpm run desktop:dev
 </details>
 
 中核となるコードは [MIT License](./LICENSE) でライセンスされています。サードパーティの依存関係と素材は、それぞれのライセンスに従います。この取り組みを可能にしてくれているオープンソースの作者とコントリビューターの皆さんに感謝します。脆弱性を報告するには、[セキュリティポリシー](./SECURITY.md)を参照してください。
-
-## コミュニティに参加
-
-WeChat で QR コードを読み取って私たちを追加し、OpenBitFun のコミュニティグループへの参加を申請してください。
-
-<img src="./png/openbitfun-community-wechat.png" alt="OpenBitFun のコミュニティに参加するための WeChat の QR コード" width="360" />
 
 ## Star History
 
