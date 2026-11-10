@@ -47,6 +47,13 @@ SessionManager -> Session -> DialogTurn -> ModelRound
 - `plugin_source` 只注入产品目录并保留兼容接口；受管插件包发现与信任持久化归 `services-integrations`，生态适配解析与 `PluginRuntimeClient` 行为分别归对应的适配器层和执行层。
 - `plugin_runtime`、`external_sources` 与 `instruction_sources` 是经过评审、可分别为对应能力契约选择生态适配器的
   owner-feature 组装文件。产品入口只消费产品级视图，不得导入适配器或原始插件运行时 client 类型。
+- `native_hooks` 是可移植 Hook 引擎（`openbitfun_agent_runtime::native_hooks`）的产品接线，负责 `hooks.json` 发现、
+  `app.hooks` 开关、进程级 `RuntimeHookRegistry` 和按事件的类型化分发辅助函数；各分发点调用这些辅助函数，不要就地执行 Hook。
+  内置、用户、项目、导入、技能和插件 Hook 都通过 `RuntimeHookRegistry` 注册并由 `AgentHookEngine` 调度，同时各自保持信任、
+  配置、契约和执行策略语义。远程工作区使用独立的 Registry，只包含从目标端读取的项目 Hook，并在目标工作区 shell 中执行；
+  用户、导入和技能命令 Hook 不会在远程工作区运行。`external_hooks` 是其他 AI 应用 Hook 的只读目录，不得进入可执行
+  Registry：查看它不得加载代码；条目只有经显式 `external_hook_import` plan/apply 写成已评审快照后才可执行，不得实时读取来源。
+  契约参考与差异见 `docs/features/agent-hooks.zh-CN.md`。
 - Remote/service 改动必须保持 external protocol lifecycle、workspace projection、scheduler/session restore、
   terminal pre-warm 和 product execution 边界清晰。
 - Feature 改动必须保持 `product-full` 作为兼容产品组装边界；默认能力选择只有在单独的 product matrix review 后才能变化。

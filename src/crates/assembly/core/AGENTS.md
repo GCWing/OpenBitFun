@@ -89,6 +89,22 @@ SessionManager -> Session -> DialogTurn -> ModelRound
   product-domain control DTO and closed generic actions. Capability-specific
   approvals and conflict choices remain typed owner operations; do not add a
   second surface-specific lifecycle model or arbitrary control payload.
+- `native_hooks` is the product wiring for the portable hook engine in
+  `openbitfun_agent_runtime::native_hooks`. It owns `hooks.json` discovery, the
+  `app.hooks` gates, the process-wide `RuntimeHookRegistry`, and typed
+  per-event dispatch helpers; dispatch sites call those helpers instead of
+  executing hooks inline. Built-in, user, project, imported, skill, and plugin
+  hooks register through a `RuntimeHookRegistry` and run through
+  `AgentHookEngine` while keeping distinct trust, configuration, contract, and
+  execution-policy semantics. A remote workspace gets a separate registry that
+  holds only the project hooks read from the target and runs them in the target
+  workspace shell; user, imported, and skill command hooks never run there.
+  `external_hooks` is the read-only catalog of other AI
+  applications' hooks and must not enter the executable registry: inspecting it
+  must not load code, and an entry becomes executable only as the reviewed
+  snapshot written by the explicit `external_hook_import` plan/apply, never by
+  reading the source live. Contract reference and deviations:
+  `docs/features/agent-hooks.md`.
 - Remote/service changes must keep external protocol lifecycle, workspace
   projection, scheduler/session restore, terminal pre-warm, and product
   execution boundaries explicit.
