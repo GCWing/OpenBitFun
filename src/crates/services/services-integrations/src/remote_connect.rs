@@ -6285,6 +6285,7 @@ mod tests {
             user_input: "hidden".to_string(),
             original_user_input: None,
             user_message_metadata: None,
+            session_workspace: None,
         });
         tracker.mark_persistence_clean();
         let previous_version = tracker.version();
@@ -6375,6 +6376,7 @@ mod tests {
             user_input: "hello".to_string(),
             original_user_input: None,
             user_message_metadata: None,
+            session_workspace: None,
         });
         tracker.handle_agentic_event(&AgenticEvent::DialogTurnCompleted {
             session_id: "session-a".to_string(),
@@ -6443,6 +6445,7 @@ mod tests {
             user_input: "hello".to_string(),
             original_user_input: None,
             user_message_metadata: None,
+            session_workspace: None,
         });
         tracker.handle_agentic_event(&AgenticEvent::DialogTurnCompleted {
             session_id: "session-a".to_string(),
@@ -6533,6 +6536,7 @@ mod tests {
             user_input: "hello".to_string(),
             original_user_input: None,
             user_message_metadata: None,
+            session_workspace: None,
         });
         tracker.handle_agentic_event(&AgenticEvent::DialogTurnFailed {
             session_id: "session-a".to_string(),
@@ -6562,6 +6566,7 @@ mod tests {
             user_input: "queued follow-up".to_string(),
             original_user_input: None,
             user_message_metadata: None,
+            session_workspace: None,
         });
         tracker.handle_agentic_event(&AgenticEvent::TextChunk {
             session_id: "session-a".to_string(),

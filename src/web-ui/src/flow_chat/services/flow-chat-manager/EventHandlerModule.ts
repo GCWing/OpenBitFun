@@ -1071,17 +1071,7 @@ function handleSessionCreated(context: FlowChatContext, event: any): void {
 
   const store = FlowChatStore.getInstance();
   const existing = store.getState().sessions.get(sessionId);
-  const { workspaceId, workspacePath } = resolveExternalSessionWorkspace(context, event);
-  const projectWorkspacePath =
-    (typeof event.projectWorkspacePath === 'string' && event.projectWorkspacePath)
-    || (typeof event.project_workspace_path === 'string' && event.project_workspace_path)
-    || workspacePath;
-  const executionTarget =
-    event.executionTarget && typeof event.executionTarget === 'object'
-      ? event.executionTarget
-      : event.execution_target && typeof event.execution_target === 'object'
-        ? event.execution_target
-        : undefined;
+  const binding = resolveExternalSessionBinding(context, event);
   const remoteConnectionId = extractEventRemoteConnectionId(event);
   const remoteSshHost = extractEventRemoteSshHost(event);
 
@@ -1091,11 +1081,12 @@ function handleSessionCreated(context: FlowChatContext, event: any): void {
     sessionId,
     sessionName || 'Remote Session',
     agentType || 'Standard',
-    workspacePath,
+    binding.workspacePath,
     {
-      projectWorkspacePath,
-      executionTarget,
-      workspaceId,
+      projectWorkspacePath: binding.projectWorkspacePath,
+      projectWorkspaceId: binding.projectWorkspaceId,
+      executionTarget: binding.executionTarget,
+      workspaceId: binding.workspaceId,
     },
     remoteConnectionId,
     remoteSshHost
@@ -1119,9 +1110,10 @@ interface ExternalSessionWorkspace {
  *    through the compatibility resolver. A path that names no opened record
  *    is kept as an IO projection only; it never silently becomes the current
  *    workspace.
- * 3. No workspace facts at all: the event belongs to the workspace this
- *    manager is initialized for (the host only forwards events for the
- *    workspaces this surface subscribed to).
+ * 3. No workspace facts at all: legacy fallback to the workspace this
+ *    manager is initialized for. Current hosts announce the binding on both
+ *    `session-created` and `dialog-turn-started`, because a scheduled or
+ *    delegated turn can start in a workspace this surface has not loaded.
  */
 function resolveExternalSessionWorkspace(
   context: FlowChatContext,
@@ -1160,6 +1152,33 @@ function resolveExternalSessionWorkspace(
     workspaceId: context.currentWorkspaceId || undefined,
     workspacePath: context.currentWorkspacePath || undefined,
   };
+}
+
+interface ExternalSessionBinding extends ExternalSessionWorkspace {
+  projectWorkspacePath?: string;
+  projectWorkspaceId?: string;
+  executionTarget?: Session['config']['executionTarget'];
+}
+
+/** Workspace attribution plus the project/execution facts an event carries. */
+function resolveExternalSessionBinding(
+  context: FlowChatContext,
+  event?: Record<string, unknown> | null,
+): ExternalSessionBinding {
+  const workspace = resolveExternalSessionWorkspace(context, event);
+  const projectWorkspacePath =
+    (typeof event?.projectWorkspacePath === 'string' && event.projectWorkspacePath)
+    || (typeof event?.project_workspace_path === 'string' && event.project_workspace_path)
+    || workspace.workspacePath;
+  const projectWorkspaceId =
+    (typeof event?.projectWorkspaceId === 'string' && event.projectWorkspaceId.trim())
+    || (typeof event?.project_workspace_id === 'string' && event.project_workspace_id.trim())
+    || undefined;
+  const rawExecutionTarget = event?.executionTarget ?? event?.execution_target;
+  const executionTarget = rawExecutionTarget && typeof rawExecutionTarget === 'object'
+    ? rawExecutionTarget as Session['config']['executionTarget']
+    : undefined;
+  return { ...workspace, projectWorkspacePath, projectWorkspaceId, executionTarget };
 }
 
 function extractEventRemoteConnectionId(event?: Record<string, unknown> | null): string | undefined {
@@ -1936,18 +1955,24 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
       ? userMessageMetadata.appId
       : undefined;
     log.warn('DialogTurnStarted: session not in store, creating placeholder', { sessionId, sessionsCount: state.sessions.size, isMiniAppAgentRun });
-    const workspace = resolveExternalSessionWorkspace(context, event);
+    const workspace = resolveExternalSessionBinding(context, event);
+    const binding = {
+      workspaceId: workspace.workspaceId,
+      projectWorkspacePath: workspace.projectWorkspacePath,
+      projectWorkspaceId: workspace.projectWorkspaceId,
+      executionTarget: workspace.executionTarget,
+    };
     store.addExternalSession(
       sessionId,
       isMiniAppAgentRun ? (miniAppId ? `MiniApp: ${miniAppId}` : 'MiniApp Agent') : isBtwRun ? 'Side thread' : 'Remote Session',
       'Standard',
       workspace.workspacePath,
       isMiniAppAgentRun
-        ? { sessionKind: 'miniapp', isTransient: true, agentBackedTransient: true, workspaceId: workspace.workspaceId }
+        ? { sessionKind: 'miniapp', isTransient: true, agentBackedTransient: true, ...binding }
         : isBtwRun
           ? { sessionKind: 'btw', isTransient: true, agentBackedTransient: true,
-              parentSessionId: userMessageMetadata.parentSessionId, workspaceId: workspace.workspaceId }
-        : { workspaceId: workspace.workspaceId },
+              parentSessionId: userMessageMetadata.parentSessionId, ...binding }
+        : binding,
       extractEventRemoteConnectionId(event),
       extractEventRemoteSshHost(event)
     );

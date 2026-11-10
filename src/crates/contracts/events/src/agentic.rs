@@ -94,6 +94,29 @@ pub struct DeepReviewQueueState {
     pub session_concurrency_high: bool,
 }
 
+/// Workspace binding of the session a turn event belongs to.
+///
+/// A consumer that has not loaded the session yet (for example, a scheduled
+/// job running in a workspace the UI has not opened) places the session from
+/// these facts instead of guessing from its own foreground workspace.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionWorkspaceFacts {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_target: Option<SessionExecutionTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_connection_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_ssh_host: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum AgenticEvent {
@@ -182,6 +205,10 @@ pub enum AgenticEvent {
         original_user_input: Option<String>,
         /// Image metadata JSON for UI rendering (id, name, data_url, mime_type, image_path)
         user_message_metadata: Option<serde_json::Value>,
+        /// Workspace the session is bound to. Absent in events written by
+        /// older hosts and in emitters that do not know the binding.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_workspace: Option<SessionWorkspaceFacts>,
     },
 
     /// Low-frequency linking event that associates a hidden subagent session
