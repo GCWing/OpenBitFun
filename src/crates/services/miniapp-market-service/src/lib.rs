@@ -144,6 +144,7 @@ mod tests {
     use axum::body::{Body, Bytes};
     use axum::http::{header, Request, StatusCode};
     use axum::routing::post;
+    use std::collections::HashSet;
     use std::io::Cursor;
     use tower::ServiceExt;
 
@@ -161,6 +162,7 @@ mod tests {
             github_client_secret: None,
             session_secret: "test-session-secret-at-least-24".to_string(),
             admin_github_ids: [24753352].into_iter().collect(),
+            admin_emails: HashSet::new(),
             public_browse: true,
             web_submissions_enabled: false,
         };

@@ -2356,6 +2356,7 @@ mod tests {
             github_client_secret: Some("client-secret".to_string()),
             session_secret: "test-session-secret-at-least-24".to_string(),
             admin_github_ids: HashSet::from([24753352]),
+            admin_emails: HashSet::new(),
             public_browse: true,
             web_submissions_enabled: false,
         };
@@ -2548,6 +2549,7 @@ mod tests {
             github_client_secret: Some("client-secret".to_string()),
             session_secret: "test-session-secret-at-least-24".to_string(),
             admin_github_ids: HashSet::from([24753352]),
+            admin_emails: HashSet::new(),
             public_browse: true,
             web_submissions_enabled: false,
         };
@@ -2725,6 +2727,7 @@ mod tests {
             github_client_secret: Some("client-secret".to_string()),
             session_secret: "test-session-secret-at-least-24".to_string(),
             admin_github_ids: HashSet::from([24753352]),
+            admin_emails: HashSet::new(),
             public_browse: true,
             web_submissions_enabled: false,
         };
@@ -2890,6 +2893,7 @@ mod tests {
             github_client_secret: Some("client-secret".to_string()),
             session_secret: "test-session-secret-at-least-24".to_string(),
             admin_github_ids: HashSet::from([24753352]),
+            admin_emails: HashSet::new(),
             public_browse: true,
             web_submissions_enabled: false,
         };
