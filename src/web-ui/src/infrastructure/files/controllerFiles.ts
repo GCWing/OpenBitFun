@@ -86,6 +86,8 @@ export interface UploadBytesToHostOptions {
   /** Throw once the target changed; checked around every host call. */
   assertCurrent: () => void;
   onProgress?: (sentBytes: number, totalBytes: number) => void;
+  /** SHA-256 of the existing destination; omitted means create a new file only. */
+  expectedHash?: string;
 }
 
 interface UploadStatus {
@@ -96,10 +98,11 @@ interface UploadStatus {
 }
 
 /**
- * Publish bytes at a new destination on the rendered execution host.
+ * Publish bytes on the rendered execution host.
  *
  * The host verifies the SHA-256 digest and, because the expected hash is
- * empty, refuses to replace an existing file. An unknown append outcome is
+ * empty by default, refuses to replace an existing file. A supplied expected
+ * hash permits replacing only that exact destination version. An unknown append outcome is
  * resolved from the host cursor before any byte is resent.
  */
 export async function uploadBytesToHost(options: UploadBytesToHostOptions): Promise<void> {
@@ -128,7 +131,7 @@ export async function uploadBytesToHost(options: UploadBytesToHostOptions): Prom
     action: 'begin',
     totalBytes: bytes.byteLength,
     sha256: await sha256Hex(bytes),
-    expectedHash: '',
+    expectedHash: options.expectedHash ?? '',
   });
   try {
     options.onProgress?.(status.nextOffset, bytes.byteLength);

@@ -131,7 +131,36 @@
       "unavailable": "LaTeX compilation requires a supported OpenBitFun Desktop host and an opened workspace.",
       "compileFailed": "Compilation failed. View log",
       "stalePreview": "Compilation failed. Showing the last successful PDF",
-      "saveFailed": "The source could not be saved. Save your changes before compiling."
+      "saveFailed": "The source could not be saved. Save your changes before compiling.",
+      "source": "LaTeX source",
+      "panes": "Writing panes",
+      "undo": "Undo source edit",
+      "redo": "Redo source edit",
+      "insert": "Insert",
+      "find": "Find / replace",
+      "logs": "Compile logs",
+      "save": "Save",
+      "outline": "Document outline",
+      "outlineEmpty": "Add sections to navigate your paper.",
+      "mainFile": "Main TeX file",
+      "mainFileHint": "Compile this project entry. Relative paths resolve beside this source; % !TeX root is also supported.",
+      "closeSource": "Close source pane",
+      "closePdf": "Close PDF pane",
+      "closeLogs": "Close compile logs",
+      "compileSuccess": "Compilation finished successfully.",
+      "noLogs": "Compile to see diagnostics here.",
+      "panesClosed": "Source and PDF panes are closed. Your edits are retained.",
+      "restorePanes": "Open source and PDF",
+      "snippets": {
+        "section": "Section",
+        "equation": "Equation",
+        "figure": "Figure",
+        "table": "Table",
+        "cite": "Citation",
+        "reference": "Cross-reference",
+        "bibliography": "Bibliography",
+        "itemize": "Bullet list"
+      }
     },
     "pdfViewer": {
       "loading": "Loading PDF...",
@@ -145,7 +174,8 @@
       "zoomOut": "Zoom out",
       "zoomLevel": "Zoom level",
       "zoomIn": "Zoom in",
-      "rotate90": "Rotate 90°"
+      "rotate90": "Rotate 90°",
+      "fitWidth": "Fit page width"
     },
     "meditor": {
       "placeholder": "Enter Markdown...",
@@ -232,6 +262,51 @@
       "selectLanguageModeHint": "Select Language Mode (click to switch)",
       "indentOptionSpaces": "Spaces: {{n}}",
       "indentOptionTab": "Tab: {{n}}"
+    },
+    "pdfReview": {
+      "tools": "PDF annotation tools",
+      "select": "Select text",
+      "highlight": "Highlight",
+      "note": "Note",
+      "ink": "Draw",
+      "color": "Annotation color",
+      "colors": {
+        "yellow": "Yellow",
+        "green": "Green",
+        "blue": "Blue",
+        "pink": "Pink"
+      },
+      "undo": "Undo annotation",
+      "redo": "Redo annotation",
+      "comments": "Notes & comments",
+      "closeComments": "Close comments",
+      "savePdf": "Save PDF",
+      "export": "Export annotated PDF",
+      "saving": "Saving…",
+      "saved": "Annotations saved to workspace",
+      "unsaved": "Unsaved annotations",
+      "savedFile": "Saved: {{path}}",
+      "exported": "Annotated PDF exported.",
+      "saveFailed": "Could not save annotations. Your edits are retained.",
+      "empty": "Select text to highlight, click a page to leave a note, or draw on the PDF.",
+      "page": "Page {{page}}",
+      "commentPlaceholder": "Write a comment…",
+      "addComment": "Comment",
+      "resolve": "Resolve thread",
+      "reopen": "Reopen thread",
+      "remove": "Delete annotation",
+      "recompiled": "The PDF was recompiled. Annotations are retained by page; check their positions before saving.",
+      "hints": {
+        "highlight": "Select text in the PDF to highlight it.",
+        "note": "Click a position on the PDF to add a note.",
+        "ink": "Drag on the PDF to draw. Use Undo to remove the last stroke."
+      },
+      "editComment": "Edit comment",
+      "saveComment": "Save comment",
+      "replaceTitle": "Replace annotated PDF?",
+      "replaceMessage": "The destination already exists or changed outside this editor: {{path}}. Replace this version with your current review?",
+      "replace": "Replace this version",
+      "cancel": "Cancel"
     }
   },
   "terminal": {

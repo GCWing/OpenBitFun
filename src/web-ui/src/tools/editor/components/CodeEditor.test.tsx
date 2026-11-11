@@ -209,6 +209,49 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+describe('CodeEditor initialization lifecycle', () => {
+  it('closes safely before the first Monaco initialization completes', async () => {
+    const runtime = createRuntime();
+    const pending = deferred<typeof Monaco>();
+    const createEditor = vi.spyOn(runtime.editor, 'create');
+    const createModel = vi.spyOn(runtime.editor, 'createModel');
+    setMonacoRuntime(null);
+    mocks.initialize.mockReturnValueOnce(pending.promise);
+
+    await act(async () => root.render(<EditorTab session={session} filePath={path} />));
+    expect(mocks.initialize).toHaveBeenCalledTimes(1);
+    await act(async () => root.render(null));
+    await act(async () => {
+      setMonacoRuntime(runtime);
+      pending.resolve(runtime);
+    });
+
+    expect(createEditor).not.toHaveBeenCalled();
+    expect(createModel).not.toHaveBeenCalled();
+    expect(mocks.logError).not.toHaveBeenCalled();
+  });
+
+  it('does not release another view model when closed before acquiring it', async () => {
+    const runtime = createRuntime();
+    const pending = deferred<typeof Monaco>();
+    setMonacoRuntime(runtime);
+    const retainedModel = monacoModelManager.getOrCreateModel(path, 'plaintext', 'disk', undefined, session.modelKey);
+    mocks.initialize.mockReturnValueOnce(pending.promise);
+
+    try {
+      await act(async () => root.render(<EditorTab session={session} filePath={path} />));
+      expect(mocks.initialize).toHaveBeenCalledTimes(1);
+      await act(async () => root.render(null));
+      await act(async () => pending.resolve(runtime));
+
+      expect(model()).toBe(retainedModel);
+      expect(metadata().referenceCount).toBe(1);
+    } finally {
+      monacoModelManager.releaseModel(session.modelKey);
+    }
+  });
+});
+
 describe('CodeEditor disk synchronization', () => {
   it('keeps remote external edits responsive and immediately checks again on window focus', async () => {
     session.scope.remoteConnectionId = 'ssh-a';
