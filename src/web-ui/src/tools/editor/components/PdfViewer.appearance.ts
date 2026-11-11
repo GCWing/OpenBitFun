@@ -3,6 +3,7 @@ import type { AppearanceSurfaceDescriptor } from '@/infrastructure/appearance';
 export const pdfViewerAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'pdf-viewer',
   parts: [
+    { id: 'reviewToolbar' }, { id: 'comments' },
     { id: 'root' },
     { id: 'info' },
     { id: 'container' },

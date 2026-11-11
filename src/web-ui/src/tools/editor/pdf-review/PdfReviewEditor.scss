@@ -1,0 +1,51 @@
+.pdf-review-editor {
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  color: var(--openbitfun-color-content-primary);
+  background: var(--openbitfun-color-surface-canvas);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+
+  &__toolbar, &__tools { display: flex; align-items: center; gap: var(--openbitfun-space-1); }
+  &__toolbar { flex-wrap: wrap; justify-content: space-between; padding: var(--openbitfun-space-2); border-bottom: 1px solid var(--openbitfun-color-border-subtle); }
+  &__tools { flex-wrap: wrap; }
+  &__color { width: 90px; }
+  &__body { display: flex; flex: 1; min-height: 0; min-width: 0; }
+  &__viewer { flex: 1; min-width: 0; min-height: 0; }
+  &__notice, &__hint-bar { padding: var(--openbitfun-space-2) var(--openbitfun-space-3); color: var(--openbitfun-color-content-secondary); background: var(--openbitfun-color-surface-subtle); overflow-wrap: anywhere; }
+  &__comments { display: flex; flex-direction: column; flex: 0 0 230px; min-width: 0; border-inline-start: 1px solid var(--openbitfun-color-border-subtle); }
+  &__comments header, &__comments footer { display: flex; justify-content: space-between; align-items: center; padding: var(--openbitfun-space-2) var(--openbitfun-space-3); }
+  &__comments footer { color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-label-sm-font-size); }
+  &__thread-list { flex: 1; min-height: 0; overflow: auto; padding: var(--openbitfun-space-2); }
+  &__thread { padding: var(--openbitfun-space-3); margin-bottom: var(--openbitfun-space-2); border: 1px solid var(--openbitfun-color-border-subtle); border-radius: var(--openbitfun-radius-md); }
+  &__thread[data-selected='true'] { border-color: var(--openbitfun-color-accent-default); }
+  &__thread[data-resolved='true'] { opacity: 0.65; }
+  &__thread p, &__thread blockquote { white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--openbitfun-space-2) 0; }
+  &__thread blockquote { border-inline-start: 2px solid var(--openbitfun-color-border-subtle); padding-inline-start: var(--openbitfun-space-2); color: var(--openbitfun-color-content-secondary); }
+  &__thread-title { display: flex; justify-content: space-between; width: 100%; padding: 0; border: 0; background: none; color: var(--openbitfun-color-content-secondary); cursor: pointer; font: inherit; }
+  &__comment { display: flex; align-items: start; gap: var(--openbitfun-space-1); }
+  &__comment p { flex: 1; min-width: 0; }
+  &__thread-actions { display: flex; align-items: center; gap: var(--openbitfun-space-1); margin-top: var(--openbitfun-space-2); }
+  &__hint { color: var(--openbitfun-color-content-secondary); }
+}
+.pdf-review-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  &[data-tool='note'], &[data-tool='ink'] { pointer-events: auto; cursor: crosshair; touch-action: none; }
+  &__canvas { position: absolute; inset: 0; pointer-events: none; }
+  &__marker { position: absolute; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border-radius: var(--openbitfun-radius-sm); border: 1px solid var(--openbitfun-color-border-strong); color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-surface-canvas); box-shadow: var(--openbitfun-shadow-sm); cursor: pointer; pointer-events: auto; }
+  &__marker[data-selected='true'] { outline: 2px solid var(--openbitfun-color-accent-default); }
+  &__marker[data-resolved='true'] { opacity: 0.55; }
+}
+
+@container (max-width: 520px) {
+  .pdf-review-editor__body { flex-direction: column; }
+  .pdf-review-editor__comments { flex: 0 1 42%; min-height: 150px; border-inline-start: 0; border-top: 1px solid var(--openbitfun-color-border-subtle); }
+}

@@ -12,7 +12,7 @@ export function supportsLatexPreview(surfaceId: string, capabilities?: PeerHostC
 
 export async function compileWorkspaceLatex(origin: ContentResourceScope, filePath: string, engine: LatexEngine) {
   const { workspaceId, surfaceId } = origin;
-  return invokePrepared<{ pdfBase64: string }>('compile_workspace_latex', async scope => {
+  return invokePrepared<{ pdfBase64: string; log?: string }>('compile_workspace_latex', async scope => {
     if (scope.surfaceId !== surfaceId || !workspaceId) {
       throw new Error('The LaTeX source workspace is unavailable on this device.');
     }

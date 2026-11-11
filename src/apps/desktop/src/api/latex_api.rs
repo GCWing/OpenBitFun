@@ -54,6 +54,13 @@ pub struct CompileWorkspaceLatexRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CompileWorkspaceLatexResponse {
     pdf_base64: String,
+    log: String,
+}
+
+#[derive(Debug)]
+struct CompiledLatex {
+    pdf: Vec<u8>,
+    log: String,
 }
 
 #[tauri::command]
@@ -63,15 +70,16 @@ pub async fn compile_workspace_latex(
     let workspace = WorkspaceBinding::resolve(&request.workspace_id)
         .await
         .map_err(|error| error.to_string())?;
-    let pdf_base64 = if workspace.is_remote() {
+    let (pdf_base64, log) = if workspace.is_remote() {
         let connection_id = workspace
             .connection_id()
             .ok_or("Remote workspace is disconnected.")?;
         compile_remote(connection_id, &workspace.root_path_string(), &request).await?
     } else {
-        BASE64.encode(compile_local(workspace.root_path(), &request).await?)
+        let output = compile_local(workspace.root_path(), &request).await?;
+        (BASE64.encode(output.pdf), output.log)
     };
-    Ok(CompileWorkspaceLatexResponse { pdf_base64 })
+    Ok(CompileWorkspaceLatexResponse { pdf_base64, log })
 }
 
 // latexmk invokes TeX and bibliography programs via their command templates.
@@ -93,7 +101,7 @@ fn source_stem(file_name: &str) -> Result<&str, String> {
 async fn compile_local(
     root: &Path,
     request: &CompileWorkspaceLatexRequest,
-) -> Result<Vec<u8>, String> {
+) -> Result<CompiledLatex, String> {
     let source = root.join(&request.file_path);
     let root = tokio::fs::canonicalize(root)
         .await
@@ -156,14 +164,14 @@ async fn compile_local(
     .await
     .map_err(|_| "LaTeX compilation timed out.")?
     .map_err(|error| error.to_string())?;
+    let log = format!("{stdout}\n{stderr}");
     if !status.success() {
-        let log = format!("{stdout}\n{stderr}");
         return Err(format!("latexmk exited with {status}.\n{}", log.trim()));
     }
     drop(child);
 
     let pdf = build.path().join(format!("{stem}.pdf"));
-    tokio::task::spawn_blocking(move || {
+    let pdf = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let _build = build;
         let metadata = std::fs::symlink_metadata(&pdf).map_err(|_| MISSING_PDF)?;
         if !metadata.is_file() || is_symlink_or_reparse(&metadata) {
@@ -176,7 +184,8 @@ async fn compile_local(
         }
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())??;
+    Ok(CompiledLatex { pdf, log })
 }
 
 async fn read_log_tail(mut reader: impl AsyncRead + Unpin) -> std::io::Result<String> {
@@ -229,6 +238,7 @@ if latexmk {arguments} "-outdir=$build" "$source" </dev/null >"$build/compile.lo
     pdf="$build/"{pdf}
     [ -f "$pdf" ] && [ ! -L "$pdf" ] || {{ echo "{MISSING_PDF}" >&2; exit 1; }}
     [ "$(wc -c < "$pdf")" -le {MAX_PDF_BYTES} ] || {{ echo "The PDF exceeds the 8 MiB preview limit." >&2; exit 1; }}
+    tail -c {MAX_LOG_BYTES} "$build/compile.log" >&2
     base64 < "$pdf"
 else
     tail -c {MAX_LOG_BYTES} "$build/compile.log" >&2
@@ -247,7 +257,7 @@ async fn compile_remote(
     connection_id: &str,
     root: &str,
     request: &CompileWorkspaceLatexRequest,
-) -> Result<String, String> {
+) -> Result<(String, String), String> {
     let command = remote_build_command(root, &request.file_path, request.engine)?;
     let manager = get_remote_workspace_manager().ok_or("Remote workspace is unavailable.")?;
     let ssh = manager
@@ -288,7 +298,7 @@ async fn compile_remote(
     if pdf.len() > MAX_PDF_BYTES || !pdf.starts_with(b"%PDF-") {
         return Err(MISSING_PDF.into());
     }
-    Ok(encoded)
+    Ok((encoded, result.stderr))
 }
 
 #[cfg(test)]
@@ -353,7 +363,8 @@ mod tests {
             engine: LatexEngine::PdfLatex,
         };
         let pdf = compile_local(root.path(), &request).await.unwrap();
-        assert!(pdf.starts_with(b"%PDF-"));
+        assert!(pdf.pdf.starts_with(b"%PDF-"));
+        assert!(pdf.log.contains("Latexmk"));
         assert!(!root.path().join("main draft.aux").exists());
         assert_eq!(
             std::fs::read_to_string(previous_pdf).unwrap(),

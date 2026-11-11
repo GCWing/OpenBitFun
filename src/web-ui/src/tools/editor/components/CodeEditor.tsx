@@ -92,6 +92,8 @@ export interface CodeEditorProps {
   className?: string;
   /** Content change callback */
   onContentChange?: (content: string, hasChanges: boolean) => void;
+  /** Host actions operate on the retained editor instead of global focus. */
+  onEditorReady?: (editor: monaco.editor.IStandaloneCodeEditor | null) => void;
   /** Save callback */
   onSave?: (content: string) => void;
   /** Jump to line number (deprecated, use jumpToRange) */
@@ -178,6 +180,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   className = '',
   onContentChange,
   onSave,
+  onEditorReady,
   jumpToLine,
   jumpToColumn,
   jumpToRange,
@@ -330,6 +333,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   const showLineNumbersRuntimeRef = useRef(showLineNumbers);
   const showMinimapRuntimeRef = useRef(showMinimap);
   const onContentChangeRef = useRef(onContentChange);
+  const onEditorReadyRef = useRef(onEditorReady);
+  onEditorReadyRef.current = onEditorReady;
   const tRef = useRef(t);
   const contentRef = useRef(content);
   const loadingRef = useRef(loading);
@@ -844,6 +849,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
 
         editor = monacoApi.editor.create(container, editorOptions);
         editorRef.current = editor;
+        onEditorReadyRef.current?.(editor);
         if (documentSession?.viewState) editor.restoreViewState(documentSession.viewState as monaco.editor.ICodeEditorViewState);
         // Monaco's viewState does not serialize find/replace state. Keep the
         // view while it owns a query, including a closed widget used by F3.
@@ -1096,6 +1102,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       }
       
       if (editorRef.current) {
+        onEditorReadyRef.current?.(null);
         if (documentSession) documentSession.viewState = editorRef.current.saveViewState();
         editorRef.current.dispose();
         editorRef.current = null;
@@ -1105,7 +1112,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         delete (container as any).__monacoEditor;
       }
 
-      monacoModelManager.releaseModel(modelKey);
+      // Cleanup can run before asynchronous Monaco initialization acquires a
+      // model. Release only the reference owned by this initialization.
+      if (model) monacoModelManager.releaseModel(modelKey);
 
     };
   }, [clearScheduledNavigationSettlement, detectedLanguage, detectLargeFileMode, documentSession, filePath, modelKey, viewResident]);

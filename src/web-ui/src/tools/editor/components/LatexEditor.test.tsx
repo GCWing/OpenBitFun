@@ -27,7 +27,7 @@ vi.mock('./CodeEditor', () => ({
     return <textarea aria-label="Source" />;
   },
 }));
-vi.mock('./PdfViewer', () => ({
+vi.mock('../pdf-review/PdfReviewEditor', () => ({
   default: ({ pdfBase64 }: import('./PdfViewer').PdfViewerProps) => <div data-pdf={pdfBase64} />,
 }));
 
@@ -122,4 +122,40 @@ it('coalesces edits that arrive while auto compilation is running', async () => 
   await act(async () => { finish({ pdfBase64: 'old-build' }); });
   await act(async () => { await vi.advanceTimersByTimeAsync(400); });
   expect(mocks.invoke).toHaveBeenCalledTimes(2);
+});
+
+it('independently hides either pane and restores the same source view after both are closed', async () => {
+  await act(async () => { renderEditor(); });
+  const source = container.querySelector('textarea');
+  const toggle = (key: string) => [...container.querySelectorAll('button')].find(button => button.textContent === key)!;
+  await act(async () => toggle('editor.latexEditor.source').click());
+  expect(container.querySelector('.latex-editor__split')?.getAttribute('data-mode')).toBe('secondary');
+  expect(container.querySelector('textarea')).toBe(source);
+  expect(mocks.sourceProps?.isActiveTab).toBe(false);
+  await act(async () => toggle('editor.latexEditor.preview').click());
+  expect(container.querySelector('.latex-editor__body')?.hasAttribute('hidden')).toBe(true);
+  expect(container.textContent).toContain('editor.latexEditor.panesClosed');
+  await act(async () => toggle('editor.latexEditor.restorePanes').click());
+  expect(container.querySelector('.latex-editor__split')?.getAttribute('data-mode')).toBe('split');
+  expect(container.querySelector('textarea')).toBe(source);
+  expect(mocks.sourceProps?.isActiveTab).toBe(true);
+});
+
+it('retains pane preferences when the same document moves between views', async () => {
+  const doc = new EditorDocument('layout-retained', origin, path);
+  await act(async () => { renderEditor(doc); });
+  const close = container.querySelector<HTMLButtonElement>('[aria-label="editor.latexEditor.closeSource"]')!;
+  await act(async () => close.click());
+  await act(async () => root.render(null));
+  await act(async () => { renderEditor(doc); });
+  expect(container.querySelector('.latex-editor__split')?.getAttribute('data-mode')).toBe('secondary');
+});
+
+it('compiles the declared project entry after saving an included source file', async () => {
+  const doc = new EditorDocument('root-project', origin, path);
+  doc.capture('% !TeX root = manuscript.tex\n\\section{Introduction}', false);
+  mocks.invoke.mockResolvedValueOnce({ pdfBase64: 'project-pdf', log: 'LaTeX compiler warnings' });
+  await act(async () => { renderEditor(doc); });
+  await act(async () => compileButton().click());
+  expect(mocks.invoke).toHaveBeenCalledWith(origin, '/project/manuscript.tex', 'pdflatex');
 });

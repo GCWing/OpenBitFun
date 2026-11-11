@@ -17,6 +17,15 @@ export class EditorDocument {
   markdownMode?: 'ir' | 'source';
   save?: () => Promise<unknown>;
   readonly modelKey: string;
+  private readonly saveParticipants = new Map<string, () => Promise<unknown>>();
+  registerSaveParticipant(key: string, save: () => Promise<unknown>): () => void {
+    this.saveParticipants.set(key, save);
+    return () => { if (this.saveParticipants.get(key) === save) this.saveParticipants.delete(key); };
+  }
+  async saveAll(): Promise<void> {
+    await this.save?.();
+    for (const save of this.saveParticipants.values()) await save();
+  }
   // Disk observations survive view remounts/transfers, but are never inferred
   // from a buffer or persisted tab flags. Each path belongs to this origin.
   private readonly observedFiles = new Set<string>();

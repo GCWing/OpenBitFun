@@ -79,6 +79,7 @@
     "parse-entities": "^4.0.2",
     "partial-json": "^0.1.7",
     "path-browserify": "^1.0.1",
+    "pdf-lib": "1.17.1",
     "pdfjs-dist": "5.4.624",
     "prismjs": "^1.30.0",
     "qrcode.react": "^4.2.0",
