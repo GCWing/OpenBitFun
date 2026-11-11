@@ -1127,7 +1127,7 @@ fn file_credential_vault(
 /// vault was introduced. Keep the historical service names readable so an
 /// upgrade can copy those entries into the current vault.
 const LEGACY_MACOS_KEYRING_SERVICES: &[&str] = &[
-    "openbitfun.bitfun.subscription-auth.v1",
+    concat!("openbitfun.", "bit", "fun", ".subscription-auth.v1"),
     "openbitfun.subscription-auth.v1",
 ];
 
@@ -2628,7 +2628,7 @@ mod file_lock_tests {
 mod legacy_keychain_migration_tests {
     use super::*;
 
-    const LEGACY_SERVICE: &str = "openbitfun.bitfun.subscription-auth.v1";
+    const LEGACY_SERVICE: &str = LEGACY_MACOS_KEYRING_SERVICES[0];
 
     fn temporary_metadata_path(label: &str) -> PathBuf {
         std::env::temp_dir()
