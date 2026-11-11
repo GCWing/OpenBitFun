@@ -467,10 +467,6 @@ fn builtin_skill_catalog_and_mode_policy_are_runtime_owned() {
     for removed in ["docx", "pdf", "pptx", "xlsx"] {
         assert_eq!(builtin_skill_group_key(removed), None);
     }
-    assert_eq!(
-        builtin_skill_group_key("create-openbitfun-skin"),
-        Some("meta")
-    );
     assert_eq!(builtin_skill_group_key("commit-push-pr"), Some("meta"));
     assert_eq!(builtin_skill_group_key("find-skills"), Some("meta"));
     assert_eq!(builtin_skill_group_key("miniapp-dev"), Some("miniapp"));
@@ -492,10 +488,6 @@ fn builtin_skill_catalog_and_mode_policy_are_runtime_owned() {
     );
     assert_eq!(
         resolve_builtin_default_enabled("ppt-design", "Cowork"),
-        Some(true)
-    );
-    assert_eq!(
-        resolve_builtin_default_enabled("create-openbitfun-skin", "DeepResearch"),
         Some(true)
     );
     for mode in ["Standard", "Claw", "Creative", "Cowork", "DeepResearch"] {

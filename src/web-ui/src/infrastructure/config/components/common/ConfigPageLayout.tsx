@@ -24,7 +24,14 @@ export const ConfigPageLayout: React.FC<ConfigPageLayoutProps> = ({
   ...props
 }) => {
   return (
-    <ScrollArea className={`openbitfun-config-page-layout ${className}`} data-openbitfun-component="config" data-openbitfun-part="root" {...props}>
+    <ScrollArea
+      className={`openbitfun-config-page-layout ${className}`}
+      data-openbitfun-component="config"
+      data-openbitfun-part="root"
+      {...props}
+      data-openbitfun-product-component="config-page"
+      data-openbitfun-product-part="root"
+    >
       {children}
       {/* Real DOM spacer: keeps a guaranteed blank tail at the end of the scroll range. */}
       <div className="openbitfun-config-page-layout__scroll-end-spacer" aria-hidden="true" />
@@ -137,7 +144,7 @@ export const ConfigPageSection: React.FC<ConfigPageSectionProps> = ({
         </span>
       ) : undefined}
       actions={extra ? (
-        <div className="openbitfun-config-page-section__extra">{extra}</div>
+        <div className="openbitfun-config-page-section__extra" data-openbitfun-component="config" data-openbitfun-part="actionBar" data-openbitfun-state="toolbar">{extra}</div>
       ) : undefined}
       {...props}
     >
@@ -145,8 +152,9 @@ export const ConfigPageSection: React.FC<ConfigPageSectionProps> = ({
         <FieldGroup
           appearance={bodySurface ? 'subtle' : 'plain'}
           className={bodyClassName}
-          data-openbitfun-component="config"
-          data-openbitfun-part="sectionBody"
+          data-openbitfun-product-component="config-page"
+          data-openbitfun-product-part="sectionBody"
+          data-openbitfun-paint-layer={bodySurface ? undefined : 'none'}
           dividers={false}
           fieldSurface={fieldSurface ?? (bodySurface ? 'ambient' : 'default')}
         >

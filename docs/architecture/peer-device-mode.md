@@ -390,17 +390,17 @@ not a whitelist assembled by the login UI. Its scope is:
 | `editor`, `terminal`, `workspace` | Preferences in the global document; workspace files and machine connection records are separate |
 | `tool_permissions`, `memories` | User permission policy and memory preferences; project permission files and generated memory content are separate |
 | `mcp_servers`, `acp_clients`, `plugin`, `project` | Declarations present in the global document; external executables, installed packages and separately stored project overlays are not copied |
-| `appearance`, `font` | Appearance selection and UI font preferences; imported skin assets are stored separately |
+| `appearance`, `font` | Appearance selection and UI font preferences; imported appearance assets are stored separately |
 
 The frontend refreshes the config cache and the appearance, font and language
 runtimes after a settings-applied event. Keybindings register a path watcher
 even when their initial value came from the bootstrap hint, and an empty or
 removed override restores the registered default. Applying these preferences
-does not save them again. An unavailable imported skin keeps the persisted
+does not save them again. An unavailable imported appearance keeps the persisted
 selection and exposes the existing degraded/unavailable state.
 
 This is settings synchronization, not a user-home backup: custom Agent and Skill
-source files, `hooks.json` declarations/scripts, plugin packages, skin/pet
+source files, `hooks.json` declarations/scripts, plugin packages, appearance/pet
 assets, local credential-vault entries, SSH profiles and browser storage are
 outside this payload. A synchronized declaration or asset path does not imply
 that its dependency is installed or usable on another host. Runtime-only model

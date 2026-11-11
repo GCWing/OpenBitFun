@@ -30,12 +30,13 @@ export async function buildMiniAppChatStyles() {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const files = await buildMiniAppChatStyles();
+  const normalizeEol = value => value.replace(/\r\n/g, '\n');
   for (const [name, content] of Object.entries(files)) {
     const path = resolve(generated, name);
     if (process.argv.includes('--check')) {
-      if (readFileSync(path, 'utf8') !== content) throw new Error(`Stale MiniApp chat style projection: ${name}`);
-    } else if (!existsSync(path) || readFileSync(path, 'utf8') !== content) {
-      mkdirSync(generated, { recursive: true }); writeFileSync(path, content);
+      if (normalizeEol(readFileSync(path, 'utf8')) !== normalizeEol(content)) throw new Error(`Stale MiniApp chat style projection: ${name}`);
+    } else if (!existsSync(path) || normalizeEol(readFileSync(path, 'utf8')) !== normalizeEol(content)) {
+      mkdirSync(generated, { recursive: true }); writeFileSync(path, normalizeEol(content));
     }
   }
 }

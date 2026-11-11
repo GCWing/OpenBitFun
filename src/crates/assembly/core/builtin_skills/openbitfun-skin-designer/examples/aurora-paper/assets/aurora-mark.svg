@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Aurora Paper mark</title>
+  <desc id="desc">An indigo arc around a mint aurora dot.</desc>
+  <circle cx="32" cy="32" r="25" fill="#F7F4EE"/>
+  <path d="M14 39c5-17 22-27 37-18" fill="none" stroke="#3E4A92" stroke-linecap="round" stroke-width="7"/>
+  <circle cx="39" cy="26" r="8" fill="#82D8C4"/>
+</svg>

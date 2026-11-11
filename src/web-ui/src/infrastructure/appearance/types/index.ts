@@ -676,7 +676,7 @@ export interface StoredAppearanceAsset {
 }
 
 /**
- * Review provenance for a package installed from the public Appearance market.
+ * Legacy review provenance retained for previously imported appearance data.
  * Package bytes remain device-local; this small sidecar is used to discover
  * updates and to distinguish a reviewed release from a later local import.
  */

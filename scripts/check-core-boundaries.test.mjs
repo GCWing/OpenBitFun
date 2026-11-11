@@ -3222,7 +3222,7 @@ test('Reqwest consumers inherit the workspace version without duplicating featur
     rule.reason.includes('Reqwest consumers must inherit the workspace-owned compatible version')
   );
 
-  assert.equal(rules.length, 7);
+  assert.equal(rules.length, 6);
   for (const rule of rules) {
     const pattern = rule.patterns[0].regex;
     assert.match('reqwest = { workspace = true, features = ["rustls-no-provider"] }', pattern);

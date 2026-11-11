@@ -27,12 +27,10 @@ vi.mock('@openbitfun/ui', async (importOriginal) => ({
 
 vi.mock('@/infrastructure/appearance', () => ({
   SYSTEM_APPEARANCE_ID: 'system',
-  getAppearancePackageValidationError: () => null,
   useAppearance: () => ({
     selectedAppearanceId: 'system',
     appearances: [],
     select: vi.fn(),
-    activate: vi.fn(),
     initialized: true,
     status: 'ready',
   }),
@@ -60,11 +58,10 @@ vi.mock('@/infrastructure/font-preference', () => ({
 
 vi.mock('../../../../../infrastructure/config/components/AppearancePackageConfigSection', () => ({
   AppearancePackageConfigSection: () => <div data-testid="appearance-package-config" />,
-  AppearancePackageFailurePanel: () => <div data-testid="appearance-package-failure" />,
 }));
 
 describe('AppearanceSettingsPage', () => {
-  it('keeps appearance packages and fonts together while language belongs to General', () => {
+  it('keeps themes and fonts together while language belongs to General', () => {
     document.body.innerHTML = renderToStaticMarkup(<AppearanceSettingsPage />);
     expect(document.querySelector('[data-testid="appearance-package-config"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="appearance-font-section"]')).not.toBeNull();

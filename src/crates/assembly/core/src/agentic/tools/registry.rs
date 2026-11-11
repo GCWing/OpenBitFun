@@ -610,7 +610,6 @@ mod tests {
             "PublishMiniApp",
             "MiniAppBrowser",
             "FrontendWorkbench",
-            "PublishAppearance",
             "PageManage",
             "PageDeploy",
             "PagePublish",
@@ -783,7 +782,6 @@ mod tests {
         assert!(!registry.is_tool_deferred("InitMiniApp"));
         assert!(!registry.is_tool_deferred("FinalizeMiniApp"));
         assert!(!registry.is_tool_deferred("PublishMiniApp"));
-        assert!(!registry.is_tool_deferred("PublishAppearance"));
     }
 
     #[cfg(feature = "product-full")]

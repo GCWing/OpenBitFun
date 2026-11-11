@@ -83,6 +83,12 @@
     inline-size: 100%;
     min-inline-size: 0;
     block-size: var(--_combobox-height);
+    /* The control is a public paint target behind the visible trigger. */
+    border-radius: var(--openbitfun-control-select-radius);
+  }
+
+  .root[data-variant="pill"] .control {
+    border-radius: var(--openbitfun-control-status-pill-radius);
   }
 
   .trigger {

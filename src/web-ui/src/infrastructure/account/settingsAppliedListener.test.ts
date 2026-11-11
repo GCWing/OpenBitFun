@@ -76,7 +76,7 @@ describe('settingsAppliedListener', () => {
   });
 
   it('refreshes the remaining preferences when one runtime fails', async () => {
-    mocks.reconcilePersistedState.mockRejectedValueOnce(new Error('skin unavailable'));
+    mocks.reconcilePersistedState.mockRejectedValueOnce(new Error('appearance unavailable'));
     const { ensureSettingsAppliedListener } = await import('./settingsAppliedListener');
     ensureSettingsAppliedListener();
     mocks.listen.mock.calls[0][1]({ applied: true });

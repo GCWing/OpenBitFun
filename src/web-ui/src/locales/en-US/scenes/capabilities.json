@@ -403,16 +403,11 @@
           },
           "appearance": {
             "title": "Appearance & language",
-            "summary": "Switch themes and languages, tune typography, and install or import appearance packs.",
+            "summary": "Switch built-in themes and languages, and tune typography.",
             "items": {
               "built-in-appearance": "Choose system, light, dark, monochrome, Midnight, China, Cyber, Slate, Tokyo Night, and other built-in appearances",
               "language": "Switch among Simplified Chinese, Traditional Chinese, English, and other supported UI languages",
-              "ui-font-size": "Adjust the global UI font size, including custom pixel values",
-              "local-packages": "Import, preview, apply, export, and delete local appearance packages",
-              "appearance-market": "Browse, search, filter, install, and update appearances from the Skin market",
-              "agent-market-submit": "Let an agent submit a local Appearance package for Skin-market review when explicitly requested",
-              "market-submissions": "Review and withdraw your appearance-market submissions",
-              "market-review": "When authorized, inspect and approve or reject appearance submissions"
+              "ui-font-size": "Adjust the global UI font size, including custom pixel values"
             }
           },
           "pet": {

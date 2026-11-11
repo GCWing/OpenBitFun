@@ -20,7 +20,7 @@ export const chatInputWorkspaceStripAppearanceDescriptor: AppearanceSurfaceDescr
     { id: 'selected', selector: { kind: 'self', suffix: '[data-openbitfun-state~="selected"]' } },
     { id: 'active', selector: { kind: 'self', suffix: '[data-openbitfun-state~="active"]' } },
     // The goal control carries its tone as its state, so these three exist as
-    // states of the track rather than as classes that skins must guess at.
+    // states of the track rather than as classes that appearance data must guess at.
     { id: 'paused', selector: { kind: 'self', suffix: '[data-openbitfun-state~="paused"]' } },
     { id: 'blocked', selector: { kind: 'self', suffix: '[data-openbitfun-state~="blocked"]' } },
     { id: 'complete', selector: { kind: 'self', suffix: '[data-openbitfun-state~="complete"]' } },

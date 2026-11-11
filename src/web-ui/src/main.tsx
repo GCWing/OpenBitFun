@@ -6,6 +6,7 @@ import AppErrorBoundary from "./app/components/AppErrorBoundary";
 import { STARTUP_OVERLAY_HIDDEN_EVENT } from "./app/startup/startupSignals";
 import { I18nProvider } from "./infrastructure/i18n/providers/I18nProvider";
 import { OpenBitFunDesignSystemProvider } from "./infrastructure/design-system";
+import { skinRuntime } from './infrastructure/visual-skin';
 import "./app/styles/index.scss";
 
 // The build-selected font profile is linked from index.html before first paint.
@@ -232,6 +233,12 @@ async function initializeBeforeRender(): Promise<void> {
     });
   });
   log.info('Theme system initialized');
+  await traceStartupStep('before_render_step', 'visual_skin_initialize', async () => {
+    await measureAsyncAndLog(log, 'Startup step completed', () => skinRuntime.initialize(), {
+      data: { step: 'skinRuntime.initialize' },
+    });
+  });
+  log.info('Visual skin runtime initialized');
   logElapsed(log, 'Startup phase completed', phaseStartedAt, {
     data: { phase: 'initializeBeforeRender' },
   });

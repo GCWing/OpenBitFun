@@ -74,7 +74,6 @@ test('build version projection and verification work without npm workspace lockf
     'src/web-ui/package.json',
     'src/mobile-web/package.json',
     'src/miniapp-market-web/package.json',
-    'src/skin-market-web/package.json',
   ];
   for (const relative of jsonFiles) {
     const file = path.join(root, relative);

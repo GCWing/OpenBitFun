@@ -1,0 +1,117 @@
+{
+  "manifest": {
+    "schema": "openbitfun.visual-skin",
+    "schemaVersion": 1,
+    "id": "aurora-paper",
+    "name": "Aurora Paper",
+    "version": "1.0.0",
+    "description": "Warm paper surfaces, indigo text actions, and a restrained aurora illustration.",
+    "previewAssetId": "brand.mark"
+  },
+  "modes": {
+    "light": {
+      "tokens": {
+        "color.surface.canvas": "#F7F4EE",
+        "color.surface.panel": "#FFFDF8",
+        "color.content.primary": "#202636",
+        "color.content.secondary": "#667085",
+        "color.accent.default": "#3E4A92",
+        "color.accent.secondary": "#82D8C4",
+        "color.surface.scene": "#F0ECE4",
+        "color.surface.raised": "#FFFFFF",
+        "color.surface.chrome": "#E6E1D7",
+        "color.surface.tertiary": "#EAE5DB",
+        "color.border.default": "#999181",
+        "color.border.subtle": "#C4BCAF",
+        "color.focus.ring": "#3E4A92",
+        "color.accent.hover": "#303C7E",
+        "component.button.textContent": "#3E4A92",
+        "component.button.textContentHover": "#303C7E"
+      }
+    },
+    "dark": {
+      "tokens": {
+        "color.surface.canvas": "#171A1F",
+        "color.surface.panel": "#222831",
+        "color.content.primary": "#F1F0EA",
+        "color.content.secondary": "#B6BECC",
+        "color.accent.default": "#AAB6FF",
+        "color.accent.secondary": "#58BFAF",
+        "color.surface.scene": "#1D222B",
+        "color.surface.raised": "#2B3340",
+        "color.surface.chrome": "#12151B",
+        "color.surface.tertiary": "#303946",
+        "color.border.default": "#778397",
+        "color.border.subtle": "#465267",
+        "color.focus.ring": "#AAB6FF",
+        "color.accent.hover": "#C1CAFF",
+        "component.button.textContent": "#AAB6FF",
+        "component.button.textContentHover": "#C1CAFF"
+      }
+    }
+  },
+  "assets": {
+    "brand.mark": {
+      "mimeType": "image/svg+xml",
+      "source": {
+        "kind": "path",
+        "path": "assets/aurora-mark.svg"
+      },
+      "alt": "Indigo arc around a mint aurora dot"
+    }
+  },
+  "components": [
+    {
+      "component": "button",
+      "states": {
+        "disabled": {
+          "slots": {
+            "leading-icon": {
+              "foregroundToken": "color.content.muted"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "surfaces": [
+    {
+      "surface": "shell",
+      "baseToken": "color.surface.canvas"
+    },
+    {
+      "surface": "workbench",
+      "baseToken": "color.surface.canvas"
+    },
+    {
+      "surface": "workbench-content",
+      "baseToken": "color.surface.panel"
+    },
+    {
+      "surface": "navigation",
+      "baseToken": "color.surface.chrome"
+    },
+    {
+      "surface": "chat",
+      "baseToken": "color.surface.scene"
+    },
+    {
+      "surface": "editor",
+      "baseToken": "color.surface.panel"
+    },
+    {
+      "surface": "terminal",
+      "baseToken": "color.surface.canvas"
+    },
+    {
+      "surface": "empty-state",
+      "baseToken": "color.surface.panel",
+      "backgroundAssetId": "brand.mark",
+      "fit": "contain",
+      "backgroundPosition": "center",
+      "backgroundOpacity": 0.1,
+      "scrimToken": "color.surface.panel",
+      "scrimOpacity": 0.4
+    }
+  ]
+}

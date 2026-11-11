@@ -845,26 +845,6 @@ describe('L0 Appearance', () => {
     expect(await picker.isDisplayed()).toBe(true);
   });
 
-  it('should keep the Skin market and appearance package import entry points hidden', async () => {
-    await openAppearanceSettings();
-    await waitForDisplayed('[data-openbitfun-part="packageSection"]');
-
-    const packageEntryPoints = await browser.execute(() => ({
-      actionButtons: Array.from(document.querySelectorAll<HTMLElement>(
-        '[data-openbitfun-part="packageActions"] [data-openbitfun-component="button"]',
-      )).map(button => button.textContent?.trim() ?? ''),
-      fileInputs: document.querySelectorAll('.appearance-package-config__file-input').length,
-    }));
-
-    expect(packageEntryPoints.actionButtons).toEqual([]);
-    expect(packageEntryPoints.fileInputs).toBe(0);
-
-    await saveElementScreenshot(
-      '[data-openbitfun-part="packageSection"]',
-      'l0-appearance-package-entry-points-hidden',
-    );
-  });
-
   it('should switch to another built-in Appearance', async () => {
     await openAppearanceSettings();
 

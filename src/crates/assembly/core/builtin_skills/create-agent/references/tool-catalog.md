@@ -83,7 +83,6 @@ Use these tables to select tools for the user's tasks, then put their exact name
 | --- | --- |
 | `OpenBitFunControl` | Discover and control OpenBitFun features and settings. |
 | `FrontendWorkbench` | Draft and hot-apply the packaged OpenBitFun frontend with rollback protection. |
-| `PublishAppearance` | Submit an Appearance package to the Skin market for review. |
 
 ## MiniApp development and publishing
 

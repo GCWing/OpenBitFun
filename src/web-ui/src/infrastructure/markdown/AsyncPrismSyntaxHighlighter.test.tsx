@@ -37,7 +37,7 @@ describe('AsyncPrismSyntaxHighlighter appearance contract', () => {
     container.remove();
   });
 
-  it('marks the real pre and code elements as skin-addressable parts', async () => {
+  it('marks the real pre and code elements as appearance-addressable parts', async () => {
     await act(async () => {
       root.render(
         <AsyncPrismSyntaxHighlighter language="ts" style={{}}>

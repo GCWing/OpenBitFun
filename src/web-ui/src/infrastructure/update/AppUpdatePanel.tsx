@@ -30,7 +30,7 @@ export function AppUpdatePanel() {
     : state.checkStatus === 'latest' && !candidate && !state.version ? t('update.noUpdate') : null;
 
   return (
-    // Preserve the published Appearance ancestry for existing update skins.
+    // Preserve the published Appearance ancestry for existing update customizations.
     <section className="openbitfun-update-details" data-testid="app-update-panel"
       data-openbitfun-component="about-dialog" data-openbitfun-part="updateCard"
       data-openbitfun-state={state.checkStatus === 'checking' ? 'checking' : downloading ? 'downloading'

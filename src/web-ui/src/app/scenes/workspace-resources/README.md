@@ -3,7 +3,7 @@
 The workspace's folder entry opens one persistent navigation panel containing files
 and terminals. Opening this panel leaves the active conversation or editor intact.
 The existing `file-viewer` navigation id and `file-viewer-nav` appearance identity
-remain compatible with navigation links and installed skins. Files and selected
+remain compatible with navigation links and legacy appearance selections. Files and selected
 terminal sessions follow the [workbench opening policy](../../workbench/README.md):
 prefer the matching workspace's already open session tab and its right panel, or
 open a main resource tab when no matching session tab is open. A cached or selected

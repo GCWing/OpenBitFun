@@ -69,7 +69,7 @@ Primitive/reference 色值只存在于主题 authoring、明确的主题 preset 
 普通 UI 的状态色统一由设计系统定义。成功强调色引用 `color.codeChange.added`（`#1aa73e`），
 错误/危险强调色引用 `color.codeChange.removed`（`#ec221f`）；警告固定使用 `#ff8c00`，
 信息/进行中复用已有的清亮蓝 `ref.color.blue.550`（`#2e7eff`）。这组鲜明色相搭配淡着色背景，
-避免在不同页面或内置皮肤中混入灰绿、粉红和另一套橙黄色。
+避免在不同页面或内置主题中混入灰绿、粉红和另一套橙黄色。
 
 - `color.status.*.emphasis` 用于图标和短强调，与增删行等源色对齐。
 - `content` 从同一 emphasis 混入黑/白来保证长文本可读，`surface` 和 `border` 分别使用 10% 与 30% 着色。
@@ -77,8 +77,8 @@ Primitive/reference 色值只存在于主题 authoring、明确的主题 preset 
 - 三个新增 emphasis Token（info/success/danger）由 Icon、Alert、ConfirmDialog、StatusPill 和工具卡状态图标
   消费；它们区分图形强调与可读文本，不能用于重新建立局部色板。
 - 状态源文件保留 Token 引用和混色关系，主题构建将它们解析为 hex/RGBA，以便 CSS 与专用 renderer
-  使用同一结果。内置 Appearance 和 Installer 只选取这些状态值，不再接受私有状态色覆盖；Git 增删、暂存和
-  变更状态也由相同源色派生。第三方 Appearance 的现有 Token 名称与导入格式保持可读。
+  使用同一结果。内置主题和 Installer 只选取这些状态值，不再接受私有状态色覆盖；Git 增删、暂存和
+  变更状态也由相同源色派生。历史 Appearance 数据的 Token 名称与存储格式保持可读。
 
 新增颜色按以下顺序判断：
 
@@ -100,9 +100,9 @@ Primitive/reference 色值只存在于主题 authoring、明确的主题 preset 
 
 更新提醒与详情弹窗共用磨砂材质。暗色通过现有 surface、content、info 与 highlight Token 提亮底面，
 并用 `--openbitfun-component-update-material-cyan` 保留青色衬光；该组件 Token 复用公开浅色主题的
-accent，由 Web UI Appearance 提供默认值并接受皮肤覆盖。暗色全局 accent 为蓝色，无法同时表达
+accent，由 Web UI 主题层提供默认值。暗色全局 accent 为蓝色，无法同时表达
 青蓝两种材质色；其他组件的青色 Token 也不属于更新材质。该差异因此由更新组件的最小契约承载，
-不新增基础色。旧皮肤通过现有组合逻辑补齐默认值。
+不新增基础色。历史 Appearance 数据通过现有组合逻辑补齐默认值。
 
 Session Usage 的输入、输出数据系列使用 `--openbitfun-component-session-usage-input` 和
 `--openbitfun-component-session-usage-output`，分别引用对应明暗设计系统主题的蓝色信息强调色与紫色次强调色。
@@ -191,7 +191,7 @@ Tokyo Night 使用夜靛外壳、storm 靛蓝内容与蓝紫浮层。Cyber 保�
 登记稳定 `id`、源码 root、颜色 owner 和审计引擎；新增目录不能依赖维护者再给 `package.json` 手写一段命令。
 当前注册表覆盖：
 
-- Web UI、`@openbitfun/ui`、Design Lab、Website、Mini App Market、Skin Market、Mobile Web 和 Installer。
+- Web UI、`@openbitfun/ui`、Design Lab、Website、Mini App Market、Mobile Web 和 Installer。
 - Desktop JavaScript 启动前页面、Native Mobile 比较预览、CLI/TUI。
 - HarmonyOS、Android、iOS 三端原生源码。
 - 全部 builtin/Demo MiniApp 及其内置 Skill reference mirror。
@@ -208,7 +208,7 @@ Tokyo Night 使用夜靛外壳、storm 靛蓝内容与蓝紫浮层。Cyber 保�
 
 ### Design Lab、Website、Market
 
-Design Lab、Website、Mini App Market 与 Skin Market 直接加载 `@openbitfun/theme-openbitfun/default.css`，通过
+Design Lab、Website 与 Mini App Market 直接加载 `@openbitfun/theme-openbitfun/default.css`，通过
 `data-openbitfun-design-system-root`、`data-color-scheme`、`data-contrast` 和 `data-density` 选择已发布主题。
 它们可以拥有布局和产品交互，但不得再维护本地 light/dark palette。
 

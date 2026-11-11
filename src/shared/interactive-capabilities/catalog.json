@@ -5765,16 +5765,15 @@
       "categoryId": "application",
       "titleZh": "外观与语言",
       "titleEn": "Appearance & language",
-      "summaryZh": "切换主题与语言，调整字体，并安装或导入外观包。",
-      "summaryEn": "Switch themes and languages, tune typography, and install or import appearance packs.",
+      "summaryZh": "切换内置主题与语言，调整字体。",
+      "summaryEn": "Switch built-in themes and languages, and tune typography.",
       "keywordsZh": [
         "外观",
         "主题",
         "深色模式",
         "浅色模式",
         "语言",
-        "字体",
-        "皮肤"
+        "字体"
       ],
       "keywordsEn": [
         "appearance",
@@ -5782,18 +5781,15 @@
         "dark mode",
         "light mode",
         "language",
-        "font",
-        "skin"
+        "font"
       ],
       "highlightsZh": [
         "系统、深色与浅色主题",
-        "界面语言与字号",
-        "本地与市场外观包"
+        "界面语言与字号"
       ],
       "highlightsEn": [
         "System, dark, and light themes",
-        "UI language and font size",
-        "Local and marketplace appearance packs"
+        "UI language and font size"
       ],
       "items": [
         {
@@ -5847,102 +5843,17 @@
           "evidence": [
             "source:src/web-ui/src/locales/zh-CN/settings/application.json#appearance.fontSize.uiSizeLabel"
           ]
-        },
-        {
-          "id": "local-packages",
-          "titleZh": "导入、预览、应用、导出和删除本地外观包",
-          "titleEn": "Import, preview, apply, export, and delete local appearance packages",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“导入、预览、应用、导出和删除本地外观包”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Import, preview, apply, export, and delete local appearance packages” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "source:src/web-ui/src/locales/zh-CN/settings/appearance.json#package.import",
-            "source:src/web-ui/src/locales/zh-CN/settings/appearance.json#package.export",
-            "source:src/web-ui/src/locales/zh-CN/settings/appearance.json#package.delete"
-          ]
-        },
-        {
-          "id": "appearance-market",
-          "titleZh": "浏览、搜索、筛选并安装或更新 Skin 市场外观",
-          "titleEn": "Browse, search, filter, install, and update appearances from the Skin market",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“浏览、搜索、筛选并安装或更新 Skin 市场外观”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Browse, search, filter, install, and update appearances from the Skin market” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:appearance_market_browse",
-            "command:appearance_market_download_release",
-            "command:appearance_market_get_listing"
-          ]
-        },
-        {
-          "id": "agent-market-submit",
-          "titleZh": "在用户明确要求时由智能体提交本地外观包到 Skin 市场审核",
-          "titleEn": "Let an agent submit a local Appearance package for Skin-market review when explicitly requested",
-          "control": {
-            "kind": "delegate",
-            "tools": [
-              "PublishAppearance"
-            ],
-            "workflowZh": [
-              "仅在用户明确要求对外投稿时调用 PublishAppearance，并使用本机绝对 `.openbitfun-appearance` 路径及用户确认的许可证",
-              "登录或校验返回待处理状态时展示具体下一步；工具不支持远程 SSH 路径，也不能把提交审核报告为已经上架"
-            ],
-            "workflowEn": [
-              "Call PublishAppearance only after an explicit external-submission request, using a local absolute `.openbitfun-appearance` path and a user-confirmed license",
-              "Show the exact next step for pending authentication or validation; remote SSH paths are unsupported and submission for review is not publication"
-            ]
-          },
-          "evidence": [
-            "command:appearance_market_submit_package"
-          ]
-        },
-        {
-          "id": "market-submissions",
-          "titleZh": "查看和撤回自己的外观市场投稿",
-          "titleEn": "Review and withdraw your appearance-market submissions",
-          "control": {
-            "kind": "open",
-            "reasonCode": "visualSelection",
-            "reasonZh": "智能体可提交本地外观包，但投稿列表与撤回仍依赖账户状态和用户确认，因此保留准确的市场入口。",
-            "reasonEn": "The Agent can submit a local Appearance package, while submission history and withdrawal still depend on account state and user confirmation, so those actions keep an exact market entry."
-          },
-          "evidence": [
-            "command:appearance_market_list_submissions",
-            "command:appearance_market_withdraw_submission"
-          ]
-        },
-        {
-          "id": "market-review",
-          "titleZh": "在具备权限时查看并批准或拒绝外观投稿",
-          "titleEn": "When authorized, inspect and approve or reject appearance submissions",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“在具备权限时查看并批准或拒绝外观投稿”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“When authorized, inspect and approve or reject appearance submissions” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:appearance_market_list_review_submissions",
-            "command:appearance_market_get_review_submission",
-            "command:appearance_market_review_submission"
-          ]
         }
       ],
       "stepsZh": [
         "打开设置",
         "进入“应用 > 外观”",
-        "选择主题、语言或外观包"
+        "选择内置主题或语言"
       ],
       "stepsEn": [
         "Open Settings",
         "Go to Application > Appearance",
-        "Choose a theme, language, or appearance package"
+        "Choose a built-in theme or language"
       ],
       "agentExamplesZh": [
         "切换成深色主题",
@@ -10169,9 +10080,6 @@
     },
     "review_platform": {
       "capabilityId": "feature.code-review"
-    },
-    "appearance_market": {
-      "capabilityId": "setting.application.appearance"
     },
     "speech": {
       "capabilityId": "feature.voice-input"

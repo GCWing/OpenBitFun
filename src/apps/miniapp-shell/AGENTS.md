@@ -85,7 +85,7 @@ is page-scoped in `chat-labels.json`, and colors use the generated token project
 Chat visuals are built from the actual Hi and FlowChat style owners through
 `styles/chat.js`: FloatingMiniChat, LauncherButton, ChatComposer, IconButton and
 FlowChat message styles. `styles/chat-layout.scss` only adapts native DOM/layout;
-do not reintroduce a separate chat palette or bubble/composer skin. The generator
+do not reintroduce a separate chat palette or bubble/composer appearance. The generator
 emits CSS and static CSS-module class maps, without React or Web UI runtime code.
 `prepare:miniapp-shell` regenerates both styles and their token projection before
 Cargo builds. Keep the generated files committed for direct Cargo builds, and

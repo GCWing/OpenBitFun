@@ -41,7 +41,7 @@ async function applyCloudSyncedSettings(): Promise<void> {
     await configAPI.reloadConfig();
     // These runtimes read through ConfigAPI directly, so cache invalidation
     // alone cannot update their already-rendered state. Keep failures isolated:
-    // an unavailable skin must not prevent language, fonts or shortcuts loading.
+    // an unavailable appearance must not prevent language, fonts or shortcuts loading.
     const refreshes = [
       { name: 'config', run: () => configManager.applyExternalReload() },
       { name: 'appearance', run: () => appearanceService.reconcilePersistedState() },

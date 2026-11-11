@@ -294,7 +294,7 @@ target triple 和 `normal,build` 版本化 package instance 去重口径；它�
 | Services Integrations feature-free | 26 → 26 | 28 → 28 | 27 → 27 | Qrcode 的 PNG/SVG 能力仍由 `remote-connect` owner 显式选择 |
 
 workspace member 中显式 `default-features = false` 从 70 处降到 6 处：62 个仓内空默认重复声明删除，
-MiniApp/Skin Market 的 2 个 SQLx 声明改为继承 workspace 根策略。剩余 6 处中，两处是 Desktop/CLI 对 ACP
+MiniApp Market 的 SQLx 声明改为继承 workspace 根策略。剩余 6 处中，两处是 Desktop/CLI 对 ACP
 的必要例外，因为 ACP 有意保留 `client + server` 兼容默认，而两个产品入口必须分别选择 client-only 和
 双角色；另 4 处属于 Relay Server、Relay Service 和 Page Function Runtime，它们会被 Docker 单独复制、
 无法继承 workspace 根，因此继续显式声明 Tokio、SQLx 与 RquickJS 的默认策略。

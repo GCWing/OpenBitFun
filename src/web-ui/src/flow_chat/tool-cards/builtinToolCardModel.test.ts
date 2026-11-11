@@ -68,7 +68,8 @@ describe('built-in historical result presentation', () => {
     expect(model('PortForward', { operation: 'start', local_port: 5173 }).links).toEqual([]);
   });
 
-  it.each(['PublishMiniApp', 'PublishAppearance'] as const)('%s separates sign-in, submission and review', name => {
+  it('PublishMiniApp separates sign-in, submission and review', () => {
+    const name = 'PublishMiniApp' as const;
     expect(model(name, {}, { status: 'pending_review', submission_id: 's1' }).outcome?.label).toBe('states.pendingReview');
     expect(model(name, {}, { status: 'submitted', submission_id: 's1' }).outcome?.label).toBe('states.submitted');
     const signIn = model(name, {}, { status: 'sign_in_required', authorization_url: 'https://example.com/auth' });

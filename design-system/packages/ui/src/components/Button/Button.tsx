@@ -41,6 +41,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={classNames(styles.button, variant === "glass" && glassStyles.surface, className)}
       data-openbitfun-component="button"
       data-openbitfun-part="root"
+      data-openbitfun-paint-layer={variant === 'glass' ? "self" : "before"}
       data-openbitfun-tone={tone}
       data-openbitfun-variant={variant}
       data-loading={loading ? "true" : "false"}

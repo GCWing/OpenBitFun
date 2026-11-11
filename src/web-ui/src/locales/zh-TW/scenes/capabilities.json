@@ -407,12 +407,7 @@
             "items": {
               "built-in-appearance": "選擇跟隨系統、淺色、深色、單色、Midnight、中國風、Cyber、Slate 或 Tokyo Night 等內置外觀",
               "language": "切換簡體中文、繁體中文、英文等受支持界面語言",
-              "ui-font-size": "調整全局界面字號，並支持自定義像素值",
-              "local-packages": "導入、預覽、應用、導出和刪除本地外觀包",
-              "appearance-market": "瀏覽、搜索、篩選並安裝或更新 Skin 市場外觀",
-              "agent-market-submit": "在用戶明確要求時由智能體提交本地外觀包到 Skin 市場審核",
-              "market-submissions": "查看和撤回自己的外觀市場投稿",
-              "market-review": "在具備權限時查看並批准或拒絕外觀投稿"
+              "ui-font-size": "調整全局界面字號，並支持自定義像素值"
             }
           },
           "pet": {

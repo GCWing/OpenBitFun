@@ -166,7 +166,7 @@ DNA 与样例 → `references/design-styles.md`。
 
 1. **优先用已给样式，不要默认 Read**：若输入已含 `style.palette`（或 MiniApp/宿主已写入完整 style），**禁止**再 `Read references/style-presets/*`；直接用 palette + 下表「一句话 DNA」落地视觉身份。只有输入没有可用 palette、且用户明确点名预设、你确实需要完整视觉细则时，才允许一次 `Read references/style-presets/<stylePreset>.md`。
 2. 预设只接管「视觉身份」：配色、字体气质、装饰语言、版式偏好。本 skill 的核心原则全部继续生效——断言式标题、单页一结论、信息密度、反 AI slop、1280×720px 画布、可编辑 authoring contract、不许溢出（用户明确要求压力测试/故意溢出时除外）。
-3. 从上面 5 种设计哲学中选最接近的一种作为版式骨架（structural grammar），预设负责皮肤；两者冲突时以信息传达优先、弱化装饰。
+3. 从上面 5 种设计哲学中选最接近的一种作为版式骨架（structural grammar），预设负责视觉样式；两者冲突时以信息传达优先、弱化装饰。
 4. 预设文件缺失或 key 未知时，回退到 5 种哲学中最接近的一种，并沿用输入提供的 palette。
 
 | styleKey | 预设 | 一句话 DNA |

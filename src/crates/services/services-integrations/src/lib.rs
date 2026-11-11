@@ -31,9 +31,6 @@ pub(crate) fn reqwest_client() -> reqwest::Client {
     reqwest::Client::new()
 }
 
-#[cfg(feature = "miniapp-market")]
-pub mod appearance_market;
-
 #[cfg(feature = "browser-control")]
 pub mod browser_control;
 

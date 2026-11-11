@@ -87,6 +87,21 @@ gamut. Palette colors, the current-color ring and the lightness ramp represent
 editable color content; they deliberately do not follow theme or status colors.
 Chrome, borders, focus and shadows use existing semantic/system tokens. No theme
 color literal or new token is needed. The component has no storage or host API.
+## Decorative paint ownership
+
+Components that paint their background in an existing `::before` layer advertise
+`data-openbitfun-paint-layer="before"` on that part (Button, IconButton and
+TabGroup tabs). Glass variants use `self`. Product paint adapters can target the
+existing background without inserting children, replacing pseudo-elements or
+changing geometry. TabGroup also advertises `data-openbitfun-edge-layer="before"`:
+its border and shadow follow the expanding surface, including the close action.
+Button and IconButton borders remain on their native element. Unmarked parts paint their own box. Switch exposes `input`,
+`track` and `thumb` parts; its native input still owns checked/disabled behavior.
+
+`data-openbitfun-paint-layer="none"` delegates a part's decorations to its
+container. SearchField uses it for embedded/panel inner Inputs and for its
+unpainted default wrapper. Skin adapters must omit those part decorations,
+including focus shadows, while retaining native input behavior and token colors.
 
 ## Pane layouts
 

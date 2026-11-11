@@ -14,6 +14,8 @@ import styles from "./Input.module.css";
 export interface InputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "className" | "size"> {
   className?: string;
+  /** Product anatomy: an embedded field delegates decorative paint to its container. */
+  "data-openbitfun-paint-layer"?: "self" | "none";
   /** Hide the browser reveal button when the caller provides a visibility control. */
   hideNativePasswordReveal?: boolean;
   invalid?: boolean;
@@ -26,6 +28,7 @@ export interface InputProps
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
   "aria-invalid": ariaInvalid,
+  "data-openbitfun-paint-layer": paintLayer,
   className,
   disabled,
   hideNativePasswordReveal = false,
@@ -58,6 +61,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
     <span
       className={classNames(styles.field, className)}
       data-openbitfun-component="input"
+      data-openbitfun-paint-layer={paintLayer}
       data-disabled={disabled ? "true" : "false"}
       data-field-surface={fieldSurface}
       data-invalid={isInvalid ? "true" : "false"}

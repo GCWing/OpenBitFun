@@ -36,10 +36,11 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
         onChange={handleChange}
         ref={ref}
         role="switch"
+        data-openbitfun-part="input"
         type="checkbox"
       />
-      <span aria-hidden="true" className={styles.track}>
-        <span className={styles.thumb} />
+      <span aria-hidden="true" className={styles.track} data-openbitfun-part="track">
+        <span className={styles.thumb} data-openbitfun-part="thumb" />
       </span>
     </span>
   );

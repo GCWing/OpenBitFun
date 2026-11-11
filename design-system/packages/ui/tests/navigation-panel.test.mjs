@@ -18,12 +18,12 @@ test("NavigationPanelItem forwards static labels and keeps native navigation sem
   const markup = renderToStaticMarkup(createElement(NavigationPanelItem, {
     selected: true, labelBehavior: "static", className: "horizontal-navigation",
     title: "My submissions", "data-active": true,
-  }, "My submitted appearance packages"));
+  }, "My submitted Mini Apps"));
   assert.match(markup, /<span[^>]+class="[^"]+ horizontal-navigation"/);
   assert.match(markup, /<button[^>]+aria-current="page"/);
   assert.match(markup, /data-active="true"/);
   assert.match(markup, /type="button"/);
-  assert.match(markup, /data-openbitfun-part="label">My submitted appearance packages<\/span>/);
+  assert.match(markup, /data-openbitfun-part="label">My submitted Mini Apps<\/span>/);
   assert.doesNotMatch(markup, /data-overflow-behavior|data-overflow-content|labelBehavior/);
   const defaultMarkup = renderToStaticMarkup(createElement(NavigationPanelItem, null, "Navigation"));
   assert.match(defaultMarkup, /data-overflow-behavior="marquee"/);

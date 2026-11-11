@@ -15,10 +15,6 @@ mod tests {
         for removed in ["docx", "pdf", "pptx", "xlsx"] {
             assert_eq!(builtin_skill_group_key(removed), None);
         }
-        assert_eq!(
-            builtin_skill_group_key("create-openbitfun-skin"),
-            Some("meta")
-        );
         assert_eq!(builtin_skill_group_key("commit-push-pr"), Some("meta"));
         assert_eq!(builtin_skill_group_key("find-skills"), Some("meta"));
         assert_eq!(builtin_skill_group_key("generate-image"), Some("creation"));

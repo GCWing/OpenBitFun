@@ -13,7 +13,7 @@ const AgentCatalogCard: React.FC<AgentCatalogCardProps> = ({ agent, onOpenDetail
   const openDetails = () => onOpenDetails(agent);
 
   return (
-    <Card
+    <Card data-openbitfun-reading-surface="self"
       {...props}
       className="agent-catalog-card__surface"
       appearance="subtle"

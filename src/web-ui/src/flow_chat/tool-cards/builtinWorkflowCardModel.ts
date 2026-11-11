@@ -190,7 +190,7 @@ export function buildBuiltinWorkflowCard(context: BuiltinCardContext): void {
       }
       return;
     }
-    case 'PublishMiniApp': case 'PublishAppearance': {
+    case 'PublishMiniApp': {
       model.family = 'marketplace-publish';
       model.summary = builtinText(data.name, input.app_name, data.slug, input.slug, input.app_id, builtinBasename(builtinText(input.package_path)));
       field('release', data.release_number);
@@ -207,7 +207,7 @@ export function buildBuiltinWorkflowCard(context: BuiltinCardContext): void {
       } else if (data.status === 'submitted' || data.status === 'pending_review') {
         outcome(data.status === 'submitted' ? 'submitted' : 'pendingReview', 'neutral');
         model.notice = t('toolCards.builtin.reviewPending');
-        link('market', model.name === 'PublishAppearance' ? 'appearance' : 'miniapps', 'openSubmissions');
+        link('market', 'miniapps', 'openSubmissions');
       }
       return;
     }

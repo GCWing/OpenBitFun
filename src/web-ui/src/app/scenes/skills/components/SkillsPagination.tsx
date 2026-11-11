@@ -17,7 +17,7 @@ export function SkillsPagination({ pagination, total, listId, hasMore = false, l
 
   return (
     <nav
-      className="skills-pagination"
+      className="skills-pagination" data-openbitfun-reading-surface="before"
       aria-label={t('pagination.label')}
       aria-busy={loading || undefined}
       data-testid={`${listId}-pagination`}

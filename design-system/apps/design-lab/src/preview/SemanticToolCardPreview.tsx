@@ -27,7 +27,7 @@ function SemanticPreview({ component, interactive, specimen, state }: Parameters
   const text = (key: string) => t(`flowChat.builtin.${key}` as MessageKey);
   const tool = specimen?.tool ?? toolsForComponent(component)[0] ?? component;
   const prominent = ['create_goal', 'update_goal', 'AgentDelete', 'Worktree', 'PortForward', 'ReviewPlatform',
-    'FrontendWorkbench', 'FinalizeMiniApp', 'PublishMiniApp', 'PublishAppearance', 'DesktopCard'].includes(tool);
+    'FrontendWorkbench', 'FinalizeMiniApp', 'PublishMiniApp', 'DesktopCard'].includes(tool);
   const props: SemanticToolCardProps = {
     action: text(`tools.${tool}`), status: state === 'loading' ? 'running' : state === 'error' ? 'error' : 'completed',
     attention: prominent ? 'prominent' : 'ambient', isExpanded: expanded,
@@ -85,7 +85,7 @@ function SemanticPreview({ component, interactive, specimen, state }: Parameters
   }
   if (props.status !== 'completed') props.outcome = undefined;
   if (component === 'AgentRosterToolCard') return <AgentRosterToolCard {...props} deleting={tool === 'AgentDelete'} />;
-  if (component === 'MarketplacePublishToolCard') return <MarketplacePublishToolCard {...props} appearance={tool === 'PublishAppearance'} />;
+  if (component === 'MarketplacePublishToolCard') return <MarketplacePublishToolCard {...props} />;
   if (component === 'McpResourceToolCard') return <McpResourceToolCard {...props} kind={tool === 'ReadMCPResource' ? 'resource'
     : tool === 'GetMCPPrompt' ? 'prompt' : tool === 'ListMCPPrompts' ? 'prompts' : 'resources'} />;
   const View = views[component];

@@ -403,16 +403,11 @@
           },
           "appearance": {
             "title": "外观与语言",
-            "summary": "切换主题与语言，调整字体，并安装或导入外观包。",
+            "summary": "切换内置主题与语言，调整字体。",
             "items": {
               "built-in-appearance": "选择跟随系统、浅色、深色、单色、Midnight、中国风、Cyber、Slate 或 Tokyo Night 等内置外观",
               "language": "切换简体中文、繁体中文、英文等受支持界面语言",
-              "ui-font-size": "调整全局界面字号，并支持自定义像素值",
-              "local-packages": "导入、预览、应用、导出和删除本地外观包",
-              "appearance-market": "浏览、搜索、筛选并安装或更新 Skin 市场外观",
-              "agent-market-submit": "在用户明确要求时由智能体提交本地外观包到 Skin 市场审核",
-              "market-submissions": "查看和撤回自己的外观市场投稿",
-              "market-review": "在具备权限时查看并批准或拒绝外观投稿"
+              "ui-font-size": "调整全局界面字号，并支持自定义像素值"
             }
           },
           "pet": {

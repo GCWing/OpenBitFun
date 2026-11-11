@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "8a02be2b328791ebb823e4b7a956bf0371c523caa7f881a6c778cbaa42d72575",
-  "count": 200,
+  "catalogDigest": "5370adbf2ff3746a6d89704d38498047e3430850234e4abc1cd6bb5eea2aac49",
+  "count": 196,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
-    "unstructuredInteraction": 165,
-    "visualSelection": 26
+    "unstructuredInteraction": 162,
+    "visualSelection": 25
   },
   "entries": [
     {
@@ -2351,77 +2351,6 @@
       },
       "evidence": [
         "source:src/web-ui/src/locales/zh-CN/settings/application.json#appearance.fontSize.uiSizeLabel"
-      ]
-    },
-    {
-      "capabilityId": "setting.application.appearance",
-      "itemId": "local-packages",
-      "titleZh": "导入、预览、应用、导出和删除本地外观包",
-      "titleEn": "Import, preview, apply, export, and delete local appearance packages",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“导入、预览、应用、导出和删除本地外观包”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Import, preview, apply, export, and delete local appearance packages” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "settings",
-        "pageId": "application.appearance"
-      },
-      "evidence": [
-        "source:src/web-ui/src/locales/zh-CN/settings/appearance.json#package.import",
-        "source:src/web-ui/src/locales/zh-CN/settings/appearance.json#package.export",
-        "source:src/web-ui/src/locales/zh-CN/settings/appearance.json#package.delete"
-      ]
-    },
-    {
-      "capabilityId": "setting.application.appearance",
-      "itemId": "appearance-market",
-      "titleZh": "浏览、搜索、筛选并安装或更新 Skin 市场外观",
-      "titleEn": "Browse, search, filter, install, and update appearances from the Skin market",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“浏览、搜索、筛选并安装或更新 Skin 市场外观”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Browse, search, filter, install, and update appearances from the Skin market” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "settings",
-        "pageId": "application.appearance"
-      },
-      "evidence": [
-        "command:appearance_market_browse",
-        "command:appearance_market_download_release",
-        "command:appearance_market_get_listing"
-      ]
-    },
-    {
-      "capabilityId": "setting.application.appearance",
-      "itemId": "market-submissions",
-      "titleZh": "查看和撤回自己的外观市场投稿",
-      "titleEn": "Review and withdraw your appearance-market submissions",
-      "reasonCode": "visualSelection",
-      "reasonZh": "智能体可提交本地外观包，但投稿列表与撤回仍依赖账户状态和用户确认，因此保留准确的市场入口。",
-      "reasonEn": "The Agent can submit a local Appearance package, while submission history and withdrawal still depend on account state and user confirmation, so those actions keep an exact market entry.",
-      "presentationTarget": {
-        "kind": "settings",
-        "pageId": "application.appearance"
-      },
-      "evidence": [
-        "command:appearance_market_list_submissions",
-        "command:appearance_market_withdraw_submission"
-      ]
-    },
-    {
-      "capabilityId": "setting.application.appearance",
-      "itemId": "market-review",
-      "titleZh": "在具备权限时查看并批准或拒绝外观投稿",
-      "titleEn": "When authorized, inspect and approve or reject appearance submissions",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“在具备权限时查看并批准或拒绝外观投稿”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“When authorized, inspect and approve or reject appearance submissions” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "settings",
-        "pageId": "application.appearance"
-      },
-      "evidence": [
-        "command:appearance_market_list_review_submissions",
-        "command:appearance_market_get_review_submission",
-        "command:appearance_market_review_submission"
       ]
     },
     {

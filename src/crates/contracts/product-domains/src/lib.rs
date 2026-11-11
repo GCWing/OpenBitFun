@@ -21,9 +21,6 @@ pub mod remote_surface;
 pub mod session_import;
 pub mod tool_permissions;
 
-#[cfg(feature = "appearance-market")]
-pub mod appearance_market;
-
 #[cfg(feature = "external-sources")]
 pub mod external_integration_policy;
 

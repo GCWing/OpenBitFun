@@ -213,7 +213,7 @@ export const ReasoningIntensityControl: React.FC<ReasoningIntensityControlProps>
           </div>
         </FlowChatCollapse>
       </div>
-      {/* Keep existing skin part IDs valid without rendering decorative layers. */}
+      {/* Keep existing appearance part IDs valid without rendering decorative layers. */}
       <span hidden aria-hidden="true">
         <span data-openbitfun-component="model-selector" data-openbitfun-part="reasoningSliderSky" />
         <span data-openbitfun-component="model-selector" data-openbitfun-part="reasoningSliderNebula" />

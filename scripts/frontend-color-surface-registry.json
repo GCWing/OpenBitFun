@@ -109,17 +109,6 @@
       }
     },
     {
-      "id": "skin-market",
-      "label": "Skin Market",
-      "kind": "canonical-web",
-      "owner": "@openbitfun/theme-openbitfun",
-      "root": "src/skin-market-web",
-      "audit": {
-        "engine": "theme",
-        "baseline": "scripts/theme-color-governance-baseline.skin-market.json"
-      }
-    },
-    {
       "id": "website",
       "label": "Public website",
       "kind": "canonical-web",

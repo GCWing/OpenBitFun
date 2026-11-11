@@ -19,24 +19,21 @@ pub struct MarketImageCache {
 }
 
 impl MarketImageCache {
-    pub fn new(root: PathBuf, miniapp_api: &str, appearance_api: &str) -> Result<Self, String> {
-        let mut prefixes = Vec::new();
-        for (base, path) in [
-            (miniapp_api, "screenshots/"),
-            (appearance_api, "artifacts/previews/"),
-        ] {
-            let url = Url::parse(base).map_err(|error| error.to_string())?;
-            let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
-            if (url.scheme() != "https" && !(url.scheme() == "http" && loopback))
-                || !url.username().is_empty()
-                || url.password().is_some()
-                || url.query().is_some()
-                || url.fragment().is_some()
-            {
-                return Err("Marketplace image origins must use HTTPS or loopback HTTP.".into());
-            }
-            prefixes.push(format!("{}/{path}", url.as_str().trim_end_matches('/')));
+    pub fn new(root: PathBuf, miniapp_api: &str) -> Result<Self, String> {
+        let url = Url::parse(miniapp_api).map_err(|error| error.to_string())?;
+        let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+        if (url.scheme() != "https" && !(url.scheme() == "http" && loopback))
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err("Marketplace image origins must use HTTPS or loopback HTTP.".into());
         }
+        let prefixes = vec![format!(
+            "{}/screenshots/",
+            url.as_str().trim_end_matches('/')
+        )];
         let client = crate::reqwest_client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(5))
@@ -237,11 +234,11 @@ mod tests {
         let bytes = webp();
         let (base, server) = serve_once(bytes.clone(), "Content-Type: image/webp").await;
         let source = format!("{base}/screenshots/{}?variant=compact-v1", "a".repeat(64));
-        let cache = MarketImageCache::new(storage.path().into(), &base, &base).unwrap();
+        let cache = MarketImageCache::new(storage.path().into(), &base).unwrap();
         assert_eq!(cache.load(&source).await.unwrap(), bytes);
         assert!(server.await.unwrap().contains("variant=compact-v1"));
         drop(cache);
-        let restarted = MarketImageCache::new(storage.path().into(), &base, &base).unwrap();
+        let restarted = MarketImageCache::new(storage.path().into(), &base).unwrap();
         assert_eq!(restarted.load(&source).await.unwrap(), bytes);
         // A different resolution cannot accidentally consume the compact entry.
         assert!(restarted
@@ -250,31 +247,10 @@ mod tests {
             .is_err());
     }
 
-    #[tokio::test]
-    async fn appearance_previews_use_the_same_cache_without_authentication() {
-        let storage = tempfile::tempdir().unwrap();
-        let bytes = webp();
-        let (base, server) = serve_once(bytes.clone(), "Content-Type: image/webp").await;
-        let source = format!(
-            "{base}/artifacts/previews/{}?variant=large-v1",
-            "b".repeat(64)
-        );
-        let cache = MarketImageCache::new(storage.path().into(), &base, &base).unwrap();
-        assert_eq!(cache.load(&source).await.unwrap(), bytes);
-        let request = server.await.unwrap().to_lowercase();
-        assert!(!request.contains("authorization:"));
-        assert!(!request.contains("cookie:"));
-        assert_eq!(cache.load(&source).await.unwrap(), bytes);
-    }
-
     #[test]
     fn rejects_arbitrary_origins_paths_and_personalized_urls() {
-        let cache = MarketImageCache::new(
-            PathBuf::new(),
-            "https://market.test/miniapp/api/v1",
-            "https://market.test/skin/api/v1",
-        )
-        .unwrap();
+        let cache = MarketImageCache::new(PathBuf::new(), "https://market.test/miniapp/api/v1")
+            .unwrap();
         let path = format!("/miniapp/api/v1/screenshots/{}", "a".repeat(64));
         assert!(cache
             .image_url(&format!("https://market.test{path}"))
@@ -303,12 +279,12 @@ mod tests {
         tokio::fs::write(storage.path().join(format!("{key}.webp")), &bytes[..12])
             .await
             .unwrap();
-        let cache = MarketImageCache::new(storage.path().into(), &base, &base).unwrap();
+        let cache = MarketImageCache::new(storage.path().into(), &base).unwrap();
         assert_eq!(cache.load(&source).await.unwrap(), bytes);
         server.await.unwrap();
 
         let (base, server) = serve_once(b"error page".to_vec(), "Content-Type: image/webp").await;
-        let cache = MarketImageCache::new(storage.path().into(), &base, &base).unwrap();
+        let cache = MarketImageCache::new(storage.path().into(), &base).unwrap();
         assert!(cache
             .load(&format!("{base}/screenshots/{}", "d".repeat(64)))
             .await

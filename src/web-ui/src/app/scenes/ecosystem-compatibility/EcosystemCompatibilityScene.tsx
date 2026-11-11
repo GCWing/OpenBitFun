@@ -339,7 +339,7 @@ const ExternalImportSection: React.FC = () => {
         const displayName = client.name || client.id;
 
         return (
-          <article className="ecosystem-compatibility__runtime-agent" key={client.id}>
+          <article className="ecosystem-compatibility__runtime-agent" data-openbitfun-reading-surface="self" key={client.id}>
             <div className="ecosystem-compatibility__runtime-row">
               <div className="ecosystem-compatibility__runtime-copy">
                 <strong><OverflowText>{displayName}</OverflowText></strong>
@@ -546,7 +546,10 @@ const ExternalImportSection: React.FC = () => {
           data-openbitfun-part="main"
         >
           <header
-            className="ecosystem-compatibility__product-header"
+            className="ecosystem-compatibility__product-header" data-openbitfun-reading-surface="before"
+            data-openbitfun-product-component="config-page"
+            data-openbitfun-product-part="sectionBody"
+            data-openbitfun-paint-layer="before"
             data-openbitfun-scene="ecosystem-compatibility"
             data-openbitfun-part="header"
           >

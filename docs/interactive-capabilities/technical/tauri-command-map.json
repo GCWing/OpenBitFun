@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "8a02be2b328791ebb823e4b7a956bf0371c523caa7f881a6c778cbaa42d72575",
-  "commandCount": 708,
+  "catalogDigest": "5370adbf2ff3746a6d89704d38498047e3430850234e4abc1cd6bb5eea2aac49",
+  "commandCount": 699,
   "coverage": {
-    "commandCount": 708,
-    "documentedCommandCount": 646,
+    "commandCount": 699,
+    "documentedCommandCount": 637,
     "implementationCommandCount": 62,
     "implementationDigest": "39288402985a24c84852570c8137b888b15b3d9e1b40448d974085b25c0fcf46"
   },
@@ -407,150 +407,6 @@
       "sourceFile": "src/apps/desktop/src/api/skill_api.rs",
       "signature": "fn add_skill( _state: State<'_, AppState>, source_path: String, level: String, workspace_id: Option<String>, workspace_path: Option<String>, source_key: Option<String>, target_name: Option<String>, expected_source_fingerprint: Option<String>, ) -> Result<String, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
-    },
-    {
-      "id": "appearance_market_browse",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:appearance-market"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_browse",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_browse( request: AppearanceMarketBrowseRequest, ) -> Result<AppearanceCursorPage<AppearanceMarketListingSummary>, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_download_release",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:appearance-market"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_download_release",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_download_release( request: AppearanceMarketDownloadRequest, ) -> Result<tauri::ipc::Response, String>",
-      "remoteWorkspacePolicy": "LocalOnly"
-    },
-    {
-      "id": "appearance_market_get_listing",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:appearance-market"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_get_listing",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_get_listing( request: AppearanceMarketSlugRequest, ) -> Result<AppearanceMarketListingDetail, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_get_review_submission",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:market-review"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_get_review_submission",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_get_review_submission( request: AppearanceMarketSubmissionIdRequest, ) -> Result<AppearanceAdminSubmissionDetail, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_list_review_submissions",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:market-review"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_list_review_submissions",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_list_review_submissions( ) -> Result<Vec<AppearanceMarketSubmission>, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_list_submissions",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:market-submissions"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_list_submissions",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_list_submissions() -> Result<Vec<AppearanceMarketSubmission>, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_review_submission",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:market-review"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_review_submission",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_review_submission( request: AppearanceMarketReviewRequest, ) -> Result<AppearanceAdminSubmissionDetail, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_submit_package",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:agent-market-submit"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_submit_package",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_submit_package( request: AppearanceMarketSubmitPackageRequest, ) -> Result<AppearanceMarketSubmission, String>",
-      "remoteWorkspacePolicy": "LocalOnly"
-    },
-    {
-      "id": "appearance_market_withdraw_submission",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:market-submissions"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_withdraw_submission",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_withdraw_submission( request: AppearanceMarketSubmissionIdRequest, ) -> Result<AppearanceMarketSubmission, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "append_flow_chat_diagnostics",
