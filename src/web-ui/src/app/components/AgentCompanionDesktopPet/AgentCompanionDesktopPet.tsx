@@ -19,16 +19,14 @@ import { aiExperienceConfigService, type AgentCompanionPetSelection, type AIExpe
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 import { AgentCompanionPet, type AgentCompanionPetMood } from '@/flow_chat/components/AgentCompanionPet';
 import type { AgentCompanionMood } from '@/flow_chat/utils/agentCompanionMood';
-import type {
-  AgentCompanionActivityPayload,
-  AgentCompanionTaskState,
-  AgentCompanionTaskStatus,
-} from '@/flow_chat/utils/agentCompanionActivity';
+import { deriveLivingLineState, type AgentCompanionActivityPayload, type AgentCompanionTaskState, type AgentCompanionTaskStatus, type LivingLineActivityState } from '@/flow_chat/utils/agentCompanionActivity';
 import type { AgentCompanionPetCommand } from '@/app/services/agentCompanionPetCommands';
 import { createLogger } from '@/shared/utils/logger';
 import { isImeOwnedKeyboardEvent } from '@/shared/utils/ime';
 import { isReducedMotionPreferred } from '@/shared/utils/motionPreference';
 import { getPetLookDirection } from '@/infrastructure/config/services/agentCompanionPetSprite';
+import { isGrokLivePet } from '@/infrastructure/config/services/grokLivePetIdentity';
+import { isLivingLinePet } from '@/infrastructure/config/services/livingLinePetIdentity';
 import { startAgentCompanionDrag } from '@/infrastructure/config/services/AgentCompanionDragService';
 import { prepareAgentCompanionPointerDrag, type CompanionPointerDrag } from '@/infrastructure/config/services/AgentCompanionPointerDragService';
 import { createCompanionWindowResizer, isCompanionViewportShort } from './agentCompanionWindowResize';
@@ -39,6 +37,7 @@ const DEFAULT_PET_SIZE = 96;
 const DEFAULT_PETDEX_DISPLAY_SIZE = { width: 96, height: 104 };
 const PETDEX_DESKTOP_SCALE = 0.5;
 const WINDOW_MAX_WIDTH = 360;
+const LIVING_LINE_WINDOW_MAX_WIDTH = 480;
 const WINDOW_MAX_HEIGHT = 240;
 const WINDOW_HORIZONTAL_GAP = 8;
 const MAX_VISIBLE_BUBBLES = 2;
@@ -61,6 +60,7 @@ const PET_MAX_DISPLAY_SIZE = {
   width: WINDOW_MAX_WIDTH - BUBBLE_WIDTH - WINDOW_HORIZONTAL_GAP - WINDOW_EDGE_BUFFER,
   height: WINDOW_MAX_HEIGHT - WINDOW_VERTICAL_BUFFER * 2,
 };
+
 const POINTER_HOVER_POLL_INTERVAL_MS = 120;
 const PET_LOOK_HOLD_MS = 960;
 /** Clicks shorter/smaller than this use `show_main_window`; beyond it we start dragging. */
@@ -167,6 +167,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
     () => aiExperienceConfigService.getSettings().agent_companion_pet ?? null,
   );
   const [mood, setMood] = useState<AgentCompanionMood>('rest');
+  const [livingLineState, setLivingLineState] = useState<LivingLineActivityState>('idle');
   const [tasks, setTasks] = useState<AgentCompanionTaskStatus[]>([]);
   const previousTasksRef = useRef<AgentCompanionTaskStatus[] | null>(null);
   const [reaction, setReaction] = useState<{ action: 'jumping' | 'waving' } | null>(null);
@@ -192,9 +193,11 @@ export const AgentCompanionDesktopPet: React.FC = () => {
   const [typedOutputBySessionId, setTypedOutputBySessionId] = useState<Record<string, TypewriterOutputState>>({});
   const [isHoveringPet, setIsHoveringPet] = useState(false);
   const [lookDirection, setLookDirection] = useState<number | null>(null);
+  const [grokGaze, setGrokGaze] = useState<[number, number] | null>(null);
   const trackPetLook = mood === 'rest' && pet != null && (
     pet.spriteVersionNumber === 2 || (pet.source === 'user' && pet.spriteVersionNumber == null)
   );
+  const trackGrokGaze = isGrokLivePet(pet);
   const [isDraggingPet, setIsDraggingPet] = useState(false);
   const [dragDirection, setDragDirection] = useState<'left' | 'right'>('right');
   const stopDragRef = useRef<(() => void) | null>(null);
@@ -236,11 +239,18 @@ export const AgentCompanionDesktopPet: React.FC = () => {
   // Task activity and explicit dismissals own visibility. Depending on the
   // main window's focus made new tasks appear only after touching the pet.
   const displayTasks = [...visibleTasks].reverse();
+  const livingLinePet = isLivingLinePet(pet);
+  const windowMaxWidth = livingLinePet ? LIVING_LINE_WINDOW_MAX_WIDTH : WINDOW_MAX_WIDTH;
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const activePetSize = pet && petFrameSize
     ? petFrameSize
-    : pet
-      ? DEFAULT_PETDEX_DISPLAY_SIZE
-      : { width: DEFAULT_PET_SIZE, height: DEFAULT_PET_SIZE };
+    : pet && isLivingLinePet(pet)
+      ? { width: 216, height: 96 }
+      : pet && isGrokLivePet(pet)
+        ? { width: DEFAULT_PET_SIZE, height: DEFAULT_PET_SIZE }
+      : pet
+        ? DEFAULT_PETDEX_DISPLAY_SIZE
+        : { width: DEFAULT_PET_SIZE, height: DEFAULT_PET_SIZE };
 
   useEffect(() => {
     let disposed = false;
@@ -301,6 +311,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       lastActivityEmittedAtRef.current = emittedAt;
       lastActivitySequenceRef.current = sequence;
       setMood(event.payload.mood);
+      setLivingLineState(event.payload.livingLineState ?? deriveLivingLineState(event.payload.tasks));
       // The first snapshot is hydration, not a new request.
       if (previousTasksRef.current === null) previousTasksRef.current = event.payload.tasks;
       setTasks(event.payload.tasks);
@@ -489,7 +500,12 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       )
       : activePetSize.height) + WINDOW_VERTICAL_BUFFER * 2;
     const measuredBubbleWidth = bubbleCount > 0 ? BUBBLE_WIDTH : 0;
-    const measuredDockWidth = bubbleCount > 0
+    // Keep the wide renderer's bubble slot reserved even without a task. Native
+    // resize and reposition are asynchronous, so growing/shrinking by the pet frame height on
+    // bubble arrival/removal otherwise exposes a clipped, left-shifted frame.
+    const measuredDockWidth = livingLinePet
+      ? BUBBLE_WIDTH + WINDOW_HORIZONTAL_GAP + activePetSize.width + WINDOW_EDGE_BUFFER
+      : bubbleCount > 0
       ? measuredBubbleWidth + WINDOW_HORIZONTAL_GAP + activePetSize.width + WINDOW_EDGE_BUFFER
       : Math.max(
         activePetSize.width,
@@ -498,7 +514,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       );
     const nextWidth = Math.max(
       activePetSize.width,
-      Math.min(WINDOW_MAX_WIDTH, Math.ceil(measuredDockWidth)),
+      Math.min(windowMaxWidth, Math.ceil(measuredDockWidth)),
     );
     // Rounded up so converting to physical pixels cannot shave a row or column.
     const nextWindowHeight = Math.ceil(nextHeight);
@@ -511,8 +527,11 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       return;
     }
 
+    const target = windowResizer.target();
+    if (target?.width === nextWidth && target.height === nextWindowHeight
+      && !isCompanionViewportShort({ width: window.innerWidth, height: window.innerHeight }, target)) return;
     windowResizer.request({ width: nextWidth, height: nextWindowHeight });
-  }, [activePetSize.height, activePetSize.width, composingSessionId, visibleTasks, windowResizer]);
+  }, [activePetSize.height, activePetSize.width, composingSessionId, livingLinePet, visibleTasks, windowMaxWidth, windowResizer]);
 
   useEffect(() => {
     // The host can change the window behind the dock's back (display or DPI
@@ -520,6 +539,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
     // viewport comes out smaller than the dock needs; the host ignores requests
     // that already match, so this cannot loop.
     const reassertWindowSize = () => {
+      setViewportWidth(window.innerWidth);
       const target = windowResizer.target();
       if (target && isCompanionViewportShort(
         { width: window.innerWidth, height: window.innerHeight },
@@ -539,7 +559,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
   }, [windowResizer]);
 
   useEffect(() => {
-    if (IS_WINDOWS_WEBVIEW && !trackPetLook) {
+    if (IS_WINDOWS_WEBVIEW && !trackPetLook && !trackGrokGaze) {
       return;
     }
 
@@ -656,6 +676,17 @@ export const AgentCompanionDesktopPet: React.FC = () => {
           lastPointerMovedAt = now;
           lastPointer = { x: pointer.x, y: pointer.y };
         }
+        const gazeX = cachedHitboxRect && !isReducedMotionPreferred()
+          ? Math.max(-1, Math.min(1, (pointerX - (cachedHitboxRect.left + cachedHitboxRect.width / 2)) / (cachedHitboxRect.width * 2)))
+          : 0;
+        const gazeY = cachedHitboxRect && !isReducedMotionPreferred()
+          ? Math.max(-1, Math.min(1, -(pointerY - (cachedHitboxRect.top + cachedHitboxRect.height / 2)) / (cachedHitboxRect.height * 2)))
+          : 0;
+        if (trackGrokGaze) {
+          setGrokGaze(previous => previous?.[0] === gazeX && previous?.[1] === gazeY ? previous : [gazeX, gazeY]);
+        } else {
+          setGrokGaze(null);
+        }
         setLookDirection(cachedHitboxRect && now - lastPointerMovedAt < PET_LOOK_HOLD_MS && !isReducedMotionPreferred()
           ? getPetLookDirection(
             pointerX - (cachedHitboxRect.left + cachedHitboxRect.width / 2),
@@ -689,7 +720,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       if (document.visibilityState === 'hidden') return;
       // Keep the same visible hover latency, and refresh immediately on return.
       void pollPointerHover();
-      intervalId = window.setInterval(() => { void pollPointerHover(); }, POINTER_HOVER_POLL_INTERVAL_MS);
+      intervalId = window.setInterval(() => { void pollPointerHover(); }, trackGrokGaze ? 33 : POINTER_HOVER_POLL_INTERVAL_MS);
     };
     document.addEventListener('visibilitychange', syncPointerPolling);
     syncPointerPolling();
@@ -702,7 +733,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       removeWindowMovedListener?.();
       removeScaleChangedListener?.();
     };
-  }, [trackPetLook]);
+  }, [trackPetLook, trackGrokGaze]);
 
   const showMainWindowFromPet = useCallback(async () => {
     try {
@@ -1041,6 +1072,10 @@ export const AgentCompanionDesktopPet: React.FC = () => {
     '--openbitfun-agent-companion-gap': `${WINDOW_HORIZONTAL_GAP}px`,
     '--openbitfun-agent-companion-vertical-buffer': `${WINDOW_VERTICAL_BUFFER}px`,
   } as React.CSSProperties;
+  // Keep bubbles measurable but do not paint them outside the old viewport
+  // while the initial/switch-to-LivingLine native resize is still pending.
+  const bubblesFit = !livingLinePet
+    || viewportWidth + 1 >= BUBBLE_WIDTH + WINDOW_HORIZONTAL_GAP + activePetSize.width;
   const isSingleTask = visibleTasks.length === 1;
   const hasAttentionTask = visibleTasks.some(task => task.state === 'attention');
   const overlayTask = overlay && overlay.kind !== 'pet-menu'
@@ -1105,6 +1140,8 @@ export const AgentCompanionDesktopPet: React.FC = () => {
               scrollbarVisibility="hidden"
               className={`openbitfun-agent-companion-window__bubbles${isSingleTask ? ' openbitfun-agent-companion-window__bubbles--single' : ''}`}
               aria-live="polite"
+              aria-hidden={!bubblesFit || undefined}
+              style={{ visibility: bubblesFit ? undefined : 'hidden' }}
               onDoubleClick={event => event.stopPropagation()}
              data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="bubbles">
               {displayTasks.map(task => {
@@ -1251,12 +1288,16 @@ export const AgentCompanionDesktopPet: React.FC = () => {
            data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="hitbox" data-openbitfun-state={hasAttentionTask ? 'attention' : undefined}>
             <AgentCompanionPet
               mood={displayMood}
+              needsAttention={tasks.some(task => task.state === 'attention')}
+              toolWaiting={tasks.some(task => task.state === 'waiting')}
+              livingLineState={livingLineState}
               dragDirection={dragDirection}
               action={!isDraggingPet
                 ? mood === 'rest' && visibleTasks.some(task => task.state === 'error') ? 'failed' : reaction?.action ?? null
                 : null}
               pet={pet}
               lookDirection={trackPetLook && !isDraggingPet ? lookDirection : null}
+              gaze={trackGrokGaze && !isDraggingPet ? grokGaze : null}
               nativePetdexSize
               petdexScale={PETDEX_DESKTOP_SCALE}
               petdexMaxSize={PET_MAX_DISPLAY_SIZE}

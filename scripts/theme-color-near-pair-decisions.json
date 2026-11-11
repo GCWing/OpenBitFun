@@ -28,6 +28,24 @@
       "owner": "src/web-ui/src/infrastructure/appearance/builtins/buildBuiltinAppearance.ts",
       "reason": "The first value is the light xterm blue and the second is the light workbench link hover. They belong to different renderer and document interaction semantics.",
       "reevaluateWhen": "Reevaluate only when terminal ANSI and workbench link roles share a reviewed palette contract."
+    },
+    {
+      "root": "src/web-ui",
+      "domain": "appUi",
+      "key": "#ffffff06 <-> #ffffff08",
+      "decision": "keep",
+      "owner": "src/web-ui/src/flow_chat/components/living-line/preview.scss",
+      "reason": "LivingLine preview uses slightly different translucent white surfaces for stage background and control borders; merging would reduce depth separation in the debug preview.",
+      "reevaluateWhen": "Only after a LivingLine preview visual review removes the need for distinct translucent surfaces."
+    },
+    {
+      "root": "src/web-ui",
+      "domain": "appUi",
+      "key": "#ffffff20 <-> #ffffff24",
+      "decision": "keep",
+      "owner": "src/web-ui/src/flow_chat/components/living-line/preview.scss",
+      "reason": "LivingLine preview uses slightly different translucent white borders for cards and controls; merging would reduce edge separation in the debug preview.",
+      "reevaluateWhen": "Only after a LivingLine preview visual review removes the need for distinct translucent borders."
     }
   ]
 }

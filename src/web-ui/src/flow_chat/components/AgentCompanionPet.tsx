@@ -26,6 +26,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { AgentCompanionMood } from '../utils/agentCompanionMood';
 import type { AgentCompanionPetSelection } from '@/infrastructure/config/services/AIExperienceConfigService';
 import { resolveAgentCompanionPet } from '@/infrastructure/config/services/AgentCompanionPetService';
+import { isGrokLivePet } from '@/infrastructure/config/services/grokLivePetIdentity';
+import { isLivingLinePet } from '@/infrastructure/config/services/livingLinePetIdentity';
+import { LivingLinePet } from './living-line/LivingLinePet';
+import type { LivingState } from './living-line/geometry';
+import { GrokLivePet } from './GrokLivePet';
 import { getPetAnimationFrameCount, getPetLookFrame, getPetSpriteFrameSize } from '@/infrastructure/config/services/agentCompanionPetSprite';
 import { createLogger } from '@/shared/utils/logger';
 import { useI18n } from '@/infrastructure/i18n';
@@ -40,7 +45,11 @@ export interface AgentCompanionPetProps {
   /** Fits the native petdex frame into this box, preserving its aspect ratio. */
   petdexMaxSize?: { width: number; height: number };
   lookDirection?: number | null;
+  gaze?: [number, number] | null;
   action?: 'jumping' | 'waving' | 'failed' | null;
+  needsAttention?: boolean;
+  toolWaiting?: boolean;
+  livingLineState?: LivingState;
   dragDirection?: 'left' | 'right';
   onPetFrameSizeChange?: (size: { width: number; height: number } | null) => void;
 }
@@ -290,7 +299,7 @@ function pickIdleAction(prev: IdleAction | null): IdleAction {
   return pick;
 }
 
-export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = ({
+const SpriteAgentCompanionPet: React.FC<AgentCompanionPetProps> = ({
   mood,
   className = '',
   pet = null,
@@ -590,4 +599,12 @@ export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = ({
       </div>
     </div>
   );
+};
+
+export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = (props) => {
+  if (isLivingLinePet(props.pet)) {
+    const state = props.livingLineState ?? (props.mood === 'waiting' ? 'question' : props.mood === 'working' || props.mood === 'analyzing' ? 'working' : 'idle');
+    return <LivingLinePet state={state} mood={props.mood} className={props.className} onFrameSizeChange={props.onPetFrameSizeChange} />;
+  }
+  return isGrokLivePet(props.pet) ? <GrokLivePet {...props} /> : <SpriteAgentCompanionPet {...props} />;
 };

@@ -1,0 +1,26 @@
+.living-line-preview {
+  min-height: 100vh; padding: 8vh 8vw; box-sizing: border-box; color: #f3f5f3;
+  background: radial-gradient(ellipse at 50% 42%, #202d31 0%, #111719 52%, #0c1012 100%);
+  font: 14px/1.5 Inter, ui-sans-serif, system-ui, sans-serif;
+  header { display: flex; align-items: center; gap: 16px; max-width: 900px; margin: auto; }
+  header p, .living-line-caption { color: #91a4a3; font-size: 10px; letter-spacing: .18em; }
+  h1 { margin: 0; font-size: 28px; font-weight: 500; letter-spacing: -.04em; }
+  header p { margin: 0 0 3px; }
+  .living-line-mark { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid #597374; border-radius: 50%; color: #8fe0d4; }
+  .living-line-stage { max-width: 900px; min-height: 300px; margin: 8vh auto 32px; padding: 40px; display: grid; place-items: center; border: 1px solid #ffffff15; border-radius: 16px; background: #ffffff06; }
+  .living-line-art { width: min(100%, 600px); overflow: visible; path { fill: none; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 7px currentColor); } .state-ring { fill: none; stroke-width: 3.2; filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 9px currentColor); } .state-glow { filter: blur(5px); } }
+  .is-hovering .main-path { visibility: hidden; }
+  .is-hovering .hover-path:first-of-type, .is-hovering .hover-path:last-of-type { opacity: .4; }
+  .living-line-caption { margin-top: 12px; }
+  .living-line-controls, .living-line-options { max-width: 900px; margin: 20px auto; display: flex; justify-content: center; gap: 10px; }
+  button { padding: 9px 20px; border: 1px solid #ffffff24; border-radius: 999px; background: #ffffff08; color: inherit; text-transform: capitalize; cursor: pointer; &:hover, &[aria-pressed='true'] { border-color: #80d8cd; color: #9de7dd; background: #80d8cd12; } }
+  .living-line-options { color: #a9b6b5; gap: 28px; label { cursor: pointer; } input { accent-color: #80d8cd; vertical-align: middle; } }
+  .living-line-settings { max-width: 900px; margin: 24px auto; padding: 16px 20px; border: 1px solid #ffffff20; border-radius: 12px; background: #ffffff06; color: #d9e3e1; }
+  .living-line-settings summary { cursor: pointer; color: #a9d8d2; }
+  .settings-colors { display: flex; flex-wrap: wrap; gap: 16px; margin: 18px 0; label { display: flex; align-items: center; gap: 8px; color: #a9b6b5; } input { width: 36px; height: 28px; border: 0; padding: 0; background: transparent; } }
+  .settings-ranges { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 24px; label { display: grid; gap: 4px; color: #a9b6b5; } label span { display: flex; justify-content: space-between; } output { color: #d9e3e1; font-variant-numeric: tabular-nums; } input { width: 100%; accent-color: #80d8cd; } }
+  .settings-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; color: #91a4a3; font-size: 12px; }
+  footer { margin: 8vh auto 0; max-width: 900px; text-align: center; color: #586867; font-size: 12px; }
+}
+@media (max-width: 600px) { .living-line-preview { padding: 6vh 5vw; .living-line-stage { padding: 16px; } .living-line-options { flex-wrap: wrap; } } }
+@media (prefers-reduced-motion: reduce) { .living-line-art { transition: none; } }

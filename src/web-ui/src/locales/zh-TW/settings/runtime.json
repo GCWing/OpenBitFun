@@ -34,6 +34,42 @@
       "deleteConfirmBody": "從本機刪除此已匯入的寵物形象？此操作無法復原。",
       "deleteSuccess": "已刪除匯入的形象",
       "deleteFailed": "刪除匯入形象失敗",
+      "grok": {
+        "title": "GrokLive 設定",
+        "size": "大小（像素）",
+        "frameRate": "目標幀率",
+        "auto": "自動（最高 120）",
+        "follow": "視線跟隨滑鼠",
+        "idleMotion": "閒置動作與眨眼",
+        "glow": "額外發光（可能降低幀率）",
+        "showStats": "除錯幀統計（僅開發版）",
+        "reset": "恢復預設",
+        "bodyColor": "球體顏色",
+        "bodyColor.black": "黑色",
+        "bodyColor.darkGray": "深灰色",
+        "bodyColor.gray": "灰色",
+        "bodyColor.custom": "自訂",
+        "eyeColor": "眼睛顏色",
+        "eyeColor.white": "白色",
+        "eyeColor.lightGray": "淺灰色",
+        "eyeColor.custom": "自訂"
+      },
+      "livingLine": {
+        "title": "LivingLine 設定",
+        "reset": "恢復預設",
+        "lineColor": "線條顏色",
+        "questionColor": "提問顏色",
+        "errorColor": "錯誤顏色",
+        "flowColor": "流動顏色",
+        "lineWidth": "線條寬度",
+        "flowLength": "流動長度",
+        "flowWidth": "流動寬度",
+        "flowBlur": "流動模糊",
+        "flowIntensity": "流動強度",
+        "lineGlowBlur": "線條發光模糊",
+        "idlePeriodSeconds": "閒置週期（秒）",
+        "workingPeriodSeconds": "工作週期（秒）"
+      },
       "presets": {
         "blueGolden": {
           "name": "困困"

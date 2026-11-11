@@ -12,6 +12,13 @@ packages:
   - "website"
   - "tests/e2e"
 
+allowBuilds:
+  '@parcel/watcher': false
+  edgedriver: false
+  esbuild: true
+  geckodriver: false
+  sharp: true
+
 patchedDependencies:
   "@xterm/xterm@6.1.0-beta.141": patches/@xterm__xterm@6.1.0-beta.141.patch
   mdast-util-gfm-autolink-literal@2.0.1: patches/mdast-util-gfm-autolink-literal@2.0.1.patch

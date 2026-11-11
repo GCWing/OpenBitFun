@@ -55,9 +55,11 @@
           "src/flow_chat/assets/subagent-avatars/robot-18.svg",
           "src/flow_chat/assets/subagent-avatars/robot-19.svg",
           "src/flow_chat/assets/subagent-avatars/robot-20.svg",
-          "src/tools/generative-ui/components/openui",
+"src/tools/generative-ui/components/openui",
           "src/tools/generative-ui/components/openuiLibrary.tsx",
-          "src/tools/generative-ui/components/vendor"
+          "src/tools/generative-ui/components/vendor",
+          "public/agent-companion-pets/grok-live/preview.svg",
+          "src/flow_chat/components/grok-live/grok-player.js"
         ]
       }
     },
@@ -514,6 +516,20 @@
     }
   ],
   "exclusions": [
+    {
+      "id": "grok-live-thumbnail",
+      "path": "src/web-ui/public/agent-companion-pets/grok-live/preview.svg",
+      "kind": "authored-vector-artwork",
+      "owner": "GrokLive preview in AgentCompanionPetService",
+      "reason": "The transparent pet picker artwork requires an invariant black body and two opaque white eyes; it is an illustration, not theme-dependent UI chrome."
+    },
+    {
+      "id": "grok-live-vendor-mask",
+      "path": "src/web-ui/src/flow_chat/components/grok-live/grok-player.js",
+      "kind": "vendored-renderer",
+      "owner": "src/web-ui/src/flow_chat/components/grok-live/SOURCE.txt",
+      "reason": "The local animation renderer needs fixed black and white mask-pixel semantics; this narrowly scoped vendor file is not product UI chrome."
+    },
     {
       "id": "subagent-hatch-artwork",
       "path": "design-system/packages/ui/src/brand/assets/subagent-egg.svg",
