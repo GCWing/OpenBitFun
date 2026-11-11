@@ -1,0 +1,31 @@
+{
+  "title": "Terminal",
+  "emptyState": "Aucun terminal ouvert",
+  "actions": {
+    "closeView": "Fermer la vue du terminal",
+    "stopTerminal": "Arrêter le terminal"
+  },
+  "dialog": {
+    "editTerminal": {
+      "title": "Modifier le terminal",
+      "nameLabel": "Nom",
+      "namePlaceholder": "Nom du terminal",
+      "workingDirectoryLabel": "Chemin de démarrage",
+      "workingDirectoryPlaceholder": "Chemin à ouvrir au démarrage du terminal",
+      "workingDirectoryHint": "Utilisé à la réouverture d’un terminal enregistré",
+      "startupCommandLabel": "Commande de démarrage (facultatif)",
+      "startupCommandPlaceholder": "Commande à exécuter après le démarrage du terminal",
+      "startupCommandHint": "Cette commande s’exécute automatiquement après le démarrage du terminal",
+      "cancel": "Annuler",
+      "save": "Enregistrer"
+    }
+  },
+  "linkForward": {
+    "label": "Lien du terminal",
+    "created": "Port distant {{remotePort}} transféré vers {{localAddress}}.",
+    "failed": "Impossible de transférer le port distant {{port}} : {{error}}",
+    "peerUnsupported": "Les ports ne peuvent pas être transférés pendant le contrôle d’un autre appareil. Ce lien pointe vers l’hôte distant, et non vers cette machine.",
+    "openAnyway": "Ouvrir le lien malgré tout",
+    "noPort": "Ce lien pointe vers l’hôte distant, et non vers cette machine, et ne comporte aucun port à transférer."
+  }
+}

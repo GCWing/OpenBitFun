@@ -215,8 +215,11 @@ function generateWebLocaleContract(contract, sharedTermsByLocale) {
   const unknownFallbacks = contract.unknownLocaleFallbackChain;
   const sharedTerms = sharedTermsForLocales(sharedTermsByLocale, locales);
 
+  const contractLocaleIds = contract.locales.map((locale) => locale.id);
   return `${generatedHeader('ts')}export const LOCALE_IDS = ${tsArray(locales.map((locale) => locale.id))} as const;
 export type LocaleId = (typeof LOCALE_IDS)[number];
+export const CONTRACT_LOCALE_IDS = ${tsArray(contractLocaleIds)} as const;
+export type ContractLocaleId = (typeof CONTRACT_LOCALE_IDS)[number];
 
 export const DEFAULT_LOCALE = ${jsonString(defaultLocale)} satisfies LocaleId;
 export const DEFAULT_FALLBACK_LOCALE = ${jsonString(fallbackLocale)} satisfies LocaleId;
@@ -309,7 +312,7 @@ ${contract.locales.map((locale) => {
   const webLocale = localeMap.get(locale.id);
   return `  ${jsonString(locale.id)}: ${jsonString(webLocale.englishName)}`;
 }).join(',\n')}
-} as const satisfies Record<LocaleId, string>;
+} as const satisfies Record<ContractLocaleId, string>;
 `;
 }
 
@@ -594,20 +597,20 @@ mod tests {
 
     #[test]
     fn generated_contract_resolves_aliases_like_runtime_locale_contract() {
-        assert_eq!(
-            generated_locale_entry_from_code("zh-Hant-TW").map(|entry| entry.id),
-            Some(LocaleId::ZhTW)
-        );
+        for entry in GENERATED_LOCALE_CONTRACT {
+            for alias in entry.aliases {
+                assert_eq!(
+                    generated_locale_entry_from_code(alias).map(|resolved| resolved.id),
+                    Some(entry.id)
+                );
+            }
+        }
         assert_eq!(
             generated_locale_entry_from_code("  ZH-hans-CN  ").map(|entry| entry.id),
             Some(LocaleId::ZhCN)
         );
         assert_eq!(
-            generated_locale_entry_from_code("en").map(|entry| entry.id),
-            Some(LocaleId::EnUS)
-        );
-        assert_eq!(
-            generated_locale_entry_from_code("fr-FR").map(|entry| entry.id),
+            generated_locale_entry_from_code("xx-XX").map(|entry| entry.id),
             None
         );
     }

@@ -1,0 +1,121 @@
+{
+  "title": "Recherche web",
+  "subtitle": "Choisissez le service que votre Agent utilise pour trouver des informations sur le web.",
+  "providers": {
+    "exaMcpFree": "Exa MCP (gratuit)",
+    "exaSearchApi": "Exa Search API",
+    "tavily": "Tavily Search API",
+    "deepseek": "DeepSeek Search API",
+    "keenable": "Keenable Search API",
+    "openbitfunSearchHttp": "Service HTTP personnalisé"
+  },
+  "providerDescriptions": {
+    "exaMcpFree": "Aucune clé API ni configuration supplémentaire nécessaire",
+    "exaSearchApi": "Nécessite une clé API Exa ; saisissez-la et enregistrez-la ci-dessous",
+    "tavily": "Nécessite une clé API Tavily ; saisissez-la et enregistrez-la ci-dessous",
+    "deepseek": "Nécessite une clé API DeepSeek ; saisissez-la et enregistrez-la ci-dessous",
+    "keenable": "Aucune clé API nécessaire ; enregistrez éventuellement une clé API Keenable ci-dessous pour des limites de débit plus élevées",
+    "openbitfunSearchHttp": "Connectez un service de recherche auto-hébergé ou interne avec son adresse et l’authentification requise"
+  },
+  "auth": {
+    "none": "Aucune authentification",
+    "bearer": "Identifiants Bearer",
+    "header": "Identifiants d’en-tête restreints"
+  },
+  "sections": {
+    "provider": {
+      "title": "Fournisseur de recherche",
+      "description": "La recherche est configurée séparément des modèles de conversation ; le service détermine l’adresse et les identifiants nécessaires"
+    },
+    "http": {
+      "title": "Service de recherche personnalisé",
+      "description": "Le service doit implémenter le protocole Alex Search HTTP v1"
+    },
+    "protocol": {
+      "title": "Spécification du protocole",
+      "description": "Format de requête et de réponse requis pour un endpoint de recherche personnalisé."
+    },
+    "credential": {
+      "title": "Identifiants du service de recherche",
+      "description": "Les clés sont chiffrées sur l’hôte qui effectue les recherches et ne sont pas synchronisées avec d’autres appareils"
+    }
+  },
+  "fields": {
+    "provider": {
+      "label": "Fournisseur",
+      "description": "Utilisé pour les recherches web suivantes après l’enregistrement",
+      "placeholder": "Choisir un service de recherche"
+    },
+    "providerHelp": {
+      "label": "Prérequis de configuration",
+      "description": "Choisissez un service de recherche pour afficher ses prérequis de configuration."
+    },
+    "endpoint": {
+      "label": "URL du service",
+      "description": "HTTPS est requis. HTTP simple est accepté uniquement pour localhost ou une adresse IP de bouclage.",
+      "placeholder": "https://search.example.com/search"
+    },
+    "authMode": {
+      "label": "Authentification"
+    },
+    "headerName": {
+      "label": "Nom de l’en-tête d’identification",
+      "description": "Saisissez un en-tête personnalisé tel que X-API-Key ; choisissez les identifiants Bearer pour Authorization",
+      "placeholder": "X-Search-Key"
+    },
+    "credentialStatus": {
+      "label": "Statut"
+    },
+    "credential": {
+      "label": "Clé API ou secret",
+      "description": "L’enregistrement d’une nouvelle valeur remplace la clé de ce service sur l’hôte d’exécution",
+      "placeholder": "Saisir les identifiants",
+      "replacePlaceholder": "Saisir de nouveaux identifiants pour remplacer la valeur enregistrée"
+    }
+  },
+  "status": {
+    "configured": "Configuré sur l’hôte d’exécution",
+    "missing": "Identifiants absents sur l’hôte d’exécution",
+    "optionalMissing": "Aucune clé enregistrée ; les recherches utilisent le niveau gratuit sans clé"
+  },
+  "protocol": {
+    "request": {
+      "title": "Requête",
+      "description": "L’endpoint doit accepter cette requête POST. query doit être une chaîne non vide et maxResults un entier compris entre 1 et 20."
+    },
+    "success": {
+      "title": "Réponse de succès",
+      "description": "Une réponse 2xx doit utiliser application/json ou le type de média v1. title et url sont obligatoires ; publishedAt et author peuvent être omis ou null."
+    },
+    "error": {
+      "title": "Réponse d’erreur",
+      "description": "Une réponse non 2xx peut utiliser cette structure. Alex mappe également les erreurs courantes à partir du statut HTTP lorsque l’enveloppe est absente.",
+      "codes": "Codes pris en charge :"
+    },
+    "notes": {
+      "resultHandling": "Le service peut renvoyer moins de maxResults résultats. Alex valide, déduplique et tronque les résultats, et ignore les champs de racine de réponse inconnus.",
+      "transportLimits": "Alex ne suit pas les redirections. Les requêtes expirent après 60 secondes et les corps de réponse sont limités à 1 MiB."
+    }
+  },
+  "actions": {
+    "retry": "Recharger la configuration",
+    "saveConfiguration": "Enregistrer la configuration",
+    "saveCredential": "Enregistrer",
+    "clearCredential": "Effacer",
+    "copyProtocol": "Copier le protocole"
+  },
+  "messages": {
+    "loading": "Chargement des paramètres de recherche web…",
+    "loadFailed": "Échec du chargement des paramètres de recherche web.",
+    "saved": "Configuration de recherche web enregistrée.",
+    "saveFailed": "Échec de l’enregistrement de la configuration de recherche web.",
+    "credentialRequired": "Saisissez des identifiants avant d’enregistrer.",
+    "credentialSaved": "Identifiants enregistrés sur l’hôte d’exécution",
+    "credentialSaveFailed": "Échec de l’enregistrement des identifiants sur l’hôte d’exécution",
+    "credentialSaveFailedAfterConfigSaved": "La configuration de recherche a été enregistrée, mais les identifiants n’ont pas pu l’être sur l’hôte d’exécution. Saisissez à nouveau les identifiants et réessayez",
+    "credentialCleared": "Identifiants effacés de l’hôte d’exécution",
+    "credentialClearFailed": "Échec de l’effacement des identifiants de l’hôte d’exécution",
+    "protocolCopied": "Protocole copié.",
+    "protocolCopyFailed": "Échec de la copie du protocole."
+  }
+}

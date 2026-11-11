@@ -1,37 +1,32 @@
 {
   "version": 1,
-  "defaultLocale": "zh-CN",
+  "defaultLocale": "fr-FR",
   "fallbackLocale": "en-US",
   "unknownLocaleFallbackChain": [
-    "en-US",
-    "zh-CN"
+    "en-US"
   ],
   "surfaceDefaults": {
-    "android": "zh-CN",
-    "web-ui": "zh-CN",
-    "mobile-web": "en-US",
-    "installer": "en-US",
-    "core": "zh-CN"
+    "android": "fr-FR",
+    "web-ui": "fr-FR",
+    "mobile-web": "fr-FR",
+    "installer": "fr-FR",
+    "core": "fr-FR"
   },
   "surfaceOrders": {
     "web-ui": [
-      "zh-CN",
-      "en-US",
-      "zh-TW"
+      "fr-FR",
+      "en-US"
     ],
     "mobile-web": [
-      "zh-CN",
-      "zh-TW",
+      "fr-FR",
       "en-US"
     ],
     "installer": [
-      "en-US",
-      "zh-CN",
-      "zh-TW"
+      "fr-FR",
+      "en-US"
     ],
     "core": [
-      "zh-CN",
-      "zh-TW",
+      "fr-FR",
       "en-US"
     ]
   },
@@ -106,7 +101,7 @@
         "en-US"
       ],
       "contentFallbacks": [
-        "zh-CN"
+        "fr-FR"
       ],
       "modelLanguageName": "English",
       "shortModelInstruction": "Use English",
@@ -147,6 +142,35 @@
         "label": "Traditional Chinese",
         "nativeName": "繁體中文",
         "continueLabel": "繼續"
+      }
+    },
+    {
+      "id": "fr-FR",
+      "rustVariant": "FrFr",
+      "name": "Français",
+      "englishName": "French",
+      "nativeName": "Français",
+      "shortName": "FR",
+      "rtl": false,
+      "dateFormat": "DD/MM/YYYY",
+      "numberFormat": {
+        "decimal": ",",
+        "thousands": " "
+      },
+      "aliases": [
+        "fr",
+        "fr-FR"
+      ],
+      "contentFallbacks": [
+        "en-US"
+      ],
+      "modelLanguageName": "French",
+      "shortModelInstruction": "Use French",
+      "installer": {
+        "uiCode": "fr",
+        "label": "French",
+        "nativeName": "Français",
+        "continueLabel": "Continuer"
       }
     }
   ]

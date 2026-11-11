@@ -1,0 +1,120 @@
+{
+  "title": "Statistiques d’appels",
+  "subtitle": "Utilisation des modèles enregistrée dans les espaces de travail de cet hôte Alex, sous-agents inclus",
+  "overview": {
+    "title": "Période sélectionnée",
+    "description": "Calculé dans le fuseau {{timeZone}}"
+  },
+  "timeRange": {
+    "label": "Période",
+    "last24Hours": "24 dernières heures",
+    "today": "Aujourd’hui",
+    "thisWeek": "Cette semaine",
+    "thisMonth": "Ce mois-ci",
+    "all": "Tout l’historique"
+  },
+  "granularity": {
+    "label": "Granularité",
+    "hour": "Par heure",
+    "day": "Par jour"
+  },
+  "filter": {
+    "kind": {
+      "label": "Champ de filtre",
+      "all": "Tous les champs",
+      "provider": "Fournisseur",
+      "model": "Modèle"
+    },
+    "placeholder": "Rechercher dans ces informations",
+    "inputLabel": "Rechercher dans les sources d’utilisation",
+    "clear": "Effacer le filtre",
+    "empty": {
+      "title": "Aucun résultat",
+      "description": "Essayez un autre terme de recherche."
+    }
+  },
+  "refresh": "Actualiser",
+  "loading": "Chargement des statistiques d’utilisation…",
+  "loadFailed": "Échec du chargement des statistiques d’utilisation. Veuillez réessayer.",
+  "unsupported": "L’appareil connecté utilise une version d’Alex plus ancienne qui ne prend pas en charge les statistiques d’utilisation.",
+  "empty": {
+    "title": "Aucune donnée d’utilisation pour le moment",
+    "description": "Les statistiques d’appels de modèles apparaîtront ici dès que vous commencerez à dialoguer avec un modèle.",
+    "periodTitle": "Aucun appel sur cette période",
+    "periodDescription": "Choisissez une autre période pour consulter d’autres enregistrements."
+  },
+  "summary": {
+    "requests": "Requêtes de modèles enregistrées",
+    "tokens": "Total de jetons",
+    "inputTokens": "Jetons d’entrée",
+    "outputTokens": "Jetons de sortie",
+    "cachedTokens": "Jetons en cache",
+    "cacheHitRate": "Taux de réussite du cache"
+  },
+  "chart": {
+    "totalTokens": "{{count}} jetons",
+    "tokensUnit": "Jetons"
+  },
+  "activity": {
+    "title": "Utilisation quotidienne : six derniers mois",
+    "description": "Plage fixe de six mois · {{timeZone}}",
+    "day": "{{date}} : {{tokens}} jetons",
+    "total": "{{tokens}} jetons au total",
+    "less": "Moins",
+    "more": "Plus"
+  },
+  "distributions": {
+    "title": "Sources d’utilisation",
+    "byModel": "Répartition par modèle",
+    "byGroup": "Répartition par fournisseur",
+    "byEndpoint": "Détails par endpoint",
+    "more": "Autres sources",
+    "showAll": "Tout afficher",
+    "showLess": "Afficher moins"
+  },
+  "details": {
+    "title": "Plus de détails"
+  },
+  "cache": {
+    "title": "Données de cache",
+    "description": "Calculé uniquement lorsque le fournisseur de modèles signale des données de cache",
+    "unavailable": "Non fourni",
+    "note": "Les jetons de lecture du cache sont inclus dans les jetons d’entrée. Le taux de réussite n’utilise que les requêtes pour lesquelles des données de cache ont été signalées."
+  },
+  "cacheHitRate": {
+    "title": "Taux de réussite du cache des modèles"
+  },
+  "attribution": {
+    "deletedConfig": "Configuration supprimée",
+    "unknownConfig": "Configuration inconnue",
+    "unknownProvider": "Fournisseur inconnu",
+    "unknownModel": "Modèle inconnu",
+    "unknownEndpoint": "Endpoint inconnu"
+  },
+  "trend": {
+    "title": "Tendance détaillée",
+    "summary": "Consultez l’évolution des entrées et des sorties sur la période sélectionnée",
+    "description": "Utilisation des jetons d’entrée et de sortie dans le temps",
+    "range": "{{start}} à {{end}}",
+    "partial": "Affichage de la tendance la plus récente ; le total couvre l’ensemble de la période sélectionnée",
+    "dataTableCaption": "Détails de la tendance d’utilisation des jetons",
+    "time": "Heure",
+    "legend": {
+      "input": "Entrée",
+      "output": "Sortie",
+      "cacheRead": "Lecture du cache",
+      "cacheHitRate": "Taux de réussite du cache"
+    }
+  },
+  "table": {
+    "caption": "Détails par {{dimension}}",
+    "model": "Modèle",
+    "group": "Fournisseur",
+    "endpoint": "Endpoint",
+    "requests": "Requêtes",
+    "requestsCount": "{{count}} requêtes",
+    "tokens": "Jetons",
+    "share": "Part",
+    "shareValue": "{{share}} du total"
+  }
+}

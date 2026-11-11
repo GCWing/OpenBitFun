@@ -1,0 +1,119 @@
+{
+  "title": "Éditeur",
+  "subtitle": "Ajustez l’affichage du code, l’indentation et le formatage automatique",
+  "sections": {
+    "appearance": {
+      "title": "Apparence",
+      "description": "Ces paramètres affectent le texte de l’éditeur et le curseur ; ajustez la taille du texte de l’interface et des conversations sur la page Apparence"
+    },
+    "behavior": {
+      "title": "Comportement d’édition",
+      "description": "Les paramètres d’indentation affectent le texte nouvellement saisi ; le retour à la ligne automatique ne modifie que l’affichage"
+    },
+    "display": {
+      "title": "Paramètres d’affichage",
+      "description": "Les repères visuels aident à naviguer dans le code et à identifier les espaces sans modifier le contenu des fichiers"
+    },
+    "advanced": {
+      "title": "Fonctions avancées",
+      "description": "La coloration change l’apparence du code ; le formatage et le nettoyage des espaces modifient le texte"
+    }
+  },
+  "appearance": {
+    "font": "Police",
+    "fontDefault": "Suivre la police de code de l’application",
+    "fontWeight": "Épaisseur de la police",
+    "fontWeightNormal": "Normal",
+    "fontWeightBold": "Gras",
+    "fontSize": "Taille de la police",
+    "lineHeight": "Hauteur de ligne",
+    "cursorStyle": "Style du curseur",
+    "cursorBlinking": "Clignotement du curseur",
+    "cursorStyles": {
+      "line": "Ligne",
+      "lineThin": "Ligne fine",
+      "block": "Bloc",
+      "blockOutline": "Contour de bloc",
+      "underline": "Soulignement",
+      "underlineThin": "Soulignement fin"
+    },
+    "cursorBlinkings": {
+      "blink": "Clignoter",
+      "smooth": "Progressif",
+      "phase": "Phase",
+      "expand": "Expansion",
+      "solid": "Fixe"
+    },
+    "lineHeightDesc": "Multiple de la taille de la police ; par exemple, un texte de 14 px avec un facteur de 1,5 donne une hauteur de ligne de 21 px"
+  },
+  "behavior": {
+    "tabSize": "Largeur des tabulations",
+    "insertSpaces": "Insérer des espaces",
+    "insertSpacesDesc": "Activé : la touche Tab insère des espaces jusqu’au prochain taquet de tabulation. Désactivé : insère un caractère de tabulation. Le texte existant n’est pas converti.",
+    "wordWrap": "Retour à la ligne automatique",
+    "wordWrapOptions": {
+      "off": "Désactivé",
+      "on": "Activé",
+      "wordWrapColumn": "À la colonne",
+      "bounded": "Au viewport et à la colonne"
+    },
+    "lineNumbers": "Numéros de ligne",
+    "lineNumberOptions": {
+      "on": "Activé",
+      "off": "Désactivé",
+      "relative": "Relatif",
+      "interval": "Intervalle"
+    },
+    "smoothScrolling": "Défilement fluide",
+    "scrollBeyondLastLine": "Défilement au-delà de la dernière ligne",
+    "scrollBeyondLastLineDesc": "Défiler au-delà de la fin du fichier pour centrer le contenu",
+    "tabSizeDesc": "Colonnes de caractères par taquet de tabulation ; définit aussi la largeur d’indentation lors de l’utilisation d’espaces",
+    "detectIndentation": "Détection de l’indentation",
+    "detectIndentationDesc": "Utilise l’indentation du fichier à l’ouverture ; sinon, utilise les valeurs par défaut ci-dessus. Désactivez pour toujours utiliser vos valeurs par défaut. La barre d’état ne modifie que le fichier actuel.",
+    "detectIndentationUnsupported": "Cet hôte ne prend pas en charge l’enregistrement des paramètres de détection d’indentation. Mettez l’hôte à niveau pour activer cette option."
+  },
+  "display": {
+    "minimap": "Afficher la minimap",
+    "minimapDesc": "Affiche la minimap du code sur le côté de l’éditeur",
+    "minimapPosition": "Position de la minimap",
+    "minimapPositionLeft": "Gauche",
+    "minimapPositionRight": "Droite",
+    "minimapSize": "Taille de la minimap",
+    "minimapSizeAuto": "Auto",
+    "minimapSizeFill": "Remplir",
+    "minimapSizeFit": "Ajuster",
+    "whitespace": "Affichage des espaces",
+    "whitespaceOptions": {
+      "none": "Aucun",
+      "boundary": "Limites",
+      "selection": "Sélection",
+      "trailing": "Fins de ligne",
+      "all": "Tous"
+    },
+    "lineHighlight": "Surlignage de la ligne actuelle",
+    "lineHighlightOptions": {
+      "none": "Aucun",
+      "gutter": "Marge uniquement",
+      "line": "Ligne uniquement",
+      "all": "Tout"
+    }
+  },
+  "advanced": {
+    "semanticHighlighting": "Coloration sémantique",
+    "semanticHighlightingDesc": "Colore le code selon la signification des symboles, tels que les variables et les fonctions",
+    "bracketPairColorization": "Coloration des paires de parenthèses",
+    "bracketPairColorizationDesc": "Utilise des couleurs différentes pour les paires de parenthèses imbriquées",
+    "formatOnSave": "Formatage à l’enregistrement",
+    "formatOnPaste": "Formatage au collage",
+    "trimAutoWhitespace": "Supprimer les espaces insérés automatiquement",
+    "trimAutoWhitespaceDesc": "Supprime les espaces en fin de ligne laissés par l’indentation automatique et d’autres actions de l’éditeur"
+  },
+  "messages": {
+    "loading": "Chargement...",
+    "loadFailed": "Échec du chargement de la configuration",
+    "loadFailedLocked": "Les paramètres de l’éditeur n’ont pas pu être lus. Cette page est verrouillée afin d’éviter d’écraser la configuration actuelle par les valeurs par défaut.",
+    "retry": "Recharger",
+    "saveSuccess": "Configuration enregistrée ; les éditeurs ouverts seront mis à jour",
+    "saveFailed": "Échec de l’enregistrement de la configuration"
+  }
+}

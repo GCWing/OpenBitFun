@@ -1,0 +1,202 @@
+{
+  "defaultDesc": "Un partenaire IA dédié à la programmation, expert en analyse de code et en gestion de projet",
+  "modelSlots": {
+    "primary": {
+      "label": "Principal",
+      "desc": "Conversation générale et raisonnement"
+    },
+    "fast": {
+      "label": "Rapide",
+      "desc": "Réponses rapides et légères"
+    },
+    "compression": {
+      "label": "Compression",
+      "desc": "Compression de la longueur du contexte"
+    },
+    "image": {
+      "label": "Image",
+      "desc": "Génération et compréhension d’images"
+    },
+    "voice": {
+      "label": "Voix",
+      "desc": "Synthèse et reconnaissance vocales"
+    },
+    "retrieval": {
+      "label": "Recherche",
+      "desc": "Recherche vectorielle et embeddings"
+    }
+  },
+  "slotDefault": {
+    "primary": "Modèle principal",
+    "fast": "Modèle rapide",
+    "unconfigured": "Non configuré"
+  },
+  "modelGroups": {
+    "presets": "Préréglages système",
+    "models": "Modèles disponibles"
+  },
+  "hero": {
+    "editNameTitle": "Cliquez pour modifier le nom",
+    "editDescTitle": "Cliquez pour modifier la description",
+    "descPlaceholder": "Ajouter une description...",
+    "radarTitle": "Cliquez pour déplier · Cliquez sur les libellés de dimensions pour naviguer"
+  },
+  "identity": {
+    "emoji": "Marqueur emoji",
+    "emojiPlaceholder": "Définir le marqueur emoji",
+    "avatarChange": "Changer l’avatar de l’assistant",
+    "avatarPickerTitle": "Choisir un avatar",
+    "avatarPickerHint": "Choisissez un marqueur ou saisissez votre propre symbole",
+    "avatarPickerClose": "Fermer le sélecteur d’avatar",
+    "avatarPresets": "Choix d’avatars",
+    "avatarOfficialPresets": "Avatars IP",
+    "avatarEmojiPresets": "Emoji",
+    "avatarUseOfficialPreset": "Utiliser l’avatar {{name}}",
+    "avatarFamilies": {
+      "joystick": "compagnon à joystick noir"
+    },
+    "avatarUsePreset": "Utiliser {{emoji}} comme avatar",
+    "avatarCustom": "Symbole d’avatar personnalisé",
+    "avatarCustomPlaceholder": "Saisissez un seul symbole",
+    "avatarApply": "Appliquer",
+    "avatarAutosave": "Les modifications sont enregistrées automatiquement",
+    "avatarSaving": "Enregistrement...",
+    "avatarSaved": "Enregistré",
+    "avatarSaveFailed": "Impossible d’enregistrer",
+    "creature": "Type de rôle",
+    "creaturePlaceholderShort": "Définir le type de rôle",
+    "vibe": "Style",
+    "vibePlaceholderShort": "Définir le style",
+    "resetTooltip": "Réinitialiser la personnalité de l’assistant",
+    "resetConfirmTitle": "Réinitialiser la personnalité de l’assistant",
+    "resetConfirmMessage": "Cela rétablira BOOTSTRAP.md, SOUL.md, USER.md et IDENTITY.md à leurs modèles par défaut et écrasera le contenu actuel. Continuer ?",
+    "resetConfirmAction": "Réinitialiser",
+    "resetCancel": "Annuler",
+    "resetSuccess": "Personnalité de l’assistant réinitialisée",
+    "resetFailed": "Échec de la réinitialisation de la personnalité de l’assistant"
+  },
+  "home": {
+    "descHint": "Cliquez pour modifier le contenu d’IDENTITY.md."
+  },
+  "sections": {
+    "brain": "Cerveau",
+    "capabilities": "Capacités",
+    "interaction": "Interaction"
+  },
+  "cards": {
+    "model": "Modèles",
+    "rules": "Règles de comportement",
+    "memory": "Mémoire",
+    "toolsMcp": "Outils et MCP",
+    "skills": "Skills",
+    "preferences": "Préférences"
+  },
+  "actions": {
+    "globalManage": "Gestion globale",
+    "manage": "Gérer",
+    "selectAll": "Tout sélectionner",
+    "clearAll": "Tout effacer",
+    "reset": "Réinitialiser",
+    "collapse": "Réduire"
+  },
+  "kpi": {
+    "rules": "Utilisateur {{user}} · Projet {{project}} · {{enabled}} actives",
+    "memory": "{{count}} actifs",
+    "skills": "{{count}} actifs",
+    "toolStats": "{{enabled}}/{{total}} intégrés",
+    "toolStatsMcp": "{{enabled}}/{{total}} intégrés · MCP {{mcpHealthy}}/{{mcpTotal}}"
+  },
+  "empty": {
+    "rules": "Aucune règle configurée",
+    "memory": "Aucune mémoire",
+    "tools": "Aucun outil disponible",
+    "toolsUnsupported": "L’hôte pair connecté n’expose pas de catalogue d’outils.",
+    "toolsFailed": "Impossible de charger le catalogue d’outils. Essayez d’actualiser.",
+    "skills": "Aucun Skill"
+  },
+  "notifications": {
+    "modelUpdated": "Modèle mis à jour",
+    "updateFailed": "Échec de la mise à jour",
+    "toggleFailed": "Échec du basculement",
+    "resetSuccess": "Réinitialisation terminée",
+    "resetFailed": "Échec de la réinitialisation",
+    "resetConfirm": "Réinitialiser la configuration des outils ?"
+  },
+  "radar": {
+    "title": "Radar de personnalité",
+    "subtitle": "Cliquez sur les libellés de dimensions pour accéder aux paramètres correspondants",
+    "dims": {
+      "creativity": "Créativité",
+      "rigor": "Rigueur",
+      "autonomy": "Autonomie",
+      "memory": "Mémoire",
+      "expression": "Expression",
+      "adaptability": "Adaptabilité"
+    }
+  },
+  "prefs": {
+    "visualMode": "Mode visuel",
+    "visualModeDesc": "Afficher un retour visuel pendant l’exécution",
+    "sessionTitle": "Nommer automatiquement les sessions",
+    "sessionTitleDesc": "Générer automatiquement les titres des nouvelles sessions"
+  },
+  "nursery": {
+    "backToGallery": "Accueil $t(shared:agents.Claw)",
+    "gallery": {
+      "title": "$t(shared:agents.Claw)",
+      "subtitle": "Votre compagnon IA personnel, qui utilise vos préférences et votre contexte pour accompagner votre travail et vos tâches quotidiennes au fil du temps.",
+      "newAssistant": "Créer un assistant",
+      "createConfirmMessage": "Créer un nouvel assistant ? Après sa création, vous pourrez configurer son identité, ses outils et sa personnalité.",
+      "creating": "Création...",
+      "createFailed": "Impossible de créer l’assistant.",
+      "loadFailed": "Impossible de charger les assistants.",
+      "emptyTitle": "Aucun assistant pour le moment",
+      "emptySubtitle": "Créez un assistant pour lui donner un rôle, des outils et une personnalité.",
+      "assistantsTitle": "Vos assistants"
+    },
+    "tabs": {
+      "identity": "Identité",
+      "personality": "Personnalité",
+      "ability": "Capacités",
+      "memory": "Mémoire"
+    },
+    "card": {
+      "unnamed": "Assistant sans nom",
+      "noVibe": "Un assistant en attente de définition",
+      "configure": "Configurer l’assistant",
+      "open": "Ouvrir l’assistant",
+      "openFailed": "Échec de l’ouverture de l’assistant",
+      "close": "Fermer l’assistant",
+      "closeFailed": "Échec de la fermeture de l’assistant",
+      "tokenTitle": "Estimation de l’utilisation du contexte",
+      "primaryBadge": "Principal",
+      "setPrimary": "Définir comme principal",
+      "setPrimarySuccess": "Assistant principal mis à jour.",
+      "setPrimaryFailed": "Impossible de définir l’assistant principal.",
+      "delete": "Supprimer l’assistant",
+      "deleteFailed": "Impossible de supprimer l’assistant.",
+      "deleteConfirmTitle": "Supprimer l’assistant",
+      "deleteConfirmMessage": "Supprimer l’assistant « {{name}} » ? Cette action est irréversible.",
+      "deleteConfirm": "Supprimer",
+      "deleteCancel": "Annuler"
+    },
+    "assistant": {
+      "inheritGroup": "Hériter du modèle",
+      "inheritPrimary": "Hériter du modèle (principal)",
+      "inheritFast": "Hériter du modèle (rapide)",
+      "personaDocsTitle": "Documents clés",
+      "newSessionTitle": "Démarrer une conversation",
+      "sessionsSectionTitle": "Sessions",
+      "scheduledSessionsTitle": "Sessions planifiées",
+      "scheduledSessionsNoWorkspace": "Sélectionnez un espace de travail d’assistant pour gérer les sessions planifiées.",
+      "personaDocs": {
+        "IDENTITY": "Identité",
+        "SOUL": "Personnalité centrale",
+        "USER": "Profil utilisateur"
+      },
+      "personaDocSaveFailed": "Échec de l’enregistrement du document",
+      "personaDocLoadFailed": "Échec du chargement du document",
+      "closeDetail": "Fermer les détails"
+    }
+  }
+}

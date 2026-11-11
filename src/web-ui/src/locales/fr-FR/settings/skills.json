@@ -1,0 +1,128 @@
+{
+  "title": "Gestion des Skills",
+  "subtitle": "Gérez les Skills au niveau utilisateur et au niveau projet",
+  "toolbar": {
+    "searchPlaceholder": "Rechercher des Skills...",
+    "refreshTooltip": "Actualiser",
+    "addTooltip": "Ajouter un Skill"
+  },
+  "filters": {
+    "all": "Tout",
+    "user": "Utilisateur",
+    "project": "Projet"
+  },
+  "market": {
+    "title": "Marketplace de Skills",
+    "subtitle": "Recherchez et téléchargez des Skills réutilisables (portée par défaut : projet actuel)",
+    "searchPlaceholder": "Rechercher des Skills dans la Marketplace...",
+    "refreshTooltip": "Actualiser les résultats de la Marketplace",
+    "loading": "Chargement des Skills de la Marketplace...",
+    "errorPrefix": "Échec du chargement de la Marketplace : ",
+    "empty": {
+      "noMatch": "Aucun Skill correspondant trouvé dans la Marketplace",
+      "noSkills": "Aucun Skill disponible dans la Marketplace"
+    },
+    "item": {
+      "sourceLabel": "Source : ",
+      "installs": "Installations : {{count}}",
+      "noDescription": "Aucune description disponible",
+      "downloadProject": "Télécharger vers le projet",
+      "installed": "Installé",
+      "installedTooltip": "Ce Skill est déjà installé",
+      "downloading": "Téléchargement...",
+      "downloadUser": "Télécharger vers l’utilisateur"
+    },
+    "settings": {
+      "provider": "Format API",
+      "url": "URL de la Marketplace",
+      "urlHint": "Saisissez la racine de la Marketplace, sous-chemin inclus. SKILLS_API_URL ne remplace la source officielle par défaut que tant que son URL reste https://skills.sh. Une URL personnalisée modifiée utilise l’adresse saisie.",
+      "token": "Jeton API (facultatif)",
+      "tokenHint": "Envoyé comme jeton Bearer s’il est fourni. Enregistré dans la configuration de l’application sur cet hôte.",
+      "save": "Enregistrer les sources",
+      "saving": "Enregistrement...",
+      "invalidUrl": "Saisissez des URL de Marketplace HTTP(S) valides, sans identifiants, paramètres de requête ni fragments.",
+      "unsupported": "Cet hôte ne prend pas en charge plusieurs sources de Marketplace. Mettez l’hôte à niveau pour configurer des sources.",
+      "title": "Sources de la Marketplace",
+      "name": "Nom de la source",
+      "enabled": "Activé",
+      "remove": "Retirer la source",
+      "add": "Ajouter une source",
+      "newSource": "Nouvelle source de Marketplace",
+      "empty": "Aucune source configurée. Enregistrez pour désactiver la recherche dans la Marketplace."
+    }
+  },
+  "form": {
+    "title": "Ajouter un Skill",
+    "closeTooltip": "Fermer",
+    "level": {
+      "label": "Niveau",
+      "user": "Niveau utilisateur (global)",
+      "project": "Niveau projet (espace de travail actuel)",
+      "projectDisabled": " - ouvrez d’abord un espace de travail",
+      "currentWorkspace": "Espace de travail actuel : {{path}}"
+    },
+    "path": {
+      "label": "Chemin du dossier du Skill",
+      "placeholder": "Sélectionnez ou saisissez le chemin du dossier du Skill",
+      "browseTooltip": "Parcourir",
+      "hint": "Le dossier doit contenir un fichier SKILL.md valide"
+    },
+    "validating": "Validation...",
+    "actions": {
+      "cancel": "Annuler",
+      "add": "Ajouter",
+      "adding": "Ajout..."
+    }
+  },
+  "list": {
+    "loading": "Chargement...",
+    "errorPrefix": "Échec du chargement : ",
+    "empty": {
+      "noMatch": "Aucun Skill correspondant trouvé",
+      "noSkills": "Aucun Skill configuré pour le moment"
+    },
+    "item": {
+      "user": "Utilisateur",
+      "project": "Projet",
+      "localUser": "Cet appareil · Utilisateur",
+      "remoteProject": "Espace de travail distant · Projet",
+      "deleteTooltip": "Supprimer",
+      "pathLabel": "Chemin :",
+      "sourceLabel": "Source :",
+      "shadowed": "Masqué",
+      "shadowedTooltip": "Le skill de même nom provenant de {{source}} a normalement une priorité plus élevée.",
+      "shadowedLabel": "Source prioritaire :",
+      "shadowedDetail": "Le skill de même nom provenant de {{source}}",
+      "unknownSource": "une autre source"
+    }
+  },
+  "deleteModal": {
+    "title": "Confirmer la suppression",
+    "message": "Voulez-vous vraiment supprimer le Skill « {{name}} » ?",
+    "warning": "Le dossier du Skill sera supprimé ; cette action est irréversible.",
+    "cancel": "Annuler",
+    "delete": "Supprimer"
+  },
+  "messages": {
+    "invalidPath": "Veuillez sélectionner un dossier de Skill valide",
+    "noWorkspace": "Veuillez d’abord ouvrir un espace de travail pour ajouter un Skill de niveau projet",
+    "addSuccess": "Skill « {{name}} » ajouté",
+    "addFailed": "Échec de l’ajout : {{error}}",
+    "deleteSuccess": "Skill « {{name}} » supprimé",
+    "deleteFailed": "Échec de la suppression : {{error}}",
+    "toggleSuccess": "Skill « {{name}} » {{status}}",
+    "toggleFailed": "Échec du basculement : {{error}}",
+    "marketDownloadSuccess": "Skill « {{name}} » téléchargé",
+    "marketDownloadFailed": "Échec du téléchargement : {{error}}",
+    "enabled": "activé",
+    "disabled": "désactivé"
+  },
+  "section": {
+    "user": {
+      "description": "Skills installés pour l’utilisateur actuel."
+    },
+    "project": {
+      "description": "Skills de niveau projet dans l’espace de travail actuel."
+    }
+  }
+}

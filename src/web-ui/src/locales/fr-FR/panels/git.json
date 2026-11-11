@@ -1,0 +1,470 @@
+{
+  "reviewPlatform": {
+    "stateFilterUnsupported": "Cet hôte ne prend pas en charge les filtres d’état Gitee à l’échelle du dépôt. Mettez à jour l’hôte connecté pour utiliser ces onglets.",
+    "fileLimit": "Gitee a peut-être tronqué la liste des fichiers. Les nombres de fichiers et de modifications peuvent être incomplets.",
+    "commitLimit": "Gitee renvoie au maximum 250 commits. L’historique des commits peut être incomplet.",
+    "commentsLimited": "Seule une partie des commentaires a pu être chargée.",
+    "checksLimited": "Seule une partie des vérifications CI a pu être chargée.",
+    "ciHeadUnavailable": "Les vérifications CI sont indisponibles car la demande de fusion n’a pas de révision de tête exacte.",
+    "limited": "Certaines données du fournisseur sont incomplètes."
+  },
+  "title": "Git",
+  "init": {
+    "title": "Initialiser Git",
+    "notRepository": "Le répertoire courant n’est pas un dépôt Git",
+    "initButton": "Initialiser le dépôt",
+    "hint": "Cliquez sur le bouton pour initialiser avec l’assistant IA",
+    "chatPrompt": "Veuillez m’aider à initialiser un dépôt Git dans l’espace de travail actuel."
+  },
+  "loading": {
+    "text": "Chargement des informations Git...",
+    "hint": "Cliquez sur Actualiser si le chargement prend trop de temps"
+  },
+  "common": {
+    "loading": "Chargement...",
+    "retry": "Réessayer",
+    "refresh": "Actualiser",
+    "saving": "Enregistrement...",
+    "processing": "Traitement...",
+    "unknown": "Inconnu",
+    "unknownError": "Erreur inconnue"
+  },
+  "actions": {
+    "refresh": "Actualiser le statut Git",
+    "forceRefresh": "Forcer l’actualisation",
+    "push": "Push",
+    "forcePush": "Push forcé",
+    "pull": "Pull",
+    "stageAll": "Tout indexer",
+    "stageSelected": "Indexer les {{count}} fichiers sélectionnés",
+    "selectFilesToStage": "Sélectionnez d’abord les fichiers à indexer",
+    "commit": "Commit",
+    "commitWithCount": "Commit ({{count}})",
+    "aiGenerateCommit": "Générer le message de commit avec l’IA",
+    "cancelGenerate": "Annuler la génération",
+    "aiCodeReview": "Revue de code par l’IA",
+    "viewAllDiff": "Voir tout le diff",
+    "discardFile": "Abandonner ce fichier",
+    "deleteFile": "Supprimer ce fichier",
+    "discardAllChanges": "Abandonner toutes les modifications",
+    "copyCommitHash": "Copier le hash du commit",
+    "resetToCommit": "Réinitialiser à ce commit",
+    "createBranchFromCommit": "Créer une branche à partir du commit",
+    "switchBranch": "Basculer vers cette branche",
+    "createBranchFrom": "Créer une branche à partir de celle-ci",
+    "deleteBranch": "Supprimer la branche",
+    "viewBranchHistory": "Cliquez pour voir l’historique des commits",
+    "viewBranchGraph": "Voir le graphe des branches"
+  },
+  "tabs": {
+    "changes": "Fichiers modifiés",
+    "commits": "Historique des commits",
+    "branches": "Branches",
+    "changeDiff": "Diff des modifications",
+    "branchGraph": "Graphe des branches Git",
+    "branchCommitHistory": "Historique des commits de {{branch}}"
+  },
+  "search": {
+    "files": "Rechercher des fichiers...",
+    "commits": "Rechercher des commits...",
+    "branches": "Rechercher des branches...",
+    "clear": "Effacer la recherche"
+  },
+  "branchHistory": {
+    "loading": "Chargement de l’historique des commits de {{branch}}...",
+    "loadFailed": "Échec du chargement de l’historique des commits",
+    "loadFailedWithMessage": "Échec du chargement : {{error}}",
+    "retry": "Réessayer",
+    "selection": {
+      "selectAll": "Tout sélectionner",
+      "deselectAll": "Tout désélectionner"
+    },
+    "allAuthors": "Tous les auteurs",
+    "authorPlaceholder": "Auteur",
+    "cherryPick": "Cherry-pick",
+    "cherryPickRunning": "Exécution...",
+    "cherryPickFailed": "Échec du cherry-pick",
+    "cherryPickOperationFailed": "Échec de l’opération de cherry-pick",
+    "copied": "Copié",
+    "copy": "Cliquez pour copier",
+    "refresh": "Actualiser",
+    "details": {
+      "fullHash": "Hash complet :",
+      "commitTime": "Date du commit :"
+    },
+    "notifications": {
+      "cherryPickSuccess": "Cherry-pick de {{count}} commits dans {{branch}} effectué",
+      "cherryPickPartial": "Cherry-pick de {{count}} commits effectué, mais le commit {{hash}} a échoué : {{error}}",
+      "cherryPickFailedWithError": "Échec du cherry-pick du commit {{hash}} : {{error}}"
+    }
+  },
+  "graph": {
+    "loading": "Chargement de l’historique des commits...",
+    "loadFailedWithMessage": "Échec du chargement : {{error}}",
+    "empty": "Aucun historique de commits",
+    "title": "Historique des commits",
+    "searchPlaceholder": "Rechercher par message de commit, auteur ou hash...",
+    "searchPrevious": "Résultat précédent (Maj+Entrée)",
+    "searchNext": "Résultat suivant (Entrée)",
+    "noResults": "Aucun résultat",
+    "tooltip": {
+      "author": "Auteur",
+      "hash": "Hash",
+      "time": "Heure",
+      "refs": "Refs:",
+      "currentRefSuffix": "(actuel)"
+    }
+  },
+  "diffView": {
+    "errors": {
+      "repositoryPathEmpty": "Le chemin du dépôt ne peut pas être vide",
+      "loadFailed": "Échec du chargement du diff"
+    },
+    "loading": "Chargement du diff...",
+    "loadFailedTitle": "Échec du chargement du diff",
+    "workingTree": "Arbre de travail",
+    "staged": "Indexé",
+    "collapseAll": "Tout réduire",
+    "expandAll": "Tout développer",
+    "loadingData": "Chargement des données de diff...",
+    "empty": {
+      "title": "Aucun diff trouvé",
+      "workingTreeClean": "L’arbre de travail ne contient aucune modification",
+      "noDiffBetweenCommits": "Aucun diff entre les commits sélectionnés",
+      "selectRepository": "Sélectionnez un dépôt Git pour afficher le diff"
+    }
+  },
+  "diffEditor": {
+    "saveFailedWithMessage": "Échec de l’enregistrement du fichier : {{error}}",
+    "confirmAcceptAll": "Êtes-vous sûr de vouloir accepter toutes les modifications et indexer ce fichier ?\n\nFichier : {{filePath}}\n+{{additions}} lignes, -{{deletions}} lignes",
+    "acceptFailedWithMessage": "Échec de l’acceptation des modifications : {{error}}",
+    "confirmRejectAll": "Êtes-vous sûr de vouloir abandonner toutes les modifications ? Cette action est irréversible.\n\nFichier : {{filePath}}\n{{changes}} modifications seront abandonnées",
+    "rejectFailedWithMessage": "Échec du rejet des modifications : {{error}}",
+    "completed": {
+      "acceptedTitle": "Toutes les modifications acceptées",
+      "rejectedTitle": "Toutes les modifications rejetées",
+      "stagedHint": "Fichier indexé et prêt pour le commit",
+      "rejectedHint": "Toutes les modifications abandonnées et fichier restauré"
+    }
+  },
+  "review": {
+    "noFilesToReview": "Aucune modification de fichier disponible pour la revue de code",
+    "displayMessage": "Revue des fichiers Git modifiés :\n{{files}}",
+    "requestMessage": "Veuillez examiner les fichiers Git modifiés suivants :\n\n{{files}}",
+    "sendFailed": "Échec de l’envoi de la demande de revue de code"
+  },
+  "relativeTime": {
+    "justNow": "à l’instant",
+    "minutesAgo": "il y a {{count}} minutes",
+    "hoursAgo": "il y a {{count}} heures",
+    "daysAgo": "il y a {{count}} jours",
+    "weeksAgo": "il y a {{count}} semaines",
+    "monthsAgo": "il y a {{count}} mois",
+    "yearsAgo": "il y a {{count}} ans"
+  },
+  "status": {
+    "staged": "Indexé",
+    "unstaged": "Non indexé",
+    "untracked": "Non suivi",
+    "ahead": "En avance sur le dépôt distant",
+    "behind": "En retard sur le dépôt distant",
+    "modified": "M",
+    "added": "A",
+    "deleted": "D",
+    "renamed": "R",
+    "untrackedBadge": "U"
+  },
+  "fileGroups": {
+    "unstaged": "Non indexé",
+    "untracked": "Non suivi",
+    "staged": "Indexé",
+    "unstagedWithCount": "Non indexé ({{count}})",
+    "untrackedWithCount": "Non suivi ({{count}})",
+    "stagedWithCount": "Indexé ({{count}})",
+    "unstagedWithFilter": "Non indexé ({{filtered}} / {{total}})",
+    "untrackedWithFilter": "Non suivi ({{filtered}} / {{total}})",
+    "stagedWithFilter": "Indexé ({{filtered}} / {{total}})",
+    "moreFiles": "{{count}} fichiers supplémentaires non affichés..."
+  },
+  "commit": {
+    "inputPlaceholder": "Saisir le message de commit...",
+    "inputPlaceholderNoStaged": "Indexez des fichiers pour saisir le message de commit...",
+    "changedFiles": "Fichiers modifiés ({{count}})",
+    "author": "Auteur",
+    "unknown": "Inconnu"
+  },
+  "branch": {
+    "current": "Actuelle"
+  },
+  "quickSwitch": {
+    "refresh": "Actualiser les branches",
+    "menuLabel": "Changer de branche",
+    "searchLabel": "Rechercher des branches",
+    "searchPlaceholder": "Rechercher des branches...",
+    "loading": "Chargement...",
+    "conflict": {
+      "title": "Commiter les modifications pour changer de branche",
+      "description": "Vos modifications des fichiers suivants seraient écrasées par le checkout :",
+      "instruction": "Veuillez commiter vos modifications pour continuer.",
+      "filesUnavailable": "Git n’a pas indiqué quels fichiers modifiés bloquent le checkout.",
+      "cancel": "Annuler",
+      "commitAndSwitch": "Commiter et changer de branche…",
+      "commitTitle": "Commiter les modifications et basculer vers {{branch}}",
+      "commitDescription": "Toutes les modifications de cet espace de travail seront indexées et commitées sur la branche actuelle avant de basculer vers {{branch}}.",
+      "retryDescription": "Les modifications ont été commitées. Réessayez de basculer vers {{branch}}.",
+      "commitMessageLabel": "Message de commit",
+      "commitMessagePlaceholder": "Saisir le message de commit...",
+      "commitMessageRequired": "Saisissez un message de commit pour continuer.",
+      "commitAction": "Commiter et changer",
+      "retrySwitchAction": "Réessayer le changement",
+      "stageFailed": "Impossible d’indexer les modifications : {{error}}",
+      "commitFailed": "Impossible de commiter les modifications : {{error}}",
+      "retryFailed": "Les modifications ont été commitées, mais la branche n’a toujours pas pu être changée : {{error}}"
+    },
+    "notifications": {
+      "switchSuccess": "Basculé vers la branche {{branch}}"
+    },
+    "errors": {
+      "title": "Échec du changement de branche",
+      "refreshFailed": "Impossible d’actualiser les branches. La liste précédente est affichée.",
+      "loadFailed": "Impossible de charger les branches",
+      "switchFailed": "Échec du changement de branche",
+      "switchFailedWithMessage": "Échec du changement de branche : {{error}}",
+      "localChanges": "Veuillez d’abord commiter ou stash vos modifications locales",
+      "indexConflict": "Veuillez d’abord résoudre les conflits d’index actuels",
+      "unexpected": "Erreur inattendue lors du changement de branche"
+    }
+  },
+  "selection": {
+    "selectAll": "Sélectionner tous les fichiers non indexés",
+    "deselectAll": "Tout désélectionner",
+    "selectFolder": "Sélectionner tous les fichiers de ce dossier",
+    "deselectFolder": "Désélectionner ce dossier",
+    "selectFile": "Sélectionner ce fichier",
+    "deselectFile": "Désélectionner"
+  },
+  "empty": {
+    "noChanges": "Aucune modification de fichier",
+    "noMatchingFiles": "Aucun fichier correspondant",
+    "noCommits": "Aucun commit",
+    "noMatchingCommits": "Aucun commit correspondant",
+    "noBranches": "Aucune branche",
+    "noMatchingBranches": "Aucune branche correspondante"
+  },
+  "tooltips": {
+    "viewDiff": "Cliquez pour voir le diff",
+    "expandDetails": "Développer les détails",
+    "collapseDetails": "Réduire les détails",
+    "resizeFileList": "Faites glisser pour redimensionner la liste de fichiers et la zone de diff"
+  },
+  "dialog": {
+    "createBranch": {
+      "title": "Créer une branche à partir du commit",
+      "description": "Une nouvelle branche sera créée à partir du commit {{hash}}",
+      "placeholder": "Saisir le nom de la branche",
+      "confirm": "Créer",
+      "cancel": "Annuler"
+    },
+    "createNewBranch": {
+      "title": "Créer une nouvelle branche",
+      "baseBranch": "Basée sur la branche",
+      "nameLabel": "Nom de la nouvelle branche",
+      "namePlaceholder": "p. ex. feature/new-feature ou bugfix/issue-123",
+      "namingHintTitle": "Suggestions de nommage des branches :",
+      "namingHints": {
+        "featureLabel": "Branche de fonctionnalité :",
+        "featureExample": "feature/feature-name",
+        "bugfixLabel": "Branche de correction d’anomalie :",
+        "bugfixExample": "bugfix/issue-description",
+        "hotfixLabel": "Branche hotfix :",
+        "hotfixExample": "hotfix/fix-description",
+        "releaseLabel": "Branche de release :",
+        "releaseExample": "release/version"
+      },
+      "confirm": "Créer la branche",
+      "cancel": "Annuler"
+    }
+  },
+  "validation": {
+    "branchNameInvalid": "Le nom de branche ne peut contenir que des lettres, des chiffres, des points, des tirets bas, des tirets et des barres obliques",
+    "branchNameExists": "Le nom de branche existe déjà",
+    "branchNameEmpty": "Le nom de branche ne peut pas être vide",
+    "branchNameContainsDoubleDot": "Le nom de branche ne peut pas contenir « .. »",
+    "branchNameContainsDoubleSlash": "Le nom de branche ne peut pas contenir « // »",
+    "branchNameDotEdge": "Le nom de branche ne peut ni commencer ni finir par « . »",
+    "branchNameSlashEdge": "Le nom de branche ne peut ni commencer ni finir par « / »",
+    "branchNameSpaces": "Le nom de branche ne peut pas contenir d’espaces",
+    "branchNameSpecialChars": "Le nom de branche ne peut pas contenir les caractères spéciaux suivants : ^ ~ : ? * [ \\",
+    "branchNameAtBrace": "Le nom de branche ne peut pas contenir « @{ »",
+    "branchNameExistsWithName": "La branche « {{name}} » existe déjà"
+  },
+  "operations": {
+    "addFilesTitle": "Ajouter des fichiers",
+    "commitChangesTitle": "Commiter les modifications",
+    "pushTitle": "Push des modifications",
+    "pushTitleForce": "Push des modifications (forcé)",
+    "pushProgress": "Push vers le dépôt distant...",
+    "pullTitle": "Pull des modifications",
+    "pullProgress": "Pull depuis le dépôt distant...",
+    "checkoutTitle": "Basculement vers la branche {{branch}}",
+    "createBranchTitle": "Création de la branche {{branch}}",
+    "deleteBranchTitle": "Suppression de la branche {{branch}}",
+    "resetFilesTitle": "Réinitialiser les fichiers"
+  },
+  "advancedOperations": {
+    "merge": "Fusionner la branche",
+    "rebase": "Rebase de la branche",
+    "stash": "Stash des modifications",
+    "applyStash": "Appliquer le stash",
+    "popStash": "Pop du stash",
+    "dropStash": "Supprimer le stash",
+    "cherryPick": "Cherry-pick du commit",
+    "revert": "Revert du commit",
+    "resetCommit": "Réinitialiser le commit"
+  },
+  "settingsView": {
+    "title": "Paramètres Git",
+    "loading": "Chargement des paramètres Git...",
+    "loadFailedTitle": "Échec du chargement des paramètres",
+    "retry": "Réessayer",
+    "refresh": "Actualiser les paramètres",
+    "dismissError": "Ignorer l’erreur",
+    "dismissSuccess": "Ignorer le message de succès",
+    "saving": "Enregistrement...",
+    "save": "Enregistrer les paramètres",
+    "success": {
+      "saveConfig": "Paramètres enregistrés avec succès"
+    },
+    "errors": {
+      "loadConfigFailed": "Échec du chargement de la configuration",
+      "saveConfigFailed": "Échec de l’enregistrement de la configuration"
+    },
+    "tabs": {
+      "user": "Utilisateur",
+      "repository": "Dépôt",
+      "advanced": "Avancé"
+    },
+    "sections": {
+      "user": {
+        "title": "Informations utilisateur",
+        "description": "Ces informations servent d’identité d’auteur pour les commits Git",
+        "nameLabel": "Nom",
+        "namePlaceholder": "Saisissez votre nom",
+        "emailLabel": "Adresse e-mail",
+        "emailPlaceholder": "Saisissez votre adresse e-mail"
+      },
+      "editor": {
+        "title": "Paramètres de l’éditeur",
+        "defaultEditorLabel": "Éditeur par défaut"
+      },
+      "lineEndings": {
+        "title": "Fins de ligne",
+        "autocrlfLabel": "CRLF automatique",
+        "options": {
+          "auto": "Auto (recommandé sous Windows)",
+          "input": "Input (recommandé sous macOS/Linux)",
+          "disabled": "Ne pas convertir"
+        }
+      },
+      "remotes": {
+        "title": "Dépôts distants",
+        "urlLabel": "URL",
+        "urlPlaceholder": "URL du dépôt distant"
+      },
+      "core": {
+        "title": "Paramètres principaux",
+        "ignoreCaseLabel": "Ignorer la casse des noms de fichiers",
+        "ignoreCaseDescription": "Activer sur les systèmes de fichiers insensibles à la casse"
+      },
+      "branch": {
+        "title": "Paramètres de branche",
+        "branchLabel": "Branche : {{branch}}",
+        "remoteLabel": "Distante",
+        "mergeLabel": "Fusionner la branche"
+      }
+    }
+  },
+  "errors": {
+    "addFailed": "Échec de l’ajout des fichiers",
+    "commitFailed": "Échec du commit",
+    "pushFailed": "Échec du push",
+    "pushFailedWithCheck": "Échec du push. Vérifiez votre connexion réseau et vos autorisations.",
+    "pullFailed": "Échec du pull",
+    "pullFailedWithCheck": "Échec du pull. Vérifiez votre connexion réseau et vos autorisations.",
+    "checkoutFailed": "Échec du changement de branche",
+    "createBranchFailed": "Échec de la création de la branche",
+    "deleteBranchFailed": "Échec de la suppression de la branche",
+    "resetFilesFailed": "Échec de la réinitialisation des fichiers",
+    "resetCommitFailed": "Échec de la réinitialisation au commit",
+    "cherryPickFailed": "Échec du cherry-pick",
+    "cherryPickAbortFailed": "Échec de l’abandon du cherry-pick",
+    "cherryPickContinueFailed": "Échec de la reprise du cherry-pick",
+    "refreshFailed": "Échec de l’actualisation",
+    "checkoutFailedTitle": "Échec du changement de branche",
+    "createBranchFailedTitle": "Échec de la création de la branche",
+    "deleteBranchFailedTitle": "Échec de la suppression de la branche",
+    "checkoutLocalChanges": "Veuillez d’abord commiter ou stash vos modifications locales",
+    "checkoutIndexConflict": "Veuillez d’abord résoudre les conflits d’index actuels (une fusion ou un rebase inachevé peut exister)",
+    "branchNotFound": "Branche {{branch}} introuvable",
+    "branchAlreadyExists": "La branche {{branch}} existe déjà",
+    "branchNotMerged": "La branche {{branch}} n’est pas entièrement fusionnée. Utilisez la suppression forcée si nécessaire.",
+    "cannotDeleteCurrentBranch": "Impossible de supprimer la branche actuellement extraite {{branch}}"
+  },
+  "notifications": {
+    "stageSuccess": "{{count}} fichiers indexés",
+    "stageFailed": "Échec de l’indexation : {{error}}",
+    "commitSuccess": "Commit effectué",
+    "commitFailed": "Échec du commit : {{error}}",
+    "fileRestored": "Fichier restauré",
+    "fileRestoreFailed": "Échec de la restauration du fichier : {{error}}",
+    "allChangesRestored": "Toutes les modifications ont été restaurées avec succès",
+    "restoreFailed": "Échec de la restauration des modifications : {{error}}",
+    "resetSuccess": "Réinitialisé au commit {{hash}}",
+    "resetFailed": "Échec de la réinitialisation : {{error}}",
+    "aiGenerateFailed": "Échec de la génération du message de commit par l’IA : {{error}}",
+    "noFilesToGenerate": "Aucune modification de fichier pour générer un message de commit",
+    "noStagedFiles": "Aucun fichier indexé à commiter",
+    "enterCommitMessage": "Veuillez saisir un message de commit",
+    "selectFilesToStage": "Sélectionnez d’abord les fichiers à indexer",
+    "cannotDeleteCurrentBranch": "Impossible de supprimer la branche actuelle",
+    "openDiffFailed": "Échec de l’ouverture du diff du fichier : {{error}}",
+    "openDiffFailedWithPath": "Échec de l’ouverture du diff du fichier : {{error}}\nFichier : {{file}}",
+    "pushUpstreamSuccess": "Branche amont définie et push effectué vers le dépôt distant",
+    "pushSuccess": "Push effectué vers le dépôt distant",
+    "pushForceSuccess": "Push forcé effectué vers le dépôt distant",
+    "pullSuccess": "Dernières modifications récupérées depuis le dépôt distant",
+    "checkoutSuccess": "Basculé vers la branche {{branch}}",
+    "createBranchSuccess": "Branche {{branch}} créée",
+    "deleteBranchSuccess": "Branche {{branch}} supprimée"
+  },
+  "confirm": {
+    "discardFile": "Avertissement : êtes-vous sûr de vouloir abandonner \"{{file}}\" ?\n\nCette action est irréversible !",
+    "deleteFile": "Avertissement : êtes-vous sûr de vouloir supprimer \"{{file}}\" ?\n\nCette action est irréversible !",
+    "discardAllChanges": "Avertissement : cette opération va :\n\n1. Abandonner toutes les modifications indexées\n2. Abandonner toutes les modifications non indexées\n3. Supprimer tous les fichiers non suivis\n\nCette action est irréversible ! Êtes-vous sûr ?",
+    "resetToCommit": "Êtes-vous sûr de vouloir réinitialiser au commit {{hash}} ?\n\nCela déplacera le pointeur de la branche actuelle vers ce commit.",
+    "deleteBranch": "Êtes-vous sûr de vouloir supprimer la branche \"{{branch}}\" ?"
+  },
+  "trust": {
+    "title": "Faire confiance à ce dépôt ?",
+    "message": "Git ne lira pas \"{{path}}\" car ce dossier appartient à un autre utilisateur.\n\nLui accorder votre confiance ajoute le dossier à votre liste globale safe.directory ; Git exécutera donc sa configuration et ses hooks depuis une arborescence dont vous n’êtes pas propriétaire. Ne continuez que si vous savez d’où vient ce dossier.",
+    "confirm": "Faire confiance au dossier",
+    "cancel": "Annuler",
+    "granted": "Git fait désormais confiance à \"{{path}}\".",
+    "alreadyTrusted": "Git accepte déjà \"{{path}}\" — il n’y a rien de plus à accorder.",
+    "unavailable": "La confiance Git (propriétaire) pour \"{{path}}\" n’a pas pu être accordée depuis cet endroit. Accordez-la sur la machine qui possède le dépôt.",
+    "unavailableWithCommand": "La confiance Git (propriétaire) pour \"{{path}}\" n’a pas pu être accordée depuis cet endroit. Exécutez cette commande sur la machine qui détient le dépôt :\n\n{{command}}",
+    "required": "Git ne lira pas \"{{path}}\" tant que vous n’aurez pas fait confiance à son propriétaire."
+  },
+  "workingCopy": {
+    "openWorkspace": "Ouvrez un espace de travail pour voir les modifications.",
+    "currentHost": "Hôte actuel",
+    "clean": "L’arbre de travail est propre",
+    "cleanDescription": "Aucune modification non commitée dans ce dépôt.",
+    "upstreamComparison": "Par rapport à l’amont : {{ahead}} en avance · {{behind}} en retard",
+    "unpushed": "Des commits locaux attendent d’être poussés. Utilisez Push ci-dessus quand vous êtes prêt.",
+    "remoteSnapshot": "Vérifiez le suivi de branche et la synchronisation distante dans Branches.",
+    "statusUnavailable": "Le statut Git est indisponible",
+    "selectFile": "Sélectionnez un fichier pour examiner ses modifications",
+    "conflicts": "{{count}} fichiers présentent des conflits non résolus."
+  }
+}

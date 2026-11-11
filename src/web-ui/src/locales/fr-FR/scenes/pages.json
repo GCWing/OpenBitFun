@@ -1,0 +1,106 @@
+{
+  "navLabel": "Pages",
+  "title": "Pages publiées",
+  "subtitle": "Ouvrez, partagez, protégez, annulez et supprimez les Pages publiées via le relais de votre compte.",
+  "loading": "Chargement de vos Pages...",
+  "loadFailed": "Impossible de charger les Pages. Vérifiez la connexion de votre compte et réessayez.",
+  "signInRequired": "Connectez-vous pour gérer vos Pages publiées.",
+  "signInHint": "Les Pages sont stockées sur le relais de votre compte et deviennent disponibles après connexion au compte.",
+  "empty": "Aucune Page n’a encore été publiée.",
+  "emptyHint": "Demandez à l’Agent de créer une Page, puis examinez chaque version enregistrée ici.",
+  "status": {
+    "deployed": "En production",
+    "savedOnly": "Enregistrée uniquement",
+    "notDeployed": "non déployée"
+  },
+  "summary": {
+    "total": "{{count}} Pages",
+    "deployed": "{{count}} en production"
+  },
+  "visibility": {
+    "label": "Visibilité",
+    "private": "Privée",
+    "relay": "Utilisateurs du relais connectés",
+    "public": "Publique",
+    "privateHint": "Connectez-vous en tant que propriétaire de la Page pour l’ouvrir",
+    "relayHint": "Connectez-vous avec n’importe quel compte de ce relais pour l’ouvrir",
+    "publicHint": "Toute personne disposant du lien peut l’ouvrir",
+    "changeAria": "Modifier la visibilité de {{title}}"
+  },
+  "titleField": {
+    "label": "Titre",
+    "inputAria": "Modifier le titre de /{{slug}}"
+  },
+  "meta": {
+    "updated": "Mis à jour le {{date}}",
+    "size": "{{size}}",
+    "files": "{{count}} fichiers"
+  },
+  "bytes": {
+    "b": "{{value}} o",
+    "kb": "{{value}} Ko",
+    "mb": "{{value}} Mo"
+  },
+  "actions": {
+    "refresh": "Actualiser",
+    "retry": "Réessayer",
+    "signIn": "Ouvrir la connexion au compte",
+    "openProduction": "Ouvrir",
+    "copyLink": "Copier le lien",
+    "versions": "Versions",
+    "manage": "Gérer",
+    "deploy": "Déployer",
+    "unpublish": "Arrêter la production",
+    "changeVisibility": "Modifier la visibilité",
+    "saveTitle": "Enregistrer le titre",
+    "deletePage": "Supprimer la Page",
+    "deleteVersion": "Supprimer la version",
+    "openVersionAria": "Ouvrir la version {{version}}",
+    "copyVersionAria": "Copier le lien de la version {{version}}",
+    "deleteVersionAria": "Supprimer la version {{version}}"
+  },
+  "manage": {
+    "title": "Détails et accès de la Page",
+    "description": "Modifiez le nom de la Page et l’exigence de connexion.",
+    "lifecycleTitle": "Production et données",
+    "lifecycleDescription": "L’arrêt de la production conserve les versions enregistrées. La suppression de la Page retire définitivement chaque version et ses données de Page Function."
+  },
+  "versions": {
+    "title": "Versions immuables",
+    "empty": "Aucune version enregistrée n’a été renvoyée.",
+    "current": "Production actuelle",
+    "worker": "Page Function",
+    "meta": "{{date}} · {{size}} · {{count}} fichiers"
+  },
+  "confirm": {
+    "visibilityTitle": "Modifier la visibilité de la Page ?",
+    "visibilityMessage": "/{{slug}} passera de {{current}} à {{target}}. Toute option sauf Publique exige une connexion.",
+    "deployTitle": "Changer la version en production ?",
+    "deployMessage": "/{{slug}} passera de la production de {{current}} à {{target}}. La version précédente reste disponible pour un retour arrière.",
+    "unpublishTitle": "Arrêter la diffusion de cette Page en production ?",
+    "unpublishMessage": "/{{slug}} diffuse actuellement la version {{current}}. La production s’arrêtera, tandis que toutes les versions immuables resteront disponibles ici.",
+    "deleteVersionTitle": "Supprimer cette version enregistrée ?",
+    "deleteVersionMessage": "La version {{version}} de {{title}} sera définitivement supprimée. Les versions en production ne peuvent pas être supprimées.",
+    "deletePageTitle": "Supprimer cette Page et toutes ses versions ?",
+    "deletePageMessage": "{{title}} (/{{slug}}), chaque version enregistrée et ses données de Page Function seront définitivement supprimées."
+  },
+  "notifications": {
+    "versionsLoadFailed": "Impossible de charger les versions : {{error}}",
+    "openFailed": "Impossible d’ouvrir la Page : {{error}}",
+    "linkCopied": "URL de la Page copiée.",
+    "protectedLinkCopied": "URL de la Page protégée copiée. Les visiteurs doivent d’abord se connecter.",
+    "copyFailed": "Impossible de copier le lien de la Page : {{error}}",
+    "visibilityUpdated": "Visibilité définie sur {{visibility}}.",
+    "visibilityFailed": "Impossible de modifier la visibilité : {{error}}",
+    "titleUpdated": "Titre de la Page mis à jour.",
+    "titleFailed": "Impossible de mettre à jour le titre : {{error}}",
+    "deployed": "La version {{version}} dessert désormais la production.",
+    "deployFailed": "Impossible de déployer la version : {{error}}",
+    "unpublished": "Production arrêtée. Les versions enregistrées ont été conservées.",
+    "unpublishFailed": "Impossible d’arrêter la production : {{error}}",
+    "versionDeleted": "Version enregistrée supprimée.",
+    "versionDeleteFailed": "Impossible de supprimer la version : {{error}}",
+    "pageDeleted": "Page et toutes les versions enregistrées supprimées.",
+    "pageDeleteFailed": "Impossible de supprimer la Page : {{error}}"
+  }
+}

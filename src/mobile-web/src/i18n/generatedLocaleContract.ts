@@ -2,25 +2,19 @@
 // Do not edit it by hand; edit the shared i18n contract or shared terms instead.
 export const MOBILE_LOCALES = [
   {
-    id: "zh-CN",
-    shortName: "中",
-    aliases: ["zh", "zh-Hans", "zh-CN"],
+    id: "fr-FR",
+    shortName: "FR",
+    aliases: ["fr", "fr-FR"],
     contentFallbacks: ["en-US"],
-  },
-  {
-    id: "zh-TW",
-    shortName: "繁",
-    aliases: ["zh-TW", "zh-Hant", "zh-HK", "zh-MO"],
-    contentFallbacks: ["zh-CN", "en-US"],
   },
   {
     id: "en-US",
     shortName: "EN",
     aliases: ["en", "en-US"],
-    contentFallbacks: ["zh-CN"],
+    contentFallbacks: ["fr-FR"],
   }
 ] as const;
-const UNKNOWN_LANGUAGE_FALLBACK_CHAIN = ["en-US", "zh-CN"] as const satisfies readonly MobileLanguage[];
+const UNKNOWN_LANGUAGE_FALLBACK_CHAIN = ["en-US"] as const satisfies readonly MobileLanguage[];
 
 const mobileLocaleAliasesByPriority = MOBILE_LOCALES
   .flatMap(locale => locale.aliases.map(alias => ({ locale, alias: alias.toLowerCase() })))
@@ -28,137 +22,74 @@ const mobileLocaleAliasesByPriority = MOBILE_LOCALES
 
 export type MobileLanguage = (typeof MOBILE_LOCALES)[number]['id'];
 
-export const DEFAULT_LANGUAGE = "en-US" satisfies MobileLanguage;
+export const DEFAULT_LANGUAGE = "fr-FR" satisfies MobileLanguage;
 
 export type SharedI18nTerms = {
   readonly [key: string]: string | SharedI18nTerms;
 };
 
 export const SHARED_TERMS_BY_LOCALE = {
-  "zh-CN": {
+  "fr-FR": {
     "window": {
-      "minimize": "最小化应用窗口",
-      "maximize": "最大化应用窗口",
-      "restore": "还原应用窗口",
-      "close": "关闭应用窗口"
+      "minimize": "Minimize app window",
+      "maximize": "Maximize app window",
+      "restore": "Restore app window",
+      "close": "Close app window"
     },
     "product": {
       "name": "OpenBitFun",
       "remote": "OpenBitFun Remote"
     },
     "features": {
-      "remoteControl": "远程控制",
-      "codeAgent": "代码助手",
-      "deepReview": "严格审查",
-      "settings": "设置",
-      "workspace": "工作区"
+      "remoteControl": "Remote Control",
+      "codeAgent": "Code Agent",
+      "deepReview": "Review: Strict",
+      "settings": "Settings",
+      "workspace": "Workspace"
     },
     "modes": {
-      "assistant": "助手模式",
-      "expert": "专家模式",
-      "review": "评审模式"
+      "assistant": "Assistant Mode",
+      "expert": "Expert Mode",
+      "review": "Review Mode"
     },
     "agents": {
-      "Minimal": "极简",
-      "Standard": "标准",
-      "Ultimate": "极致",
-      "Creative": "创造",
-      "Claw": "助理",
-      "Cowork": "办公协作",
-      "DeepResearch": "深度研究",
-      "PaperWriting": "论文写作",
-      "ComputerUse": "电脑操作",
-      "default": "默认助手"
+      "Minimal": "Minimal",
+      "Standard": "Standard",
+      "Ultimate": "Ultimate",
+      "Creative": "Creative",
+      "Claw": "Assistant",
+      "Cowork": "Cowork",
+      "DeepResearch": "Deep Research",
+      "PaperWriting": "Paper Writing",
+      "ComputerUse": "Computer Use",
+      "default": "Default Assistant"
     },
     "tools": {
-      "explore": "探索",
-      "read": "读取",
-      "write": "写入",
-      "shell": "命令行",
-      "search": "搜索",
-      "edit": "编辑",
-      "todo": "待办"
+      "explore": "Explore",
+      "read": "Read",
+      "write": "Write",
+      "shell": "Shell",
+      "search": "Search",
+      "edit": "Edit",
+      "todo": "Todo"
     },
     "connectionMethods": {
-      "lan": "局域网",
+      "lan": "LAN",
       "openbitfunServer": "OpenBitFun Server",
-      "customServer": "自定义服务器",
-      "botFeishu": "飞书机器人",
+      "customServer": "Custom Server",
+      "botFeishu": "Feishu Bot",
       "botTelegram": "Telegram Bot",
-      "botWeixin": "微信机器人"
+      "botWeixin": "WeChat Bot"
     },
     "statuses": {
-      "loading": "加载中",
-      "running": "运行中",
-      "done": "已完成",
-      "failed": "失败",
-      "cancelled": "已取消"
+      "loading": "Loading",
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
     },
     "sessions": {
-      "new": "新会话"
-    }
-  },
-  "zh-TW": {
-    "window": {
-      "minimize": "最小化應用視窗",
-      "maximize": "最大化應用視窗",
-      "restore": "還原應用視窗",
-      "close": "關閉應用視窗"
-    },
-    "product": {
-      "name": "OpenBitFun",
-      "remote": "OpenBitFun Remote"
-    },
-    "features": {
-      "remoteControl": "遠端控制",
-      "codeAgent": "程式碼助手",
-      "deepReview": "嚴格審查",
-      "settings": "設定",
-      "workspace": "工作區"
-    },
-    "modes": {
-      "assistant": "助手模式",
-      "expert": "專家模式",
-      "review": "審查模式"
-    },
-    "agents": {
-      "Minimal": "極簡",
-      "Standard": "標準",
-      "Ultimate": "極致",
-      "Creative": "創造",
-      "Claw": "助理",
-      "Cowork": "辦公協作",
-      "DeepResearch": "深度研究",
-      "PaperWriting": "論文寫作",
-      "ComputerUse": "電腦操作",
-      "default": "預設助手"
-    },
-    "tools": {
-      "explore": "探索",
-      "read": "讀取",
-      "write": "寫入",
-      "shell": "命令列",
-      "search": "搜尋",
-      "edit": "編輯",
-      "todo": "待辦"
-    },
-    "connectionMethods": {
-      "lan": "區域網路",
-      "openbitfunServer": "OpenBitFun Server",
-      "customServer": "自訂伺服器",
-      "botFeishu": "飛書機器人",
-      "botTelegram": "Telegram Bot",
-      "botWeixin": "微信機器人"
-    },
-    "statuses": {
-      "loading": "載入中",
-      "running": "執行中",
-      "done": "已完成",
-      "failed": "失敗",
-      "cancelled": "已取消"
-    },
-    "sessions": {
-      "new": "新會話"
+      "new": "New Session"
     }
   },
   "en-US": {

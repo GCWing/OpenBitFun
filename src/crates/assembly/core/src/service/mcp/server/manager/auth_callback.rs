@@ -54,7 +54,9 @@ impl OAuthCallbackLocale {
         match LocaleId::from_str(value)? {
             LocaleId::ZhCN => Some(Self::ZhCN),
             LocaleId::ZhTW => Some(Self::ZhTW),
-            LocaleId::EnUS => Some(Self::EnUS),
+            // fr-FR callback page copy is not prepared yet; serve the English
+            // page until OAuthCallbackLocale gains a French variant.
+            LocaleId::EnUS | LocaleId::FrFr => Some(Self::EnUS),
         }
     }
 

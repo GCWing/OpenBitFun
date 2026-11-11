@@ -1,0 +1,176 @@
+{
+  "general": {
+    "unknown": "Une erreur inconnue s’est produite",
+    "network": "Erreur réseau",
+    "timeout": "Expiration du délai de la requête",
+    "serverError": "Erreur du serveur",
+    "notFound": "Ressource introuvable",
+    "unauthorized": "Non autorisé",
+    "forbidden": "Accès interdit",
+    "badRequest": "Requête incorrecte",
+    "conflict": "Conflit de ressource",
+    "tooManyRequests": "Trop de requêtes",
+    "copyFailed": "Échec de la copie. Veuillez réessayer."
+  },
+  "file": {
+    "notFound": "Fichier introuvable : {{path}}",
+    "readError": "Échec de la lecture du fichier : {{path}}",
+    "writeError": "Échec de l’écriture du fichier : {{path}}",
+    "deleteError": "Échec de la suppression du fichier : {{path}}",
+    "permissionDenied": "Accès refusé : {{path}}",
+    "alreadyExists": "Le fichier existe déjà : {{path}}",
+    "invalidPath": "Chemin de fichier invalide : {{path}}",
+    "tooLarge": "Le fichier est trop volumineux : {{path}}",
+    "encodingError": "Erreur d’encodage du fichier : {{path}}",
+    "createFileFailed": "Échec de la création du fichier",
+    "createFolderFailed": "Échec de la création du dossier",
+    "renameFailed": "Échec du renommage",
+    "openInBrowserFailed": "Échec de l’ouverture du fichier dans le navigateur",
+    "revealFailed": "Échec de l’ouverture du gestionnaire de fichiers"
+  },
+  "workspace": {
+    "notFound": "Espace de travail introuvable",
+    "openError": "Échec de l’ouverture de l’espace de travail",
+    "invalidPath": "Chemin d’espace de travail invalide",
+    "alreadyOpen": "L’espace de travail est déjà ouvert"
+  },
+  "git": {
+    "notRepository": "Le répertoire actuel n’est pas un dépôt Git",
+    "cloneError": "Échec du clonage du dépôt",
+    "commitError": "Échec du commit",
+    "pushError": "Échec du push",
+    "pullError": "Échec du pull",
+    "mergeConflict": "Un conflit de fusion existe",
+    "branchError": "Échec de l’opération de branche",
+    "stashError": "Échec de l’opération de stash",
+    "authError": "Échec de l’authentification",
+    "remoteError": "Erreur du dépôt distant"
+  },
+  "ai": {
+    "connectionError": "Échec de la connexion au service d’IA",
+    "apiKeyInvalid": "Clé API invalide",
+    "modelNotFound": "Modèle introuvable",
+    "contextTooLong": "Le contexte dépasse la limite",
+    "rateLimited": "Limite de débit dépassée",
+    "generationError": "Échec de la génération du contenu",
+    "streamError": "Erreur de réponse en flux",
+    "timeout": "Délai d’attente de la réponse de l’IA dépassé",
+    "initializeFailedTitle": "Échec de l’initialisation du client IA",
+    "configRequired": "La configuration du modèle est requise",
+    "primaryModelNotConfigured": "Modèle principal non configuré. Veuillez le configurer dans les paramètres.",
+    "executionFailed": "Échec de l’exécution du dialogue",
+    "genericSuggestion": "Réessayez plus tard, ou vérifiez votre connexion réseau et l’état du service de modèle",
+    "networkError": "Réponse de l’IA interrompue",
+    "networkErrorSuggestion": "La connexion était instable ou le serveur du modèle l’a fermée prématurément. Vérifiez votre réseau et réessayez",
+    "rateLimit": "Limite de débit du modèle dépassée",
+    "rateLimitSuggestion": "Le fournisseur a rejeté cette requête en raison de la limitation de débit. Cela peut être dû à un trop grand nombre de requêtes sur une courte période, ou aux limites de jetons par minute (TPM) de certaines plateformes de fournisseurs. Patientez un instant et réessayez, ou passez à un autre modèle dans les paramètres",
+    "authError": "Échec de l’authentification API",
+    "authErrorSuggestion": "La clé API est invalide ou expirée. Vérifiez la clé dans votre configuration de modèle",
+    "contextOverflow": "La conversation dépasse la limite de contexte",
+    "contextOverflowSuggestion": "La conversation est trop longue pour le contexte du modèle. Démarrez une nouvelle conversation ou activez la compression du contexte",
+    "timeoutError": "La réponse de l’IA a expiré",
+    "timeoutSuggestion": "Le modèle a mis trop de temps à répondre. Vérifiez votre réseau ou essayez de changer de modèle",
+    "providerQuota": {
+      "title": "Quota du modèle indisponible",
+      "message": "Le fournisseur du modèle a rejeté cette requête car le solde du compte, le quota ou le forfait de ressources est indisponible. Mettez à jour la configuration du modèle, changez de modèle, ou continuez une fois la ressource du fournisseur rétablie."
+    },
+    "providerBilling": {
+      "title": "Action de facturation requise pour le modèle",
+      "message": "Le fournisseur du modèle exige une mise à jour de facturation, d’abonnement ou de forfait avant que cette requête puisse continuer."
+    },
+    "providerUnavailable": {
+      "title": "Fournisseur du modèle temporairement indisponible",
+      "message": "Le fournisseur est surchargé ou temporairement indisponible. Patientez un instant et réessayez, ou passez à un autre modèle."
+    },
+    "permission": {
+      "title": "Accès au modèle refusé",
+      "message": "La clé API n’a pas la permission d’utiliser ce modèle ou cet endpoint. Vérifiez la configuration du modèle ou changez de modèle."
+    },
+    "invalidRequest": {
+      "title": "Requête de modèle invalide",
+      "message": "Le fournisseur a rejeté le format de la requête, ses paramètres, le nom du modèle ou la taille des données. Ajustez la requête ou choisissez un autre modèle."
+    },
+    "contentPolicy": {
+      "title": "La politique de sécurité du modèle a bloqué la requête",
+      "message": "Le fournisseur a bloqué l’entrée ou la sortie pour des raisons de politique. Ajustez le prompt ou le périmètre avant de réessayer."
+    },
+    "actions": {
+      "retry": "Réessayer",
+      "continue": "Continuer",
+      "openModelSettings": "Ouvrir les paramètres du modèle",
+      "switchModel": "Changer de modèle",
+      "waitAndRetry": "Patienter et réessayer",
+      "compressContext": "Compresser le contexte",
+      "startNewChat": "Démarrer une nouvelle conversation",
+      "copyDiagnostics": "Copier les diagnostics"
+    }
+  },
+  "terminal": {
+    "createError": "Échec de la création du terminal",
+    "executeError": "Échec de l’exécution de la commande",
+    "killError": "Échec de l’arrêt du processus",
+    "shellNotFound": "Shell introuvable"
+  },
+  "window": {
+    "maximizeFailed": "Échec de la maximisation de la fenêtre : {{error}}",
+    "fullscreenFailed": "Échec du basculement en plein écran : {{error}}",
+    "closeFailed": "Échec de la fermeture de la fenêtre : {{error}}"
+  },
+  "editor": {
+    "openError": "Échec de l’ouverture de l’éditeur",
+    "saveError": "Échec de l’enregistrement du fichier",
+    "formatError": "Échec du formatage",
+    "parseError": "Échec de l’analyse du fichier"
+  },
+  "config": {
+    "loadError": "Échec du chargement de la configuration",
+    "saveError": "Échec de l’enregistrement de la configuration",
+    "invalidFormat": "Format de configuration invalide",
+    "validationError": "Échec de la validation de la configuration"
+  },
+  "snapshot": {
+    "createError": "Échec de la création du point de contrôle",
+    "restoreError": "Échec de la restauration du point de contrôle",
+    "notFound": "Point de contrôle introuvable",
+    "corrupted": "Le point de contrôle est corrompu",
+    "loadStatsFailed": "Échec du chargement des statistiques du point de contrôle",
+    "loadSessionsFailed": "Échec du chargement des sessions du point de contrôle",
+    "loadOperationsFailed": "Échec du chargement des opérations de la session",
+    "getDiffFailed": "Échec de l’obtention du diff du fichier",
+    "acceptOperationFailed": "Échec de l’acceptation de l’opération",
+    "rejectOperationFailed": "Échec du rejet de l’opération",
+    "rollbackSessionFailed": "Échec de la restauration de la session",
+    "cleanupFailed": "Échec du nettoyage des données expirées"
+  },
+  "contextMenu": {
+    "noSelection": "Aucun texte sélectionné",
+    "notEditable": "Le contenu n’est pas modifiable",
+    "readOnlyEditor": "L’éditeur est en lecture seule",
+    "clipboardUnavailable": "L’accès au presse-papiers est indisponible",
+    "clipboardEmpty": "Le presse-papiers est vide",
+    "copyFailed": "Échec de la copie",
+    "cutFailed": "Échec de la coupe",
+    "pasteFailed": "Échec du collage",
+    "selectAllFailed": "Échec de la sélection de tout",
+    "refreshFailed": "Échec de l’actualisation",
+    "deleteFailed": "Échec de la suppression",
+    "deleteCancelled": "Suppression annulée",
+    "editorModelUnavailable": "Le modèle de l’éditeur est indisponible",
+    "copyPathFailed": "Échec de la copie du chemin",
+    "copyRelativePathFailed": "Échec de la copie du chemin relatif"
+  },
+  "core": {
+    "initializationFailed": "Échec de l’initialisation du système central"
+  },
+  "moduleLoad": {
+    "title": "Cette vue n’a pas pu être chargée",
+    "description": "Réessayez, ou rechargez l’application si le problème persiste. Enregistrez tout travail non sauvegardé avant de recharger.",
+    "retry": "Réessayer"
+  },
+  "boundary": {
+    "title": "Erreur de l’application",
+    "reload": "Recharger",
+    "technicalDetails": "Détails techniques",
+    "unknown": "Erreur inconnue"
+  }
+}

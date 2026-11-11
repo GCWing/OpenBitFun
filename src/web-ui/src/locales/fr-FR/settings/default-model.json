@@ -1,0 +1,73 @@
+{
+  "title": "Configuration des modèles par défaut",
+  "subtitle": "Ces valeurs par défaut s’appliquent lorsqu’une tâche ne précise pas de modèle",
+  "loading": "Chargement...",
+  "sections": {
+    "defaults": "Modèles par défaut",
+    "providers": "Services de modèles",
+    "proxy": "Proxy réseau"
+  },
+  "core": {
+    "title": "Configuration principale",
+    "required": "Obligatoire",
+    "optional": "Facultatif",
+    "primary": {
+      "label": "Modèle principal",
+      "description": "Utilisé lorsqu’aucun modèle n’est précisé, pour les conversations quotidiennes et les tâches complexes",
+      "placeholder": "Sélectionner le modèle principal"
+    },
+    "fast": {
+      "label": "Modèle rapide",
+      "description": "Utilisé pour les tâches légères ; revient au modèle principal s’il n’est pas défini",
+      "hint": "Lorsqu’il n’est pas configuré, toutes les tâches utilisent le modèle principal",
+      "placeholder": "Sélectionner le modèle rapide",
+      "notSet": "Utiliser le modèle principal"
+    },
+    "economy": {
+      "label": "Modèle économique",
+      "description": "Traite les étapes légères du mode intelligent, indépendamment du modèle rapide des sous-agents",
+      "placeholder": "Sélectionner le modèle économique",
+      "notSet": "Non configuré"
+    }
+  },
+  "optional": {
+    "title": "Configuration des modèles multimodaux",
+    "capabilities": {
+      "image_understanding": {
+        "label": "Compréhension d’images",
+        "description": "Analyse les images et les captures d’écran, prend en charge les conversations mixtes image-texte"
+      },
+      "image_generation": {
+        "label": "Modèle de génération d’images",
+        "description": "Génère des images à partir de descriptions textuelles"
+      },
+      "speech_recognition": {
+        "label": "Reconnaissance vocale",
+        "description": "Convertit la parole en texte, prend en charge la saisie vocale"
+      }
+    },
+    "notConfigured": "Non configuré",
+    "notSet": "Non défini",
+    "selectModel": "Sélectionner un modèle"
+  },
+  "selection": {
+    "primary": "Principal",
+    "fast": "Rapide",
+    "custom": "Personnalisé",
+    "selectModel": "Sélectionner un modèle",
+    "notConfigured": "Non configuré ; le modèle principal sera utilisé"
+  },
+  "empty": {
+    "noModels": "Aucun modèle disponible"
+  },
+  "messages": {
+    "loadFailed": "Échec du chargement de la configuration",
+    "updateFailed": "Échec de la mise à jour",
+    "modelUpdated": "{{slot}} défini sur {{name}}",
+    "modelCleared": "{{slot}} n’est plus défini",
+    "fastModelCleared": "Modèle rapide effacé ; le modèle principal sera utilisé",
+    "capabilityUpdated": "Modèle de capacité mis à jour"
+  },
+  "router": "Routage intelligent",
+  "routerConfigure": "Configurer le service"
+}

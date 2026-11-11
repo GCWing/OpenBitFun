@@ -260,12 +260,13 @@ pub fn setup_tray(
     startup_trace.record_elapsed_step(TRAY_TRACE_CATEGORY, "setup_tray.icon", step_started);
 
     let step_started = Instant::now();
+    let labels = crate::desktop_locale::DesktopNativeLabels::for_app(app);
     let tray = TrayIconBuilder::new()
         .icon(icon)
         .icon_as_template(cfg!(target_os = "macos"))
         .menu(&initial_menu)
         .show_menu_on_left_click(false)
-        .tooltip("OpenBitFun")
+        .tooltip(labels.tray_tooltip)
         .on_menu_event(|app, event| {
             let id = event.id.as_ref();
             if id == "mark_all_read" {

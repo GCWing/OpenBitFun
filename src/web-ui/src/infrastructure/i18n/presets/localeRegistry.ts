@@ -5,6 +5,7 @@
  * `src/shared/i18n/contract/locales.json`.
  */
 export {
+  CONTRACT_LOCALE_IDS,
   DEFAULT_FALLBACK_LOCALE,
   DEFAULT_LOCALE,
   LOCALE_IDS,
@@ -16,4 +17,4 @@ export {
   resolveLocaleId,
   SHARED_TERMS_BY_LOCALE,
 } from './generatedLocaleContract';
-export type { LocaleId, LocaleMetadata } from './generatedLocaleContract';
+export type { ContractLocaleId, LocaleId, LocaleMetadata } from './generatedLocaleContract';

@@ -1337,8 +1337,9 @@ fn show_confirmation_window(
         let _ = window.close();
     }
     let url = confirmation_window_url(transaction_id);
+    let labels = crate::desktop_locale::DesktopNativeLabels::for_app(app);
     let window = WebviewWindowBuilder::new(app, CONFIRM_WINDOW_LABEL, url)
-        .title("Review OpenBitFun frontend update")
+        .title(labels.frontend_review_title)
         .inner_size(440.0, 286.0)
         .resizable(false)
         .always_on_top(true)

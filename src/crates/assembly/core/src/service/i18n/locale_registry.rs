@@ -25,4 +25,8 @@ pub const LOCALE_RESOURCE_REGISTRY: &[LocaleResourceEntry] = &[
         id: LocaleId::EnUS,
         fluent_source: include_str!("../../../locales/en-US.ftl"),
     },
+    LocaleResourceEntry {
+        id: LocaleId::FrFr,
+        fluent_source: include_str!("../../../locales/fr-FR.ftl"),
+    },
 ];

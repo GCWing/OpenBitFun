@@ -1,0 +1,423 @@
+{
+  "title": "Importation externe",
+  "applications": {
+    "title": "Applications externes"
+  },
+  "loading": "Vérification de la compatibilité…",
+  "partialLoad": "Certains états n’ont pas pu être lus : {{sources}} {{acp}}. Le contenu disponible restant est affiché.",
+  "retry": "Réessayer",
+  "loadAreas": {
+    "externalSources": "sources externes",
+    "acpClients": "agents ACP"
+  },
+  "search": {
+    "label": "Rechercher des produits, protocoles ou fonctionnalités compatibles",
+    "placeholder": "Rechercher des produits, protocoles ou fonctionnalités",
+    "empty": "Aucun produit compatible ne correspond à cette recherche."
+  },
+  "host": {
+    "local": "Cet ordinateur",
+    "remote": "Distant · {{name}}"
+  },
+  "groups": {
+    "identified": "Reconnu",
+    "more": "Plus d’applications",
+    "other": "Autre"
+  },
+  "status": {
+    "connected": "Connecté",
+    "detected": "Découvert",
+    "configured": "Configuré",
+    "available": "Disponible",
+    "development": "En développement"
+  },
+  "productSummary": {
+    "assets": "{{count}} éléments compatibles trouvés",
+    "acpClients": "{{count}} configurations ACP",
+    "available": "Disponible à configurer",
+    "development": "La compatibilité est en cours de développement"
+  },
+  "sidebar": {
+    "label": "Produits compatibles",
+    "hint": "Sélectionnez un produit pour voir comment l’utiliser et quel contenu importer."
+  },
+  "header": {
+    "sourceLocation": "Source de configuration",
+    "executionHost": "Hôte d’exécution",
+    "currentState": "État actuel",
+    "adapterRevision": "Adaptateur v{{revision}}",
+    "acpRuntime": "ACP",
+    "notDetected": "Aucune configuration trouvée",
+    "notAvailable": "Indisponible"
+  },
+  "comingSoon": {
+    "title": "En développement",
+    "notice": "« {{name}} » est en développement."
+  },
+  "capabilities": {
+    "account": "Abonnements de compte",
+    "settings": "Paramètres et préférences",
+    "command": "Commandes",
+    "tool": "Outils",
+    "subagent": "Sous-agents",
+    "skill": "Skills",
+    "mcp": "MCP",
+    "hook": "Hooks",
+    "memory": "Mémoires",
+    "plugin": "Plugins",
+    "pet": "Compagnons",
+    "instruction": "Instructions"
+  },
+  "sessions": {
+    "removed": {
+      "title": "Sessions sources retirées",
+      "description": "Réajoutez une session source à la liste des sessions. Ses branches Alex existantes restent indépendantes ; l’historique se met à jour à l’ouverture de la source.",
+      "empty": "Aucune session source n’a été retirée.",
+      "restore": "Ajouter à nouveau",
+      "restoreNamed": "Ajouter à nouveau « {{name}} »",
+      "retry": "Réessayer",
+      "loadFailed": "Impossible de charger les sessions sources retirées. Réessayez lorsque l’hôte est disponible.",
+      "restoreFailed": "Impossible de réajouter cette session source. L’enregistrement du retrait est conservé ; réessayez plus tard.",
+      "refreshFailed": "La source a été réajoutée, mais la liste des sessions n’a pas pu s’actualiser. Rouvrez l’espace de travail pour la voir.",
+      "unsupportedHost": "Cet hôte ne prend pas en charge la restauration des sessions sources retirées. Mettez à jour l’hôte servant les données et réessayez.",
+      "unsupportedSurface": "Gérez les sessions sources retirées sur leur hôte d’origine. Cette action est indisponible en mode Pair."
+    },
+    "autoDiscovery": {
+      "label": "Découvrir automatiquement les sessions {{name}}",
+      "description": "À l’ouverture d’un espace de travail, liste ses sessions {{name}} à l’aide d’un index léger. L’historique complet est enregistré localement la première fois que vous ouvrez ou poursuivez une session. L’historique non ouvert requiert la source d’origine. La désactivation masque immédiatement les entrées suivant la source ; les forks locaux restent visibles. La découverte dans les espaces de travail SSH n’est pas disponible.",
+      "unsupported": "Cet hôte ne prend pas en charge la découverte automatique de sessions. Mettez à jour l’hôte servant les données pour l’activer.",
+      "loadFailed": "Impossible de charger les paramètres de découverte automatique de sessions.",
+      "saveFailed": "Impossible d’enregistrer le paramètre de découverte automatique de sessions."
+    }
+  },
+  "import": {
+    "title": "Importer et réutiliser",
+    "description": "Voyez quels contenus de {{name}} sont compatibles avec Alex. Importez directement les éléments disponibles ; les autres affichent leur état de prise en charge actuel.",
+    "columns": {
+      "item": "Élément",
+      "type": "Type",
+      "source": "Source",
+      "state": "Prise en charge",
+      "action": "Action"
+    },
+    "states": {
+      "ready": "Prêt à importer",
+      "readyRename": "Prêt · renommage automatique",
+      "checking": "Recherche du contenu",
+      "imported": "Importé",
+      "notDetected": "Aucun contenu trouvé",
+      "unsupportedContext": "Importation impossible dans cet environnement",
+      "unavailable": "Actuellement indisponible",
+      "discoveryDisabled": "Découverte désactivée",
+      "discoveryUnavailable": "Lecture impossible",
+      "discoverySupported": "Découvrable",
+      "discoveryUnsupported": "Pas encore pris en charge",
+      "discovered": "Découvert",
+      "importUnsupported": "Format d’importation non pris en charge par cet hôte",
+      "available": "Disponible via la compatibilité",
+      "approvalRequired": "Approbation requise",
+      "disabled": "Non activé",
+      "conflict": "Sélection de la source requise",
+      "blocked": "Utilisation restreinte",
+      "runtimeUnavailable": "Indisponible dans cet environnement",
+      "runtimeFailed": "Échec du chargement",
+      "configurationChanged": "Configuration modifiée",
+      "unknown": "Utilisation non confirmée",
+      "notScanned": "Non analysé"
+    },
+    "importAction": "Importer",
+    "importingAction": "Importation",
+    "undetectedItem": "Aucun {{type}} trouvé",
+    "undetectedDescription": "Aucun contenu disponible n’a été trouvé",
+    "ownerAdaptedDescription": "Ouvrez la page de gestion pour découvrir, examiner et configurer {{type}}.",
+    "notifications": {
+      "success": "{{name}} importé dans Alex",
+      "stale": "La source a changé. Consultez le dernier état et réessayez.",
+      "failed": "Échec de l’importation de {{name}}"
+    },
+    "discoveryUnsupportedDescription": "Il n’est pas encore possible d’afficher ici {{type}} de {{name}}."
+  },
+  "run": {
+    "title": "Utiliser dans Alex",
+    "description": "Démarrez une session {{name}} dédiée, ou configurez-le comme sous-agent que l’Agent principal pourra solliciter sur les tâches appropriées.",
+    "session": {
+      "title": "Créer une session autonome",
+      "description": "Laissez {{name}} traiter des tâches dans sa propre session continue."
+    },
+    "subagent": {
+      "title": "Configurer comme sous-agent",
+      "responsibilityFallback": "Aucune responsabilité n’a encore été ajoutée.",
+      "bestForSummary": "Idéal pour : {{value}}",
+      "bestForFallback": "Aucune tâche appropriée n’a été définie",
+      "configureAction": "Configurer",
+      "editAction": "$t(shared:tools.edit)",
+      "editorTitle": "Profil de sous-agent pour {{name}}",
+      "editorDescription": "L’Agent principal utilise ce profil pour décider s’il faut déléguer à cet agent et à quel moment.",
+      "enabledLabel": "Autoriser l’Agent principal à le solliciter",
+      "responsibilityLabel": "Ce qu’il fait",
+      "responsibilityPlaceholder": "Par exemple : implémente des modifications de code complexes sur plusieurs fichiers et vérifie le résultat",
+      "bestForLabel": "Pour quelles tâches il est idéal",
+      "bestForPlaceholder": "Par exemple : refontes importantes, débogage difficile ou implémentation gagnant à disposer d’un contexte séparé",
+      "profileNote": "Des consignes plus claires aident l’Agent principal à le solliciter pour les bonnes tâches.",
+      "saveAction": "Enregistrer le profil",
+      "savingAction": "Enregistrement",
+      "cancelAction": "Annuler",
+      "states": {
+        "configured": "Configuré",
+        "defaultProfile": "Utilise la description par défaut",
+        "disabled": "Désactivé",
+        "clientDisabled": "ACP désactivé",
+        "unsupportedHost": "Non pris en charge par cette version d’hôte"
+      },
+      "notifications": {
+        "saved": "Profil de sous-agent de {{name}} mis à jour",
+        "failed": "Échec de l’enregistrement du profil de sous-agent de {{name}}"
+      }
+    },
+    "openManager": "Connexion ACP",
+    "managerLabel": "Gestion des agents ACP",
+    "managerScope": "Installez, activez ou ajustez les agents ACP pour cet écosystème.",
+    "loadingManager": "Chargement de la gestion des agents ACP…",
+    "startSession": "Nouvelle session",
+    "starting": "Création d’une session {{name}}…",
+    "workspaceRequired": "Ouvrez un espace de travail avant de créer une session ACP.",
+    "configurationRequired": "{{name}} n’est pas prêt. Vérifiez d’abord sa configuration ACP.",
+    "notConfiguredTitle": "{{name}} n’est pas prêt",
+    "notConfiguredDescription": "Installez et activez {{name}}, puis démarrez une session ou configurez-le ici comme sous-agent.",
+    "clientStatus": {
+      "configured": "Configuré",
+      "starting": "Démarrage",
+      "running": "$t(shared:statuses.running)",
+      "stopped": "Arrêté",
+      "failed": "Échec du démarrage"
+    }
+  },
+  "discovery": {
+    "toggleLabel": "Découverte automatique",
+    "enabledDescription": "Trouvez automatiquement les paramètres et contenus d’autres agents et mettez à jour cette liste. Vous choisissez quoi importer ou activer.",
+    "disabledDescription": "La découverte automatique est en pause et les résultats précédents sont conservés. Vous pouvez toujours actualiser manuellement, et les fonctionnalités connectées continuent de fonctionner.",
+    "workspaceScope": "S’applique à toutes les applications compatibles de l’espace de travail en cours.",
+    "userScope": "S’applique à toutes les applications compatibles de l’hôte en cours.",
+    "loadingDescription": "Lecture de l’état de la découverte automatique…",
+    "readOnlyDescription": "Cet hôte ou cette version des paramètres ne prend pas en charge la modification de la découverte automatique.",
+    "saveFailed": "Impossible d’enregistrer les paramètres de découverte automatique. Veuillez réessayer.",
+    "unavailableDescription": "La découverte n’a pas pu aboutir. Vérifiez les paramètres de la source et les diagnostics.",
+    "workspaceLabel": "Espace de travail en cours"
+  },
+  "content": {
+    "skillStale": "Le paquet du Skill a changé. Annulez cette confirmation et préparez un nouvel aperçu avant d’importer.",
+    "reviewedPackage": "Paquet examiné : {{count}} fichiers. Si la source change, examinez-le à nouveau avant d’importer.",
+    "manageCopy": "Gérer la copie",
+    "skillNameConflict": "Un Skill portant ce nom existe déjà avec un contenu ou une provenance différents. Modifiez le nom d’importation ci-dessus et réessayez ; la copie existante ne sera pas écrasée.",
+    "batchUndoWarning": "Retirez ces {{count}} copies Alex, y compris les modifications qui leur ont été apportées. Les sources externes sont préservées et peuvent être importées à nouveau.",
+    "batchUndoSummary": "{{removed}} retirés · {{pending}} mises à jour d’exécution en attente · {{failed}} échecs",
+    "batchPending": "En attente",
+    "batchResultSummary": "Importés {{imported}} · À examiner {{unresolved}} · Ignorés {{skipped}}",
+    "title": "Contenu de {{name}}",
+    "description": "Parcourez le contenu externe et gérez la disponibilité ou les importations.",
+    "search": "Rechercher dans le contenu de cet agent",
+    "all": "Tout le contenu · {{count}} trouvés",
+    "importStatus": "État actuel",
+    "view": "Afficher",
+    "prepareImport": "Importer",
+    "reviewRequired": "Examen requis",
+    "externalOnly": "Contenu externe ; aucune copie native n’a été créée.",
+    "importedDescription": "Une copie a été importée. Les modifications de la source externe ne sont pas synchronisées automatiquement.",
+    "previewOnly": "Ce contenu ne peut pas être importé pour l’instant. Les informations de source disponibles sont consultables ici.",
+    "unsupportedContext": "L’importation n’est pas prise en charge sur cet hôte ni dans cet espace de travail. Les informations de source restent disponibles.",
+    "sourceDisabled": "Désactivé dans l’agent externe. L’activation externe est indépendante de l’importation ; actualisez le plan d’importation pour connaître la disponibilité.",
+    "setupRequired": "La déclaration contient des variables non résolues, des références d’identifiants ou des champs non pris en charge. Terminez sa configuration avant d’importer ; rien n’a été copié.",
+    "importUnavailable": "La déclaration actuelle ne peut pas être importée sans risque, ou son plan d’importation est indisponible. Actualisez pour vérifier à nouveau.",
+    "validationFailed": "Le Skill source n’a pas pu être validé. Rien n’a été importé.",
+    "previewFailed": "Impossible de préparer l’aperçu de l’importation. Actualisez et réessayez.",
+    "importFailed": "Échec de l’importation.",
+    "importSuccess": "{{name}} importé. Sa copie est désormais disponible dans la page de gestion d’Alex.",
+    "stale": "La source ou la destination a changé. Examinez l’aperçu mis à jour et confirmez à nouveau.",
+    "noMatches": "Aucun contenu correspondant.",
+    "confirmTitle": "Confirmer l’importation dans Alex",
+    "copyWarning": "Cela crée une copie Alex indépendante. Les fichiers de l’agent externe ne sont pas modifiés, et les changements futurs ne sont pas synchronisés automatiquement.",
+    "mcpTarget": "Cible : MCP Alex / {{name}}. La copie démarre désactivée. Alex gère l’activation, la connexion, la reconnexion et les autorisations d’outils ; les stratégies de l’hôte externe ne sont pas copiées.",
+    "targetScope": "Copier vers",
+    "userTarget": "Alex · Skills utilisateur",
+    "projectTarget": "Alex · Skills du projet en cours",
+    "targetExists": "Un répertoire de Skill du même nom existe déjà à la cible. Il ne sera pas écrasé. Choisissez une autre portée ou résolvez d’abord le conflit.",
+    "hookWarning": "Examinez les commandes et dépendances exactes ci-dessous. Les Hooks importés s’exécutent sous les paramètres de Hooks d’Alex et peuvent s’exécuter lorsque leurs événements surviennent.",
+    "skipped": "Non importé : {{reason}} ({{count}})",
+    "cancel": "Annuler",
+    "confirm": "Confirmer l’importation",
+    "transport": "Transport",
+    "command": "Aperçu de la commande / de l’endpoint",
+    "environmentKeys": "Noms des variables d’environnement",
+    "headerNames": "Noms des en-têtes",
+    "groupSummary": "{{count}} éléments trouvés",
+    "undo": "Annuler l’importation",
+    "undoTitle": "Annuler l’importation dans Alex",
+    "undoWarning": "Cela retire la copie Alex, y compris les modifications apportées après l’importation. Le contenu d’origine de l’agent externe est préservé et peut être importé à nouveau.",
+    "undoTarget": "Copie à retirer : {{target}}",
+    "confirmUndo": "Confirmer le retrait",
+    "undoSuccess": "Importation de {{name}} annulée.",
+    "undoRuntimePending": "Configuration de {{name}} retirée, mais son runtime ne s’est pas mis à jour. Vérifiez le gestionnaire MCP d’Alex.",
+    "undoFailed": "Le retrait ne s’est pas terminé. La copie ou la configuration a peut-être changé. Actualisez, examinez et confirmez à nouveau.",
+    "undoUnavailable": "La copie importée de ce Skill n’a pas pu être identifiée. Examinez-la et retirez-la dans le gestionnaire de Skills d’Alex.",
+    "viewCategory": "Afficher {{type}}",
+    "importAll": "Tout importer",
+    "importCategory": "Tout importer",
+    "batchTitle": "Confirmer l’importation",
+    "batchResults": "Résultats de l’importation",
+    "batchDescription": "Copie {{count}} éléments ; ignore {{skipped}} éléments déjà importés, indisponibles ou nécessitant une configuration individuelle. Les sources externes restent inchangées. Activez les serveurs MCP et Hooks importés dans leurs pages de gestion.",
+    "batchEmpty": "Aucun élément n’est prêt pour une importation par lot. Vérifiez les statuts individuels ; utilisez l’importation individuelle sur les hôtes plus anciens.",
+    "refreshAfterImportFailed": "Les opérations d’importation sont terminées, mais l’actualisation a échoué. Actualisez pour vérifier les résultats avant de répéter une opération.",
+    "close": "Fermer",
+    "targetRepair": "Un Skill portant ce nom de dossier existe. Les copies héritées identiques peuvent récupérer les informations de la source ; les contenus différents ne seront pas écrasés.",
+    "mcpImportedDescription": "Enregistré comme configuration MCP native. Cette page n’a pas confirmé l’état de connexion de la copie. Vérifiez, activez et connectez-la dans les paramètres MCP.",
+    "hookImportedDescription": "Enregistré comme Hook natif. Examinez-le et activez-le sur la page Hooks ; l’exécution requiert aussi le commutateur global des Hooks.",
+    "batchState": {
+      "imported": "Importé",
+      "failed": "Succès non confirmé ; actualisez pour vérifier avant de réessayer",
+      "stale": "Configuration modifiée ; examinez à nouveau"
+    },
+    "repairSource": "Réparer le libellé de la source",
+    "nativeUserTarget": "Alex · Configuration utilisateur",
+    "undoAll": "Annuler",
+    "importSelected": "Importer la sélection",
+    "undoSelected": "Annuler la sélection",
+    "selectedCount": "{{count}} sélectionnés",
+    "selectVisible": "Sélectionner tous les éléments visibles",
+    "selectItem": "Sélectionner {{name}}",
+    "batchUndoTitle": "Confirmer l’annulation",
+    "batchUndoResults": "Résultats de l’annulation",
+    "undoEmpty": "Aucune copie importée ne peut être retirée.",
+    "batchUndoState": {
+      "removed": "Retirés",
+      "pending": "Copie retirée ; mise à jour du runtime en attente",
+      "failed": "Échec du retrait"
+    },
+    "nativeCopy": "Copie native à retirer",
+    "sourceLocation": "Source externe",
+    "descriptionLabel": "Description",
+    "importName": "Nom d’importation",
+    "renameNotice": "La copie utilisera « {{name}} » comme nom de répertoire et d’invocation. Les Skills existants et les fichiers sources externes resteront inchangés.",
+    "invalidImportName": "Saisissez un nom libre de 1 à 100 lettres, chiffres, tirets ou traits de soulignement.",
+    "refresh": "Actualiser",
+    "scan": "Analyser",
+    "scanFailed": "Échec de l’analyse. Réessayez.",
+    "batchProgress": "{{completed}} / {{total}} éléments traités",
+    "batchImporting": "Importation",
+    "batchUndoing": "Annulation des importations",
+    "batchProcessing": "Traitement…",
+    "batchRefreshing": "Mise à jour de la liste…",
+    "directUse": {
+      "available": "Disponible via la fonctionnalité de compatibilité existante. L’importation par copie n’est pas prise en charge sur cette page.",
+      "approvalRequired": "Approuvez d’abord l’utilisation dans la fonctionnalité concernée. L’importation par copie n’est pas prise en charge sur cette page.",
+      "disabled": "L’utilisation via la compatibilité est désactivée ou l’approbation a été refusée. L’importation par copie n’est pas prise en charge sur cette page.",
+      "conflict": "Choisissez la source correspondante dans la fonctionnalité concernée avant utilisation. L’importation par copie n’est pas prise en charge sur cette page.",
+      "blocked": "La déclaration ou la stratégie restreint l’utilisation ; vérifiez les diagnostics de la fonctionnalité concernée. L’importation par copie n’est pas prise en charge sur cette page.",
+      "runtimeUnavailable": "Cet hôte ne peut pas utiliser le contenu ; vérifiez l’environnement et les diagnostics de la fonctionnalité concernée. La source reste consultable. L’importation par copie n’est pas prise en charge sur cette page.",
+      "runtimeFailed": "La fonctionnalité concernée a signalé un échec de chargement ; vérifiez les diagnostics et réessayez. L’importation par copie n’est pas prise en charge sur cette page.",
+      "configurationChanged": "Examinez la configuration modifiée dans la fonctionnalité concernée. L’importation par copie n’est pas prise en charge sur cette page.",
+      "unknown": "La source a été découverte, mais cet hôte n’a pas confirmé l’état d’utilisation. L’importation par copie n’est pas prise en charge sur cette page."
+    },
+    "hookDiscoveryOnly": "Aperçu statique de la source et de la déclaration uniquement. Cette page ne peut ni importer ni exécuter ces Hooks.",
+    "skillImportUnsupported": "Cet hôte n’annonce pas de prise en charge de l’importation pour ce format. Mettez à niveau l’hôte gérant cette source et réessayez.",
+    "itemCount": "{{count}} éléments",
+    "lastKnownResult": "Affichage du dernier contenu lu avec succès.",
+    "mcpReviewDescription": "Examinez les paramètres de la source et les copies existantes avant d’importer.",
+    "instructions": {
+      "description": "Sources d’instructions lues par Alex. Les documents de démarrage et les règles de chemins correspondantes sont appliquées par le lecteur d’instructions ; cet inventaire n’indique pas ce qu’une session donnée a déjà chargé.",
+      "shared": "Instructions partagées de l’espace de travail",
+      "scope": "Portée",
+      "user": "Configuration utilisateur",
+      "project": "Projet en cours",
+      "application": "Moment d’application",
+      "startup": "Contexte de démarrage",
+      "conditional": "Après la lecture d’un fichier correspondant",
+      "patterns": "Motifs de chemins relatifs à l’espace de travail",
+      "unsupportedHost": "La découverte de sources d’instructions n’est pas disponible sur cet hôte ni sur cet espace de travail distant. Aucune source locale n’est substituée.",
+      "partial": "Certaines sources d’instructions n’ont pas pu être lues. Les sources disponibles sont listées ci-dessous.",
+      "readOnly": "Lu par le lecteur d’instructions"
+    },
+    "accounts": {
+      "description": "Consultez les comptes d’abonnement connectés dans Alex.",
+      "providers": {
+        "codex": "Codex / ChatGPT",
+        "opencode": "OpenCode Console (Zen)"
+      },
+      "notes": {
+        "codex": "Connectez votre abonnement ChatGPT et choisissez les modèles dans les paramètres de modèles.",
+        "opencode": "Connectez OpenCode Zen et ajoutez des modèles dans les paramètres de modèles. Go utilise une clé API."
+      },
+      "states": {
+        "unsupportedHost": "Les connexions de comptes sont indisponibles dans cet environnement",
+        "loading": "Chargement de l’état des comptes",
+        "failed": "Impossible de charger l’état des comptes. Actualisez pour réessayer.",
+        "unavailable": "Cet hôte n’offre pas cette connexion de compte",
+        "vaultUnavailable": "Le stockage des identifiants est indisponible",
+        "reauthenticationRequired": "Se reconnecter",
+        "connected": "Connecté dans Alex",
+        "notConnected": "Non connecté dans Alex"
+      },
+      "manage": "Gérer le compte et les modèles",
+      "connect": "Se connecter via les paramètres de modèles",
+      "labels": {
+        "unsupportedHost": "Non pris en charge",
+        "failed": "Échec du chargement",
+        "unavailable": "Indisponible",
+        "vaultUnavailable": "Coffre hors ligne",
+        "reauthenticationRequired": "Se reconnecter",
+        "connected": "Connecté",
+        "notConnected": "Non connecté"
+      },
+      "refresh": "Actualiser l’état des comptes"
+    },
+    "pets": {
+      "builtinSource": "Codex intégré",
+      "customSource": "Codex personnalisé",
+      "description": "Parcourez les compagnons Codex intégrés et personnalisés, puis importez-les pour les utiliser dans Alex.",
+      "partial": "Certains compagnons n’ont pas pu être lus. Consultez les diagnostics de la source ci-dessous.",
+      "reviewTitle": "Importer un compagnon",
+      "reviewDescription": "Copiez le paquet du compagnon examiné dans Alex. Vous pourrez le sélectionner après l’importation ; votre compagnon actuel reste sélectionné.",
+      "operationFailed": "L’opération ne s’est pas terminée. La source ou la copie a peut-être changé. Actualisez et examinez à nouveau.",
+      "use": "Utiliser ce compagnon",
+      "states": {
+        "unsupported": "Non pris en charge",
+        "failed": "Échec du chargement",
+        "partial": "Partiellement disponible",
+        "available": "Découverte prise en charge",
+        "empty": "Aucun compagnon trouvé",
+        "copyModified": "Copie modifiée",
+        "sourceChanged": "Source modifiée",
+        "using": "En cours d’utilisation",
+        "imported": "Importé",
+        "ready": "Prêt à importer"
+      }
+    },
+    "skills": {
+      "directUse": "Utilisez les Skills directement depuis leurs répertoires sources, sans importation ni copie. Activé par défaut ; la désactivation bloque l’utilisation dans tous les modes. Les commutateurs de projet n’affectent que cet espace de travail.",
+      "unsupported": "Cet hôte ne prend pas en charge la gestion directe de la disponibilité des Skills. Mettez à jour l’hôte ou gérez les Skills dans un espace de travail local.",
+      "availability": "Disponibilité",
+      "toggle": "Activer {{name}}",
+      "updateFailed": "Impossible de mettre à jour la disponibilité du Skill. Réessayez.",
+      "sameName": "Un autre Skill porte le même nom. La priorité de source détermine la valeur par défaut ; utilisez la clé complète pour sélectionner cette entrée."
+    }
+  },
+  "sourceSettings": {
+    "health": {
+      "available": "Disponible",
+      "partial": "Partiellement lu",
+      "degraded": "Dégradé",
+      "unavailable": "Indisponible"
+    },
+    "title": "Découverte de {{name}}",
+    "description": "Les paramètres de découverte sont distincts de l’importation. Cette liste ne contient que les sources de l’agent sélectionné.",
+    "master": "Commutateur principal des sources externes pour cette portée",
+    "projectScope": "S’applique à l’espace de travail en cours. Le commutateur principal affecte tous les agents de cette portée et préserve leurs stratégies existantes ; il n’importe aucun contenu.",
+    "userScope": "S’applique aux paramètres utilisateur de cet hôte. Le commutateur principal affecte tous les agents de cette portée et préserve leurs stratégies existantes ; il n’importe aucun contenu.",
+    "mode": "Stratégie {{name}}",
+    "discoverOnly": "Découvrir uniquement",
+    "disabled": "Désactivé",
+    "existingPolicy": "Stratégie de compatibilité existante",
+    "readOnly": "Cet hôte ne prend pas en charge la modification de ces paramètres, ou sa version de stratégie est incompatible.",
+    "failed": "Impossible d’enregistrer le paramètre. Consultez le dernier état avant de réessayer.",
+    "empty": "Aucune source pour cet agent n’est disponible dans l’instantané en cours."
+  }
+}

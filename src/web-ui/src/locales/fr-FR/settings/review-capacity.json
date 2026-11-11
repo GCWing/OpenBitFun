@@ -1,0 +1,28 @@
+{
+  "loading": "Chargement de la capacité de revue...",
+  "desktopOnly": {
+    "title": "Bureau uniquement",
+    "description": "Les paramètres de capacité de revue sont disponibles dans l’application de bureau Alex. La revue n’est pas disponible sur cette surface."
+  },
+  "error": {
+    "title": "Capacité de revue indisponible",
+    "retry": "Réessayer"
+  },
+  "capacity": {
+    "title": "Capacité de revue",
+    "maxParallelReviewers": {
+      "label": "Parallélisme de revue",
+      "description": "Exécute les tâches de revue complémentaires une par une ou deux à la fois"
+    },
+    "maxQueueWaitSeconds": {
+      "label": "Délai d’attente de capacité",
+      "description": "Durée d’attente des revues facultatives pour la capacité du fournisseur ; exclut le temps consacré aux vérifications déjà en cours"
+    },
+    "description": "Contrôle la manière dont les revues complémentaires utilisent la capacité des modèles ; la modification de la concurrence ne change pas le périmètre de revue"
+  },
+  "messages": {
+    "loadFailed": "Échec du chargement de la capacité de revue.",
+    "saveFailed": "Échec de l’enregistrement de la capacité de revue.",
+    "saved": "Capacité de revue enregistrée."
+  }
+}

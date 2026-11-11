@@ -1,0 +1,725 @@
+{
+  "button": {
+    "primary": "Principal",
+    "secondary": "Secondaire",
+    "danger": "Danger",
+    "ghost": "Fantôme"
+  },
+  "input": {
+    "placeholder": "Saisir...",
+    "clear": "Effacer",
+    "show": "Afficher",
+    "hide": "Masquer"
+  },
+  "select": {
+    "placeholder": "Sélectionner",
+    "noOptions": "Aucune option",
+    "loading": "Chargement...",
+    "search": "Rechercher...",
+    "emptyText": "Aucune donnée",
+    "selectAll": "Tout sélectionner",
+    "customValueHint": "Appuyez sur Entrée pour utiliser une valeur personnalisée",
+    "useCustomValue": "Utiliser « {{value}} »"
+  },
+  "numberInput": {
+    "decrease": "Diminuer",
+    "increase": "Augmenter"
+  },
+  "codeEditor": {
+    "exitFullscreen": "Quitter le plein écran",
+    "exitFullscreenHint": "Quitter le plein écran (ESC)",
+    "enterFullscreen": "Aperçu plein écran"
+  },
+  "diffFullscreen": {
+    "acceptFile": "Accepter le fichier",
+    "rejectFile": "Rejeter le fichier",
+    "acceptFileTooltip": "Accepter toutes les modifications de ce fichier",
+    "rejectFileTooltip": "Rejeter toutes les modifications de ce fichier",
+    "processing": "Traitement..."
+  },
+  "inputDialog": {
+    "emptyError": "Ce champ ne peut pas être vide"
+  },
+  "markdown": {
+    "imageUnavailable": "Impossible de charger l’aperçu de l’image",
+    "remoteImageUnavailable": "L’aperçu de l’image n’est pas disponible pour les tâches déléguées",
+    "copySuccess": "Copié",
+    "copyCode": "Copier le code",
+    "openInExplorer": "Ouvrir dans l’Explorateur",
+    "openInBrowser": "Ouvrir dans le navigateur",
+    "openInBuiltInBrowser": "Ouvrir dans le navigateur intégré",
+    "copyLink": "Copier le lien",
+    "copyFilePath": "Copier le chemin du fichier"
+  },
+  "imageLightbox": {
+    "label": "Aperçu de l’image"
+  },
+  "mermaidBlock": {
+    "renderFailed": "Échec du rendu du diagramme",
+    "codeIncomplete": "Code incomplet, en attente de contenu supplémentaire...",
+    "rendering": "Rendu du diagramme...",
+    "showCode": "Afficher la source",
+    "hideCode": "Masquer la source",
+    "copyCode": "Copier le code"
+  },
+  "flowChatCards": {
+    "todoCard": {
+      "title": "Gestion des tâches",
+      "description": "Gérer la liste de tâches",
+      "total": "Total",
+      "inProgress": "En cours",
+      "completed": "Terminé",
+      "noTasks": "Aucune tâche",
+      "taskCount": "{{total}} tâches / {{completed}} terminées"
+    },
+    "webSearchCard": {
+      "searchTitle": "Recherche web",
+      "fetchTitle": "Récupérer l’URL",
+      "searchQuery": "Requête de recherche",
+      "url": "URL",
+      "results": "Résultats de recherche",
+      "resultsCount": "{{count}} résultats",
+      "resultCount": "Résultats",
+      "noResults": "Aucun résultat trouvé",
+      "searching": "Recherche...",
+      "searchDesc": "Rechercher du contenu web",
+      "fetchDesc": "Récupérer le contenu d’une URL web",
+      "unspecifiedQuery": "Requête non spécifiée"
+    },
+    "snapshotCard": {
+      "writeFile": "Écrire un fichier",
+      "editFile": "Modifier un fichier",
+      "deleteFile": "Supprimer un fichier",
+      "multiEdit": "Modification multiple",
+      "accept": "Accepter les modifications",
+      "reject": "Rejeter les modifications",
+      "viewDetails": "Voir les détails",
+      "viewFullDiff": "Voir le diff complet",
+      "processing": "Traitement du fichier...",
+      "linesAdded": "lignes ajoutées",
+      "linesDeleted": "lignes supprimées",
+      "filesCount": "{{count}} fichiers",
+      "filePath": "Chemin du fichier",
+      "unspecifiedFile": "Fichier non spécifié",
+      "file": "Fichier"
+    },
+    "taskCard": {
+      "title": "Exécuter une tâche",
+      "description": "Exécuter une tâche d’IA spécialisée",
+      "taskType": "Type de tâche",
+      "taskDesc": "Description de la tâche",
+      "result": "Résultat de la tâche",
+      "processing": "L’IA traite la tâche...",
+      "defaultType": "Tâche IA",
+      "unspecifiedTask": "Tâche non spécifiée",
+      "taskResult": "Résultat de la tâche"
+    },
+    "searchCard": {
+      "grepTitle": "Recherche de texte",
+      "globTitle": "Recherche de fichiers",
+      "grepDesc": "Rechercher du texte dans les fichiers",
+      "globDesc": "Rechercher des fichiers par motif",
+      "pattern": "Motif de recherche",
+      "path": "Chemin de recherche",
+      "matches": "correspondances",
+      "files": "fichiers",
+      "matchingFiles": "Fichiers correspondants",
+      "noTextMatch": "Aucun texte correspondant trouvé",
+      "noFileMatch": "Aucun fichier correspondant trouvé",
+      "unspecifiedPattern": "Motif non spécifié",
+      "currentDir": "Répertoire courant",
+      "matchCount": "{{count}} occurrences"
+    },
+    "contextCompressionCard": {
+      "title": "Compression du contexte",
+      "description": "Optimiser le contexte de conversation pour économiser des jetons",
+      "compressing": "Compression du contexte...",
+      "analyzing": "Analyse et compression du contexte...",
+      "triggerBeforeUserMessage": "Avant le message de l’utilisateur",
+      "triggerAfterToolBatch": "Après un lot d’outils",
+      "triggerAfterAiResponse": "Après la réponse de l’IA",
+      "triggerManual": "Déclenchement manuel",
+      "triggerAuto": "Déclenchement automatique",
+      "triggerTime": "Déclenchement : {{trigger}} · #{{count}}",
+      "duration": "Durée",
+      "savedTokens": "{{count}} jetons économisés · Ratio {{ratio}} %"
+    },
+    "toolConfig": {
+      "read": {
+        "displayName": "Lire un fichier",
+        "description": "Lire le contenu d’un fichier spécifié"
+      },
+      "write": {
+        "displayName": "Écrire un fichier",
+        "description": "Écrire ou créer un fichier"
+      },
+      "edit": {
+        "displayName": "Modifier un fichier",
+        "description": "Modifier le contenu d’un fichier"
+      },
+      "delete": {
+        "displayName": "Supprimer un fichier",
+        "description": "Supprimer un fichier spécifié"
+      },
+      "grep": {
+        "displayName": "Recherche de texte",
+        "description": "Rechercher du texte dans les fichiers"
+      },
+      "glob": {
+        "displayName": "Recherche de fichiers",
+        "description": "Rechercher des fichiers par motif"
+      },
+      "webSearch": {
+        "displayName": "Recherche web",
+        "description": "Rechercher du contenu web"
+      },
+      "webFetch": {
+        "displayName": "Récupérer l’URL",
+        "description": "Récupérer le contenu d’une URL"
+      },
+      "task": {
+        "displayName": "Exécuter une tâche",
+        "description": "Exécuter des tâches d’IA spécialisées"
+      },
+      "todoWrite": {
+        "displayName": "Gestion des tâches",
+        "description": "Gérer la liste de tâches"
+      },
+      "contextCompression": {
+        "displayName": "Compression du contexte",
+        "description": "Compresser intelligemment le contexte de conversation"
+      },
+      "default": {
+        "description": "Exécuter l’outil {{toolName}}"
+      }
+    },
+    "baseToolCard": {
+      "awaitingConfirmation": "En attente de confirmation",
+      "analyzing": "Analyse des paramètres...",
+      "running": "Exécution...",
+      "completed": "Terminé",
+      "cancelled": "Annulé",
+      "failed": "Échec de l’exécution",
+      "preparing": "Préparation",
+      "inputParams": "Paramètres d’entrée :",
+      "confirm": "Confirmer",
+      "cancel": "Annuler",
+      "result": "Résultat :",
+      "viewDetails": "Voir les détails"
+    }
+  },
+  "componentLibrary": {
+    "alertDemo": {
+      "title": "Messages d’alerte",
+      "subtitle": "Composant d’alerte minimal",
+      "sections": {
+        "basic": "Types de base",
+        "withTitle": "Avec titre",
+        "withDescription": "Avec description",
+        "closable": "Fermable",
+        "noIcon": "Sans icône"
+      },
+      "messages": {
+        "operationSuccess": "Opération effectuée avec succès",
+        "operationFailed": "Échec de l’opération. Veuillez réessayer.",
+        "operationRisk": "Cette opération comporte des risques.",
+        "infoMessage": "Ceci est un message d’information.",
+        "deploySuccessTitle": "Déploiement réussi",
+        "deploySuccessMessage": "L’application a été déployée en production.",
+        "deployFailedTitle": "Échec du déploiement",
+        "deployFailedMessage": "Une erreur est survenue pendant le déploiement.",
+        "expiringTitle": "Expire bientôt",
+        "expiringMessage": "Votre abonnement expire dans 7 jours.",
+        "expiringDescription": "Renouvelez à temps pour éviter une interruption de service.",
+        "updateTitle": "Mise à jour de version",
+        "updateMessage": "Une nouvelle version v3.0.0 est disponible.",
+        "updateDescription": "Inclut des améliorations de performances et de nouvelles fonctionnalités.",
+        "closableMessage": "Cliquez sur le bouton à droite pour fermer cette alerte.",
+        "closableInfoTitle": "Avis",
+        "closableInfoMessage": "Cette alerte peut également être fermée.",
+        "noIconMessage": "Ceci est une alerte sans icône."
+      }
+    },
+    "iconButtonExample": {
+      "title": "Exemples d’IconButton",
+      "sections": {
+        "basic": "Style de base (Défaut) - arrière-plan transparent, affiche un remplissage au survol",
+        "ghost": "Style fantôme - identique au style Défaut",
+        "primary": "Bouton d’accentuation principal - utilise des variables CSS",
+        "shape": "Variantes de forme - cercle",
+        "other": "Autres variantes",
+        "usage": "Remarques d’utilisation"
+      },
+      "usage": {
+        "defaultGhost": {
+          "label": "défaut/fantôme : ",
+          "text": "arrière-plan transparent, affiche un remplissage au survol ; adapté aux actions de priorité faible"
+        },
+        "primary": {
+          "label": "principal : ",
+          "text": "bouton d’accentuation utilisant les mêmes variables CSS que les boutons textuels ; adapté aux actions de priorité élevée"
+        },
+        "disabled": {
+          "label": "désactivé : ",
+          "text": "utiliser l’attribut disabled ; l’opacité est réduite à 0.5"
+        },
+        "appearance": {
+          "label": "prise en charge de l’apparence : ",
+          "text": "la variante principale suit les variables d’apparence"
+        }
+      }
+    },
+    "previewApp": {
+      "title": "Bibliothèque de composants Alex",
+      "appearanceLabel": "Apparence",
+      "appearanceModeLight": "Clair",
+      "appearanceModeDark": "Sombre",
+      "appearanceDescriptionLight": "Apparence claire",
+      "appearanceDescriptionDark": "Apparence sombre",
+      "sidebarTitle": "Navigation des composants",
+      "expandSidebar": "Développer la navigation",
+      "collapseSidebar": "Réduire la navigation",
+      "emptyState": "Sélectionnez une catégorie à gauche pour afficher les composants"
+    },
+    "layouts": {
+      "quickJump": "Accès rapide",
+      "previewLabel": "Aperçu",
+      "idLabel": "ID :"
+    },
+    "markdownPreview": {
+      "title": "Aperçu Markdown",
+      "badge": "Composant de contenu",
+      "backToLibrary": "← Retour à la bibliothèque de composants",
+      "controls": {
+        "variantLabel": "Variante de style :",
+        "modeLabel": "Mode :",
+        "preview": "Aperçu",
+        "edit": "Modifier",
+        "reset": "Réinitialiser le contenu"
+      },
+      "variants": {
+        "default": "Par défaut",
+        "bordered": "Avec bordure",
+        "minimal": "Minimal"
+      },
+      "editorPlaceholder": "Saisissez le contenu Markdown ici...",
+      "sample": "# Aperçu complet du composant Markdown\n\nBienvenue dans la page d’aperçu du composant Markdown d’Alex !\n\n## Syntaxe de base\n\n### Styles de texte\n\nCeci est du **texte en gras**, ceci est du *texte en italique*, et ceci est du ~~texte barré~~.\n\nVous pouvez aussi combiner les styles, comme ***gras italique***.\n\n### Listes\n\n#### Liste non ordonnée\n\n- Élément 1\n- Élément 2\n  - Sous-élément 2.1\n  - Sous-élément 2.2\n- Élément 3\n\n#### Liste ordonnée\n\n1. Étape une\n2. Étape deux\n3. Étape trois\n\n#### Liste de tâches\n\n- [x] Tâche terminée\n- [ ] Tâche en attente\n- [ ] Une autre tâche\n\n## Exemples de code\n\n### Code en ligne\n\nExécutez `npm install` pour installer les dépendances, puis exécutez `npm run dev` pour démarrer le serveur de développement.\n\n### Blocs de code\n\n```typescript\ninterface User {\n  id: string;\n  name: string;\n  email: string;\n}\n\nfunction greetUser(user: User): string {\n  return `Hello, ${user.name}!`;\n}\n\nconst user: User = {\n  id: '1',\n  name: 'Alice',\n  email: 'alice@example.com'\n};\n\nconsole.log(greetUser(user));\n```\n\n```javascript\n// Exemple JavaScript\nconst fetchData = async () => {\n  try {\n    const response = await fetch('https://api.example.com/data');\n    const data = await response.json();\n    return data;\n  } catch (error) {\n    console.error('Error:', error);\n  }\n};\n```\n\n```python\n# Exemple Python\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nfor i in range(10):\n    print(f\"F({i}) = {fibonacci(i)}\")\n```\n\n## Tableaux\n\n| Fonctionnalité | Description | Pris en charge |\n|------|------|---------|\n| Titres | Titres H1-H6 | Oui |\n| Listes | Listes ordonnées/non ordonnées | Oui |\n| Blocs de code | Coloration syntaxique | Oui |\n| Tableaux | Tableaux Markdown | Oui |\n| Liens | Liens hypertexte | Oui |\n| Images | Rendu d’images | Oui |\n| Citations | Blocs de citation | Oui |\n\n## Citations\n\n> Ceci est une citation.\n> \n> Elle peut servir à mettre en évidence une information importante ou à citer quelqu’un.\n> \n> — Équipe Alex\n\n> **Remarque :** les citations peuvent contenir d’autres éléments Markdown, notamment **gras**, *italique* et `code`.\n\n## Liens\n\nConsultez le [site web d’Alex](https://openbitfun.dev) pour plus d’informations.\n\nVoyez le [dépôt GitHub](https://github.com/openbitfun) pour le code source.\n\nLien automatique : https://example.com\n\n## Images\n\n![Exemple d’image](https://via.placeholder.com/600x300/667eea/ffffff?text=OpenBitFun+Markdown)\n\n## Ligne horizontale\n\n---\n\n## Contenu imbriqué\n\n### Code dans les listes\n\n1. Installez d’abord les dépendances :\n   ```bash\n   npm install react-markdown\n   ```\n\n2. Utilisez-le ensuite dans le code :\n   ```jsx\n   import ReactMarkdown from 'react-markdown';\n   \n   <ReactMarkdown>{content}</ReactMarkdown>\n   ```\n\n### Liste dans une citation\n\n> #### Remarques\n> \n> - Veillez à bien échapper les caractères spéciaux\n> - Utilisez une coloration syntaxique appropriée\n> - Conservez une structure de document claire\n\n## Formats spéciaux\n\n<details>\n<summary>Cliquez pour afficher les détails</summary>\n\nCe contenu est replié ; cliquez sur le titre pour le déplier.\n\n- Prend en charge les balises HTML\n- Peut inclure du contenu Markdown\n\n</details>\n\n## Résumé\n\nLe composant Markdown d’Alex prend en charge :\n\n1. Syntaxe Markdown complète\n2. GitHub Flavored Markdown (GFM)\n3. Un thème sombre soigné\n4. Coloration syntaxique du code\n5. Tableaux responsive\n6. Variantes de style personnalisées\n\n**Commencez dès maintenant !**"
+    }
+  },
+  "modal": {
+    "close": "Fermer",
+    "confirm": "Confirmer",
+    "cancel": "Annuler"
+  },
+  "dialog": {
+    "alert": {
+      "title": "Alerte",
+      "ok": "OK"
+    },
+    "confirm": {
+      "title": "Confirmer",
+      "ok": "OK",
+      "cancel": "Annuler"
+    },
+    "prompt": {
+      "title": "Prompt",
+      "placeholder": "Saisir...",
+      "ok": "OK",
+      "cancel": "Annuler"
+    }
+  },
+  "tooltip": {
+    "openDetails": "Ouvrir les détails",
+    "copy": "Copier",
+    "copied": "Copié",
+    "close": "Fermer",
+    "expand": "Développer",
+    "collapse": "Réduire"
+  },
+  "tabs": {
+    "close": "Fermer",
+    "closeBtwTitle": "Fermer la conversation latérale ?",
+    "saveBtwAsFork": "Enregistrer comme fork",
+    "saveBtwFailed": "Impossible d’enregistrer. Le fil latéral est encore ouvert ; réessayez.",
+    "confirmCloseBtw": "La fermeture supprime définitivement la conversation.",
+    "skipCloseBtwConfirmation": "Ne plus demander",
+    "closeBtwFailed": "Impossible de fermer la conversation latérale. L’onglet est encore ouvert ; veuillez réessayer.",
+    "popOut": "Extraire en scène",
+    "closeOthers": "Fermer les autres",
+    "closeAll": "Tout fermer",
+    "closeRight": "Fermer les onglets à droite",
+    "pin": "Épingler",
+    "unpin": "Désépingler l’onglet",
+    "unsaved": "Non enregistré",
+    "fileDeleted": "Supprimé",
+    "missionControl": "Mission Control",
+    "hiddenTabsCount": "{{count}} onglets masqués",
+    "confirmCloseWithDirty": "Le fichier \"{{title}}\" contient des modifications non enregistrées.\n\nAbandonner les modifications et fermer ?",
+    "confirmCloseAllWithDirty": "{{count}} fichiers contiennent des modifications non enregistrées :\n\n{{fileList}}\n\nAbandonner toutes les modifications et fermer ?"
+  },
+  "tree": {
+    "expand": "Développer",
+    "collapse": "Réduire",
+    "loading": "Chargement..."
+  },
+  "table": {
+    "empty": "Aucune donnée",
+    "loading": "Chargement...",
+    "rowsPerPage": "Lignes par page",
+    "totalRows": "{{total}} lignes au total",
+    "page": "Page {{page}}",
+    "of": "sur {{total}}"
+  },
+  "pagination": {
+    "first": "Première page",
+    "last": "Dernière page",
+    "previous": "Page précédente",
+    "next": "Page suivante",
+    "page": "Page {{page}}",
+    "of": "sur {{total}}"
+  },
+  "dropdown": {
+    "noItems": "Aucun élément"
+  },
+  "contextMenu": {
+    "cut": "Couper",
+    "copy": "Copier",
+    "paste": "Coller",
+    "delete": "Supprimer",
+    "selectAll": "Tout sélectionner"
+  },
+  "contextSystem": {
+    "contextList": {
+      "emptyTitle": "Aucun contexte",
+      "emptyHint": "Faites glisser ici du contenu depuis l’arborescence de fichiers, l’éditeur de code ou un diagramme Mermaid",
+      "title": "Contexte",
+      "clearAll": "Effacer",
+      "clearAllTitle": "Effacer tout le contexte",
+      "clearAllConfirm": "Effacer les {{count}} contextes ?"
+    },
+    "contextCard": {
+      "unknownType": "Type inconnu : {{type}}",
+      "removeContext": "Supprimer ce contexte",
+      "viewFullCode": "Voir le code complet",
+      "viewLargeImage": "Voir l’image complète"
+    },
+    "contextTypes": {
+      "selection": "Sélection de texte",
+      "file": "Fichier",
+      "folder": "Dossier",
+      "editor": "Éditeur",
+      "flowChat": "FlowChat",
+      "flowChatToolCard": "Carte d’outil FlowChat",
+      "flowChatTextBlock": "Bloc de texte FlowChat",
+      "tab": "Onglet",
+      "panelHeader": "En-tête de panneau",
+      "emptySpace": "Espace vide",
+      "custom": "Personnalisé",
+      "unknown": "Inconnu"
+    },
+    "contextRegistry": {
+      "file": {
+        "name": "Fichier",
+        "description": "Fichier du système de fichiers"
+      },
+      "directory": {
+        "name": "Répertoire",
+        "description": "Répertoire du système de fichiers"
+      },
+      "codeSnippet": {
+        "name": "Extrait de code",
+        "description": "Extrait de code sélectionné"
+      },
+      "mermaidDiagram": {
+        "name": "Diagramme Mermaid",
+        "description": "Code complet du diagramme Mermaid"
+      },
+      "image": {
+        "name": "Image",
+        "description": "Fichier image (pour la compréhension multimodale)"
+      },
+      "webElement": {
+        "name": "Élément web",
+        "description": "Élément DOM capturé depuis le navigateur"
+      }
+    },
+    "webElement": {
+      "from": "de"
+    },
+    "diagram": {
+      "defaultTitle": "Diagramme Mermaid",
+      "types": {
+        "flowchart": "Diagramme de flux",
+        "sequence": "Diagramme de séquence",
+        "class": "Diagramme de classes",
+        "state": "Diagramme d’états",
+        "er": "Diagramme ER",
+        "gantt": "Diagramme de Gantt",
+        "other": "Diagramme"
+      },
+      "codeSize": {
+        "chars": "{{count}} caractères",
+        "kChars": "{{count}}K caractères"
+      }
+    },
+    "validation": {
+      "warnings": {
+        "codeLinesLarge": "Le code sélectionné comporte beaucoup de lignes (>{{max}}). Envisagez de le réduire.",
+        "codeContentLarge": "Le code sélectionné est volumineux (>{{maxChars}} caractères). Le traitement peut être plus lent.",
+        "fileLarge": "Le fichier est volumineux (>{{size}}MB). Le traitement peut être plus lent.",
+        "mermaidCodeLong": "Le code Mermaid est long (>{{maxChars}} caractères). Le traitement peut être plus lent.",
+        "mermaidCodeInvalid": "La syntaxe Mermaid pourrait être invalide."
+      }
+    }
+  },
+  "notification": {
+    "close": "Fermer",
+    "closeAll": "Tout fermer"
+  },
+  "notificationCenter": {
+    "title": "Centre de notifications",
+    "actions": {
+      "markAllRead": "Tout marquer comme lu",
+      "clearAll": "Tout effacer"
+    },
+    "searchPlaceholder": "Rechercher des notifications...",
+    "filters": {
+      "all": "Tout ({{count}})"
+    },
+    "activeTasks": {
+      "title": "Tâches actives ({{count}})"
+    },
+    "empty": {
+      "noMatches": "Aucune notification correspondante",
+      "noNotifications": "Aucune notification"
+    },
+    "groups": {
+      "earlier": "Plus tôt"
+    }
+  },
+  "loading": {
+    "text": "Chargement...",
+    "retry": "Réessayer"
+  },
+  "empty": {
+    "title": "Aucune donnée",
+    "description": "Aucun contenu trouvé"
+  },
+  "error": {
+    "title": "Erreur",
+    "description": "Une erreur inattendue est survenue",
+    "retry": "Réessayer"
+  },
+  "search": {
+    "placeholder": "Rechercher...",
+    "noResults": "Aucun résultat",
+    "clear": "Effacer la recherche"
+  },
+  "form": {
+    "required": "Obligatoire",
+    "optional": "Facultatif",
+    "submit": "Envoyer",
+    "reset": "Réinitialiser",
+    "cancel": "Annuler"
+  },
+  "windowControls": {
+    "minimize": "Réduire",
+    "maximize": "Agrandir",
+    "restore": "Restaurer",
+    "close": "Fermer"
+  },
+  "appLayout": {
+    "workspaceOpenFailed": "Échec de l’ouverture de l’espace de travail",
+    "projectRequestMessage": "Je souhaite créer un nouveau projet :\n\n{{description}}\n\nVeuillez concevoir la structure du projet et commencer à l’implémenter.",
+    "projectRequestSent": "Cahier des charges du projet envoyé à Xiaofang. La collaboration a commencé.",
+    "projectRequestSendFailed": "Échec de l’envoi de la description du projet. Veuillez la saisir manuellement.",
+    "flowChatInitFailed": "Échec de l’initialisation. Veuillez actualiser la page.",
+    "windowFullscreenEntered": "Mode plein écran de la fenêtre activé",
+    "windowFullscreenExited": "Mode plein écran de la fenêtre quitté",
+    "windowFullscreenExitHint": "Appuyez sur {{shortcut}} pour quitter.",
+    "windowFullscreenEnterHint": "Appuyez sur {{shortcut}} pour entrer à nouveau."
+  },
+  "bottomBar": {
+    "sessions": "Atelier",
+    "files": "Fichiers",
+    "terminal": "Terminal",
+    "git": "Git",
+    "capabilities": "Capacités",
+    "clickToSelectBranch": "Cliquez pour sélectionner une branche",
+    "aiWingExpand": "Développer les outils IA",
+    "devWingExpand": "Développer les outils de développement"
+  },
+  "canvas": {
+    "resizePanes": "Redimensionner les volets",
+    "chatPane": "Conversation",
+    "contentPane": "Contenu",
+    "swapPanes": "Permuter les volets",
+    "hidePanel": "Masquer le panneau",
+    "maximizePanel": "Agrandir le panneau",
+    "restorePanel": "Restaurer le panneau",
+    "noContentOpen": "Aucun contenu ouvert",
+    "filesCount": "{{count}} fichiers",
+    "searchPlaceholder": "Rechercher par nom ou chemin de fichier...",
+    "noPreview": "Aucun aperçu disponible",
+    "groupPrimary": "Principal",
+    "groupSecondary": "Secondaire",
+    "groupTertiary": "Tertiaire",
+    "groupPrimaryFull": "Groupe principal",
+    "groupSecondaryFull": "Groupe secondaire",
+    "groupTertiaryFull": "Groupe tertiaire",
+    "mergeAllGroups": "Fusionner tous les groupes",
+    "mergeAll": "Tout fusionner",
+    "noMatchingFiles": "Aucun fichier correspondant",
+    "noOpenFiles": "Aucun fichier ouvert",
+    "clickToSwitch": "Cliquez sur la carte pour changer de fichier",
+    "exit": "Quitter",
+    "openFileLocation": "Ouvrir l’emplacement du fichier",
+    "pinAsTab": "Épingler comme onglet (Entrée)",
+    "closeEsc": "Fermer (Esc)",
+    "enterToPin": "Entrée pour épingler comme onglet",
+    "escToClose": "Esc pour fermer",
+    "dragTabHere": "Faites glisser l’onglet ici",
+    "dragToResize": "Faites glisser pour redimensionner | Double-cliquez pour réinitialiser",
+    "terminal": "Terminal",
+    "dropLeft": "Gauche",
+    "dropRight": "Droite",
+    "dropTop": "Haut",
+    "dropBottom": "Bas",
+    "dropCenter": "Déposer",
+    "empty": {
+      "title": "Aucun élément ouvert",
+      "workspaceUnavailable": "Espace de travail déconnecté. Veuillez vous reconnecter.",
+      "selectWorkspace": "Sélectionnez d’abord un espace de travail.",
+      "browseFiles": "Parcourir les fichiers",
+      "newTerminal": "Nouveau terminal",
+      "reopen": "Rouvrir {{title}}"
+    }
+  },
+  "flexiblePanel": {
+    "empty": {
+      "title": "Aucun contenu",
+      "description": "Sélectionnez un fichier ou un nœud pour prévisualiser le contenu"
+    },
+    "unknownContent": {
+      "title": "Type de contenu non pris en charge",
+      "description": "Impossible de prévisualiser ce type de contenu",
+      "contentType": "Type de contenu : {{type}}"
+    },
+    "visualizationDisabled": {
+      "title": "Fonctions de visualisation désactivées",
+      "description": "Le mode lecture de projet se concentre sur la navigation et la prévisualisation des fichiers"
+    },
+    "errors": {
+      "markdownEditorMissingPath": "Impossible de charger l’éditeur Markdown : chemin de fichier ou contenu initial manquant",
+      "planViewerMissingPath": "Impossible de charger la visionneuse de plan : chemin de fichier manquant",
+      "terminalMissingSessionId": "Impossible de charger le terminal : ID de session manquant"
+    },
+    "placeholder": {
+      "architectureLayerViewer": "La visionneuse de couche d’architecture est en cours de développement...",
+      "noDiffResult": "Aucun résultat de diff à afficher",
+      "noModuleChanges": "Aucune modification de module"
+    },
+    "actions": {
+      "copyContent": "Copier le contenu",
+      "downloadContent": "Télécharger le contenu",
+      "close": "Fermer"
+    },
+    "loading": {
+      "gitDiff": "Chargement du diff Git...",
+      "gitGraph": "Chargement du graphe Git...",
+      "gitBranchHistory": "Chargement de l’historique des commits de la branche...",
+      "gitSettings": "Chargement des paramètres Git...",
+      "diffView": "Chargement de la vue Diff...",
+      "taskDetail": "Chargement du détail de la tâche...",
+      "dependencyGraph": "Chargement du graphe de dépendances...",
+      "planViewer": "Chargement du plan...",
+      "terminal": "Chargement du terminal..."
+    },
+    "aiSession": {
+      "title": "Session IA : {{sessionId}}",
+      "unknown": "Inconnu",
+      "sessionStatus": "Statut de la session :",
+      "operationsCount": "Nombre d’opérations :",
+      "operationsValue": "{{count}} opérations",
+      "startTime": "Heure de début :",
+      "unknownTime": "Inconnu",
+      "fileOperations": "Opérations sur les fichiers"
+    },
+    "fallback": {
+      "noCodeContent": "Aucun contenu de code disponible"
+    }
+  },
+  "header": {
+    "selectProjectDirectory": "Sélectionnez un répertoire de projet à ouvrir"
+  },
+  "hide": "Masquer",
+  "show": "Afficher",
+  "workbench": {
+    "dragToPopOut": "Faites glisser pour extraire",
+    "releaseToPopOut": "Relâchez pour extraire",
+    "save": "Enregistrer",
+    "discard": "Abandonner les modifications",
+    "cancel": "Annuler",
+    "unsavedMessage": "Enregistrer les modifications de « {{title}} » avant de fermer ?",
+    "closeOtherContent": "Fermer les autres onglets de contenu",
+    "closeAllContent": "Fermer tous les onglets de contenu"
+  },
+  "desktopCard": {
+    "loading": "Chargement…",
+    "loadFailed": "Impossible de charger cette carte.",
+    "unsupportedTemplate": "Cette carte nécessite une version plus récente d’Alex.",
+    "stackingFailed": "Impossible de changer le mode d’affichage : {{error}}",
+    "pinRecoveryFailed": "Impossible de conserver cette carte sur le bureau ; elle est donc affichée comme une fenêtre normale. Épinglez-la à nouveau depuis le menu.",
+    "updated": "Mise à jour {{time}}",
+    "updatedWithWarning": "Mise à jour {{time}}, certaines données peuvent manquer",
+    "refreshFailed": "Échec de l’actualisation : {{error}}",
+    "menu": {
+      "more": "Plus d’actions",
+      "refresh": "Actualiser",
+      "openLink": "Ouvrir le lien",
+      "openSession": "Ouvrir la session source",
+      "alwaysOnTop": "Toujours au premier plan (toutes les applications)",
+      "desktopPinned": "Épingler au bureau",
+      "hide": "Masquer la carte",
+      "delete": "Supprimer la carte"
+    },
+    "deleteConfirm": {
+      "title": "Supprimer la carte",
+      "message": "Supprimer cette carte ? Cette action est irréversible.",
+      "cancel": "Annuler",
+      "confirm": "Supprimer"
+    },
+    "countdown": {
+      "due": "Temps écoulé",
+      "days": "{{count}} j",
+      "dismiss": "Ignorer"
+    },
+    "checklist": {
+      "empty": "Aucun élément"
+    },
+    "chart": {
+      "empty": "Aucune donnée à représenter pour l’instant",
+      "other": "Autre",
+      "remaining": "Restant",
+      "ofTotal": "sur {{total}}",
+      "changeSince": "{{change}} depuis {{label}}",
+      "range": "{{min}} – {{max}}"
+    },
+    "cron": {
+      "failed": "Impossible de charger la tâche planifiée.",
+      "missing": "Cette tâche planifiée n’existe plus.",
+      "enabled": "Actif",
+      "paused": "En pause",
+      "nextRun": "Prochaine exécution",
+      "lastRun": "Dernière exécution",
+      "neverRun": "Pas encore exécutée",
+      "status": {
+        "ok": "Réussie",
+        "error": "$t(shared:statuses.failed)",
+        "running": "$t(shared:statuses.running)",
+        "queued": "En file d’attente",
+        "cancelled": "$t(shared:statuses.cancelled)"
+      }
+    }
+  }
+}

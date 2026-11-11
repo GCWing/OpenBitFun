@@ -1,0 +1,411 @@
+{
+  "title": "Agents",
+  "desc": "Sous-agents collaborant à des tâches spécialisées — {{total}} au total, {{enabled}} activés",
+  "manage": "Gérer",
+  "builtin": "Intégré",
+  "custom": "Personnalisé",
+  "empty": "Aucun sous-agent disponible",
+  "goManage": "Aller à la gestion",
+  "loading": "Chargement…",
+  "page": {
+    "title": "Agents",
+    "subtitle": "Les modes d’exécution reflètent le fonctionnement des agents par défaut, tandis que les agents spécialisés accomplissent les tâches de manière indépendante ou collective.",
+    "searchPlaceholder": "Rechercher des agents par nom ou description…",
+    "newAgent": "Nouvel agent"
+  },
+  "nav": {
+    "harness": "Modes d’exécution",
+    "coreAgents": "Agents connectés",
+    "agents": "Agents"
+  },
+  "harnessZone": {
+    "title": "Modes d’exécution",
+    "flowCaption": "Une tâche · Quatre stratégies · Un résultat",
+    "task": "Tâche",
+    "result": "Résultat",
+    "replay": "Rejouer l’animation",
+    "profiles": {
+      "Minimal": {
+        "name": "$t(shared:agents.Minimal)",
+        "purpose": "Moins d’intervention, plus d’autonomie",
+        "description": "Met l’accent sur l’autonomie, avec un processus moins prescrit afin que le modèle puisse décider comment accomplir le codage et autres tâches."
+      },
+      "Standard": {
+        "name": "$t(shared:agents.Standard)",
+        "purpose": "Une boîte à outils complète pour le codage et le travail quotidien",
+        "description": "Couvre le codage et le travail quotidien, avec des consignes de tâche claires et une boîte à outils complète pour le développement, l’organisation de l’information et la rédaction."
+      },
+      "Ultimate": {
+        "name": "$t(shared:agents.Ultimate)",
+        "purpose": "Travailler ensemble sur des projets complexes",
+        "description": "Met l’accent sur le travail d’équipe : des agents travaillant en parallèle et une revue indépendante pour soutenir les projets complexes et les changements d’envergure."
+      },
+      "Creative": {
+        "name": "$t(shared:agents.Creative)",
+        "purpose": "Créer des contenus et des applications, façonner votre expérience",
+        "description": "Transforme les idées en travail abouti en langage naturel : vidéos animées, présentations, prototypes et pages web réalisés avec des skills créatifs chargés à la demande, plus des MiniApps et un Alex personnalisé."
+      }
+    }
+  },
+  "filters": {
+    "source": "Source",
+    "kind": "Type",
+    "anySource": "Toute source",
+    "anyKind": "Tout type",
+    "builtin": "Intégré",
+    "user": "Utilisateur",
+    "project": "Projet",
+    "external": "Externe",
+    "subagent": "Sous-agent",
+    "agent": "Agent"
+  },
+  "coreAgentsZone": {
+    "title": "Agent",
+    "subtitle": "Agents qui traitent directement une tâche, comme Assistant, Cowork et Deep Research",
+    "empty": "Aucun agent disponible",
+    "roleLabel": "Usage principal · ",
+    "computerUseDisabledBadge": "Désactivé dans les paramètres"
+  },
+  "agentsZone": {
+    "title": "Agents spécialisés",
+    "subtitle": "Parcourez en un seul endroit les agents intégrés, utilisateur, de projet et externes, puis ouvrez une carte pour la consulter ou la configurer.",
+    "empty": {
+      "noAgents": "Aucun agent disponible pour le moment",
+      "noMatch": "Aucun agent correspondant"
+    }
+  },
+  "agentCard": {
+    "status": {
+      "connected": "Connecté"
+    },
+    "metrics": {
+      "tools": "Outils",
+      "skills": "Skills",
+      "collaboration": "Agents",
+      "capabilities": "Capacités",
+      "model": "Modèle"
+    },
+    "badges": {
+      "agent": "Agent",
+      "userMode": "Agent utilisateur",
+      "projectMode": "Agent de projet",
+      "subagent": "Sous-agent",
+      "userSubagent": "Sous-agent utilisateur",
+      "projectSubagent": "Sous-agent de projet",
+      "externalSubagent": "Sous-agent externe",
+      "disabled": "Désactivé"
+    },
+    "actions": {
+      "expand": "Développer les détails"
+    },
+    "meta": {
+      "tools": "{{count}} outils",
+      "skills": "{{count}} skills",
+      "subagents": "{{count}} sous-agents",
+      "externalProvider": "Externe · {{provider}}",
+      "singleRun": "Une seule exécution · Sans relance"
+    },
+    "modelSelector": {
+      "label": "Modèle",
+      "default": "Utiliser le modèle de sous-agent par défaut",
+      "inherit": "Hériter de la session parente",
+      "fast": "Modèle rapide",
+      "primary": "Modèle principal",
+      "updateFailed": "Échec de la mise à jour du modèle du sous-agent"
+    }
+  },
+  "capabilityCategories": {
+    "coding": "Codage",
+    "docs": "Docs",
+    "analysis": "Analyse",
+    "testing": "Tests",
+    "creative": "$t(shared:agents.Creative)",
+    "ops": "Ops"
+  },
+  "agentsOverview": {
+    "filterUser": "Utilisateur",
+    "filterProject": "Projet",
+    "backToOverview": "Retour à la vue d’ensemble",
+    "detail": {
+      "overview": "Vue d’ensemble",
+      "backToOverview": "Retour à la vue d’ensemble",
+      "cards": {
+        "tools": "Consulter et gérer les outils que cet agent peut utiliser",
+        "skills": "Choisir les Skills disponibles pour cet agent",
+        "subagents": "Configurer la délégation et les agents collaborateurs",
+        "model": "Choisir le modèle utilisé par ce sous-agent"
+      },
+      "configuration": "Configuration",
+      "basicInfo": "Informations de base",
+      "basicInfoHint": "Identité, objectif et propriétés d’exécution",
+      "behaviorContext": "Comportement et contexte",
+      "behaviorContextHint": "Points forts d’exécution et relations avec les profils partagés",
+      "name": "Nom de l’agent",
+      "source": "Source",
+      "type": "Type",
+      "followUp": "Tours de suivi",
+      "description": "Description de l’objectif",
+      "supported": "Pris en charge",
+      "unsupported": "Non pris en charge"
+    },
+    "capabilities": "Configuration des capacités",
+    "tools": "Outils",
+    "toolsReset": "Rétablir par défaut",
+    "toolsCancel": "Annuler la modification",
+    "toolsSave": "Enregistrer",
+    "toolsEdit": "Gérer les outils",
+    "toolsResetSuccess": "Outils rétablis par défaut",
+    "toolsResetFailed": "Échec de la réinitialisation des outils",
+    "toolToggleFailed": "Échec de l’activation de l’outil",
+    "toolsUnsupported": "L’hôte pair connecté n’expose pas de catalogue d’outils.",
+    "toolsFailed": "Impossible de charger le catalogue d’outils. Essayez de rouvrir l’agent.",
+    "skills": "Skills",
+    "subagents": "Sous-agents",
+    "skillsCancel": "Annuler la modification",
+    "skillsSave": "Enregistrer",
+    "skillsEdit": "Gérer les skills",
+    "subagentsEdit": "Gérer les sous-agents",
+    "subagentsDone": "Terminé",
+    "noSubagents": "Aucun sous-agent gérable disponible",
+    "enableGroup": "Activer le groupe",
+    "disableGroup": "Désactiver le groupe",
+    "clearGroup": "Effacer",
+    "selectAll": "Tout sélectionner",
+    "selectionSaveHint": "Prend effet après l’enregistrement",
+    "capabilityEnabled": "Activé",
+    "noEnabledSubagents": "Aucun sous-agent activé",
+    "reset": "Réinitialiser",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "skillToggleFailed": "Échec de l’activation du skill",
+    "subagentToggleFailed": "Échec de l’activation du sous-agent",
+    "sharedProfileLabel": "Profil partagé",
+    "sharedProfileDefaultLabel": "Profil de codage partagé",
+    "sharedProfileDescription": "Les modifications ici s’appliquent à : {{modes}}.",
+    "unknownSkillSource": "Autre source",
+    "skillScopeUser": "Utilisateur",
+    "skillScopeProject": "Projet",
+    "skillScopeLocalUser": "Cet appareil · Utilisateur",
+    "skillScopeRemoteProject": "Espace de travail distant · Projet",
+    "skillRuntimeSelected": "Utilisé à l’exécution",
+    "skillRuntimeCovered": "Activé, couvert par {{source}}",
+    "skillRuntimeEnabled": "Activé, non sélectionné actuellement",
+    "skillShadowed": "masqué par un skill de priorité supérieure portant le même nom",
+    "noSkills": "Aucun skill activé",
+    "capabilityTooltip": {
+      "executionPermission": "Autorisation d’exécution",
+      "standardPermission": "$t(shared:agents.Standard)",
+      "provider": "Fournisseur",
+      "mcpServer": "Serveur MCP",
+      "skillKey": "Clé",
+      "sourceLevel": "Source / niveau",
+      "status": "Statut",
+      "savedStatus": "Statut de la configuration enregistrée",
+      "source": "Source",
+      "toolCount": "Nombre d’outils",
+      "externalManaged": "Géré par le fournisseur externe"
+    },
+    "skillGroups": {
+      "computerUse": "$t(shared:agents.ComputerUse)",
+      "office": "Bureautique",
+      "meta": "Meta",
+      "miniapp": "MiniApp",
+      "canvas": "Canvas",
+      "debugging": "Débogage",
+      "coordination": "Coordination",
+      "planning": "Planification",
+      "other": "Autre"
+    },
+    "skillGroupPicker": {
+      "builtin": "Groupes intégrés",
+      "myGroups": "Mes groupes",
+      "otherSkills": "Autres skills",
+      "unavailableCount": "{{count}} indisponibles",
+      "enableGroupSkills": "Sélectionner tous les skills de {{name}}",
+      "clearGroupSkills": "Désélectionner les skills de {{name}}",
+      "loadFailed": "Impossible de charger les groupes personnalisés. Vous pouvez toujours sélectionner des skills individuellement.",
+      "retry": "Réessayer"
+    },
+    "toolGroups": {
+      "builtin": "Groupes intégrés",
+      "myGroups": "Mes groupes",
+      "extensions": "Extensions",
+      "otherTools": "Autres outils",
+      "filesSearch": "Inspection et recherche",
+      "fileEditing": "Édition de fichiers",
+      "commands": "Exécution de commandes",
+      "delegation": "Agents et skills",
+      "web": "Accès web",
+      "imageUnderstanding": "Compréhension d’images",
+      "interactionCanvas": "Interaction et canvas",
+      "computerAutomation": "Utilisation et automatisation de l’ordinateur",
+      "extension": "Extension · {{provider}}",
+      "other": "Autre",
+      "selectedCount": "{{count}} outils sélectionnés",
+      "manageGroups": "Gérer les groupes",
+      "manageTitle": "Gérer mes groupes d’outils",
+      "manageSubtitle": "Organisez vos sélections d’outils personnelles réutilisables.",
+      "createGroup": "Nouveau groupe",
+      "saveGroup": "Enregistrer le groupe",
+      "editGroup": "Modifier le groupe",
+      "deleteGroup": "Supprimer le groupe",
+      "moveUp": "Monter",
+      "moveDown": "Descendre",
+      "groupName": "Nom du groupe",
+      "groupNamePlaceholder": "Par exemple, Modifications quotidiennes du code",
+      "groupTools": "Outils",
+      "groupCount": "{{count}} outils",
+      "unavailableCount": "{{count}} indisponibles",
+      "noUserGroups": "Aucun groupe d’outils personnel pour le moment.",
+      "noEnabledTools": "Aucun outil activé",
+      "readonly": "Lecture seule",
+      "permissionRequired": "Autorisation requise",
+      "enableGroupTools": "Sélectionner tous les outils de {{name}}",
+      "clearGroupTools": "Effacer les outils de {{name}}",
+      "deleteTitle": "Supprimer le groupe d’outils",
+      "deleteMessage": "Supprimer \"{{name}}\" ? Cela ne modifie la sélection d’outils d’aucun agent.",
+      "deleteConfirm": "Supprimer",
+      "saveFailed": "Échec de l’enregistrement des groupes d’outils",
+      "validation": {
+        "nameRequired": "Saisissez un nom de groupe",
+        "nameDuplicate": "Un groupe portant ce nom existe déjà",
+        "toolsRequired": "Sélectionnez au moins un outil"
+      }
+    },
+    "customActions": "Agent personnalisé",
+    "editAgent": "Modifier",
+    "deleteAgent": "Supprimer",
+    "externalActions": "Agent externe",
+    "manageExternalAgent": "Gérer dans Importation externe",
+    "deleteConfirm": "Supprimer l’agent personnalisé \"{{name}}\" ? Cette action est irréversible.",
+    "deleteSuccess": "\"{{name}}\" supprimé",
+    "deleteFailed": "Échec de la suppression : ",
+    "form": {
+      "wizard": {
+        "navigation": "Étapes de création",
+        "progress": "{{current}} / {{total}}",
+        "next": "Suivant",
+        "back": "Retour",
+        "basicsTitle": "Définir son mode de collaboration",
+        "basicsDescription": "Vous confiez le travail directement aux agents ; les autres agents délèguent les tâches aux sous-agents. Les agents de niveau utilisateur fonctionnent pour tous les projets, tandis que les agents de niveau projet ne s’appliquent qu’au projet actuel.",
+        "promptTitle": "Définir des règles de travail cohérentes",
+        "promptDescription": "Ces instructions guident chaque tâche. Des critères de décision et des conditions d’achèvement clairs aident à garder une approche et des résultats cohérents.",
+        "toolsTitle": "Définir le périmètre de ses actions",
+        "toolsDescription": "Les outils déterminent les actions qu’il peut réaliser. N’activez que les capacités nécessaires à ses tâches ; les appels d’outils restent soumis à la politique d’autorisation actuelle.",
+        "loadingTools": "Chargement des outils disponibles…",
+        "toolsLoadFailed": "Impossible de charger les outils depuis l’appareil actuel. Veuillez réessayer.",
+        "retry": "Réessayer",
+        "noTools": "Aucun outil sélectionnable n’est disponible. La configuration d’outils par défaut sera utilisée."
+      },
+      "createThroughChatHint": "Vous pouvez également décrire votre besoin dans une conversation et demander à un agent de créer un agent personnalisé pour vous.",
+      "title": "Créer un agent",
+      "subtitle": "Créer un agent ou sous-agent avec son propre prompt, ses outils et sa politique de contexte d’exécution.",
+      "titleEdit": "Modifier l’agent personnalisé",
+      "subtitleEdit": "Modifier le nom affiché, la description, le prompt système, les outils et la politique de contexte d’exécution.",
+      "subtitleEditMode": "Modifier le nom affiché, la description, le prompt système, les outils et la politique de contexte d’exécution. Choisissez le modèle dans la zone de saisie de la conversation.",
+      "subtitleEditSubagent": "Modifier le nom affiché, la description, le prompt système, les outils, le modèle et la politique de contexte d’exécution.",
+      "loadingDetail": "Chargement…",
+      "save": "Enregistrer",
+      "updateSuccess": "\"{{name}}\" enregistré",
+      "updateFailed": "Échec de l’enregistrement : ",
+      "basicInformation": "Informations de base",
+      "kind": "Type d’agent",
+      "kindAgentTooltip": "Sélectionnez cet agent dans la zone de saisie de la conversation pour lui confier des tâches directement.",
+      "kindSubagentTooltip": "Reçoit les tâches déléguées d’un agent principal et renvoie les résultats.",
+      "name": "Nom",
+      "namePlaceholder": "p. ex. Assistant de recherche",
+      "level": "Niveau",
+      "modeUserOnly": "Les agents personnalisés qui acceptent des tâches directement sont de niveau utilisateur dans la version actuelle.",
+      "description": "Objectif de la tâche",
+      "descPlaceholder": "Décrivez brièvement ce que fait cet agent",
+      "descRequired": "La description est obligatoire",
+      "prompt": "Prompt système",
+      "promptPlaceholder": "Saisissez le prompt système de l’agent",
+      "promptRequired": "Le prompt système est obligatoire",
+      "readonly": "Mode lecture seule",
+      "model": "Modèle",
+      "modelPlaceholder": "Utilisez inherit, primary, fast ou un identifiant de modèle concret",
+      "modelRequired": "Le modèle est obligatoire",
+      "tools": "Outils",
+      "toolsOptional": "facultatif",
+      "toolsHint": "({{optionalLabel}}, utilise les valeurs par défaut si aucun n’est sélectionné)",
+      "contextPolicy": "Contexte d’exécution",
+      "contextPolicyHint": "(sélectionnez le contexte d’espace de travail injecté automatiquement à l’exécution)",
+      "contextPreviewLabel": "Injecté automatiquement à l’exécution",
+      "contextPreviewEmpty": "Aucun contexte d’espace de travail sélectionné",
+      "contextWorkspaceContext": "Contexte d’espace de travail",
+      "contextWorkspaceContextTooltip": "Ajoute l’identité de l’espace de travail actuel et le contexte général de la session, aidant l’agent à comprendre où il travaille.",
+      "contextWorkspaceInstructions": "Instructions de l’espace de travail",
+      "contextWorkspaceInstructionsTooltip": "Ajoute les consignes du projet comme les instructions AGENTS.md, afin que l’agent respecte les conventions du dépôt et les règles locales.",
+      "contextProjectLayout": "Structure du projet",
+      "contextProjectLayoutTooltip": "Ajoute un résumé compact de la structure du projet, aidant l’agent à choisir plus vite les fichiers et répertoires pertinents.",
+      "noWorkspace": "Ouvrez d’abord un espace de travail",
+      "cancel": "Annuler",
+      "submit": "Créer",
+      "createSuccess": "Agent \"{{name}}\" créé",
+      "createFailed": "Échec de la création : ",
+      "review": "Revue",
+      "reviewToolsHint": "Les vérifications supplémentaires n’utilisent que des outils en lecture seule.",
+      "readonlyToolsRequired": "Sélectionnez au moins un outil en lecture seule en mode lecture seule.",
+      "nameRequired": "Donnez un nom à votre agent.",
+      "promptGuide": "Décrivez la manière de travailler, ce qu’il faut éviter et à quoi ressemble un résultat utile. Vous pouvez partir d’un plan basé sur l’objectif de votre tâche.",
+      "usePromptTemplate": "Partir du plan de la tâche",
+      "promptTemplate": "## Objectif\n{{goal}}\n\n## Approche\nLisez le contexte disponible, identifiez les informations manquantes et traitez la tâche. Posez une question lorsqu’une décision manquante changerait le résultat.\n\n## Contraintes\nRespectez les instructions du projet et les autorisations accordées. Distinguez les éléments prouvés des hypothèses.\n\n## Livrable\nFournissez le résultat, les éléments de preuve associés et les questions restées sans réponse.",
+      "permissionsReadonly": "Accès en lecture seule · ajuster les autorisations",
+      "permissionsStandard": "Autorisations standard · ajuster les accès",
+      "customizeTools": "Personnaliser les outils sélectionnés",
+      "createNamePlaceholder": "Par exemple, Assistant de recherche"
+    }
+  },
+  "reviewTeams": {
+    "members": {
+      "worker": {
+        "funName": "Vérification supplémentaire",
+        "role": "Vérification à la demande",
+        "description": "Une vérification en lecture seule utilisée lorsque la revue principale a besoin de plus d’éléments sur un point précis.",
+        "responsibilities": [
+          "Ne vérifier que la question confiée par la revue principale.",
+          "Rester dans le périmètre sélectionné et étayer les conclusions par des éléments concrets.",
+          "Ne pas modifier de fichiers ni refaire le travail déjà accompli par la revue principale."
+        ]
+      },
+      "judge": {
+        "funName": "Validation indépendante",
+        "role": "Contrôle qualité",
+        "description": "Une vérification indépendante en lecture seule, utilisée uniquement lorsqu’un constat sérieux, des preuves contradictoires ou une conclusion incertaine doivent être validés.",
+        "responsibilities": [
+          "Confirmer ou rejeter les constats contestés à l’aide d’éléments concrets.",
+          "Ne vérifier que les affirmations qui nécessitent une validation indépendante.",
+          "Veiller à ce que chaque anomalie retenue comporte une prochaine étape sûre et réalisable."
+        ]
+      }
+    },
+    "extraReviewer": {
+      "role": "Vérification demandée par l’utilisateur",
+      "description": "Une vérification en lecture seule portant sur un point précis choisi par l’utilisateur.",
+      "responsibilities": [
+        "Vérifier le point demandé par l’utilisateur.",
+        "Ne vérifier que les modifications demandées et les fichiers sélectionnés.",
+        "Rendre des constats concrets avec des corrections claires ou des étapes de suivi."
+      ]
+    }
+  },
+  "agentDescriptions": {
+    "Cowork": "Agent de collaboration bureautique : aide aux tâches bureautiques et de recherche, en vous consultant aux étapes clés.",
+    "ComputerUse": "Sous-agent d’utilisation de l’ordinateur : exécute le travail délégué dans les navigateurs, les applications de bureau et les systèmes de fichiers.",
+    "DeepResearch": "Agent de recherche approfondie : mène une investigation et une analyse systématiques sur des sujets complexes",
+    "PaperWriting": "Rédige et révise des manuscrits académiques en LaTeX, avec bibliographie, figures et PDF compilé.",
+    "ResearchSpecialist": "Trouve et évalue des sources web pour livrer une recherche ciblée avec des preuves claires.",
+    "GeneralPurpose": "Combine recherche, analyse et codage pour accomplir des tâches multi-étapes de manière autonome.",
+    "Explore": "Sous-agent Explore : parcourt rapidement la base de code pour comprendre la structure du projet et les fichiers clés",
+    "CodeReview": "Sous-agent de revue de code : effectue des contrôles qualité et propose des suggestions d’amélioration",
+    "DeepReview": "Sous-agent de compatibilité Strict Review : prend en charge les flux de revue dans les sessions et commandes historiques.",
+    "Init": "Agent Init : aide à mettre en place la structure du projet et la configuration initiale",
+    "ReviewFixer": "Sous-agent de correction de revue : corrige automatiquement les anomalies de code à partir des résultats de la revue",
+    "Claw": "Assistant personnel : aide aux tâches quotidiennes en s’appuyant sur vos préférences et votre contexte.",
+    "Standard": "Des consignes claires et une boîte à outils complète soutiennent le codage ainsi que le travail quotidien comme le traitement de l’information et la création de contenu.",
+    "Ultimate": "Plusieurs agents travaillent en parallèle, avec une revue indépendante pour les projets complexes et les changements d’envergure.",
+    "Minimal": "Un prompting minimal et un ensemble d’outils ciblé laissent aux modèles phares de nouvelle génération la latitude d’exceller en codage et dans les autres tâches.",
+    "Creative": "Créez des vidéos, des présentations, des prototypes et des pages web avec des skills créatifs, ou construisez des MiniApps et personnalisez l’interface en langage naturel."
+  }
+}

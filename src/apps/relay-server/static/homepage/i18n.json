@@ -55,5 +55,24 @@
     "flowMobileSub": {
       "$shared": "features.remoteControl"
     }
+  },
+  "fr-FR": {
+    "languageToggle": "Language: FR",
+    "status": "Service Running",
+    "desc": "Connect devices on the same OpenBitFun account. The official Relay needs no server deployment.",
+    "f1t": "Account access",
+    "f1d": "Sign in with the same account. An invitation alone does not grant access.",
+    "f2t": "Encrypted forwarding",
+    "f2d": "Device-control payloads are encrypted end to end; routing metadata remains visible.",
+    "f3t": "Deployment",
+    "f3d": "Use the official service, or build matching clients for a private Relay.",
+    "flowDesktop": "Desktop / CLI",
+    "flowDesktopSub": "OpenBitFun Agent",
+    "flowRelay": "Relay Server",
+    "flowRelaySub": "Device messages",
+    "flowMobile": "Mobile",
+    "flowMobileSub": {
+      "$shared": "features.remoteControl"
+    }
   }
 }

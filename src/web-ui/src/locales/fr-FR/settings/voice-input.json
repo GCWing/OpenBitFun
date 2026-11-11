@@ -1,0 +1,264 @@
+{
+  "title": "Voix",
+  "subtitle": "Configurez la dictée vocale sur cet appareil",
+  "loading": "Chargement des paramètres de saisie vocale...",
+  "sections": {
+    "basic": "Saisie vocale",
+    "basicDescription": "Transcrivez la parole sur cet appareil sans envoyer l’audio"
+  },
+  "languages": {
+    "auto": "Auto",
+    "zh": "中文",
+    "yue": "粤语",
+    "en": "English",
+    "ja": "日本語",
+    "ko": "한국어",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "fr": "Français",
+    "es": "Español",
+    "pt": "Português",
+    "id": "Bahasa Indonesia",
+    "it": "Italiano",
+    "ru": "Русский",
+    "th": "ไทย",
+    "vi": "Tiếng Việt",
+    "tr": "Türkçe",
+    "hi": "हिन्दी",
+    "ms": "Bahasa Melayu",
+    "nl": "Nederlands",
+    "sv": "Svenska",
+    "da": "Dansk",
+    "fi": "Suomi",
+    "pl": "Polski",
+    "cs": "Čeština",
+    "fil": "Filipino",
+    "fa": "فارسی",
+    "el": "Ελληνικά",
+    "hu": "Magyar",
+    "mk": "Македонски",
+    "ro": "Română"
+  },
+  "composer": {
+    "enabled": {
+      "label": "Afficher le bouton vocal dans la zone de saisie"
+    },
+    "language": {
+      "label": "Langue de reconnaissance",
+      "description": "Automatique par défaut ; choisissez une langue uniquement lorsque la détection est imprécise."
+    }
+  },
+  "voiceCall": {
+    "title": "Appel vocal en temps réel",
+    "description": "L’appareil de contrôle envoie l’audio du microphone à Volcengine pour un traitement en direct, indépendamment de la dictée locale",
+    "loading": "Chargement des paramètres vocaux en temps réel…",
+    "enabled": {
+      "label": "Activer l’assistant vocal du client",
+      "description": "Autorisez l’assistant vocal à lire l’état de l’espace de travail et à démarrer des tâches ; ouvrez un appel depuis le coin inférieur droit de l’application"
+    },
+    "apiKey": {
+      "label": "Clé API Volcengine",
+      "description": "Utilisée uniquement par l’appareil de contrôle pour les appels vocaux ; elle n’est pas envoyée avec les tâches vers les espaces de travail distants ou les appareils pairs",
+      "placeholder": "Saisissez la clé API vocale en temps réel de bout en bout"
+    },
+    "voice": {
+      "label": "ID de voix",
+      "description": "Utilise par défaut la voix féminine Jupiter de la démonstration officielle."
+    },
+    "status": {
+      "label": "Configuration de la connexion",
+      "description": "L’enregistrement ne vérifie ni la clé ni la connexion ; ouvrez Hello en bas à droite pour passer à la voix en direct et la tester"
+    },
+    "save": "Enregistrer la voix en temps réel",
+    "messages": {
+      "loadFailed": "Échec du chargement des paramètres vocaux en temps réel de l’appareil de contrôle",
+      "saved": "Paramètres vocaux en temps réel enregistrés",
+      "saveFailed": "Échec de l’enregistrement des paramètres vocaux en temps réel",
+      "required": "Saisissez une clé API et une voix avant d’activer la voix en temps réel.",
+      "unsaved": "Vous avez des modifications vocales en temps réel non enregistrées.",
+      "unsupported": "Les appels vocaux en temps réel sont disponibles uniquement dans Alex Desktop."
+    },
+    "call": {
+      "title": "Appel en direct",
+      "close": "Fermer la fenêtre d’appel",
+      "button": "Démarrer un appel vocal en temps réel",
+      "launcherCompactLabel": "Bonjour",
+      "launcherLabel": "Bonjour",
+      "switchToVoice": "Passer à la voix en temps réel",
+      "switchToChat": "Revenir à la conversation textuelle",
+      "identity": {
+        "start": "Voix en direct",
+        "ongoing": "Appel en cours",
+        "connecting": "Connexion",
+        "retry": "Reconnecter"
+      },
+      "empty": "Commencez simplement à parler. Lorsque vous demandez une tâche, je démarre une nouvelle session Alex.",
+      "mute": "Couper le microphone",
+      "unmute": "Réactiver le microphone",
+      "hangUp": "Raccrocher",
+      "settings": "Paramètres de la voix en temps réel",
+      "configureFirst": "Configurez d’abord une clé API Volcengine pour la voix en temps réel.",
+      "startFailed": "Échec du démarrage de l’appel vocal en temps réel",
+      "taskComplete": "La tâche Alex est terminée. Je prépare le résultat.",
+      "taskFailed": "La tâche Alex a échoué. Je prépare une explication.",
+      "taskStopping": "Arrêt de la tâche Alex en cours…",
+      "taskStopped": "La tâche Alex en cours s’est arrêtée.",
+      "taskAlreadyComplete": "La tâche est déjà terminée, il n’y a donc rien à arrêter.",
+      "noActiveTask": "Aucune tâche Alex n’est en cours d’exécution pour le moment.",
+      "taskOutcome": {
+        "completed": "La tâche est terminée. {{conclusion}}",
+        "completedWithoutConclusion": "La tâche est terminée, mais elle n’a renvoyé aucune conclusion écrite.",
+        "failed": "La tâche est inachevée. Raison : {{reason}}",
+        "failedWithoutReason": "La tâche est inachevée et aucune raison précise n’a été renvoyée.",
+        "cancelled": "La tâche est inachevée car elle a été arrêtée à votre demande."
+      },
+      "status": {
+        "connecting": "Connexion à Volcengine…",
+        "connected": "Connecté, création de la conversation…",
+        "listening": "Écoute",
+        "thinking": "Réflexion",
+        "readingClientContext": "Lecture de l’état du client…",
+        "switchingWorkspace": "Changement d’espace de travail…",
+        "speaking": "Prise de parole",
+        "ending": "Fin de l’appel…",
+        "error": "Échec de la connexion vocale en temps réel",
+        "disconnected": "La connexion vocale en temps réel a été interrompue",
+        "microphoneDisconnected": "Le microphone a été déconnecté",
+        "retryingAudio": "Nouvelle tentative de lecture vocale…",
+        "audioPlaybackFailed": "Échec de la lecture vocale. Vérifiez la sortie audio du système."
+      },
+      "taskPhases": {
+        "starting": "Démarrage de la tâche.",
+        "working": "Alex travaille encore sur la tâche. Je continue à la suivre.",
+        "using_tools": "Alex utilise des outils pour faire avancer la tâche.",
+        "waiting_approval": "La tâche attend votre approbation dans Alex.",
+        "needs_input": "Alex a besoin d’informations supplémentaires dans la session de la tâche.",
+        "finishing": "Le travail principal est terminé et Alex prépare le résultat final.",
+        "stopping": "Arrêt de la tâche Alex en cours."
+      },
+      "historySaveFailed": "Impossible d’enregistrer l’historique vocal. La transcription est conservée pour une nouvelle tentative."
+    }
+  },
+  "diagnostics": {
+    "microphone": {
+      "label": "Périphérique d’entrée",
+      "description": "Utilise le périphérique par défaut du système, sauf si vous en choisissez un pour cet ordinateur.",
+      "systemDefault": "Par défaut du système",
+      "unnamed": "Microphone {{index}}"
+    },
+    "recognition": {
+      "label": "Tester la saisie vocale",
+      "description": "Dites une courte phrase pour vérifier ensemble le microphone et la reconnaissance locale.",
+      "start": "Démarrer le test",
+      "finish": "Arrêter l’enregistrement",
+      "preparing": "Préparation",
+      "transcribing": "Reconnaissance",
+      "timing": "Temps d’inférence : {{duration}} ms"
+    },
+    "messages": {
+      "deviceDisconnected": "Le microphone sélectionné a été déconnecté.",
+      "recognitionFailed": "Le test de saisie vocale a échoué.",
+      "noSpeech": "Aucune parole n’a été reconnue."
+    }
+  },
+  "status": {
+    "label": "État",
+    "manageModels": "Gérer les modèles",
+    "unknownModel": "Modèle vocal local",
+    "useLocal": "Passer à la reconnaissance locale",
+    "downloadModel": "Télécharger le modèle",
+    "viewDetails": "Voir les détails",
+    "repair": "Examiner et réparer",
+    "ready": {
+      "badge": "Prêt",
+      "title": "La saisie vocale est prête",
+      "description": "{{model}} traite la parole sur cet appareil. L’audio n’est pas envoyé.",
+      "summary": "Modèle téléchargé : <model>{{model}}</model>"
+    },
+    "setup": {
+      "badge": "Non téléchargé",
+      "title": "Modèle vocal non téléchargé",
+      "description": "Téléchargez-le pour utiliser la saisie vocale. Il occupe environ {{size}}.",
+      "summary": "Modèle vocal <warning>non téléchargé</warning> — téléchargez-le pour utiliser la saisie vocale."
+    },
+    "downloading": {
+      "badge": "Téléchargement",
+      "title": "Téléchargement du modèle vocal",
+      "description": "La saisie vocale sera disponible une fois le téléchargement de {{model}} terminé."
+    },
+    "verifying": {
+      "badge": "Vérification",
+      "title": "Vérification du modèle vocal",
+      "description": "Vérification que {{model}} est complet et prêt à l’emploi."
+    },
+    "deleting": {
+      "badge": "Suppression",
+      "title": "Suppression du modèle vocal",
+      "description": "Suppression de {{model}} de cet appareil."
+    },
+    "unavailable": {
+      "badge": "Indisponible",
+      "title": "La saisie vocale dans le Cloud est indisponible",
+      "description": "Votre configuration Cloud est conservée. Passez à la reconnaissance locale pour utiliser la saisie vocale."
+    },
+    "error": {
+      "badge": "Réparation nécessaire",
+      "title": "Modèle vocal indisponible",
+      "description": "{{model}} ne peut pas être utilisé. Examinez-le et téléchargez-le à nouveau."
+    }
+  },
+  "localModels": {
+    "title": "Modèles vocaux locaux",
+    "description": "Choisissez le modèle que cet appareil utilise pour la reconnaissance vocale.",
+    "loading": "Chargement des modèles vocaux locaux..."
+  },
+  "states": {
+    "not_installed": "Non installé",
+    "downloading": "Téléchargement",
+    "installed": "Installé",
+    "verifying": "Vérification",
+    "corrupt": "Réparation nécessaire",
+    "deleting": "Suppression",
+    "error": "Erreur"
+  },
+  "model": {
+    "refresh": "Actualiser",
+    "progress": "{{percent}}% · {{downloaded}} / {{total}}",
+    "progressCompact": "{{percent}}%",
+    "download": "Télécharger",
+    "repair": "Télécharger à nouveau",
+    "select": "Utiliser",
+    "selected": "Utilisé",
+    "cancel": "Annuler",
+    "openFolder": "Ouvrir l’emplacement",
+    "verify": "Vérifier",
+    "delete": "Supprimer",
+    "more": "Autres actions sur le modèle",
+    "keep": "Conserver",
+    "deleteConfirmTitle": "Supprimer le modèle vocal local ?",
+    "deleteConfirmMessage": "{{name}} sera supprimé du stockage local.",
+    "empty": "Aucun modèle vocal n’est disponible.",
+    "resourceHints": {
+      "sensevoice": "Léger, recommandé",
+      "qwen3": "Amélioré, multilingue",
+      "default": "Sur l’appareil"
+    }
+  },
+  "messages": {
+    "unsupported": "La saisie vocale est disponible dans l’application de bureau Alex.",
+    "loadFailed": "Échec du chargement des paramètres de saisie vocale",
+    "modelsLoadFailed": "Échec du chargement de l’état du modèle vocal local.",
+    "retry": "Réessayer",
+    "saveFailed": "Échec de l’enregistrement des paramètres de saisie vocale",
+    "downloadSuccess": "Modèle vocal téléchargé",
+    "localActivated": "Passage à la saisie vocale locale effectué",
+    "downloadFailed": "Échec du téléchargement du modèle vocal",
+    "downloadCancelled": "Téléchargement du modèle vocal annulé",
+    "cancelFailed": "Échec de l’annulation du téléchargement",
+    "openFolderFailed": "Échec de l’ouverture de l’emplacement du modèle vocal",
+    "verifySuccess": "Modèle vocal vérifié",
+    "verifyFailed": "Échec de la vérification du modèle vocal",
+    "deleteSuccess": "Modèle vocal supprimé",
+    "deleteFailed": "Échec de la suppression du modèle vocal"
+  }
+}

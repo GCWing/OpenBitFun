@@ -1,0 +1,60 @@
+{
+  "success": {
+    "fileSaved": "Fichier enregistré",
+    "fileCreated": "Fichier créé",
+    "fileDeleted": "Fichier supprimé",
+    "fileRenamed": "Fichier renommé",
+    "folderCreated": "Dossier créé",
+    "folderDeleted": "Dossier supprimé",
+    "copied": "Copié dans le presse-papiers",
+    "settingsSaved": "Paramètres enregistrés",
+    "configImported": "Configuration importée",
+    "configExported": "Configuration exportée",
+    "gitCommit": "Commit réussi",
+    "gitPush": "Push réussi",
+    "gitPull": "Pull réussi",
+    "gitStash": "Modifications mises de côté (stash)",
+    "gitStashApply": "Stash appliqué",
+    "snapshotCreated": "Instantané créé",
+    "snapshotRestored": "Instantané restauré",
+    "languageChanged": "Langue modifiée",
+    "connectionEstablished": "Connexion établie"
+  },
+  "error": {
+    "fileSaveFailed": "Échec de l’enregistrement du fichier",
+    "fileCreateFailed": "Échec de la création du fichier",
+    "fileDeleteFailed": "Échec de la suppression du fichier",
+    "operationFailed": "Échec de l’opération",
+    "networkError": "Erreur réseau",
+    "unexpectedError": "Une erreur inattendue s’est produite"
+  },
+  "warning": {
+    "unsavedChanges": "Vous avez des modifications non enregistrées",
+    "largeFile": "Fichier volumineux, le chargement peut être lent",
+    "deprecatedFeature": "Cette fonctionnalité est obsolète",
+    "experimentalFeature": "Cette fonctionnalité est expérimentale",
+    "lowMemory": "Mémoire disponible faible",
+    "diskSpace": "Espace disque faible"
+  },
+  "info": {
+    "loading": "Chargement...",
+    "processing": "Traitement...",
+    "downloading": "Téléchargement...",
+    "uploading": "Téléversement...",
+    "indexing": "Indexation des fichiers...",
+    "searching": "Recherche...",
+    "updating": "Mise à jour...",
+    "installing": "Installation...",
+    "connecting": "Connexion...",
+    "syncing": "Synchronisation...",
+    "assistantBootstrapWaitingForModelConfiguration": "L’initialisation de l’assistant attend la configuration des modèles IA."
+  },
+  "confirm": {
+    "deleteFile": "Voulez-vous vraiment supprimer ce fichier ?",
+    "deleteFolder": "Voulez-vous vraiment supprimer ce dossier et tout son contenu ?",
+    "discardChanges": "Voulez-vous vraiment abandonner toutes les modifications ?",
+    "resetSettings": "Voulez-vous vraiment réinitialiser tous les paramètres ?",
+    "closeUnsaved": "Vous avez des modifications non enregistrées. Voulez-vous vraiment fermer ?",
+    "exitApp": "Voulez-vous vraiment quitter ?"
+  }
+}

@@ -116,9 +116,10 @@ test('i18n contract generated files are in sync with the canonical contract', ()
   assert.ok(fs.existsSync(contractPath), 'missing shared i18n locale contract');
 
   const contract = readJson('src/shared/i18n/contract/locales.json');
+  const expectedLocales = contract.locales.map((locale) => locale.id);
   assert.deepEqual(
-    contract.locales.map((locale) => locale.id),
-    ['zh-CN', 'en-US', 'zh-TW'],
+    expectedLocales,
+    ['zh-CN', 'en-US', 'zh-TW', 'fr-FR'],
   );
 
   for (const relativePath of expectedGeneratedFiles) {

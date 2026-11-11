@@ -1,0 +1,70 @@
+{
+  "page": {
+    "title": "Actions rapides",
+    "subtitle": "Exécutez rapidement les prompts IA courants depuis la conversation."
+  },
+  "loading": "Chargement...",
+  "commitAttribution": {
+    "title": "Attribution des commits",
+    "scope": "Partagé entre les espaces de travail de cet hôte d’exécution. S’applique au prochain chargement d’un flux de commit intégré.",
+    "label": "Ajouter Alex comme co-auteur",
+    "description": "Créditer Alex ({{account}}) comme co-auteur des nouveaux commits créés par le flux de commit intégré.",
+    "unsupported": "Cet hôte d’exécution ne prend pas en charge ce paramètre. Mettez Alex à niveau sur l’hôte."
+  },
+  "quickActions": {
+    "defaults": {
+      "commit": {
+        "label": "Commit",
+        "prompt": "Commit de toutes les modifications de code en cours"
+      },
+      "createPr": {
+        "label": "Créer une PR",
+        "prompt": "Créer une demande de fusion pour la branche actuelle"
+      }
+    }
+  },
+  "sections": {
+    "builtin": {
+      "title": "Actions intégrées",
+      "description": "Modifiez les noms et les prompts des actions intégrées, ou désactivez les actions inutiles"
+    },
+    "custom": {
+      "title": "Actions personnalisées",
+      "empty": "Aucune action personnalisée pour le moment.",
+      "description": "Enregistrez vos propres prompts pour les tâches récurrentes ; le déclenchement d’une action envoie son prompt à la session actuelle"
+    }
+  },
+  "edit": {
+    "button": "Modifier"
+  },
+  "delete": {
+    "button": "Supprimer",
+    "confirmTitle": "Supprimer l’action personnalisée ?",
+    "confirmMessage": "Cette opération supprime « {{name}} » et son prompt. Elle est irréversible.",
+    "confirmAction": "Supprimer l’action"
+  },
+  "add": {
+    "button": "Ajouter une action"
+  },
+  "modal": {
+    "addTitle": "Nouvelle action rapide",
+    "editTitle": "Modifier l’action rapide",
+    "labelField": "Nom de l’action",
+    "labelPlaceholder": "ex. : générer des tests unitaires",
+    "promptField": "Prompt",
+    "promptPlaceholder": "ex. : générer des tests unitaires pour les modifications de code en cours",
+    "promptHint": "Envoie ce prompt à l’IA au déclenchement de l’action",
+    "cancel": "Annuler",
+    "saveEdit": "Enregistrer",
+    "confirmAdd": "Ajouter",
+    "discardTitle": "Abandonner les modifications non enregistrées ?",
+    "discardMessage": "Fermer maintenant abandonnera le nom de l’action et le prompt que vous avez modifiés.",
+    "discardConfirm": "Abandonner les modifications"
+  },
+  "messages": {
+    "saved": "Enregistré",
+    "saveFailed": "Échec de l’enregistrement. Vos modifications restent ouvertes pour vous permettre de réessayer.",
+    "loadFailedLocked": "Les actions rapides n’ont pas pu être lues. Cette page est verrouillée afin d’éviter de remplacer la configuration existante par une liste vide.",
+    "retry": "Recharger"
+  }
+}

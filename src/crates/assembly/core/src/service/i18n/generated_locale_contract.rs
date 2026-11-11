@@ -23,34 +23,22 @@ pub struct GeneratedSharedTermEntry {
     pub value: &'static str,
 }
 
-pub const GENERATED_DEFAULT_LOCALE: LocaleId = LocaleId::ZhCN;
+pub const GENERATED_DEFAULT_LOCALE: LocaleId = LocaleId::FrFr;
 pub const GENERATED_FALLBACK_LOCALE: LocaleId = LocaleId::EnUS;
-pub const GENERATED_UNKNOWN_LOCALE_FALLBACK_CHAIN: &[LocaleId] = &[LocaleId::EnUS, LocaleId::ZhCN];
+pub const GENERATED_UNKNOWN_LOCALE_FALLBACK_CHAIN: &[LocaleId] = &[LocaleId::EnUS];
 
 pub const GENERATED_LOCALE_CONTRACT: &[GeneratedLocaleContractEntry] = &[
     GeneratedLocaleContractEntry {
-        id: LocaleId::ZhCN,
-        code: "zh-CN",
-        name: "简体中文",
-        english_name: "Simplified Chinese",
-        native_name: "简体中文",
+        id: LocaleId::FrFr,
+        code: "fr-FR",
+        name: "Français",
+        english_name: "French",
+        native_name: "Français",
         rtl: false,
-        model_language_name: "Simplified Chinese",
-        short_model_instruction: "使用简体中文",
-        aliases: &["zh", "zh-Hans", "zh-CN"],
+        model_language_name: "French",
+        short_model_instruction: "Use French",
+        aliases: &["fr", "fr-FR"],
         content_fallbacks: &[LocaleId::EnUS],
-    },
-    GeneratedLocaleContractEntry {
-        id: LocaleId::ZhTW,
-        code: "zh-TW",
-        name: "繁體中文",
-        english_name: "Traditional Chinese",
-        native_name: "繁體中文",
-        rtl: false,
-        model_language_name: "Traditional Chinese",
-        short_model_instruction: "使用繁體中文",
-        aliases: &["zh-TW", "zh-Hant", "zh-HK", "zh-MO"],
-        content_fallbacks: &[LocaleId::ZhCN, LocaleId::EnUS],
     },
     GeneratedLocaleContractEntry {
         id: LocaleId::EnUS,
@@ -62,440 +50,225 @@ pub const GENERATED_LOCALE_CONTRACT: &[GeneratedLocaleContractEntry] = &[
         model_language_name: "English",
         short_model_instruction: "Use English",
         aliases: &["en", "en-US"],
-        content_fallbacks: &[LocaleId::ZhCN],
+        content_fallbacks: &[LocaleId::FrFr],
     },
 ];
 
 pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "agents.Claw",
-        value: "助理",
+        value: "Assistant",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "agents.ComputerUse",
-        value: "电脑操作",
+        value: "Computer Use",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "agents.Cowork",
-        value: "办公协作",
+        value: "Cowork",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "agents.Creative",
-        value: "创造",
+        value: "Creative",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "agents.DeepResearch",
-        value: "深度研究",
+        value: "Deep Research",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "agents.default",
-        value: "默认助手",
+        value: "Default Assistant",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "agents.Minimal",
-        value: "极简",
+        value: "Minimal",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "agents.PaperWriting",
-        value: "论文写作",
+        value: "Paper Writing",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "agents.Standard",
-        value: "标准",
+        value: "Standard",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "agents.Ultimate",
-        value: "极致",
+        value: "Ultimate",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "connectionMethods.botFeishu",
-        value: "飞书机器人",
+        value: "Feishu Bot",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "connectionMethods.botTelegram",
         value: "Telegram Bot",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "connectionMethods.botWeixin",
-        value: "微信机器人",
+        value: "WeChat Bot",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "connectionMethods.customServer",
-        value: "自定义服务器",
+        value: "Custom Server",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "connectionMethods.lan",
-        value: "局域网",
+        value: "LAN",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "connectionMethods.openbitfunServer",
         value: "OpenBitFun Server",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "features.codeAgent",
-        value: "代码助手",
+        value: "Code Agent",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "features.deepReview",
-        value: "严格审查",
+        value: "Review: Strict",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "features.remoteControl",
-        value: "远程控制",
+        value: "Remote Control",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "features.settings",
-        value: "设置",
+        value: "Settings",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "features.workspace",
-        value: "工作区",
+        value: "Workspace",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "modes.assistant",
-        value: "助手模式",
+        value: "Assistant Mode",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "modes.expert",
-        value: "专家模式",
+        value: "Expert Mode",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "modes.review",
-        value: "评审模式",
+        value: "Review Mode",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "product.name",
         value: "OpenBitFun",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "product.remote",
         value: "OpenBitFun Remote",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "sessions.new",
-        value: "新会话",
+        value: "New Session",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "statuses.cancelled",
-        value: "已取消",
+        value: "Cancelled",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "statuses.done",
-        value: "已完成",
+        value: "Done",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "statuses.failed",
-        value: "失败",
+        value: "Failed",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "statuses.loading",
-        value: "加载中",
+        value: "Loading",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "statuses.running",
-        value: "运行中",
+        value: "Running",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "tools.edit",
-        value: "编辑",
+        value: "Edit",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "tools.explore",
-        value: "探索",
+        value: "Explore",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "tools.read",
-        value: "读取",
+        value: "Read",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "tools.search",
-        value: "搜索",
+        value: "Search",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "tools.shell",
-        value: "命令行",
+        value: "Shell",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "tools.todo",
-        value: "待办",
+        value: "Todo",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "tools.write",
-        value: "写入",
+        value: "Write",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "window.close",
-        value: "关闭应用窗口",
+        value: "Close app window",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "window.maximize",
-        value: "最大化应用窗口",
+        value: "Maximize app window",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "window.minimize",
-        value: "最小化应用窗口",
+        value: "Minimize app window",
     },
     GeneratedSharedTermEntry {
-        locale: LocaleId::ZhCN,
+        locale: LocaleId::FrFr,
         key: "window.restore",
-        value: "还原应用窗口",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "agents.Claw",
-        value: "助理",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "agents.ComputerUse",
-        value: "電腦操作",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "agents.Cowork",
-        value: "辦公協作",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "agents.Creative",
-        value: "創造",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "agents.DeepResearch",
-        value: "深度研究",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "agents.default",
-        value: "預設助手",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "agents.Minimal",
-        value: "極簡",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "agents.PaperWriting",
-        value: "論文寫作",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "agents.Standard",
-        value: "標準",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "agents.Ultimate",
-        value: "極致",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "connectionMethods.botFeishu",
-        value: "飛書機器人",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "connectionMethods.botTelegram",
-        value: "Telegram Bot",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "connectionMethods.botWeixin",
-        value: "微信機器人",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "connectionMethods.customServer",
-        value: "自訂伺服器",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "connectionMethods.lan",
-        value: "區域網路",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "connectionMethods.openbitfunServer",
-        value: "OpenBitFun Server",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "features.codeAgent",
-        value: "程式碼助手",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "features.deepReview",
-        value: "嚴格審查",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "features.remoteControl",
-        value: "遠端控制",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "features.settings",
-        value: "設定",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "features.workspace",
-        value: "工作區",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "modes.assistant",
-        value: "助手模式",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "modes.expert",
-        value: "專家模式",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "modes.review",
-        value: "審查模式",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "product.name",
-        value: "OpenBitFun",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "product.remote",
-        value: "OpenBitFun Remote",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "sessions.new",
-        value: "新會話",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "statuses.cancelled",
-        value: "已取消",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "statuses.done",
-        value: "已完成",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "statuses.failed",
-        value: "失敗",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "statuses.loading",
-        value: "載入中",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "statuses.running",
-        value: "執行中",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "tools.edit",
-        value: "編輯",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "tools.explore",
-        value: "探索",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "tools.read",
-        value: "讀取",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "tools.search",
-        value: "搜尋",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "tools.shell",
-        value: "命令列",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "tools.todo",
-        value: "待辦",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "tools.write",
-        value: "寫入",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "window.close",
-        value: "關閉應用視窗",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "window.maximize",
-        value: "最大化應用視窗",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "window.minimize",
-        value: "最小化應用視窗",
-    },
-    GeneratedSharedTermEntry {
-        locale: LocaleId::ZhTW,
-        key: "window.restore",
-        value: "還原應用視窗",
+        value: "Restore app window",
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::EnUS,
@@ -772,20 +545,20 @@ mod tests {
 
     #[test]
     fn generated_contract_resolves_aliases_like_runtime_locale_contract() {
-        assert_eq!(
-            generated_locale_entry_from_code("zh-Hant-TW").map(|entry| entry.id),
-            Some(LocaleId::ZhTW)
-        );
+        for entry in GENERATED_LOCALE_CONTRACT {
+            for alias in entry.aliases {
+                assert_eq!(
+                    generated_locale_entry_from_code(alias).map(|resolved| resolved.id),
+                    Some(entry.id)
+                );
+            }
+        }
         assert_eq!(
             generated_locale_entry_from_code("  ZH-hans-CN  ").map(|entry| entry.id),
             Some(LocaleId::ZhCN)
         );
         assert_eq!(
-            generated_locale_entry_from_code("en").map(|entry| entry.id),
-            Some(LocaleId::EnUS)
-        );
-        assert_eq!(
-            generated_locale_entry_from_code("fr-FR").map(|entry| entry.id),
+            generated_locale_entry_from_code("xx-XX").map(|entry| entry.id),
             None
         );
     }

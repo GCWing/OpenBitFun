@@ -1,0 +1,664 @@
+{
+  "skills": "Skills",
+  "subagents": "Agents",
+  "mcp": "MCP",
+  "refresh": "Actualiser l’état des fonctionnalités",
+  "reconnect": "Reconnecter",
+  "mcpWarning": "{{count}} serveur(s) MCP nécessitent votre attention",
+  "loadFailed": "Échec du chargement des fonctionnalités",
+  "toggleFailed": "Échec de la mise à jour de l’interrupteur de fonctionnalité",
+  "mcpReconnectSuccess": "{{name}} reconnecté",
+  "mcpReconnectFailed": "Échec de la reconnexion de {{name}}",
+  "emptySkills": "Aucun Skill configuré",
+  "emptySubagents": "Aucun agent disponible",
+  "emptyAgents": "Aucun agent disponible",
+  "emptyMcp": "Aucun serveur MCP configuré",
+  "path": "Chemin",
+  "toolCount": "Outils",
+  "serverType": "Type",
+  "clickToCopy": "Cliquez pour copier le chemin",
+  "pathCopied": "Chemin copié",
+  "pathCopyFailed": "Échec de la copie du chemin",
+  "search": {
+    "categories": {
+      "assistant": "IA et collaboration",
+      "workspace": "Projets et développement",
+      "automation": "Extensions et automatisation",
+      "connect": "Connexion et publication",
+      "application": "Paramètres de l’application",
+      "data": "Données et diagnostics"
+    },
+    "kinds": {
+      "feature": "Fonctionnalité",
+      "setting": "$t(shared:features.settings)"
+    },
+    "capabilities": {
+      "feature": {
+        "ai-assistant": {
+          "title": "Assistant IA et sessions",
+          "summary": "Travaillez avec l’IA dans le contexte du projet, créez des sessions, poursuivez des tâches, répondez aux demandes d’autorisation et conservez une trace de travail durable.",
+          "items": {
+            "create-session": "Ouvrir et créer une nouvelle session IA",
+            "session-lifecycle": "Renommer, archiver, restaurer, supprimer, copier, dupliquer et exporter des sessions",
+            "model-mode-permissions": "Choisir le modèle, le mode de travail, le mode de mémoire et le mode d’autorisation pour chaque session",
+            "creative-frontend-authoring": "Étendre l’interface et les capacités d’exécution du client en mode Creative",
+            "image-generation": "Générer des images avec le modèle d’image par défaut configuré",
+            "office-document-generation": "Créer et modifier des fichiers Word, Excel et PowerPoint avec GenOfficeFile",
+            "turn-control": "Démarrer, orienter, interrompre, annuler ou récupérer un tour de l’agent",
+            "permission-mailbox": "Examiner et traiter les demandes d’autorisation en attente, individuellement ou par lot",
+            "history-search": "Parcourir, rechercher et compléter rétroactivement l’historique des tours et le contenu des sessions",
+            "session-storage-directory": "Ouvrir le stockage des sessions depuis les menus de l’espace de travail ou de la session, pour les sauvegardes et le dépannage manuel",
+            "agent-session-coordination": "Permettre à un agent de créer, lister, annuler ou supprimer des sessions et d’envoyer des messages à une autre session",
+            "mcp-mentions": "Utiliser @ dans la conversation pour sélectionner les serveurs MCP disponibles pour le mode en cours",
+            "tool-activity": "Examiner les appels d’outils et les commandes en arrière-plan, lire la sortie, envoyer une entrée ou les arrêter",
+            "goals": "Consulter, créer, achever ou bloquer l’objectif de la session en cours",
+            "goal-maintenance": "Modifier l’objectif ou effacer l’objectif de la session en cours",
+            "working-plan": "Permettre à un agent de tenir une liste de tâches, produire un plan d’implémentation et solliciter l’utilisateur au besoin",
+            "usage": "Afficher l’utilisation des requêtes, des jetons et des coûts pour une session donnée",
+            "context-memory": "Recharger le contexte de la session, initialiser AGENTS.md et gérer la mémoire à long terme",
+            "btw-editor-ai": "Utiliser les questions BTW légères et l’IA de l’éditeur en ligne, avec annulation possible"
+          }
+        },
+        "agents": {
+          "title": "Agents",
+          "summary": "Gérez les agents intégrés, personnalisés et sous-agents afin que des rôles spécialisés prennent en charge la recherche, le codage, la revue et plus encore.",
+          "items": {
+            "browse-agents": "Parcourir les agents intégrés, utilisateur, de projet et actuellement visibles",
+            "custom-agent-create": "Créer des agents personnalisés avec un nom, une description et un rôle",
+            "custom-agent-manage": "Consulter, modifier, recharger ou supprimer des agents personnalisés",
+            "subagent-manage": "Créer, configurer, consulter et supprimer des sous-agents délégables",
+            "capability-summary": "Consulter les outils, Skills, l’état lecture seule et le récapitulatif des fonctionnalités de chaque agent",
+            "tools-skills": "Choisir les groupes d’outils, les outils individuels, les groupes de Skills et les Skills par agent",
+            "delegation": "Permettre à l’agent principal de déléguer en parallèle des travaux de recherche, de codage et de revue, et de coordonner leur cycle de vie"
+          }
+        },
+        "personal-assistants": {
+          "title": "Assistants personnels",
+          "summary": "Créez et gérez des assistants IA persistants, définissez leur identité et leur personnalité, et démarrez des conversations ou des travaux planifiés depuis un seul endroit.",
+          "items": {
+            "assistant-gallery": "Parcourir les assistants existants, en créer un nouveau et consulter l’identité et le récapitulatif des fonctionnalités de chaque assistant",
+            "assistant-open-close": "Fermer les assistants de la barre latérale et annuler leurs sessions en cours, en préservant la configuration et l’historique, puis les rouvrir depuis la galerie des assistants",
+            "primary-delete-reset": "Définir l’assistant principal, supprimer les assistants secondaires ou réinitialiser l’espace de travail d’un assistant aux valeurs par défaut",
+            "identity-avatar": "Modifier le nom, le type de personnage et le style d’un assistant, puis choisir un avatar officiel, un emoji ou un personnage d’avatar personnalisé",
+            "persona-documents": "Lire et modifier IDENTITY.md, SOUL.md et USER.md, avec corps Markdown et frontmatter enregistrés automatiquement",
+            "assistant-sessions": "Choisir un modèle, envoyer un message et parcourir les sessions d’un assistant depuis sa page de détail",
+            "assistant-schedules": "Consulter et gérer les sessions planifiées et les travaux automatisés propres à l’espace de travail de l’assistant en cours"
+          }
+        },
+        "projects": {
+          "title": "Projets et espaces de travail",
+          "summary": "Ouvrez un répertoire local ou créez un projet pour que fichiers, sessions, terminaux et agents partagent un même espace de travail.",
+          "items": {
+            "open-create": "Ouvrir un projet existant ou lancer le flux de création de projet",
+            "close-switch-reorder": "Fermer, changer et réordonner plusieurs espaces de travail ouverts",
+            "recent-workspaces": "Consulter, nettoyer et rouvrir les projets utilisés récemment",
+            "workspace-metadata": "Analyser et maintenir les noms d’espaces de travail, les métadonnées, les répertoires associés et les fichiers de personnalité",
+            "workspace-icon": "Choisir les formes et couleurs de l’icône du projet, ou utiliser une image personnalisée",
+            "file-watch": "Surveiller les modifications de fichiers du projet, vérifier l’état de la surveillance et récupérer une surveillance arrêtée",
+            "workspace-search": "Rechercher dans les espaces de travail locaux par nom de fichier, chemin ou contenu",
+            "remote-open": "Ouvrir des espaces de travail distants SSH et autres depuis le flux de projet",
+            "project-health": "Consulter l’espace de travail en cours, l’état, la santé et les statistiques de l’application"
+          }
+        },
+        "files-editor": {
+          "title": "Fichiers et édition de code",
+          "summary": "Parcourez, recherchez et modifiez les fichiers du projet tout en consultant les diffs, les actions d’éditeur adaptées au langage et les modifications de l’agent.",
+          "items": {
+            "file-tree": "Parcourir, créer, lire, modifier, renommer et supprimer des fichiers et répertoires",
+            "reveal-in-system": "Afficher un fichier ou un répertoire dans le gestionnaire de fichiers du système",
+            "indexed-search": "Rechercher dans l’espace de travail actif par motif de nom de fichier et contenu intégral",
+            "search-index-management": "Construire ou reconstruire l’index de recherche de l’interface",
+            "edit-save": "Lire, modifier et enregistrer des fichiers tout en synchronisant l’état de l’éditeur",
+            "diffs": "Consulter les diffs et statistiques par fichier, session, tour ou opération",
+            "accept-reject": "Accepter ou rejeter les modifications de l’agent par fichier, opération ou session entière",
+            "snapshots-rollback": "Consulter l’historique des fichiers et les instantanés, puis revenir en arrière sur une session ou un tour sélectionné",
+            "language-actions": "Afficher le formatage, la navigation vers les définitions et les types, les références, le renommage, les correctifs rapides et la navigation par symbole uniquement si le fournisseur de langage actif les prend en charge",
+            "attachments": "Coller ou déposer des fichiers, dossiers et images locaux dans les sessions locales de l’application de bureau",
+            "image-analysis": "Afficher et analyser les images de l’espace de travail ou du contexte de session"
+          }
+        },
+        "terminal": {
+          "title": "Terminal",
+          "summary": "Exécutez un shell dans le projet en cours, consultez la sortie, conservez l’historique des commandes et partagez le même contexte de terminal avec les agents.",
+          "items": {
+            "create-terminal": "Ouvrir le panneau du terminal et créer une session de terminal",
+            "terminal-session-management": "Lister, changer et fermer plusieurs sessions de terminal",
+            "shells": "Détecter les shells disponibles et choisir un shell par défaut ou explicite",
+            "working-directory": "Créer des terminaux dans le projet en cours ou dans un répertoire de départ choisi",
+            "command-control": "Exécuter des commandes, écrire des entrées et envoyer des signaux d’interruption ou autres",
+            "resize": "Synchroniser les lignes et colonnes du terminal lors du redimensionnement du panneau",
+            "history-integration": "Consulter l’historique des commandes et détecter la prise en charge de l’intégration du shell",
+            "shutdown": "Accuser réception de la sortie et arrêter en toute sécurité un terminal ou tous les terminaux"
+          }
+        },
+        "git": {
+          "title": "Contrôle de version Git",
+          "summary": "Consultez les modifications, les branches et les commits ; indexez, commitez, fusionnez, effectuez des cherry-pick et travaillez avec des worktrees Git.",
+          "items": {
+            "status-diff": "Consulter l’état du dépôt, les fichiers modifiés et les diffs par fichier",
+            "stage-reset": "Indexer des fichiers, désindexer des modifications et réinitialiser sur un commit sélectionné",
+            "commit": "Prévisualiser ou générer un message de commit et créer le commit",
+            "sync": "Pull depuis et push vers les dépôts distants",
+            "branches": "Parcourir, créer, extraire (checkout) et supprimer des branches locales",
+            "graph-history": "Parcourir le graphe des commits et l’historique du dépôt, y compris la persistance de l’historique récent",
+            "revision-content": "Résoudre les révisions et consulter le contenu d’un fichier depuis n’importe quel commit",
+            "cherry-pick": "Démarrer, poursuivre ou abandonner un cherry-pick",
+            "trust-worktrees": "Gérer la confiance du dépôt et créer, lier, promouvoir, recréer ou supprimer des worktrees"
+          }
+        },
+        "code-review": {
+          "title": "Revue de code et demandes de fusion",
+          "summary": "Examinez les modifications et le contexte des demandes de fusion, consultez les journaux CI, générez des messages de commit et lancez des revues de code approfondies.",
+          "items": {
+            "workspace-context": "Charger le contexte du dépôt, de la branche, de l’instantané de l’espace de travail et de la cible de revue",
+            "pull-request": "Consulter les détails d’une demande de fusion, son contenu paginé et les modifications associées",
+            "ci-logs": "Lire les journaux d’exécution CI d’une demande de fusion",
+            "issues": "Lire le titre, le corps et le contexte des issues associées",
+            "authentication": "Stocker ou effacer les jetons d’accès de la plateforme de revue",
+            "commit-message": "Prévisualiser, générer ou appliquer rapidement un message de commit",
+            "deep-review": "Lancer Deep Review sur un espace de travail, un commit ou une demande de fusion, et consolider une revue structurée"
+          }
+        },
+        "browser": {
+          "title": "Navigateur intégré",
+          "summary": "Ouvrez des pages web et des services locaux dans Alex, où un agent peut inspecter la page et sélectionner, cliquer, remplir, faire défiler ou capturer des éléments directement.",
+          "items": {
+            "open-urls": "Ouvrir des URL complètes, des noms d’hôte locaux ou des ports de services de développement dans Alex",
+            "agent-web-research": "Permettre à un agent de rechercher sur le web et de récupérer à la demande le contenu des pages sélectionnées",
+            "history-navigation": "Naviguer dans l’historique des pages avec Précédent, Suivant et la barre d’adresse",
+            "reload-status": "Recharger les pages et synchroniser l’URL actuelle, l’état de chargement et les erreurs",
+            "scene-and-panel": "Utiliser le navigateur comme scène autonome ou panneau auxiliaire à côté d’une session",
+            "element-picker": "Démarrer le sélecteur d’éléments pour mettre en évidence les éléments survolés et afficher les détails de balise, d’ID et de classe",
+            "element-context": "Cliquer sur un élément pour capturer son chemin CSS, ses attributs, son texte et son HTML dans le contexte de la session en cours",
+            "element-picker-cancel": "Cliquer à nouveau sur le sélecteur ou appuyer sur Échap pour annuler la sélection et supprimer les superpositions",
+            "agent-page-automation": "Permettre à un agent de capturer, lire, cliquer, survoler, remplir, appuyer sur des touches, faire défiler, attendre, évaluer des scripts et capturer la page intégrée",
+            "shared-browser-action-contract": "Utiliser un contrat unique de paramètres BrowserActions, de références d’éléments, de résultats et d’erreurs sur le WebView intégré et les navigateurs CDP externes",
+            "browser-target-selection": "Choisir le navigateur intégré ou externe avec sa cible et localiser une page par session_id, URL ou titre",
+            "embedded-webview": "Utiliser un WebView natif sur ordinateur de bureau, un iframe isolé sur le web, et ouvrir les liens de nouvelle fenêtre sur place"
+          }
+        },
+        "computer-use": {
+          "title": "Contrôle du navigateur et du bureau",
+          "summary": "Autorisez les agents à piloter un navigateur ou une interface locale tout en gérant explicitement les accès d’accessibilité, d’enregistrement d’écran et de connexion au navigateur.",
+          "items": {
+            "status": "Vérifier la disponibilité de Computer Use ainsi que l’état des autorisations d’accessibilité et d’enregistrement d’écran",
+            "request-permissions": "Demander les autorisations système requises pour le contrôle du bureau",
+            "system-settings": "Ouvrir les paramètres de confidentialité et de sécurité correspondants du système",
+            "browser-discovery": "Découvrir les navigateurs pris en charge et consulter l’état de la connexion CDP en cours",
+            "launch-connect": "Lancer le contrôle du navigateur, ou se connecter à un navigateur configuré pour CDP et s’en déconnecter",
+            "default-cdp": "Activer la configuration CDP par défaut et redémarrer le navigateur si nécessaire",
+            "agent-actions": "Après autorisation, permettre aux agents de capturer, cliquer, taper, faire défiler et inspecter l’interface visible",
+            "control-session-preview": "Consulter la cible, le mode et l’aperçu de capture autorisé en cours dans la carte de contrôle",
+            "stop-control-session": "Arrêter la session de contrôle du bureau en cours et libérer les ressources de capture et d’entrée",
+            "app-sharing": "Sélectionner une fenêtre d’application et accorder ou révoquer le contrôle séparément",
+            "preview-input": "Cliquer, faire glisser, faire défiler et taper via l’aperçu partagé",
+            "remembered-control": "Mémoriser ou oublier le contrôle par exécutable d’application et mode d’entrée"
+          }
+        },
+        "skills": {
+          "title": "Skills",
+          "summary": "Installez et gérez des flux de travail experts réutilisables pour les agents, et contrôlez quels modes peuvent les utiliser.",
+          "items": {
+            "installed-catalog": "Parcourir les Skills installés depuis les sources utilisateur, projet, locales et distantes dans un catalogue unique",
+            "market": "Parcourir, rechercher et actualiser le marché des Skills",
+            "market-install": "Télécharger un Skill du marché pour l’utilisateur ou le projet en cours",
+            "local-add": "Valider le chemin d’un Skill local et l’ajouter à l’échelle utilisateur ou projet",
+            "remove": "Supprimer un Skill installé au niveau utilisateur ou projet",
+            "global-enable": "Activer ou désactiver un Skill individuel globalement",
+            "mode-selection": "Choisir les Skills et groupes de Skills par mode d’agent et restaurer les valeurs par défaut",
+            "shadowing": "Comprendre la priorité utilisateur/projet en cas de Skills de même nom",
+            "invoke": "Charger et exécuter à la demande un Skill visible par l’agent en cours"
+          }
+        },
+        "miniapps": {
+          "title": "Mini Apps",
+          "summary": "Installez, créez et exécutez des applications légères dans Alex, combinant interface, données et flux de travail d’agent.",
+          "items": {
+            "gallery-lifecycle": "Consulter, créer, mettre à jour et supprimer les MiniApps installées",
+            "market": "Parcourir le marché, consulter les fiches et installer ou mettre à jour des versions",
+            "market-account": "Se connecter au marché, ajouter des applications aux favoris et les noter, et consulter les origines des applications installées",
+            "permissions": "Accorder l’accès à un chemin ou à un espace de travail et examiner les changements d’autorisation avant personnalisation",
+            "runtime": "Exécuter les appels hôte et worker des Mini Apps, consulter l’état et arrêter les workers en arrière-plan",
+            "storage": "Lire et enregistrer l’état persistant séparément pour les applications installées et les brouillons de personnalisation",
+            "agent-ai": "Utiliser la complétion par modèle, la conversation et des sessions d’agent dédiées dans les Mini Apps",
+            "customization": "Créer des brouillons de personnalisation, les prévisualiser en direct, puis appliquer, synchroniser ou abandonner les modifications",
+            "versions": "Consulter l’historique des versions et revenir à une version antérieure",
+            "agent-authoring": "Permettre à un agent d’initialiser, de rédiger et de valider une Mini App",
+            "agent-operate-app": "Permettre à un agent de contrôler une Mini App via son code source et son interface en direct",
+            "agent-market-submit": "Permettre à un agent de soumettre une Mini App achevée à la revue du marché sur demande explicite",
+            "publishing": "Retirer et examiner des versions du marché, et afficher des pages de diapositives"
+          }
+        },
+        "canvas": {
+          "title": "Canvas et artefacts interactifs",
+          "summary": "Affichez et enregistrez des visualisations, des pages interactives et des artefacts structurés générés à côté d’une session.",
+          "items": {
+            "artifact-open": "Charger et ouvrir des artefacts Canvas persistants depuis les résultats d’outils de session",
+            "html-react": "Effectuer le rendu et modifier itérativement des interfaces HTML ou React, des graphiques et des visualisations interactives",
+            "inline-generative-ui": "Générer en ligne, dans une session, des graphiques HTML/SVG compacts, des explications ou des widgets interactifs",
+            "state": "Charger et enregistrer l’état interactif lorsqu’un Canvas est rouvert ou actualisé",
+            "source-inspection": "Consulter le code source Canvas, les révisions compilées et la dernière révision valide connue",
+            "element-context": "Sélectionner un élément dans Canvas et ajouter sa référence au contexte de session",
+            "runtime-errors": "Capturer les erreurs d’exécution, signaler les diagnostics et demander à l’agent de les corriger",
+            "export-html": "Exporter le Canvas en cours sous forme de fichier HTML autonome"
+          }
+        },
+        "tasks-automation": {
+          "title": "Tableau de tâches et travaux planifiés",
+          "summary": "Suivez le travail dans un tableau de tâches unique et laissez les travaux planifiés s’exécuter à l’heure ou sur l’hôte de votre choix.",
+          "items": {
+            "board-views": "Parcourir les tâches dans les vues En attente, Calendrier et Inactives",
+            "create-edit": "Créer, modifier, activer, désactiver et supprimer des travaux planifiés",
+            "schedule-types": "Choisir des planifications ponctuelles, quotidiennes, hebdomadaires ou cron personnalisées",
+            "calendar-occurrences": "Prévisualiser sur un calendrier les prochaines occurrences des travaux",
+            "agent-workspace": "Choisir l’agent, le modèle, le mode de travail et l’espace de travail d’un travail",
+            "local-remote-target": "Planifier l’exécution des travaux sur l’hôte en cours ou sur une cible distante connectée",
+            "host-readiness": "Lister les travaux et attendre la disponibilité de l’hôte de bureau avant une exécution fiable"
+          }
+        },
+        "insights": {
+          "title": "Analyses",
+          "summary": "Transformez l’activité des sessions et des projets en analyses lisibles sur les habitudes de travail, l’utilisation et la progression.",
+          "items": {
+            "availability": "Vérifier si le compte et les sessions en cours contiennent des données exploitables pour l’analyse",
+            "generate": "Générer un rapport d’analyse d’activité pour une plage de dates et un modèle sélectionnés",
+            "cancel": "Annuler une génération d’analyses en cours",
+            "latest-report": "Ouvrir le dernier rapport ou charger un rapport historique sélectionné",
+            "usage-statistics": "Relier l’activité de travail aux statistiques de modèle, de jetons et d’utilisation du cache",
+            "patterns": "Consulter la répartition par projet, les horaires de travail, les types de tâches et les schémas de collaboration"
+          }
+        },
+        "ecosystem-compatibility": {
+          "title": "Importation externe",
+          "summary": "Consultez le contenu et l’état des IA externes, importez les Skills, MCP, Hooks et sessions Codex ou Zcode pris en charge, et poursuivez les conversations dans Alex.",
+          "items": {
+            "source-discovery": "Découvrir OpenCode, Claude Code, Codex et autres sources et contenus IA externes",
+            "source-policy": "Activer ou désactiver chaque source et choisir une stratégie gérée, aperçu ou lecture seule",
+            "codex-session-import": "Découvrir, supprimer et restaurer les sessions sources Codex, puis poursuivre dans des branches Alex",
+            "zcode-session-import": "Découvrir, supprimer et restaurer les sessions sources Zcode, puis poursuivre dans des branches Alex",
+            "prompts-commands": "Développer le contenu externe de prompts/commandes et résoudre les conflits avec les commandes natives",
+            "subagents": "Activer des agents externes, résoudre les conflits de noms et associer des modèles",
+            "mcp-import": "Prévisualiser les plans d’importation MCP, résoudre individuellement les conflits de serveurs et les appliquer",
+            "tool-targets": "Choisir les cibles d’outils externes, résoudre les conflits et contrôler l’activation",
+            "hooks": "Consulter les catalogues de Hooks externes, planifier les importations, ajuster les sélections et appliquer",
+            "security-review": "Examiner les conflits, l’impact sécurité et les instantanés de contrôle de source avant la migration",
+            "reveal-source": "Afficher les sources de configuration externes dans le gestionnaire de fichiers ou l’environnement distant"
+          }
+        },
+        "remote-workspaces": {
+          "title": "Espaces de travail distants",
+          "summary": "Ouvrez des projets via SSH ou dans des conteneurs pour que fichiers, recherche, terminal et agents s’exécutent tous dans l’environnement cible.",
+          "items": {
+            "ssh-profiles": "Enregistrer, lister, tester et supprimer des profils de connexion SSH",
+            "ssh-auth": "Se connecter avec des mots de passe, clés privées, certificats, hôtes de configuration SSH et hôtes de rebond",
+            "docker": "Découvrir les conteneurs Docker distants et utiliser un conteneur comme environnement de travail",
+            "wsl": "Choisir une distribution WSL sur l’hôte Windows comme espace de travail",
+            "remote-open": "Ouvrir, fermer et supprimer des espaces de travail distants, et consulter les informations du serveur",
+            "remote-files": "Parcourir, lire, écrire, créer, renommer et supprimer des fichiers et répertoires distants",
+            "transfer": "Téléverser des fichiers locaux, télécharger des fichiers distants et annuler les transferts actifs",
+            "remote-execution": "Exécuter des commandes sur la cible pour que terminaux, recherche et agents utilisent le plan de données distant",
+            "port-forwarding": "Découvrir les ports d’écoute distants et démarrer, consulter ou arrêter la redirection de ports",
+            "connection-lifecycle": "Consulter l’état des connexions et déconnecter une session SSH ou toutes"
+          }
+        },
+        "remote-connect": {
+          "title": "Remote Connect et appareils",
+          "summary": "Connectez-vous à cet hôte depuis un mobile, un bot ou un autre appareil Alex pour consulter les sessions, répondre aux autorisations et poursuivre le travail à distance.",
+          "items": {
+            "connection-methods": "Choisir le LAN ou le Relay officiel",
+            "start-stop-status": "Démarrer ou arrêter Remote Connect et consulter l’état en direct et les informations de l’appareil",
+            "network": "Consulter l’adresse IP LAN, les détails réseau et la configuration de connexion partageable",
+            "bots": "Configurer les bots Feishu, Telegram, WeChat et autres, et arrêter un bot indépendamment",
+            "account": "Se connecter avec GitHub, se déconnecter et consulter l’état de l’identité",
+            "devices": "Lister, connecter, consulter le modèle et l’OS, définir des alias et retirer des appareils du même compte",
+            "peer-device": "Activer le mode Appareil pair et utiliser un autre appareil Alex comme plan de données des commandes et événements"
+          }
+        },
+        "detached-dispatch": {
+          "title": "Detached Dispatch",
+          "summary": "Envoyez des travaux durables vers un autre hôte Alex ; le contrôleur peut se déconnecter tandis que la cible poursuit et conserve la trace.",
+          "items": {
+            "targets": "Lister les appareils du même compte et les cibles SSH enregistrées",
+            "provision": "Provisionner l’environnement d’exécution de la cible et installer ou mettre à jour la CLI Alex",
+            "model-sync": "Synchroniser la configuration des modèles requise avant de soumettre un travail",
+            "submit": "Soumettre un travail durable depuis l’espace de travail Git en cours vers un appareil du même compte ou une cible SSH",
+            "status-list": "Lister les travaux envoyés et interroger leur état, leur résultat et leurs erreurs",
+            "transcript": "Enregistrer, compléter et recharger des transcriptions d’exécution reconnectables",
+            "permission-continuation": "Répondre à distance aux demandes d’autorisation et poursuivre le travail côté cible",
+            "cancel": "Annuler un travail soumis depuis cet hôte",
+            "result-sync": "Rapatrier les résultats côté cible sans traiter le contrôleur comme un proxy de système de fichiers distant"
+          }
+        },
+        "pages": {
+          "title": "Publication de pages",
+          "summary": "Enregistrez des versions de pages et publiez-les vers des URL publiques ou privées, en gérant titres, visibilité, historique et liens de partage.",
+          "items": {
+            "pages-list": "Lister les Pages du compte et consulter l’état de publication actuel de chaque page",
+            "immutable-versions": "Enregistrer des versions de pages immuables et parcourir l’historique des versions",
+            "publish": "Publier ou redéployer une version de page sélectionnée",
+            "visibility": "Mettre à jour les titres, la visibilité publique/privée et les paramètres d’accès",
+            "share-open": "Créer un lien ouvrable et partageable pour une page",
+            "unpublish": "Dépublier une page tout en conservant les versions pour une publication ultérieure",
+            "delete": "Supprimer une version individuelle ou une Page entière"
+          }
+        },
+        "voice-input": {
+          "title": "Saisie vocale et appels temps réel",
+          "summary": "Transcrivez des enregistrements ou maintenez un appel vocal temps réel à l’échelle du client, capable d’entrer dans les projets, d’exécuter des tâches et d’énoncer des points d’avancement concis.",
+          "items": {
+            "composer-recording": "Démarrer, terminer ou annuler un enregistrement depuis le composeur de conversation",
+            "stream-audio": "Diffuser les segments audio pendant l’enregistrement et afficher la progression de la reconnaissance",
+            "realtime-assistant-call": "Démarrer ou terminer un appel vocal temps réel à l’échelle du client, entendre les réponses et demander à l’assistant d’exécuter ou d’arrêter des tâches du projet",
+            "realtime-assistant-config": "Lire ou enregistrer les paramètres du service vocal temps réel",
+            "local-models": "Parcourir les modèles vocaux locaux et leurs états d’installation, de téléchargement, de vérification, de réparation et de suppression",
+            "cancel-download": "Annuler un téléchargement de modèle vocal en cours",
+            "language-microphone": "Utiliser la détection automatique de la langue ou choisir une langue et un microphone système",
+            "diagnostic-test": "Tester le microphone et la reconnaissance vocale dans les Paramètres, y compris le minutage et les erreurs",
+            "edit-transcript": "Renvoyer la transcription au composeur pour modification avant envoi"
+          }
+        },
+        "desktop-pet": {
+          "title": "Compagnon d’agent de bureau",
+          "summary": "Affichez un compagnon d’agent sur le bureau, et choisissez, importez ou gérez des packs de personnages Petdex.",
+          "items": {
+            "enable": "Activer ou désactiver globalement le compagnon d’agent de bureau",
+            "presets": "Parcourir et changer entre les personnages Petdex intégrés ou importés",
+            "petdex-import": "Importer et utiliser un nouveau personnage et ses animations depuis un paquet Petdex local",
+            "petdex-delete": "Supprimer un paquet Petdex importé et revenir à un personnage disponible",
+            "desktop-window": "Afficher, masquer et redimensionner la fenêtre du compagnon de bureau, et revenir à la fenêtre principale"
+          }
+        },
+        "desktop-cards": {
+          "title": "Cartes de bureau",
+          "summary": "Laissez les agents placer des cartes déplaçables hors de la fenêtre principale pour des informations d’un coup d’œil : comptes à rebours, listes de contrôle, statut de PR, météo ou cours de bourse, restaurées après réouverture de l’application.",
+          "items": {
+            "agent-cards": "Créer à la demande ou pendant une tâche des cartes de compte à rebours, liste de contrôle, note, progression, métriques, graphique, travail planifié et personnalisées, avec actualisation optionnelle depuis un endpoint HTTP ou une commande locale",
+            "home-management": "Voir chaque carte dans la section Cartes de bureau de l’accueil, et afficher, masquer ou supprimer des cartes individuelles",
+            "card-actions": "Actualiser les données, cocher des éléments de liste, activer l’option toujours au premier plan, ouvrir le lien ou revenir à la session source depuis une carte",
+            "drag-restore": "Faire glisser les cartes n’importe où sur le bureau et les redimensionner par leurs bords ou coins ; elles disparaissent à la fermeture d’Alex et reviennent à la même position et taille à sa réouverture",
+            "desktop-pinning": "Épingler une carte sur le bureau Windows depuis le menu de la carte, la liste des cartes de l’accueil ou les Paramètres, y compris les cartes masquées"
+          }
+        },
+        "generative-ui": {
+          "title": "UI générative",
+          "summary": "Générez des interfaces interactives dans une conversation à l’aide de la bibliothèque de composants sélectionnée.",
+          "items": {
+            "app-generation": "Générer une application GenUI interactive rendue par l’hôte"
+          }
+        }
+      },
+      "setting": {
+        "application": {
+          "general": {
+            "title": "Paramètres généraux",
+            "summary": "Gérez les préférences de l’application : démarrage, mises à jour, comportement à la fermeture, notifications et prévention de la mise en veille.",
+            "items": {
+              "automatic-updates": "Activer ou désactiver la vérification automatique des mises à jour",
+              "manual-update": "Vérifier et télécharger les mises à jour en arrière-plan, puis confirmer l’installation et redémarrer, ou installer plus tard depuis À propos",
+              "launch-at-login": "Choisir si Alex se lance automatiquement après la connexion au système",
+              "prevent-sleep": "Choisir si Alex empêche la mise en veille de l’ordinateur pendant son exécution",
+              "close-behavior": "Choisir si la fermeture de la fenêtre principale quitte l’application, la réduit dans la zone de notification ou demande à chaque fois",
+              "notifications": "Contrôler séparément les notifications d’achèvement et de demandes d’autorisation"
+            }
+          },
+          "appearance": {
+            "title": "Apparence et langue",
+            "summary": "Changez de thèmes et de langues, ajustez la typographie, et installez ou importez des packs d’apparence.",
+            "items": {
+              "built-in-appearance": "Choisir l’apparence système, claire, sombre, monochrome, Midnight, China, Cyber, Slate, Tokyo Night et autres apparences intégrées",
+              "language": "Basculer entre chinois simplifié, chinois traditionnel, anglais et autres langues d’interface prises en charge",
+              "ui-font-size": "Ajuster la taille globale de la police de l’interface, y compris des valeurs personnalisées en pixels",
+              "local-packages": "Importer, prévisualiser, appliquer, exporter et supprimer des paquets d’apparence locaux",
+              "appearance-market": "Parcourir, rechercher, filtrer, installer et mettre à jour des apparences depuis le marché Skin",
+              "agent-market-submit": "Permettre à un agent de soumettre un paquet d’apparence local à la revue du marché Skin sur demande explicite",
+              "market-submissions": "Consulter et retirer vos soumissions au marché des apparences",
+              "market-review": "Si vous y êtes autorisé, consulter puis approuver ou rejeter les soumissions d’apparences"
+            }
+          },
+          "pet": {
+            "title": "Paramètres du compagnon",
+            "summary": "Activez le compagnon d’agent de bureau, gérez le personnage actif et activez ou désactivez les cartes de bureau.",
+            "items": {
+              "enabled": "Activer ou désactiver le compagnon d’agent",
+              "desktop-cards-enabled": "Activer ou désactiver les cartes de bureau ; désactivées, toutes les cartes sont masquées et les agents ne voient plus l’outil de cartes de bureau",
+              "preset-selection": "Choisir le compagnon actif parmi les personnages intégrés et importés",
+              "import": "Importer un paquet de personnages Petdex local",
+              "delete-refresh": "Actualiser la liste des personnages et supprimer les paquets importés dont vous n’avez plus besoin"
+            }
+          },
+          "input": {
+            "title": "Saisie et interaction",
+            "summary": "Configurez les actions sur la sélection de texte des conversations, la saisie vocale, les microphones, la langue de reconnaissance et les modèles locaux.",
+            "items": {
+              "auto-show-selection-toolbar": "Activer ou désactiver les actions automatiques après sélection de texte dans une conversation",
+              "voice-enabled": "Activer ou désactiver la saisie vocale dans le composeur de conversation",
+              "language": "Choisir la détection automatique ou le chinois, le cantonais, l’anglais, le japonais et autres langues de reconnaissance",
+              "microphone-test": "Choisir un microphone et lancer un test de reconnaissance vocale",
+              "local-models": "Télécharger, sélectionner, vérifier, réparer ou supprimer des modèles vocaux locaux",
+              "recording-limit": "Définir la durée maximale d’un enregistrement vocal"
+            }
+          },
+          "shortcuts": {
+            "title": "Raccourcis clavier",
+            "summary": "Recherchez, parcourez, personnalisez et réinitialisez les raccourcis de l’application, des scènes, de l’éditeur et du terminal.",
+            "items": {
+              "shortcut-browser": "Rechercher et parcourir tous les raccourcis de l’application, des scènes, de l’éditeur et du terminal",
+              "shortcut-remap": "Enregistrer de nouveaux raccourcis, détecter les conflits, annuler un raccourci ou réinitialiser tous les raccourcis personnalisés"
+            }
+          },
+          "development": {
+            "title": "Éditeur",
+            "summary": "Réglez la police, l’indentation, le retour à la ligne, le formatage et la minimap de l’éditeur de code.",
+            "items": {
+              "editor-appearance": "Configurer la police, la graisse, la taille, la hauteur de ligne et le comportement du curseur de l’éditeur",
+              "indent-wrap": "Configurer la taille des tabulations, l’indentation par espaces, le retour à la ligne automatique, les numéros de ligne et le défilement fluide",
+              "editor-display": "Contrôler la minimap, l’affichage des espaces, le surlignage de la ligne en cours et les limites de défilement",
+              "editor-advanced": "Contrôler l’enregistrement automatique, le surlignage sémantique, les couleurs des crochets, le formatage et la suppression des espaces en fin de ligne"
+            }
+          },
+          "terminal": {
+            "title": "Terminal",
+            "summary": "Choisissez le shell du terminal par défaut et l’emplacement d’ouverture des nouveaux panneaux de terminal dans une session.",
+            "items": {
+              "default-shell": "Détecter automatiquement ou choisir le shell de terminal par défaut",
+              "terminal-position": "Placer le panneau du terminal à droite ou en bas"
+            }
+          }
+        },
+        "ai": {
+          "models": {
+            "title": "Modèles et fournisseurs",
+            "summary": "Ajoutez des fournisseurs et modèles IA, choisissez les valeurs par défaut, et configurez proxy, abonnements et délais d’expiration de streaming.",
+            "items": {
+              "providers": "Ajouter, modifier et retirer des fournisseurs IA intégrés ou personnalisés",
+              "credentials-endpoint": "Configurer les clés API, URL de base, formats de requête et listes de modèles",
+              "subscription-auth": "Se connecter, actualiser et se déconnecter des comptes Codex, Antigravity, OpenCode Console (Zen), Grok, Hermes et autres",
+              "default-models": "Choisir les modèles principal, rapide, de compréhension d’images, de génération d’images et de reconnaissance vocale",
+              "reasoning": "Choisir des préréglages de raisonnement ou un effort de raisonnement personnalisé par modèle",
+              "proxy": "Configurer les proxys réseau et les règles de contournement pour les requêtes IA",
+              "stream-timeouts": "Définir ou désactiver les délais du premier jeton et d’inactivité du streaming",
+              "available-models": "Permettre à un agent de consulter les modèles disponibles sous la configuration en cours",
+              "model-catalog": "Consulter l’état du catalogue models.dev, l’actualiser manuellement et afficher son cache local",
+              "advanced-request": "Ajouter des en-têtes personnalisés, des champs de corps de requête et un comportement SSL par fournisseur",
+              "smart-routing": "Afficher la disponibilité du mode intelligent (non publié)",
+              "connection-test": "Tester les connexions aux modèles ou la génération d’images et actualiser le client d’exécution",
+              "model-pools": "Gérer les pools de modèles, les stratégies de routage et la sélection de modèle de session"
+            }
+          },
+          "memory": {
+            "title": "Paramètres de mémoire",
+            "summary": "Contrôlez si Alex extrait et utilise la mémoire à long terme des sessions, y compris rétention, consolidation et stratégie de modèle.",
+            "items": {
+              "generation-recall": "Activer ou désactiver ensemble la génération de mémoire à long terme et le rappel de session",
+              "btw": "Choisir si les sessions BTW légères contribuent à la mémoire",
+              "external-context": "En présence d’un contexte d’outil externe, effacer les résultats d’outils, l’autoriser ou ignorer la session",
+              "rollout-policy": "Définir le temps d’inactivité, l’âge maximal, la limite de déploiement au démarrage et la limite d’analyse",
+              "extraction": "Définir la concurrence d’extraction de mémoire et la limite de candidats bruts",
+              "extraction-model": "Choisir le modèle d’extraction de mémoire parmi les modèles actuellement disponibles ou suivre le modèle principal",
+              "retention": "Définir la durée de conservation des souvenirs inutilisés",
+              "consolidation": "Choisir le modèle de consolidation ou le faire suivre le modèle principal ou celui d’extraction",
+              "maintenance": "Ouvrir le répertoire de mémoire, restaurer les valeurs par défaut ou effacer explicitement tous les souvenirs"
+            }
+          }
+        },
+        "workspace": {
+          "session": {
+            "title": "Paramètres de session et d’espace de travail",
+            "summary": "Contrôlez l’Agent Harness par défaut, la génération des titres de session, la recherche accélérée de l’espace de travail et le comportement du contexte de projet.",
+            "items": {
+              "default-agent-harness": "Faire suivre aux nouvelles sessions ordinaires la dernière sélection ChatInput ou utiliser un Harness fixe",
+              "automatic-titles": "Activer ou désactiver les titres automatiques générés à partir du contenu de session",
+              "title-model": "Faire hériter la génération de titres du modèle principal ou rapide, ou utiliser un modèle sélectionné",
+              "next-input-suggestion": "Activer ou désactiver la suggestion d’entrée suivante d’une phrase proposée dans la zone de saisie après une réponse d’agent",
+              "accelerated-search": "Activer la recherche accélérée par Flashgrep pour les espaces de travail locaux",
+              "search-index": "Consulter l’état de l’index et reconstruire l’index de l’espace de travail au besoin",
+              "remote-behavior": "Utiliser un chemin de recherche explicite pour l’espace de travail distant, sans repli silencieux sur les fichiers locaux"
+            }
+          },
+          "worktrees": {
+            "title": "Paramètres des worktrees",
+            "summary": "Configurez la racine, le préfixe de branche et les règles de nettoyage des worktrees Git, et consultez les espaces de travail isolés existants.",
+            "items": {
+              "isolation": "Comprendre les worktrees isolés et configurer leurs valeurs par défaut de création et de nettoyage",
+              "root-path": "Définir le répertoire racine commun des worktrees gérés",
+              "branch-prefix": "Définir le préfixe de nom de branche utilisé pour les branches créées automatiquement",
+              "copy-changes": "Choisir si les modifications en cours non validées sont copiées dans un nouvel espace de travail isolé",
+              "auto-cleanup": "Activer le nettoyage automatique et définir le nombre maximal de worktrees gérés à conserver",
+              "management": "Consulter le cycle de vie des worktrees, leur état modifié, les commits non publiés et les sessions liées",
+              "open-restore-delete": "Ouvrir ou restaurer les sessions liées et supprimer ou forcer la suppression d’un worktree après vérifications de protection"
+            }
+          }
+        },
+        "tools": {
+          "execution": {
+            "title": "Exécution et autorisations",
+            "summary": "Gérez les autorisations d’outils d’agent, le mode de présentation, la concurrence, les délais d’expiration, le chargement différé, Computer Use et le contrôle du navigateur.",
+            "items": {
+              "permission-mode": "Choisir le mode d’autorisation Demander, Approbation automatique ou Accès complet, et accuser réception des avertissements à haut risque",
+              "permission-selector": "Choisir si le sélecteur de mode d’autorisation apparaît sous le composeur de conversation",
+              "global-project-rules": "Créer, réordonner et enregistrer des règles Autoriser, Demander et Refuser globales ou au niveau du projet",
+              "remembered-grants": "Consulter, révoquer ou effacer les autorisations de projet mémorisées et les enregistrements d’audit",
+              "deferred-tools": "Chargement différé des outils à la demande pour réduire le contexte initial de l’agent",
+              "tool-presentation": "Choisir le mode natif ou le mode PTC TypeScript pour le modèle",
+              "parallelism": "Définir la concurrence des sous-agents et du swarm, ainsi que la stratégie : sécurisé uniquement, parallèle forcé ou série",
+              "timeouts": "Définir ou désactiver le délai d’expiration d’exécution par outil",
+              "review-capacity": "Définir le nombre maximal de workers Deep Review parallèles et le temps d’attente en file",
+              "computer-use": "Activer ou désactiver Computer Use après autorisation du système d’exploitation",
+              "computer-use-permissions": "Consulter et demander les autorisations d’accessibilité et d’enregistrement d’écran",
+              "browser-auto-connect": "Choisir si Alex reconnecte le contrôle du navigateur au démarrage",
+              "browser-setup": "Découvrir et choisir un navigateur, configurer le CDP par défaut ou le redémarrer si nécessaire",
+              "json-repair": "Choisir si le JSON d’arguments d’outils malformé généré par le modèle peut être réparé dans les limites de sécurité",
+              "genui-library": "Choisir la bibliothèque de composants GenUI et essayer son aperçu"
+            }
+          },
+          "desktop-control": {
+            "title": "Contrôle du bureau",
+            "summary": "Gérez Computer Use et consultez les autorisations d’accessibilité et d’enregistrement d’écran.",
+            "items": {
+              "permissions": "Consulter l’état de Computer Use, de l’accessibilité et de l’enregistrement d’écran, puis achever l’autorisation système"
+            }
+          },
+          "browser-control": {
+            "title": "Contrôle du navigateur",
+            "summary": "Choisissez un navigateur, consultez l’état de la connexion et configurez le CDP et le comportement de connexion au démarrage.",
+            "items": {
+              "connection": "Choisir un navigateur et consulter, établir ou fermer sa connexion CDP"
+            }
+          },
+          "automation": {
+            "title": "Actions rapides et Hooks",
+            "summary": "Personnalisez les actions rapides après codage et configurez les Hooks exécutés lors des événements du cycle de vie de l’agent.",
+            "items": {
+              "built-in-actions": "Activer et régler les actions rapides intégrées Commit et Créer une demande de fusion",
+              "custom-actions": "Ajouter, modifier et supprimer des actions rapides et des prompts personnalisés après codage",
+              "hooks-enabled": "Activer ou désactiver globalement les Hooks de cycle de vie d’agent",
+              "project-hooks": "Activer séparément le fichier .openbitfun/config/hooks.json au niveau du projet pour les dépôts de confiance",
+              "hook-files": "Localiser les fichiers de configuration des Hooks utilisateur et projet, et appliquer les modifications sans redémarrage",
+              "hook-events": "Exécuter des gestionnaires sur les événements de Hooks Codex pour les sessions, agents, outils, autorisations et entrées utilisateur",
+              "external-hooks": "Consulter en lecture seule les catalogues de Hooks des IA externes et choisir les entrées à importer",
+              "hook-import": "Prévisualiser, modifier et appliquer les plans d’importation de Hooks en conservant les diagnostics de conflit"
+            }
+          },
+          "web-search": {
+            "title": "Recherche web",
+            "summary": "Choisissez le fournisseur de recherche utilisé par l’outil WebSearch à l’exécution et configurez les endpoints HTTP personnalisés et les identifiants sur l’hôte d’exécution en cours.",
+            "items": {
+              "provider": "Choisir Exa MCP gratuit, Exa Search API, Tavily, DeepSeek ou le protocole HTTP de recherche Alex comme fournisseur à l’exécution",
+              "http-endpoint": "Configurer l’endpoint, le mode d’authentification et l’en-tête d’identifiant restreint pour le protocole HTTP de recherche Alex",
+              "device-credential": "Consulter l’état des identifiants sur l’hôte d’exécution en cours et enregistrer, remplacer ou effacer une clé API ou un secret",
+              "http-protocol": "Consulter et copier la requête, la réponse et les limites de transport du protocole HTTP de recherche Alex v1"
+            }
+          },
+          "mcp": {
+            "title": "Serveurs MCP",
+            "summary": "Ajoutez et gérez des serveurs Model Context Protocol, y compris outils, ressources, prompts et état d’autorisation distant.",
+            "items": {
+              "json-config": "Afficher et enregistrer toute la configuration des serveurs MCP via des formulaires ou du JSON",
+              "server-types": "Ajouter des serveurs MCP de processus local, HTTP/SSE distant ou conteneur",
+              "lifecycle": "Démarrer, arrêter, redémarrer et supprimer des serveurs MCP individuels",
+              "status": "Consulter les états d’initialisation, de connexion, de santé, de reconnexion, d’authentification et d’échec",
+              "remote-auth": "Configurer l’authentification distante par en-tête/environnement ou effacer les identifiants enregistrés",
+              "oauth": "Démarrer, interroger, annuler ou reconnecter l’OAuth MCP distant",
+              "tools-prompts": "Lister les prompts MCP et charger un prompt sélectionné avec ses arguments",
+              "mcp-tool-ui": "Consulter les catalogues d’outils MCP et ouvrir les surfaces App/UI fournies par les outils",
+              "resources": "Lister et lire les ressources MCP",
+              "mcp-apps": "Ouvrir les surfaces App/UI MCP, échanger des messages et répondre aux demandes d’interaction"
+            }
+          },
+          "acp": {
+            "title": "Agents externes ACP",
+            "summary": "Configurez des agents externes connectés via Agent Client Protocol et consultez adaptateurs, commandes et options de session.",
+            "items": {
+              "presets": "Utiliser des préréglages pour OpenCode, dsh, OMP, Claude Code, Codex et autres",
+              "json-config": "Afficher, ajouter et enregistrer la configuration d’agents ACP via JSON",
+              "probe": "Sonder les prérequis de CLI, d’adaptateur, de chemin, de version, de connexion et d’autorisations",
+              "install": "Installer les CLI d’agents externes et pré-télécharger les adaptateurs clients ACP",
+              "remote-detection": "Détecter les agents externes disponibles dans les espaces de travail SSH et afficher les raisons explicites de non-prise en charge",
+              "session-model-options": "Choisir un modèle de session ACP et modifier les options de configuration déclarées par le client",
+              "session-commands": "Parcourir et exécuter les commandes de session exposées par un agent externe",
+              "dialog-permissions": "Démarrer ou annuler des tours ACP et répondre à distance aux demandes d’autorisation des agents externes"
+            }
+          }
+        },
+        "data": {
+          "usage": {
+            "title": "Utilisation des jetons",
+            "summary": "Consultez le nombre de requêtes, les jetons d’entrée et de sortie, les accès au cache et les statistiques de coût estimé.",
+            "items": {
+              "time-range": "Consulter l’utilisation des dernières 24 heures, du jour, de la semaine, du mois ou de tout l’historique",
+              "granularity": "Basculer la granularité des tendances entre vues horaire et quotidienne",
+              "filter": "Filtrer l’utilisation par fournisseur, modèle ou texte recherché",
+              "summary": "Afficher le nombre de requêtes, le total de jetons, les jetons en cache et le taux d’accès au cache",
+              "distribution": "Comparer les distributions par modèle, groupe de fournisseurs et endpoint de requête",
+              "trend": "Suivre séparément les tendances d’entrée, de sortie, de création de cache, de lecture de cache et de taux d’accès"
+            }
+          },
+          "archived": {
+            "title": "Sessions archivées",
+            "summary": "Recherchez, restaurez ou supprimez définitivement des sessions archivées, et gérez l’historique des conversations à long terme.",
+            "items": {
+              "browse": "Parcourir les sessions archivées paginées et leurs métadonnées par espace de travail",
+              "search": "Rechercher des sessions archivées par titre, contenu et espace de travail",
+              "restore": "Restaurer une session, ses tours et la vue d’origine de l’espace de travail, puis la désarchiver",
+              "delete-selected": "Supprimer définitivement une session archivée sélectionnée après confirmation explicite",
+              "delete-all": "Supprimer définitivement toutes les sessions archivées après confirmation explicite"
+            }
+          },
+          "diagnostics": {
+            "title": "Journaux et diagnostics",
+            "summary": "Ajustez le niveau de journalisation, consultez l’emplacement des journaux d’exécution et exportez des paquets de diagnostic pour le dépannage.",
+            "items": {
+              "log-level": "Définir la journalisation du backend sur Trace, Debug, Info, Warn, Error ou Désactivé",
+              "sensitive-diagnostics": "Choisir si les diagnostics peuvent inclure un contexte sensible, avec un avertissement explicite avant l’exportation",
+              "log-path": "Consulter le chemin des journaux et ouvrir le dossier des journaux",
+              "export-bundle": "Exporter un paquet de diagnostics contenant les informations système, de santé de la configuration et les journaux",
+              "crash-recovery": "Consulter les plantages précédents, les arrêts non propres, la récupération au démarrage et la récupération de configuration",
+              "devtools": "Dans les builds de développement, vérifier la disponibilité des DevTools et les ouvrir ou les fermer",
+              "element-inspector": "Dans les builds de développement, inspecter les éléments de la fenêtre principale et signaler l’élément sélectionné"
+            }
+          }
+        }
+      }
+    }
+  }
+}

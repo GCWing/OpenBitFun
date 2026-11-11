@@ -1114,8 +1114,9 @@ pub async fn show_agent_companion_desktop_pet(app: tauri::AppHandle) -> Result<(
     }
 
     let url = app_url(&app, "?openbitfunWindow=agent-companion");
+    let labels = crate::desktop_locale::DesktopNativeLabels::for_app(&app);
     let mut builder = tauri::WebviewWindowBuilder::new(&app, AGENT_COMPANION_WINDOW_LABEL, url)
-        .title("OpenBitFun Agent Companion")
+        .title(labels.agent_companion_window_title)
         .inner_size(
             AGENT_COMPANION_WINDOW_MIN_SIZE,
             AGENT_COMPANION_WINDOW_MIN_SIZE,

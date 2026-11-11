@@ -1,0 +1,205 @@
+{
+  "title": "Génération d’images",
+  "subtitle": "Les services d’images sont distincts des modèles de conversation : chaque fois qu’une image est générée, le service sélectionné ici est utilisé, quel que soit le modèle exécuté par la session.",
+  "loadFailed": "Impossible de charger les paramètres de génération d’images.",
+  "retry": "Réessayer",
+  "default": {
+    "label": "Service par défaut",
+    "description": "Modèle par défaut pour générer des images. Vous pouvez aussi choisir un modèle d’abonnement Codex existant.",
+    "placeholder": "Choisir un modèle d’image",
+    "unavailable": "Modèle sélectionné indisponible"
+  },
+  "empty": {
+    "title": "Aucun service d’image configuré pour le moment",
+    "description": "Ajoutez un service pour permettre à l’agent de générer des images. D’ici là, la génération d’images reste indisponible."
+  },
+  "card": {
+    "defaultBadge": "Par défaut",
+    "model": "Modèle",
+    "endpoint": "Endpoint",
+    "toggleEnabled": "Activer ce service",
+    "apiKeyBadge": "Clé API",
+    "subscriptionBadge": "Abonnement · {{provider}}"
+  },
+  "actions": {
+    "add": "Ajouter un service",
+    "delete": "Supprimer",
+    "cancel": "Annuler",
+    "save": "Enregistrer"
+  },
+  "messages": {
+    "saved": "Paramètres du service d’images enregistrés.",
+    "saveFailed": "Impossible d’enregistrer les paramètres du service d’images.",
+    "deleted": "Service d’images supprimé."
+  },
+  "delete": {
+    "title": "Supprimer le service d’images",
+    "message": "Supprimer « {{name}} » ? Les images déjà générées restent sur le disque.",
+    "confirm": "Supprimer"
+  },
+  "dialect": {
+    "openaiImages": {
+      "name": "OpenAI Images",
+      "description": "L’API JSON `POST /images/generations`. Fonctionne avec OpenAI et avec la plupart des services de relais compatibles."
+    },
+    "dashscopeNative": {
+      "name": "Qwen natif (DashScope)",
+      "description": "Génération multimodale Alibaba Cloud DashScope, utilisée par les modèles d’images Qwen."
+    },
+    "chatgptCodex": {
+      "name": "Abonnement ChatGPT (Codex)",
+      "description": "Génère via un abonnement ChatGPT Plus / Pro / Team : un modèle de conversation appelle son outil d’image intégré et répond par un flux d’événements. C’est un chemin de facturation distinct d’une clé API."
+    }
+  },
+  "subscriptionLabels": {
+    "codex": "Codex",
+    "antigravity": "Antigravity",
+    "opencode": "OpenCode",
+    "grok": "Grok",
+    "hermes": "Hermes"
+  },
+  "wizard": {
+    "titleCreate": "Ajouter ou importer un modèle d’image",
+    "titleEdit": "Modifier le modèle d’image",
+    "guideLabel": "Étapes de configuration",
+    "progress": "{{current}} / {{total}}",
+    "back": "Retour",
+    "next": "Continuer",
+    "steps": {
+      "dialect": {
+        "label": "Protocole",
+        "title": "Quel est le protocole utilisé par le service ?",
+        "description": "Le protocole détermine le corps de la requête, le chemin de l’endpoint et la forme du résultat. Choisissez celui que le fournisseur documente pour la génération d’images."
+      },
+      "connection": {
+        "label": "Connexion",
+        "title": "Où se trouve-t-il et comment s’authentifier ?",
+        "description": "Saisissez la racine du service, l’identifiant d’authentification et l’identifiant du modèle d’image. Un service de relais nécessite sa propre URL de base."
+      },
+      "parameters": {
+        "label": "Paramètres",
+        "title": "Quelles valeurs par défaut pour chaque requête d’image ?",
+        "description": "Ces valeurs s’appliquent chaque fois qu’une requête ne les remplace pas. La syntaxe des tailles suit le protocole sélectionné."
+      },
+      "test": {
+        "label": "Vérification",
+        "title": "Générer une image pour confirmer la configuration",
+        "description": "C’est la seule vérification fiable : elle prouve que l’endpoint, l’identifiant d’authentification, le modèle et le protocole correspondent tous."
+      }
+    },
+    "auth": {
+      "label": "Authentification",
+      "apiKey": "Clé API",
+      "subscription": "Connexion par abonnement",
+      "apiKeyHint": "Utilisez la clé propre à ce service, stockée localement avec le reste de vos paramètres.",
+      "subscriptionHint": "Utilise la connexion {{provider}} importée et résout son jeton d’accès lors de l’envoi.",
+      "subscriptionCaveat": "Une connexion par abonnement couvre uniquement ce que le fournisseur lui ouvre, généralement ses propres endpoints de conversation. Par exemple, l’endpoint d’images d’OpenAI exige le scope api.model.images.request, que les connexions par abonnement de conversation n’ont normalement pas. Dans ce cas, la vérification renvoie l’erreur du fournisseur lui-même ; utilisez plutôt une clé API.",
+      "subscriptionRouteHint": "Ce protocole est piloté par la connexion par abonnement {{provider}} ; le jeton est résolu lors de l’envoi.",
+      "subscriptionRouteNote": "Ce chemin consomme le quota de l’abonnement, et non le crédit de la clé API. L’adresse, le catalogue de modèles et le jeton d’accès proviennent tous de la connexion, donc rien n’est à saisir ici. Si la connexion a expiré, réautorisez-la d’abord dans les connexions par abonnement."
+    },
+    "reuse": {
+      "label": "Réutiliser un identifiant d’authentification configuré",
+      "hint": "Choisissez un modèle de conversation pour copier sa clé et son adresse, ou un modèle par abonnement pour réutiliser cette connexion. Vérifiez-les avant d’enregistrer.",
+      "none": "Ne pas réutiliser"
+    },
+    "fields": {
+      "endpoint": {
+        "label": "Adresse de requête effective",
+        "unresolved": "Affiché dès qu’une adresse de service est saisie"
+      },
+      "baseUrl": {
+        "label": "Adresse du service",
+        "hint": "La requête est envoyée à cette adresse plus {{path}}.",
+        "subscriptionHint": "Laissez-la vide pour utiliser l’adresse renvoyée par la connexion par abonnement. Si cette adresse ne sert pas d’images, saisissez explicitement l’adresse du service d’images.",
+        "subscriptionRouteHint": "Fournie par la connexion par abonnement et non modifiable. Après l’enregistrement, l’adresse réellement utilisée est celle renvoyée par la connexion."
+      },
+      "requestUrl": {
+        "label": "Adresse de requête complète (facultatif)",
+        "hint": "Remplace l’adresse du service plus le chemin de l’endpoint. Utilisez-la pour une instance dédiée ou une passerelle."
+      },
+      "apiKey": {
+        "label": "Clé API",
+        "hint": "Stockée localement avec le reste de vos paramètres."
+      },
+      "modelName": {
+        "label": "Identifiant du modèle d’image",
+        "hint": "L’identifiant exact du modèle attendu par le fournisseur pour la génération d’images, pas un modèle de conversation.",
+        "subscriptionPlaceholder": "Utilise le modèle d’image intégré",
+        "subscriptionHint": "La génération d’images par abonnement utilise un modèle d’image intégré. Aucun modèle de conversation n’est nécessaire."
+      },
+      "name": {
+        "label": "Nom d’affichage",
+        "hint": "Facultatif. Par défaut, l’identifiant du modèle."
+      },
+      "size": {
+        "label": "Taille par défaut",
+        "hint": "Les tailles s’écrivent en syntaxe {{dialect}}."
+      },
+      "n": {
+        "label": "Images par requête",
+        "hint": "Entre 1 et {{max}}."
+      },
+      "quality": {
+        "label": "Qualité"
+      },
+      "background": {
+        "label": "Arrière-plan"
+      },
+      "negativePrompt": {
+        "label": "Prompt négatif",
+        "hint": "Contenu que le modèle doit éviter."
+      },
+      "promptExtend": {
+        "label": "Réécrire le prompt",
+        "hint": "Permet au fournisseur de développer des prompts courts en une description plus complète."
+      },
+      "watermark": {
+        "label": "Ajouter un filigrane"
+      }
+    },
+    "validation": {
+      "unsupportedAuth": "La génération d’images ne prend pas en charge les pools de comptes par abonnement. Choisissez un seul compte.",
+      "duplicate": "Une configuration d’image identique existe déjà. Modifiez plutôt l’entrée existante.",
+      "baseUrlInvalid": "Saisissez une adresse http ou https valide.",
+      "modelRequired": "Saisissez l’identifiant du modèle d’image.",
+      "apiKeyRequired": "Saisissez la clé API."
+    },
+    "test": {
+      "billed": "La vérification génère une image réelle et est facturée par votre fournisseur.",
+      "promptLabel": "Prompt utilisé pour la vérification",
+      "run": "Générer l’image de test",
+      "running": "Génération...",
+      "success": "Image générée en {{time}} ms.",
+      "failed": "La vérification a échoué.",
+      "previewAlt": "Image générée par le test"
+    },
+    "errors": {
+      "config": "Ce service est incomplet. Vérifiez l’adresse, l’identifiant d’authentification et l’identifiant du modèle.",
+      "auth": "Le fournisseur a rejeté l’identifiant d’authentification. Vérifiez qu’il correspond à cette adresse et que la connexion par abonnement est autorisée à appeler l’endpoint d’images.",
+      "invalid_request": "Le fournisseur a rejeté la requête. Cela signifie généralement que le protocole ne correspond pas au service, ou qu’un paramètre n’est pas pris en charge.",
+      "content_filtered": "Le système de sécurité du fournisseur a bloqué ce prompt. Essayez un autre sujet.",
+      "rate_limited": "Le fournisseur limite le débit ou le quota est épuisé. Réessayez plus tard.",
+      "timeout": "Le fournisseur n’a pas répondu à temps.",
+      "transport": "L’adresse n’a pas pu être atteinte. Si le service n’est accessible que via un proxy local, laissez le proxy vide pour suivre le proxy du système, ou définissez l’adresse du proxy dans les paramètres de proxy.",
+      "missingScope": "L’identifiant d’authentification a été validé mais n’a pas la permission d’images (le fournisseur exige un scope tel que api.model.images.request). Une connexion par abonnement ne couvre normalement que ses propres endpoints de conversation ; utilisez donc la clé API du fournisseur pour la génération d’images.",
+      "provider": "Le fournisseur a signalé une erreur interne.",
+      "empty_result": "Le fournisseur a répondu mais n’a renvoyé aucune image."
+    }
+  },
+  "acquisition": {
+    "label": "Modèles d’images",
+    "description": "Ajoutez un service d’images ou importez une configuration de modèle existante",
+    "add": "Ajouter un modèle",
+    "empty": "Aucun modèle d’image ajouté",
+    "remove": "Supprimer le modèle d’image {{name}}"
+  },
+  "import": {
+    "source": "Source de la configuration",
+    "manual": "Ajouter un service manuellement",
+    "saved": "Configuration actuelle",
+    "hint": "Réutilisez une connexion de fournisseur existante ou configurez un service d’images.",
+    "subscriptionHint": "Utilise votre compte par abonnement importé. Aucune clé ni adresse supplémentaire n’est nécessaire."
+  },
+  "advanced": "Paramètres avancés",
+  "automatic": "Par défaut du modèle"
+}

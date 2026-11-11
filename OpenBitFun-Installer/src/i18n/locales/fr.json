@@ -1,0 +1,270 @@
+{
+  "errors": {
+    "install": {
+      "failed": "Installation failed"
+    },
+    "installPath": {
+      "notAbsolute": "The installation path must be an absolute path (for example a folder on a local drive).",
+      "filesystemRoot": "Cannot install to a drive root. Choose a folder inside the drive.",
+      "pathNotDirectory": "The selected path exists but is not a folder.",
+      "directoryMustBeEmptyOrOpenBitFun": "The installation folder must be empty, or already contain an OpenBitFun installation.",
+      "inspectDirectoryFailed": "Could not read the installation folder. Check permissions and try again.",
+      "directoryNotWritable": "The installation folder is not writable. Choose another location or run the installer as administrator (see below).",
+      "parentNotWritable": "The parent folder is not writable. System folders such as Program Files often require administrator rights (see below).",
+      "adminHint": "To install under protected locations (for example Program Files), close this installer, right-click the installer executable, choose \"Run as administrator\", then try again. Alternatively install under your user profile, for example %LOCALAPPDATA%\\Programs, which does not require elevation."
+    }
+  },
+  "options": {
+    "title": "Install OpenBitFun",
+    "subtitle": "Review install location and preferences",
+    "theme": "Theme",
+    "changeLanguage": "Change language",
+    "pathLabel": "Installation Path",
+    "pathPlaceholder": "Select directory...",
+    "browse": "Browse",
+    "required": "Required",
+    "available": "Available",
+    "insufficientSpace": "Insufficient space",
+    "optionsLabel": "Options",
+    "desktopShortcut": "Create desktop shortcut",
+    "startMenu": "Add to Start Menu",
+    "launchAfterInstall": "Launch OpenBitFun after setup",
+    "back": "Back",
+    "install": "Install",
+    "installing": "Preparing…",
+    "existingInstallTitle": "OpenBitFun is installed. You can update or repair it in place.",
+    "existingInstallVersion": "Installed version: {{version}}",
+    "existingInstallLocation": "Install location: {{path}}",
+    "existingInstallBinaryMissing": "The installed app is missing. Reinstall to repair it.",
+    "existingInstallRunUninstaller": "Run uninstaller"
+  },
+  "model": {
+    "title": "Connect a model",
+    "subtitle": "Installation complete. Continue with model and theme setup",
+    "provider": "Provider",
+    "config": "Connection",
+    "modelName": "Model name (e.g. deepseek-v4-flash)",
+    "skip": "Skip for now",
+    "nextTheme": "Next: Theme",
+    "description": "Manage default models, providers, subscriptions, catalog data, and network connections.",
+    "providerLabel": "Select Model Provider",
+    "selectProvider": "or select a preset provider",
+    "customProvider": "Custom Configuration",
+    "modelNamePlaceholder": "Enter model name...",
+    "baseUrlPlaceholder": "e.g., https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    "providers": {
+      "openbitfun": {
+        "name": "OpenBitFun Service",
+        "description": "OpenBitFun Model Platform",
+        "urlOptions": {
+          "default": "Anthropic Format - Default",
+          "openai": "OpenAI Compatible Format"
+        }
+      },
+      "gemini": {
+        "name": "Google Gemini",
+        "description": "Google Gemini series models"
+      },
+      "anthropic": {
+        "name": "Anthropic Claude",
+        "description": "Anthropic Claude series models"
+      },
+      "minimax": {
+        "name": "MiniMax",
+        "description": "MiniMax series models",
+        "urlOptions": {
+          "default": "China - Anthropic Format - Default",
+          "openai": "China - OpenAI Compatible",
+          "intl": "Global - Anthropic Format",
+          "intlOpenai": "Global - OpenAI Compatible"
+        }
+      },
+      "moonshot": {
+        "name": "Moonshot AI",
+        "description": "Moonshot Kimi series models",
+        "urlOptions": {
+          "default": "China - OpenAI Format - Default",
+          "anthropic": "China - Anthropic Format",
+          "intl": "Global - OpenAI Format",
+          "intlAnthropic": "Global - Anthropic Format",
+          "kimiForCoding": "Kimi For Coding plan (models: k3 / kimi-for-coding)"
+        }
+      },
+      "deepseek": {
+        "name": "DeepSeek",
+        "description": "DeepSeek series models",
+        "urlOptions": {
+          "default": "OpenAI Format - Default",
+          "anthropic": "Anthropic Format"
+        }
+      },
+      "zhipu": {
+        "name": "Zhipu AI",
+        "description": "Zhipu AI GLM series models",
+        "urlOptions": {
+          "default": "China - OpenAI Format - Default",
+          "anthropic": "China - Anthropic Format",
+          "codingPlan": "China - Coding Plan",
+          "intl": "Global (Z.AI) - OpenAI Format",
+          "intlAnthropic": "Global (Z.AI) - Anthropic Format",
+          "intlCodingPlan": "Global (Z.AI) - Coding Plan"
+        }
+      },
+      "qwen": {
+        "name": "Qwen",
+        "description": "Alibaba Cloud Bailian Model Platform",
+        "urlOptions": {
+          "default": "China - OpenAI Format - Default",
+          "codingPlan": "China - Coding Plan",
+          "codingPlanAnthropic": "China - Coding Plan - Anthropic Format",
+          "intl": "Global (International) - OpenAI Format",
+          "intlCodingPlan": "Global - Coding Plan"
+        }
+      },
+      "volcengine": {
+        "name": "Volcano Engine",
+        "description": "ByteDance Volcano Engine Model Platform",
+        "urlOptions": {
+          "default": "China - Default",
+          "codingPlan": "China - Coding Plan",
+          "intl": "Global (BytePlus)"
+        }
+      },
+      "siliconflow": {
+        "name": "SiliconFlow",
+        "description": "SiliconFlow Model Platform",
+        "urlOptions": {
+          "default": "China - OpenAI Format - Default",
+          "anthropic": "China - Anthropic Format",
+          "intl": "Global - OpenAI Format"
+        }
+      },
+      "nvidia": {
+        "name": "NVIDIA",
+        "description": "NVIDIA NIM Model Platform"
+      },
+      "openrouter": {
+        "name": "OpenRouter",
+        "description": "OpenRouter Model Platform"
+      },
+      "tokendance": {
+        "name": "TokenDance",
+        "description": "Unified AI model gateway"
+      }
+    },
+    "modelNameSelectPlaceholder": "Select model",
+    "testConnection": "Test Connection",
+    "testing": "Testing...",
+    "testSuccess": "Test successful",
+    "testFailed": "Test failed",
+    "fillApiKeyBeforeFetch": "Enter the API key before fetching models",
+    "fetchingModels": "Fetching model list...",
+    "fetchFailedFallback": "Failed to fetch model list, fell back to common preset models",
+    "fetchEmptyFallback": "Provider returned no models, fell back to common preset models",
+    "usingPresetModels": "Currently showing common preset models",
+    "addCustomModel": "Add Custom Model",
+    "form": {
+      "baseUrl": "API URL",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "Enter your API Key",
+      "provider": "Request Format",
+      "providerPlaceholder": "Select request format",
+      "modelSelection": "Select Models",
+      "resolvedUrlLabel": "Request URL: ",
+      "modelName": "Model Name"
+    },
+    "formats": {
+      "openaiCompatible": "OpenAI Compatible",
+      "responsesApi": "OpenAI Responses API",
+      "claudeApi": "Claude API",
+      "geminiApi": "Gemini GenerateContent API"
+    },
+    "showSecret": "Show",
+    "hideSecret": "Hide",
+    "getApiKey": "Get API Key",
+    "modelNoResults": "No matching models",
+    "customRequestBodyPlaceholder": "Example:\n{\n  \"temperature\": 0.8,\n  \"top_p\": 0.9\n}",
+    "jsonValid": "JSON format is valid",
+    "jsonInvalid": "Invalid JSON format, please check syntax",
+    "skipSslVerify": "Skip SSL Certificate Verification",
+    "customHeadersModeMerge": "Merge",
+    "customHeadersModeReplace": "Replace",
+    "addHeader": "Add Field",
+    "headerKey": "key",
+    "headerValue": "value",
+    "advancedShow": "Show advanced settings",
+    "advancedHide": "Hide advanced settings",
+    "setupDescription": "Add your provider and API key, or set up a model later in the app.",
+    "advancedSettings": "Advanced settings",
+    "endpointPreset": "API endpoint"
+  },
+  "progress": {
+    "title": "Installing",
+    "prepare": "Preparing",
+    "extract": "Extracting Files",
+    "registry": "Registering Application",
+    "shortcuts": "Creating Shortcuts",
+    "path": "Updating PATH",
+    "config": "Applying startup preferences",
+    "complete": "Finishing Up",
+    "starting": "Starting...",
+    "failed": "Installation Failed",
+    "confirmContinue": "Continue setup",
+    "completed": "Installation complete",
+    "completedDescription": "OpenBitFun is ready. Make it yours with a model and a theme.",
+    "description": "Setting up your workspace for what's next.",
+    "retry": "Try again"
+  },
+  "themeSetup": {
+    "title": "Make it yours",
+    "subtitle": "Select a theme to preview it. You can change it anytime.",
+    "followSystem": "Match system",
+    "themeNames": {
+      "openbitfun-dark": "Dark",
+      "openbitfun-light": "Light",
+      "openbitfun-midnight": "Midnight",
+      "openbitfun-china-style": "Ink Charm",
+      "openbitfun-china-night": "Ink Night",
+      "openbitfun-cyber": "Cyber",
+      "openbitfun-slate": "Slate",
+      "openbitfun-tokyo-night": "Tokyo Night"
+    }
+  },
+  "complete": {
+    "finish": "Finish",
+    "migrateLegacyData": "Migrate legacy data after installation",
+    "migrateLegacyDataDescription": "Starts the installed Data Migrator. It keeps the old data unchanged, asks you to confirm the scope, and reopens OpenBitFun when migration ends."
+  },
+  "uninstall": {
+    "title": "Uninstall OpenBitFun",
+    "subtitle": "This removes OpenBitFun and related integrations (shortcuts, context menu, PATH).",
+    "installPath": "Install path",
+    "pathUnknown": "Install path not detected",
+    "confirm": "Start uninstall",
+    "uninstalling": "Uninstalling...",
+    "completed": "Uninstall completed. You can close this window.",
+    "cancel": "Cancel",
+    "close": "Close"
+  },
+  "welcome": {
+    "title": "Choose your language",
+    "description": "Use this language for setup and your first launch.",
+    "version": "Version {{version}}"
+  },
+  "steps": {
+    "label": "Setup progress",
+    "language": "Language",
+    "install": "Install",
+    "model": "Model",
+    "theme": "Appearance"
+  },
+  "window": {
+    "minimize": "Minimize",
+    "close": "Close"
+  },
+  "preview": {
+    "badge": "UI preview · no installation",
+    "page": "Preview page",
+    "progress": "Install progress"
+  }
+}

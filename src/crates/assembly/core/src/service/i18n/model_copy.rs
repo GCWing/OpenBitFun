@@ -49,6 +49,6 @@ pub fn code_review_copy_for_language(lang_code: &str) -> &'static CodeReviewCopy
     match LocaleId::from_str(lang_code).unwrap_or_default() {
         LocaleId::ZhCN => &CODE_REVIEW_ZH_CN,
         LocaleId::ZhTW => &CODE_REVIEW_ZH_TW,
-        LocaleId::EnUS => &CODE_REVIEW_EN_US,
+        LocaleId::EnUS | LocaleId::FrFr => &CODE_REVIEW_EN_US,
     }
 }

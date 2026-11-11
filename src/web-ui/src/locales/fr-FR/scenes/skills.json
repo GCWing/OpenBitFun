@@ -1,0 +1,269 @@
+{
+  "nav": {
+    "title": "Skills",
+    "summary": "Parcourez localement les Skills installés et accédez à la section de la place de marché externe.",
+    "anchors": {
+      "installed": "Skills installés",
+      "market": "Place de marché"
+    },
+    "anchorDescriptions": {
+      "installed": "Gérez les Skills déjà disponibles dans cet environnement.",
+      "market": "Recherchez et téléchargez d’autres Skills depuis skills.sh."
+    },
+    "categories": {
+      "discover": "Découvrir",
+      "installed": "Bibliothèque"
+    },
+    "items": {
+      "market": "Place de marché",
+      "installedAll": "Tous",
+      "installedUser": "Utilisateur",
+      "installedProject": "Projet"
+    }
+  },
+  "page": {
+    "title": "Skills",
+    "subtitle": "Gérez les Skills installés et découvrez des Skills réutilisables depuis la place de marché externe.",
+    "searchPlaceholder": "Rechercher dans les Skills installés et la place de marché..."
+  },
+  "installed": {
+    "titleAll": "Bibliothèque de Skills",
+    "titleListAll": "Tous les Skills",
+    "subtitleAll": "Gérez tous les Skills installés au niveau utilisateur et au niveau projet",
+    "titleBuiltin": "Skills intégrés",
+    "titleUser": "Skills utilisateur",
+    "titleSource": "Skills {{source}}",
+    "subtitleUser": "Skills au niveau utilisateur installés globalement",
+    "titleProject": "Skills de projet",
+    "subtitleProject": "Skills au niveau projet dans l’espace de travail actuel"
+  },
+  "toolbar": {
+    "searchPlaceholder": "Rechercher des Skills...",
+    "addTooltip": "Ajouter un Skill"
+  },
+  "filters": {
+    "source": "{{source}}",
+    "all": "Tous",
+    "builtin": "Intégré",
+    "user": "Utilisateur",
+    "project": "Projet",
+    "groups": "Groupes de Skills"
+  },
+  "categories": {
+    "all": "Tous les Skills découverts, y compris intégrés, au niveau utilisateur et au niveau projet.",
+    "builtin": "Skills essentiels fournis avec l’application. Ils ne peuvent pas être supprimés.",
+    "user": "Skills au niveau utilisateur provenant de tous les répertoires sources de votre compte.",
+    "project": "Skills au niveau projet provenant de tous les répertoires sources de l’espace de travail actuel.",
+    "source": "Skills de {{source}}, y compris les Skills au niveau utilisateur et au niveau projet de l’espace de travail actuel.",
+    "groups": "Créez et organisez des groupes de Skills réutilisables."
+  },
+  "section": {
+    "user": {
+      "description": "Skills installés globalement pour l’utilisateur actuel."
+    },
+    "project": {
+      "description": "Skills au niveau projet dans l’espace de travail actuel."
+    }
+  },
+  "market": {
+    "title": "Place de marché des Skills",
+    "subtitle": "Recherchez et téléchargez des Skills réutilisables (portée par défaut : projet actuel)",
+    "subtitlePrefix": "Parcourez les Skills réutilisables de",
+    "subtitleSuffix": ".",
+    "searchPlaceholder": "Rechercher des Skills sur la place de marché...",
+    "loading": "Chargement des Skills de la place de marché...",
+    "errorPrefix": "Échec du chargement de la place de marché : ",
+    "empty": {
+      "noMatch": "Aucun Skill de place de marché correspondant",
+      "noSkills": "Aucun Skill disponible sur la place de marché"
+    },
+    "resultsInfo": "{{count}} résultats pour « {{query}} »",
+    "item": {
+      "sourceLabel": "Source : ",
+      "installs": "Installations : {{count}}",
+      "noDescription": "Aucune description disponible",
+      "downloadProject": "Télécharger vers le projet",
+      "installed": "Installé",
+      "installedTooltip": "Ce Skill est déjà installé",
+      "downloading": "Téléchargement...",
+      "downloadUser": "Télécharger vers l’utilisateur"
+    },
+    "pagination": {
+      "prev": "Page précédente",
+      "next": "Page suivante",
+      "info": "{{current}} / {{total}}",
+      "infoMore": "Page {{current}}",
+      "loading": "Chargement..."
+    },
+    "sourceNote": {
+      "prefix": "Source :",
+      "suffix": " · Jusqu’à {{max}} résultats"
+    },
+    "detail": {
+      "installsLabel": "Installations",
+      "linkLabel": "Lien"
+    }
+  },
+  "groups": {
+    "title": "Groupes de Skills",
+    "subtitle": "Créez et organisez des groupes de Skills réutilisables.",
+    "create": "Nouveau groupe",
+    "edit": "Modifier le groupe",
+    "copy": "Dupliquer le groupe",
+    "copyName": "Copie de {{name}}",
+    "copyNameNumbered": "{{name}} {{count}}",
+    "delete": "Supprimer le groupe",
+    "deleteTitle": "Supprimer le groupe de Skills",
+    "deleteMessage": "Supprimer « {{name}} » ? Les Skills et les configurations d’agent existantes seront conservés.",
+    "moveUp": "Monter",
+    "moveDown": "Descendre",
+    "actions": "Actions pour {{name}}",
+    "refresh": "Actualiser les groupes et les Skills",
+    "search": "Rechercher des groupes ou des Skills…",
+    "searchSkills": "Rechercher des Skills…",
+    "name": "Nom du groupe",
+    "namePlaceholder": "Par exemple : Développement au quotidien",
+    "save": "Enregistrer le groupe",
+    "cancel": "Fermer",
+    "selectedOnly": "Sélection uniquement",
+    "memberCount": "{{count}} Skills",
+    "unavailableCount": "{{count}} indisponibles",
+    "myGroups": "Mes groupes",
+    "builtinGroups": "Groupes intégrés",
+    "emptyGroup": "Aucun Skill ajouté",
+    "unresolvedMembers": "Les membres sont indisponibles dans le catalogue actuel",
+    "noGroups": "Aucun groupe de Skills pour le moment.",
+    "noMatch": "Aucun groupe correspondant.",
+    "noMatchingSkills": "Aucun Skill correspondant.",
+    "loading": "Chargement des groupes de Skills…",
+    "catalogUnavailable": "Le catalogue de Skills est incomplet ou indisponible. Les références des membres existants sont conservées.",
+    "unavailableMember": "Indisponible dans cet environnement",
+    "unresolvedMember": "Les détails du Skill sont actuellement indisponibles",
+    "globalDisabled": "Désactivé globalement",
+    "discardTitle": "Abandonner les modifications du groupe ?",
+    "discardMessage": "Vos modifications non enregistrées de ce groupe seront abandonnées.",
+    "discard": "Abandonner les modifications",
+    "keepEditing": "Continuer la modification",
+    "errors": {
+      "invalidConfig": "Les données enregistrées du groupe n’ont pas pu être lues. Elles ont été conservées telles quelles.",
+      "unsupportedVersion": "Ces groupes utilisent un format plus récent. Mettez Alex à jour pour les modifier.",
+      "nameRequired": "Saisissez un nom de groupe.",
+      "nameDuplicate": "Un groupe portant ce nom existe déjà.",
+      "conflict": "Ce groupe a été modifié ailleurs. Fermez l’éditeur et actualisez avant de le modifier à nouveau.",
+      "notReady": "Attendez le chargement des groupes, ou actualisez puis réessayez.",
+      "loadFailed": "Impossible de charger les groupes de Skills. Actualisez pour réessayer.",
+      "saveFailed": "Impossible d’enregistrer le groupe. Vos modifications ont été conservées ; réessayez."
+    },
+    "builtin": {
+      "office": "Bureautique",
+      "computerUse": "$t(shared:agents.ComputerUse)",
+      "meta": "Meta",
+      "miniapp": "MiniApp",
+      "canvas": "Canvas",
+      "debugging": "Débogage",
+      "coordination": "Coordination",
+      "planning": "Planification"
+    }
+  },
+  "form": {
+    "title": "Ajouter un Skill",
+    "closeTooltip": "Fermer",
+    "level": {
+      "label": "Niveau",
+      "user": "Niveau utilisateur (global)",
+      "project": "Niveau projet (espace de travail actuel)",
+      "projectDisabled": " - ouvrez d’abord un espace de travail",
+      "currentWorkspace": "Espace de travail actuel : {{path}}",
+      "selectedProjectPath": "Chemin du projet sélectionné : {{path}}"
+    },
+    "path": {
+      "label": "Chemin du dossier du Skill",
+      "placeholder": "Sélectionnez ou saisissez le chemin du dossier du Skill",
+      "browseTooltip": "Parcourir",
+      "hint": "Le dossier doit contenir un fichier SKILL.md valide"
+    },
+    "validating": "Validation...",
+    "actions": {
+      "cancel": "Annuler",
+      "add": "Ajouter",
+      "adding": "Ajout..."
+    }
+  },
+  "list": {
+    "loading": "Chargement...",
+    "errorPrefix": "Échec du chargement : ",
+    "loadFailed": "Impossible de charger les Skills",
+    "retry": "Réessayer",
+    "desktopUnavailable": "Gérez les Skills dans l’application de bureau.",
+    "remoteUnavailable": "La gestion des Skills est indisponible pendant une connexion distante.",
+    "columns": {
+      "source": "Source",
+      "level": "Niveau",
+      "status": "État",
+      "actions": "Actions"
+    },
+    "empty": {
+      "noMatch": "Aucun Skill correspondant trouvé",
+      "noSkills": "Aucun Skill configuré pour le moment"
+    },
+    "item": {
+      "user": "Utilisateur",
+      "project": "Projet",
+      "localUser": "Cet appareil · Utilisateur",
+      "remoteProject": "Espace de travail distant · Projet",
+      "builtin": "Intégré",
+      "userInstalled": "Installé",
+      "detail": "Détails",
+      "deleteTooltip": "Supprimer",
+      "pathLabel": "Chemin :",
+      "sourceLabel": "Source :",
+      "openPathInExplorer": "Ouvrir ce dossier dans l’explorateur de fichiers",
+      "revealPathUnavailableRemote": "Les chemins d’un espace de travail distant ne peuvent pas être ouverts dans le gestionnaire de fichiers local",
+      "shadowed": "Masqué",
+      "shadowedTooltip": "Le Skill du même nom provenant de {{source}} a normalement une priorité supérieure.",
+      "shadowedLabel": "Source de priorité supérieure :",
+      "shadowedDetail": "Le Skill du même nom provenant de {{source}}",
+      "unknownSource": "une autre source",
+      "globalEnabled": "Disponible pour les agents",
+      "globalDisabled": "Désactivé globalement",
+      "globalToggleLabel": "Basculer la disponibilité globale de {{name}}"
+    },
+    "scanIncomplete": "Certains Skills n’ont pas pu être analysés. Les Skills disponibles restent listés.",
+    "unsupportedSkills": "Certains Skills requièrent des capacités non prises en charge et n’ont pas été chargés.",
+    "unsupportedField": "Cet hôte ne prend pas en charge la déclaration {{field}} du Skill. Le Skill n’a pas été chargé.",
+    "diagnosticsUnavailable": "Cet hôte ne signale pas les diagnostics d’analyse des Skills.",
+    "diagnostics": {
+      "title": "Détails de l’analyse ({{count}})",
+      "description": "Les Skills disponibles restent utilisables. Corrigez les fichiers ci-dessous, puis analysez à nouveau."
+    }
+  },
+  "deleteModal": {
+    "title": "Confirmer la suppression",
+    "message": "Voulez-vous vraiment supprimer le Skill « {{name}} » ?",
+    "warning": "Cette action supprimera le dossier du Skill et sera irréversible.",
+    "cancel": "Annuler",
+    "delete": "Supprimer"
+  },
+  "messages": {
+    "invalidPath": "Veuillez sélectionner un dossier de Skill valide",
+    "noWorkspace": "Veuillez d’abord ouvrir un espace de travail pour ajouter des Skills au niveau projet",
+    "addSuccess": "Skill « {{name}} » ajouté",
+    "addFailed": "Échec de l’ajout : {{error}}",
+    "deleteSuccess": "Skill « {{name}} » supprimé",
+    "deleteFailed": "Échec de la suppression : {{error}}",
+    "toggleSuccess": "Skill « {{name}} » {{status}}",
+    "toggleFailed": "Échec du basculement : {{error}}",
+    "marketDownloadSuccess": "Skill « {{name}} » téléchargé",
+    "marketDownloadFailed": "Échec du téléchargement : {{error}}",
+    "enabled": "activé",
+    "disabled": "désactivé",
+    "revealPathFailed": "Impossible d’ouvrir dans l’explorateur de fichiers : {{error}}",
+    "copyPathFailed": "Échec de la copie du chemin : {{error}}"
+  },
+  "pagination": {
+    "label": "Pages de Skills",
+    "page": "Page {{page}}",
+    "range": "{{start}}–{{end}} sur {{total}} Skills",
+    "rangeMore": "{{start}}–{{end}} · {{total}} Skills chargés"
+  }
+}

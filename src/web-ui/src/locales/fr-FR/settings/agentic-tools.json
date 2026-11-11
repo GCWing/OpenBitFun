@@ -1,0 +1,83 @@
+{
+  "title": "Paramètres des outils",
+  "subtitle": "Configuration de l’exécution des outils et liste des outils disponibles",
+  "section": {
+    "config": {
+      "title": "Comportement d’exécution",
+      "description": "Contrôlez les règles de confirmation et d’expiration des appels d’outils."
+    },
+    "list": {
+      "title": "Liste des outils",
+      "description": "{{count}} outils disponibles."
+    },
+    "subagents": {
+      "title": "Sous-agents",
+      "description": "Les sous-agents classiques et Swarm disposent de limites de concurrence distinctes"
+    }
+  },
+  "config": {
+    "autoExecute": "Exécution automatique",
+    "autoExecuteDesc": "Ignorer la confirmation utilisateur avant l’exécution des outils.",
+    "subagentMaxConcurrency": "Limite de tâches simultanées",
+    "subagentMaxConcurrencyDesc": "Nombre maximum de tâches de sous-agents classiques exécutées simultanément",
+    "swarmMaxConcurrency": "Concurrence des workers Swarm",
+    "swarmMaxConcurrencyDesc": "Limite de concurrence pour les agents worker et reviewer dans Swarm",
+    "confirmTimeout": "Délai de confirmation",
+    "confirmTimeoutDesc": "Nombre maximum de secondes d’attente de la confirmation utilisateur des appels d’outils.",
+    "confirmTimeoutHint": "Définir 0 pour désactiver le délai de confirmation.",
+    "executionTimeout": "Délai d’expiration des outils",
+    "executionTimeoutDesc": "Durée maximale d’exécution d’une opération d’outil unique",
+    "executionTimeoutHint": "Définir 0 pour ne fixer aucune limite.",
+    "userQuestionTimeout": "Délai de question",
+    "userQuestionTimeoutDesc": "Durée maximale d’attente avant que vous commenciez à répondre à une question",
+    "subagentBatchPolicy": {
+      "label": "Concurrence des tâches",
+      "tooltipLabel": "Détails de la concurrence des tâches",
+      "safeOnly": "Parallèle sûr",
+      "safeOnlyDesc": "Exécuter les tâches ensemble uniquement lorsqu’elles ne modifient pas de contenu",
+      "forceParallel": "Parallèle privilégié",
+      "forceParallelDesc": "Exécuter plusieurs tâches ensemble dès que possible"
+    },
+    "seconds": "s",
+    "subagentModelSettings": "Rendez-vous sur la page Agents pour définir les modèles de chaque sous-agent",
+    "subagentModelInherit": "Hériter de la session parente",
+    "subagentDefaultModel": "Modèle par défaut des sous-agents",
+    "subagentDefaultModelDesc": "Utilisé par les sous-agents ne disposant pas d’un modèle propre."
+  },
+  "filters": {
+    "all": "Tout",
+    "readonly": "Lecture seule",
+    "writable": "Modifiable"
+  },
+  "search": {
+    "placeholder": "Rechercher des outils..."
+  },
+  "badges": {
+    "readonly": "Lecture seule",
+    "writable": "Modifiable",
+    "concurrent": "Sécurisé en concurrence",
+    "permission": "Requiert une permission"
+  },
+  "properties": {
+    "title": "Propriétés de l’outil",
+    "readonlyMode": "Mode lecture seule",
+    "concurrencySafe": "Sécurisé en concurrence",
+    "needsPermission": "Requiert une permission",
+    "yes": "Oui",
+    "no": "Non"
+  },
+  "schema": {
+    "title": "Schéma des paramètres d’entrée"
+  },
+  "messages": {
+    "loading": "Chargement...",
+    "loadFailed": "Échec du chargement",
+    "retry": "Réessayer",
+    "noTools": "Aucun outil disponible",
+    "noMatchingTools": "Aucun outil correspondant trouvé",
+    "autoExecuteEnabled": "Exécution automatique activée",
+    "autoExecuteDisabled": "Exécution automatique désactivée",
+    "saveSuccess": "Enregistré",
+    "saveFailed": "Échec de l’enregistrement"
+  }
+}

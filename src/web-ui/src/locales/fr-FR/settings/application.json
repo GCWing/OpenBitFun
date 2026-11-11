@@ -1,0 +1,294 @@
+{
+  "title": "Général",
+  "subtitle": "Alimentation, journalisation, terminal, notifications et lancement à l’ouverture de session",
+  "common": {
+    "retry": "Réessayer"
+  },
+  "messageSending": {
+    "title": "Envoi des messages",
+    "duringTurn": "Envoyer des messages pendant l’exécution d’une conversation",
+    "description": "Par défaut, les sessions natives envoient immédiatement les instructions de suivi à la tâche en cours. Choisissez « File d’attente » pour attendre la fin du tour en cours. Les sessions ACP attendent toujours la fin du tour en cours ; les sessions distribuées continuent d’ajouter des messages à la tâche cible.",
+    "immediate": "Envoyer immédiatement (par défaut)",
+    "queue": "Mettre les messages en file d’attente",
+    "immediateDescription": "Les sessions natives ajoutent immédiatement les nouveaux messages à la tâche en cours.",
+    "queueDescription": "Les sessions natives envoient les messages en file d’attente après la fin du tour en cours.",
+    "loading": "Chargement des préférences d’envoi de messages…",
+    "loadFailed": "Échec du chargement des préférences d’envoi de messages",
+    "saveFailed": "Échec de l’enregistrement des préférences d’envoi de messages"
+  },
+  "textSelection": {
+    "title": "Sélection de texte",
+    "autoShowToolbar": "Afficher automatiquement les actions de sélection de texte",
+    "autoShowToolbarDescription": "Affiche « Ajouter une annotation » et « Demander dans la conversation latérale » après la sélection de texte d’une conversation. Lorsque désactivé, ces actions restent disponibles dans le menu contextuel (clic droit).",
+    "loading": "Chargement des préférences de sélection de texte…",
+    "loadFailed": "Échec du chargement des préférences de sélection de texte",
+    "saveFailed": "Échec de l’enregistrement des préférences de sélection de texte"
+  },
+  "btwCloseConfirmation": {
+    "title": "Fermeture des conversations latérales",
+    "label": "Confirmer avant de fermer les conversations latérales",
+    "description": "La fermeture d’une conversation latérale supprime définitivement son contenu. Désactivez cette option pour ignorer la confirmation."
+  },
+  "applicationGroups": {
+    "startupAndUpdates": {
+      "title": "Démarrage et mises à jour",
+      "description": "Choisissez le comportement automatique à l’ouverture de session et pendant l’exécution de l’application ; l’installation des mises à jour nécessite toujours votre confirmation"
+    },
+    "windowAndNotifications": {
+      "title": "Fenêtre et notifications",
+      "description": "Choisissez si la fermeture de la fenêtre quitte l’application ou la laisse s’exécuter, et quels événements nécessitent votre attention"
+    }
+  },
+  "appearance": {
+    "title": "Apparence",
+    "hint": "Langue de l’interface et apparence",
+    "interfaceTitle": "Interface",
+    "language": "Langue",
+    "appearances": "Apparences",
+    "builtIn": "Intégrée",
+    "custom": "Personnalisée",
+    "export": "Exporter",
+    "delete": "Supprimer",
+    "confirmDelete": "Voulez-vous vraiment supprimer l’apparence « {{name}} » ?",
+    "languageRowHint": "Choisissez un pack de langue comme langue active de l’interface.",
+    "appearanceRowHint": "Choisissez l’apparence de l’interface.",
+    "systemAppearance": "Suivre le système",
+    "systemAppearanceDescription": "Bascule entre les thèmes clair et sombre avec le système",
+    "presets": {
+      "openbitfun-dark": {
+        "name": "Sombre",
+        "description": "Apparence sombre par défaut"
+      },
+      "openbitfun-light": {
+        "name": "Clair",
+        "description": "Apparence claire - Surfaces blanches nettes, gris neutres doux et actions bleu marine profond"
+      },
+      "openbitfun-monochrome": {
+        "name": "Noir et blanc",
+        "description": "Apparence contrastée noir et blanc - Chrome noir profond, espace de travail blanc éclatant et blocs neutres doux"
+      },
+      "openbitfun-midnight": {
+        "name": "Minuit",
+        "description": "Apparence sombre gris minuit - Professionnelle et élégante, inspirée des IDE JetBrains"
+      },
+      "openbitfun-china-style": {
+        "name": "Charme de l’encre",
+        "description": "Apparence de style chinois - Papier de riz et encre, bleu et vermillon, chaleureuse et élégante"
+      },
+      "openbitfun-china-night": {
+        "name": "Nuit d’encre",
+        "description": "Apparence sombre chinoise - Nuit d’encre étoilée, clair de lune comme de l’eau, sereine et élégante"
+      },
+      "openbitfun-cyber": {
+        "name": "Cyber",
+        "description": "Apparence de style tech - Trou noir profond, futur néon, esthétique tech ultime"
+      },
+      "openbitfun-slate": {
+        "name": "Ardoise",
+        "description": "Apparence géométrique gris ardoise - Immersion profonde, esthétique en niveaux de gris à contraste élevé"
+      },
+      "openbitfun-tokyo-night": {
+        "name": "Tokyo Night",
+        "description": "Palette Tokyo Night populaire - Nuit indigo, accents bleus et violets"
+      }
+    },
+    "fontSize": {
+      "title": "Taille de police",
+      "hint": "S’applique à l’interface et au contenu des conversations ; ajustez la taille du texte du code séparément dans les paramètres de l’éditeur",
+      "uiSizeLabel": "Interface et conversations",
+      "levels": {
+        "compact": "Compacte",
+        "small": "Petit",
+        "default": "Par défaut",
+        "medium": "Moyen",
+        "large": "Grand",
+        "custom": "Personnalisée"
+      },
+      "customPxLabel": "Taille personnalisée (12–20 px)",
+      "previewLabel": "Aperçu de la taille de police",
+      "previewPlaceholder": "Saisissez du texte pour prévisualiser la taille sélectionnée"
+    },
+    "interfaceHint": "Choisissez la langue des menus, des boutons et des messages ; les changements s’appliquent immédiatement"
+  },
+  "autoUpdate": {
+    "sections": {
+      "title": "Mises à jour",
+      "hint": "Recherche de nouvelles versions après le démarrage"
+    },
+    "toggleLabel": "Recherche automatique de mises à jour",
+    "toggleDescription": "Recherche des mises à jour au démarrage et pendant l’exécution, avec une seule invite par version ; la vérification manuelle reste disponible lorsque l’option est désactivée",
+    "messages": {
+      "loading": "Chargement...",
+      "loadFailed": "Échec de la lecture des paramètres de mise à jour",
+      "saveFailed": "Échec de l’enregistrement des paramètres de mise à jour",
+      "saved": "Préférence de mise à jour enregistrée"
+    }
+  },
+  "launchAtLogin": {
+    "sections": {
+      "title": "Ouverture de session",
+      "hint": "Démarre Alex à l’ouverture de votre session sur ce compte"
+    },
+    "toggleLabel": "Lancer à l’ouverture de session",
+    "toggleDescription": "Démarre Alex à l’ouverture de session du système",
+    "messages": {
+      "loading": "Chargement...",
+      "loadFailed": "Échec du chargement des paramètres de lancement à l’ouverture de session",
+      "saveFailed": "Échec de la mise à jour des paramètres de lancement à l’ouverture de session"
+    }
+  },
+  "preventSleep": {
+    "sections": {
+      "title": "Alimentation",
+      "hint": "Comportement de veille de l’ordinateur pendant l’exécution d’Alex"
+    },
+    "toggleLabel": "Empêcher la mise en veille",
+    "toggleDescription": "Empêche la mise en veille automatique pendant l’exécution. L’affichage, la veille manuelle et le comportement du couvercle restent inchangés.",
+    "messages": {
+      "loading": "Chargement…",
+      "loadFailed": "Échec de la lecture du paramètre de veille",
+      "saveFailed": "Échec de la mise à jour du paramètre de veille",
+      "saved": "Paramètre de veille enregistré"
+    }
+  },
+  "logging": {
+    "sections": {
+      "logging": "Journalisation",
+      "level": "Niveau de journalisation",
+      "path": "Chemin du journal de démarrage",
+      "loggingHint": "Plus de détails produit plus de données de journal ; vérifiez la présence de contenu sensible dans les lots de diagnostic avant tout partage"
+    },
+    "level": {
+      "description": "Les changements prennent effet immédiatement"
+    },
+    "sensitiveDiagnostics": {
+      "label": "Inclure des données de diagnostic sensibles",
+      "description": "Les journaux peuvent inclure le contenu des conversations, les requêtes et réponses du modèle, les arguments des outils, les chemins de fichiers et les événements d’interface. À utiliser pour le diagnostic ; les journaux ne sont pas envoyés automatiquement"
+    },
+    "path": {
+      "description": "Les journaux de cette session sont stockés dans ce dossier"
+    },
+    "diagnostics": {
+      "label": "Lot de diagnostic",
+      "description": "Exporte les journaux récents, les rapports de plantage et les informations d’exécution dans un fichier ZIP ; rien n’est envoyé automatiquement",
+      "confirmTitle": "Exporter le lot de diagnostic ?",
+      "confirmSensitive": "Le lot inclura des données de diagnostic sensibles et pourra contenir des prompts, des requêtes et réponses de modèle, des arguments d’outils et des chemins de fichiers. Enregistrez-le uniquement dans un emplacement de confiance et examinez-le avant tout partage.",
+      "confirmStandard": "Le lot peut contenir des chemins locaux, des détails d’exécution et des informations d’erreur. Enregistrez-le uniquement dans un emplacement de confiance et examinez-le avant tout partage.",
+      "confirmAction": "Exporter"
+    },
+    "previousCrash": {
+      "title": "La session précédente s’est terminée de manière inattendue",
+      "description": "Les journaux de la dernière session sont disponibles à l’emplacement {{path}}."
+    },
+    "previousUncleanShutdown": {
+      "title": "La session précédente n’a pas enregistré d’arrêt normal",
+      "description": "Les journaux de la dernière session sont disponibles à l’emplacement {{path}}. Cela peut se produire après un redémarrage, un arrêt du système ou un rechargement en développement."
+    },
+    "startupRecovery": {
+      "title": "La session précédente s’est terminée de manière inattendue",
+      "message": "Alex a trouvé un rapport de plantage de la session précédente. Vous pouvez exporter les diagnostics si vous souhaitez signaler le problème."
+    },
+    "configRecovery": {
+      "title": "Configuration récupérée",
+      "message": "Alex a réparé ou isolé {{count}} problème(s) de configuration afin que l’application puisse démarrer. Vérifiez vos paramètres de modèle avant de continuer."
+    },
+    "levels": {
+      "trace": "Trace",
+      "debug": "Debug",
+      "info": "Info",
+      "warn": "Warn",
+      "error": "Erreur",
+      "off": "Désactivé"
+    },
+    "actions": {
+      "refreshTooltip": "Actualiser l’état d’exécution",
+      "openFolder": "Ouvrir le dossier",
+      "openFolderTooltip": "Ouvrir le dossier de journaux dans l’explorateur de fichiers",
+      "exportDiagnostics": "Exporter les diagnostics",
+      "openLoggingSettings": "Ouvrir les paramètres de journalisation"
+    },
+    "messages": {
+      "loading": "Chargement...",
+      "loadFailed": "Échec du chargement de la configuration de journalisation",
+      "saveFailed": "Échec de l’enregistrement du niveau de journalisation",
+      "levelUpdated": "Niveau de journalisation mis à jour",
+      "levelSavedNotApplied": "Niveau de journalisation enregistré, mais cet appareil journalise toujours à {{level}}.",
+      "sensitiveDiagnosticsUpdated": "Préférence de journalisation des données sensibles mise à jour",
+      "refreshed": "État d’exécution actualisé",
+      "openedFolder": "Dossier de journaux ouvert",
+      "openFailed": "Échec de l’ouverture du dossier de journaux",
+      "pathUnavailable": "Le chemin du dossier de journaux est indisponible",
+      "diagnosticsExported": "Lot de diagnostic exporté",
+      "diagnosticsExportFailed": "Échec de l’export du lot de diagnostic"
+    }
+  },
+  "terminal": {
+    "sections": {
+      "terminal": "Terminal",
+      "defaultTerminal": "Terminal par défaut",
+      "terminalHint": "Les nouveaux terminaux utilisent le shell sélectionné ; les terminaux ouverts conservent leur shell existant",
+      "terminalHintWithCmdFallback": "Les nouveaux terminaux utilisent le shell sélectionné ; les terminaux ouverts conservent leur shell existant. Les commandes de l’agent utilisent en réalité PowerShell."
+    },
+    "controls": {
+      "refreshTooltip": "Actualiser les terminaux disponibles",
+      "autoDetect": "Détection automatique (recommandé)",
+      "description": "Utilisé pour les nouveaux terminaux et les commandes d’agent dans les espaces de travail locaux",
+      "placeholder": "Sélectionner le terminal par défaut",
+      "noShells": "Aucun terminal disponible détecté"
+    },
+    "panelPosition": {
+      "label": "Ouvrir le terminal dans",
+      "description": "Emplacement d’ouverture des nouveaux onglets de terminal dans une session",
+      "placeholder": "Sélectionner l’emplacement du terminal",
+      "options": {
+        "right": "Panneau droit",
+        "bottom": "Panneau inférieur"
+      }
+    },
+    "messages": {
+      "loading": "Chargement...",
+      "loadFailed": "Échec du chargement de la configuration",
+      "updated": "Terminal par défaut mis à jour",
+      "panelPositionUpdated": "Emplacement du panneau de terminal mis à jour",
+      "saveFailed": "Échec de l’enregistrement de la configuration",
+      "refreshed": "Liste des terminaux disponibles actualisée"
+    }
+  },
+  "windowBehavior": {
+    "sections": {
+      "title": "Comportement de la fenêtre",
+      "hint": "Ce qui se produit lors d’un clic sur le bouton de fermeture"
+    },
+    "closeButtonLabel": "Action du bouton de fermeture",
+    "closeButtonDescription": "Action effectuée lors d’un clic sur le bouton de fermeture de la fenêtre (×)",
+    "options": {
+      "quit": "Quitter",
+      "minimizeToTray": "Réduire dans la zone de notification",
+      "ask": "Demander à chaque fois"
+    },
+    "messages": {
+      "loading": "Chargement...",
+      "loadFailed": "Échec de la lecture des paramètres de comportement de la fenêtre",
+      "saveFailed": "Échec de l’enregistrement des paramètres de comportement de la fenêtre",
+      "saved": "Paramètres de comportement de la fenêtre enregistrés"
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "hint": "Choisissez les événements qui envoient des notifications",
+    "dialogCompletion": {
+      "label": "Notification de fin de tâche",
+      "description": "Vous notifier lorsqu’une tâche IA se termine pendant que la fenêtre est en arrière-plan"
+    },
+    "permissionRequest": {
+      "label": "Notification de demande d’autorisation",
+      "description": "Vous notifier lorsqu’une action nécessite une approbation pendant que la fenêtre est en arrière-plan"
+    },
+    "messages": {
+      "loading": "Chargement…",
+      "loadFailed": "Échec de la lecture des paramètres de notification",
+      "saveSuccess": "Paramètres de notification enregistrés",
+      "saveFailed": "Échec de l’enregistrement des paramètres de notification"
+    }
+  }
+}

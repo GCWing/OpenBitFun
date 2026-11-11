@@ -12,46 +12,37 @@ export interface InstallerLanguageDefinition {
 
 export const INSTALLER_LANGUAGE_DEFINITIONS = [
   {
+    uiCode: "fr",
+    appCode: "fr-FR",
+    label: "French",
+    nativeName: "Français",
+    continueLabel: "Continuer",
+    aliases: ["fr", "fr-FR"],
+    contentFallbacks: ["en-US"],
+  },
+  {
     uiCode: "en",
     appCode: "en-US",
     label: "English",
     nativeName: "English",
     continueLabel: "Continue",
     aliases: ["en", "en-US"],
-    contentFallbacks: ["zh-CN"],
-  },
-  {
-    uiCode: "zh",
-    appCode: "zh-CN",
-    label: "Chinese",
-    nativeName: "简体中文",
-    continueLabel: "继续",
-    aliases: ["zh", "zh-Hans", "zh-CN"],
-    contentFallbacks: ["en-US"],
-  },
-  {
-    uiCode: "zh-TW",
-    appCode: "zh-TW",
-    label: "Traditional Chinese",
-    nativeName: "繁體中文",
-    continueLabel: "繼續",
-    aliases: ["zh-TW", "zh-Hant", "zh-HK", "zh-MO"],
-    contentFallbacks: ["zh-CN", "en-US"],
+    contentFallbacks: ["fr-FR"],
   }
 ] as const satisfies readonly InstallerLanguageDefinition[];
 
 export type InstallerUiLanguage = (typeof INSTALLER_LANGUAGE_DEFINITIONS)[number]['uiCode'];
 export type AppLanguage = (typeof INSTALLER_LANGUAGE_DEFINITIONS)[number]['appCode'];
 
-export const DEFAULT_INSTALLER_APP_LANGUAGE = "en-US" satisfies AppLanguage;
-export const DEFAULT_INSTALLER_UI_LANGUAGE = "en" satisfies InstallerUiLanguage;
+export const DEFAULT_INSTALLER_APP_LANGUAGE = "fr-FR" satisfies AppLanguage;
+export const DEFAULT_INSTALLER_UI_LANGUAGE = "fr" satisfies InstallerUiLanguage;
 
 export type SharedI18nTerms = {
   readonly [key: string]: string | SharedI18nTerms;
 };
 
 export const SHARED_TERMS_BY_APP_LANGUAGE = {
-  "en-US": {
+  "fr-FR": {
     "window": {
       "minimize": "Minimize app window",
       "maximize": "Maximize app window",
@@ -114,130 +105,67 @@ export const SHARED_TERMS_BY_APP_LANGUAGE = {
       "new": "New Session"
     }
   },
-  "zh-CN": {
+  "en-US": {
     "window": {
-      "minimize": "最小化应用窗口",
-      "maximize": "最大化应用窗口",
-      "restore": "还原应用窗口",
-      "close": "关闭应用窗口"
+      "minimize": "Minimize app window",
+      "maximize": "Maximize app window",
+      "restore": "Restore app window",
+      "close": "Close app window"
     },
     "product": {
       "name": "OpenBitFun",
       "remote": "OpenBitFun Remote"
     },
     "features": {
-      "remoteControl": "远程控制",
-      "codeAgent": "代码助手",
-      "deepReview": "严格审查",
-      "settings": "设置",
-      "workspace": "工作区"
+      "remoteControl": "Remote Control",
+      "codeAgent": "Code Agent",
+      "deepReview": "Review: Strict",
+      "settings": "Settings",
+      "workspace": "Workspace"
     },
     "modes": {
-      "assistant": "助手模式",
-      "expert": "专家模式",
-      "review": "评审模式"
+      "assistant": "Assistant Mode",
+      "expert": "Expert Mode",
+      "review": "Review Mode"
     },
     "agents": {
-      "Minimal": "极简",
-      "Standard": "标准",
-      "Ultimate": "极致",
-      "Creative": "创造",
-      "Claw": "助理",
-      "Cowork": "办公协作",
-      "DeepResearch": "深度研究",
-      "PaperWriting": "论文写作",
-      "ComputerUse": "电脑操作",
-      "default": "默认助手"
+      "Minimal": "Minimal",
+      "Standard": "Standard",
+      "Ultimate": "Ultimate",
+      "Creative": "Creative",
+      "Claw": "Assistant",
+      "Cowork": "Cowork",
+      "DeepResearch": "Deep Research",
+      "PaperWriting": "Paper Writing",
+      "ComputerUse": "Computer Use",
+      "default": "Default Assistant"
     },
     "tools": {
-      "explore": "探索",
-      "read": "读取",
-      "write": "写入",
-      "shell": "命令行",
-      "search": "搜索",
-      "edit": "编辑",
-      "todo": "待办"
+      "explore": "Explore",
+      "read": "Read",
+      "write": "Write",
+      "shell": "Shell",
+      "search": "Search",
+      "edit": "Edit",
+      "todo": "Todo"
     },
     "connectionMethods": {
-      "lan": "局域网",
+      "lan": "LAN",
       "openbitfunServer": "OpenBitFun Server",
-      "customServer": "自定义服务器",
-      "botFeishu": "飞书机器人",
+      "customServer": "Custom Server",
+      "botFeishu": "Feishu Bot",
       "botTelegram": "Telegram Bot",
-      "botWeixin": "微信机器人"
+      "botWeixin": "WeChat Bot"
     },
     "statuses": {
-      "loading": "加载中",
-      "running": "运行中",
-      "done": "已完成",
-      "failed": "失败",
-      "cancelled": "已取消"
+      "loading": "Loading",
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
     },
     "sessions": {
-      "new": "新会话"
-    }
-  },
-  "zh-TW": {
-    "window": {
-      "minimize": "最小化應用視窗",
-      "maximize": "最大化應用視窗",
-      "restore": "還原應用視窗",
-      "close": "關閉應用視窗"
-    },
-    "product": {
-      "name": "OpenBitFun",
-      "remote": "OpenBitFun Remote"
-    },
-    "features": {
-      "remoteControl": "遠端控制",
-      "codeAgent": "程式碼助手",
-      "deepReview": "嚴格審查",
-      "settings": "設定",
-      "workspace": "工作區"
-    },
-    "modes": {
-      "assistant": "助手模式",
-      "expert": "專家模式",
-      "review": "審查模式"
-    },
-    "agents": {
-      "Minimal": "極簡",
-      "Standard": "標準",
-      "Ultimate": "極致",
-      "Creative": "創造",
-      "Claw": "助理",
-      "Cowork": "辦公協作",
-      "DeepResearch": "深度研究",
-      "PaperWriting": "論文寫作",
-      "ComputerUse": "電腦操作",
-      "default": "預設助手"
-    },
-    "tools": {
-      "explore": "探索",
-      "read": "讀取",
-      "write": "寫入",
-      "shell": "命令列",
-      "search": "搜尋",
-      "edit": "編輯",
-      "todo": "待辦"
-    },
-    "connectionMethods": {
-      "lan": "區域網路",
-      "openbitfunServer": "OpenBitFun Server",
-      "customServer": "自訂伺服器",
-      "botFeishu": "飛書機器人",
-      "botTelegram": "Telegram Bot",
-      "botWeixin": "微信機器人"
-    },
-    "statuses": {
-      "loading": "載入中",
-      "running": "執行中",
-      "done": "已完成",
-      "failed": "失敗",
-      "cancelled": "已取消"
-    },
-    "sessions": {
-      "new": "新會話"
+      "new": "New Session"
     }
   }
 } as const satisfies Record<AppLanguage, SharedI18nTerms>;

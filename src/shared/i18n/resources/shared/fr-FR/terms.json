@@ -1,0 +1,63 @@
+{
+  "window": {
+    "minimize": "Minimize app window",
+    "maximize": "Maximize app window",
+    "restore": "Restore app window",
+    "close": "Close app window"
+  },
+  "product": {
+    "name": "OpenBitFun",
+    "remote": "OpenBitFun Remote"
+  },
+  "features": {
+    "remoteControl": "Remote Control",
+    "codeAgent": "Code Agent",
+    "deepReview": "Review: Strict",
+    "settings": "Settings",
+    "workspace": "Workspace"
+  },
+  "modes": {
+    "assistant": "Assistant Mode",
+    "expert": "Expert Mode",
+    "review": "Review Mode"
+  },
+  "agents": {
+    "Minimal": "Minimal",
+    "Standard": "Standard",
+    "Ultimate": "Ultimate",
+    "Creative": "Creative",
+    "Claw": "Assistant",
+    "Cowork": "Cowork",
+    "DeepResearch": "Deep Research",
+    "PaperWriting": "Paper Writing",
+    "ComputerUse": "Computer Use",
+    "default": "Default Assistant"
+  },
+  "tools": {
+    "explore": "Explore",
+    "read": "Read",
+    "write": "Write",
+    "shell": "Shell",
+    "search": "Search",
+    "edit": "Edit",
+    "todo": "Todo"
+  },
+  "connectionMethods": {
+    "lan": "LAN",
+    "openbitfunServer": "OpenBitFun Server",
+    "customServer": "Custom Server",
+    "botFeishu": "Feishu Bot",
+    "botTelegram": "Telegram Bot",
+    "botWeixin": "WeChat Bot"
+  },
+  "statuses": {
+    "loading": "Loading",
+    "running": "Running",
+    "done": "Done",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  },
+  "sessions": {
+    "new": "New Session"
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "loadingValue": "…",
+  "unavailableValue": "—",
+  "retry": "Actualiser",
+  "greetings": {
+    "spotted": "Bonjour, on vous a surpris à jeter un œil !",
+    "mystery": "Bonjour, mystérieux invité !",
+    "ideas": "Bonjour, les idées bouillonnent !",
+    "create": "Puisque vous êtes là, passons à l’action !",
+    "energy": "Vous êtes là ! C’est parti !",
+    "ready": "Votre assistant est prêt. Faites votre entrée !"
+  },
+  "metrics": {
+    "title": "Aperçu de l’utilisation",
+    "totalTokens": "Total de jetons",
+    "peakTokens": "Pic quotidien de jetons",
+    "longestTask": "Tâche la plus longue",
+    "longestStreak": "Plus longue série",
+    "currentStreak": "Série actuelle",
+    "days": "{{count}} jours",
+    "partial": "Le pic d’utilisation et les séries ne couvrent que l’historique d’activité conservé."
+  },
+  "agents": {
+    "title": "Agents",
+    "loading": "Chargement des Agents…",
+    "failed": "Impossible de charger les Agents depuis l’hôte actif. Vérifiez la connexion et réessayez.",
+    "assistants": {
+      "description": "Des collaborateurs de long terme dotés de leur propre mémoire."
+    },
+    "description": "Agents intégrés et personnalisés pour vos flux de travail.",
+    "create": "Créer un agent",
+    "createAssistant": "Créer un assistant",
+    "createAssistantConfirmMessage": "Créer un nouvel assistant ? Après sa création, vous pourrez configurer son identité, ses outils et sa personnalité.",
+    "createAssistantFailed": "Impossible de créer l’assistant. Veuillez réessayer."
+  },
+  "devices": {
+    "title": "Appareils",
+    "manage": "Gérer les appareils",
+    "scrollPrevious": "Faire défiler les appareils vers la gauche",
+    "scrollNext": "Faire défiler les appareils vers la droite",
+    "online": "En ligne",
+    "offline": "Hors ligne",
+    "current": "Appareil actuel",
+    "thisDevice": "Cet appareil",
+    "incompatible": "Mise à jour requise pour le contrôle",
+    "loading": "Chargement des appareils…",
+    "signInHint": "Connectez-vous pour associer d’autres appareils",
+    "failed": "Impossible d’actualiser les appareils. Les appareils affichés peuvent être obsolètes. Réessayez ou ouvrez la gestion des appareils pour vérifier la connexion.",
+    "empty": "Aucun appareil associé pour le moment. Connectez-vous avec le même compte sur un autre appareil pour l’associer.",
+    "viewAll": "Afficher les {{count}} appareils"
+  },
+  "usage": {
+    "loading": "Chargement de l’activité des jetons…",
+    "failed": "Impossible de charger l’utilisation depuis l’hôte actif. Vérifiez la connexion et réessayez.",
+    "unsupported": "Cet hôte ne prend pas en charge les statistiques d’utilisation. Mettez l’hôte à jour pour consulter l’activité des jetons."
+  },
+  "activity": {
+    "title": "Activité des jetons"
+  },
+  "miniApps": {
+    "start": "Lancer",
+    "backToOverview": "Retour à l’accueil",
+    "create": "Créer une Mini App",
+    "manage": "Gérer les Mini Apps",
+    "installed": "Installées",
+    "runningCount": "{{count}} en cours d’exécution",
+    "moreInstalled": "Afficher {{count}} autres Mini Apps",
+    "loading": "Chargement des Mini Apps…",
+    "failed": "Impossible de charger les Mini Apps depuis l’hôte actif. Vérifiez la connexion et la prise en charge par l’hôte, puis réessayez.",
+    "empty": "Aucune Mini App pour le moment"
+  },
+  "desktopCards": {
+    "title": "Cartes du bureau",
+    "settings": "Paramètres des cartes",
+    "listTitle": "Mes cartes",
+    "visibleCount": "{{count}} sur le bureau",
+    "disabled": "Désactivé dans les paramètres. Les cartes sont conservées et réapparaissent à la réactivation.",
+    "loading": "Chargement des cartes du bureau…",
+    "failed": "Impossible de charger les cartes du bureau. Réessayez.",
+    "empty": "Aucune carte pour le moment",
+    "shown": "Sur le bureau",
+    "hidden": "Masquée",
+    "show": "Afficher sur le bureau",
+    "hide": "Masquer du bureau",
+    "pin": "Épingler au bureau",
+    "unpin": "Désépingler du bureau",
+    "pinned": "Épinglée au bureau",
+    "pinLost": "Désépinglée : bureau indisponible",
+    "delete": "Supprimer la carte",
+    "deleteConfirmTitle": "Supprimer la carte",
+    "deleteConfirmMessage": "Supprimer « {{title}} » ? Cette action est irréversible.",
+    "actionFailed": "Impossible de mettre à jour la carte. Réessayez."
+  },
+  "skills": {
+    "add": "Ajouter un Skill",
+    "loading": "Chargement des Skills…",
+    "failed": "Impossible de charger les Skills pour l’espace de travail actif. Vérifiez la connexion et la prise en charge par l’hôte, puis réessayez.",
+    "incomplete": "Certaines sources de Skills n’ont pas pu être lues entièrement. Ouvrez la gestion des Skills pour plus de détails.",
+    "diagnosticsUnavailable": "Cet hôte ne fournit pas de diagnostics d’analyse. Le nombre reflète les Skills renvoyés par l’hôte.",
+    "installed": "Skills installés",
+    "installedDescription": "Réutilisez les skills installés dans vos tâches.",
+    "discover": "Trouver d’autres Skills",
+    "discoverDescription": "Découvrez d’autres skills réutilisables."
+  }
+}

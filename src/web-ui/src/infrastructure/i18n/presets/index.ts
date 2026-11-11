@@ -1,7 +1,8 @@
  
 
-import type { LocaleId } from './localeRegistry';
+import type { ContractLocaleId, LocaleId } from './localeRegistry';
 import {
+  CONTRACT_LOCALE_IDS,
   DEFAULT_FALLBACK_LOCALE,
   DEFAULT_LOCALE,
   builtinLocales,
@@ -14,6 +15,7 @@ import {
 } from './localeRegistry';
 export { ALL_NAMESPACES, WEB_UI_BOOTSTRAP_NAMESPACES } from './namespaceRegistry';
 export {
+  CONTRACT_LOCALE_IDS,
   DEFAULT_FALLBACK_LOCALE,
   DEFAULT_LOCALE,
   builtinLocales,
@@ -24,6 +26,6 @@ export {
   resolveLocaleId,
   SHARED_TERMS_BY_LOCALE,
 };
-export type { LocaleId };
+export type { ContractLocaleId, LocaleId };
 
 export const DEFAULT_NAMESPACE = 'common';

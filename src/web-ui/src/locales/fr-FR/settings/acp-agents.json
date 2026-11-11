@@ -1,0 +1,160 @@
+{
+  "title": "Agents ACP",
+  "subtitle": "Connectez des agents externes via ACP pour exécuter des tâches dans Alex",
+  "views": {
+    "local": "Local",
+    "ssh": "SSH",
+    "json": "JSON avancé"
+  },
+  "actions": {
+    "add": "Ajouter",
+    "addConfig": "Ajouter une configuration",
+    "download": "Télécharger",
+    "installCli": "Installer la CLI",
+    "configureAcp": "Configurer ACP",
+    "viewError": "Afficher l’erreur",
+    "viewInstructions": "Afficher les instructions",
+    "save": "Enregistrer",
+    "refresh": "Revérifier",
+    "learnMore": "Documentation ACP",
+    "saveJson": "Enregistrer le JSON",
+    "revert": "Restaurer",
+    "install": "Installer",
+    "restorePreset": "Restaurer le préréglage",
+    "predownloadAcp": "Pré-télécharger ACP",
+    "retry": "Recharger"
+  },
+  "json": {
+    "title": "Configuration JSON avancée",
+    "description": "À utiliser lorsque la liste ne permet pas de définir les paramètres souhaités ; modifie acpClients sur l’hôte d’exécution actuel",
+    "discardTitle": "Abandonner les modifications JSON non enregistrées ?",
+    "discardMessage": "Ces modifications non enregistrées seront perdues lorsque vous quitterez le JSON avancé.",
+    "discardConfirm": "Abandonner les modifications"
+  },
+  "security": {
+    "secretWarning": "Le JSON ACP et les variables d’environnement peuvent contenir des clés API ou des jetons d’accès. Alex les enregistre dans la configuration sur l’hôte d’exécution actuel. Ne les collez pas dans des validateurs JSON en ligne, des conversations ou des tickets de support."
+  },
+  "installConfirm": {
+    "title": "Installer la CLI {{name}} ?",
+    "message": "Hôte cible : {{host}}. Alex exécutera « {{command}} » pour installer le paquet npm globalement sur cet hôte. Cette opération modifie l’environnement de commandes global de l’hôte et peut nécessiter un accès réseau et en écriture.",
+    "localHost": "Hôte d’exécution actuel",
+    "packageUnknown": "Alex n’a pas pu vérifier le paquet d’installation de cet Agent ; l’installation a été annulée",
+    "confirm": "Installer sur l’hôte cible"
+  },
+  "presets": {
+    "opencode": {
+      "description": "Prise en charge ACP native."
+    },
+    "dsh": {
+      "description": "Utilise le pont ACP intégré à Alex et les paramètres de modèle de dsh."
+    },
+    "omp": {
+      "description": "Prise en charge ACP native."
+    },
+    "claudeCode": {
+      "description": "Se connecte via l’adaptateur ACP officiel."
+    },
+    "codex": {
+      "description": "Se connecte via l’adaptateur ACP officiel."
+    }
+  },
+  "registry": {
+    "title": "Agents",
+    "searchPlaceholder": "Rechercher des agents...",
+    "filterLabel": "Filtre des agents ACP",
+    "filters": {
+      "all": "Tout",
+      "enabled": "Activé",
+      "installed": "Installé",
+      "notInstalled": "Non installé",
+      "configInvalid": "Configuration invalide"
+    },
+    "enabled": "Activé",
+    "ready": "Disponible",
+    "partial": "Partiellement disponible",
+    "installed": "Installé",
+    "notInstalled": "Non installé",
+    "configInvalid": "Configuration invalide",
+    "checking": "Vérification",
+    "cliMissing": "CLI manquante",
+    "acpMissing": "ACP manquant",
+    "pathInvalid": "Chemin invalide",
+    "versionMismatch": "Version incompatible",
+    "connectionFailed": "Échec de la connexion",
+    "permissionDenied": "Permission refusée",
+    "partialDetail": "La CLI est prête, mais l’adaptateur ACP n’est pas configuré.",
+    "cliMissingDetail": "Aucune commande CLI n’a été trouvée sur le PATH.",
+    "selfManagedCliMissingDetail": "{{name}} est configuré séparément d’Alex. Installez la CLI {{command}} et assurez-vous qu’elle figure sur le PATH, puis actualisez la détection.",
+    "acpMissingDetail": "L’adaptateur ACP n’est pas encore disponible.",
+    "pathInvalidDetail": "Le chemin de la commande n’a pas pu être résolu.",
+    "versionMismatchDetail": "La version détectée ne correspond pas à l’environnement d’exécution attendu.",
+    "connectionFailedDetail": "L’hôte distant n’a pas pu être contacté.",
+    "permissionDeniedDetail": "La commande n’a pas pu s’exécuter en raison d’un problème de permissions.",
+    "configInvalidDetail": "La configuration ACP actuelle ne peut pas être utilisée telle quelle.",
+    "toolPath": "Chemin",
+    "toolVersion": "Version",
+    "empty": "Aucun agent ACP correspondant.",
+    "description": "Découvrez les agents sur l’hôte d’exécution actuel et activez-les pour pouvoir les sélectionner dans les sessions"
+  },
+  "clients": {
+    "loading": "Chargement des agents ACP…"
+  },
+  "remote": {
+    "title": "Serveurs SSH",
+    "description": "Vérifiez les agents ACP sur les serveurs SSH enregistrés.",
+    "empty": "Aucun serveur SSH enregistré.",
+    "emptyVisible": "Aucun serveur SSH visible.",
+    "noAgents": "Ajoutez un agent ACP avant de vérifier les serveurs distants.",
+    "refreshDetection": "Actualiser la détection",
+    "hideConnection": "Masquer {{name}} dans Agents ACP",
+    "restoreConnection": "Afficher {{name}} dans Agents ACP",
+    "showHiddenConnections": "Serveurs masqués ({{count}})",
+    "hideHiddenConnections": "Masquer les serveurs masqués",
+    "summary": "{{available}} / {{total}} disponibles",
+    "issueSummary": "{{count}} problème(s)"
+  },
+  "fields": {
+    "name": "Nom",
+    "command": "Commande",
+    "args": "Arguments, un par ligne",
+    "env": "Environnement, KEY=VALUE par ligne",
+    "permissionMode": "Confirmation des outils"
+  },
+  "permissionMode": {
+    "ask": "Demander",
+    "allowOnce": "Approbation automatique",
+    "legacyRejectWarning": "Certains agents ont encore « Rejet automatique » enregistré. L’éditeur le remplace par « Demander ». Enregistrez et appliquez vos choix actuels pour qu’ils prennent effet ; d’ici là, ces agents continueront de rejeter automatiquement les demandes.",
+    "saveAndApply": "Enregistrer et appliquer"
+  },
+  "requirements": {
+    "tool": "CLI",
+    "adapter": "ACP",
+    "installed": "Installé",
+    "missing": "Manquant",
+    "checking": "Vérification",
+    "ready": "Prérequis satisfaits",
+    "notReady": "Prérequis manquants"
+  },
+  "notifications": {
+    "loadFailed": "Échec du chargement de la configuration ACP",
+    "loadFailedLocked": "La configuration ACP n’a pas pu être lue. Cette page est verrouillée afin d’éviter de remplacer la configuration d’agents existante par une configuration vide.",
+    "saveSuccess": "Configuration ACP enregistrée",
+    "configAdded": "Configuration d’agent ACP ajoutée",
+    "configAddedManualCliRequired": "Configuration de {{name}} ajoutée. Installez manuellement la CLI {{command}}, puis actualisez la détection.",
+    "saveFailed": "Échec de l’enregistrement de la configuration ACP",
+    "probeFailed": "Échec de la vérification des prérequis ACP",
+    "openLinkFailed": "Échec de l’ouverture du lien",
+    "invalidJson": "JSON ACP invalide",
+    "invalidEnv": "Valeur d’environnement invalide",
+    "installSuccess": "CLI ACP installée",
+    "installFailed": "Échec de l’installation de la CLI ACP",
+    "configureSuccess": "Adaptateur ACP préparé",
+    "configureFailed": "Échec de la préparation de l’adaptateur ACP",
+    "downloadSuccess": "CLI de l’agent ACP téléchargée",
+    "downloadFailed": "Échec du téléchargement de la CLI de l’agent ACP",
+    "predownloadSuccess": "Adaptateur ACP téléchargé",
+    "predownloadFailed": "Échec du téléchargement de l’adaptateur ACP",
+    "connectionHidden": "{{name}} est masqué dans Agents ACP",
+    "connectionRestored": "{{name}} est affiché dans Agents ACP"
+  }
+}

@@ -1,18 +1,18 @@
 {
   "version": 1,
-  "description": "No-growth baseline for i18n governance candidates. Lower counts when shared-term or l10n debt is removed; do not raise without review. Agent identity unification removes duplicate labels; agents.Minimal and agents.Standard only inventory existing reasoning, review, and Markdown-preview homonyms.",
+  "description": "No-growth baseline for i18n governance candidates. Lower counts when shared-term or l10n debt is removed; do not raise without review. Agent identity unification removes duplicate labels; agents.Minimal and agents.Standard only inventory existing reasoning, review, and Markdown-preview homonyms. fr-FR resources are now translated; shared-term duplicate counts decreased accordingly.",
   "budgets": {
     "confirmedUnusedKeys": {
       "maxTotal": 0
     },
     "sharedTermDuplicates": {
-      "maxTotal": 153,
+      "maxTotal": 71,
       "bySurface": {
-        "core": 15,
+        "core": 10,
         "installer": 0,
         "mobile-web": 0,
         "relay-static-homepage": 0,
-        "web-ui": 138
+        "web-ui": 61
       },
       "bySharedKey": {
         "agents.claw": 0,
@@ -21,26 +21,26 @@
         "agents.default": 0,
         "connectionMethods.openbitfunServer": 0,
         "connectionMethods.lan": 0,
-        "features.codeAgent": 1,
+        "features.codeAgent": 0,
         "features.deepReview": 0,
         "features.remoteControl": 0,
         "features.settings": 0,
-        "features.workspace": 2,
+        "features.workspace": 0,
         "modes.assistant": 1,
         "modes.expert": 2,
         "modes.review": 0,
         "product.name": 0,
-        "statuses.cancelled": 24,
-        "statuses.done": 19,
-        "statuses.failed": 32,
-        "statuses.loading": 5,
-        "statuses.running": 6,
-        "tools.edit": 33,
-        "tools.explore": 2,
-        "tools.search": 10,
-        "tools.shell": 7,
-        "agents.Minimal": 3,
-        "agents.Standard": 6
+        "statuses.cancelled": 9,
+        "statuses.done": 1,
+        "statuses.failed": 11,
+        "statuses.loading": 4,
+        "statuses.running": 3,
+        "tools.edit": 12,
+        "tools.explore": 0,
+        "tools.search": 6,
+        "tools.shell": 14,
+        "agents.Minimal": 4,
+        "agents.Standard": 4
       }
     },
     "l10nQualityCandidates": {

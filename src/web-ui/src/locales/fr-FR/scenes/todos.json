@@ -1,0 +1,140 @@
+{
+  "title": "Tableau des tâches",
+  "header": {
+    "subtitle": "Planifiez, gérez et exécutez vos travaux planifiés",
+    "summary": "{{total}} planifiées · {{dueSoon}} à échéance sous 24 heures"
+  },
+  "actions": {
+    "newTodo": "Nouvelle tâche",
+    "refresh": "Actualiser",
+    "edit": "Modifier la tâche",
+    "delete": "Supprimer la tâche",
+    "toggleEnabled": "Basculer l’état d’activation"
+  },
+  "list": {
+    "title": "Tâches planifiées",
+    "countTitle": "Tâches planifiées ({{total}})",
+    "hint": "Exécutions à échéance sous un jour, de la plus proche à la plus lointaine.",
+    "empty": "Aucune tâche planifiée pour le moment."
+  },
+  "overview": {
+    "title": "Aperçu du plan",
+    "unit": "éléments",
+    "total": "Tâches planifiées",
+    "dueSoon": "À échéance sous 24 heures"
+  },
+  "calendar": {
+    "title": "Calendrier",
+    "previousMonth": "Mois précédent",
+    "nextMonth": "Mois suivant",
+    "today": "Aujourd’hui",
+    "dayDetailTitle": "Jour sélectionné",
+    "dayEmpty": "Rien de planifié ce jour-là.",
+    "clearDay": "Effacer",
+    "dayCount": "Planifiées : {{total}}",
+    "moreCount": "+{{total}} autres"
+  },
+  "badges": {
+    "nextRun": "Prochaine exécution",
+    "overdue": "En retard"
+  },
+  "relative": {
+    "now": "À tout instant",
+    "overdue": "En retard",
+    "inMinutes": "dans {{value}} min",
+    "inHours": "dans {{value}} h",
+    "inOneDay": "dans 1 jour",
+    "inDays": "dans {{value}} jours"
+  },
+  "schedule": {
+    "once": "Une fois, à {{at}}",
+    "cron": "Cron : {{expr}}",
+    "cronWithTz": "Cron : {{expr}} · {{tz}}",
+    "kinds": {
+      "at": "Ponctuelle",
+      "every": "Intervalle",
+      "cron": "Cron"
+    },
+    "everyUnit": {
+      "minute": "Toutes les {{value}} minutes",
+      "hour": "Toutes les {{value}} heures",
+      "day": "Tous les {{value}} jours"
+    },
+    "intervalUnits": {
+      "minute": "Minutes",
+      "hour": "Heures",
+      "day": "Jours"
+    }
+  },
+  "target": {
+    "existingSession": "Session existante",
+    "newSession": "Nouvelle session {{agentType}}"
+  },
+  "inactive": {
+    "disabled": "En pause",
+    "invalid": "Planification invalide",
+    "title": "Aucune exécution à venir ({{total}})"
+  },
+  "editor": {
+    "createTitle": "Créer une tâche",
+    "editTitle": "Modifier la tâche",
+    "createDescription": "Créez une tâche et Alex l’exécutera automatiquement à l’heure planifiée.",
+    "editDescription": "Mettez à jour les détails de la tâche et la manière dont Alex doit l’exécuter.",
+    "noWorkspace": "Ouvrez un espace de travail avant de créer une tâche : une exécution planifiée a besoin d’un emplacement où s’exécuter.",
+    "sections": {
+      "information": "Détails de la tâche",
+      "prompt": "Prompt"
+    },
+    "enabled": {
+      "title": "Activer la tâche",
+      "description": "Une fois activée, la tâche s’exécute automatiquement selon sa planification."
+    },
+    "smartExecution": {
+      "title": "Exécution contextuelle",
+      "description": "Alex exécute le prompt à l’heure planifiée avec l’Agent sélectionné et le contexte de l’espace de travail."
+    },
+    "advanced": {
+      "title": "Paramètres avancés (facultatif)",
+      "empty": "Une tâche ponctuelle ne nécessite aucun paramètre supplémentaire."
+    },
+    "fields": {
+      "name": "Nom",
+      "agentType": "Type d’agent",
+      "scheduleKind": "Planification",
+      "at": "Exécution à",
+      "anchor": "Heure de référence (facultatif)",
+      "cronExpr": "Expression Cron",
+      "timezone": "Fuseau horaire (facultatif)",
+      "enabled": "Activé",
+      "prompt": "Prompt",
+      "runsIn": "S’exécute dans",
+      "every": "Intervalle"
+    },
+    "placeholders": {
+      "name": "Par exemple : Résumé du stand-up quotidien",
+      "workspace": "Sélectionnez un espace de travail",
+      "agentType": "Par exemple : Standard ou Cowork",
+      "anchor": "Laissez vide pour utiliser l’heure de création",
+      "timezone": "Par exemple : Asia/Shanghai",
+      "prompt": "Que doit faire l’agent lorsque cette tâche se déclenche ?"
+    },
+    "hints": {
+      "cronExpr": "Les champs sont : minute, heure, jour, mois, jour de la semaine. Le jour de la semaine va de 1 à 7, le dimanche valant 1 ; ainsi, 0 8 * * 2 correspond à tous les lundis à 08:00.",
+      "boundSession": "Cette tâche est liée à une session existante et continue de s’y exécuter."
+    },
+    "actions": {
+      "create": "Créer une tâche",
+      "save": "Enregistrer les modifications"
+    }
+  },
+  "deleteDialog": {
+    "title": "Supprimer « {{name}} » ?"
+  },
+  "messages": {
+    "loadFailed": "Échec du chargement des tâches : {{error}}",
+    "saveFailed": "Échec de l’enregistrement de la tâche : {{error}}",
+    "deleteFailed": "Échec de la suppression de la tâche : {{error}}",
+    "updateFailed": "Échec de la mise à jour de la tâche : {{error}}",
+    "workspaceRequired": "Sélectionnez d’abord un espace de travail pour cette tâche."
+  }
+}

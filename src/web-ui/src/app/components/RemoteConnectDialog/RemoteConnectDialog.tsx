@@ -46,7 +46,7 @@ import {
   Wifi,
 } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
-import { getLocaleFallbackChain, type LocaleId } from '@/infrastructure/i18n/presets';
+import { getLocaleFallbackChain, type ContractLocaleId, type LocaleId } from '@/infrastructure/i18n/presets';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 import { useAccountLoginState } from '@/infrastructure/account/useAccountLoginState';
@@ -130,11 +130,11 @@ const BOT_TABS: { id: BotTab; label: string }[] = [
 const FEISHU_SETUP_GUIDE_URLS = {
   'zh-CN': 'https://github.com/GCWing/OpenBitFun/blob/main/docs/remote-connect/feishu-bot-setup.zh-CN.md',
   'en-US': 'https://github.com/GCWing/OpenBitFun/blob/main/docs/remote-connect/feishu-bot-setup.md',
-} as const satisfies Partial<Record<LocaleId, string>>;
+} as const satisfies Partial<Record<ContractLocaleId, string>>;
 
 const FEISHU_OPEN_PLATFORM_URL = 'https://open.feishu.cn/app';
 
-function pickLocalizedUrl(urls: Partial<Record<LocaleId, string>>, locale: LocaleId): string {
+function pickLocalizedUrl(urls: Partial<Record<ContractLocaleId, string>>, locale: LocaleId): string {
   for (const localeId of getLocaleFallbackChain(locale, true)) {
     const url = urls[localeId];
     if (url) return url;

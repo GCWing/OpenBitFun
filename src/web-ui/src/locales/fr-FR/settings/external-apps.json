@@ -1,0 +1,657 @@
+{
+  "title": "Applications IA externes",
+  "subtitle": "Examinez les commandes, outils, agents et MCP compatibles découverts depuis d’autres applications IA.",
+  "governance": {
+    "title": "Sources externes et sécurité",
+    "subtitle": "Contrôlez l’accès aux sources, la politique de sécurité, les approbations et les conflits pour l’hôte d’exécution actuel."
+  },
+  "legacyHostNotice": "Cet hôte d’exécution utilise le protocole de sources externes hérité. Le mode sans échec nécessite une mise à niveau de l’hôte.",
+  "loading": "Vérification des sources externes…",
+  "checkingNonBlocking": "Recherche de mises à jour…",
+  "applications": {
+    "title": "Applications découvertes",
+    "empty": "Aucun paramètre d’application compatible trouvé.",
+    "toggleLabel": "Activer ou désactiver {{name}}",
+    "enableInAdvanced": "Activez d’abord les applications externes dans les Paramètres avancés.",
+    "attentionRequired": "Nécessite votre attention. Ouvrez les Paramètres avancés pour continuer.",
+    "openAdvanced": "Ouvrir les Paramètres avancés de {{name}}",
+    "advanced": {
+      "title": "Paramètres avancés"
+    }
+  },
+  "hooksManagement": {
+    "title": "Hooks",
+    "loading": "Chargement de la gestion des Hooks…"
+  },
+  "hooks": {
+    "title": "Hooks",
+    "description": "Affichez la configuration des Hooks d’OpenCode, Claude Code et Codex. Alex se contente de lire les fichiers de configuration sans exécuter de code.",
+    "refresh": "Actualiser les Hooks",
+    "refreshing": "Actualisation des Hooks…",
+    "showMoreSources": "Afficher {{count}} sources supplémentaires",
+    "showMoreEntries": "Afficher {{count}} Hooks supplémentaires",
+    "showMoreDiagnostics": "Afficher {{count}} diagnostics supplémentaires",
+    "showMoreSourcesForProvider": "Afficher {{count}} sources supplémentaires pour {{provider}}",
+    "showMoreEntriesForProvider": "Afficher {{count}} Hooks supplémentaires pour {{provider}}",
+    "showMoreDiagnosticsForProvider": "Afficher {{count}} diagnostics supplémentaires pour {{provider}}",
+    "loading": "Vérification de la configuration des Hooks…",
+    "pending": "La découverte des Hooks est toujours en cours. Le catalogue sera mis à jour automatiquement.",
+    "empty": "Aucune configuration de Hook n’a été trouvée.",
+    "error": "La configuration des Hooks est indisponible ({{code}}).",
+    "staleAfterRefresh": "L’actualisation a échoué ({{code}}). Affichage du dernier résultat réussi.",
+    "pollInterrupted": "La découverte automatique des Hooks a été interrompue ({{code}}). Actualisez pour réessayer ; le contenu visible peut dater de la dernière vérification réussie.",
+    "summary": "{{hooks}} Hooks · {{mapped}} rattachables · {{sources}} sources",
+    "providerEmpty": "Aucune configuration de Hook n’a été trouvée pour cette application.",
+    "providerFailed": "Échec de la lecture de la configuration des Hooks de cette application ; aucun contenu n’est disponible.",
+    "providerStaleEmpty": "La dernière lecture réussie n’a trouvé aucun Hook, et la dernière actualisation a également échoué.",
+    "noEntries": "Aucun événement de Hook n’a été trouvé dans cette source.",
+    "entriesDeferred": "Davantage de Hooks sont disponibles via le bouton Afficher plus ci-dessous.",
+    "matcher": "Matcher : {{matcher}}",
+    "matcherValue": {
+      "all": "Tous",
+      "dynamic": "Dynamique",
+      "unavailable": "Indisponible",
+      "unknown": "Inconnu"
+    },
+    "diagnostics": "Diagnostics",
+    "readOnly": "Lecture seule. Alex se contente d’afficher ces configurations et n’exécute aucun Hook.",
+    "unsupported": {
+      "remote": "L’inspection des Hooks n’est pas disponible pour les espaces de travail distants dans cette version.",
+      "peer": "L’inspection des Hooks n’est pas disponible via le mode Appareil homologue dans cette version."
+    },
+    "health": {
+      "available": "Disponible",
+      "partial": "Lecture partielle",
+      "degraded": "Dégradé",
+      "unavailable": "Indisponible",
+      "stale": "Dernier résultat réussi",
+      "failed": "Échec de lecture"
+    },
+    "handler": {
+      "function": "Fonction",
+      "command": "Commande",
+      "http": "HTTP",
+      "mcp_tool": "Outil MCP",
+      "prompt": "Prompt",
+      "agent": "Agent"
+    },
+    "scope": {
+      "user_global": "Utilisateur",
+      "project": "Projet",
+      "remote_user": "Utilisateur distant",
+      "remote_project": "Projet distant"
+    },
+    "activation": {
+      "disabled": "Désactivé dans la configuration native",
+      "unsupported": "Non pris en charge par l’environnement d’exécution natif",
+      "unknown": "Impossible de confirmer s’il est activé"
+    },
+    "diagnosticCategory": {
+      "nativeDisabled": "Les Hooks sont désactivés dans cette configuration native.",
+      "activationUnknown": "Alex s’est contenté de lire les fichiers de configuration sans exécuter l’application source ; il ne peut donc pas confirmer si ces Hooks sont activés. Cette information est purement indicative et n’affecte pas les autres fonctionnalités.",
+      "staticCoverage": "Alex a découvert certains Hooks en lisant les fichiers de configuration. L’application source peut enregistrer des Hooks supplémentaires à l’exécution, visibles uniquement lorsque l’application tourne réellement.",
+      "opaque": "Une partie de la logique d’enregistrement des Hooks nécessite l’exécution du code source pour être identifiée, ce que l’inspection statique ne peut pas résoudre.",
+      "inspectionLimit": "Une partie de la configuration des Hooks a été omise en raison d’une limite de sécurité de l’inspection statique.",
+      "invalidConfiguration": "Une partie de la configuration des Hooks est non valide ou n’a pas pu être analysée.",
+      "unavailable": "Une partie de la configuration des Hooks n’a pas pu être lue.",
+      "generic": "L’inspection des Hooks a signalé un diagnostic."
+    },
+    "projection": {
+      "tool_before": "Correspond au tool-before d’Alex",
+      "tool_after": "Correspond au tool-after d’Alex",
+      "nativeOnly": "Événement natif uniquement",
+      "opaque": "Enregistrement statique opaque"
+    }
+  },
+  "common": {
+    "details": "Détails",
+    "hideDetails": "Masquer les détails",
+    "close": "Fermer",
+    "unknown": "Inconnu",
+    "selected": "Actuellement utilisé",
+    "selectedUnavailable": "Sélectionné, actuellement indisponible",
+    "notSelected": "Non utilisé",
+    "availableChoice": "Choix disponible",
+    "openInExplorer": "Ouvrir dans l’explorateur de fichiers",
+    "openInExplorerRemote": "Les chemins d’un espace de travail distant ne peuvent pas être ouverts dans le gestionnaire de fichiers local",
+    "openInExplorerUnavailable": "Cet hôte ne peut pas ouvrir les emplacements des sources"
+  },
+  "actions": {
+    "refresh": "Actualiser",
+    "refreshing": "Actualisation…",
+    "updated": "Enregistré.",
+    "waitForUpdate": "Une autre modification est encore en cours d’enregistrement. Attendez la fin avant de faire un autre choix.",
+    "agentUpdated": "Modifications de {{name}} enregistrées et statut actualisé.",
+    "modelBindingUpdated": "Rattachement de modèle de l’agent enregistré et agents concernés actualisés.",
+    "mcpUpdated": "Choix du serveur MCP enregistré et statut actualisé."
+  },
+  "bulkActions": {
+    "enablePending": "Activer tous les éléments en attente ({{count}})",
+    "disableAll": "Tout désactiver",
+    "enableRisk": "Cette action approuve exactement les {{count}} éléments actuellement affichés. Si la découverte change, Alex vous demandera de vérifier à nouveau.",
+    "enabled": "Éléments en attente sélectionnés activés.",
+    "disabled": "Éléments sélectionnés désactivés."
+  },
+  "recoveryActions": {
+    "refresh": "Actualiser le statut",
+    "retry": "Réessayer",
+    "review": "Vérifier les éléments",
+    "resolve_conflict": "Résoudre le conflit",
+    "install_runtime": "Installez ou réparez l’environnement d’exécution requis, puis actualisez.",
+    "reconnect_host": "Reconnectez ou mettez à niveau l’hôte d’exécution, puis réessayez.",
+    "exit_safe_mode": "Quitter le mode sans échec",
+    "upgrade_host": "Mettre à niveau l’hôte",
+    "view_reason": "Afficher la raison"
+  },
+  "safeMode": {
+    "title": "Mode sans échec externe",
+    "description": "Bloque les nouveaux appels externes d’outils, d’agents et de MCP tout en gardant visibles les commandes découvertes et les diagnostics. Les appels déjà en cours ne sont pas annulés.",
+    "activeNotice": "Les nouveaux appels externes sont bloqués pour ce processus hôte. Les appels déjà en cours peuvent s’achever ; le redémarrage ou le changement d’hôte désactive le mode sans échec.",
+    "toggleLabel": "Utiliser le mode sans échec externe",
+    "entered": "Le mode sans échec externe est actif.",
+    "exited": "Le mode sans échec externe est désactivé et les intégrations éligibles ont été resynchronisées."
+  },
+  "unavailable": {
+    "hostTitle": "Indisponible ici",
+    "hostDescription": "Affichez ou gérez les paramètres externes dans Desktop.",
+    "remoteDescription": "Les paramètres externes sont indisponibles pour ce projet distant. Basculez vers un projet local.",
+    "remoteConnectionDescription": "Connexion distante indisponible. Réessayez la connexion."
+  },
+  "policy": {
+    "title": "Paramètres d’intégration",
+    "externalBadge": "Externe",
+    "readySummary": "{{count}} éléments trouvés",
+    "attentionSummary": "{{count}} éléments nécessitent votre attention",
+    "enabledLabel": "Autoriser la compatibilité externe",
+    "updated": "Enregistré.",
+    "recoveryRequired": "Ces paramètres sont plus récents ; l’accès externe est donc désactivé.",
+    "unknownStatus": "Cet état de paramètres n’est pas pris en charge ; l’accès externe est donc désactivé.",
+    "hostReadOnlyHint": "Consultation seule. Gérez cela dans Desktop.",
+    "remoteReadOnlyHint": "Ce projet distant est en consultation seule. Basculez vers un projet local pour le gérer.",
+    "backupAndReset": "Sauvegarder et réinitialiser",
+    "resetConfirmTitle": "Sauvegarder et réinitialiser la politique ?",
+    "resetConfirmMessage": "Alex conservera la politique plus récente dans une sauvegarde locale, la remplacera par des valeurs par défaut sûres et gardera l’exécution externe désactivée jusqu’à ce que vous l’activiez.",
+    "recoveryResetComplete": "La politique incompatible a été sauvegardée et réinitialisée avec des valeurs par défaut sûres.",
+    "inherited": "Hérité",
+    "projectOverride": "Substitution par le projet",
+    "resetWorkspace": "Utiliser les paramètres globaux",
+    "adapterRevision": "Adaptateur {{revision}}",
+    "sourceCount": "{{count}} emplacements de sources",
+    "capabilities": "Personnaliser les capacités",
+    "capabilitiesFor": "Personnaliser les capacités de {{ecosystem}}",
+    "modeLabel": "Mode de compatibilité {{ecosystem}}",
+    "capabilityAccessLabel": "Accès {{capability}} pour {{ecosystem}}",
+    "unsupportedSafelyOff": "Non pris en charge par cette version (désactivé en toute sécurité)",
+    "capabilitiesHint": "Choisissez la manière dont chaque type de contenu externe est découvert et utilisé.",
+    "safetyLimited": "Limite de sécurité",
+    "scope": {
+      "user": "Global",
+      "workspace": "Ce projet",
+      "workspaceHint": "Ne concerne que ce projet.",
+      "workspaceUnavailable": "Ouvrez un projet pour le configurer séparément."
+    },
+    "mode": {
+      "recommended": "Recommandé",
+      "discoverOnly": "Découverte uniquement",
+      "disabled": "Désactivé",
+      "custom": "Personnalisé"
+    },
+    "access": {
+      "disabled": "Désactivé",
+      "discoverOnly": "Découvrir",
+      "askBeforeUse": "Demander avant utilisation",
+      "auto": "Utiliser automatiquement"
+    },
+    "capability": {
+      "reference": "Références",
+      "command": "Commandes",
+      "tool": "Outils",
+      "subagent": "Agents",
+      "mcp": "Serveurs MCP"
+    },
+    "health": {
+      "available": "Adaptateur disponible",
+      "partial": "Adaptateur partiellement disponible",
+      "degraded": "Adaptateur dégradé",
+      "unavailable": "Adaptateur indisponible"
+    },
+    "state": {
+      "checking": "Vérification",
+      "attention": "Nécessite votre attention",
+      "ready": "Prêt",
+      "noConfig": "Aucune configuration"
+    }
+  },
+  "errors": {
+    "loadFailed": "Les paramètres externes n’ont pas pu être lus. Actualisez pour réessayer.",
+    "refreshFailed": "La vérification a échoué. Les éléments activés sont inchangés.",
+    "mutationUnknown": "Le statut d’enregistrement est inconnu. Actualisez pour confirmer."
+  },
+  "operationErrors": {
+    "rejected": "Les paramètres actuels n’autorisent pas cette modification.",
+    "refreshRequired": "Le catalogue a changé avant la fin de cette action. Actualisez, examinez l’état actuel, puis réessayez.",
+    "policyIncompatible": "Les paramètres externes ont été écrits par une version plus récente d’Alex. Sauvegardez-les et réinitialisez-les avant de les modifier.",
+    "unavailableRetry": "Temporairement indisponible. Réessayez plus tard.",
+    "internal": "L’action a échoué et aucun paramètre n’a été modifié. Réessayez ci-dessous. Si l’échec persiste, contactez l’assistance en indiquant le numéro de référence.",
+    "referenceId": "Référence d’assistance (à indiquer lors du contact avec l’assistance) : {{id}}"
+  },
+  "diagnostics": {
+    "summary": "{{count}} éléments nécessitent votre attention. Consultez les détails pour voir ce qui est concerné.",
+    "sourceSummary": "{{name}} présente {{count}} problèmes",
+    "category": {
+      "confirmationStateUnavailable": "Alex n’a pas pu vérifier les confirmations d’outils enregistrées ; les outils concernés restent donc désactivés. Vérifiez le stockage des paramètres d’Alex, puis actualisez.",
+      "conflictHistoryUnavailable": "Alex n’a pas pu enregistrer les informations de conflit ; les noms concernés restent donc indisponibles. Vérifiez le stockage des paramètres d’Alex, puis actualisez.",
+      "checkInProgress": "Une source est encore en cours de vérification. Le contenu existant reste disponible.",
+      "checkTimedOut": "La vérification d’une source a pris trop de temps. Le reste du contenu reste disponible ; actualisez pour réessayer.",
+      "confirmationRequired": "Une source attend votre confirmation avant qu’Alex puisse l’utiliser.",
+      "sourceTooLarge": "Certains fichiers ont été ignorés car la source est trop volumineuse. Réduisez sa taille, puis actualisez.",
+      "invalidSettings": "Certains paramètres n’ont pas pu être lus et ont été ignorés. Corrigez la source, puis actualisez.",
+      "unreadableSource": "Alex n’a pas pu lire une partie d’une source. Vérifiez l’accès aux fichiers, puis actualisez.",
+      "notSupported": "Ce type de contenu externe n’est pas encore pris en charge ; Alex ne l’a donc ni chargé ni exécuté.",
+      "checkFailed": "Alex n’a pas pu vérifier une source. Les autres sources restent disponibles ; actualisez pour réessayer.",
+      "runtimeUnavailable": "Un serveur MCP de cette source est indisponible. Désactivez-le, corrigez sa configuration ou son authentification, puis réactivez-le.",
+      "sourceIssue": "Alex n’a pas pu terminer la vérification d’une source. Le contenu utilisable existant reste disponible ; actualisez ou consultez les détails techniques."
+    }
+  },
+  "sources": {
+    "title": "Sources de configuration",
+    "description": "Les paramètres restent à leur emplacement d’origine. Ouvrez cette page pour vérifier automatiquement les changements.",
+    "globalOnly": "Affiche les sources disponibles pour tous les espaces de travail. Ouvrez un espace de travail pour afficher également les sources de ce projet.",
+    "empty": "Aucune configuration trouvée.",
+    "commandCount": "{{count}} commandes",
+    "toolCount": "{{count}} outils",
+    "agentCount": "{{count}} agents",
+    "mcpCount": "{{count}} serveurs MCP",
+    "toggleLabel": "Activer {{name}}"
+  },
+  "agents": {
+    "title": "Agents trouvés",
+    "description": "Les agents restent dans leur application d’origine. Avant d’en activer un, examinez son modèle, ses outils et son lieu d’exécution. Alex demande à nouveau si ses instructions ou ces paramètres changent.",
+    "disable": "Désactiver",
+    "enable": "Activer l’agent",
+    "reviewTitle": "Examiner comment {{name}} s’exécute",
+    "approvalWarning": "Une fois activé, cet agent peut demander au modèle sélectionné d’utiliser les outils affichés ci-dessus. Alex demande à nouveau si ses instructions, son modèle, ses outils ou ses sources de configuration changent.",
+    "role": {
+      "primary": "Sessions principales",
+      "subagent": "Tâches à exécution unique ; sans suivi",
+      "all": "Sessions principales et tâches à exécution unique"
+    },
+    "modelUnavailable": "Indisponible",
+    "modelResolvedFromParentAtTaskStart": "Résolu depuis la session parente au démarrage de la tâche",
+    "requestedModel": "Demandé par la source : {{model}}",
+    "requestedModelProfile": "Profil demandé : {{profile}}",
+    "modelBindingMethod": "Résolution : {{method}}",
+    "model": "Modèle : {{model}}",
+    "tools": "Outils : {{tools}}",
+    "executionDomain": "S’exécute sur : cet ordinateur et l’espace de travail actuel",
+    "compatibility": "Statut : {{state}}",
+    "noDescription": "Aucune description fournie",
+    "noTools": "Aucun outil",
+    "unavailableToolsUnknown": "Les noms n’ont pas été fournis par cet hôte",
+    "sourceLocations": "Sources de configuration ({{count}})"
+  },
+  "agentModelBindings": {
+    "title": "Rattachements de modèles d’agents",
+    "affectedAgents": "Concerne {{count}} agents",
+    "effectiveModel": "Utilise {{model}}",
+    "configuredEffort": "Effort configuré : {{value}}",
+    "selectLabel": "Choisir un modèle Alex pour {{request}}",
+    "automatic": "Associé automatiquement",
+    "targetUnavailable": "Indisponible : {{target}}",
+    "request": {
+      "default": "Par défaut (Alex)",
+      "inherit": "Modèle de la session parente"
+    },
+    "profile": {
+      "namedVariant": "Variante nommée {{name}}",
+      "reasoningEffort": "Effort de raisonnement {{value}}"
+    },
+    "target": {
+      "source": "Utiliser la correspondance automatique de la source",
+      "unbound": "Aucun rattachement de modèle",
+      "primary": "Modèle principal",
+      "fast": "Modèle rapide",
+      "model": "Modèle configuré"
+    },
+    "method": {
+      "default": "Par défaut (Alex)",
+      "inherit": "Hérité de la session parente",
+      "exact": "Modèle configuré exact",
+      "explicit": "Rattachement utilisateur",
+      "binding_required": "Choisir un modèle",
+      "binding_unavailable": "Le modèle enregistré est indisponible"
+    }
+  },
+  "agentState": {
+    "approval_required": "Confirmation requise",
+    "declined": "Maintenu désactivé",
+    "disabled": "Désactivé",
+    "active": "Activé",
+    "conflict": "Choix requis",
+    "blocked": "Pas encore pris en charge",
+    "unavailable": "Temporairement indisponible"
+  },
+  "agentChanges": {
+    "unavailable": "{{name}} n’est plus disponible pour les nouvelles tâches ({{state}}). Examinez ci-dessous son modèle actuel, ses outils, sa source ou son conflit de nom.",
+    "unavailableMany": "{{count}} agents activés ne sont plus disponibles pour les nouvelles tâches. Examinez leurs paramètres actuels ci-dessous.",
+    "removedState": "Source supprimée"
+  },
+  "agentCompatibility": {
+    "ready": "Pris en charge",
+    "ready_with_degradation": "Pris en charge, mais certains paramètres ne s’appliqueront pas",
+    "blocked": "Non pris en charge",
+    "invalid": "Erreur de configuration"
+  },
+  "agentDiagnostics": {
+    "activationBlocked": "Cet agent ne peut pas être activé.",
+    "degradedOnly": "Certains paramètres ne s’appliqueront pas.",
+    "configurationUnavailable": {
+      "reason": "Alex n’a pas pu lire ses paramètres de modèles ; cet agent ne peut donc pas être activé.",
+      "impact": "{{impact}}",
+      "nextStep": "Vérifiez les paramètres de modèles d’Alex, puis actualisez."
+    },
+    "modelUnavailable": {
+      "reason": "Le modèle demandé n’est pas disponible dans Alex.",
+      "impact": "{{impact}}",
+      "nextStep": "Choisissez un modèle disponible dans l’application source, ou configurez un modèle disponible dans Alex, puis actualisez."
+    },
+    "toolUnavailable": {
+      "reason": "Outils indisponibles : {{tools}}",
+      "impact": "{{impact}}",
+      "nextStep": "Retirez ou remplacez ces outils dans l’application source, puis actualisez."
+    },
+    "promptMissing": {
+      "reason": "Un prompt valide manque à cet agent.",
+      "impact": "{{impact}}",
+      "nextStep": "Ajoutez un prompt dans l’application source, puis actualisez."
+    },
+    "unsupportedSetting": {
+      "reason": "Alex ne prend pas en charge le paramètre {{setting}} ; cet agent ne peut donc pas être activé.",
+      "impact": "{{impact}}",
+      "nextStep": "Retirez ce paramètre dans l’application source, puis actualisez."
+    },
+    "ignoredSetting": {
+      "reason": "Alex ne prend pas en charge le paramètre {{setting}} et l’ignorera. Cela n’affecte pas l’utilisation.",
+      "impact": "{{impact}}",
+      "nextStep": ""
+    },
+    "settings": {
+      "unknownField": "champ inconnu",
+      "ambientPermissions": "permissions globales",
+      "permissions": "permissions",
+      "options": "options",
+      "nativeAgentOverlay": "superposition d’agent intégrée",
+      "legacyPrimaryMode": "mode principal hérité",
+      "primaryAgentMode": "mode agent principal",
+      "toolPatterns": "motifs d’outils",
+      "defaultPermissions": "permissions par défaut",
+      "variant": "variante de modèle",
+      "temperature": "température",
+      "topP": "top_p",
+      "steps": "limite d’étapes",
+      "maxSteps": "étapes maximum",
+      "color": "couleur d’affichage",
+      "primaryFacet": "facette d’agent principal"
+    },
+    "invalidDefinition": {
+      "reason": "La configuration de cet agent n’est pas valide.",
+      "impact": "{{impact}}",
+      "nextStep": "Corrigez la configuration de l’agent dans l’application source, puis actualisez."
+    },
+    "unsupportedBehavior": {
+      "reason": "Cet agent utilise des paramètres non pris en charge par Alex ; il ne peut donc pas être activé.",
+      "impact": "{{impact}}",
+      "nextStep": "Mettez à jour l’agent dans l’application source, puis actualisez."
+    },
+    "ignoredOption": {
+      "reason": "Alex ne prend pas en charge ce paramètre et l’ignorera. Cela n’affecte pas l’utilisation.",
+      "impact": "{{impact}}",
+      "nextStep": ""
+    }
+  },
+  "agentConflicts": {
+    "title": "Agents portant le même nom",
+    "description": "Alex ne choisit jamais silencieusement. Les choix en attente et actuels restent visibles, et un choix est mémorisé jusqu’à ce que l’un de ces agents change.",
+    "agentName": "Plusieurs agents sont nommés {{name}}",
+    "disableAll": "N’utiliser aucun de ceux-ci",
+    "pending": "Choisissez l’agent à utiliser pour les tâches futures. Choisir un agent externe confirme également le modèle, les outils et le lieu d’exécution indiqués ci-dessous.",
+    "currentSelection": "Le choix actuel est utilisé pour les nouvelles tâches. Choisissez une autre option ci-dessus pour le modifier.",
+    "currentSelectionUnavailable": "Cette source reste sélectionnée, mais elle est actuellement désactivée ou indisponible pour les nouvelles tâches. Activez-la ou réparez-la, choisissez une autre option, ou laissez ce nom indisponible.",
+    "keptUnavailable": "Ce nom d’agent est laissé indisponible. Choisissez une option ci-dessus lorsque vous souhaitez en utiliser un.",
+    "selectionApproves": "Ce choix confirme le modèle, les outils, le lieu d’exécution et les sources de configuration indiqués ci-dessous."
+  },
+  "mcp": {
+    "title": "Serveurs MCP trouvés",
+    "description": "Les paramètres MCP restent dans l’application source. Les serveurs externes sont en lecture seule ici ; désactivez-en un ou modifiez-le dans son application d’origine.",
+    "externalSource": "Application IA externe",
+    "source": "Source : {{source}}",
+    "sourceLocation": "Configuration : {{location}}",
+    "sourceLocationLabel": "Configuration",
+    "scope": "S’applique à : {{scope}}",
+    "command": "Commande : {{command}}",
+    "url": "Adresse : {{url}}",
+    "workingDirectory": "Démarre dans : {{location}}",
+    "environmentCount": "{{count}} variables d’environnement configurées",
+    "environmentNames": "Variables d’environnement : {{names}}",
+    "environmentReads": "Lit depuis l’environnement d’Alex : {{names}}",
+    "argumentCount": "Arguments de la commande : {{count}}",
+    "headerCount": "{{count}} en-têtes HTTP configurés",
+    "headerNames": "En-têtes HTTP : {{names}}",
+    "timeoutSummary": "Remplacements de délai d’expiration : {{values}}",
+    "timeoutStartup": "démarrage {{duration}}",
+    "timeoutCatalog": "catalogue {{duration}}",
+    "timeoutExecution": "exécution {{duration}}",
+    "timeoutMilliseconds": "{{value}} ms",
+    "changePolicy": "Alex demande à nouveau avant de charger une configuration de serveur modifiée.",
+    "failureReason": "Raison : {{reason}}",
+    "failureReasons": {
+      "authentication": "Une authentification est requise pour ce serveur MCP.",
+      "timeout": "Le serveur MCP n’a pas terminé son démarrage avant l’expiration de son délai.",
+      "commandUnavailable": "La commande MCP configurée n’a pas pu être démarrée.",
+      "workingDirectoryUnavailable": "Le répertoire de travail MCP configuré est indisponible.",
+      "connectionFailed": "Alex n’a pas pu se connecter au serveur MCP.",
+      "protocolFailed": "Le serveur MCP n’a pas terminé la poignée de main de démarrage MCP.",
+      "nativeConfigurationUnavailable": "Alex n’a pas pu lire la configuration MCP actuelle.",
+      "hostReadOnly": "Cet hôte peut découvrir des serveurs MCP mais ne peut pas les exécuter.",
+      "configurationChanged": "La configuration MCP a changé avant l’activation. Actualisez puis confirmez-la à nouveau.",
+      "configurationInvalid": "La configuration MCP ne peut pas être utilisée par l’environnement d’exécution d’Alex.",
+      "hostUnavailable": "L’environnement d’exécution MCP n’est pas disponible sur cet hôte.",
+      "installFailed": "Alex n’a pas pu enregistrer ce serveur MCP auprès de l’environnement d’exécution.",
+      "preparationFailed": "Alex n’a pas pu préparer cette configuration MCP pour l’activation.",
+      "serverMissing": "Le serveur MCP n’est plus enregistré auprès de l’environnement d’exécution.",
+      "runtimeFailed": "Le serveur MCP a échoué ou s’est arrêté de manière inattendue.",
+      "stopped": "Le serveur MCP n’est pas en cours d’exécution actuellement.",
+      "statusUnavailable": "Alex n’a pas pu lire le statut actuel du serveur MCP.",
+      "other": "Le serveur MCP n’a pas démarré. Vérifiez sa configuration source et les journaux d’Alex."
+    },
+    "runtimeUnavailableGuidance": "Désactivez ce serveur, corrigez la configuration source ou l’authentification, puis réactivez-le. Le redémarrage d’Alex n’est généralement pas nécessaire.",
+    "unsupportedGuidance": "Modifiez ce paramètre dans l’application source, puis actualisez.",
+    "enable": "Activer le serveur",
+    "disable": "Désactiver",
+    "empty": "Aucun serveur MCP trouvé.",
+    "emptyGuidance": "Alex recherche des serveurs MCP dans les emplacements suivants, mais n’en a trouvé aucun :",
+    "emptyLocation": {
+      "userGlobal": "Global utilisateur : ~/.config/opencode/opencode.json",
+      "project": "Projet : .opencode/opencode.json",
+      "envConfig": "Fichier pointé par la variable d’environnement OPENCODE_CONFIG"
+    },
+    "transport": {
+      "local_stdio": "Processus local",
+      "streamable_http": "Connexion distante"
+    }
+  },
+  "mcpApprovals": {
+    "title": "Serveurs MCP à vérifier",
+    "description": "Alex a trouvé une configuration exécutable ou réseau provenant d’une autre application IA. Elle n’est ni démarrée ni contactée tant que vous ne l’avez pas confirmée.",
+    "compactWarning": "L’activation peut exécuter cette commande avec vos permissions utilisateur ou se connecter à ce service ; le serveur peut recevoir les données envoyées dans les appels d’outils.",
+    "showDetails": "Afficher la configuration et le risque",
+    "warning": "Les commandes locales peuvent lire les variables d’environnement listées, et les requêtes distantes peuvent envoyer les en-têtes listés. Examinez ces détails avant l’activation.",
+    "keepDisabled": "Maintenir désactivé",
+    "enable": "Activer le serveur"
+  },
+  "mcpState": {
+    "approval_required": "Confirmation requise",
+    "starting": "Démarrage en cours",
+    "active": "Activé",
+    "declined": "Maintenu désactivé",
+    "conflict": "Choix requis",
+    "covered": "Non sélectionné",
+    "source_disabled": "Désactivé par la source",
+    "configuration_changed": "Modifié ; confirmer à nouveau",
+    "unsupported": "Non pris en charge",
+    "runtime_unavailable": "Temporairement indisponible",
+    "removed": "Supprimé"
+  },
+  "mcpConflicts": {
+    "title": "Serveurs MCP portant le même nom",
+    "description": "Alex ne choisit jamais silencieusement. Choisissez le serveur Alex ou externe à utiliser ; le choix est mémorisé jusqu’à ce que l’une de ces configurations change.",
+    "serverName": "Plusieurs serveurs MCP sont nommés {{name}}",
+    "pending": "Choisissez un serveur. Choisir un serveur externe confirme également cette configuration.",
+    "currentSelection": "Le choix actuel est utilisé. Choisissez une autre option disponible pour le modifier.",
+    "unavailable": "Actuellement indisponible",
+    "nativeDisabled": "Activez ce serveur Alex avant de le sélectionner",
+    "review": "Examiner {{name}}",
+    "approveAndUse": "Approuver et utiliser {{name}}"
+  },
+  "tools": {
+    "title": "Outils trouvés",
+    "description": "Le code des outils reste à son emplacement d’origine. Alex ne l’exécute pas pendant la vérification de la source.",
+    "review": "Vérifier les paramètres",
+    "disable": "Désactiver ces outils",
+    "reviewTitle": "Examiner {{name}} provenant de {{source}}",
+    "reason": "Raison : {{reason}}",
+    "nextStep": "Étape suivante : {{nextStep}}",
+    "targetScope": "Cette action s’applique à tous les outils fournis par cette source."
+  },
+  "toolApprovals": {
+    "title": "Outils à vérifier",
+    "description": "Avant d’activer du code d’outils provenant d’une autre application, examinez d’où vient le code et ce à quoi il peut accéder.",
+    "source": "Source : {{location}}",
+    "sourceRoot": "Dossier source : {{location}}",
+    "modulePath": "Fichier de code : {{location}}",
+    "scope": "S’applique à : {{scope}}",
+    "executionDomain": "S’exécute dans : {{domain}}",
+    "runtime": "Exécuté avec : {{runtime}}",
+    "workingDirectory": "Démarre dans le dossier : {{location}}",
+    "capabilities": "Peut accéder directement à : {{capabilities}}",
+    "warning": "Le code des outils s’exécute avec vos permissions utilisateur et hérite de vos variables d’environnement. Il n’est pas isolé par un bac à sable du système d’exploitation. Les processus qu’il démarre peuvent continuer à s’exécuter après une annulation.",
+    "keepDisabled": "Maintenir désactivé",
+    "enable": "Activer les outils"
+  },
+  "capability": {
+    "file_system": "fichiers",
+    "network": "réseau",
+    "process": "processus",
+    "environment": "variables d’environnement"
+  },
+  "toolState": {
+    "approval_required": "Confirmation requise",
+    "declined": "Maintenu désactivé",
+    "disabled": "Désactivé",
+    "active": "Activé",
+    "conflict": "Choix requis",
+    "unsupported": "Pas encore pris en charge",
+    "runtime_unavailable": "Environnement d’exécution indisponible",
+    "load_failed": "Impossible de charger"
+  },
+  "toolReason": {
+    "approval_required": "Examinez les accès de ce fichier d’outil avant de l’activer.",
+    "declined": "Vous avez choisi de laisser ces outils désactivés.",
+    "disabled": "La source ou sa capacité d’outils est désactivée par la politique.",
+    "active": "Le code de l’outil est chargé et prêt à l’emploi.",
+    "conflict": "Un autre outil porte le même nom.",
+    "unsupported": "Ce fichier d’outil contient du code ou des opérations non pris en charge par Alex.",
+    "runtime_unavailable": "L’environnement d’exécution JavaScript requis est indisponible.",
+    "load_failed": "Alex n’a pas pu charger ce fichier d’outil."
+  },
+  "toolNextStep": {
+    "approval_required": "Examinez la source et les accès ci-dessus, puis activez ces outils ou laissez-les désactivés.",
+    "declined": "Examinez la source et les accès ci-dessus avant d’activer ces outils.",
+    "disabled": "Activez cette source ou sa capacité d’outils avant d’utiliser ces outils.",
+    "active": "Aucune action nécessaire. Désactivez ces outils pour cesser d’utiliser les outils de cette source.",
+    "conflict": "Choisissez ci-dessous l’outil à utiliser, ou laissez-les désactivés.",
+    "unsupported": "Remplacez la source par un fichier JavaScript unique pris en charge par Alex, puis actualisez.",
+    "runtime_unavailable": "Installez ou réparez Node.js, puis actualisez. Vous pouvez continuer sans ces outils JavaScript externes tant que l’environnement d’exécution est indisponible.",
+    "load_failed": "Corrigez la source et actualisez, ou laissez ces outils désactivés."
+  },
+  "toolConflicts": {
+    "title": "Outils portant le même nom",
+    "description": "Les choix en attente et actuels restent visibles. Tant que vous n’avez pas choisi, Alex continue d’utiliser un outil local ou MCP disponible ; si aucun n’est disponible, ce nom reste désactivé. Les choix sont mémorisés jusqu’à ce que les outils disponibles changent.",
+    "toolName": "Plusieurs outils sont nommés {{name}}",
+    "pending": "Choisissez l’outil à utiliser lorsque ce nom est appelé.",
+    "currentSelection": "Le choix actuel est utilisé pour ce nom d’outil. Choisissez une autre option ci-dessus pour le modifier.",
+    "currentSelectionUnavailable": "Cette source d’outils reste sélectionnée, mais elle est actuellement désactivée ou indisponible. Activez-la ou réparez-la, ou choisissez un autre outil."
+  },
+  "toolCandidateKind": {
+    "built_in": "Intégré",
+    "mcp": "MCP",
+    "external": "Externe"
+  },
+  "scope": {
+    "user_global": "Tous les espaces de travail",
+    "project": "Espace de travail actuel",
+    "remote_user": "Tous les espaces de travail distants",
+    "remote_project": "Espace de travail distant actuel"
+  },
+  "executionLocation": {
+    "local": "Cet ordinateur",
+    "remote": "Environnement distant actuel",
+    "unknown": "Inconnu"
+  },
+  "runtime": {
+    "java_script": "JavaScript",
+    "type_script": "TypeScript"
+  },
+  "lifecycle": {
+    "available": "Disponible",
+    "restricted": "Non pris en charge dans cette version",
+    "degraded": "Contenu partiellement indisponible",
+    "unavailable": "Temporairement indisponible",
+    "removed": "Source supprimée",
+    "suppressed": "Désactivé",
+    "using_last_valid_version": "Utilise la dernière version fonctionnelle"
+  },
+  "conflicts": {
+    "title": "Commandes portant le même nom",
+    "description": "Alex ne choisit jamais silencieusement. Les choix en attente et actuels restent visibles, et un choix est mémorisé jusqu’à ce que l’une des sources change.",
+    "commandName": "Plus d’une source fournit /{{name}}",
+    "pending": "Choisissez une source disponible pour utiliser cette commande.",
+    "currentSelection": "La source actuelle est utilisée pour cette commande. Choisissez une autre source disponible ci-dessus pour la modifier.",
+    "currentSelectionUnavailable": "Cette source de commandes reste sélectionnée, mais elle ne peut pas s’exécuter dans son état actuel. Choisissez une source disponible ou corrigez d’abord cette source.",
+    "restricted": "Non pris en charge dans cette version"
+  },
+  "opencode": {
+    "title": "Extensions OpenCode",
+    "description": "Capacités externes découvertes depuis des configurations compatibles OpenCode.",
+    "summary": "Trouvé {{agents}} agents · {{commands}} commandes · {{tools}} outils · {{mcps}} MCP",
+    "configLocations": "Emplacements de configuration",
+    "inherited": "Hérité du mode global",
+    "capability": {
+      "reference": {
+        "description": "Répertoires locaux nommés issus de la configuration OpenCode",
+        "effect": "Affiche les références dans les vues de répertoires de l’espace de travail et la navigation explicite de répertoires.",
+        "risk": "Les références n’accordent aucun accès supplémentaire aux fichiers."
+      },
+      "subagent": {
+        "description": "{{count}} agents trouvés · depuis {{scope}}",
+        "effect": "Permet d’appeler les agents définis dans OpenCode.",
+        "risk": "Les agents peuvent effectuer des appels de modèle ; confirmez que la source est fiable."
+      },
+      "command": {
+        "description": "{{count}} commandes trouvées · depuis {{scope}}",
+        "effect": "Permet d’appeler les commandes OpenCode dans Alex.",
+        "risk": ""
+      },
+      "mcp": {
+        "description": "{{count}} serveurs MCP trouvés",
+        "effect": "Permet de se connecter aux serveurs MCP configurés dans OpenCode.",
+        "risk": "Les serveurs MCP peuvent démarrer des processus locaux ou se connecter à des adresses distantes."
+      },
+      "tool": {
+        "description": "{{count}} outils trouvés · depuis {{scope}}",
+        "effect": "Permet d’utiliser les outils définis dans OpenCode.",
+        "risk": "Le code des outils s’exécute avec vos permissions utilisateur, sans bac à sable."
+      }
+    }
+  }
+}
