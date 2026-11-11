@@ -640,7 +640,7 @@ test('runtime-ports async dependencies stay behind their exact port owners', () 
   );
   assert.deepEqual(
     ownersByDependency.get('tokio-util'),
-    new Set(['workspace-ports']),
+    new Set(['permission', 'ts', 'workspace-ports']),
   );
   assert.deepEqual(
     ownersByDependency.get('tokio'),
@@ -815,7 +815,7 @@ const RUNTIME_PORT_FEATURE_PROFILES = {
   'agent-api': ['dep:openbitfun-core-types'],
   'git-port': [],
   'hook-function-runtime': [],
-  permission: ['dep:openbitfun-product-domains'],
+  permission: ['dep:openbitfun-product-domains', 'dep:tokio-util'],
   'plugin-runtime': [],
   'product-search': ['dep:openbitfun-product-domains'],
   'ptc-runtime': [],
@@ -827,6 +827,7 @@ const RUNTIME_PORT_FEATURE_PROFILES = {
   'tool-runtime-handles': ['workspace-ports', 'terminal-port', 'remote-exec-port'],
   ts: [
     'dep:ts-rs',
+    'dep:tokio-util',
     'agent-api',
     'permission',
     'openbitfun-core-types/ts',
@@ -1914,6 +1915,7 @@ const CLI_REVIEWED_CORE_FEATURES = [
   'workspace-icons',
   'tools-pages',
   ...ACP_REVIEWED_CORE_FEATURES,
+  'decision-model-credentials',
   'product-search',
   'remote-connect',
   'file-watch',

@@ -1456,6 +1456,7 @@ export function findProductEntrypointCoreFeatureViolations(
       'workspace-icons',
       'tools-pages',
       ...coreCompatibilityReviewedFeatures,
+      'decision-model-credentials',
       'product-search',
       'remote-connect',
       // The CLI Peer Host answers `start_file_watch` / `stop_file_watch` for an
@@ -1529,6 +1530,7 @@ export function findProductEntrypointCoreFeatureViolations(
       'workspace-icons',
       'tools-pages',
       ...acpActiveCoreFeatures,
+      'decision-model-credentials',
       'i18n-runtime',
       'plugin-runtime',
       'product-search',

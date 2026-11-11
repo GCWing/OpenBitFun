@@ -70,7 +70,7 @@ tool-runtime-handles = [
 remote-workspace-ports = ["dep:openbitfun-core-types"]
 git-port = []
 runtime-event-port = []
-permission = ["dep:openbitfun-product-domains"]
+permission = ["dep:openbitfun-product-domains", "dep:tokio-util"]
 product-search = ["dep:openbitfun-product-domains"]
 # Derive `ts_rs::TS` on the wire types so downstream crates (app-server) can
 # export TypeScript bindings. The `permission` feature gates the product
@@ -81,6 +81,7 @@ product-search = ["dep:openbitfun-product-domains"]
 # undeclared owner of the optional product-domain dependency.
 ts = [
     "dep:ts-rs",
+    "dep:tokio-util",
     "agent-api",
     "permission",
     "openbitfun-core-types/ts",

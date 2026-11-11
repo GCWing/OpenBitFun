@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:efc7f6c992af17a1",
+  "digest": "fnv1a64:86aabcc23554987b",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -918,6 +918,17 @@
       "id": "cleanup_invalid_workspaces",
       "surface": "tauri_command",
       "remoteWorkspace": "LegacyUnaudited",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
+      }
+    },
+    {
+      "id": "clear_decision_model_credential",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
       "peer": {
         "kind": "proxied"
       },
@@ -2588,6 +2599,17 @@
       "cliPeer": {
         "kind": "unsupported",
         "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "get_decision_model_credential_status",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
       }
     },
     {
@@ -6702,6 +6724,17 @@
       "cliPeer": {
         "kind": "unsupported",
         "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "save_decision_model_credential",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
       }
     },
     {

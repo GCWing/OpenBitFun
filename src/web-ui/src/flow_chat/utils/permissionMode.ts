@@ -25,11 +25,16 @@ export function sessionPermissionMode(mode: NativePermissionMode): SessionPermis
  * Derives the mode a stored configuration represents.
  *
  * Mirrors `PermissionMode::from_config`: full access already resolves every
- * ask, so it outranks the auto-approve preference.
+ * ask, so it outranks the automatic approval preference. Both the legacy
+ * interaction flag and the new approval strategy project to the same control.
  */
 export function permissionModeFromConfig(config: ToolPermissionConfig): SessionPermissionMode {
   if (config.policy.preset === 'full_access') return 'full_access';
-  return config.interaction.auto_approve_ask ? 'auto_approve' : 'ask';
+  return config.interaction.auto_approve_ask
+    || config.approval?.strategy === 'model'
+    || config.approval?.strategy === 'immediate_allow'
+    ? 'auto_approve'
+    : 'ask';
 }
 
 /** Projects a mode back onto the two stored configuration knobs. */
@@ -37,6 +42,14 @@ export function permissionModeToConfig(
   config: ToolPermissionConfig,
   mode: SessionPermissionMode,
 ): ToolPermissionConfig {
+  const approval = config.approval ?? {
+    strategy: 'interactive' as const,
+    model_kind: 'chat' as const,
+    chat_model_id: '',
+    timeout_ms: 30_000,
+    on_ask: 'user' as const,
+    on_error: 'ask' as const,
+  };
   return {
     policy: {
       ...config.policy,
@@ -45,6 +58,10 @@ export function permissionModeToConfig(
     interaction: {
       ...config.interaction,
       auto_approve_ask: mode === 'auto_approve',
+    },
+    approval: {
+      ...approval,
+      strategy: mode === 'auto_approve' ? 'model' : 'interactive',
     },
   };
 }

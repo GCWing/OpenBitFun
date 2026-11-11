@@ -127,7 +127,7 @@ export const optionalDependencyFeatureOwnerRules = [
       { depName: 'openbitfun-core-types', ownerFeatures: ['agent-api', 'remote-workspace-ports', 'ts'] },
       { depName: 'openbitfun-product-domains', ownerFeatures: ['permission', 'product-search', 'ts'] },
       { depName: 'tokio', ownerFeatures: ['remote-exec-port', 'terminal-port', 'workspace-ports'] },
-      { depName: 'tokio-util', ownerFeatures: ['workspace-ports'] },
+      { depName: 'tokio-util', ownerFeatures: ['permission', 'ts', 'workspace-ports'] },
       { depName: 'ts-rs', ownerFeatures: ['ts'] },
     ],
   },
@@ -405,7 +405,7 @@ export const capabilityContractDependencyRules = [
       'agent-api': ['dep:openbitfun-core-types'],
       'git-port': [],
       'hook-function-runtime': [],
-      permission: ['dep:openbitfun-product-domains'],
+      permission: ['dep:openbitfun-product-domains', 'dep:tokio-util'],
       'plugin-runtime': [],
       'product-search': ['dep:openbitfun-product-domains'],
       'ptc-runtime': [],
@@ -418,6 +418,7 @@ export const capabilityContractDependencyRules = [
       'web-search-port': [],
       ts: [
         'dep:ts-rs',
+        'dep:tokio-util',
         'agent-api',
         'permission',
         'openbitfun-core-types/ts',
@@ -480,6 +481,9 @@ export const capabilityContractDependencyRules = [
       ['openbitfun-opencode-adapter', capabilityConsumer([
         capabilityEdge(['hook-function-runtime', 'plugin-runtime']),
         capabilityEdge(['script-tool-runtime'], { kind: 'dev' }),
+      ])],
+      ['openbitfun-ai-adapters', capabilityConsumer([
+        capabilityEdge(['permission']),
       ])],
       ['openbitfun-opencode-plugin-host', capabilityConsumer([
         capabilityEdge(['hook-function-runtime']),
@@ -729,6 +733,7 @@ export const coreProductFullFeatureAssemblyRule = {
   featureName: 'product-full',
   requiredFeatureRefs: [
     'agent-runtime',
+    'decision-model-credentials',
     'product-search',
     'diagnostics',
     'diff',
@@ -954,6 +959,13 @@ export const coreClosedFeatureProfileRules = [
     exact: true,
     reason:
       'openbitfun-core agent-runtime is the reviewed Core Agent Runtime owner closure, not a product-full alias',
+  },
+  {
+    manifestPath: 'src/crates/assembly/core/Cargo.toml',
+    featureName: 'decision-model-credentials',
+    requiredFeatureRefs: ['openbitfun-services-core/credential-vault'],
+    exact: true,
+    reason: 'decision-model-credentials must be the only Core owner of decision-model secrets',
   },
   {
     manifestPath: 'src/crates/assembly/core/Cargo.toml',

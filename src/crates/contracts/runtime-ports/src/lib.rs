@@ -43,7 +43,9 @@ pub use openbitfun_product_domains::product_search::{
 #[cfg(feature = "permission")]
 pub use openbitfun_product_domains::tool_permissions::{
     deserialize_optional_permission_mode, resolve_child_permission_policy, resolve_permission_mode,
-    resolve_permission_policy, wildcard_matches, ChildPermissionPolicyLayers, PermissionAuditEvent,
+    resolve_permission_policy, wildcard_matches, ChildPermissionPolicyLayers,
+    PermissionApprovalConfig, PermissionApprovalModelKind, PermissionApprovalOnAsk,
+    PermissionApprovalOnError, PermissionApprovalStrategy, PermissionAuditEvent,
     PermissionAuditRecord, PermissionConstraintLayer, PermissionDelegationContext,
     PermissionEffect, PermissionEvaluator, PermissionGrant, PermissionGrantKey,
     PermissionInteractionConfig, PermissionMode, PermissionModeLayers, PermissionModeSource,
@@ -55,7 +57,9 @@ pub use openbitfun_product_domains::tool_permissions::{
 };
 #[cfg(feature = "permission")]
 pub use permission::{
-    PermissionAuditStorePort, PermissionGrantStorePort, PermissionReplyStorePort,
+    PermissionAuditStorePort, PermissionDecision, PermissionDecisionDelegation,
+    PermissionDecisionInput, PermissionDecisionOutcome, PermissionDecisionPort,
+    PermissionGrantStorePort, PermissionReasonCode, PermissionReplyStorePort, PermissionRiskClass,
 };
 #[cfg(feature = "plugin-runtime")]
 pub use plugin::{

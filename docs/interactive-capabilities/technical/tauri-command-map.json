@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "5370adbf2ff3746a6d89704d38498047e3430850234e4abc1cd6bb5eea2aac49",
-  "commandCount": 699,
+  "catalogDigest": "778506ae9a8c979c4cea4de5c575be1bde0517def6ee5854dba203665098fa29",
+  "commandCount": 702,
   "coverage": {
-    "commandCount": 699,
+    "commandCount": 702,
     "documentedCommandCount": 637,
-    "implementationCommandCount": 62,
-    "implementationDigest": "39288402985a24c84852570c8137b888b15b3d9e1b40448d974085b25c0fcf46"
+    "implementationCommandCount": 65,
+    "implementationDigest": "1e1e2b424a391bd866585162da35a043dcca3d6f67e0a770a8f8c886007b677a"
   },
   "commands": [
     {
@@ -1073,6 +1073,20 @@
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
       "signature": "fn cleanup_invalid_workspaces( state: State<'_, AppState>, app: tauri::AppHandle, startup_trace: State<'_, DesktopStartupTrace>, ) -> Result<usize, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "clear_decision_model_credential",
+      "moduleId": "config",
+      "capabilityId": "setting.application.general",
+      "capabilityIds": [
+        "setting.application.general"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "clear_decision_model_credential",
+      "sourceFile": "src/apps/desktop/src/api/config_api.rs",
+      "signature": "fn clear_decision_model_credential( _state: State<'_, AppState>, _request: GetDecisionModelCredentialStatusRequest, ) -> Result<openbitfun_core::service::decision_model::DecisionModelCredentialStatus, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "clear_mcp_remote_auth",
@@ -3106,6 +3120,20 @@
       "sourceFile": "src/apps/desktop/src/api/custom_agent_api.rs",
       "signature": "fn get_custom_agent_detail( state: State<'_, AppState>, request: GetCustomAgentDetailRequest, ) -> Result<CustomAgentDetail, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "get_decision_model_credential_status",
+      "moduleId": "config",
+      "capabilityId": "setting.application.general",
+      "capabilityIds": [
+        "setting.application.general"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "get_decision_model_credential_status",
+      "sourceFile": "src/apps/desktop/src/api/config_api.rs",
+      "signature": "fn get_decision_model_credential_status( _state: State<'_, AppState>, _request: GetDecisionModelCredentialStatusRequest, ) -> Result<openbitfun_core::service::decision_model::DecisionModelCredentialStatus, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "get_default_review_team_definition",
@@ -8604,6 +8632,20 @@
       "rustPath": "save_cloud_speech_config",
       "sourceFile": "src/apps/desktop/src/api/config_api.rs",
       "signature": "fn save_cloud_speech_config( state: State<'_, AppState>, request: SaveCloudSpeechConfigRequest, ) -> Result<SaveCloudSpeechConfigResult, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
+      "id": "save_decision_model_credential",
+      "moduleId": "config",
+      "capabilityId": "setting.application.general",
+      "capabilityIds": [
+        "setting.application.general"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "save_decision_model_credential",
+      "sourceFile": "src/apps/desktop/src/api/config_api.rs",
+      "signature": "fn save_decision_model_credential( _state: State<'_, AppState>, request: openbitfun_core::service::decision_model::SaveDecisionModelCredentialRequest, ) -> Result<openbitfun_core::service::decision_model::DecisionModelCredentialStatus, String>",
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {

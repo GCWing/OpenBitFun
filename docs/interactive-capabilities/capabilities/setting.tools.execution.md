@@ -17,8 +17,8 @@ Manage agent tool permissions, presentation mode, concurrency, timeouts, deferre
 
 ## 完整功能清单 / Everything included
 
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 选择询问、自动批准或完全访问权限模式，并确认高风险警告
-  - Choose Ask, Auto-approve, or Full Access permission mode and acknowledge high-risk warnings
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 选择询问、自动审批或完全访问权限模式，并确认高风险警告
+  - Choose Ask, Automatic approval, or Full Access permission mode and acknowledge high-risk warnings
 - **智能体可直接控制 / Direct Agent control** · 控制权限模式选择器是否显示在聊天输入框下方
   - Choose whether the permission-mode selector appears below the chat composer
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 创建、排序和保存全局或项目级 Allow、Ask、Deny 规则

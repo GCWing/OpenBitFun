@@ -67,6 +67,9 @@ pub struct GetWebSearchCredentialStatusRequest {
     pub provider: String,
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct GetDecisionModelCredentialStatusRequest {}
+
 fn to_json_value<T: Serialize>(value: T, context: &str) -> Result<Value, String> {
     serde_json::to_value(value).map_err(|e| format!("Failed to serialize {}: {}", context, e))
 }
@@ -294,6 +297,36 @@ pub async fn clear_web_search_credential(
     openbitfun_core::service::web_search::clear_web_search_credential(request)
         .await
         .map_err(|error| format!("Failed to clear WebSearch credential: {error}"))
+}
+
+#[tauri::command]
+pub async fn get_decision_model_credential_status(
+    _state: State<'_, AppState>,
+    _request: GetDecisionModelCredentialStatusRequest,
+) -> Result<openbitfun_core::service::decision_model::DecisionModelCredentialStatus, String> {
+    openbitfun_core::service::decision_model::get_credential_status()
+        .await
+        .map_err(|error| format!("Failed to read decision-model credential status: {error}"))
+}
+
+#[tauri::command]
+pub async fn save_decision_model_credential(
+    _state: State<'_, AppState>,
+    request: openbitfun_core::service::decision_model::SaveDecisionModelCredentialRequest,
+) -> Result<openbitfun_core::service::decision_model::DecisionModelCredentialStatus, String> {
+    openbitfun_core::service::decision_model::save_credential(request)
+        .await
+        .map_err(|error| format!("Failed to save decision-model credential: {error}"))
+}
+
+#[tauri::command]
+pub async fn clear_decision_model_credential(
+    _state: State<'_, AppState>,
+    _request: GetDecisionModelCredentialStatusRequest,
+) -> Result<openbitfun_core::service::decision_model::DecisionModelCredentialStatus, String> {
+    openbitfun_core::service::decision_model::clear_credential()
+        .await
+        .map_err(|error| format!("Failed to clear decision-model credential: {error}"))
 }
 
 #[tauri::command]

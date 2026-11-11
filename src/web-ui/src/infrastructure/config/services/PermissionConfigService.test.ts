@@ -101,6 +101,45 @@ describe('PermissionConfigService', () => {
     });
   });
 
+  it('normalizes model approval settings', async () => {
+    configManagerMock.getConfig.mockResolvedValue({
+      policy: { preset: 'ask', rules: [] },
+      interaction: { auto_approve_ask: false },
+      approval: {
+        strategy: 'model',
+        model_kind: 'chat',
+        chat_model_id: 'approval-model',
+        timeout_ms: 999999,
+        on_ask: 'reject',
+        on_error: 'reject',
+      },
+    });
+    const { permissionConfigService } = await import('./PermissionConfigService');
+    await expect(permissionConfigService.getConfig()).resolves.toMatchObject({
+      approval: {
+        strategy: 'model',
+        model_kind: 'chat',
+        chat_model_id: 'approval-model',
+        timeout_ms: 300000,
+        on_ask: 'reject',
+        on_error: 'reject',
+      },
+    });
+  });
+
+  it('defaults an omitted approval timeout to 30 seconds', async () => {
+    configManagerMock.getConfig.mockResolvedValue({
+      policy: { preset: 'ask', rules: [] },
+      interaction: { auto_approve_ask: false },
+      approval: { strategy: 'model', model_kind: 'decision', chat_model_id: '' },
+    });
+    const { permissionConfigService } = await import('./PermissionConfigService');
+
+    await expect(permissionConfigService.getConfig()).resolves.toMatchObject({
+      approval: { timeout_ms: 30_000 },
+    });
+  });
+
   it('uses a narrow nested write for quick interaction changes', async () => {
     configManagerMock.getConfig.mockResolvedValue({
       policy: { preset: 'full_access', rules: [] },

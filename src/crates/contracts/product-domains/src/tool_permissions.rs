@@ -235,6 +235,88 @@ pub struct PermissionInteractionConfig {
     pub auto_approve_ask: bool,
 }
 
+/// The strategy used after static permission evaluation leaves a request in
+/// the `Ask` state.  This is deliberately separate from the static policy:
+/// approval can never widen a policy `Deny` or a runtime constraint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionApprovalStrategy {
+    #[default]
+    Interactive,
+    ImmediateAllow,
+    Model,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionApprovalModelKind {
+    #[default]
+    Chat,
+    Decision,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionApprovalOnAsk {
+    #[default]
+    User,
+    Reject,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionApprovalOnError {
+    #[default]
+    Ask,
+    Reject,
+}
+
+/// Model approval configuration. Defaults are fail-closed, so an existing
+/// `tool_permissions` record without this section remains valid.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PermissionApprovalConfig {
+    pub strategy: PermissionApprovalStrategy,
+    pub model_kind: PermissionApprovalModelKind,
+    pub chat_model_id: String,
+    pub timeout_ms: u64,
+    pub on_ask: PermissionApprovalOnAsk,
+    pub on_error: PermissionApprovalOnError,
+}
+
+impl Default for PermissionApprovalConfig {
+    fn default() -> Self {
+        Self {
+            strategy: PermissionApprovalStrategy::Interactive,
+            model_kind: PermissionApprovalModelKind::Chat,
+            chat_model_id: "fast".to_string(),
+            timeout_ms: 30_000,
+            on_ask: PermissionApprovalOnAsk::User,
+            on_error: PermissionApprovalOnError::Ask,
+        }
+    }
+}
+
+impl PermissionApprovalConfig {
+    pub fn is_default(value: &Self) -> bool {
+        value == &Self::default()
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.timeout_ms == 0 || self.timeout_ms > 300_000 {
+            return Err("permission approval timeout_ms must be between 1 and 300000".into());
+        }
+        if matches!(self.strategy, PermissionApprovalStrategy::Model) {
+            if self.model_kind == PermissionApprovalModelKind::Chat
+                && self.chat_model_id.trim().is_empty()
+            {
+                return Err("chat approval strategy requires a chat_model_id".into());
+            }
+        }
+        Ok(())
+    }
+}
+
 /// The interaction mode a dialog turn runs with.
 ///
 /// This is the single user-facing selection behind the permission control. It
@@ -252,7 +334,8 @@ pub enum PermissionMode {
     /// Every `ask` decision is raised to the user.
     #[default]
     Ask,
-    /// Static policy is unchanged; interactive `ask` is answered automatically.
+    /// Static policy is unchanged; runtime automatic approval evaluates each
+    /// `ask` request before deciding whether to allow it once or ask the user.
     AutoApprove,
     /// The policy baseline allows everything the later layers do not deny.
     FullAccess,
@@ -420,6 +503,8 @@ pub const fn resolve_permission_mode(layers: PermissionModeLayers) -> ResolvedPe
 pub struct ToolPermissionConfig {
     pub policy: PermissionPolicyConfig,
     pub interaction: PermissionInteractionConfig,
+    #[serde(skip_serializing_if = "PermissionApprovalConfig::is_default")]
+    pub approval: PermissionApprovalConfig,
 }
 
 /// Ordered inputs used to resolve one effective static permission ruleset.
@@ -606,6 +691,11 @@ pub enum PermissionReply {
 #[serde(rename_all = "snake_case")]
 pub enum PermissionReplySource {
     User,
+    ImmediateAllow,
+    Model,
+    ModelAsk,
+    ModelDeny,
+    /// Compatibility value for old clients and persisted audit records.
     AutoApprove,
     System,
 }

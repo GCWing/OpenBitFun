@@ -125,6 +125,15 @@ describe('resolveWsMethod', () => {
     expect(resolveWsMethod('clear_web_search_credential')).toBe(
       'config/clearWebSearchCredential'
     );
+    expect(resolveWsMethod('get_decision_model_credential_status')).toBe(
+      'config/getDecisionModelCredentialStatus'
+    );
+    expect(resolveWsMethod('save_decision_model_credential')).toBe(
+      'config/saveDecisionModelCredential'
+    );
+    expect(resolveWsMethod('clear_decision_model_credential')).toBe(
+      'config/clearDecisionModelCredential'
+    );
     expect(resolveWsMethod('validate_config')).toBe('config/validateConfig');
     expect(resolveWsMethod('i18n_get_current_language')).toBe(
       'i18n/getCurrentLanguage'
@@ -162,7 +171,7 @@ describe('resolveWsMethod', () => {
       'agent/submitDialogTurn'
     );
     expect(AGENT_COMMAND_SCHEMA.copy_session.method).toBe('session/fork');
-    expect(Object.keys(AGENT_COMMAND_SCHEMA).length).toBe(40);
+    expect(Object.keys(AGENT_COMMAND_SCHEMA).length).toBe(43);
 
     // Touch the locals so noUnusedLocals does not flag them under vitest's
     // transformed build (tsc --noEmit is the real gate; this is belt-and-suspenders).

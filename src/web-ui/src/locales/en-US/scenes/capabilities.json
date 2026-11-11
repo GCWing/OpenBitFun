@@ -530,7 +530,7 @@
             "title": "Execution & permissions",
             "summary": "Manage agent tool permissions, presentation mode, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
             "items": {
-              "permission-mode": "Choose Ask, Auto-approve, or Full Access permission mode and acknowledge high-risk warnings",
+              "permission-mode": "Choose Ask, Automatic approval, or Full Access permission mode and acknowledge high-risk warnings",
               "permission-selector": "Choose whether the permission-mode selector appears below the chat composer",
               "global-project-rules": "Create, reorder, and save global or project-level Allow, Ask, and Deny rules",
               "remembered-grants": "Review, revoke, or clear remembered project permission grants and audit records",

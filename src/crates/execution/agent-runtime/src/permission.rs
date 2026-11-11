@@ -34,6 +34,11 @@ pub const AUTO_APPROVE_ASK_CONTEXT_KEY: &str = "auto_approve_ask";
 /// layers with partial context.
 pub const PERMISSION_MODE_CONTEXT_KEY: &str = "permission_mode";
 
+/// Invocation-scoped approval strategy override. This is separate from the
+/// permission mode because `auto_approve` means immediate allow while model
+/// approval still evaluates every request.
+pub const PERMISSION_APPROVAL_STRATEGY_CONTEXT_KEY: &str = "permission_approval_strategy";
+
 /// Provider-neutral result of applying resolved policy and remembered grants.
 ///
 /// Product orchestration remains responsible for scope derivation, native hooks,

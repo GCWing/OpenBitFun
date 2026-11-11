@@ -151,6 +151,32 @@ pub(crate) async fn clear_web_search_credential(args: &Value) -> Result<Value, S
         .map_err(|error| format!("Failed to serialize WebSearch credential status: {error}"))
 }
 
+pub(crate) async fn get_decision_model_credential_status(_args: &Value) -> Result<Value, String> {
+    let status = openbitfun_core::service::decision_model::get_credential_status()
+        .await
+        .map_err(|error| format!("Failed to read decision-model credential status: {error}"))?;
+    serde_json::to_value(status)
+        .map_err(|error| format!("Failed to serialize decision-model credential status: {error}"))
+}
+
+pub(crate) async fn save_decision_model_credential(args: &Value) -> Result<Value, String> {
+    let request = serde_json::from_value(request_value(args).clone())
+        .map_err(|error| format!("Invalid decision-model credential request: {error}"))?;
+    let status = openbitfun_core::service::decision_model::save_credential(request)
+        .await
+        .map_err(|error| format!("Failed to save decision-model credential: {error}"))?;
+    serde_json::to_value(status)
+        .map_err(|error| format!("Failed to serialize decision-model credential status: {error}"))
+}
+
+pub(crate) async fn clear_decision_model_credential(_args: &Value) -> Result<Value, String> {
+    let status = openbitfun_core::service::decision_model::clear_credential()
+        .await
+        .map_err(|error| format!("Failed to clear decision-model credential: {error}"))?;
+    serde_json::to_value(status)
+        .map_err(|error| format!("Failed to serialize decision-model credential status: {error}"))
+}
+
 pub(crate) async fn get_agent_profile_config(args: &Value) -> Result<Value, String> {
     // Desktop Tauri takes top-level `agentId` (not always under `request`).
     let agent_id = crate::peer_host::args::get_string(args, "agentId")

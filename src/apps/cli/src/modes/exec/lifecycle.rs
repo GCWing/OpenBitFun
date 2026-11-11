@@ -65,11 +65,13 @@ pub(crate) enum ExecOutputFormat {
     StreamJson,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ExecApprovalMode {
     #[default]
     Reject,
     Auto,
+    /// Ask the configured approval model for a one-shot decision.
+    Model,
 }
 
 pub(super) type ExecTokenUsage = TurnTokenUsage;
@@ -465,7 +467,9 @@ impl ExecMode {
         session_options: ExecSessionOptions,
     ) -> Self {
         let approval_mode = match runtime.approval_policy() {
-            crate::runtime::approval::CliApprovalPolicy::Auto => ExecApprovalMode::Auto,
+            crate::runtime::approval::CliApprovalPolicy::ImmediateAllow => ExecApprovalMode::Auto,
+            crate::runtime::approval::CliApprovalPolicy::Auto => ExecApprovalMode::Model,
+            crate::runtime::approval::CliApprovalPolicy::Model => ExecApprovalMode::Model,
             crate::runtime::approval::CliApprovalPolicy::Ask
             | crate::runtime::approval::CliApprovalPolicy::DisableAuto
             | crate::runtime::approval::CliApprovalPolicy::Reject => ExecApprovalMode::Reject,

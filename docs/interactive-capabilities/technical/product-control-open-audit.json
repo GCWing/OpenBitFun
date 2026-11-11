@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "5370adbf2ff3746a6d89704d38498047e3430850234e4abc1cd6bb5eea2aac49",
+  "catalogDigest": "778506ae9a8c979c4cea4de5c575be1bde0517def6ee5854dba203665098fa29",
   "count": 196,
   "reasonCounts": {
     "externalAuth": 4,
@@ -2780,11 +2780,11 @@
     {
       "capabilityId": "setting.tools.execution",
       "itemId": "permission-mode",
-      "titleZh": "选择询问、自动批准或完全访问权限模式，并确认高风险警告",
-      "titleEn": "Choose Ask, Auto-approve, or Full Access permission mode and acknowledge high-risk warnings",
+      "titleZh": "选择询问、自动审批或完全访问权限模式，并确认高风险警告",
+      "titleEn": "Choose Ask, Automatic approval, or Full Access permission mode and acknowledge high-risk warnings",
       "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“选择询问、自动批准或完全访问权限模式，并确认高风险警告”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Choose Ask, Auto-approve, or Full Access permission mode and acknowledge high-risk warnings” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
+      "reasonZh": "“选择询问、自动审批或完全访问权限模式，并确认高风险警告”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
+      "reasonEn": "“Choose Ask, Automatic approval, or Full Access permission mode and acknowledge high-risk warnings” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
       "presentationTarget": {
         "kind": "settings",
         "pageId": "tools.execution",

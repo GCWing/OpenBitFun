@@ -11,6 +11,8 @@ pub mod config; // Config management
 pub(crate) mod coordination_persistence;
 #[cfg(all(feature = "agent-runtime", feature = "scheduled-jobs"))]
 pub mod cron; // Scheduled jobs
+#[cfg(feature = "decision-model-credentials")]
+pub mod decision_model; // Shared decision-model connection and credentials
 #[cfg(feature = "dispatch-store")]
 pub mod dispatch; // Outbound dispatch observer index and target contracts
 #[cfg(feature = "filesystem")]

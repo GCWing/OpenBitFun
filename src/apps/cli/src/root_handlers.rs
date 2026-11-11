@@ -187,7 +187,8 @@ pub(crate) async fn handle_exec_command(config: CliConfig, args: ExecCommandArgs
 
     let approval_policy = match args.approval_mode {
         ExecApprovalMode::Reject => crate::runtime::approval::CliApprovalPolicy::Reject,
-        ExecApprovalMode::Auto => crate::runtime::approval::CliApprovalPolicy::Auto,
+        ExecApprovalMode::Auto => crate::runtime::approval::CliApprovalPolicy::ImmediateAllow,
+        ExecApprovalMode::Model => crate::runtime::approval::CliApprovalPolicy::Model,
     };
     let runtime = match crate::initialize_core_services(
         workspace_path_resolved
