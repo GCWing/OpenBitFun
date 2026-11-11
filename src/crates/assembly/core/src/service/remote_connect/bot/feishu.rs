@@ -18,43 +18,95 @@ use tokio::sync::RwLock;
 
 use super::command_router::{
     complete_im_bot_pairing, current_bot_language, execute_forwarded_turn, handle_command,
-    parse_command, welcome_message, BotAction, BotChatState, BotInteractionHandler,
-    BotInteractiveRequest, BotLanguage, BotMessageSender, HandleResult,
+    parse_command, BotAction, BotChatState, BotInteractionHandler, BotInteractiveRequest,
+    BotLanguage, BotMessageSender, HandleResult,
 };
+use super::pairing_gate::{PairingGate, UnpairedDecision};
 use super::{
-    load_bot_persistence, update_bot_persistence, BotConfig, BotRuntimeFence, SavedBotConnection,
+    load_bot_persistence, BotConfig, BotRuntimeFence, SavedBotConnection, WorkspaceFileContent,
 };
 use crate::service::remote_connect::remote_server::ImageAttachment;
 
-#[derive(Debug, Clone)]
-struct PendingPairing {
-    created_at: i64,
+/// Feishu Open Platform calls this adapter makes. The provider client is the
+/// production implementation; unit tests substitute a recording fake.
+#[async_trait::async_trait]
+pub(crate) trait FeishuPlatform: Send + Sync {
+    fn config(&self) -> &FeishuConfig;
+    async fn send_message(&self, chat_id: &str, content: &str) -> Result<()>;
+    async fn send_action_card(
+        &self,
+        chat_id: &str,
+        language: BotLanguage,
+        content: &str,
+        actions: &[BotAction],
+    ) -> Result<()>;
+    async fn download_image_resource(
+        &self,
+        message_id: &str,
+        file_key: &str,
+    ) -> Result<feishu_provider::FeishuDownloadedImage>;
+    async fn send_artifact_to_chat(
+        &self,
+        chat_id: &str,
+        content: WorkspaceFileContent,
+    ) -> Result<()>;
+    async fn get_ws_endpoint(&self) -> Result<feishu_provider::FeishuWsEndpoint>;
+    async fn connect_ws(&self, url: &str) -> Result<feishu_provider::FeishuWsConnection>;
+}
+
+#[async_trait::async_trait]
+impl FeishuPlatform for FeishuBotApi {
+    fn config(&self) -> &FeishuConfig {
+        FeishuBotApi::config(self)
+    }
+
+    async fn send_message(&self, chat_id: &str, content: &str) -> Result<()> {
+        FeishuBotApi::send_message(self, chat_id, content).await
+    }
+
+    async fn send_action_card(
+        &self,
+        chat_id: &str,
+        language: BotLanguage,
+        content: &str,
+        actions: &[BotAction],
+    ) -> Result<()> {
+        FeishuBotApi::send_action_card(self, chat_id, language, content, actions).await
+    }
+
+    async fn download_image_resource(
+        &self,
+        message_id: &str,
+        file_key: &str,
+    ) -> Result<feishu_provider::FeishuDownloadedImage> {
+        FeishuBotApi::download_image_resource(self, message_id, file_key).await
+    }
+
+    async fn send_artifact_to_chat(
+        &self,
+        chat_id: &str,
+        content: WorkspaceFileContent,
+    ) -> Result<()> {
+        FeishuBotApi::send_artifact_to_chat(self, chat_id, content).await
+    }
+
+    async fn get_ws_endpoint(&self) -> Result<feishu_provider::FeishuWsEndpoint> {
+        FeishuBotApi::get_ws_endpoint(self).await
+    }
+
+    async fn connect_ws(&self, url: &str) -> Result<feishu_provider::FeishuWsConnection> {
+        FeishuBotApi::connect_ws(self, url).await
+    }
 }
 
 pub struct FeishuBot {
-    api: FeishuBotApi,
-    pending_pairings: Arc<RwLock<HashMap<String, PendingPairing>>>,
+    api: Arc<dyn FeishuPlatform>,
+    pairing_gate: PairingGate,
     chat_states: Arc<RwLock<HashMap<String, BotChatState>>>,
     runtime_fence: BotRuntimeFence,
 }
 
 impl FeishuBot {
-    fn invalid_pairing_code_message(language: BotLanguage) -> &'static str {
-        if language.is_chinese() {
-            "\u{914d}\u{5bf9}\u{7801}\u{65e0}\u{6548}\u{6216}\u{5df2}\u{8fc7}\u{671f}\u{ff0c}\u{8bf7}\u{91cd}\u{8bd5}\u{3002}"
-        } else {
-            "Invalid or expired pairing code. Please try again."
-        }
-    }
-
-    fn enter_pairing_code_message(language: BotLanguage) -> &'static str {
-        if language.is_chinese() {
-            "\u{8bf7}\u{8f93}\u{5165} OpenBitFun Desktop \u{4e2d}\u{663e}\u{793a}\u{7684} 6 \u{4f4d}\u{914d}\u{5bf9}\u{7801}\u{3002}"
-        } else {
-            "Please enter the 6-digit pairing code from OpenBitFun Desktop."
-        }
-    }
-
     fn unsupported_message_type_message(language: BotLanguage) -> &'static str {
         if language.is_chinese() {
             "\u{6682}\u{4e0d}\u{652f}\u{6301}\u{8fd9}\u{79cd}\u{6d88}\u{606f}\u{7c7b}\u{578b}\u{ff0c}\u{8bf7}\u{53d1}\u{9001}\u{6587}\u{672c}\u{6216}\u{56fe}\u{7247}\u{3002}"
@@ -93,9 +145,13 @@ impl FeishuBot {
     }
 
     pub(crate) fn new_fenced(config: FeishuConfig, runtime_fence: BotRuntimeFence) -> Self {
+        Self::with_platform(Arc::new(FeishuBotApi::new(config)), runtime_fence)
+    }
+
+    fn with_platform(api: Arc<dyn FeishuPlatform>, runtime_fence: BotRuntimeFence) -> Self {
         Self {
-            api: FeishuBotApi::new(config),
-            pending_pairings: Arc::new(RwLock::new(HashMap::new())),
+            api,
+            pairing_gate: PairingGate::new(),
             chat_states: Arc::new(RwLock::new(HashMap::new())),
             runtime_fence,
         }
@@ -216,6 +272,11 @@ impl FeishuBot {
     }
 
     async fn send_handle_result(&self, chat_id: &str, result: &HandleResult) -> Result<()> {
+        if !self.runtime_fence.is_lifecycle_current()
+            || !super::chat_is_paired(&self.chat_states, chat_id).await
+        {
+            return Ok(());
+        }
         let language = current_bot_language().await;
         let text = if result.menu.items.is_empty() && result.menu.title.is_empty() {
             result.reply.clone()
@@ -245,6 +306,7 @@ impl FeishuBot {
         for reference in super::extract_output_file_references(text) {
             if !self.runtime_fence.is_lifecycle_current()
                 || self.runtime_fence.identity_epoch() != identity_epoch
+                || !super::chat_is_paired(&self.chat_states, chat_id).await
             {
                 return;
             }
@@ -261,6 +323,7 @@ impl FeishuBot {
             .await;
             if !self.runtime_fence.is_lifecycle_current()
                 || self.runtime_fence.identity_epoch() != identity_epoch
+                || !super::chat_is_paired(&self.chat_states, chat_id).await
             {
                 return;
             }
@@ -284,75 +347,80 @@ impl FeishuBot {
         }
     }
 
+    /// Only a valid code can replace the chat that owns this connection.
+    /// Keep admission serialized with commands, and never create state for a refusal.
+    async fn handle_pairing_message(&self, chat_id: &str, text: &str) -> bool {
+        let epoch = self.runtime_fence.identity_epoch();
+        let mut states = self.chat_states.write().await;
+        if !self.runtime_fence.is_lifecycle_current() {
+            return false;
+        }
+        self.runtime_fence.reconcile_states(&mut states);
+        if states.get(chat_id).is_some_and(|state| state.paired) {
+            return true;
+        }
+        let connected_elsewhere = states.values().any(|state| state.paired);
+        match self
+            .pairing_gate
+            .evaluate(chat_id, text, connected_elsewhere)
+        {
+            UnpairedDecision::Pair => {
+                let mut state = BotChatState::new(chat_id.to_string());
+                let result = complete_im_bot_pairing(&mut state).await;
+                if !self.runtime_fence.is_lifecycle_current()
+                    || self.runtime_fence.identity_epoch() != epoch
+                {
+                    return false;
+                }
+                states.clear();
+                states.insert(chat_id.to_string(), state.clone());
+                self.persist_chat_state(chat_id, &state).await;
+                drop(states);
+                self.send_handle_result(chat_id, &result).await.ok();
+                true
+            }
+            UnpairedDecision::Reply(reply) => {
+                drop(states);
+                let language = current_bot_language().await;
+                if self.runtime_fence.is_lifecycle_current()
+                    && self.runtime_fence.identity_epoch() == epoch
+                {
+                    let _ = self.send_message(chat_id, &reply.text(language)).await;
+                }
+                false
+            }
+            UnpairedDecision::Silent => false,
+        }
+    }
+
     pub async fn register_pairing(&self, pairing_code: &str) -> Result<()> {
-        self.pending_pairings.write().await.insert(
-            pairing_code.to_string(),
-            PendingPairing {
-                created_at: chrono::Utc::now().timestamp(),
-            },
-        );
+        self.pairing_gate.register(pairing_code);
         Ok(())
     }
 
     pub async fn verify_pairing_code(&self, code: &str) -> bool {
-        let mut pairings = self.pending_pairings.write().await;
-        if let Some(p) = pairings.remove(code) {
-            let age = chrono::Utc::now().timestamp() - p.created_at;
-            return age < 300;
-        }
-        false
+        self.pairing_gate.consume(code)
     }
 
     async fn handle_pairing_event_payload(&self, payload: &[u8]) -> Option<String> {
-        let event: serde_json::Value = serde_json::from_slice(payload).ok()?;
-
-        if let Some(parsed) = feishu_provider::parse_message_event_full(&event) {
-            let language = current_bot_language().await;
-            let chat_id = parsed.chat_id;
-            let msg_text = parsed.text;
-            let trimmed = msg_text.trim();
-
-            if trimmed == "/start" {
-                self.send_message(&chat_id, welcome_message(language))
-                    .await
-                    .ok();
-            } else if trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_digit()) {
-                if self.verify_pairing_code(trimmed).await {
-                    info!("Feishu pairing successful, chat_id={chat_id}");
-                    let mut state = BotChatState::new(chat_id.clone());
-                    let identity_epoch = self.runtime_fence.identity_epoch();
-                    let result = complete_im_bot_pairing(&mut state).await;
-                    if !self.runtime_fence.is_lifecycle_current() {
-                        return None;
-                    }
-                    let mut states = self.chat_states.write().await;
-                    self.runtime_fence.reconcile_states(&mut states);
-                    self.runtime_fence
-                        .sanitize_after_epoch(identity_epoch, &mut state);
-                    states.insert(chat_id.clone(), state.clone());
-                    drop(states);
-                    self.persist_chat_state(&chat_id, &state).await;
-                    self.send_handle_result(&chat_id, &result).await.ok();
-
-                    return Some(chat_id);
-                } else {
-                    self.send_message(&chat_id, Self::invalid_pairing_code_message(language))
-                        .await
-                        .ok();
-                }
-            } else {
-                self.send_message(&chat_id, Self::enter_pairing_code_message(language))
-                    .await
-                    .ok();
-            }
-        } else if let Some(chat_id) = feishu_provider::extract_message_chat_id(&event) {
-            let language = current_bot_language().await;
-            self.send_message(&chat_id, Self::enter_pairing_code_message(language))
-                .await
-                .ok();
+        if !self.runtime_fence.is_lifecycle_current() {
+            return None;
         }
-        None
+        let event: serde_json::Value = serde_json::from_slice(payload).ok()?;
+        let (chat_id, text) =
+            if let Some(parsed) = feishu_provider::parse_message_event_full(&event) {
+                (parsed.chat_id, parsed.text)
+            } else {
+                (
+                    feishu_provider::extract_message_chat_id(&event)?,
+                    String::new(),
+                )
+            };
+        self.handle_pairing_message(&chat_id, &text)
+            .await
+            .then_some(chat_id)
     }
+
     pub async fn wait_for_pairing(
         &self,
         stop_rx: &mut tokio::sync::watch::Receiver<bool>,
@@ -486,49 +554,58 @@ impl FeishuBot {
         let Ok(event) = serde_json::from_slice::<serde_json::Value>(payload) else {
             return;
         };
+        let bot = self.clone();
+        tokio::spawn(async move {
+            bot.dispatch_event(event).await;
+        });
+    }
 
+    async fn dispatch_event(self: &Arc<Self>, event: serde_json::Value) {
+        if !self.runtime_fence.is_lifecycle_current() {
+            return;
+        }
         if let Some(parsed) = feishu_provider::parse_message_event_full(&event) {
-            let bot = self.clone();
-            tokio::spawn(async move {
-                const MAX_IMAGES: usize = 5;
-                let language = current_bot_language().await;
-                let truncated = parsed.image_keys.len() > MAX_IMAGES;
-                let keys_to_use = if truncated {
-                    &parsed.image_keys[..MAX_IMAGES]
-                } else {
-                    &parsed.image_keys
-                };
-                let images = if keys_to_use.is_empty() {
-                    vec![]
-                } else {
-                    bot.download_images(&parsed.message_id, keys_to_use).await
-                };
-                if truncated {
-                    let discarded = parsed.image_keys.len() - MAX_IMAGES;
-                    let msg = Self::image_truncated_message(language, MAX_IMAGES, discarded);
-                    bot.send_message(&parsed.chat_id, &msg).await.ok();
-                }
-                let text = if parsed.text.is_empty() && !images.is_empty() {
-                    Self::image_placeholder_message(language)
-                } else {
-                    parsed.text
-                };
-                bot.handle_incoming_message(&parsed.chat_id, &text, images)
+            if !super::chat_is_paired(&self.chat_states, parsed.chat_id.as_str()).await {
+                self.handle_pairing_message(&parsed.chat_id, &parsed.text)
                     .await;
-            });
+                return;
+            }
+            const MAX_IMAGES: usize = 5;
+            let language = current_bot_language().await;
+            let truncated = parsed.image_keys.len() > MAX_IMAGES;
+            let keys_to_use = if truncated {
+                &parsed.image_keys[..MAX_IMAGES]
+            } else {
+                &parsed.image_keys
+            };
+            let images = if keys_to_use.is_empty() {
+                vec![]
+            } else {
+                self.download_images(&parsed.message_id, keys_to_use).await
+            };
+            if truncated {
+                let discarded = parsed.image_keys.len() - MAX_IMAGES;
+                let msg = Self::image_truncated_message(language, MAX_IMAGES, discarded);
+                self.send_message(&parsed.chat_id, &msg).await.ok();
+            }
+            let text = if parsed.text.is_empty() && !images.is_empty() {
+                Self::image_placeholder_message(language)
+            } else {
+                parsed.text
+            };
+            self.handle_incoming_message(&parsed.chat_id, &text, images)
+                .await;
         } else if let Some((chat_id, cmd)) = feishu_provider::parse_card_action_event(&event) {
-            let bot = self.clone();
-            tokio::spawn(async move {
-                bot.handle_incoming_message(&chat_id, &cmd, vec![]).await;
-            });
+            self.handle_incoming_message(&chat_id, &cmd, vec![]).await;
         } else if let Some(chat_id) = feishu_provider::extract_message_chat_id(&event) {
-            let bot = self.clone();
-            tokio::spawn(async move {
-                let language = current_bot_language().await;
-                bot.send_message(&chat_id, Self::unsupported_message_type_message(language))
-                    .await
-                    .ok();
-            });
+            if !super::chat_is_paired(&self.chat_states, chat_id.as_str()).await {
+                self.handle_pairing_message(&chat_id, "").await;
+                return;
+            }
+            let language = current_bot_language().await;
+            self.send_message(&chat_id, Self::unsupported_message_type_message(language))
+                .await
+                .ok();
         }
     }
     async fn handle_incoming_message(
@@ -543,45 +620,12 @@ impl FeishuBot {
         let mut states = self.chat_states.write().await;
         let command_identity_epoch = self.runtime_fence.identity_epoch();
         self.runtime_fence.reconcile_states(&mut states);
-        let state = states.entry(chat_id.to_string()).or_insert_with(|| {
-            let mut s = BotChatState::new(chat_id.to_string());
-            s.paired = true;
-            s
-        });
-        let language = current_bot_language().await;
-
-        if !state.paired {
-            let trimmed = text.trim();
-            if trimmed == "/start" {
-                self.send_message(chat_id, welcome_message(language))
-                    .await
-                    .ok();
-                return;
-            }
-            if trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_digit()) {
-                if self.verify_pairing_code(trimmed).await {
-                    let identity_epoch = self.runtime_fence.identity_epoch();
-                    let result = complete_im_bot_pairing(state).await;
-                    self.runtime_fence
-                        .sanitize_after_epoch(identity_epoch, state);
-                    if !self.runtime_fence.is_lifecycle_current() {
-                        return;
-                    }
-                    self.send_handle_result(chat_id, &result).await.ok();
-                    self.persist_chat_state(chat_id, state).await;
-                    return;
-                } else {
-                    self.send_message(chat_id, Self::invalid_pairing_code_message(language))
-                        .await
-                        .ok();
-                    return;
-                }
-            }
-            self.send_message(chat_id, Self::enter_pairing_code_message(language))
-                .await
-                .ok();
+        if !states.get(chat_id).is_some_and(|state| state.paired) {
+            drop(states);
+            self.handle_pairing_message(chat_id, text).await;
             return;
         }
+        let state = states.get_mut(chat_id).expect("paired chat exists");
 
         if self.runtime_fence.identity_epoch() != command_identity_epoch {
             return;
@@ -634,6 +678,7 @@ impl FeishuBot {
                     Box::pin(async move {
                         if !msg_bot.runtime_fence.is_lifecycle_current()
                             || msg_bot.runtime_fence.identity_epoch() != output_identity_epoch
+                            || !super::chat_is_paired(&msg_bot.chat_states, msg_cid.as_str()).await
                         {
                             return;
                         }
@@ -654,6 +699,7 @@ impl FeishuBot {
                 .await;
                 if !bot.runtime_fence.is_lifecycle_current()
                     || bot.runtime_fence.identity_epoch() != output_identity_epoch
+                    || !super::chat_is_paired(&bot.chat_states, cid.as_str()).await
                 {
                     return;
                 }
@@ -698,11 +744,9 @@ impl FeishuBot {
         }
         let mut states = self.chat_states.write().await;
         self.runtime_fence.reconcile_states(&mut states);
-        let state = states.entry(chat_id.to_string()).or_insert_with(|| {
-            let mut s = BotChatState::new(chat_id.to_string());
-            s.paired = true;
-            s
-        });
+        let Some(state) = states.get_mut(chat_id).filter(|state| state.paired) else {
+            return;
+        };
         if self.runtime_fence.identity_epoch() != identity_epoch {
             return;
         }
@@ -734,15 +778,435 @@ impl FeishuBot {
             chat_state: snapshot,
             connected_at: chrono::Utc::now().timestamp(),
         };
-        self.runtime_fence.commit_if_current(|| {
-            update_bot_persistence(|data| data.upsert(connection));
-        });
+        self.runtime_fence.persist_connection(connection);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::feishu_provider;
+    use super::super::test_support::{
+        legacy_saved_connection, paired_state, question, PAIRING_CODE,
+    };
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex as StdMutex;
+
+    const OWNER: &str = "oc_owner";
+    const STRANGER: &str = "oc_stranger";
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum Sent {
+        Text { chat_id: String, text: String },
+        Card { chat_id: String },
+        Artifact { chat_id: String },
+    }
+
+    impl Sent {
+        fn chat_id(&self) -> &str {
+            match self {
+                Self::Text { chat_id, .. }
+                | Self::Card { chat_id }
+                | Self::Artifact { chat_id } => chat_id,
+            }
+        }
+    }
+
+    /// Records every outbound call; the event socket is driven by the tests.
+    struct FakeFeishu {
+        config: FeishuConfig,
+        sent: StdMutex<Vec<Sent>>,
+        image_downloads: AtomicUsize,
+    }
+
+    impl FakeFeishu {
+        fn record(&self, sent: Sent) {
+            self.sent.lock().unwrap().push(sent);
+        }
+
+        fn sent_to(&self, chat_id: &str) -> Vec<Sent> {
+            self.sent
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|sent| sent.chat_id() == chat_id)
+                .cloned()
+                .collect()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl FeishuPlatform for FakeFeishu {
+        fn config(&self) -> &FeishuConfig {
+            &self.config
+        }
+
+        async fn send_message(&self, chat_id: &str, content: &str) -> Result<()> {
+            self.record(Sent::Text {
+                chat_id: chat_id.to_string(),
+                text: content.to_string(),
+            });
+            Ok(())
+        }
+
+        async fn send_action_card(
+            &self,
+            chat_id: &str,
+            _language: BotLanguage,
+            _content: &str,
+            _actions: &[BotAction],
+        ) -> Result<()> {
+            self.record(Sent::Card {
+                chat_id: chat_id.to_string(),
+            });
+            Ok(())
+        }
+
+        async fn download_image_resource(
+            &self,
+            _message_id: &str,
+            _file_key: &str,
+        ) -> Result<feishu_provider::FeishuDownloadedImage> {
+            self.image_downloads.fetch_add(1, Ordering::SeqCst);
+            Ok(feishu_provider::FeishuDownloadedImage {
+                content_type: "image/png".to_string(),
+                bytes: vec![1, 2, 3],
+            })
+        }
+
+        async fn send_artifact_to_chat(
+            &self,
+            chat_id: &str,
+            _content: WorkspaceFileContent,
+        ) -> Result<()> {
+            self.record(Sent::Artifact {
+                chat_id: chat_id.to_string(),
+            });
+            Ok(())
+        }
+
+        async fn get_ws_endpoint(&self) -> Result<feishu_provider::FeishuWsEndpoint> {
+            Err(anyhow!("the fake has no event socket"))
+        }
+
+        async fn connect_ws(&self, _url: &str) -> Result<feishu_provider::FeishuWsConnection> {
+            Err(anyhow!("the fake has no event socket"))
+        }
+    }
+
+    fn fake_bot() -> (Arc<FakeFeishu>, Arc<FeishuBot>) {
+        let fake = Arc::new(FakeFeishu {
+            config: FeishuConfig {
+                app_id: "fixture-app".to_string(),
+                app_secret: "fixture-secret".to_string(),
+            },
+            sent: StdMutex::default(),
+            image_downloads: AtomicUsize::new(0),
+        });
+        let bot = Arc::new(FeishuBot::with_platform(
+            fake.clone(),
+            BotRuntimeFence::standalone(),
+        ));
+        (fake, bot)
+    }
+
+    /// A bot whose first pairing already completed with `OWNER`.
+    async fn connected_bot() -> (Arc<FakeFeishu>, Arc<FeishuBot>) {
+        let (fake, bot) = fake_bot();
+        bot.restore_chat_state(OWNER, paired_state(OWNER)).await;
+        (fake, bot)
+    }
+
+    fn saved_chat_id(bot: &FeishuBot) -> Option<String> {
+        bot.runtime_fence
+            .saved_connection("feishu")
+            .map(|saved| saved.chat_id)
+    }
+
+    fn message_event(chat_id: &str, message_type: &str, content: serde_json::Value) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "header": { "event_type": "im.message.receive_v1" },
+            "event": {
+                "message": {
+                    "message_id": "om_fixture",
+                    "message_type": message_type,
+                    "chat_id": chat_id,
+                    "content": content.to_string()
+                }
+            }
+        }))
+        .unwrap()
+    }
+
+    fn text_event(chat_id: &str, text: &str) -> Vec<u8> {
+        message_event(chat_id, "text", serde_json::json!({ "text": text }))
+    }
+
+    fn image_event(chat_id: &str) -> Vec<u8> {
+        message_event(
+            chat_id,
+            "image",
+            serde_json::json!({ "image_key": "img_fixture" }),
+        )
+    }
+
+    fn file_event(chat_id: &str) -> Vec<u8> {
+        message_event(
+            chat_id,
+            "file",
+            serde_json::json!({ "file_key": "file_fixture" }),
+        )
+    }
+
+    async fn dispatch(bot: &Arc<FeishuBot>, payload: Vec<u8>) {
+        bot.dispatch_event(serde_json::from_slice(&payload).unwrap())
+            .await;
+    }
+
+    #[tokio::test]
+    async fn unknown_chat_after_first_pairing_is_refused_and_cannot_run_a_command() {
+        let (fake, bot) = connected_bot().await;
+
+        dispatch(&bot, text_event(STRANGER, "/help")).await;
+
+        assert!(
+            !bot.chat_states.read().await.contains_key(STRANGER),
+            "a chat that never paired must not gain state"
+        );
+        let replies = fake.sent_to(STRANGER);
+        assert_eq!(replies.len(), 1, "one explanatory reply: {replies:?}");
+        assert!(
+            matches!(replies[0], Sent::Text { .. }),
+            "an unpaired chat must not receive a command menu: {replies:?}"
+        );
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(OWNER));
+
+        dispatch(&bot, text_event(OWNER, "/help")).await;
+        assert!(
+            fake.sent_to(OWNER)
+                .iter()
+                .any(|sent| matches!(sent, Sent::Card { .. })),
+            "the paired chat keeps its commands"
+        );
+    }
+
+    #[tokio::test]
+    async fn outbound_paths_never_create_state_or_reach_an_unpaired_chat() {
+        let (fake, bot) = connected_bot().await;
+        let epoch = bot.runtime_fence.identity_epoch();
+
+        bot.deliver_interaction(STRANGER, question("tool-1"), epoch)
+            .await;
+        bot.notify_files_ready(
+            STRANGER,
+            "missing-session",
+            None,
+            "[report](computer://report.pdf)",
+            epoch,
+        )
+        .await;
+
+        assert!(!bot.chat_states.read().await.contains_key(STRANGER));
+        assert_eq!(fake.sent_to(STRANGER), Vec::<Sent>::new());
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(OWNER));
+
+        // A chat that is known but never completed pairing is treated the same.
+        bot.chat_states.write().await.insert(
+            STRANGER.to_string(),
+            BotChatState::new(STRANGER.to_string()),
+        );
+        bot.deliver_interaction(STRANGER, question("tool-2"), epoch)
+            .await;
+        assert_eq!(fake.sent_to(STRANGER), Vec::<Sent>::new());
+        let states = bot.chat_states.read().await;
+        let stranger = states.get(STRANGER).expect("state was inserted above");
+        assert!(!stranger.paired);
+        assert!(stranger.pending_action.is_none());
+        drop(states);
+
+        // The paired chat still receives its interaction.
+        bot.deliver_interaction(OWNER, question("tool-3"), epoch)
+            .await;
+        assert_eq!(fake.sent_to(OWNER).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn wrong_codes_are_limited_per_chat_without_locking_the_owner_or_burning_the_code() {
+        let (fake, bot) = fake_bot();
+        bot.register_pairing(PAIRING_CODE).await.unwrap();
+
+        for _ in 0..5 {
+            let paired = bot
+                .handle_pairing_event_payload(&text_event(STRANGER, "000000"))
+                .await;
+            assert_eq!(paired, None);
+        }
+        // The right code no longer helps a chat that used up its attempts.
+        let paired = bot
+            .handle_pairing_event_payload(&text_event(STRANGER, PAIRING_CODE))
+            .await;
+        assert_eq!(paired, None);
+        let paired = bot
+            .handle_pairing_event_payload(&text_event(OWNER, "111111"))
+            .await;
+        assert_eq!(paired, None);
+        let paired = bot
+            .handle_pairing_event_payload(&text_event(OWNER, PAIRING_CODE))
+            .await;
+        assert_eq!(paired.as_deref(), Some(OWNER));
+
+        let states = bot.chat_states.read().await;
+        assert!(states.get(OWNER).is_some_and(|state| state.paired));
+        assert!(!states.contains_key(STRANGER));
+        drop(states);
+        // Four "wrong code" replies, then one lockout notice, then silence.
+        assert_eq!(fake.sent_to(STRANGER).len(), 5);
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(OWNER));
+    }
+
+    #[tokio::test]
+    async fn repeated_messages_from_an_unpaired_chat_get_a_bounded_number_of_replies() {
+        // While the first pairing is still pending.
+        let (fake, bot) = fake_bot();
+        bot.register_pairing(PAIRING_CODE).await.unwrap();
+        for index in 0..20 {
+            let payload = match index % 3 {
+                0 => text_event(STRANGER, "hello"),
+                1 => image_event(STRANGER),
+                _ => file_event(STRANGER),
+            };
+            assert_eq!(bot.handle_pairing_event_payload(&payload).await, None);
+        }
+        let paired = bot
+            .handle_pairing_event_payload(&text_event(OWNER, PAIRING_CODE))
+            .await;
+        assert_eq!(paired.as_deref(), Some(OWNER));
+        let replies = fake.sent_to(STRANGER).len();
+        assert!(
+            (1..=3).contains(&replies),
+            "replies while pairing: {replies}"
+        );
+
+        // After pairing, in the message loop: text, images and other types.
+        for index in 0..20 {
+            let payload = match index % 3 {
+                0 => text_event(STRANGER, "hello again"),
+                1 => image_event(STRANGER),
+                _ => file_event(STRANGER),
+            };
+            dispatch(&bot, payload).await;
+        }
+        let replies = fake.sent_to(STRANGER).len() - replies;
+        assert!(
+            (1..=3).contains(&replies),
+            "replies when connected: {replies}"
+        );
+        assert!(!bot.chat_states.read().await.contains_key(STRANGER));
+        assert_eq!(
+            fake.image_downloads.load(Ordering::SeqCst),
+            0,
+            "an unpaired chat must not make the host download its images"
+        );
+    }
+
+    #[tokio::test]
+    async fn code_issued_for_a_connected_bot_moves_the_connection_to_the_chat_that_presents_it() {
+        let (fake, bot) = connected_bot().await;
+        bot.register_pairing(PAIRING_CODE).await.unwrap();
+
+        dispatch(&bot, text_event(STRANGER, "111111")).await;
+        assert!(!bot.chat_states.read().await.contains_key(STRANGER));
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(OWNER));
+
+        dispatch(&bot, text_event(STRANGER, PAIRING_CODE)).await;
+        let states = bot.chat_states.read().await;
+        assert!(states.get(STRANGER).is_some_and(|state| state.paired));
+        assert!(
+            !states.contains_key(OWNER),
+            "one connection has one chat: the previous chat is no longer paired"
+        );
+        drop(states);
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(STRANGER));
+        assert!(
+            !bot.verify_pairing_code(PAIRING_CODE).await,
+            "the pairing code is single use"
+        );
+        assert!(!fake.sent_to(STRANGER).is_empty());
+    }
+
+    #[tokio::test]
+    async fn legacy_persisted_paired_chat_is_restored_without_pairing_again() {
+        let saved = legacy_saved_connection(
+            "feishu",
+            OWNER,
+            serde_json::json!({
+                "bot_type": "feishu",
+                "app_id": "fixture-app",
+                "app_secret": "fixture-secret"
+            }),
+        );
+        let (fake, bot) = fake_bot();
+
+        bot.restore_chat_state(OWNER, saved.chat_state.clone())
+            .await;
+        dispatch(&bot, text_event(OWNER, "/help")).await;
+
+        assert_eq!(
+            fake.sent_to(OWNER)
+                .iter()
+                .filter(|sent| matches!(sent, Sent::Card { .. }))
+                .count(),
+            1,
+            "the restored chat reaches the command router without a pairing prompt"
+        );
+        let resaved = bot
+            .runtime_fence
+            .saved_connection("feishu")
+            .expect("restored connection is saved");
+        assert_eq!(resaved.chat_id, OWNER);
+        assert!(resaved.chat_state.paired);
+        // The stored shape is unchanged: an older build reads it back.
+        let stored = serde_json::to_value(&resaved.chat_state).unwrap();
+        let legacy = serde_json::to_value(&saved.chat_state).unwrap();
+        assert_eq!(stored, legacy);
+        assert_eq!(stored["paired"], serde_json::json!(true));
+    }
+
+    #[tokio::test]
+    async fn retired_or_reidentified_bot_neither_answers_nor_delivers() {
+        let (fake, bot) = connected_bot().await;
+        let epoch = bot.runtime_fence.identity_epoch();
+
+        // An account change invalidates deliveries that started before it.
+        bot.runtime_fence
+            .account_identity_epoch
+            .fetch_add(1, Ordering::AcqRel);
+        bot.deliver_interaction(OWNER, question("tool-1"), epoch)
+            .await;
+        bot.notify_files_ready(
+            OWNER,
+            "missing-session",
+            None,
+            "[report](computer://report.pdf)",
+            epoch,
+        )
+        .await;
+        assert_eq!(fake.sent_to(OWNER), Vec::<Sent>::new());
+
+        // A replaced instance stays silent for paired and unpaired chats alike.
+        bot.runtime_fence.slot.advance();
+        dispatch(&bot, text_event(OWNER, "/help")).await;
+        dispatch(&bot, text_event(STRANGER, "/help")).await;
+        dispatch(&bot, file_event(STRANGER)).await;
+        bot.deliver_interaction(
+            OWNER,
+            question("tool-2"),
+            bot.runtime_fence.identity_epoch(),
+        )
+        .await;
+        assert_eq!(fake.sent.lock().unwrap().len(), 0);
+        assert!(!bot.chat_states.read().await.contains_key(STRANGER));
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(OWNER));
+    }
 
     #[test]
     fn parse_text_message_event() {

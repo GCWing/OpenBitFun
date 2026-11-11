@@ -6,7 +6,9 @@
 
 use anyhow::{anyhow, Result};
 use log::{error, info, warn};
-use openbitfun_services_integrations::remote_connect::bot::telegram::TelegramBotApi;
+use openbitfun_services_integrations::remote_connect::bot::telegram::{
+    TelegramBotApi, TelegramIncomingMessage,
+};
 pub use openbitfun_services_integrations::remote_connect::bot::telegram::{
     TelegramConfig, MAX_TELEGRAM_FILE_BYTES,
 };
@@ -16,53 +18,92 @@ use tokio::sync::RwLock;
 
 use super::command_router::{
     complete_im_bot_pairing, current_bot_language, execute_forwarded_turn, handle_command,
-    parse_command, welcome_message, BotAction, BotChatState, BotInteractionHandler,
-    BotInteractiveRequest, BotLanguage, BotMessageSender, HandleResult,
+    parse_command, BotAction, BotChatState, BotInteractionHandler, BotInteractiveRequest,
+    BotMessageSender, HandleResult,
 };
+use super::pairing_gate::{PairingGate, UnpairedDecision};
 use super::{
-    load_bot_persistence, update_bot_persistence, BotConfig, BotRuntimeFence, SavedBotConnection,
+    load_bot_persistence, BotConfig, BotRuntimeFence, SavedBotConnection, WorkspaceFileContent,
 };
 use crate::service::remote_connect::remote_server::ImageAttachment;
 
+/// Telegram Bot API calls this adapter makes. The provider client is the
+/// production implementation; unit tests substitute a scripted fake.
+#[async_trait::async_trait]
+pub(crate) trait TelegramPlatform: Send + Sync {
+    fn bot_token(&self) -> &str;
+    async fn send_message(&self, chat_id: i64, text: &str) -> Result<()>;
+    async fn send_message_with_keyboard(
+        &self,
+        chat_id: i64,
+        text: &str,
+        actions: &[BotAction],
+    ) -> Result<()>;
+    async fn send_artifact(&self, chat_id: i64, content: WorkspaceFileContent) -> Result<()>;
+    async fn set_bot_commands(&self) -> Result<()>;
+    async fn poll_updates(
+        &self,
+        last_update_id: i64,
+    ) -> Result<(i64, Vec<TelegramIncomingMessage>)>;
+}
+
+#[async_trait::async_trait]
+impl TelegramPlatform for TelegramBotApi {
+    fn bot_token(&self) -> &str {
+        &self.config().bot_token
+    }
+
+    async fn send_message(&self, chat_id: i64, text: &str) -> Result<()> {
+        TelegramBotApi::send_message(self, chat_id, text).await
+    }
+
+    async fn send_message_with_keyboard(
+        &self,
+        chat_id: i64,
+        text: &str,
+        actions: &[BotAction],
+    ) -> Result<()> {
+        TelegramBotApi::send_message_with_keyboard(self, chat_id, text, actions).await
+    }
+
+    async fn send_artifact(&self, chat_id: i64, content: WorkspaceFileContent) -> Result<()> {
+        TelegramBotApi::send_artifact(self, chat_id, content).await
+    }
+
+    async fn set_bot_commands(&self) -> Result<()> {
+        TelegramBotApi::set_bot_commands(self).await
+    }
+
+    async fn poll_updates(
+        &self,
+        last_update_id: i64,
+    ) -> Result<(i64, Vec<TelegramIncomingMessage>)> {
+        TelegramBotApi::poll_updates(self, last_update_id).await
+    }
+}
+
 pub struct TelegramBot {
-    api: TelegramBotApi,
-    pending_pairings: Arc<RwLock<HashMap<String, PendingPairing>>>,
+    api: Arc<dyn TelegramPlatform>,
+    pairing_gate: PairingGate,
     last_update_id: Arc<RwLock<i64>>,
     chat_states: Arc<RwLock<HashMap<i64, BotChatState>>>,
     runtime_fence: BotRuntimeFence,
 }
 
-#[derive(Debug, Clone)]
-struct PendingPairing {
-    created_at: i64,
-}
-
 impl TelegramBot {
-    fn invalid_pairing_code_message(language: BotLanguage) -> &'static str {
-        if language.is_chinese() {
-            "配对码无效或已过期，请重试。"
-        } else {
-            "Invalid or expired pairing code. Please try again."
-        }
-    }
-
-    fn enter_pairing_code_message(language: BotLanguage) -> &'static str {
-        if language.is_chinese() {
-            "请输入 OpenBitFun Desktop 中显示的 6 位配对码。"
-        } else {
-            "Please enter the 6-digit pairing code from OpenBitFun Desktop."
-        }
-    }
-
     #[cfg(test)]
     pub fn new(config: TelegramConfig) -> Self {
         Self::new_fenced(config, BotRuntimeFence::standalone())
     }
 
     pub(crate) fn new_fenced(config: TelegramConfig, runtime_fence: BotRuntimeFence) -> Self {
+        Self::with_platform(Arc::new(TelegramBotApi::new(config)), runtime_fence)
+    }
+
+    fn with_platform(api: Arc<dyn TelegramPlatform>, runtime_fence: BotRuntimeFence) -> Self {
         Self {
-            api: TelegramBotApi::new(config),
-            pending_pairings: Arc::new(RwLock::new(HashMap::new())),
+            api,
+            pairing_gate: PairingGate::new(),
             last_update_id: Arc::new(RwLock::new(0)),
             chat_states: Arc::new(RwLock::new(HashMap::new())),
             runtime_fence,
@@ -146,6 +187,7 @@ impl TelegramBot {
         for reference in super::extract_output_file_references(text) {
             if !self.runtime_fence.is_lifecycle_current()
                 || self.runtime_fence.identity_epoch() != identity_epoch
+                || !super::chat_is_paired(&self.chat_states, &chat_id).await
             {
                 return;
             }
@@ -162,6 +204,7 @@ impl TelegramBot {
             .await;
             if !self.runtime_fence.is_lifecycle_current()
                 || self.runtime_fence.identity_epoch() != identity_epoch
+                || !super::chat_is_paired(&self.chat_states, &chat_id).await
             {
                 return;
             }
@@ -191,6 +234,11 @@ impl TelegramBot {
     /// text is replaced with a friendlier prompt, and a Cancel Task button is
     /// added via the inline keyboard.
     async fn send_handle_result(&self, chat_id: i64, result: &HandleResult) {
+        if !self.runtime_fence.is_lifecycle_current()
+            || !super::chat_is_paired(&self.chat_states, &chat_id).await
+        {
+            return;
+        }
         let text = if result.menu.items.is_empty() && result.menu.title.is_empty() {
             result.reply.clone()
         } else {
@@ -222,23 +270,60 @@ impl TelegramBot {
         self.api.set_bot_commands().await
     }
 
+    /// Only a valid code can replace the chat that owns this connection.
+    /// Keep admission serialized with commands, and never create state for a refusal.
+    async fn handle_pairing_message(&self, chat_id: i64, text: &str) -> bool {
+        let epoch = self.runtime_fence.identity_epoch();
+        let mut states = self.chat_states.write().await;
+        if !self.runtime_fence.is_lifecycle_current() {
+            return false;
+        }
+        self.runtime_fence.reconcile_states(&mut states);
+        if states.get(&chat_id).is_some_and(|state| state.paired) {
+            return true;
+        }
+        let connected_elsewhere = states.values().any(|state| state.paired);
+        match self
+            .pairing_gate
+            .evaluate(&chat_id.to_string(), text, connected_elsewhere)
+        {
+            UnpairedDecision::Pair => {
+                let mut state = BotChatState::new(chat_id.to_string());
+                let result = complete_im_bot_pairing(&mut state).await;
+                if !self.runtime_fence.is_lifecycle_current()
+                    || self.runtime_fence.identity_epoch() != epoch
+                {
+                    return false;
+                }
+                states.clear();
+                states.insert(chat_id, state.clone());
+                self.persist_chat_state(chat_id, &state).await;
+                drop(states);
+                self.send_handle_result(chat_id, &result).await;
+                self.set_bot_commands().await.ok();
+                true
+            }
+            UnpairedDecision::Reply(reply) => {
+                drop(states);
+                let language = current_bot_language().await;
+                if self.runtime_fence.is_lifecycle_current()
+                    && self.runtime_fence.identity_epoch() == epoch
+                {
+                    let _ = self.send_message(chat_id, &reply.text(language)).await;
+                }
+                false
+            }
+            UnpairedDecision::Silent => false,
+        }
+    }
+
     pub async fn register_pairing(&self, pairing_code: &str) -> Result<()> {
-        self.pending_pairings.write().await.insert(
-            pairing_code.to_string(),
-            PendingPairing {
-                created_at: chrono::Utc::now().timestamp(),
-            },
-        );
+        self.pairing_gate.register(pairing_code);
         Ok(())
     }
 
     pub async fn verify_pairing_code(&self, code: &str) -> bool {
-        let mut pairings = self.pending_pairings.write().await;
-        if let Some(p) = pairings.remove(code) {
-            let age = chrono::Utc::now().timestamp() - p.created_at;
-            return age < 300;
-        }
-        false
+        self.pairing_gate.consume(code)
     }
 
     /// Returns `(chat_id, text, images)` tuples for each incoming message.
@@ -275,48 +360,11 @@ impl TelegramBot {
             match poll_result {
                 Ok(messages) => {
                     for (chat_id, text, _images) in messages {
-                        let trimmed = text.trim();
-                        let language = current_bot_language().await;
-
-                        if trimmed == "/start" {
-                            self.send_message(chat_id, welcome_message(language))
-                                .await
-                                .ok();
-                            continue;
+                        if *stop_rx.borrow() || !self.runtime_fence.is_lifecycle_current() {
+                            return Err(anyhow!("bot lifecycle replaced during pairing"));
                         }
-
-                        if trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_digit()) {
-                            if self.verify_pairing_code(trimmed).await {
-                                info!("Telegram pairing successful, chat_id={chat_id}");
-                                let mut state = BotChatState::new(chat_id.to_string());
-                                let identity_epoch = self.runtime_fence.identity_epoch();
-                                let result = complete_im_bot_pairing(&mut state).await;
-                                if *stop_rx.borrow() || !self.runtime_fence.is_lifecycle_current() {
-                                    return Err(anyhow!("bot lifecycle replaced during pairing"));
-                                }
-                                let mut states = self.chat_states.write().await;
-                                self.runtime_fence.reconcile_states(&mut states);
-                                self.runtime_fence
-                                    .sanitize_after_epoch(identity_epoch, &mut state);
-                                states.insert(chat_id, state.clone());
-                                drop(states);
-                                self.persist_chat_state(chat_id, &state).await;
-                                self.send_handle_result(chat_id, &result).await;
-                                self.set_bot_commands().await.ok();
-
-                                return Ok(chat_id);
-                            } else {
-                                self.send_message(
-                                    chat_id,
-                                    Self::invalid_pairing_code_message(language),
-                                )
-                                .await
-                                .ok();
-                            }
-                        } else {
-                            self.send_message(chat_id, Self::enter_pairing_code_message(language))
-                                .await
-                                .ok();
+                        if self.handle_pairing_message(chat_id, &text).await {
+                            return Ok(chat_id);
                         }
                     }
                 }
@@ -377,46 +425,12 @@ impl TelegramBot {
         let mut states = self.chat_states.write().await;
         let command_identity_epoch = self.runtime_fence.identity_epoch();
         self.runtime_fence.reconcile_states(&mut states);
-        let state = states.entry(chat_id).or_insert_with(|| {
-            let mut s = BotChatState::new(chat_id.to_string());
-            s.paired = true;
-            s
-        });
-        let language = current_bot_language().await;
-
-        if !state.paired {
-            let trimmed = text.trim();
-            if trimmed == "/start" {
-                self.send_message(chat_id, welcome_message(language))
-                    .await
-                    .ok();
-                return;
-            }
-            if trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_digit()) {
-                if self.verify_pairing_code(trimmed).await {
-                    let identity_epoch = self.runtime_fence.identity_epoch();
-                    let result = complete_im_bot_pairing(state).await;
-                    self.runtime_fence
-                        .sanitize_after_epoch(identity_epoch, state);
-                    self.persist_chat_state(chat_id, state).await;
-                    if !self.runtime_fence.is_lifecycle_current() {
-                        return;
-                    }
-                    self.send_handle_result(chat_id, &result).await;
-                    self.set_bot_commands().await.ok();
-                    return;
-                } else {
-                    self.send_message(chat_id, Self::invalid_pairing_code_message(language))
-                        .await
-                        .ok();
-                    return;
-                }
-            }
-            self.send_message(chat_id, Self::enter_pairing_code_message(language))
-                .await
-                .ok();
+        if !states.get(&chat_id).is_some_and(|state| state.paired) {
+            drop(states);
+            self.handle_pairing_message(chat_id, text).await;
             return;
         }
+        let state = states.get_mut(&chat_id).expect("paired chat exists");
 
         if self.runtime_fence.identity_epoch() != command_identity_epoch {
             return;
@@ -460,6 +474,7 @@ impl TelegramBot {
                     Box::pin(async move {
                         if !msg_bot.runtime_fence.is_lifecycle_current()
                             || msg_bot.runtime_fence.identity_epoch() != output_identity_epoch
+                            || !super::chat_is_paired(&msg_bot.chat_states, &chat_id).await
                         {
                             return;
                         }
@@ -478,6 +493,7 @@ impl TelegramBot {
                 .await;
                 if !bot.runtime_fence.is_lifecycle_current()
                     || bot.runtime_fence.identity_epoch() != output_identity_epoch
+                    || !super::chat_is_paired(&bot.chat_states, &chat_id).await
                 {
                     return;
                 }
@@ -520,11 +536,9 @@ impl TelegramBot {
         }
         let mut states = self.chat_states.write().await;
         self.runtime_fence.reconcile_states(&mut states);
-        let state = states.entry(chat_id).or_insert_with(|| {
-            let mut s = BotChatState::new(chat_id.to_string());
-            s.paired = true;
-            s
-        });
+        let Some(state) = states.get_mut(&chat_id).filter(|state| state.paired) else {
+            return;
+        };
         if self.runtime_fence.identity_epoch() != identity_epoch {
             return;
         }
@@ -550,20 +564,370 @@ impl TelegramBot {
             bot_type: "telegram".to_string(),
             chat_id: chat_id.to_string(),
             config: BotConfig::Telegram {
-                bot_token: self.api.config().bot_token.clone(),
+                bot_token: self.api.bot_token().to_string(),
             },
             chat_state: snapshot,
             connected_at: chrono::Utc::now().timestamp(),
         };
-        self.runtime_fence.commit_if_current(|| {
-            update_bot_persistence(|data| data.upsert(connection));
-        });
+        self.runtime_fence.persist_connection(connection);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_support::{
+        legacy_saved_connection, paired_state, question, PAIRING_CODE,
+    };
     use super::*;
+    use std::collections::VecDeque;
+    use std::sync::Mutex as StdMutex;
+    use std::time::Duration;
+
+    const OWNER: i64 = 1001;
+    const STRANGER: i64 = 2002;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum Sent {
+        Text { chat_id: i64, text: String },
+        Keyboard { chat_id: i64 },
+        Artifact { chat_id: i64 },
+    }
+
+    impl Sent {
+        fn chat_id(&self) -> i64 {
+            match self {
+                Self::Text { chat_id, .. }
+                | Self::Keyboard { chat_id }
+                | Self::Artifact { chat_id } => *chat_id,
+            }
+        }
+    }
+
+    /// Records every outbound call and replays scripted update batches.
+    #[derive(Default)]
+    struct FakeTelegram {
+        sent: StdMutex<Vec<Sent>>,
+        updates: StdMutex<VecDeque<Vec<TelegramIncomingMessage>>>,
+    }
+
+    impl FakeTelegram {
+        fn record(&self, sent: Sent) {
+            self.sent.lock().unwrap().push(sent);
+        }
+
+        fn sent_to(&self, chat_id: i64) -> Vec<Sent> {
+            self.sent
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|sent| sent.chat_id() == chat_id)
+                .cloned()
+                .collect()
+        }
+
+        fn script(&self, batch: Vec<(i64, &str)>) {
+            self.updates.lock().unwrap().push_back(
+                batch
+                    .into_iter()
+                    .map(|(chat_id, text)| TelegramIncomingMessage {
+                        chat_id,
+                        text: text.to_string(),
+                        images: Vec::new(),
+                    })
+                    .collect(),
+            );
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl TelegramPlatform for FakeTelegram {
+        fn bot_token(&self) -> &str {
+            "fixture-token"
+        }
+
+        async fn send_message(&self, chat_id: i64, text: &str) -> Result<()> {
+            self.record(Sent::Text {
+                chat_id,
+                text: text.to_string(),
+            });
+            Ok(())
+        }
+
+        async fn send_message_with_keyboard(
+            &self,
+            chat_id: i64,
+            _text: &str,
+            _actions: &[BotAction],
+        ) -> Result<()> {
+            self.record(Sent::Keyboard { chat_id });
+            Ok(())
+        }
+
+        async fn send_artifact(&self, chat_id: i64, _content: WorkspaceFileContent) -> Result<()> {
+            self.record(Sent::Artifact { chat_id });
+            Ok(())
+        }
+
+        async fn set_bot_commands(&self) -> Result<()> {
+            Ok(())
+        }
+
+        async fn poll_updates(
+            &self,
+            last_update_id: i64,
+        ) -> Result<(i64, Vec<TelegramIncomingMessage>)> {
+            let next = self.updates.lock().unwrap().pop_front();
+            match next {
+                Some(batch) => Ok((last_update_id + 1, batch)),
+                None => std::future::pending().await,
+            }
+        }
+    }
+
+    fn fake_bot() -> (Arc<FakeTelegram>, Arc<TelegramBot>) {
+        let fake = Arc::new(FakeTelegram::default());
+        let bot = Arc::new(TelegramBot::with_platform(
+            fake.clone(),
+            BotRuntimeFence::standalone(),
+        ));
+        (fake, bot)
+    }
+
+    /// A bot whose first pairing already completed with `OWNER`.
+    async fn connected_bot() -> (Arc<FakeTelegram>, Arc<TelegramBot>) {
+        let (fake, bot) = fake_bot();
+        bot.restore_chat_state(OWNER, paired_state(&OWNER.to_string()))
+            .await;
+        (fake, bot)
+    }
+
+    fn saved_chat_id(bot: &TelegramBot) -> Option<String> {
+        bot.runtime_fence
+            .saved_connection("telegram")
+            .map(|saved| saved.chat_id)
+    }
+
+    async fn pair_through_updates(bot: &TelegramBot) -> i64 {
+        let (_stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
+        tokio::time::timeout(Duration::from_secs(5), bot.wait_for_pairing(&mut stop_rx))
+            .await
+            .expect("pairing must finish with the scripted updates")
+            .expect("pairing must succeed")
+    }
+
+    #[tokio::test]
+    async fn unknown_chat_after_first_pairing_is_refused_and_cannot_run_a_command() {
+        let (fake, bot) = connected_bot().await;
+
+        bot.handle_incoming_message(STRANGER, "/help", vec![]).await;
+
+        assert!(
+            !bot.chat_states.read().await.contains_key(&STRANGER),
+            "a chat that never paired must not gain state"
+        );
+        let replies = fake.sent_to(STRANGER);
+        assert_eq!(replies.len(), 1, "one explanatory reply: {replies:?}");
+        assert!(
+            matches!(replies[0], Sent::Text { .. }),
+            "an unpaired chat must not receive a command menu: {replies:?}"
+        );
+        assert_eq!(saved_chat_id(&bot), Some(OWNER.to_string()));
+
+        bot.handle_incoming_message(OWNER, "/help", vec![]).await;
+        assert!(
+            fake.sent_to(OWNER)
+                .iter()
+                .any(|sent| matches!(sent, Sent::Keyboard { .. })),
+            "the paired chat keeps its commands"
+        );
+    }
+
+    #[tokio::test]
+    async fn outbound_paths_never_create_state_or_reach_an_unpaired_chat() {
+        let (fake, bot) = connected_bot().await;
+        let epoch = bot.runtime_fence.identity_epoch();
+
+        bot.deliver_interaction(STRANGER, question("tool-1"), epoch)
+            .await;
+        bot.notify_files_ready(
+            STRANGER,
+            "missing-session",
+            None,
+            "[report](computer://report.pdf)",
+            epoch,
+        )
+        .await;
+
+        assert!(!bot.chat_states.read().await.contains_key(&STRANGER));
+        assert_eq!(fake.sent_to(STRANGER), Vec::<Sent>::new());
+        assert_eq!(saved_chat_id(&bot), Some(OWNER.to_string()));
+
+        // A chat that is known but never completed pairing is treated the same.
+        bot.chat_states
+            .write()
+            .await
+            .insert(STRANGER, BotChatState::new(STRANGER.to_string()));
+        bot.deliver_interaction(STRANGER, question("tool-2"), epoch)
+            .await;
+        assert_eq!(fake.sent_to(STRANGER), Vec::<Sent>::new());
+        let states = bot.chat_states.read().await;
+        let stranger = states.get(&STRANGER).expect("state was inserted above");
+        assert!(!stranger.paired);
+        assert!(stranger.pending_action.is_none());
+        drop(states);
+
+        // The paired chat still receives its interaction.
+        bot.deliver_interaction(OWNER, question("tool-3"), epoch)
+            .await;
+        assert_eq!(fake.sent_to(OWNER).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn wrong_codes_are_limited_per_chat_without_locking_the_owner_or_burning_the_code() {
+        let (fake, bot) = fake_bot();
+        bot.register_pairing(PAIRING_CODE).await.unwrap();
+        let mut batch = vec![(STRANGER, "000000"); 5];
+        // The right code no longer helps a chat that used up its attempts.
+        batch.push((STRANGER, PAIRING_CODE));
+        batch.push((OWNER, "111111"));
+        batch.push((OWNER, PAIRING_CODE));
+        fake.script(batch);
+
+        assert_eq!(pair_through_updates(&bot).await, OWNER);
+
+        let states = bot.chat_states.read().await;
+        assert!(states.get(&OWNER).is_some_and(|state| state.paired));
+        assert!(!states.contains_key(&STRANGER));
+        drop(states);
+        // Four "wrong code" replies, then one lockout notice, then silence.
+        assert_eq!(fake.sent_to(STRANGER).len(), 5);
+        assert_eq!(saved_chat_id(&bot), Some(OWNER.to_string()));
+    }
+
+    #[tokio::test]
+    async fn repeated_messages_from_an_unpaired_chat_get_a_bounded_number_of_replies() {
+        // While the first pairing is still pending.
+        let (fake, bot) = fake_bot();
+        bot.register_pairing(PAIRING_CODE).await.unwrap();
+        let mut batch = vec![(STRANGER, "hello"); 20];
+        batch.push((OWNER, PAIRING_CODE));
+        fake.script(batch);
+        assert_eq!(pair_through_updates(&bot).await, OWNER);
+        let replies = fake.sent_to(STRANGER).len();
+        assert!(
+            (1..=3).contains(&replies),
+            "replies while pairing: {replies}"
+        );
+
+        // After pairing, in the message loop.
+        for index in 0..20 {
+            bot.handle_incoming_message(STRANGER, &format!("hello again {index}"), vec![])
+                .await;
+        }
+        let replies = fake.sent_to(STRANGER).len() - replies;
+        assert!(
+            (1..=3).contains(&replies),
+            "replies when connected: {replies}"
+        );
+        assert!(!bot.chat_states.read().await.contains_key(&STRANGER));
+    }
+
+    #[tokio::test]
+    async fn code_issued_for_a_connected_bot_moves_the_connection_to_the_chat_that_presents_it() {
+        let (fake, bot) = connected_bot().await;
+        bot.register_pairing(PAIRING_CODE).await.unwrap();
+
+        bot.handle_incoming_message(STRANGER, "111111", vec![])
+            .await;
+        assert!(!bot.chat_states.read().await.contains_key(&STRANGER));
+        assert_eq!(saved_chat_id(&bot), Some(OWNER.to_string()));
+
+        bot.handle_incoming_message(STRANGER, PAIRING_CODE, vec![])
+            .await;
+        let states = bot.chat_states.read().await;
+        assert!(states.get(&STRANGER).is_some_and(|state| state.paired));
+        assert!(
+            !states.contains_key(&OWNER),
+            "one connection has one chat: the previous chat is no longer paired"
+        );
+        drop(states);
+        assert_eq!(saved_chat_id(&bot), Some(STRANGER.to_string()));
+        assert!(
+            !bot.verify_pairing_code(PAIRING_CODE).await,
+            "the pairing code is single use"
+        );
+        assert!(!fake.sent_to(STRANGER).is_empty());
+    }
+
+    #[tokio::test]
+    async fn legacy_persisted_paired_chat_is_restored_without_pairing_again() {
+        let saved = legacy_saved_connection(
+            "telegram",
+            &OWNER.to_string(),
+            serde_json::json!({ "bot_type": "telegram", "bot_token": "fixture-token" }),
+        );
+        let (fake, bot) = fake_bot();
+
+        bot.restore_chat_state(OWNER, saved.chat_state.clone())
+            .await;
+        bot.handle_incoming_message(OWNER, "/help", vec![]).await;
+
+        assert_eq!(
+            fake.sent_to(OWNER)
+                .iter()
+                .filter(|sent| matches!(sent, Sent::Keyboard { .. }))
+                .count(),
+            1,
+            "the restored chat reaches the command router without a pairing prompt"
+        );
+        let resaved = bot
+            .runtime_fence
+            .saved_connection("telegram")
+            .expect("restored connection is saved");
+        assert_eq!(resaved.chat_id, OWNER.to_string());
+        assert!(resaved.chat_state.paired);
+        // The stored shape is unchanged: an older build reads it back.
+        let stored = serde_json::to_value(&resaved.chat_state).unwrap();
+        let legacy = serde_json::to_value(&saved.chat_state).unwrap();
+        assert_eq!(stored, legacy);
+        assert_eq!(stored["paired"], serde_json::json!(true));
+    }
+
+    #[tokio::test]
+    async fn retired_or_reidentified_bot_neither_answers_nor_delivers() {
+        let (fake, bot) = connected_bot().await;
+        let epoch = bot.runtime_fence.identity_epoch();
+
+        // An account change invalidates deliveries that started before it.
+        bot.runtime_fence
+            .account_identity_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        bot.deliver_interaction(OWNER, question("tool-1"), epoch)
+            .await;
+        bot.notify_files_ready(
+            OWNER,
+            "missing-session",
+            None,
+            "[report](computer://report.pdf)",
+            epoch,
+        )
+        .await;
+        assert_eq!(fake.sent_to(OWNER), Vec::<Sent>::new());
+
+        // A replaced instance stays silent for paired and unpaired chats alike.
+        bot.runtime_fence.slot.advance();
+        bot.handle_incoming_message(OWNER, "/help", vec![]).await;
+        bot.handle_incoming_message(STRANGER, "/help", vec![]).await;
+        bot.deliver_interaction(
+            OWNER,
+            question("tool-2"),
+            bot.runtime_fence.identity_epoch(),
+        )
+        .await;
+        assert_eq!(fake.sent.lock().unwrap().len(), 0);
+        assert!(!bot.chat_states.read().await.contains_key(&STRANGER));
+        assert_eq!(saved_chat_id(&bot), Some(OWNER.to_string()));
+    }
 
     #[tokio::test]
     async fn account_clear_is_bounded_by_epoch_when_a_command_holds_state_lock() {
