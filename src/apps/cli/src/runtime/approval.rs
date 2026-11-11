@@ -1,4 +1,6 @@
-use openbitfun_agent_runtime::permission::PERMISSION_MODE_CONTEXT_KEY;
+use openbitfun_agent_runtime::permission::{
+    PERMISSION_APPROVAL_STRATEGY_CONTEXT_KEY, PERMISSION_MODE_CONTEXT_KEY,
+};
 use openbitfun_agent_runtime::sdk::{PermissionRequest, AUTO_APPROVE_ASK_CONTEXT_KEY};
 use openbitfun_agent_runtime::user_questions::USER_INPUT_AVAILABLE_CONTEXT_KEY;
 use openbitfun_runtime_ports::PermissionMode;
@@ -11,7 +13,13 @@ pub(crate) enum CliApprovalPolicy {
     /// Explicitly disable Auto mode for this invocation/session.
     DisableAuto,
     Reject,
+    /// Automatic approval for an interactive session: classify asks with the
+    /// configured approval provider and fall back to the user mailbox.
     Auto,
+    /// Explicit one-shot bypass used by `exec --auto` and detached auto jobs.
+    ImmediateAllow,
+    /// Use the configured approval model for this headless invocation.
+    Model,
 }
 
 /// Build invocation-scoped approval metadata consumed by the shared Runtime.
@@ -22,7 +30,7 @@ pub(crate) fn approval_metadata(approval_policy: CliApprovalPolicy) -> Map<Strin
     let mut metadata = Map::new();
     if matches!(
         approval_policy,
-        CliApprovalPolicy::Reject | CliApprovalPolicy::Auto
+        CliApprovalPolicy::Reject | CliApprovalPolicy::ImmediateAllow | CliApprovalPolicy::Model
     ) {
         metadata.insert(
             USER_INPUT_AVAILABLE_CONTEXT_KEY.to_string(),
@@ -32,7 +40,8 @@ pub(crate) fn approval_metadata(approval_policy: CliApprovalPolicy) -> Map<Strin
     let auto_approve_ask = match approval_policy {
         CliApprovalPolicy::Ask => None,
         CliApprovalPolicy::DisableAuto | CliApprovalPolicy::Reject => Some(false),
-        CliApprovalPolicy::Auto => Some(true),
+        CliApprovalPolicy::Auto | CliApprovalPolicy::Model => Some(false),
+        CliApprovalPolicy::ImmediateAllow => Some(true),
     };
     if let Some(auto_approve_ask) = auto_approve_ask {
         metadata.insert(
@@ -42,17 +51,29 @@ pub(crate) fn approval_metadata(approval_policy: CliApprovalPolicy) -> Map<Strin
         // Carry the whole mode as well, so this invocation resolves through the
         // same single value as every other surface. `Ask` stays absent: it means
         // "inherit the persisted preference", not "force the ask mode".
+        let mode = if matches!(
+            approval_policy,
+            CliApprovalPolicy::Auto | CliApprovalPolicy::ImmediateAllow
+        ) {
+            PermissionMode::AutoApprove
+        } else {
+            PermissionMode::Ask
+        };
         metadata.insert(
             PERMISSION_MODE_CONTEXT_KEY.to_string(),
-            Value::String(
-                if auto_approve_ask {
-                    PermissionMode::AutoApprove
-                } else {
-                    PermissionMode::Ask
-                }
-                .as_str()
-                .to_string(),
-            ),
+            Value::String(mode.as_str().to_string()),
+        );
+    }
+    let strategy = match approval_policy {
+        CliApprovalPolicy::Auto | CliApprovalPolicy::Model => Some("model"),
+        CliApprovalPolicy::DisableAuto | CliApprovalPolicy::Reject => Some("interactive"),
+        CliApprovalPolicy::ImmediateAllow => Some("immediate_allow"),
+        CliApprovalPolicy::Ask => None,
+    };
+    if let Some(strategy) = strategy {
+        metadata.insert(
+            PERMISSION_APPROVAL_STRATEGY_CONTEXT_KEY.to_string(),
+            Value::String(strategy.to_string()),
         );
     }
     metadata
@@ -72,7 +93,9 @@ pub(crate) fn permission_request_targets_session(
 #[cfg(test)]
 mod tests {
     use super::{approval_metadata, permission_request_targets_session, CliApprovalPolicy};
-    use openbitfun_agent_runtime::permission::PERMISSION_MODE_CONTEXT_KEY;
+    use openbitfun_agent_runtime::permission::{
+        PERMISSION_APPROVAL_STRATEGY_CONTEXT_KEY, PERMISSION_MODE_CONTEXT_KEY,
+    };
     use openbitfun_agent_runtime::sdk::{
         PermissionDelegationContext, PermissionRequest, PermissionRequestSource,
         PermissionRequestSourceKind, AUTO_APPROVE_ASK_CONTEXT_KEY,
@@ -127,7 +150,7 @@ mod tests {
 
     #[test]
     fn headless_approval_metadata_is_invocation_scoped() {
-        let auto = approval_metadata(CliApprovalPolicy::Auto);
+        let auto = approval_metadata(CliApprovalPolicy::ImmediateAllow);
         assert_eq!(
             auto.get(USER_INPUT_AVAILABLE_CONTEXT_KEY),
             Some(&serde_json::Value::Bool(false))
@@ -160,6 +183,16 @@ mod tests {
             approval_metadata(CliApprovalPolicy::Auto).get(PERMISSION_MODE_CONTEXT_KEY),
             Some(&serde_json::Value::String("auto_approve".to_string()))
         );
+        assert_eq!(
+            approval_metadata(CliApprovalPolicy::Auto)
+                .get(PERMISSION_APPROVAL_STRATEGY_CONTEXT_KEY),
+            Some(&serde_json::Value::String("model".to_string()))
+        );
+        assert_eq!(
+            approval_metadata(CliApprovalPolicy::ImmediateAllow)
+                .get(PERMISSION_APPROVAL_STRATEGY_CONTEXT_KEY),
+            Some(&serde_json::Value::String("immediate_allow".to_string()))
+        );
         for policy in [CliApprovalPolicy::DisableAuto, CliApprovalPolicy::Reject] {
             assert_eq!(
                 approval_metadata(policy).get(PERMISSION_MODE_CONTEXT_KEY),
@@ -172,6 +205,23 @@ mod tests {
         assert_eq!(
             approval_metadata(CliApprovalPolicy::Ask).get(PERMISSION_MODE_CONTEXT_KEY),
             None
+        );
+    }
+
+    #[test]
+    fn model_approval_is_distinct_from_immediate_allow() {
+        let metadata = approval_metadata(CliApprovalPolicy::Model);
+        assert_eq!(
+            metadata.get(PERMISSION_APPROVAL_STRATEGY_CONTEXT_KEY),
+            Some(&serde_json::Value::String("model".to_string()))
+        );
+        assert_eq!(
+            metadata.get(AUTO_APPROVE_ASK_CONTEXT_KEY),
+            Some(&serde_json::Value::Bool(false))
+        );
+        assert_eq!(
+            metadata.get(USER_INPUT_AVAILABLE_CONTEXT_KEY),
+            Some(&serde_json::Value::Bool(false))
         );
     }
 }

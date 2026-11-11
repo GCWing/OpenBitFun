@@ -5827,6 +5827,7 @@ dependencies = [
  "openbitfun-agent-stream",
  "openbitfun-core-types",
  "openbitfun-events",
+ "openbitfun-runtime-ports",
  "openbitfun-services-core",
  "reqwest",
  "serde",

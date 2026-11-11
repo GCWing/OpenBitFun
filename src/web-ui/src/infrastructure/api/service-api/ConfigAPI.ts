@@ -93,6 +93,10 @@ export interface WebSearchCredentialStatus {
   configured: boolean;
 }
 
+export interface DecisionModelCredentialStatus {
+  configured: boolean;
+}
+
 export interface DownloadSkillMarketParams {
   packageId: string;
   level?: SkillLevel;
@@ -230,6 +234,32 @@ export class ConfigAPI {
       });
     } catch (error) {
       throw createTauriCommandError('clear_web_search_credential', error, { provider });
+    }
+  }
+
+  async getDecisionModelCredentialStatus(): Promise<DecisionModelCredentialStatus> {
+    try {
+      return await api.invoke('get_decision_model_credential_status', { request: {} });
+    } catch (error) {
+      throw createTauriCommandError('get_decision_model_credential_status', error);
+    }
+  }
+
+  async saveDecisionModelCredential(secret: string): Promise<DecisionModelCredentialStatus> {
+    try {
+      return await api.invoke('save_decision_model_credential', { request: { secret } });
+    } catch (error) {
+      throw createTauriCommandError('save_decision_model_credential', error, {
+        secret: secret ? '[redacted]' : '',
+      });
+    }
+  }
+
+  async clearDecisionModelCredential(): Promise<DecisionModelCredentialStatus> {
+    try {
+      return await api.invoke('clear_decision_model_credential', { request: {} });
+    } catch (error) {
+      throw createTauriCommandError('clear_decision_model_credential', error);
     }
   }
 

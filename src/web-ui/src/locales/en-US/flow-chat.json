@@ -1034,8 +1034,8 @@
         "description": "External access, file changes, and command execution require confirmation."
       },
       "auto": {
-        "label": "Auto approve",
-        "description": "Automatically approve requests that require confirmation."
+        "label": "Automatic approval",
+        "description": "Automatically assess actions before execution; uncertain requests can still ask you or be rejected."
       },
       "fullAccess": {
         "label": "Full access",

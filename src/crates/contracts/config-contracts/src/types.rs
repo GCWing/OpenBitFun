@@ -99,6 +99,33 @@ pub struct GlobalConfig {
     pub last_modified: chrono::DateTime<chrono::Utc>,
 }
 
+fn default_decision_model_endpoint() -> String {
+    "https://api.typesafe.ai/v1/systemone".to_string()
+}
+
+fn default_decision_model_name() -> String {
+    "jev-latest".to_string()
+}
+
+/// Connection settings for decision models shared by product features.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DecisionModelConfig {
+    #[serde(default = "default_decision_model_endpoint")]
+    pub endpoint: String,
+    #[serde(default = "default_decision_model_name")]
+    pub model_name: String,
+}
+
+impl Default for DecisionModelConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: default_decision_model_endpoint(),
+            model_name: default_decision_model_name(),
+        }
+    }
+}
+
 impl GlobalConfig {
     pub fn has_configured_plugins(&self) -> bool {
         self.plugin
@@ -1253,6 +1280,10 @@ impl Default for ModelRoutingConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AIConfig {
+    /// Shared decision-model connection settings. Secrets are stored in the
+    /// device credential vault and are intentionally kept out of this config.
+    #[serde(default)]
+    pub decision_model: DecisionModelConfig,
     /// All configured models.
     pub models: Vec<AIModelConfig>,
 
@@ -2313,6 +2344,7 @@ impl Default for WorkspaceConfig {
 impl Default for AIConfig {
     fn default() -> Self {
         Self {
+            decision_model: DecisionModelConfig::default(),
             model_pools: crate::model_pool::ModelPoolDocument::default(),
             models: vec![],
             tool_presentation_mode: ToolPresentationMode::default(),
@@ -2521,6 +2553,26 @@ impl AIModelConfig {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn decision_model_name_defaults_under_ai_configuration() {
+        let config: super::AIConfig = serde_json::from_value(serde_json::json!({
+            "decision_model": { "endpoint": "https://example.test/v1" }
+        }))
+        .unwrap();
+
+        assert_eq!(config.decision_model.model_name, "jev-latest");
+        assert_eq!(config.decision_model.endpoint, "https://example.test/v1");
+
+        let config: super::AIConfig = serde_json::from_value(serde_json::json!({
+            "decision_model": {
+                "endpoint": "https://example.test/v1",
+                "model_name": "custom-decision-model"
+            }
+        }))
+        .unwrap();
+        assert_eq!(config.decision_model.model_name, "custom-decision-model");
+    }
+
     #[test]
     fn generative_ui_library_legacy_and_future_roundtrip() {
         let legacy: super::AIConfig = serde_json::from_value(serde_json::json!({})).unwrap();

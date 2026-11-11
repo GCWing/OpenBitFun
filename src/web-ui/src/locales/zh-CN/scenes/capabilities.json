@@ -530,7 +530,7 @@
             "title": "执行与权限控制",
             "summary": "管理智能体工具权限、呈现模式、并行度、超时、延迟加载、Computer Use 与浏览器控制。",
             "items": {
-              "permission-mode": "选择询问、自动批准或完全访问权限模式，并确认高风险警告",
+              "permission-mode": "选择询问、自动审批或完全访问权限模式，并确认高风险警告",
               "permission-selector": "控制权限模式选择器是否显示在聊天输入框下方",
               "global-project-rules": "创建、排序和保存全局或项目级 Allow、Ask、Deny 规则",
               "remembered-grants": "查看、撤销或清空项目中记住的权限授权与审计记录",

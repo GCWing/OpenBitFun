@@ -8,8 +8,9 @@ use crate::agentic::workspace::WorkspaceServices;
 use crate::agentic::WorkspaceBinding;
 use openbitfun_agent_tools::{ResolvedToolInvocation, ValidationResult};
 use openbitfun_runtime_ports::{
-    DelegationPolicy, PermissionDelegationContext, RemoteExecPort, ResolvedPermissionPolicy,
-    TerminalPort,
+    DelegationPolicy, PermissionApprovalOnAsk, PermissionApprovalOnError,
+    PermissionApprovalStrategy, PermissionDelegationContext, RemoteExecPort,
+    ResolvedPermissionPolicy, TerminalPort,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,6 +31,20 @@ pub struct ToolExecutionOptions {
     pub permission_policy: ResolvedPermissionPolicy,
     /// Automatically reply `once` to `ask` requests through the permission manager.
     pub auto_approve_ask: bool,
+    /// Approval strategy applied after static policy evaluation. The existing
+    /// `auto_approve_ask` flag remains available for invocation-scoped callers
+    /// such as CLI `--auto`.
+    pub permission_approval_strategy: PermissionApprovalStrategy,
+    pub permission_approval_timeout_ms: u64,
+    pub permission_approval_on_ask: PermissionApprovalOnAsk,
+    pub permission_approval_on_error: PermissionApprovalOnError,
+    /// The latest user-authored message for the current model turn, supplied
+    /// to model-based permission approval as decision context.
+    pub current_user_message: Option<String>,
+    /// Whether this execution host can deliver a permission request to a
+    /// human mailbox. Headless and detached hosts set this to false so an
+    /// interactive fallback cannot wait forever for a controller.
+    pub permission_user_input_available: bool,
     /// Optional owner-provided token that latches cancellation before tool
     /// validation and permission preflight have registered pipeline state.
     pub parent_cancellation_token: Option<CancellationToken>,
@@ -44,6 +59,12 @@ impl Default for ToolExecutionOptions {
             timeout_secs: None, // Default no timeout (infinite waiting)
             permission_policy: ResolvedPermissionPolicy::default(),
             auto_approve_ask: false,
+            permission_approval_strategy: PermissionApprovalStrategy::Interactive,
+            permission_approval_timeout_ms: 30_000,
+            permission_approval_on_ask: PermissionApprovalOnAsk::User,
+            permission_approval_on_error: PermissionApprovalOnError::Ask,
+            current_user_message: None,
+            permission_user_input_available: true,
             parent_cancellation_token: None,
         }
     }

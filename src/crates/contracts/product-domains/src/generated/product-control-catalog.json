@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "5370adbf2ff3746a6d89704d38498047e3430850234e4abc1cd6bb5eea2aac49",
+  "digest": "778506ae9a8c979c4cea4de5c575be1bde0517def6ee5854dba203665098fa29",
   "ownerDigest": "31d6371f7765bde7bee88e22a6a4f03c2c5370e138cf49975bdc88f3c5eeb052",
   "searchAcceptance": [
     {
@@ -29801,7 +29801,7 @@
         "JSON repair"
       ],
       "highlightsZh": [
-        "询问、自动批准与完全访问策略",
+        "询问、自动审批与完全访问策略",
         "子智能体并行度和工具超时",
         "Computer Use、浏览器连接与工具参数修复"
       ],
@@ -29813,8 +29813,8 @@
       "items": [
         {
           "id": "permission-mode",
-          "titleZh": "选择询问、自动批准或完全访问权限模式，并确认高风险警告",
-          "titleEn": "Choose Ask, Auto-approve, or Full Access permission mode and acknowledge high-risk warnings",
+          "titleZh": "选择询问、自动审批或完全访问权限模式，并确认高风险警告",
+          "titleEn": "Choose Ask, Automatic approval, or Full Access permission mode and acknowledge high-risk warnings",
           "destination": {
             "kind": "settings",
             "pageId": "tools.execution",
@@ -29823,8 +29823,8 @@
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“选择询问、自动批准或完全访问权限模式，并确认高风险警告”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Choose Ask, Auto-approve, or Full Access permission mode and acknowledge high-risk warnings” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "reasonZh": "“选择询问、自动审批或完全访问权限模式，并确认高风险警告”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
+            "reasonEn": "“Choose Ask, Automatic approval, or Full Access permission mode and acknowledge high-risk warnings” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
           }
         },
         {
@@ -30294,14 +30294,14 @@
         "computer use",
         "browser control",
         "JSON repair",
-        "询问、自动批准与完全访问策略",
+        "询问、自动审批与完全访问策略",
         "子智能体并行度和工具超时",
         "Computer Use、浏览器连接与工具参数修复",
         "Ask, auto-approve, and full-access policies",
         "Subagent concurrency and tool timeouts",
         "Computer Use, browser connection, and tool-argument repair",
-        "选择询问、自动批准或完全访问权限模式，并确认高风险警告",
-        "Choose Ask, Auto-approve, or Full Access permission mode and acknowledge high-risk warnings",
+        "选择询问、自动审批或完全访问权限模式，并确认高风险警告",
+        "Choose Ask, Automatic approval, or Full Access permission mode and acknowledge high-risk warnings",
         "控制权限模式选择器是否显示在聊天输入框下方",
         "Choose whether the permission-mode selector appears below the chat composer",
         "创建、排序和保存全局或项目级 Allow、Ask、Deny 规则",

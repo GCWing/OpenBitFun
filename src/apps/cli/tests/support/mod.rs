@@ -230,7 +230,8 @@ impl CliTestEnvironment {
             "capabilities": capabilities
         }]);
         config["ai"]["default_models"] = json!({
-            "primary": "cli-e2e-model"
+            "primary": "cli-e2e-model",
+            "fast": "cli-e2e-model"
         });
         config["ai"]["agent_model_defaults"] = json!({
             "mode": "cli-e2e-model"
@@ -452,18 +453,24 @@ impl MockOpenAiServer {
                             .expect("configure mock request timeout");
                         let request =
                             read_http_request(&mut stream).expect("read mock model request");
-                        requests_for_thread
-                            .lock()
-                            .expect("lock mock model requests")
-                            .push(request);
+                        let is_permission_approval = is_permission_approval_request(&request);
+                        if !is_permission_approval {
+                            requests_for_thread
+                                .lock()
+                                .expect("lock mock model requests")
+                                .push(request.clone());
+                        }
                         serve_model_response(
                             &mut stream,
                             &response,
                             attempt,
+                            &request,
                             &release_rx,
                             &disconnect_tx,
                         );
-                        attempt += 1;
+                        if !is_permission_approval {
+                            attempt += 1;
+                        }
                         let accepts_more_requests = matches!(
                             response,
                             MockModelResponse::Http403 { .. }
@@ -478,7 +485,8 @@ impl MockOpenAiServer {
                             ) && attempt < 3)
                             || (matches!(response, MockModelResponse::ProductControlLoop)
                                 && attempt < 5)
-                            || matches!(&response, MockModelResponse::ToolSequence(calls) if attempt <= calls.len());
+                            || matches!(&response, MockModelResponse::ToolSequence(calls) if attempt <= calls.len())
+                            || is_permission_approval;
                         if accepts_more_requests {
                             continue;
                         }
@@ -525,6 +533,7 @@ fn serve_model_response(
     stream: &mut TcpStream,
     response: &MockModelResponse,
     attempt: usize,
+    request: &[u8],
     release_stream: &mpsc::Receiver<()>,
     stream_disconnected: &mpsc::Sender<()>,
 ) {
@@ -551,6 +560,32 @@ fn serve_model_response(
             b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
         )
         .expect("write mock response headers");
+
+    if is_permission_approval_request(request) {
+        write_sse_chunk(
+            stream,
+            &json!({
+                "id": "chatcmpl_permission_approval",
+                "object": "chat.completion.chunk",
+                "created": 1,
+                "model": "cli-e2e-model",
+                "choices": [{
+                    "index": 0,
+                    "delta": {
+                        "role": "assistant",
+                        "content": "DECISION=ALLOW;RISK=LOW;REASON=READ_ONLY"
+                    },
+                    "finish_reason": "stop"
+                }]
+            })
+            .to_string(),
+        )
+        .expect("write mock permission approval response");
+        let _ = write_chunk(stream, b"data: [DONE]\n\n");
+        let _ = stream.write_all(b"0\r\n\r\n");
+        let _ = stream.flush();
+        return;
+    }
 
     if matches!(response, MockModelResponse::ProductControlLoop) {
         serve_product_control_response(stream, attempt);
@@ -691,6 +726,22 @@ fn serve_model_response(
     }
     let _ = stream.write_all(b"0\r\n\r\n");
     let _ = stream.flush();
+}
+
+fn is_permission_approval_request(request: &[u8]) -> bool {
+    let Some(header_end) = find_header_end(request) else {
+        return false;
+    };
+    let Ok(body) = serde_json::from_slice::<serde_json::Value>(&request[header_end + 4..]) else {
+        return false;
+    };
+    body["messages"].as_array().is_some_and(|messages| {
+        messages.iter().any(|message| {
+            message["content"]
+                .as_str()
+                .is_some_and(|content| content.contains("You are a permission classifier."))
+        })
+    })
 }
 
 fn serve_product_control_response(stream: &mut TcpStream, attempt: usize) {

@@ -151,6 +151,7 @@ ts = [
 ]
 product-full = [
     "agent-runtime",
+    "decision-model-credentials",
     "product-search",
     "document-read",
     "diagnostics",
@@ -265,6 +266,7 @@ agent-runtime = [
     "tokio/rt",
     "tokio/time",
 ]
+decision-model-credentials = ["openbitfun-services-core/credential-vault"]
 product-search = [
     "dep:openbitfun-product-domains",
     "agent-runtime",

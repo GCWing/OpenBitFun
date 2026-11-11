@@ -24,6 +24,7 @@ async-trait = { workspace = true }
 base64 = { workspace = true, optional = true }
 openbitfun-agent-stream = { path = "../../execution/agent-stream" }
 openbitfun-core-types = { path = "../../contracts/core-types" }
+openbitfun-runtime-ports = { path = "../../contracts/runtime-ports", features = ["permission"] }
 openbitfun-services-core = { path = "../../services/services-core", features = ["tls-provider", "system-proxy"] }
 chrono = { workspace = true }
 dirs = { workspace = true, optional = true }

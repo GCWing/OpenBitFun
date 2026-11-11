@@ -192,6 +192,52 @@ pub(in crate::server) fn builder() -> Builder<AppServer, impl HandleDispatchFrom
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
+            async move |_: GetDecisionModelCredentialStatusMessage, responder, _cx| {
+                let result = openbitfun_core::service::decision_model::get_credential_status()
+                    .await
+                    .map(|status| {
+                        GetDecisionModelCredentialStatusResponse(DecisionModelCredentialStatus {
+                            configured: status.configured,
+                        })
+                    })
+                    .map_err(openbitfun_error);
+                responder.respond_with_result(result)
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: SaveDecisionModelCredentialMessage, responder, _cx| {
+                let result = openbitfun_core::service::decision_model::save_credential(
+                    openbitfun_core::service::decision_model::SaveDecisionModelCredentialRequest {
+                        secret: request.request.secret,
+                    },
+                )
+                .await
+                .map(|status| {
+                    SaveDecisionModelCredentialResponse(DecisionModelCredentialStatus {
+                        configured: status.configured,
+                    })
+                })
+                .map_err(openbitfun_error);
+                responder.respond_with_result(result)
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |_: ClearDecisionModelCredentialMessage, responder, _cx| {
+                let result = openbitfun_core::service::decision_model::clear_credential()
+                    .await
+                    .map(|status| {
+                        ClearDecisionModelCredentialResponse(DecisionModelCredentialStatus {
+                            configured: status.configured,
+                        })
+                    })
+                    .map_err(openbitfun_error);
+                responder.respond_with_result(result)
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
             async move |_: ValidateConfigMessage, responder, _cx| {
                 let result = async {
                     let service = openbitfun_core::service::config::get_global_config_service().await?;

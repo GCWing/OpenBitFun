@@ -1,7 +1,7 @@
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { createLogger } from '@/shared/utils/logger';
 import { configManager } from './ConfigManager';
-import type { PermissionEffect, PermissionRule, ToolPermissionConfig } from '../types';
+import type { PermissionApprovalConfig, PermissionEffect, PermissionRule, ToolPermissionConfig } from '../types';
 
 const log = createLogger('PermissionConfig');
 const CONFIG_PATH = 'tool_permissions';
@@ -24,9 +24,27 @@ function normalizeRule(value: unknown): PermissionRule | null {
   return { action: rule.action, resource: rule.resource, effect };
 }
 
+function normalizeApproval(value: unknown): PermissionApprovalConfig | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const input = value as Partial<PermissionApprovalConfig>;
+  const strategy = input.strategy === 'model' || input.strategy === 'immediate_allow'
+    ? input.strategy
+    : 'interactive';
+  const modelKind = input.model_kind === 'decision' ? 'decision' : 'chat';
+  const chatModelId = typeof input.chat_model_id === 'string' ? input.chat_model_id : '';
+  return {
+    strategy,
+    model_kind: modelKind,
+    chat_model_id: chatModelId,
+    timeout_ms: typeof input.timeout_ms === 'number' && input.timeout_ms > 0 ? Math.min(input.timeout_ms, 300000) : 30000,
+    on_ask: input.on_ask === 'reject' ? 'reject' : 'user',
+    on_error: input.on_error === 'reject' ? 'reject' : 'ask',
+  };
+}
+
 export function normalizeToolPermissionConfig(value: unknown): ToolPermissionConfig {
   const input = value && typeof value === 'object'
-    ? value as { policy?: { preset?: unknown; rules?: unknown }; interaction?: { auto_approve_ask?: unknown } }
+    ? value as { policy?: { preset?: unknown; rules?: unknown }; interaction?: { auto_approve_ask?: unknown }; approval?: unknown }
     : {};
   const policy = input.policy ?? {};
   const interaction = input.interaction ?? {};
@@ -34,6 +52,7 @@ export function normalizeToolPermissionConfig(value: unknown): ToolPermissionCon
     ? policy.rules.map(normalizeRule).filter((rule): rule is PermissionRule => rule !== null)
     : [];
 
+  const approval = normalizeApproval(input.approval);
   return {
     policy: {
       preset: policy.preset === undefined
@@ -44,6 +63,7 @@ export function normalizeToolPermissionConfig(value: unknown): ToolPermissionCon
     interaction: {
       auto_approve_ask: interaction.auto_approve_ask === true,
     },
+    ...(approval ? { approval } : {}),
   };
 }
 
