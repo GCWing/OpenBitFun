@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { MessageSquareText } from 'lucide-react';
 import type { PageViewport } from 'pdfjs-dist';
 import { selectionQuads } from './pdfReviewGeometry';
@@ -24,10 +24,10 @@ export function PdfReviewLayer({ viewport, pageNumber, review }: {
   const annotations = review.annotations.filter(annotation => annotation.page === pageNumber);
   const current = useRef(review);
   current.current = review;
-  const makeAnnotation = (kind: PdfReviewAnnotation['kind'], rect: PdfReviewAnnotation['rect']): PdfReviewAnnotation => ({
+  const makeAnnotation = useCallback((kind: PdfReviewAnnotation['kind'], rect: PdfReviewAnnotation['rect']): PdfReviewAnnotation => ({
     id: crypto.randomUUID(), kind, rect, color: current.current.color, page: pageNumber,
     createdAt: new Date().toISOString(), comments: [],
-  });
+  }), [pageNumber]);
 
   useEffect(() => {
     if (!review.enabled || review.tool !== 'highlight') return;
@@ -49,7 +49,7 @@ export function PdfReviewLayer({ viewport, pageNumber, review }: {
     };
     document.addEventListener('pointerup', onPointerUp);
     return () => { document.removeEventListener('pointerup', onPointerUp); cancelAnimationFrame(frame); };
-  }, [review.enabled, review.tool, pageNumber, viewport]);
+  }, [review.enabled, review.tool, makeAnnotation, viewport]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
