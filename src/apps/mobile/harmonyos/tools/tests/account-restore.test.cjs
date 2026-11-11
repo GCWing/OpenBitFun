@@ -102,3 +102,41 @@ test('directory refresh and presence retain aliases in the selected and preferre
   assert.equal(state.controlTargetDeviceId, 'desktop');
   controller.stopPresencePolling();
 });
+
+for (const online of [true, false]) {
+  test(`a delayed device list retains newer ${online ? 'online' : 'offline'} presence and refreshes metadata`, async () => {
+    const device = { deviceId: 'desktop', deviceName: 'Desktop', online: !online };
+    let onPresence;
+    let published;
+    const client = {
+      listDevices: async () => [{ ...device }],
+      observePresence: (_relay, _session, listener) => { onPresence = listener; return () => {}; },
+    };
+    const controller = new exported.SettingsController({ client, remoteState: {}, hooks: {
+      deviceId: () => 'phone', onAccountDevices: devices => { published = devices; },
+    } });
+    controller.cloudSession = { token: 'token', userId: 'user' };
+    controller.cloudRelayUrl = official;
+    await controller.listCloudAccountDevices();
+    controller.startPresencePolling(0);
+
+    let resolve;
+    client.listDevices = () => new Promise(yes => { resolve = yes; });
+    const pending = controller.listCloudAccountDevices();
+    onPresence(online ? ['desktop'] : []);
+    assert.equal(published[0].online, online);
+    resolve([{ ...device, deviceAlias: 'Office', compatible: false }]);
+    const result = await pending;
+    assert.equal(result[0].online, online);
+    assert.equal(published[0].online, online);
+    assert.equal(controller.knownAccountDevice('desktop').online, online);
+    assert.equal(published[0].deviceAlias, 'Office');
+    assert.equal(published[0].compatible, false);
+
+    // A later explicit read must still recover from a missed presence event.
+    client.listDevices = async () => [{ ...device }];
+    await controller.listCloudAccountDevices();
+    assert.equal(published[0].online, !online);
+    controller.stopPresencePolling();
+  });
+}

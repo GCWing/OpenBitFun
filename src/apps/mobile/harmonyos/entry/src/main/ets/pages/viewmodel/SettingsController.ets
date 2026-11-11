@@ -75,6 +75,7 @@ export class SettingsController {
   private accountDevices: CloudAccountDevice[] = [];
   private lastAccountDevicesAt: number = 0;
   private stopPresence?: () => void;
+  private latestPresence?: string[];
   private presenceGeneration: number = 0;
   private presenceRefreshing: boolean = false;
   private targetProbeTimer: number = -1;
@@ -293,6 +294,7 @@ export class SettingsController {
       this.stopPresence = binding.client.observePresence(binding.relayUrl, binding.session,
       (ids: string[]) => {
         if (epoch !== this.presenceGeneration) return;
+        this.latestPresence = ids.slice();
         const previousTarget = this.accountDevices.find((device: CloudAccountDevice) => device.deviceId === this.requireCloud().remoteState.controlTargetDeviceId);
         this.accountDevices = this.accountDevices.map((device: CloudAccountDevice): CloudAccountDevice => ({
           deviceId: device.deviceId, deviceName: device.deviceName, deviceKind: device.deviceKind,
@@ -325,6 +327,7 @@ export class SettingsController {
 
   stopPresencePolling(): void {
     this.presenceGeneration++;
+    this.latestPresence = undefined;
     this.stopPresence?.(); this.stopPresence = undefined;
     if (this.targetProbeTimer !== -1) clearTimeout(this.targetProbeTimer);
     this.targetProbeTimer = -1;
@@ -438,9 +441,18 @@ export class SettingsController {
     if (!session || this.cloudRelayUrl.length === 0) {
       return [];
     }
+    const presenceAtStart = this.latestPresence;
     try {
       const devices = await cloud.client.listDevices(this.cloudRelayUrl, session, cloud.hooks.deviceId());
       if (this.cloudSession !== session) throw new Error('Account changed while loading devices');
+      // A presence snapshot received during this request is newer than its
+      // HTTP answer. Keep that liveness while accepting refreshed metadata.
+      const presence = this.latestPresence;
+      if (presence !== undefined && presence !== presenceAtStart) {
+        for (const device of devices) {
+          device.online = presence.includes(device.deviceId);
+        }
+      }
       this.accountDevices = devices;
       this.lastAccountDevicesAt = Date.now();
       const target = devices.find((device: CloudAccountDevice): boolean =>
