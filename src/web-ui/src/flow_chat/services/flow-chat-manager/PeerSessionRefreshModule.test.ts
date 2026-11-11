@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const peerModeMock = vi.hoisted(() => ({ active: true }));
 const stateMachineMock = vi.hoisted(() => ({
+  getOrCreate: vi.fn(),
   get: vi.fn(() => ({
     getCurrentState: () => 'idle',
     getContext: () => ({ lastUpdateTime: 0 }),
@@ -20,9 +21,11 @@ vi.mock('@/infrastructure/peer-device/peerModeFlag', () => ({
 
 vi.mock('../../state-machine', () => ({
   stateMachineManager: stateMachineMock,
+  SessionExecutionEvent: { START: 'start' },
 }));
 
-vi.mock('../liveSessionInteractionStore', () => ({
+vi.mock('../liveSessionInteractionStore', async importOriginal => ({
+  ...await importOriginal<typeof import('../liveSessionInteractionStore')>(),
   installLiveSessionInteractionMailbox: vi.fn(),
 }));
 
@@ -42,9 +45,15 @@ import {
   runtimeProjectionCaughtUp,
 } from './PeerSessionRefreshModule';
 import { processToolEvent } from './ToolEventModule';
+import { processNormalTextChunkInternal } from './TextChunkModule';
+import { convertDialogTurnToBackendFormat } from './PersistenceModule';
+import { resetDeviceSurfaceSwitchedForTest } from '@/infrastructure/peer-device/deviceSurfaceReconcile';
 import {
+  isRuntimeSessionProjectionStale,
   markRuntimeSessionProjectionStale,
+  readRuntimeSessionProgress,
   resetRuntimeSessionEventGateForTest,
+  routeRuntimeSessionEvent,
 } from '@/infrastructure/peer-device/runtimeSessionEventGate';
 
 describe('PeerSessionRefreshModule', () => {
@@ -1067,6 +1076,8 @@ describe('PeerSessionRefreshModule journal apply', () => {
     vi.useFakeTimers();
     peerModeMock.active = true;
     resetRuntimeSessionEventGateForTest();
+    resetDeviceSurfaceSwitchedForTest();
+    activateSurface(LOCAL_SURFACE_ID);
     stateMachineMock.get.mockReturnValue({
       getCurrentState: () => 'processing',
       getContext: () => ({ lastUpdateTime: Date.now(), version: 0 }),
@@ -1094,8 +1105,158 @@ describe('PeerSessionRefreshModule journal apply', () => {
       activeSessionId: null,
     }));
     vi.clearAllMocks();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it.each([true, false])('replays a pristine local active restore when refresh is installed before hydrate: %s', async installBeforeHydrate => {
+    peerModeMock.active = false;
+    const store = FlowChatStore.getInstance();
+    const sessionId = 'local-reload';
+    const turnId = 'turn-live';
+    const roundId = 'round-live';
+    store.setState(prev => ({
+      ...prev,
+      activeSessionId: sessionId,
+      sessions: new Map([[sessionId, {
+        sessionId,
+        title: 'Local reload',
+        workspaceId: 'workspace-1',
+        workspacePath: '/repo/OpenBitFun',
+        historyState: 'metadata-only',
+        isHistorical: true,
+        isTransient: false,
+        dialogTurns: [],
+        config: { agentType: 'PaperWriting' },
+        createdAt: 1,
+        lastActiveAt: 1,
+        todos: [],
+      } as any]]),
+    }));
+    const context = {
+      flowChatStore: store,
+      eventBatcher: { flushNow: vi.fn(), clear: vi.fn(), getBufferSize: () => 0 },
+      contentBuffers: new Map(),
+      activeTextItems: new Map(),
+      runtimeStatusTimers: new Map(),
+      saveDebouncers: new Map(),
+      lastSaveTimestamps: new Map(),
+      lastSaveHashes: new Map(),
+      turnSaveInFlight: new Map(),
+      turnSavePending: new Set(),
+    } as any;
+    const apply = (eventName: string, payload: any): boolean => {
+      if (eventName === 'agentic://model-round-started') {
+        store.addModelRound(sessionId, turnId, {
+          id: roundId, index: 0, items: [], status: 'streaming',
+          isStreaming: true, isComplete: false, startTime: 1,
+        });
+      } else if (eventName === 'agentic://text-chunk') {
+        processNormalTextChunkInternal(context, sessionId, turnId, roundId, payload.text);
+      } else if (eventName === 'agentic://tool-event') {
+        processToolEvent(context, sessionId, turnId, roundId, payload.toolEvent);
+      }
+      return true;
+    };
+    agenticListenerMock.dispatchExternal.mockImplementation(apply);
+    const events = [
+      { eventName: 'agentic://dialog-turn-started', payload: { sessionId, turnId } },
+      { eventName: 'agentic://model-round-started', payload: { sessionId, turnId, roundId } },
+      { eventName: 'agentic://text-chunk', payload: { sessionId, turnId, roundId, text: 'Hello' } },
+      { eventName: 'agentic://tool-event', payload: { sessionId, turnId, roundId, toolEvent: {
+        event_type: 'Started', tool_id: 'read-1', tool_name: 'Read', params: { file_path: 'main.tex' },
+      } } },
+      { eventName: 'agentic://tool-event', payload: { sessionId, turnId, roundId, toolEvent: {
+        event_type: 'Completed', tool_id: 'read-1', tool_name: 'Read', result: 'source',
+      } } },
+    ];
+    const view = {
+      session: { sessionId, agentType: 'PaperWriting', state: 'Processing', createdAt: 1, turnCount: 7 },
+      turns: [{
+        turnId, turnIndex: 6, sessionId, timestamp: 1,
+        userMessage: { id: 'user-live', content: 'Open LaTeX', timestamp: 1 },
+        modelRounds: [], startTime: 1, status: 'inprogress',
+      }],
+      contextRestoreState: 'pending', isPartial: true, loadedTurnCount: 1, totalTurnCount: 7,
+      turnCatalog: { schemaVersion: 1, sessionId, revision: 'catalog-1', complete: true,
+        totalTurnCount: 7, entries: [] },
+      runtimeEventSnapshot: { sessionId, streamId: 'runtime-local', cursor: 5, activeTurnId: turnId, events },
+    } as any;
+    let resolveRefresh!: (value: any) => void;
+    const restore = vi.spyOn(agentAPI, 'restoreSessionView')
+      .mockResolvedValueOnce(view)
+      .mockImplementationOnce(() => new Promise(resolve => { resolveRefresh = resolve; }));
+    let cleanup: (() => void) | undefined;
+    try {
+      if (installBeforeHydrate) cleanup = installPeerSessionRefresh(context);
+      await store.loadSessionHistory(sessionId);
+      expect(store.getState().sessions.get(sessionId)?.dialogTurns[0].modelRounds).toEqual([]);
+      expect(isRuntimeSessionProjectionStale(LOCAL_SURFACE_ID, sessionId)).toBe(true);
+      if (!installBeforeHydrate) cleanup = installPeerSessionRefresh(context);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(restore).toHaveBeenCalledTimes(2);
+
+      // Live delivery races the host read: the covered prefix must not repeat,
+      // and the suffix must wait for the journal's model round to exist.
+      const deliver = (cursor: number, text: string) => routeRuntimeSessionEvent(
+        LOCAL_SURFACE_ID, 'agentic://text-chunk', {
+          sessionId, turnId, roundId, text,
+          __openbitfunRuntimeStreamId: 'runtime-local', __openbitfunRuntimeEventCursor: cursor,
+        }, payload => { apply('agentic://text-chunk', payload); },
+      );
+      deliver(3, 'Hello');
+      deliver(6, ' world');
+      expect(agenticListenerMock.dispatchExternal).not.toHaveBeenCalled();
+      resolveRefresh(view);
+      await vi.advanceTimersByTimeAsync(1);
+
+      const turn = store.getState().sessions.get(sessionId)!.dialogTurns[0];
+      expect(turn.modelRounds).toHaveLength(1);
+      expect(turn.modelRounds[0].items.find(item => item.type === 'text')).toMatchObject({ content: 'Hello world' });
+      expect(store.findToolItem(sessionId, turnId, 'read-1')?.status).toBe('completed');
+      expect(convertDialogTurnToBackendFormat(turn).modelRounds).toHaveLength(1);
+      expect(readRuntimeSessionProgress(LOCAL_SURFACE_ID, sessionId)).toEqual({ streamId: 'runtime-local', cursor: 6 });
+      expect(isRuntimeSessionProjectionStale(LOCAL_SURFACE_ID, sessionId)).toBe(false);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(restore).toHaveBeenCalledTimes(2);
+    } finally {
+      cleanup?.();
+    }
+  });
+
+  it.each(['Idle', 'Processing'])('keeps pristine local persisted content without extra reads when a %s host has no journal', async state => {
+    peerModeMock.active = false;
+    const store = FlowChatStore.getInstance();
+    const sessionId = 'local-legacy';
+    store.setState(prev => ({ ...prev, activeSessionId: sessionId, sessions: new Map([[sessionId, {
+      sessionId, title: 'Local', workspaceId: 'workspace-1', workspacePath: '/repo/OpenBitFun',
+      historyState: 'metadata-only', isHistorical: true, isTransient: false,
+      dialogTurns: [], config: { agentType: 'PaperWriting' }, createdAt: 1, lastActiveAt: 1, todos: [],
+    } as any]]) }));
+    const restore = vi.spyOn(agentAPI, 'restoreSessionView').mockResolvedValue({
+      session: { sessionId, state, agentType: 'PaperWriting', createdAt: 1 },
+      turns: [{
+        turnId: 'turn-legacy', turnIndex: 0, sessionId, timestamp: 1,
+        userMessage: { id: 'user-legacy', content: 'Open LaTeX', timestamp: 1 },
+        modelRounds: [{ id: 'round-legacy', roundIndex: 0, startTime: 1, status: 'streaming',
+          textItems: [{ id: 'text-legacy', content: 'Persisted reply', timestamp: 1 }], toolItems: [], thinkingItems: [] }],
+        startTime: 1, status: state === 'Idle' ? 'completed' : 'inprogress',
+      }], contextRestoreState: 'ready',
+    } as any);
+    const cleanup = installPeerSessionRefresh({
+      flowChatStore: store, eventBatcher: { flushNow: vi.fn(), clear: vi.fn() },
+      contentBuffers: new Map(), activeTextItems: new Map(),
+    } as any);
+    try {
+      await store.loadSessionHistory(sessionId);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(store.getState().sessions.get(sessionId)?.dialogTurns[0].modelRounds[0].items[0]).toMatchObject({ content: 'Persisted reply' });
+      expect(restore).toHaveBeenCalledTimes(1);
+      expect(agenticListenerMock.dispatchExternal).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+    }
   });
 
   it('replays a cursor-covered ToolEnd until the card is completed', async () => {

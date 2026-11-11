@@ -9787,11 +9787,19 @@ export class FlowChatStore {
           });
         }
       }
-      if (activeTurnId && isSurfaceReconcileEnabled()) {
-        const { requestPeerSessionRefresh } = await import(
+      if (activeTurnId && (restoredRuntimeEventSnapshot || isSurfaceReconcileEnabled())) {
+        const { requestPeerSessionRefresh, requestRuntimeProjectionRepair } = await import(
           '../services/flow-chat-manager/PeerSessionRefreshModule'
         );
-        requestPeerSessionRefresh(sessionId);
+        scope.assertCurrent('request restored Runtime projection replay');
+        if (restoredRuntimeEventSnapshot) {
+          // The active Turn above is an empty journal-replay shell. A local
+          // reload also needs replay, even if this window never changed device.
+          // The stream gap survives a request made before refresh installation.
+          requestRuntimeProjectionRepair(sessionId);
+        } else {
+          requestPeerSessionRefresh(sessionId);
+        }
       }
       completeSessionMutationReconciliation(sessionId);
       startupTrace.markPhase('historical_session_hydrate_end', {
