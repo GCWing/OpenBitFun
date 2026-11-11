@@ -8,7 +8,7 @@ import { getActiveSurfaceScope, isSurfaceChangedError } from '@/infrastructure/p
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { useEditorDocument, type EditorDocument } from '../services/EditorDocument';
-import { LATEX_SNIPPETS, latexOutline, latexRoot, latexRootHint, type LatexSnippetName } from '../utils/latexDocument';
+import { LATEX_SNIPPETS, latexBodyInsertionOffset, latexOutline, latexRoot, latexRootHint, type LatexSnippetName } from '../utils/latexDocument';
 import CodeEditor, { type CodeEditorProps } from './CodeEditor';
 import './LatexEditor.scss';
 
@@ -153,8 +153,20 @@ export default function LatexEditor(props: CodeEditorProps) {
   const action = (name: string, payload: unknown = null) => {
     editorRef.current?.focus();
     if (name === 'editor.action.insertSnippet') {
-      const snippet = (payload as { snippet: string }).snippet;
-      editorRef.current?.getContribution<Monaco.editor.IEditorContribution & { insert: (value: string) => void }>('snippetController2')?.insert(snippet);
+      const editor = editorRef.current;
+      const model = editor?.getModel();
+      const selection = editor?.getSelection();
+      let snippet = (payload as { snippet: string }).snippet;
+      if (editor && model && selection) {
+        const offset = latexBodyInsertionOffset(model.getValue(), model.getOffsetAt(selection.getStartPosition()));
+        if (offset !== undefined) {
+          const position = model.getPositionAt(offset);
+          editor.setSelection({ startLineNumber: position.lineNumber, startColumn: position.column,
+            endLineNumber: position.lineNumber, endColumn: position.column });
+          snippet = model.getEOL() + snippet;
+        }
+      }
+      editor?.getContribution<Monaco.editor.IEditorContribution & { insert: (value: string) => void }>('snippetController2')?.insert(snippet);
     } else editorRef.current?.trigger('paper-writing-toolbar', name, payload);
   };
   const save = async () => {

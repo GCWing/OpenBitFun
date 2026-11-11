@@ -42,6 +42,24 @@ export function latexRoot(sourcePath: string, hint: string): string {
 export function latexRootHint(source: string): string | undefined {
   return /^%\s*!\s*TeX\s+root\s*=\s*(.+)$/im.exec(source)?.[1]?.trim();
 }
+/** Body snippets must not replace a main document's preamble selection. */
+export function latexBodyInsertionOffset(source: string, selectionStart: number): number | undefined {
+  let offset = 0;
+  for (const raw of source.split('\n')) {
+    const line = latexVisibleLine(raw);
+    const markers = /\\begin\s*\{\s*document\s*\}/g;
+    for (const marker of line.matchAll(markers)) {
+      let escapes = 0;
+      for (let before = marker.index! - 1; before >= 0 && line[before] === '\\'; before--) escapes++;
+      if (escapes % 2 !== 0) continue;
+      const body = offset + marker.index! + marker[0].length;
+      return selectionStart < body ? body : undefined;
+    }
+    offset += raw.length + 1;
+  }
+  // Included chapters have no document boundary and keep their cursor/selection.
+  return undefined;
+}
 export const LATEX_SNIPPETS = {
   section: '\\section{${1:Title}}\n${0}',
   equation: '\\begin{equation}\n  ${1:E = mc^2}\n  \\label{eq:${2:energy}}\n\\end{equation}\n${0}',

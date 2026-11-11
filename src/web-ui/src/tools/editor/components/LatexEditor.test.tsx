@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { act } from 'react';
+import { act, type ComponentProps } from 'react';
+import type * as Monaco from 'monaco-editor';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import LatexEditor from './LatexEditor';
@@ -11,7 +12,16 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   supported: true,
   sourceProps: undefined as import('./CodeEditor').CodeEditorProps | undefined,
+  insertSnippet: undefined as ((value: string) => void) | undefined,
 }));
+
+vi.mock('@openbitfun/ui', async importOriginal => {
+  const actual = await importOriginal<typeof import('@openbitfun/ui')>();
+  return { ...actual, Select: (props: ComponentProps<typeof actual.Select>) => {
+    if (props['aria-label'] === 'editor.latexEditor.insert') mocks.insertSnippet = props.onValueChange;
+    return <actual.Select {...props} />;
+  } };
+});
 
 vi.mock('@/infrastructure/api/service-api/LatexAPI', () => ({
   compileWorkspaceLatex: mocks.invoke,
@@ -158,4 +168,36 @@ it('compiles the declared project entry after saving an included source file', a
   await act(async () => { renderEditor(doc); });
   await act(async () => compileButton().click());
   expect(mocks.invoke).toHaveBeenCalledWith(origin, '/project/manuscript.tex', 'pdflatex');
+});
+
+it.each([false, true])('inserts body snippets after the document start without replacing selected preamble: %s', async selectedPreamble => {
+  const original = '% !TeX program = pdflatex\n\\documentclass{article}\n\\begin{document}\nExisting text\n\\end{document}';
+  let source = original;
+  let start = 0;
+  let end = selectedPreamble ? original.indexOf('Existing text') : 0;
+  const positionAt = (offset: number) => {
+    const lines = source.slice(0, offset).split('\n');
+    return { lineNumber: lines.length, column: lines[lines.length - 1]!.length + 1 };
+  };
+  const offsetAt = (position: Monaco.IPosition) => source.split('\n').slice(0, position.lineNumber - 1)
+    .reduce((sum, line) => sum + line.length + 1, 0) + position.column - 1;
+  const editor = {
+    focus: vi.fn(),
+    getModel: () => ({ getValue: () => source, getEOL: () => '\n', getOffsetAt: offsetAt, getPositionAt: positionAt }),
+    getSelection: () => ({ getStartPosition: () => positionAt(start) }),
+    setSelection: (range: Monaco.IRange) => {
+      start = offsetAt({ lineNumber: range.startLineNumber, column: range.startColumn });
+      end = offsetAt({ lineNumber: range.endLineNumber, column: range.endColumn });
+    },
+    getContribution: () => ({ insert: (snippet: string) => {
+      const content = snippet.replace(/\$\{\d+:([^}]*)\}/g, '$1').replace(/\$\{\d+\}/g, '');
+      source = source.slice(0, start) + content + source.slice(end);
+    } }),
+  } as unknown as Monaco.editor.IStandaloneCodeEditor;
+  await act(async () => { renderEditor(); });
+  await act(async () => { mocks.sourceProps?.onEditorReady?.(editor); });
+  await act(async () => mocks.insertSnippet?.('section'));
+  expect(source.startsWith('% !TeX program = pdflatex\n\\documentclass{article}')).toBe(true);
+  expect(source).toContain('\\begin{document}\n\\section{Title}\n');
+  expect(source).toContain('Existing text\n\\end{document}');
 });
