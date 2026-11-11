@@ -12,6 +12,7 @@ export const REMOTE_CAPABILITY_HOST_STREAM_V1 = 'host_stream_v1';
 export const UNSUPPORTED_HOST_MESSAGE = 'The controlled device runs an older OpenBitFun version that does not support on-demand session streaming. Update OpenBitFun on that device to continue.';
 /** Hosts keep hint subscriptions alive for 10 minutes; renew well before. */
 const KEEPALIVE_MS = 4 * 60 * 1000;
+let subscriptionSequence = 0;
 
 /** How many pages one history request may read while it has not yet shown the
  * reader anything it did not already have.
@@ -28,6 +29,7 @@ const MAX_HISTORY_PAGES_PER_REQUEST = 4;
 
 export interface StreamEvent { seq: number; event: string; payload: unknown }
 export interface StreamPage {
+  subscription_id?: string;
   stream_id: string;
   epoch: number;
   events: StreamEvent[];
@@ -37,6 +39,7 @@ export interface StreamPage {
   truncated: boolean;
 }
 export interface StreamReadRequest {
+  subscription_id?: string;
   stream_id: string;
   after?: number;
   before?: number;
@@ -63,7 +66,7 @@ export interface SessionStreamHandle { close(): void; wake(): void; loadOlder():
 /** Host-facing calls of one reader; production is encrypted device RPC. */
 export interface HostStreamTransport {
   readStream(request: StreamReadRequest): Promise<StreamPage>;
-  unsubscribeStream(streamId: string): Promise<void>;
+  unsubscribeStream(streamId: string, subscriptionId?: string): Promise<void>;
 }
 /** Wake sources: decrypted hints and connection recoveries. */
 export interface HostStreamSignals {
@@ -123,12 +126,21 @@ export function parseStreamPage(value: unknown): StreamPage {
     }
   }
   return {
+    subscription_id: typeof page.subscription_id === 'string' ? page.subscription_id : undefined,
     stream_id: page.stream_id, epoch: page.epoch!, events: page.events as StreamEvent[], has_more: page.has_more!,
     cursor: page.cursor!, oldest_seq: page.oldest_seq!, truncated: page.truncated === true,
   };
 }
 
 class Reader {
+  private readonly subscriptionId = globalThis.crypto?.randomUUID?.()
+    ?? `reader-${Date.now().toString(36)}-${++subscriptionSequence}-${Math.random().toString(36).slice(2)}`;
+  private scopedSubscription = false;
+  close(): void {
+    // Legacy hosts have one lease per controller/stream. Let it expire instead
+    // of allowing delayed cleanup to unsubscribe a replacement reader.
+    if (this.scopedSubscription) void this.options.transport.unsubscribeStream(this.options.streamId, this.subscriptionId).catch(() => {});
+  }
   epoch = 0;
   cursor = 0;
   oldest = 1;
@@ -136,10 +148,12 @@ class Reader {
   truncated = false;
   /** Turns already emitted to the caller, i.e. already part of the transcript. */
   private readonly emittedTurns = new Set<string>();
-  constructor(private readonly options: HostStreamOptions) {}
+  constructor(private readonly options: HostStreamOptions, private readonly isActive: () => boolean) {}
 
   private async read(request: Omit<StreamReadRequest, 'stream_id' | 'subscribe'>): Promise<StreamPage> {
-    const page = await this.options.transport.readStream({ stream_id: this.options.streamId, subscribe: true, ...request });
+    const page = await this.options.transport.readStream({ stream_id: this.options.streamId, subscribe: true, ...request, subscription_id: this.subscriptionId });
+    if (!this.isActive()) throw new Error('Session stream closed');
+    this.scopedSubscription = page.subscription_id === this.subscriptionId;
     if (page.stream_id !== this.options.streamId) throw new Error('Stream page identity mismatch');
     return page;
   }
@@ -221,10 +235,9 @@ class Reader {
 /** Open one host stream. The first page is awaited so an offline or older
  * host fails the call instead of retrying silently in the background. */
 export async function openHostStream(options: HostStreamOptions): Promise<SessionStreamHandle> {
-  const reader = new Reader(options);
   let active = true;
-  try { await reader.resync(); } catch (error) { throw new Error(describeHostStreamError(error)); }
-  options.onCaughtUp?.();
+  let initialized = false;
+  const reader = new Reader(options, () => active);
 
   // One reader in flight and one dirty successor (Happy InvalidateSync);
   // older-page requests share the same lane so pages never interleave.
@@ -246,7 +259,7 @@ export async function openHostStream(options: HostStreamOptions): Promise<Sessio
     }
   };
   const wake = () => {
-    if (!active || running || retry) return;
+    if (!active || !initialized || running || retry) return;
     running = drain().then(() => { retryDelay = 1000; }).catch(error => {
       if (!active) return;
       dirty = true;
@@ -268,16 +281,28 @@ export async function openHostStream(options: HostStreamOptions): Promise<Sessio
   const onVisible = () => { if (visibility?.visibilityState === 'visible') resumed(); };
   visibility?.addEventListener('visibilitychange', onVisible);
 
+  const close = () => {
+    if (!active) return;
+    active = false;
+    stopHints(); stopReconnect(); clearInterval(keepalive);
+    visibility?.removeEventListener('visibilitychange', onVisible);
+    if (retry) clearTimeout(retry);
+    for (const older of olderRequests.splice(0)) older.reject(new Error('Session stream closed'));
+    reader.close();
+  };
+  // Subscribe before source IO: the host can publish the final update while
+  // its opening page is still in flight. Keep that wake dirty until resync ends.
+  try {
+    await reader.resync();
+    initialized = true;
+    options.onCaughtUp?.();
+    if (dirty) wake();
+  } catch (error) {
+    close();
+    throw new Error(describeHostStreamError(error));
+  }
   return {
-    close() {
-      if (!active) return;
-      active = false;
-      stopHints(); stopReconnect(); clearInterval(keepalive);
-      visibility?.removeEventListener('visibilitychange', onVisible);
-      if (retry) clearTimeout(retry);
-      for (const older of olderRequests.splice(0)) older.reject(new Error('Session stream closed'));
-      void options.transport.unsubscribeStream(options.streamId).catch(() => {});
-    },
+    close,
     wake: invalidate,
     loadOlder() {
       if (!active) return Promise.resolve();

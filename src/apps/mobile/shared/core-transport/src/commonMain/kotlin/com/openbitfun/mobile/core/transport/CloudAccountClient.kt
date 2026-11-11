@@ -6,6 +6,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.onCompletion
@@ -341,12 +343,15 @@ public class CloudAccountClient internal constructor(
      * encrypted device RPC. The relay forwards ciphertext only, and nothing is
      * written on this device: the transcript lives exactly as long as the flow.
      */
+    @OptIn(ExperimentalUuidApi::class)
     public suspend fun subscribeSession(
         relayUrl: String, session: CloudAccountSession, targetDeviceId: String, sessionId: String,
         onError: (Throwable) -> Unit, onCaughtUp: () -> Unit,
-    ): kotlinx.coroutines.flow.Flow<JsonObject> {
+    ): kotlinx.coroutines.flow.Flow<JsonObject> = flow {
         val socket = connection(relayUrl, session.token)
         val target = targetDeviceId.trim()
+        val subscriptionId = Uuid.random().toString()
+        var scopedSubscription = false
         val historyKey = target + ":" + sessionId
         val historyRequests = Channel<CompletableDeferred<Unit>>(Channel.RENDEZVOUS)
         historyReaders[historyKey] = historyRequests
@@ -356,8 +361,9 @@ public class CloudAccountClient internal constructor(
                 check(realtime.value?.socket === socket) { "Account changed" }
                 val startedAt = TimeSource.Monotonic.markNow()
                 val page = deviceRpc(relayUrl, session, target,
-                    RemoteCommand(cmd = "read_stream", streamId = sessionId, after = after, before = before, epoch = epoch, subscribe = true),
+                    RemoteCommand(cmd = "read_stream", streamId = sessionId, after = after, before = before, epoch = epoch, subscribe = true, subscriptionId = subscriptionId),
                     StreamPageWire.serializer(), RELAY_DEFAULT_TIMEOUT_MS)
+                scopedSubscription = page.subscriptionId == subscriptionId
                 val elapsedMs = startedAt.elapsedNow().inWholeMilliseconds
                 // The opening page (`after == null`) is the one the user waits for,
                 // and a slow page is worth naming wherever it happens; a page per
@@ -368,8 +374,8 @@ public class CloudAccountClient internal constructor(
                 return page
             }
             override suspend fun unsubscribe() {
-                if (realtime.value?.socket !== socket) return
-                deviceRpc(relayUrl, session, target, RemoteCommand(cmd = "unsubscribe_stream", streamId = sessionId),
+                if (realtime.value?.socket !== socket || !scopedSubscription) return
+                deviceRpc(relayUrl, session, target, RemoteCommand(cmd = "unsubscribe_stream", streamId = sessionId, subscriptionId = subscriptionId),
                     CommandStatusResponse.serializer(), RELAY_DEFAULT_TIMEOUT_MS)
             }
         }
@@ -379,7 +385,7 @@ public class CloudAccountClient internal constructor(
         // the gap between the two counts is what the receiving device spends.
         val openedAt = TimeSource.Monotonic.markNow()
         var recordsSeen = 0
-        return hostStream(sessionId, target, hints, merge(socket.connections.drop(1), foregroundResumes), reads,
+        emitAll(hostStream(sessionId, target, hints, merge(socket.connections.drop(1), foregroundResumes), reads,
             olderRequests = historyRequests, onError = { error ->
                 log.warn("host stream read failed stream=${sessionId.take(24)} type=${error::class.simpleName} failure=${(error as? CloudAccountException)?.failure} message=${error.message}")
                 onError(error)
@@ -390,7 +396,7 @@ public class CloudAccountClient internal constructor(
                 log.info("host stream ended stream=${sessionId.take(24)} events=$recordsSeen cause=${cause?.let { it::class.simpleName } ?: "none"}")
                 if (historyReaders[historyKey] === historyRequests) historyReaders.remove(historyKey)
                 historyRequests.close()
-            }
+            })
     }
 
     /**

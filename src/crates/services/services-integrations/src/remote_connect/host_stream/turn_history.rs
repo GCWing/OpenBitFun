@@ -92,8 +92,7 @@ impl HostStreamHub {
             }
             log.last_activity = Instant::now();
             if request.subscribe {
-                log.subscribers
-                    .insert(device.to_owned(), Instant::now() + SUBSCRIPTION_LEASE);
+                log.subscribe(device, request.subscription_id.as_deref())?;
             }
             if request.epoch.is_some_and(|epoch| epoch != log.epoch) {
                 // No stale snapshot content: the normal epoch fence tells the

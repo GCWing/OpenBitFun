@@ -110,6 +110,9 @@ export interface RelayHistoryReady {
   oldestSeq: number;
   cursor: number;
   historyBatches?: boolean;
+  /** Live catch-up recovered; this does not complete a historical page. */
+  live?: boolean;
+  subscriptionId?: string;
 }
 
 /** One session subscription, shared by opening history and receiving live records. */
@@ -117,6 +120,7 @@ export class RelaySessionHistory {
   private readonly scope = getActiveSurfaceScope();
   private readonly listeners: Array<() => void> = [];
   private subscriptionId: string | null = null;
+  private pendingOwnedEvents: WarmSessionStream['events'] = [];
   private closed = false;
   private failed = false;
   private ready: RelayHistoryReady | null = null;
@@ -156,7 +160,7 @@ export class RelaySessionHistory {
     readonly sessionId: string,
     onRecord: (record: SessionRecord) => boolean | void,
     onReady: (ready: RelayHistoryReady) => void,
-    onError: (error: unknown) => void,
+    onError: (error: unknown, options?: { retrying: boolean }) => void,
     onResumed?: () => Promise<void>,
     private readonly onFlush?: () => void,
     onResync?: () => void,
@@ -171,7 +175,7 @@ export class RelaySessionHistory {
     // has registered. Unlisten/relisten would lose events during async setup.
     this.warm = takeWarmStream(this.scope.surfaceId, sessionId);
     // Register before asking Rust to replay its cache or fetch the first page.
-    this.listeners.push(remoteConnectAPI.onSessionRecord(this.handlers.record = value => {
+    this.listeners.push(remoteConnectAPI.onSessionRecord(this.owned('record', value => {
       if (!this.isCurrent() || this.failed) return;
       const record = value as SessionRecord;
       if (record.sessionId !== this.sessionId) return;
@@ -184,26 +188,41 @@ export class RelaySessionHistory {
         if (onRecord(record) === true) this.flush();
         else this.scheduleFlush();
       } catch (error) { this.fail(error); }
-    }));
+    })));
     // A restarted host stream replays its latest page under fresh revisions and
     // sends no tombstones for what it dropped (a rollback, undo, or history
     // rewrite). Records already received are rendered first; the replay that
     // follows, up to its ready event, is then the whole truth.
-    this.listeners.push(remoteConnectAPI.onSessionGap(this.handlers.gap = gap => {
+    this.listeners.push(remoteConnectAPI.onSessionGap(this.owned('gap', gap => {
       if (!this.isCurrent() || gap.sessionId !== this.sessionId || gap.resync !== true) return;
       this.flush();
       this.collectingHistory = true;
       this.historyRecords = [];
       try { onResync?.(); } catch (error) { this.fail(error); }
-    }));
-    this.listeners.push(remoteConnectAPI.onSessionSyncError(this.handlers.syncError = error => {
+    })));
+    this.listeners.push(remoteConnectAPI.onSessionSyncError(this.owned('syncError', error => {
       if (!this.isCurrent() || error.sessionId !== this.sessionId || error.targetDeviceId !== this.scope.surfaceId) return;
       // Records received before the failure stay rendered.
       this.flush();
-      this.fail(new Error(error.message));
-    }));
-    this.listeners.push(remoteConnectAPI.onSessionReady(this.handlers.ready = ready => {
+      if (error.retrying === true) {
+        onError(new Error(error.message), { retrying: true });
+      } else {
+        this.fail(new Error(error.message));
+      }
+    })));
+    this.listeners.push(remoteConnectAPI.onSessionReady(this.owned('ready', ready => {
       if (!this.isCurrent() || this.failed || ready.sessionId !== this.sessionId) return;
+      if (ready.live === true) {
+        // Recovery may finish while an older immutable Turn is still loading.
+        // Keep its staged records and promise intact until its own ready event.
+        if (!this.ready || !this.flush()) return;
+        this.ready = { ...this.ready, ...ready };
+        onReady(ready);
+        if (onResumed) void onResumed().catch(error => {
+          log.warn('Session interaction mailbox refresh failed', { sessionId: this.sessionId, error });
+        });
+        return;
+      }
       try {
         for (const record of this.historyRecords) onRecord(record);
         this.historyRecords = [];
@@ -218,11 +237,11 @@ export class RelaySessionHistory {
       onReady(ready);
       this.resolveReady();
       this.pageApplied?.();
-    }));
-    this.listeners.push(remoteConnectAPI.onSessionInteractionChanged(this.handlers.interaction = event => {
+    })));
+    this.listeners.push(remoteConnectAPI.onSessionInteractionChanged(this.owned('interaction', event => {
       if (!this.isCurrent() || event.sessionId !== this.sessionId || !onResumed) return;
       void onResumed().catch(error => log.warn('Session interaction mailbox refresh failed', {sessionId:this.sessionId,error}));
-    }));
+    })));
     this.warm?.dispose();
     // A closed subscription may never have had an open() caller.
     void this.firstPage.catch(() => {});
@@ -295,6 +314,7 @@ export class RelaySessionHistory {
         throw new Error('Session subscription is closed');
       }
       this.subscriptionId = id;
+      for (const event of this.pendingOwnedEvents.splice(0)) this.handlers[event.kind]?.(event.value);
       await this.waitForFirstPage();
       this.scheduleHistoryPrefetch();
     } catch (error) {
@@ -364,12 +384,34 @@ export class RelaySessionHistory {
     try {
       await Promise.all([remoteConnectAPI.loadOlderSession(this.subscriptionId), applied]);
     } catch (error) {
-      this.fail(error);
-      this.close();
+      // A failed optional/history read does not end the live subscription.
+      // Its incomplete batch stays invisible and a later reader may retry it.
+      this.historyRecords = [];
+      this.collectingHistory = false;
+      if (this.failed) this.close();
       throw error;
     } finally { this.pageApplied = null; this.rejectPage = null; }
     this.scope.assertCurrent('finish loading older relay history');
     return true;
+  }
+
+  private owned(kind: WarmSessionStream['events'][number]['kind'], handler: (value: any) => void): (value: any) => void {
+    const receive = (value: any): void => {
+      if (!this.isCurrent() || value?.sessionId !== this.sessionId
+        || (value.targetDeviceId && value.targetDeviceId !== this.scope.surfaceId)) return;
+      // Older controller bridges omit the additive identity. New bridges tag
+      // even the first page, which can arrive before subscribeSession resolves.
+      if (typeof value.subscriptionId === 'string') {
+        if (this.subscriptionId === null) {
+          this.pendingOwnedEvents.push({ kind, value });
+          return;
+        }
+        if (value.subscriptionId !== this.subscriptionId) return;
+      }
+      handler(value);
+    };
+    this.handlers[kind] = receive;
+    return receive;
   }
 
   close(): void {
@@ -378,6 +420,7 @@ export class RelaySessionHistory {
     if (this.flushTimer !== null) this.flush();
     if (this.closed) return;
     this.closed = true;
+    this.pendingOwnedEvents = [];
     this.historyRecords = [];
     if (this.historyTimer !== null) clearTimeout(this.historyTimer);
     this.historyTimer = null;

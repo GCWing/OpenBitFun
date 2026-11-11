@@ -29,6 +29,7 @@ export interface HostSessionEvent { session_id: string; event: string; payload: 
 export interface HostStreamEventWire { seq: number; event: string; payload: Object; }
 /** `RemoteResponse::StreamPage`, flattened, as answered to `read_stream`. */
 export interface HostStreamPage extends CommandStatusResponse {
+  subscription_id?: string;
   stream_id: string;
   epoch: number;
   events: HostStreamEventWire[];

@@ -109,6 +109,101 @@ describe('RelaySessionHistory', () => {
     expect(fixture.gap).toBeNull();
   });
 
+  it('continues the same live subscription after a recoverable sync error', async () => {
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 150, historyBatches: true });
+      return 'subscription';
+    });
+    const apply = vi.fn(() => true);
+    const error = vi.fn();
+    const ready = vi.fn();
+    const history = new RelaySessionHistory('session', apply, ready, error);
+    await history.open();
+    fixture.error?.({ sessionId: 'session', targetDeviceId: 'host', message: 'Lost reply', retrying: true });
+    fixture.record?.({ sessionId: 'session', id: 'turn/last', turn: { status: 'completed' } });
+    fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 151, historyBatches: true, live: true });
+    expect(apply).toHaveBeenCalledOnce();
+    expect(error).toHaveBeenCalledWith(expect.any(Error), { retrying: true });
+    expect(ready).toHaveBeenCalledTimes(2);
+    expect(fixture.subscribe).toHaveBeenCalledOnce();
+    expect(fixture.unsubscribe).not.toHaveBeenCalled();
+    history.close();
+  });
+
+  it('ignores events from a retired subscription including events before the new open resolves', async () => {
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.error?.({ sessionId: 'session', targetDeviceId: 'host', subscriptionId: 'retired', message: 'Old read failed' });
+      fixture.record?.({ sessionId: 'session', subscriptionId: 'retired', id: 'old' });
+      fixture.record?.({ sessionId: 'session', subscriptionId: 'current', id: 'new' });
+      fixture.ready?.({ sessionId: 'session', subscriptionId: 'current', hasMore: false, oldestSeq: 1, cursor: 5 });
+      return 'current';
+    });
+    const apply = vi.fn();
+    const error = vi.fn();
+    const history = new RelaySessionHistory('session', apply, vi.fn(), error);
+    await history.open();
+    fixture.error?.({ sessionId: 'session', targetDeviceId: 'host', subscriptionId: 'retired', message: 'Late old error' });
+    fixture.gap?.({ sessionId: 'session', subscriptionId: 'retired', resync: true });
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledWith(expect.objectContaining({ id: 'new' }));
+    expect(error).not.toHaveBeenCalled();
+    history.close();
+  });
+
+  it('keeps live delivery and permits retry after an older-page transport failure', async () => {
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 150, historyBatches: true });
+      return 'subscription';
+    });
+    const apply = vi.fn(() => true);
+    const history = new RelaySessionHistory('session', apply, vi.fn(), vi.fn());
+    await history.open();
+    fixture.older.mockImplementationOnce(async () => {
+      fixture.record?.({ sessionId: 'session', id: 'partial-old', historyReplay: true });
+      throw new Error('Lost older reply');
+    });
+    await expect(history.loadOlder()).rejects.toThrow('Lost older reply');
+    fixture.record?.({ sessionId: 'session', id: 'live-terminal' });
+    expect(apply).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'live-terminal' }));
+    expect(fixture.unsubscribe).not.toHaveBeenCalled();
+    fixture.older.mockImplementationOnce(async () => {
+      fixture.record?.({ sessionId: 'session', id: 'complete-old', historyReplay: true });
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 151 });
+    });
+    await expect(history.loadOlder()).resolves.toBe(true);
+    expect(apply).toHaveBeenCalledTimes(2);
+    history.close();
+  });
+
+  it('does not publish an incomplete older page when live catch-up recovers', async () => {
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 150, historyBatches: true });
+      return 'subscription';
+    });
+    const apply = vi.fn(() => true);
+    const history = new RelaySessionHistory('session', apply, vi.fn(), vi.fn());
+    await history.open();
+    let release!: () => void;
+    fixture.older.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+    const older = history.loadOlder();
+    await Promise.resolve();
+    fixture.record?.({ sessionId: 'session', id: 'old-fragment', historyReplay: true });
+    fixture.error?.({ sessionId: 'session', targetDeviceId: 'host', message: 'Lost live reply', retrying: true });
+    fixture.record?.({ sessionId: 'session', id: 'live-terminal' });
+    fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 151, live: true });
+    expect(apply).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'live-terminal' }));
+    let settled = false;
+    void older.then(() => { settled = true; });
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 151 });
+    await older;
+    expect(apply).toHaveBeenCalledTimes(2);
+    history.close();
+  });
+
   it('surfaces replay failures instead of leaving the first page loading forever', async () => {
     fixture.subscribe.mockImplementation(async () => {
       fixture.error?.({ sessionId: 'session', targetDeviceId: 'host', message: 'Unreadable session' });

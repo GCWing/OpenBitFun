@@ -238,11 +238,11 @@ export class RelayHttpClient {
         if (!current()) throw new AccountIdentityChangedError();
         return parseStreamPage(await this.sendDeviceRpc(deviceId, { cmd: 'read_stream', ...request }, { retryable: true, timeoutMs: 30_000 }));
       },
-      unsubscribeStream: async (id: string) => {
+      unsubscribeStream: async (id: string, subscriptionId?: string) => {
         // Best effort: the host also drops the lease when this device goes
         // offline or stops renewing.
         if (this.identity !== identity) return;
-        await this.sendDeviceRpc(deviceId, { cmd: 'unsubscribe_stream', stream_id: id }, { retryable: true, timeoutMs: 10_000 });
+        await this.sendDeviceRpc(deviceId, { cmd: 'unsubscribe_stream', stream_id: id, subscription_id: subscriptionId }, { retryable: true, timeoutMs: 10_000 });
       },
     };
     const signals = {

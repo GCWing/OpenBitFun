@@ -514,22 +514,29 @@ export class CloudAccountClient {
   subscribeSession(relayUrl: string, session: CloudAccountSession, targetId: string,
     streamId: string, callbacks: HostSessionCallbacks): HostSessionStream {
     const target = targetId.trim();
+    const socket = this.connection(relayUrl, session.token);
+    const subscriptionId = Encoding.randomId('stream');
+    let scopedSubscription = false;
     const source: HostSessionSource = {
       target: target,
-      read: (request: HostStreamReadRequest): Promise<HostStreamPage> => {
-        const command: RemoteCommand = { cmd: 'read_stream', stream_id: streamId, subscribe: true };
+      read: async (request: HostStreamReadRequest): Promise<HostStreamPage> => {
+        if (this.realtime !== socket) throw new Error('Account changed');
+        const command: RemoteCommand = { cmd: 'read_stream', stream_id: streamId, subscribe: true, subscription_id: subscriptionId };
         if (request.after !== undefined) command.after = request.after;
         if (request.before !== undefined) command.before = request.before;
         if (request.epoch !== undefined) command.epoch = request.epoch;
-        return this.deviceRpc<HostStreamPage>(relayUrl, session, target, command, 30000);
+        const page = await this.deviceRpc<HostStreamPage>(relayUrl, session, target, command, 30000);
+        scopedSubscription = page.subscription_id === subscriptionId;
+        return page;
       },
       unsubscribe: async (): Promise<void> => {
+        if (this.realtime !== socket || !scopedSubscription) return;
         await this.deviceRpc<CommandStatusResponse>(relayUrl, session, target,
-          { cmd: 'unsubscribe_stream', stream_id: streamId }, 15000);
+          { cmd: 'unsubscribe_stream', stream_id: streamId, subscription_id: subscriptionId }, 15000);
       },
       onHint: (listener: (hint: HostStreamHint) => void): (() => void) =>
         this.observeStreamHints(relayUrl, session, target, listener),
-      onReconnect: (listener: () => void): (() => void) => this.connection(relayUrl, session.token).onReconnect(listener)
+      onReconnect: (listener: () => void): (() => void) => socket.onReconnect(listener)
     };
     return new HostSessionStream(streamId, source, callbacks);
   }

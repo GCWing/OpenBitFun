@@ -13,6 +13,10 @@ test('session content is read on demand from the online host, hints wake the rea
  try {
   const context=await browser.createIncognitoBrowserContext();
   const relay=new RelayFixture();
+  // This case models an upgraded host; the other fixture paths still omit the
+  // acknowledgement and exercise the legacy lease-expiry behavior.
+  const readStream=relay.readStream.bind(relay);
+  relay.readStream=request=>({...readStream(request),subscription_id:request.subscription_id});
   // More than one host page (200 events) so history must be walked backwards.
   for(let seq=1;seq<=205;seq++)relay.appendStreamEvent('browser-session','session-record',record(seq));
   const page=await relay.page(context,source.origin);
@@ -37,9 +41,13 @@ test('session content is read on demand from the online host, hints wake the rea
   });
   let state=await page.evaluate(()=>window.streamState);
   assert.equal(state.events.length,200);assert.equal(state.events[0],'turn/6');assert.equal(state.events.at(-1),'turn/205');
-  assert.equal(state.caughtUp,1);assert.deepEqual(state.history.at(-1),{hasMore:true,oldestSeq:6,cursor:205,truncated:false});
+  assert.ok(state.caughtUp>=1);assert.deepEqual(state.history.at(-1),{hasMore:true,oldestSeq:6,cursor:205,truncated:false});
   const opening=relay.streamReads.filter(read=>read.stream_id==='browser-session');
-  assert.equal(opening.length,1);assert.equal(opening[0].subscribe,true);assert.equal(opening[0].after,undefined);
+  assert.ok(opening.length>=1&&opening.length<=2);assert.equal(opening[0].subscribe,true);assert.equal(opening[0].after,undefined);
+  // The socket may connect during the initial read. Its buffered invalidation
+  // must resume by cursor, never reread or duplicate the opening content.
+  for(const read of opening.slice(1)){assert.equal(read.after,205);assert.equal(read.epoch,relay.stream('browser-session').epoch);}
+  assert.ok(opening[0].subscription_id);
 
   // Older history is one explicit backwards page from the host.
   await page.evaluate(()=>window.stream.loadOlder());

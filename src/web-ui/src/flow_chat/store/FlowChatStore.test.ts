@@ -69,6 +69,7 @@ const apiMocks = vi.hoisted(() => ({
   relayRecord: null as ((value: any) => void) | null,
   relayReady: null as ((value: any) => void) | null,
   relayGap: null as ((value: any) => void) | null,
+  relaySyncError: null as ((value: any) => void) | null,
   listSessions: vi.fn(),
   loadSessionMetadata: vi.fn(),
   listSessionsPage: vi.fn(),
@@ -168,7 +169,7 @@ vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', () => ({
   onSessionRecord: (listener: (value: any) => void) => { apiMocks.relayRecord = listener; return () => { apiMocks.relayRecord = null; }; },
     onSessionReady: (listener: (value: any) => void) => { apiMocks.relayReady = listener; return () => { apiMocks.relayReady = null; }; },
     onSessionGap: (listener: (value: any) => void) => { apiMocks.relayGap = listener; return () => { apiMocks.relayGap = null; }; },
-    onSessionSyncError: vi.fn(() => () => {}),
+    onSessionSyncError: (listener: (value: any) => void) => { apiMocks.relaySyncError = listener; return () => { apiMocks.relaySyncError = null; }; },
     subscribeSession: apiMocks.subscribeRelaySession,
     loadOlderSession: apiMocks.loadOlderRelaySession,
     unsubscribeSession: vi.fn(async () => {}),
@@ -9190,6 +9191,29 @@ describe('FlowChatStore device surfaces', () => {
     expect(apiMocks.loadSessionTurnWindow).not.toHaveBeenCalled();
     expect(apiMocks.restoreSessionView).not.toHaveBeenCalled();
     expect(apiMocks.restoreSessionWithTurns).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('recovers terminal state after a lost final read with active session=%s', async active => {
+    activateSurface(PEER_SURFACE_ID);
+    seedSession('peer-recovery');
+    if (!active) flowChatStore.setState(state => ({ ...state, activeSessionId: null }));
+    const acceptRuntimeStatus = vi.fn();
+    stateMachineManagerMock.getOrCreate.mockReturnValue({ acceptRuntimeStatus });
+    const { modelRounds: _rounds, ...stored } = createPersistedTurn(0, 'peer-recovery');
+    apiMocks.subscribeRelaySession.mockClear().mockImplementationOnce(async () => {
+      apiMocks.relayRecord?.({ sessionId: 'peer-recovery', id: 'turn/turn-0', revision: 1, turn: { ...stored, status: 'inprogress' } });
+      apiMocks.relayReady?.({ sessionId: 'peer-recovery', hasMore: false, oldestSeq: 1, cursor: 1 });
+      return 'recovery-subscription';
+    });
+    await flowChatStore.loadRelaySessionHistory('peer-recovery');
+    expect(acceptRuntimeStatus).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'processing' }));
+    apiMocks.relaySyncError?.({ sessionId: 'peer-recovery', subscriptionId: 'recovery-subscription', targetDeviceId: PEER_SURFACE_ID, retrying: true, message: 'Reply lost' });
+    expect(flowChatStore.getState().sessions.get('peer-recovery')?.historyState).toBe('failed');
+    apiMocks.relayRecord?.({ sessionId: 'peer-recovery', subscriptionId: 'recovery-subscription', id: 'turn/turn-0', revision: 2, turn: stored });
+    apiMocks.relayReady?.({ sessionId: 'peer-recovery', subscriptionId: 'recovery-subscription', live: true, hasMore: false, oldestSeq: 1, cursor: 2 });
+    expect(flowChatStore.getState().sessions.get('peer-recovery')?.historyState).toBe('ready');
+    expect(acceptRuntimeStatus).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'idle', turnId: 'turn-0' }));
+    expect(apiMocks.subscribeRelaySession).toHaveBeenCalledTimes(1);
   });
 
   it('retains mailbox questions across canonical updates and clears them when the owning turn completes', async () => {

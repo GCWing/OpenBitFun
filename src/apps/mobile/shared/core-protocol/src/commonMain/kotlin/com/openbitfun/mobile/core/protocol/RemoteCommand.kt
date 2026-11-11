@@ -106,4 +106,5 @@ public data class RemoteCommand(
     @SerialName("before") val before: Long? = null,
     @SerialName("epoch") val epoch: Long? = null,
     @SerialName("subscribe") val subscribe: Boolean? = null,
+    @SerialName("subscription_id") val subscriptionId: String? = null,
 )

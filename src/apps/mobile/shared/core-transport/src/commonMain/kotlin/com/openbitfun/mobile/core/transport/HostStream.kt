@@ -4,6 +4,7 @@ import com.openbitfun.mobile.core.protocol.CommandStatus
 import com.openbitfun.mobile.core.protocol.isError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
@@ -87,6 +88,7 @@ internal data class StreamPageWire(
     val cursor: Long = -1,
     @SerialName("oldest_seq") val oldestSeq: Long = -1,
     val truncated: Boolean = false,
+    @SerialName("subscription_id") val subscriptionId: String? = null,
 ) : CommandStatus
 
 /** A decrypted `host-stream-changed` device event. */
@@ -314,6 +316,14 @@ internal fun hostStream(
     // Requests the lane took off [wakes] and has not served yet. One sweep can
     // hand it several, and every one of them is owed an answer.
     val waiting = ArrayDeque<CompletableDeferred<Unit>>()
+    // Start collection before the opening RPC. SharedFlow does not replay a
+    // final hint that arrives without a collector while that page is in flight.
+    launch(start = CoroutineStart.UNDISPATCHED) {
+        hints.collect { hint -> if (reader.hintIsNew(hint, target)) wakes.trySend(Wake.Dirty(false)) }
+    }
+    launch(start = CoroutineStart.UNDISPATCHED) {
+        reconnects.collect { wakes.trySend(Wake.Dirty(true)) }
+    }
     // Set once a page was read with `subscribe`; before that there is nothing
     // on the host to release.
     var subscribed = false
@@ -336,8 +346,6 @@ internal fun hostStream(
         awaitConsumption()
         onCaughtUp()
 
-        launch { hints.collect { hint -> if (reader.hintIsNew(hint, target)) wakes.send(Wake.Dirty(false)) } }
-        launch { reconnects.collect { wakes.send(Wake.Dirty(true)) } }
         launch { while (currentCoroutineContext().isActive) { delay(keepaliveMs); wakes.send(Wake.Dirty(false)) } }
         launch { for (request in olderRequests) wakes.send(Wake.Older(request)) }
 
