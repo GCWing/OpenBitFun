@@ -162,25 +162,30 @@ pub(super) async fn start_lan(method: ConnectionMethod) -> Result<ConnectionResu
         return Err("account context changed".into());
     }
     // Showing an existing invitation must not reconnect phones already using
-    // this interface. Reuse only the current route owner and live transport.
+    // this interface. Reuse only the current route owner and live transport,
+    // and only when the request is for the interface the route is using: one
+    // that names it, also when it was chosen automatically at start, or one
+    // that names none. The invitation is built for the method that is running.
     {
         let holder = route.service().read().await;
         if let Some(service) = holder.as_ref() {
             let owner = with_route_state(route, |state| state.owner.clone());
-            if service.active_method().await.as_ref() == Some(&method)
-                && service.is_device_connected().await
-                && match owner {
-                    Some(owner) => device_routing_owner_is_current(&owner).await,
-                    None => false,
+            if let Some(serving) = service.serving_method(&method).await {
+                if service.is_device_connected().await
+                    && match owner {
+                        Some(owner) => device_routing_owner_is_current(&owner).await,
+                        None => false,
+                    }
+                {
+                    return service
+                        .start(serving)
+                        .await
+                        .map_err(|error| error.to_string());
                 }
-            {
-                return service
-                    .start(method)
-                    .await
-                    .map_err(|error| error.to_string());
             }
         }
     }
+    // Not running, or asked to move to another interface: start it there.
     stop_lan().await;
     let result = async {
         let holder = route.service().read().await;

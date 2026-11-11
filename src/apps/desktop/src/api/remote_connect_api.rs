@@ -2076,6 +2076,46 @@ fn parse_connection_method(
     }
 }
 
+/// Whether the official route already serves the signed-in account on the
+/// endpoint of [`prepared_relay_url`]: its device routing is owned by the
+/// current account generation and token and its transport is up (connected,
+/// or reconnecting by itself).
+///
+/// Showing the invitation of such a route needs no sign-in and no connection.
+/// Presence is deliberately not consulted: it arrives after the connection
+/// and is empty while the transport reconnects, and neither is a reason to
+/// replace a route that controllers may be attached to.
+async fn official_route_is_serving(prepared_relay_url: &str) -> bool {
+    let generation = account_context_generation();
+    let Ok((session, relay_url)) = read_account_context_for_generation(generation).await else {
+        return false;
+    };
+    if relay_requires_account_login(Some(&relay_url), prepared_relay_url) {
+        return false;
+    }
+    let Some(owner) = device_routing_owner_for_account(generation, &session.token) else {
+        return false;
+    };
+    if !device_routing_owner_is_current(&owner).await {
+        return false;
+    }
+    match get_service_holder().read().await.as_ref() {
+        Some(service) => service.is_device_connected().await,
+        None => false,
+    }
+}
+
+/// Start a connection method and return its invitation.
+///
+/// For a Relay route that is already connected this only returns the
+/// invitation again: the route is not signed in again, not reconnected and
+/// not restarted, its routing owner and attached controllers stay as they
+/// are, and a failure to build the invitation leaves it running. The dialog
+/// relies on that and calls this whenever it needs the link.
+///
+/// A LAN route is one endpoint per interface. It is reused when the request
+/// names no interface or the one it uses (also when that one was chosen
+/// automatically at start); a request for another interface restarts it there.
 #[tauri::command]
 pub async fn remote_connect_start(
     request: StartRemoteConnectRequest,
@@ -2119,6 +2159,16 @@ pub async fn remote_connect_start(
             .await
             .map_err(|e| e.to_string())?
     };
+    if official_route_is_serving(&relay_url).await {
+        // Already connected: hand out the invitation and touch nothing else.
+        let holder = get_service_holder().read().await;
+        return holder
+            .as_ref()
+            .ok_or("service not initialized")?
+            .start(method)
+            .await
+            .map_err(|e| format!("start remote connect: {e}"));
+    }
     let result = async {
         let current_url = read_account_context().await.ok().map(|(_, url)| url);
         if relay_requires_account_login(current_url.as_deref(), &relay_url) {
