@@ -194,20 +194,27 @@ test('directory restores the active target and refresh preserves an explicit sel
   assert.equal(f.state.selectedDeviceId, 'other');
 });
 
-test('alias refresh and removal update the sidebar without replacing its loaded directory', () => {
+test('shared device rows update presence and metadata without replacing their loaded directory', () => {
   const f = fixture();
   f.active('desktop');
   f.vm.completeLiveCatalog('desktop', [{ path: '/project' }], 'opened', []);
   const entry = f.state.find('desktop');
   const workspaces = entry.workspaces;
-  const device = { deviceId: 'desktop', deviceName: 'Desktop', online: true };
+  const device = { deviceId: 'desktop', deviceName: 'Desktop', online: true, deviceKind: 'desktop', lastSeenAt: 42, compatible: false };
   f.vm.syncDevices([{ ...device, deviceAlias: 'Office' }]);
   assert.equal(f.state.find('desktop'), entry);
   assert.equal(entry.displayName, 'Office');
   assert.equal(entry.deviceName, 'Desktop');
   f.vm.refreshActive();
   assert.equal(entry.displayName, 'Office');
+  assert.equal(entry.deviceKind, 'desktop');
+  assert.equal(entry.lastSeenAt, 42);
+  assert.equal(entry.compatible, false);
+  f.active('');
+  f.vm.syncDevices([{ ...device, online: false, deviceAlias: 'Office' }]);
+  assert.equal(entry.online, false, 'already open views must observe the offline transition');
   f.vm.syncDevices([{ ...device, deviceAlias: null }]);
+  assert.equal(entry.online, true, 'the same row must return online without reopening a view');
   assert.equal(entry.displayName, 'Desktop');
   assert.equal(entry.workspaces, workspaces);
   assert.equal(f.state.selectedDeviceId, 'desktop');

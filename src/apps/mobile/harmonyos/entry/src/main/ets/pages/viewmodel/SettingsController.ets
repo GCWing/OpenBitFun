@@ -297,6 +297,7 @@ export class SettingsController {
         this.accountDevices = this.accountDevices.map((device: CloudAccountDevice): CloudAccountDevice => ({
           deviceId: device.deviceId, deviceName: device.deviceName, deviceKind: device.deviceKind,
           deviceAlias: device.deviceAlias,
+          compatible: device.compatible,
           lastSeenAt: device.lastSeenAt, online: ids.includes(device.deviceId)
         }));
         const cloud = this.requireCloud();

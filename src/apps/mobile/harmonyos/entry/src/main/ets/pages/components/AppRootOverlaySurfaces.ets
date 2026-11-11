@@ -128,6 +128,7 @@ export struct AppSidebarSurface {
 
 @ComponentV2
 export struct AppSettingsSurface {
+  @Param deviceDirectoryState: DeviceDirectoryState = new DeviceDirectoryState();
   @Param shellState: AppShellState = new AppShellState();
   @Param remotePageState: RemotePageState = new RemotePageState();
   @Param generalPageState: GeneralChatPageState = new GeneralChatPageState();
@@ -145,6 +146,7 @@ export struct AppSettingsSurface {
       })
     } else {
       SettingsSheet({
+        directoryState: this.deviceDirectoryState,
         sheetState: this.shellState.settingsSheet,
         accountUsername: this.remotePageState.accountUsername,
         accountAvatarUrl: this.remotePageState.accountAvatarUrl,
@@ -179,12 +181,14 @@ export struct AppSettingsSurface {
 
 @ComponentV2
 export struct AppConnectSurface {
+  @Param deviceDirectoryState: DeviceDirectoryState = new DeviceDirectoryState();
   @Param remotePageState: RemotePageState = new RemotePageState();
   @Param deviceId: string = '';
   @Param actions: AppRootPresentationActions = emptyAppRootPresentationActions();
 
   build() {
     ConnectView({
+      directoryState: this.deviceDirectoryState,
       remoteUrl: this.remotePageState.remoteUrl,
       userId: this.remotePageState.userId,
       statusText: this.remotePageState.conversation.statusText,

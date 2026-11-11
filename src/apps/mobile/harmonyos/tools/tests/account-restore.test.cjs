@@ -68,7 +68,7 @@ test('directory refresh and presence retain aliases in the selected and preferre
   let published;
   const client = new account.CloudAccountClient();
   client.request = async () => [
-    { device_id: 'desktop', device_name: 'Studio Mac', device_alias: alias, online: true },
+    { device_id: 'desktop', device_name: 'Studio Mac', device_alias: alias, online: true, compatible: false },
   ];
   client.observePresence = (_relay, _session, listener) => { onPresence = listener; return () => {}; };
   const state = {
@@ -90,6 +90,7 @@ test('directory refresh and presence retain aliases in the selected and preferre
   onPresence(['desktop']);
   assert.equal(account.accountDeviceDisplayName(published[0]), 'Office');
   assert.equal(published[0].deviceName, 'Studio Mac');
+  assert.equal(published[0].compatible, false);
 
   alias = 'Work PC';
   await controller.listCloudAccountDevices();

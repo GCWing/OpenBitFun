@@ -1,6 +1,7 @@
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { SettingsSheetState } from '../state/SettingsSheetState';
+import { DeviceDirectoryState } from '../state/DeviceDirectoryState';
 import { DeviceModelDefaultsRequestPath } from '../state/DeviceModelDefaultsSheetState';
 import { CARD, INK, LINE, MUTED, PAGE_BG } from './Theme';
 import { CurrentControlSection } from './CurrentControlSection';
@@ -17,6 +18,7 @@ import { RemotePermissionSection } from './RemotePermissionSection';
 
 @ComponentV2
 export struct SettingsSheet {
+  @Param directoryState: DeviceDirectoryState = new DeviceDirectoryState();
   @Param sheetState: SettingsSheetState = new SettingsSheetState();
   @Param accountUsername: string = '';
   @Param accountAvatarUrl: string = '';
@@ -162,6 +164,7 @@ export struct SettingsSheet {
       Scroll() {
         Column({ space: 0 }) {
           AccountProfilePanel({
+            directoryState: this.directoryState,
             accountUsername: this.accountUsername,
             accountAvatarUrl: this.accountAvatarUrl,
             accountUserId: this.authenticatedUserId,

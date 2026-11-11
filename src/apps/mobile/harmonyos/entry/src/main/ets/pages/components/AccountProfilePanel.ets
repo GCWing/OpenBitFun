@@ -3,6 +3,7 @@ import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { accountDeviceDisplayName, CloudAccountDevice } from '../../services/CloudAccountClient';
 import { AccountDeviceSelectionPolicy } from '../policy/AccountDeviceSelectionPolicy';
 import { DeviceModelSettingsEntryPolicy } from '../policy/DeviceModelSettingsEntryPolicy';
+import { DeviceDirectoryEntry, DeviceDirectoryState } from '../state/DeviceDirectoryState';
 import {
   CARD,
   CONTENT_ON_ACTION,
@@ -20,6 +21,7 @@ import { DefaultAccountAvatar } from './DefaultAccountAvatar';
 /** Account identity and device management shared by Settings and account entry. */
 @ComponentV2
 export struct AccountProfilePanel {
+  @Param directoryState: DeviceDirectoryState = new DeviceDirectoryState();
   @Param accountUsername: string = '';
   @Param accountAvatarUrl: string = '';
   @Param accountUserId: string = '';
@@ -42,7 +44,6 @@ export struct AccountProfilePanel {
     async (): Promise<CloudAccountDevice[]> => [];
   @Event cloudSelectDevice: (device: CloudAccountDevice) => Promise<void> =
     async (_device: CloudAccountDevice): Promise<void> => {};
-  @Local accountDevices: CloudAccountDevice[] = [];
   @Local accountDevicesBusy: boolean = false;
   @Local accountDevicesError: string = '';
   @Local switchingDeviceId: string = '';
@@ -172,7 +173,7 @@ export struct AccountProfilePanel {
         if (!this.isAccountAuthenticated()) {
           Text(RemoteI18n.t('remote.settings.deviceLoginRequired'))
             .fontSize(MobileDesignTypography.bodySmall.size).lineHeight(MobileDesignTypography.bodySmall.lineHeight).fontColor(MUTED).width('100%')
-        } else if (this.accountDevicesBusy && this.accountDevices.length === 0) {
+        } else if (this.accountDevicesBusy && this.directoryState.devices.length === 0) {
           Text(RemoteI18n.t('remote.settings.deviceLoading'))
             .fontSize(MobileDesignTypography.bodySmall.size).fontColor(MUTED).width('100%')
         } else if (this.desktopDevices().length === 0) {
@@ -349,7 +350,7 @@ export struct AccountProfilePanel {
     this.accountDevicesBusy = true;
     this.accountDevicesError = '';
     try {
-      this.accountDevices = await this.cloudListDevices();
+      await this.cloudListDevices();
     } catch (err) {
       this.accountDevicesError = err instanceof Error ? err.message :
         RemoteI18n.t('remote.settings.deviceLoadFailed');
@@ -358,8 +359,8 @@ export struct AccountProfilePanel {
     }
   }
 
-  private desktopDevices(): CloudAccountDevice[] {
-    return this.accountDevices.filter((device: CloudAccountDevice): boolean =>
+  private desktopDevices(): DeviceDirectoryEntry[] {
+    return this.directoryState.devices.filter((device: DeviceDirectoryEntry): boolean =>
       device.deviceId !== this.deviceId && device.deviceName !== 'HarmonyOS Phone');
   }
 
@@ -488,7 +489,7 @@ export struct AccountProfilePanel {
 
   @Monitor('accountUserId')
   private handleAccountUserChanged(): void {
-    if (this.isAccountAuthenticated() && this.accountDevices.length === 0) {
+    if (this.isAccountAuthenticated() && this.directoryState.devices.length === 0) {
       this.refreshAccountDevices();
     }
   }

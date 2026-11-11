@@ -635,6 +635,7 @@ export struct AppRootPresentation {
 
   @Builder SettingsContent() {
     AppSettingsSurface({
+      deviceDirectoryState: this.deviceDirectoryState,
       shellState: this.shellState,
       remotePageState: this.remotePageState,
       generalPageState: this.generalPageState,
@@ -645,6 +646,7 @@ export struct AppRootPresentation {
 
   @Builder ConnectContent() {
     AppConnectSurface({
+      deviceDirectoryState: this.deviceDirectoryState,
       remotePageState: this.remotePageState,
       deviceId: this.deviceId,
       actions: this.actions
