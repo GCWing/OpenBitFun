@@ -14,6 +14,7 @@ import { createLogger } from '@/shared/utils/logger';
 import {
   getActiveSurfaceId,
   getActiveSurfaceScope,
+  isLocalSurface,
   isSurfaceChangedError,
   type DeviceSurfaceId,
 } from '@/infrastructure/peer-device/deviceSurface';
@@ -122,6 +123,13 @@ export function inFlightSubmissionCount(): number {
   return inFlightSubmissions;
 }
 
+/** The retained queue item owns recovery after its device stops being rendered. */
+class RetiredQueueSubmission extends Error {
+  constructor(readonly outcomeUnknown: boolean) {
+    super('Queued submission outlived its device surface');
+  }
+}
+
 /**
  * Salvage a submission that lost the race against a device-surface switch.
  *
@@ -142,15 +150,18 @@ function recoverSubmissionAfterSurfaceSwitch(
     options?: SendMessageOptions;
   },
 ): void {
-  const hostHasTurn =
-    turnTracker.hostAcceptedTurn || turnTracker.hostSubmitStarted === true;
-  if (hostHasTurn) {
+  if (turnTracker.hostAcceptedTurn) {
     log.info('Device surface switched after the host accepted the turn; it keeps running there', {
       sessionId,
     });
     return;
   }
-  if (turnTracker.createdLocalTurnId) {
+  const outcomeUnknown = turnTracker.hostSubmitStarted === true;
+  // Host-queue submissions have their own durable outbox and no frontend
+  // optimistic turn. Leave recovery with that owner. Legacy submissions need
+  // a retained draft, but an ambiguous receipt must never auto-resubmit it.
+  if (outcomeUnknown && !turnTracker.createdLocalTurnId) return;
+  if (turnTracker.createdLocalTurnId && !outcomeUnknown) {
     context.flowChatStore.abandonOptimisticDialogTurn(
       surfaceId,
       sessionId,
@@ -159,9 +170,15 @@ function recoverSubmissionAfterSurfaceSwitch(
     stateMachineManager.resetForSurface(surfaceId, sessionId);
     context.processingManager.clearSessionStatusForSurface(surfaceId, sessionId);
   }
+  // A drain still owns its original item and FIFO position. Do not create a
+  // second entry and then remove the first one after returning to its caller.
+  if (draft.options?.bypassPendingQueue) return;
   try {
     pendingQueueManager.enqueueForSurface(surfaceId, {
       sessionId,
+      turnId: turnTracker.createdLocalTurnId ?? draft.options?.turnId,
+      initialStatus: outcomeUnknown ? 'failed' : 'queued',
+      retryCount: outcomeUnknown ? 1 : 0,
       content: draft.message,
       displayMessage: draft.displayMessage,
       agentType: draft.agentType,
@@ -170,8 +187,8 @@ function recoverSubmissionAfterSurfaceSwitch(
       composerDraft: draft.options?.pendingQueueDraft,
       userMessageMetadata: draft.options?.userMessageMetadata,
     });
-    log.info('Device surface switched before submit reached the host; message re-queued', {
-      sessionId,
+    log.info('Retained a message after its device surface changed', {
+      sessionId, outcomeUnknown,
     });
   } catch (error) {
     // A full queue is the only expected failure, and dropping the message
@@ -603,6 +620,9 @@ async function sendMessageInternal(
       if (latestSendBySession.get(sendCoordinationKey) === sendAttempt) {
         latestSendBySession.delete(sendCoordinationKey);
       }
+      if (options?.bypassPendingQueue && !turnTracker.hostAcceptedTurn) {
+        throw new RetiredQueueSubmission(turnTracker.hostSubmitStarted === true);
+      }
       return;
     }
 
@@ -735,8 +755,15 @@ export async function drainPendingQueue(
 ): Promise<void> {
   if (isBtwSessionClosing(sessionId)) return;
   if (hostQueueSupported(sessionId) && !options?.allowInterruptedRecoveryAbandon) return;
-  if (isRuntimeSessionAttachmentInFlight(getActiveSurfaceId(), sessionId) ||
-      isRuntimeSessionProjectionStale(getActiveSurfaceId(), sessionId)) {
+  const scope = getActiveSurfaceScope();
+  const session = context.flowChatStore.getState().sessions.get(sessionId);
+  // Peer content/terminal facts are owned by the canonical subscriber, not
+  // the independent direct-event cursor repaired by local Runtime attach.
+  const peerReady = !isLocalSurface(scope.surfaceId) && session?.historyState === 'ready';
+  if (isLocalSurface(scope.surfaceId)
+    ? isRuntimeSessionAttachmentInFlight(scope.surfaceId, sessionId)
+      || isRuntimeSessionProjectionStale(scope.surfaceId, sessionId)
+    : !peerReady) {
     return;
   }
   const machineState = stateMachineManager.getCurrentState(sessionId);
@@ -750,10 +777,14 @@ export async function drainPendingQueue(
     return;
   }
   if (context.userCancelledSessionIds.has(sessionId)) {
-    log.debug('Pending queue held until cancellation outcome is authoritative', { sessionId });
-    return;
+    const latest = session?.dialogTurns.at(-1);
+    if (peerReady && latest && ['completed', 'cancelled', 'error'].includes(latest.status)) {
+      context.userCancelledSessionIds.delete(sessionId);
+    } else {
+      log.debug('Pending queue held until cancellation outcome is authoritative', { sessionId });
+      return;
+    }
   }
-  const session = context.flowChatStore.getState().sessions.get(sessionId);
   if (
     hasInterruptedTurnHoldingQueue(session)
     && !options?.allowInterruptedRecoveryAbandon
@@ -766,6 +797,7 @@ export async function drainPendingQueue(
   // skipped here — the user must explicitly act on them to avoid re-entering
   // the same failure mode automatically.
   const allItems = pendingQueueManager.list(sessionId);
+  if (allItems.some(item => item.status === 'sending' || item.status === 'sending_now')) return;
   const next = allItems.find(
     (item) => (item.retryCount ?? 0) === 0 && item.status === 'queued',
   );
@@ -816,12 +848,17 @@ export async function drainPendingQueue(
     // Only remove the item AFTER sendMessage completes successfully so we keep
     // the original id / timestamp / retryCount on failure (no UI flicker, no
     // reset of the retry counter, and FIFO order is preserved).
-    pendingQueueManager.remove(sessionId, next.id);
+    pendingQueueManager.removeForSurface(scope.surfaceId, sessionId, next.id);
   } catch (error) {
+    if (error instanceof RetiredQueueSubmission) {
+      pendingQueueManager.setStatusForSurface(scope.surfaceId, sessionId, next.id,
+        error.outcomeUnknown ? 'failed' : 'queued');
+      return;
+    }
     log.error('Failed to drain pending queue item', { sessionId, itemId: next.id, error });
     // Mark in place. The auto-drain listener skips `failed` items so the user
     // can edit / send-now / delete without entering a tight retry loop.
-    pendingQueueManager.setStatus(sessionId, next.id, 'failed');
+    pendingQueueManager.setStatusForSurface(scope.surfaceId, sessionId, next.id, 'failed');
   }
 }
 
@@ -857,4 +894,14 @@ export function installPendingQueueDrainListener(context: FlowChatContext): void
   subscribeRuntimeSessionAttachmentFinished((surfaceId, sessionId) => {
     if (surfaceId === getActiveSurfaceId()) schedulePendingQueueDrain(sessionId);
   });
+  pendingQueueManager.subscribe(sessionId => schedulePendingQueueDrain(sessionId));
+  // Recovery can confirm an already-idle session without another state-machine
+  // transition. Wake its queue when history becomes trustworthy again.
+  context.flowChatStore.subscribeSelector(
+    state => isLocalSurface(getActiveSurfaceId()) ? [] : [...state.sessions.values()]
+      .filter(session => session.historyState === 'ready' && pendingQueueManager.list(session.sessionId).length > 0)
+      .map(session => session.sessionId),
+    sessionIds => sessionIds.forEach(schedulePendingQueueDrain),
+    { isEqual: (a, b) => a.length === b.length && a.every((id, index) => id === b[index]) },
+  );
 }

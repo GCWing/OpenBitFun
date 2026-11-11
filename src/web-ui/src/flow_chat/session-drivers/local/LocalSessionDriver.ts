@@ -318,6 +318,8 @@ export const localSessionDriver: SessionDriver = {
   },
 
   async cancel(context: FlowChatContext, sessionId: string): Promise<boolean> {
+    const scope = getActiveSurfaceScope();
+    const originalTurnId = stateMachineManager.get(sessionId)?.getContext().currentDialogTurnId;
     const currentState = stateMachineManager.getCurrentState(sessionId);
     if (currentState !== SessionExecutionState.PROCESSING) {
       return false;
@@ -329,6 +331,9 @@ export const localSessionDriver: SessionDriver = {
       sessionId,
       SessionExecutionEvent.USER_CANCEL,
     );
+    scope.assertCurrent('apply cancellation outcome');
+    const currentTurnId = stateMachineManager.get(sessionId)?.getContext().currentDialogTurnId;
+    if (currentTurnId && currentTurnId !== originalTurnId) return false;
     const settledInFinishing = success
       && stateMachineManager.getCurrentState(sessionId) === SessionExecutionState.FINISHING;
     if (!settledInFinishing) {

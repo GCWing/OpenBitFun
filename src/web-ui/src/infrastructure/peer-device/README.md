@@ -215,6 +215,18 @@ notification metadata.
     records; it does not reconstruct a running turn from a second full snapshot.
     Lifecycle and approval events may update controls, but raw token/tool-body
     events cannot overwrite the canonical content owner.
+    A delayed start cannot reactivate a terminal turn or replace a newer admitted
+    turn. Stop requests capture their device activation and turn before awaiting
+    preparation; a late response cannot settle another turn or device's buffers.
+
+    Legacy frontend queues wait for canonical peer history to be ready; local
+    Runtime replay fences do not gate peer queues. An authoritative terminal
+    record releases a pending cancellation gate. Interrupted-turn recovery and
+    failed-message ordering still require their explicit user decisions. Queue
+    acknowledgements settle on the device where the send began. A device switch
+    preserves the original pending item and FIFO order when it was not submitted.
+    An uncertain legacy submission retains its draft and Turn id for explicit
+    recovery instead of being silently dropped or automatically resubmitted.
 
     `get_session_interaction_mailbox` returns the Runtime's revisioned pending
     questions and permissions on attach/reconnect. Apply it with a captured
@@ -238,6 +250,10 @@ notification metadata.
     Request admission and byte budgets belong to the shared transport owner.
     Avoid independent UI slot limits or polling loops that compete with recovery.
     Mutations are not automatically replayed without an idempotency contract.
+    Lost mutation replies carry `outcome_unknown:`; confirmed unsent requests and
+    product refusals retain their known failure. Deletion may settle from the
+    host deletion event or an authoritative missing metadata record. A failed
+    readback or a still-present record keeps the session and unsent drafts.
     Dialog submissions reuse `(sessionId, turnId)` so an ambiguous acknowledgement
     does not create another turn. A failed session list must leave loading state
     and offer an explicit retry.

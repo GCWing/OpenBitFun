@@ -14,20 +14,25 @@ const fixture = vi.hoisted(() => ({
   restore: vi.fn(),
   restoreTail: vi.fn(),
   loadTurnWindow: vi.fn(),
+  synchronize: vi.fn(),
+  extend: vi.fn(),
   present: null as ((sessionId: string, presentation: SessionHistoryPresentation) => void) | null,
 }));
 vi.mock('../../store/FlowChatStore', () => ({ flowChatStore: {
   getState: () => ({ activeSessionId: fixture.session?.sessionId, sessions: new Map(fixture.session ? [[fixture.session.sessionId, fixture.session]] : []) }),
   retainSessionHistory: () => () => {},
   subscribeSelector: () => () => {},
-  getSessionHistoryViewState: () => undefined,
+  getSessionHistoryViewState: () => ({
+    catalog: fixture.session?.turnCatalog ?? null, loadedRanges: [], activeRange: fixture.cached?.range ?? null,
+  }),
+  synchronizeSessionHistory: (...args: unknown[]) => fixture.synchronize(...args),
   reactivateSessionHistoryWindow: () => fixture.cached,
   restoreSessionHistoryWindow: (...args: unknown[]) => fixture.restore(...args),
   restoreSessionTailPresentation: (...args: unknown[]) => fixture.restoreTail(...args),
   hasPendingSessionHistoryCompletion: () => false,
   hasDeferredSessionHistoryProjection: () => false,
   releaseSessionHistoryCompletionAfterInitialPaint: () => false,
-  extendSessionHistoryWindow: () => null,
+  extendSessionHistoryWindow: (...args: unknown[]) => fixture.extend(...args),
   loadSessionTurnWindow: (...args: unknown[]) => fixture.loadTurnWindow(...args),
   loadPreviousSessionTurnWindow: (...args: unknown[]) => fixture.loadTurnWindow(...args),
   activateSessionHistoryWindow: () => fixture.cached,
@@ -45,6 +50,7 @@ vi.mock('./VirtualMessageList', () => ({ VirtualMessageList: React.forwardRef((p
   fixture.listProps = props;
   React.useImperativeHandle(ref, () => ({
     scrollToTurnEnd: () => true,
+    scrollToLatestEndPosition: () => {},
     captureViewportSnapshot: () => null,
     clearSearchMatch: () => {},
     prepareTurnNavigation: () => 'pending',
@@ -103,6 +109,14 @@ function session(totalTurnCount = 8, historyState: Session['historyState'] = 're
     }],
   } as Session;
 }
+function sessionWithCatalog(count: number, revision: string): Session {
+  return { ...session(count), turnCatalog: {
+    schemaVersion: 1, sessionId: 'session-a', revision, totalTurnCount: count,
+    complete: true, entries: Array.from({ length: count }, (_, ordinal) => ({
+      ordinal, storageTurnIndex: ordinal, turnId: `turn-${ordinal}`, previewTruncated: false,
+    })),
+  } };
+}
 function presentation(startOrdinal = 4, endOrdinalExclusive = 8): SessionHistoryPresentation {
   return {
     range: { startOrdinal, endOrdinalExclusive, targetTurnId: `turn-${startOrdinal}`, mode: 'history-window' },
@@ -151,6 +165,8 @@ describe('FlowChat reader restoration across history rewrites', () => {
     fixture.session = session();
     fixture.cached = presentation();
     fixture.restore.mockResolvedValue(null);
+    fixture.extend.mockReturnValue(null);
+    fixture.synchronize.mockResolvedValue(undefined);
     fixture.listProps = null;
     fixture.viewportSettled = true;
     fixture.present = null;
@@ -221,6 +237,109 @@ describe('FlowChat reader restoration across history rewrites', () => {
     expectPresented();
     expect(messages().dataset.presentationMode).toBe('history-window');
     expect(host.querySelector('[data-turn-id="turn-2"]')).not.toBeNull();
+  });
+
+  it.each([['local', 8], ['local', 9], ['ssh', 8], ['ssh', 9], ['peer-device', 8], ['peer-device', 9]] as const)(
+    'reacquires the reader window when the %s catalog changes after a turn (total: %d)', async (location, count) => {
+      if (location === 'peer-device') activateSurface('peer-device');
+      const withCatalog = (total: number, revision: string): Session => ({
+        ...sessionWithCatalog(total, revision),
+        ...(location === 'ssh' ? { remoteConnectionId: 'ssh-target', remoteSshHost: 'build-host' } : {}),
+      });
+      fixture.session = withCatalog(8, 'before-turn');
+      const window = presentation(3, 7);
+      fixture.cached = window;
+      stageBookmark(window);
+      await render();
+      expectPresented();
+      // Authoritative completion changes the catalog and invalidates the
+      // store's cached windows, without changing Session id or ready status.
+      fixture.cached = null;
+      const first = deferred<SessionHistoryPresentation | null>();
+      fixture.restore.mockReturnValueOnce(first.promise);
+      fixture.session = withCatalog(count, 'after-turn');
+      await render();
+      expect(fixture.restore).toHaveBeenCalledWith('session-a', window.range, expect.any(Function));
+      const firstOwner = fixture.restore.mock.calls[0][2] as () => boolean;
+      const second = deferred<SessionHistoryPresentation | null>();
+      fixture.restore.mockReturnValueOnce(second.promise);
+      fixture.session = withCatalog(count, 'corrected-turn');
+      await render();
+      expect(fixture.restore).toHaveBeenCalledTimes(2);
+      expect(firstOwner()).toBe(false);
+      await act(async () => first.reject(new Error('Retired history read failed')));
+      await act(async () => second.resolve(window));
+      expectPresented();
+      expect(messages().dataset.presentationMode).toBe('history-window');
+      expect(host.querySelector('[data-turn-id="turn-3"]')).not.toBeNull();
+    },
+  );
+
+  it('drops a retained live-tail history projection when its catalog changes', async () => {
+    fixture.session = sessionWithCatalog(8, 'before-turn');
+    fixture.cached = presentation(0, 8);
+    stageBookmark(fixture.cached);
+    await render();
+    await act(async () => { fixture.listProps!.onRequestJumpToLatest!(); });
+    expect(host.querySelector('[data-turn-id="turn-0"]')).not.toBeNull();
+    fixture.cached = null;
+    fixture.session = sessionWithCatalog(8, 'after-turn');
+    await render();
+    expectPresented();
+    expect(messages().dataset.presentationMode).toBe('tail');
+    expect(host.querySelector('[data-turn-id="turn-0"]')).toBeNull();
+    expect(fixture.restore).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('retries an orphaned reader after a failed read (explicit sync: %s)', async synchronizeHistory => {
+    const window = presentation(3, 7);
+    fixture.cached = window;
+    stageBookmark(window);
+    await render();
+    fixture.cached = null;
+    fixture.restore.mockImplementation(async () => {
+      fixture.cached = window;
+      return window;
+    });
+    fixture.restore.mockRejectedValueOnce(new Error('History read timed out'));
+    fixture.loadTurnWindow.mockResolvedValue({ status: 'ready', isCurrent: true });
+    fixture.extend.mockImplementation(() => fixture.cached ? presentation(0, 7) : null);
+    let failed: unknown;
+    await act(async () => {
+      failed = await fixture.listProps!.onHistoryWindowBoundaryIntent!('before', { synchronizeHistory });
+    });
+    expect(failed).toBe('not-ready');
+    expect(fixture.loadTurnWindow).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-turn-id="turn-3"]')).not.toBeNull();
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await fixture.listProps!.onHistoryWindowBoundaryIntent!('before', { synchronizeHistory });
+    });
+    expect(outcome).toBe('applied');
+    expect(fixture.restore).toHaveBeenCalledWith('session-a', window.range, expect.any(Function));
+    expect(fixture.restore).toHaveBeenCalledTimes(2);
+    expect(fixture.synchronize).toHaveBeenCalledTimes(synchronizeHistory ? 2 : 0);
+    expect(host.querySelector('[data-turn-id="turn-0"]')).not.toBeNull();
+  });
+
+  it('rejects a late orphan recovery after changing devices', async () => {
+    const window = presentation(3, 7);
+    fixture.cached = window;
+    stageBookmark(window);
+    await render();
+    fixture.cached = null;
+    const read = deferred<SessionHistoryPresentation | null>();
+    fixture.restore.mockReturnValueOnce(read.promise);
+    let outcome!: Promise<unknown>;
+    await act(async () => {
+      outcome = fixture.listProps!.onHistoryWindowBoundaryIntent!('before', { synchronizeHistory: true });
+    });
+    expect(fixture.restore).toHaveBeenCalledTimes(1);
+    activateSurface('peer-device');
+    await act(async () => { read.resolve(window); await outcome; });
+    expect(await outcome).toBe('cancelled');
+    expect(fixture.loadTurnWindow).not.toHaveBeenCalled();
+    expect(fixture.extend).not.toHaveBeenCalled();
   });
 
   it('cancels a pending cold range when a ready history rewrite removes it', async () => {

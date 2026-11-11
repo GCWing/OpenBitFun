@@ -1,4 +1,5 @@
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
+import { isOutcomeUnknownError } from '@/infrastructure/api/errors/TauriCommandError';
 import { forgetAgentCanvasSession, removeBtwSessionFromAgentCanvas } from '@/app/components/panels/content-canvas/stores/canvasStore';
 import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 import { projectUserQuestionTiming } from '../utils/userQuestionTiming';
@@ -3231,7 +3232,17 @@ export class FlowChatStore {
     if (catalog.sessionId !== sessionId) {
       return;
     }
-    this.ensureSessionHistoryView(sessionId, catalog).catalog = catalog;
+    const view = this.ensureSessionHistoryView(sessionId, catalog);
+    if (view.catalog?.revision !== catalog.revision) {
+      // Catalog revisions also version the cached bodies and in-flight reads.
+      // A stale page can discover a rewrite before the next Session snapshot.
+      view.navigationGeneration += 1;
+      view.pendingTargetOrdinal = null;
+      view.activeRange = null;
+      view.loadedRanges = [];
+      this.sessionHistoryTurnAccessTimes.delete(sessionId);
+    }
+    view.catalog = catalog;
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);
       if (!session) {
@@ -3751,22 +3762,21 @@ export class FlowChatStore {
     const entry = catalog?.entries.find(
       candidate => candidate.ordinal === normalizedTargetOrdinal,
     );
-    if (!session || !catalog || !entry) {
-      return {
-        status: 'not-found',
+    const notFound = (): SessionTurnWindowLoadResult => ({
+      status: 'not-found',
+      sessionId,
+      targetOrdinal: normalizedTargetOrdinal,
+      navigationGeneration: generation,
+      isCurrent: this.isSessionTurnWindowRequestCurrent(
         sessionId,
-        targetOrdinal: normalizedTargetOrdinal,
-        navigationGeneration: generation,
-        isCurrent: this.isSessionTurnWindowRequestCurrent(
-          sessionId,
-          generation,
-          normalizedTargetOrdinal,
-          source,
-        ),
-        cacheHit: false,
-        ...(catalog ? { catalog } : {}),
-      };
-    }
+        generation,
+        normalizedTargetOrdinal,
+        source,
+      ),
+      cacheHit: false,
+      ...(catalog ? { catalog } : {}),
+    });
+    if (!session || !catalog) return notFound();
 
     const cachedRange = view.loadedRanges.find(range =>
       range.startOrdinal <= normalizedTargetOrdinal
@@ -3774,7 +3784,18 @@ export class FlowChatStore {
     );
     if (cachedRange) {
       const cachedTarget = cachedRange.turns[normalizedTargetOrdinal - cachedRange.startOrdinal];
-      if (!entry.turnId || cachedTarget?.id === entry.turnId) {
+      // A live/optimistic Turn can be rendered before the next persisted
+      // catalog includes it. Only the current canonical tail can vouch for
+      // that ordinal; an unrelated stale cache entry cannot fill a catalog gap.
+      const canonicalTarget = !entry && cachedTarget
+        ? session.dialogTurns.find(turn => turn.id === cachedTarget.id)
+        : undefined;
+      const canonicalOrdinal = canonicalTarget
+        ? resolveDialogTurnIdentity(session, canonicalTarget)?.ordinal
+        : undefined;
+      if (cachedTarget && (entry
+        ? !entry.turnId || cachedTarget.id === entry.turnId
+        : canonicalOrdinal === normalizedTargetOrdinal)) {
         const selected = selectTargetHistoryPresentationRange(
           cachedRange,
           normalizedTargetOrdinal,
@@ -3803,6 +3824,8 @@ export class FlowChatStore {
         };
       }
     }
+
+    if (!entry) return notFound();
 
     if (getActiveSurfaceId() !== 'local') {
       // Turn navigation reads the same canonical log replica. It never starts
@@ -4042,18 +4065,15 @@ export class FlowChatStore {
         };
       }
 
-      const isCurrent = this.isSessionTurnWindowRequestCurrent(
+      const currentCatalog = this.sessionHistoryViews.get(request.sessionId)?.catalog;
+      const catalogIsCurrent = !currentCatalog || currentCatalog.revision === request.catalog.revision;
+      const isCurrent = catalogIsCurrent && this.isSessionTurnWindowRequestCurrent(
         request.sessionId,
         request.generation,
         request.targetOrdinal,
         request.source,
       );
-      const currentCatalog = this.sessionHistoryViews.get(request.sessionId)?.catalog;
-      if (
-        isCurrent
-        || !currentCatalog
-        || currentCatalog.revision === request.catalog.revision
-      ) {
+      if (catalogIsCurrent) {
         this.updateAuthoritativeSessionTurnCatalog(request.sessionId, response.catalog);
       }
       if (response.status === 'stale' && request.staleRetryCount === 0 && isCurrent) {
@@ -4064,7 +4084,7 @@ export class FlowChatStore {
           );
         if (relocatedEntry) {
           const view = this.sessionHistoryViews.get(request.sessionId);
-          if (request.source === 'target' && view?.navigationGeneration === request.generation) {
+          if (request.source === 'target' && view) {
             view.pendingTargetOrdinal = relocatedEntry.ordinal;
           }
           return this.loadSessionTurnWindowAttempt({
@@ -4073,6 +4093,7 @@ export class FlowChatStore {
             targetStorageTurnIndex: relocatedEntry.storageTurnIndex,
             originalTargetTurnId: relocatedEntry.turnId ?? request.originalTargetTurnId,
             catalog: response.catalog,
+            generation: view?.navigationGeneration ?? request.generation,
             staleRetryCount: 1,
           });
         }
@@ -5805,7 +5826,28 @@ export class FlowChatStore {
           // Session storage is resolved by workspace ID, so a session whose
           // workspace directory is gone must still reach the backend. Pre-ID
           // sessions fail loudly in sessionHistoryWorkspaceId.
-          await agentAPI.deleteSession(id, this.sessionHistoryWorkspaceId(id));
+          const workspaceId = this.sessionHistoryWorkspaceId(id);
+          try {
+            await agentAPI.deleteSession(id, workspaceId);
+          } catch (error) {
+            scope.assertCurrent('verify session deletion');
+            // A host deletion event may have confirmed the result before its
+            // RPC acknowledgement was lost. Otherwise only an authoritative
+            // read can settle an unknown outcome; never replay the mutation.
+            if (this.state.sessions.has(id)) {
+              if (scope.surfaceId === 'local' || !isOutcomeUnknownError(error)) throw error;
+              let confirmed = false;
+              try {
+                const { sessionAPI } = await import('@/infrastructure/api/service-api/SessionAPI');
+                scope.assertCurrent('read session deletion outcome');
+                confirmed = await sessionAPI.loadSessionMetadata(id, workspaceId) === null;
+              } catch (readError) {
+                log.warn('Could not verify peer session deletion', { sessionId: id, error: readError });
+              }
+              scope.assertCurrent('apply verified session deletion');
+              if (!confirmed) throw error;
+            }
+          }
           scope.assertCurrent('complete session deletion');
         }
         stateMachineManager.delete(id);

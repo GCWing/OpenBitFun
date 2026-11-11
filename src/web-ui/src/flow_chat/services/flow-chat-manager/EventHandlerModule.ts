@@ -1896,11 +1896,24 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
     return;
   }
 
+  // Canonical history and direct control events travel independently. A delayed
+  // start must not resurrect a settled turn or supersede a newer admitted turn.
+  // Optimistic queued turns have no backend index and do not block admission.
+  const store = FlowChatStore.getInstance();
+  const knownTurns = store.getState().sessions.get(sessionId)?.dialogTurns ?? [];
+  const knownTurn = knownTurns.find(turn => turn.id === turnId);
+  const admittedIndex = typeof turnIndex === 'number'
+    ? turnIndex : knownTurn?.backendTurnIndex ?? knownTurn?.storageTurnIndex;
+  if (knownTurn && ['completed', 'cancelled', 'error'].includes(knownTurn.status)
+    || admittedIndex !== undefined && knownTurns.some(turn =>
+      (turn.backendTurnIndex ?? turn.storageTurnIndex ?? -1) > admittedIndex)) {
+    log.debug('Dropped stale DialogTurnStarted', { sessionId, turnId, admittedIndex });
+    return;
+  }
+
   clearPromptSuggestion(sessionId);
   finalizePendingTurnCompletionNow(context, sessionId);
   clearPendingTurnCompletion(context, sessionId, turnId);
-
-  const store = FlowChatStore.getInstance();
 
   // Clean up temp image analysis turn if one exists for this session
   const tempTurnId = pendingImageAnalysisTurns.get(sessionId);
