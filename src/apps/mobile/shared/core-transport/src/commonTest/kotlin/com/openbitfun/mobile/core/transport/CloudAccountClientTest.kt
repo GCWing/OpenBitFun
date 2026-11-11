@@ -132,8 +132,8 @@ class CloudAccountClientTest {
     fun deviceDirectoryCarriesTheRelayCompatibilityVerdict() = runTest {
         val engine = MockEngine { _ ->
             json("""[
-                {"device_id":"d-1","device_name":"Desktop 1","device_kind":"desktop","online":true,"compatible":true},
-                {"device_id":"d-2","device_name":"Desktop 2","device_kind":"desktop","online":true,"compatible":false},
+                {"device_id":"d-1","device_name":"Desktop 1","device_alias":"Office","device_kind":"desktop","online":true,"compatible":true},
+                {"device_id":"d-2","device_name":"Desktop 2","device_alias":null,"device_kind":"desktop","online":true,"compatible":false},
                 {"device_id":"d-3","device_name":"Desktop 3","device_kind":"desktop","online":true}
             ]""")
         }
@@ -145,6 +145,8 @@ class CloudAccountClientTest {
         // An older Relay that does not gate reads as "unknown but usable".
         assertEquals(null, devices.getValue("d-3").compatible)
         assertEquals(listOf(true, false, true), listOf("d-1", "d-2", "d-3").map { devices.getValue(it).controllable })
+        assertEquals(listOf("Office", null, null), listOf("d-1", "d-2", "d-3").map { devices.getValue(it).deviceAlias })
+        assertEquals("Desktop 1", devices.getValue("d-1").deviceName)
     }
 
     @Test
@@ -175,12 +177,12 @@ class CloudAccountClientTest {
         val engine = MockEngine {
             json(
                 """[
-                  {"device_id":"desktop-1","device_name":"Studio Mac","online":true,"device_kind":"desktop"},
+                  {"device_id":"desktop-1","device_name":"Studio Mac","device_alias":"HarmonyOS Phone","online":true,"device_kind":"desktop"},
                   {"device_id":"cli-1","device_name":"Build host","online":true,"device_kind":"cli"},
                   {"device_id":"phone-2","device_name":"Pixel 8","online":true,"device_kind":"mobile"},
                   {"device_id":"watch-1","device_name":"Watch","online":false,"device_kind":"watch"},
                   {"device_id":"phone-1","device_name":"Pixel 8","online":true},
-                  {"device_id":"harmony-phone","device_name":"HarmonyOS Phone","online":true},
+                  {"device_id":"harmony-phone","device_name":"HarmonyOS Phone","device_alias":"Studio Mac","online":true},
                   {"device_id":"harmony-watch","device_name":"HarmonyOS Watch","online":false},
                   {"device_id":"phone-3","device_name":"Legacy Phone","online":true},
                   {"device_id":"watch-2","device_name":"Legacy Watch","online":false},
@@ -203,6 +205,8 @@ class CloudAccountClientTest {
         assertEquals("desktop", devices[0].deviceKind)
         assertEquals("cli", devices[1].deviceKind)
         assertEquals(null, devices[2].deviceKind)
+        assertEquals("Studio Mac", devices[0].deviceName)
+        assertEquals("HarmonyOS Phone", devices[0].deviceAlias)
     }
 
     @Test

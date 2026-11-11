@@ -1,6 +1,6 @@
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
-import { CloudAccountDevice } from '../../services/CloudAccountClient';
+import { accountDeviceDisplayName, CloudAccountDevice } from '../../services/CloudAccountClient';
 import { AccountDeviceSelectionPolicy } from '../policy/AccountDeviceSelectionPolicy';
 import { DeviceModelSettingsEntryPolicy } from '../policy/DeviceModelSettingsEntryPolicy';
 import {
@@ -189,7 +189,7 @@ export struct AccountProfilePanel {
             }
             .width('100%')
           }, (device: CloudAccountDevice): string =>
-            `${device.deviceId}:${device.online ? 'online' : 'offline'}:${device.lastSeenAt || 0}:${device.deviceName}` +
+            `${device.deviceId}:${device.online ? 'online' : 'offline'}:${device.lastSeenAt || 0}:${accountDeviceDisplayName(device)}` +
               `:${this.isCurrentControlDevice(device) ? 'driven' : 'idle'}` +
               `:${this.supportsDeviceModelDefaults ? 'model-defaults' : 'no-model-defaults'}`)
         }
@@ -219,7 +219,7 @@ export struct AccountProfilePanel {
       .width(28)
       .height(28)
       Column({ space: 2 }) {
-        Text(device.deviceName || device.deviceId)
+        Text(accountDeviceDisplayName(device))
           .fontSize(MobileDesignTypography.titleSmall.size).fontWeight(FontWeight.Medium).fontColor(INK)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(this.deviceStatus(device))

@@ -88,6 +88,7 @@ export interface CloudAccountBinding {
 export interface CloudAccountDevice {
   deviceId: string;
   deviceName: string;
+  deviceAlias?: string | null;
   deviceKind?: string;
   online: boolean;
   lastSeenAt?: number;
@@ -100,6 +101,11 @@ export interface CloudAccountDevice {
    * treated as "unknown but usable", never as incompatible.
    */
   compatible?: boolean;
+}
+
+/** Keep the registered name available to legacy device-kind filtering. */
+export function accountDeviceDisplayName(device: CloudAccountDevice): string {
+  return device.deviceAlias ?? (device.deviceName || device.deviceId);
 }
 
 /** The single gate every control entry point must reuse; see `compatible`. */
@@ -132,6 +138,7 @@ interface ProvisionDeviceWire {
 interface CloudAccountDeviceWire {
   device_id: string;
   device_name: string;
+  device_alias?: string | null;
   device_kind?: string;
   online: boolean;
   last_seen_at?: number;
@@ -419,6 +426,7 @@ export class CloudAccountClient {
     return hosts.map((device: CloudAccountDeviceWire): CloudAccountDevice => ({
       deviceId: device.device_id,
       deviceName: device.device_name || device.device_id,
+      deviceAlias: device.device_alias,
       deviceKind: device.device_kind,
       online: device.online,
       lastSeenAt: device.last_seen_at,

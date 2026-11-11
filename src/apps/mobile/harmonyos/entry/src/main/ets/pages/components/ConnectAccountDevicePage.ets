@@ -1,6 +1,6 @@
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
-import { CloudAccountDevice } from '../../services/CloudAccountClient';
+import { accountDeviceDisplayName, CloudAccountDevice } from '../../services/CloudAccountClient';
 import { ACCENT, CARD, STATUS_SUCCESS, INK, LINE, MUTED, PAGE_BG, STATUS_DANGER, SOFT } from './Theme';
 import { AccountDeviceSelectionPolicy } from '../policy/AccountDeviceSelectionPolicy';
 import { NavigationBackButton } from './NavigationBackButton';
@@ -95,7 +95,7 @@ export struct ConnectAccountDevicePage {
             ForEach(this.desktopDevices(), (device: CloudAccountDevice) => {
               this.AccountConnectDeviceRow(device)
             }, (device: CloudAccountDevice): string =>
-              `${device.deviceId}:${device.online ? 'online' : 'offline'}:${device.lastSeenAt || 0}:${device.deviceName}`)
+              `${device.deviceId}:${device.online ? 'online' : 'offline'}:${device.lastSeenAt || 0}:${accountDeviceDisplayName(device)}`)
           }
           .width('100%')
         }
@@ -127,7 +127,7 @@ export struct ConnectAccountDevicePage {
       SymbolGlyph($r('sys.symbol.desktop'))
         .fontSize(22).fontColor([MUTED]).width(26).height(24).opacity(device.online ? 0.68 : 0.38)
       Column({ space: 3 }) {
-        Text(device.deviceName || device.deviceId)
+        Text(accountDeviceDisplayName(device))
           .fontSize(MobileDesignTypography.titleSmall.size).fontWeight(FontWeight.Medium).fontColor(INK)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(this.accountDeviceStatus(device))

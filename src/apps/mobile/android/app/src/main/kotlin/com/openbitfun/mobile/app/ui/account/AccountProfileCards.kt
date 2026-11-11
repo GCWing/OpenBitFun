@@ -219,7 +219,7 @@ internal fun AccountSettingsDevicesSection(
                                 )
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
-                                        device.name.ifBlank { device.id },
+                                        device.displayName,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Medium,
                                         maxLines = 1,

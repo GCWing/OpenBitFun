@@ -37,6 +37,7 @@ export class WorkspaceDirectoryState {
 export class DeviceDirectoryEntry {
   @Trace deviceId: string = '';
   @Trace deviceName: string = '';
+  @Trace deviceAlias: string | null | undefined = undefined;
   @Trace online: boolean = false;
   @Trace status: DeviceDirectoryStatus = 'idle';
   @Trace errorText: string = '';
@@ -44,6 +45,10 @@ export class DeviceDirectoryEntry {
   @Trace catalogSource: string = '';
   @Trace recentWorkspaces: RecentWorkspaceEntry[] = [];
   @Trace sessions: RemoteSession[] = [];
+
+  get displayName(): string {
+    return this.deviceAlias ?? (this.deviceName || this.deviceId);
+  }
 }
 
 /** Snapshot of every account desktop the sidebar can observe. */

@@ -193,3 +193,22 @@ test('directory restores the active target and refresh preserves an explicit sel
   f.vm.syncDevices([{ deviceId: 'desktop', online: true }, { deviceId: 'other', online: false }]);
   assert.equal(f.state.selectedDeviceId, 'other');
 });
+
+test('alias refresh and removal update the sidebar without replacing its loaded directory', () => {
+  const f = fixture();
+  f.active('desktop');
+  f.vm.completeLiveCatalog('desktop', [{ path: '/project' }], 'opened', []);
+  const entry = f.state.find('desktop');
+  const workspaces = entry.workspaces;
+  const device = { deviceId: 'desktop', deviceName: 'Desktop', online: true };
+  f.vm.syncDevices([{ ...device, deviceAlias: 'Office' }]);
+  assert.equal(f.state.find('desktop'), entry);
+  assert.equal(entry.displayName, 'Office');
+  assert.equal(entry.deviceName, 'Desktop');
+  f.vm.refreshActive();
+  assert.equal(entry.displayName, 'Office');
+  f.vm.syncDevices([{ ...device, deviceAlias: null }]);
+  assert.equal(entry.displayName, 'Desktop');
+  assert.equal(entry.workspaces, workspaces);
+  assert.equal(f.state.selectedDeviceId, 'desktop');
+});

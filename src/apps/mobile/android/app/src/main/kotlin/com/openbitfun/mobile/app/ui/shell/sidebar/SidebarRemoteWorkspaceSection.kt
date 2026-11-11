@@ -173,7 +173,7 @@ internal fun SidebarRemoteWorkspaceSection(
             projectedDevices.take(visibleDeviceCount).forEach { device ->
                 val active = device.id == activeDeviceId
                 SidebarDeviceSelectorRow(
-                    deviceName = device.name.ifBlank { device.id },
+                    deviceName = device.displayName,
                     online = device.online,
                     selected = active,
                     loading = active && (remoteState is RemoteSessionUiState.Loading ||

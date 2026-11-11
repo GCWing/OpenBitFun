@@ -347,7 +347,7 @@ public class AccountStore internal constructor(
             val preferred = AccountDevicePolicy.preferredTarget(devices, deviceId)
             val selected = loggedIn.copy(
                 targetDeviceId = preferred?.id,
-                targetDeviceName = preferred?.name,
+                targetDeviceName = preferred?.displayName,
             )
             if (!persistLogin(selected)) return@launch
             session = selected
@@ -389,7 +389,7 @@ public class AccountStore internal constructor(
                 ?: AccountDevicePolicy.preferredTarget(devices, deviceId)
             val selected = current.copy(
                 targetDeviceId = preferred?.id,
-                targetDeviceName = preferred?.name,
+                targetDeviceName = preferred?.displayName,
             )
             // This retry only refreshes the volatile device-list projection. The
             // authenticated bytes saved before the failed list request stay exact.
@@ -439,10 +439,10 @@ public class AccountStore internal constructor(
         val selected = ready.devices.firstOrNull { it.id == targetId }
             ?.takeIf { AccountDevicePolicy.canSelect(it, deviceId) }
             ?: return
-        val updated = current.copy(targetDeviceId = selected.id, targetDeviceName = selected.name)
+        val updated = current.copy(targetDeviceId = selected.id, targetDeviceName = selected.displayName)
         if (!persistLogin(updated)) return
         session = updated
-        _state.value = ready.copy(selectedDeviceId = selected.id, selectedDeviceName = selected.name)
+        _state.value = ready.copy(selectedDeviceId = selected.id, selectedDeviceName = selected.displayName)
     }
 
     /**
@@ -466,7 +466,7 @@ public class AccountStore internal constructor(
                     val active = session!!
                     val selected = if (pendingInitialDeviceSelection) {
                         val preferred = AccountDevicePolicy.preferredTarget(devices, deviceId)
-                        active.copy(targetDeviceId = preferred?.id, targetDeviceName = preferred?.name)
+                        active.copy(targetDeviceId = preferred?.id, targetDeviceName = preferred?.displayName)
                     } else active
                     pendingInitialDeviceSelection = false
                     session = selected
@@ -556,7 +556,8 @@ public class AccountStore internal constructor(
             username = displayedProfile?.takeIf { it.userId == current.userId }?.username ?: current.username,
             devices = controllableDevices,
             selectedDeviceId = current.targetDeviceId.takeIf { selectionConfirmed },
-            selectedDeviceName = current.targetDeviceName.takeIf { selectionConfirmed },
+            selectedDeviceName = (controllableDevices.firstOrNull { it.id == current.targetDeviceId }?.displayName
+                ?: current.targetDeviceName).takeIf { selectionConfirmed },
         ).copy(avatarUrl = displayedProfile?.takeIf { it.userId == current.userId }?.avatarUrl)
         enrichProfile(current)
     }
@@ -798,7 +799,7 @@ private class CloudBackend(
     private fun AccountSessionData.toTransportSession(): CloudAccountSession =
         CloudAccountSession(token, userId, masterKey)
 
-    private fun CloudAccountDevice.toUi(): AccountDeviceUi = AccountDeviceUi(deviceId, deviceName, online, lastSeenAt, compatible)
+    private fun CloudAccountDevice.toUi(): AccountDeviceUi = AccountDeviceUi(deviceId, deviceName, online, lastSeenAt, compatible, deviceAlias)
 }
 
 @Serializable
