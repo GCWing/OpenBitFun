@@ -20,7 +20,9 @@ test('sidebar final entry hierarchy keeps modes in workspace plus and tools in t
  assert.doesNotMatch(menu,/supportsHarnessProfiles|workspaceTools\.files|workspaceTools\.terminal|openWorkspaceTools/);
  const sidebar=fs.readFileSync(path.join(components,'AppSidebar.ets'),'utf8');
  assert.doesNotMatch(sidebar,/requestChat|sidebar\.newChat|sidebar\.conversations/);
- assert.match(sidebar,/workspaceTools\.title/);
+ const footer=fs.readFileSync(path.join(components,'SidebarToolsFooter.ets'),'utf8');
+ assert.match(sidebar,/SidebarToolsFooter\(\{/);
+ assert.match(footer,/workspaceTools\.title/);
  assert.match(sidebar,/if \(this.connectionState !== 'connected'\) return/);
  assert.doesNotMatch(sidebar,/DeviceToolsPicker|showToolsPicker/);
  assert.match(sidebar,/type: 'open-device', deviceId: this.controlTargetDeviceId/);

@@ -110,7 +110,8 @@ import {
 } from '../main/ets/services/CloudAccountClient';
 import {
   CloudAccountSessionStore,
-  PersistedCloudAccountSession
+  PersistedCloudAccountSession,
+  PersistedWatchProvisionIdentity
 } from '../main/ets/services/CloudAccountSessionStore';
 import { RemotePageState } from '../main/ets/pages/state/RemotePageState';
 import { ConversationViewState } from '../main/ets/pages/state/ConversationViewState';
@@ -427,6 +428,20 @@ class GatedAccountSessionManager extends ScriptedAccountSessionManager {
 
 /** HUKS and preferences are not reachable from a local unit run. */
 class InMemoryCloudAccountSessionStore extends CloudAccountSessionStore {
+  private watchIdentity?: PersistedWatchProvisionIdentity;
+  async loadWatchProvisionIdentity(relayUrl: string, userId: string,
+    deviceId: string): Promise<PersistedWatchProvisionIdentity | undefined> {
+    // A persisted key keeps this refusal test independent of HUKS/randomness
+    // (neither platform service exists in the host LocalTest runner).
+    return this.watchIdentity || {
+      relayUrl, userId, deviceId, requestId: '12345678-1234-4234-8234-123456789abc',
+      privateKeyBase64: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+    };
+  }
+  async saveWatchProvisionIdentity(identity: PersistedWatchProvisionIdentity): Promise<void> {
+    this.watchIdentity = identity;
+  }
+
   readonly saved: PersistedCloudAccountSession[] = [];
   profile?: GitHubAccountProfile;
   async loadProfile(_userId: string): Promise<GitHubAccountProfile | undefined> { return this.profile; }
@@ -1319,7 +1334,8 @@ export default function transportAndGeneralChatUnitTest() {
             '12345678-1234-4234-8234-123456789abc'
           );
         } catch (err) {
-          if (err instanceof CloudAccountRequestError) statusCode = err.statusCode;
+          if (!(err instanceof CloudAccountRequestError)) throw new Error(String(err));
+          statusCode = err.statusCode;
         }
         expect(statusCode).assertEqual(expectedStatus);
         expect(harness.sessionStore.clears).assertEqual(0);

@@ -69,7 +69,7 @@
     "models-dev:update": "node scripts/update-models-dev-snapshot.mjs",
     "check:build-prereqs": "node scripts/check-build-prereqs.mjs",
     "harmony:architecture": "node scripts/check-harmonyos-architecture.mjs",
-    "mobile:architecture": "node scripts/check-mobile-architecture.mjs",
+    "mobile:architecture": "node scripts/check-mobile-architecture.mjs && node --test scripts/mobile-client-build.contract.test.mjs",
     "mobile:ui:generate": "node scripts/mobile-ui-design-system.mjs",
     "mobile:ui:check": "node scripts/mobile-ui-design-system.mjs --check && node scripts/mobile-ui-preview.mjs --check",
     "mobile:ui:preview": "node scripts/mobile-ui-design-system.mjs && node scripts/mobile-ui-preview.mjs",
