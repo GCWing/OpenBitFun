@@ -326,7 +326,10 @@ class AccountStoreTest {
 
     @Test
     fun onlyControllableDevicesReachTheList() = runTest {
-        val store = AccountStore.create(this, FakeAccountBackend(), MemorySecureStore(), "phone-1", "Android")
+        val backend = FakeAccountBackend().also {
+            it.deviceAliases = mapOf("phone-2" to "Studio Mac", "desktop-1" to "HarmonyOS Phone")
+        }
+        val store = AccountStore.create(this, backend, MemorySecureStore(), "phone-1", "Android")
         store.dispatch(AccountIntent.Login)
         advanceUntilIdle()
 
@@ -334,6 +337,46 @@ class AccountStoreTest {
         // This device and the user's other phone are gone; the offline desktop
         // stays, because "known but not running" is worth showing.
         assertEquals(listOf("desktop-1", "desktop-2"), ready.devices.map { it.id })
+        assertEquals("HarmonyOS Phone", ready.devices.first().displayName)
+        assertEquals("Desktop", ready.devices.first().name)
+    }
+
+    @Test
+    fun selectedDeviceAliasRefreshesAndClearsWithoutChangingItsIdentity() = runTest {
+        val backend = FakeAccountBackend().also {
+            it.desktop2Online = true
+            it.deviceAliases = mapOf("desktop-1" to "Studio", "desktop-2" to "Office")
+        }
+        val secure = MemorySecureStore()
+        val store = AccountStore.create(this, backend, secure, "phone-1", "Android")
+        store.dispatch(AccountIntent.Login)
+        advanceUntilIdle()
+        assertEquals("Studio", assertIs<AccountUiState.Ready>(store.state.value).selectedDeviceName)
+        store.dispatch(AccountIntent.SelectDevice("desktop-2"))
+        assertEquals("Office", assertIs<AccountUiState.Ready>(store.state.value).selectedDeviceName)
+        val saved = secure.read("github_device_session_v1")!!
+
+        backend.deviceAliases = mapOf("desktop-2" to "Work PC")
+        store.dispatch(AccountIntent.RefreshDevices)
+        advanceUntilIdle()
+        val refreshed = assertIs<AccountUiState.Ready>(store.state.value)
+        assertEquals("Work PC", refreshed.selectedDeviceName)
+        assertEquals("Work PC", refreshed.devices.single { it.id == "desktop-2" }.displayName)
+        assertEquals("desktop-2", refreshed.selectedDeviceId)
+
+        backend.deviceAliases = emptyMap()
+        store.dispatch(AccountIntent.RefreshDevices)
+        advanceUntilIdle()
+        assertEquals("DESKTOP-KM3L4UI", assertIs<AccountUiState.Ready>(store.state.value).selectedDeviceName)
+        assertContentEquals(saved, secure.read("github_device_session_v1"))
+        store.stop()
+
+        val restored = AccountStore.create(this, backend, secure, "phone-1", "Android")
+        restored.dispatch(AccountIntent.Restore)
+        advanceUntilIdle()
+        val ready = assertIs<AccountUiState.Ready>(restored.state.value)
+        assertEquals("desktop-2", ready.selectedDeviceId)
+        assertEquals("DESKTOP-KM3L4UI", ready.selectedDeviceName)
     }
 
     @Test
@@ -843,6 +886,7 @@ private class FakeAccountBackend : AccountBackend {
     var listThrowable: Throwable? = null
     var desktop1Online: Boolean = true
     var desktop2Online: Boolean = false
+    var deviceAliases: Map<String, String> = emptyMap()
     var settings: String? = null
     val transportTargets = mutableListOf<String>()
     override suspend fun login(
@@ -880,7 +924,7 @@ private class FakeAccountBackend : AccountBackend {
             AccountDeviceUi("phone-2", "HarmonyOS Phone", true, 1),
             AccountDeviceUi("desktop-1", "Desktop", desktop1Online, 1),
             AccountDeviceUi("desktop-2", "DESKTOP-KM3L4UI", desktop2Online, 1),
-        )
+        ).map { it.copy(deviceAlias = deviceAliases[it.id]) }
     }
 
 

@@ -195,6 +195,7 @@ public data class CloudAccountDevice public constructor(
      * treated as "unknown but usable", never as incompatible.
      */
     public val compatible: Boolean? = null,
+    public val deviceAlias: String? = null,
 ) {
     /** The single gate every control entry point reuses; see [compatible]. */
     public val controllable: Boolean get() = compatible != false
@@ -331,6 +332,7 @@ public class CloudAccountClient internal constructor(
                 device.lastSeenAt,
                 device.deviceKind,
                 device.compatible,
+                device.deviceAlias,
             )
         }
 
@@ -693,6 +695,7 @@ private data class AccountDeviceWire(
     @SerialName("last_seen_at") val lastSeenAt: Long? = null,
     @SerialName("device_kind") val deviceKind: String? = null,
     val compatible: Boolean? = null,
+    @SerialName("device_alias") val deviceAlias: String? = null,
 )
 
 private fun decode(value: String): ByteArray = try {

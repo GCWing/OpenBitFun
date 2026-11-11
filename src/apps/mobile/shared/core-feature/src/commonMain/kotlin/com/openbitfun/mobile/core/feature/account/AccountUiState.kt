@@ -28,9 +28,14 @@ public data class AccountDeviceUi public constructor(
      * builds. `false` is confirmed incompatible and is never a control target;
      * null is an older Relay that does not gate, "unknown but usable".
      */
-    public val compatible: Boolean? = null,
+    public val compatible: Boolean?,
+    public val deviceAlias: String?,
 ) {
     public constructor(id: String, name: String, online: Boolean, lastSeenAt: Long?) : this(id, name, online, lastSeenAt, null)
+    public constructor(id: String, name: String, online: Boolean, lastSeenAt: Long?, compatible: Boolean?) : this(id, name, online, lastSeenAt, compatible, null)
+
+    /** Keep the registered name available to legacy device-kind filtering. */
+    public val displayName: String get() = deviceAlias ?: name.ifBlank { id }
 
     /** The single gate every control entry point reuses; see [compatible]. */
     public val controllable: Boolean get() = compatible != false

@@ -207,7 +207,7 @@ private fun DeviceListCard(
                         )
                         Column(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.weight(1f)) {
                             Text(
-                                device.name.ifBlank { device.id },
+                                device.displayName,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1,

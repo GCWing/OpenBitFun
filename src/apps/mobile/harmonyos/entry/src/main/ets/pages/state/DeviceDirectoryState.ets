@@ -29,7 +29,7 @@ export class WorkspaceDirectoryState {
 }
 
 /**
- * One account desktop in the sidebar. Nested @Trace fields are what
+ * One account desktop shared by the sidebar, settings and device picker. Nested @Trace fields are what
  * SidebarDeviceGroup actually watches — replacing a plain object on
  * the parent array does not update a reused ForEach child.
  */
@@ -37,6 +37,10 @@ export class WorkspaceDirectoryState {
 export class DeviceDirectoryEntry {
   @Trace deviceId: string = '';
   @Trace deviceName: string = '';
+  @Trace deviceAlias: string | null | undefined = undefined;
+  @Trace deviceKind: string | undefined = undefined;
+  @Trace lastSeenAt: number | undefined = undefined;
+  @Trace compatible: boolean | undefined = undefined;
   @Trace online: boolean = false;
   @Trace status: DeviceDirectoryStatus = 'idle';
   @Trace errorText: string = '';
@@ -44,9 +48,13 @@ export class DeviceDirectoryEntry {
   @Trace catalogSource: string = '';
   @Trace recentWorkspaces: RecentWorkspaceEntry[] = [];
   @Trace sessions: RemoteSession[] = [];
+
+  get displayName(): string {
+    return this.deviceAlias ?? (this.deviceName || this.deviceId);
+  }
 }
 
-/** Snapshot of every account desktop the sidebar can observe. */
+/** Shared observable directory of account desktops. */
 @ObservedV2
 export class DeviceDirectoryState {
   @Trace refreshing: boolean = false;

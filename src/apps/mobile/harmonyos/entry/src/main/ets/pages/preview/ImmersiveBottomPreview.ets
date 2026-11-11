@@ -115,16 +115,13 @@ function gallery(): MiniAppSummary[] {
   return apps;
 }
 
-function settingsDevices(): CloudAccountDevice[] {
-  const devices: CloudAccountDevice[] = [];
+function settingsDevices(): DeviceDirectoryEntry[] {
+  const devices: DeviceDirectoryEntry[] = [];
   for (let index = 0; index < SETTINGS_DEVICES; index++) {
     const device = index + 1;
-    devices.push({
-      deviceId: `account-desktop-${device}`,
-      deviceName: `Account desktop ${device}`,
-      online: device % 3 !== 0,
-      lastSeenAt: device
-    });
+    const entry = emptyDeviceDirectoryEntry(`account-desktop-${device}`, `Account desktop ${device}`, device % 3 !== 0);
+    entry.lastSeenAt = device;
+    devices.push(entry);
   }
   return devices;
 }
@@ -351,7 +348,9 @@ export struct ImmersiveBottomPreview {
       // be the greyed state. This fixture is the connected desktop's, so it
       // advertises the command and the sheet shows the entry it really shows.
       this.remotePageState.setHostCapabilities([REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1]);
-      this.previewActions = previewActionsWithDevices(settingsDevices());
+      const devices = settingsDevices();
+      this.directoryState.replace(devices);
+      this.previewActions = previewActionsWithDevices(devices);
       return;
     }
     if (scenarioId.endsWith('-connect')) {
@@ -469,6 +468,7 @@ export struct ImmersiveBottomPreview {
   @Builder
   private Settings() {
     AppSettingsSurface({
+      deviceDirectoryState: this.directoryState,
       shellState: this.shellState,
       remotePageState: this.remotePageState,
       actions: this.previewActions
@@ -478,6 +478,7 @@ export struct ImmersiveBottomPreview {
   @Builder
   private Connect() {
     AppConnectSurface({
+      deviceDirectoryState: this.directoryState,
       remotePageState: this.remotePageState,
       actions: this.previewActions
     })

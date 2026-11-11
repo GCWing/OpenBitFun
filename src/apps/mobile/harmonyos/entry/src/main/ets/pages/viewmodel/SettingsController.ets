@@ -9,6 +9,7 @@ import {
   CloudAccountDevice,
   CloudAccountRequestError,
   CloudAccountSession,
+  accountDeviceDisplayName,
   isDeviceControllable
 } from '../../services/CloudAccountClient';
 import { CloudAccountSessionStore, PersistedCloudAccountSession } from '../../services/CloudAccountSessionStore';
@@ -74,6 +75,7 @@ export class SettingsController {
   private accountDevices: CloudAccountDevice[] = [];
   private lastAccountDevicesAt: number = 0;
   private stopPresence?: () => void;
+  private latestPresence?: string[];
   private presenceGeneration: number = 0;
   private presenceRefreshing: boolean = false;
   private targetProbeTimer: number = -1;
@@ -292,9 +294,12 @@ export class SettingsController {
       this.stopPresence = binding.client.observePresence(binding.relayUrl, binding.session,
       (ids: string[]) => {
         if (epoch !== this.presenceGeneration) return;
+        this.latestPresence = ids.slice();
         const previousTarget = this.accountDevices.find((device: CloudAccountDevice) => device.deviceId === this.requireCloud().remoteState.controlTargetDeviceId);
         this.accountDevices = this.accountDevices.map((device: CloudAccountDevice): CloudAccountDevice => ({
           deviceId: device.deviceId, deviceName: device.deviceName, deviceKind: device.deviceKind,
+          deviceAlias: device.deviceAlias,
+          compatible: device.compatible,
           lastSeenAt: device.lastSeenAt, online: ids.includes(device.deviceId)
         }));
         const cloud = this.requireCloud();
@@ -322,6 +327,7 @@ export class SettingsController {
 
   stopPresencePolling(): void {
     this.presenceGeneration++;
+    this.latestPresence = undefined;
     this.stopPresence?.(); this.stopPresence = undefined;
     if (this.targetProbeTimer !== -1) clearTimeout(this.targetProbeTimer);
     this.targetProbeTimer = -1;
@@ -435,11 +441,30 @@ export class SettingsController {
     if (!session || this.cloudRelayUrl.length === 0) {
       return [];
     }
+    const presenceAtStart = this.latestPresence;
     try {
       const devices = await cloud.client.listDevices(this.cloudRelayUrl, session, cloud.hooks.deviceId());
       if (this.cloudSession !== session) throw new Error('Account changed while loading devices');
+      // A presence snapshot received during this request is newer than its
+      // HTTP answer. Keep that liveness while accepting refreshed metadata.
+      const presence = this.latestPresence;
+      if (presence !== undefined && presence !== presenceAtStart) {
+        for (const device of devices) {
+          device.online = presence.includes(device.deviceId);
+        }
+      }
       this.accountDevices = devices;
       this.lastAccountDevicesAt = Date.now();
+      const target = devices.find((device: CloudAccountDevice): boolean =>
+        device.deviceId === cloud.remoteState.controlTargetDeviceId);
+      if (target && cloud.remoteState.controlTargetType === 'account_device') {
+        const displayName = accountDeviceDisplayName(target);
+        cloud.remoteState.setControlTarget('account_device', target.deviceId, displayName);
+        cloud.remoteState.setDesktopIdentity(displayName, target.deviceId);
+      }
+      const preferred = devices.find((device: CloudAccountDevice): boolean =>
+        device.deviceId === this.preferredTargetDeviceId);
+      if (preferred) this.setPreferredCloudTarget(preferred.deviceId, accountDeviceDisplayName(preferred));
       cloud.hooks.onAccountDevices(devices);
       return devices;
     } catch (err) {
@@ -532,7 +557,7 @@ export class SettingsController {
       const devices = await this.listCloudAccountDevices();
       const target = devices.find((device: CloudAccountDevice): boolean => device.deviceId === targetId);
       if (!target || !target.online) {
-        const targetName = target?.deviceName || targetDeviceName || targetId;
+        const targetName = target ? accountDeviceDisplayName(target) : targetDeviceName || targetId;
         remoteState.setControlTarget('account_device', targetId, targetName);
         remoteState.setDesktopIdentity(targetName, targetId);
         remoteState.setConnectionState('reconnecting');
@@ -543,6 +568,7 @@ export class SettingsController {
       await this.selectCloudAccountDevice({
         deviceId: target.deviceId,
         deviceName: target.deviceName || targetDeviceName || target.deviceId,
+        deviceAlias: target.deviceAlias,
         online: target.online,
         lastSeenAt: target.lastSeenAt,
         compatible: target.compatible
@@ -626,8 +652,9 @@ export class SettingsController {
       RemoteLogger.info(
         `account device sync device=${deviceId} workspace=${initialSync.workspace.path} sessions=${initialSync.sessions.length}`
       );
-      cloud.remoteState.setControlTarget('account_device', deviceId, device.deviceName);
-      cloud.remoteState.setDesktopIdentity(device.deviceName, deviceId);
+      const displayName = accountDeviceDisplayName(device);
+      cloud.remoteState.setControlTarget('account_device', deviceId, displayName);
+      cloud.remoteState.setDesktopIdentity(displayName, deviceId);
       cloud.remoteState.setWorkspace(
         initialSync.workspace.name,
         initialSync.workspace.path,
@@ -646,7 +673,7 @@ export class SettingsController {
       cloud.remoteState.setAuthenticatedUserId(initialSync.authenticatedUserId);
       cloud.remoteState.setHostCapabilities(initialSync.capabilities || []);
       cloud.remoteState.setConnectionState('connected');
-      this.setPreferredCloudTarget(deviceId, device.deviceName || deviceId);
+      this.setPreferredCloudTarget(deviceId, displayName);
       await this.saveControlTargetType('account_device');
       this.resyncAccountDevicePresence();
       cloud.remoteState.setStatusText(RemoteI18n.t('connection.connected'));
@@ -660,7 +687,7 @@ export class SettingsController {
         cloud.hooks.navigateRemoteHome();
       }
       try {
-        await this.persistCurrentCloudSessionTarget(deviceId, device.deviceName || deviceId);
+        await this.persistCurrentCloudSessionTarget(deviceId, displayName);
       } catch (err) {
         RemoteLogger.warn(`account target persistence failed device=${deviceId}: ${String(err)}`);
       }

@@ -1,12 +1,14 @@
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
-import { CloudAccountDevice } from '../../services/CloudAccountClient';
+import { accountDeviceDisplayName, CloudAccountDevice } from '../../services/CloudAccountClient';
 import { ACCENT, CARD, STATUS_SUCCESS, INK, LINE, MUTED, PAGE_BG, STATUS_DANGER, SOFT } from './Theme';
 import { AccountDeviceSelectionPolicy } from '../policy/AccountDeviceSelectionPolicy';
+import { DeviceDirectoryEntry, DeviceDirectoryState } from '../state/DeviceDirectoryState';
 import { NavigationBackButton } from './NavigationBackButton';
 
 @ComponentV2
 export struct ConnectAccountDevicePage {
+  @Param directoryState: DeviceDirectoryState = new DeviceDirectoryState();
   @Param deviceId: string = '';
   @Param controlTargetDeviceId: string = '';
   @Param connectionState: string = 'idle';
@@ -15,7 +17,6 @@ export struct ConnectAccountDevicePage {
     async (): Promise<CloudAccountDevice[]> => [];
   @Event cloudSelectDevice: (device: CloudAccountDevice) => Promise<void> =
     async (_device: CloudAccountDevice): Promise<void> => {};
-  @Local accountDevices: CloudAccountDevice[] = [];
   @Local accountDevicesBusy: boolean = false;
   @Local accountDevicesError: string = '';
   @Local switchingDeviceId: string = '';
@@ -77,7 +78,7 @@ export struct ConnectAccountDevicePage {
       }
       .width('100%').height(38)
 
-      if (this.accountDevicesBusy && this.accountDevices.length === 0) {
+      if (this.accountDevicesBusy && this.directoryState.devices.length === 0) {
         Column() {
           this.AccountDeviceSkeletonRow()
           this.AccountDeviceSkeletonRow()
@@ -95,7 +96,7 @@ export struct ConnectAccountDevicePage {
             ForEach(this.desktopDevices(), (device: CloudAccountDevice) => {
               this.AccountConnectDeviceRow(device)
             }, (device: CloudAccountDevice): string =>
-              `${device.deviceId}:${device.online ? 'online' : 'offline'}:${device.lastSeenAt || 0}:${device.deviceName}`)
+              `${device.deviceId}:${device.online ? 'online' : 'offline'}:${device.lastSeenAt || 0}:${accountDeviceDisplayName(device)}`)
           }
           .width('100%')
         }
@@ -127,7 +128,7 @@ export struct ConnectAccountDevicePage {
       SymbolGlyph($r('sys.symbol.desktop'))
         .fontSize(22).fontColor([MUTED]).width(26).height(24).opacity(device.online ? 0.68 : 0.38)
       Column({ space: 3 }) {
-        Text(device.deviceName || device.deviceId)
+        Text(accountDeviceDisplayName(device))
           .fontSize(MobileDesignTypography.titleSmall.size).fontWeight(FontWeight.Medium).fontColor(INK)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(this.accountDeviceStatus(device))
@@ -171,7 +172,7 @@ export struct ConnectAccountDevicePage {
     this.accountDevicesBusy = true;
     this.accountDevicesError = '';
     try {
-      this.accountDevices = await this.cloudListDevices();
+      await this.cloudListDevices();
     } catch (err) {
       this.accountDevicesError = err instanceof Error ? err.message :
         RemoteI18n.t('remote.settings.deviceLoadFailed');
@@ -180,8 +181,8 @@ export struct ConnectAccountDevicePage {
     }
   }
 
-  private desktopDevices(): CloudAccountDevice[] {
-    return this.accountDevices.filter((device: CloudAccountDevice): boolean =>
+  private desktopDevices(): DeviceDirectoryEntry[] {
+    return this.directoryState.devices.filter((device: DeviceDirectoryEntry): boolean =>
       device.deviceId !== this.deviceId && device.deviceName !== 'HarmonyOS Phone');
   }
 

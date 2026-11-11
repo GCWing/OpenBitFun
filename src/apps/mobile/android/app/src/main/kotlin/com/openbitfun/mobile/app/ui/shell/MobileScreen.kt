@@ -474,7 +474,7 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
                             createDevices = readyAccount?.devices.orEmpty().map { device ->
                                 com.openbitfun.mobile.app.ui.remote.CreateDeviceChoice(
                                     id = device.id,
-                                    name = device.name,
+                                    name = device.displayName,
                                     online = device.online,
                                     selected = device.id == readyAccount?.selectedDeviceId,
                                 )

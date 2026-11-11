@@ -170,7 +170,7 @@ export struct SidebarWorkspaceSection {
         tint: SIDEBAR_INK
       })
         .hitTestBehavior(HitTestMode.None)
-      Text(entry.deviceName)
+      Text(entry.displayName)
         .fontSize(MobileDesignTypography.bodyMedium.size)
         .fontWeight(this.isSelected(entry) ? FontWeight.Bold : FontWeight.Regular)
         .fontColor(SIDEBAR_INK)
@@ -200,7 +200,7 @@ export struct SidebarWorkspaceSection {
     .alignItems(VerticalAlign.Center)
     .backgroundColor(this.isSelected(entry) ? SIDEBAR_SELECTION : TRANSPARENT)
     .borderRadius(10)
-    .accessibilityText(`${entry.deviceName}, ${this.isActiveDevice(entry.deviceId) ? ConnectionStatusPresenter.label(this.connectionState) :
+    .accessibilityText(`${entry.displayName}, ${this.isActiveDevice(entry.deviceId) ? ConnectionStatusPresenter.label(this.connectionState) :
       RemoteI18n.t(entry.online ? 'sidebar.deviceOnline' : 'sidebar.deviceOffline')}`)
     .enabled(this.canUseDevice(entry) || this.canRetryDevice(entry))
     .onClick(() => {
@@ -342,7 +342,7 @@ export struct SidebarWorkspaceSection {
       tools: this.workspaceTools,
       canBrowse: this.isActiveDevice(this.workspacePickerDevice().deviceId),
       onBrowse: this.onWorkspaceTools,
-      deviceName: this.workspacePickerDevice().deviceName,
+      deviceName: this.workspacePickerDevice().displayName,
       savedConnections: this.workspacePickerDevice().deviceId === this.savedConnectionsTargetId ? this.savedConnections : [],
       workspaces: this.workspacePickerDevice().catalogSource.length > 0 ?
         this.workspacePickerDevice().recentWorkspaces : this.workspacesForDevice(this.workspacePickerDevice()),
