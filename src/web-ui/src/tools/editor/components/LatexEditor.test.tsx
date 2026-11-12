@@ -38,7 +38,7 @@ vi.mock('./CodeEditor', () => ({
   },
 }));
 vi.mock('../pdf-review/PdfReviewEditor', () => ({
-  default: ({ pdfBase64 }: import('./PdfViewer').PdfViewerProps) => <div data-pdf={pdfBase64} />,
+  default: ({ pdfBase64, filePath }: import('./PdfViewer').PdfViewerProps) => <div data-pdf={pdfBase64} data-file={filePath} />,
 }));
 
 let container: HTMLDivElement;
@@ -200,4 +200,58 @@ it.each([false, true])('inserts body snippets after the document start without r
   expect(source.startsWith('% !TeX program = pdflatex\n\\documentclass{article}')).toBe(true);
   expect(source).toContain('\\begin{document}\n\\section{Title}\n');
   expect(source).toContain('Existing text\n\\end{document}');
+});
+
+function mainFileInput() {
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="editor.latexEditor.mainFile"]');
+  if (!input) throw new Error('Main file input is missing');
+  return input;
+}
+async function typeMainFile(value: string) {
+  const input = mainFileInput();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+}
+async function enableAutoCompile() {
+  await act(async () => { container.querySelector<HTMLInputElement>('[role="switch"]')!.click(); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+}
+
+it('keeps the build target and review owner until the main-file entry is committed', async () => {
+  vi.useFakeTimers();
+  mocks.invoke.mockResolvedValue({ pdfBase64: 'build' });
+  await act(async () => { renderEditor(); });
+  await enableAutoCompile();
+  expect(mocks.invoke).toHaveBeenCalledTimes(1);
+  await act(async () => mainFileInput().focus());
+  for (const partial of ['c', 'chapters/', 'chapters/paper.tex']) await typeMainFile(partial);
+  expect(mocks.invoke).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('[data-pdf]')?.getAttribute('data-file')).toBe(path);
+
+  await act(async () => { mainFileInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+  expect(mocks.invoke).toHaveBeenCalledTimes(2);
+  expect(mocks.invoke).toHaveBeenLastCalledWith(origin, '/project/chapters/paper.tex', 'pdflatex');
+  expect(container.querySelector('[data-pdf]')?.getAttribute('data-file')).toBe('/project/chapters/paper.tex');
+});
+
+it('restores the committed main file on Escape and commits an edited entry on blur', async () => {
+  vi.useFakeTimers();
+  mocks.invoke.mockResolvedValue({ pdfBase64: 'build' });
+  await act(async () => { renderEditor(); });
+  await enableAutoCompile();
+  await act(async () => mainFileInput().focus());
+  await typeMainFile('draft.tex');
+  await act(async () => { mainFileInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+  expect(mainFileInput().value).toBe('');
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(mocks.invoke).toHaveBeenCalledTimes(1);
+
+  await typeMainFile('appendix.tex');
+  await act(async () => mainFileInput().blur());
+  await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+  expect(mocks.invoke).toHaveBeenLastCalledWith(origin, '/project/appendix.tex', 'pdflatex');
 });

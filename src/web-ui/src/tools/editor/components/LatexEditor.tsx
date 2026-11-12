@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Button, IconButton, Input, Select, SplitView, Switch, Tooltip } from '@openbitfun/ui';
 import { Code2, FileText, ListTree, Logs, PanelLeft, PanelRight, Play, Redo2, Save, Search, Undo2, X } from 'lucide-react';
 import type * as Monaco from 'monaco-editor';
@@ -33,6 +33,8 @@ export default function LatexEditor(props: CodeEditorProps) {
   const [pdfOpen, setPdfOpen] = useState(retained?.pdf ?? true);
   const [previewWidth, setPreviewWidth] = useState(retained?.width ?? INITIAL_PREVIEW_WIDTH);
   const [mainFile, setMainFile] = useState(retained?.mainFile ?? '');
+  // The build target and review owner change only on commit, never per keystroke.
+  const [mainFileDraft, setMainFileDraft] = useState(mainFile);
   const [source, setSource] = useState(document?.snapshot?.content ?? '');
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
@@ -173,6 +175,21 @@ export default function LatexEditor(props: CodeEditorProps) {
     try { await document?.saveAll(); }
     catch (failure) { setError(String(failure)); setLog(String(failure)); setLogsOpen(true); }
   };
+  const commitMainFile = () => {
+    const value = mainFileDraft.trim();
+    setMainFileDraft(value);
+    setMainFile(value);
+  };
+  const handleMainFileKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commitMainFile();
+    } else if (event.key === 'Escape' && mainFileDraft !== mainFile) {
+      event.preventDefault();
+      event.stopPropagation();
+      setMainFileDraft(mainFile);
+    }
+  };
 
   return <section className="latex-editor" data-openbitfun-component="latex-editor" data-openbitfun-part="root">
     <div className="latex-editor__header" data-openbitfun-component="latex-editor" data-openbitfun-part="header">
@@ -214,8 +231,8 @@ export default function LatexEditor(props: CodeEditorProps) {
           <div className="latex-editor__source-bar">
             <Tooltip content={t('editor.latexEditor.outline')} placement="bottom"><IconButton size="sm" icon={<ListTree size={15} />}
               aria-label={t('editor.latexEditor.outline')} aria-pressed={outlineOpen} onClick={() => setOutlineOpen(value => !value)} /></Tooltip>
-            <Input size="sm" aria-label={t('editor.latexEditor.mainFile')} value={mainFile} placeholder={latexRootHint(source) || fileName}
-              onValueChange={setMainFile} title={t('editor.latexEditor.mainFileHint')} />
+            <Input size="sm" aria-label={t('editor.latexEditor.mainFile')} value={mainFileDraft} placeholder={latexRootHint(source) || fileName}
+              onValueChange={setMainFileDraft} onBlur={commitMainFile} onKeyDown={handleMainFileKey} title={t('editor.latexEditor.mainFileHint')} />
             <IconButton size="sm" aria-label={t('editor.latexEditor.closeSource')} icon={<X size={14} />} onClick={() => setSourceOpen(false)} />
           </div>
           <div className="latex-editor__source-body">
