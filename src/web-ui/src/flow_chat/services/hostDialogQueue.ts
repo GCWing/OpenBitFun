@@ -1,4 +1,5 @@
-import { HostDialogQueue, type QueueAttachment } from '../../../../shared/dialog-queue/HostDialogQueue';
+import { HostDialogQueue, newQueueTurnId, type QueueAttachment } from '../../../../shared/dialog-queue/HostDialogQueue';
+export { newQueueTurnId };
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 import { getActiveSurfaceScope, isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { peerConnectionManager } from '@/infrastructure/peer-device/PeerConnectionManager';
@@ -67,4 +68,30 @@ export function queueImageAttachments(images?: unknown[]): QueueAttachment[] {
       mimeType: image.mime_type, metadata: image.metadata,
     } };
   });
+}
+
+/**
+ * The host refused a queue mutation because the session is not loaded there
+ * and it could not (or, on an older host, would not) load it. The refusal comes
+ * before any receipt exists: nothing was accepted, and nothing of this session
+ * is executing on that host.
+ */
+export function isHostSessionNotLoadedRefusal(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error ?? '');
+  return text.includes('Session is not loaded on the execution host');
+}
+
+/**
+ * Drop the local outbox copy of a fresh submission the host refused outright.
+ * Only for a caller that still holds the complete draft and resends it.
+ */
+export async function discardRefusedHostSubmission(
+  queue: HostDialogQueue,
+  message: Parameters<HostDialogQueue['submit']>[0],
+  turnId: string,
+): Promise<void> {
+  // An identical unresolved record is what the queue retried instead of this
+  // Turn ID; the same refusal proves the host never accepted it either.
+  const saved = queue.pendingSubmission(message) ?? await queue.savedDraft(turnId);
+  if (saved) await queue.dismiss(saved);
 }

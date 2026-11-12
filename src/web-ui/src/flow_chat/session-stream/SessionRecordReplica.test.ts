@@ -14,6 +14,43 @@ function record(revision: number, content = 'answer'): SessionRecordUpsert {
 }
 
 describe('SessionRecordReplica', () => {
+  it('lets a new subscription supersede held records stamped with higher revisions', () => {
+    const replica = new SessionRecordReplica('session');
+    const live = 2 ** 52 + 5;
+    replica.apply(record(live, 'streaming'));
+    const other = { ...record(live + 1, 'kept'), id: 'item/other' } as SessionRecordUpsert;
+    other.item = { type: 'text', data: { id: 'other', content: 'kept', isStreaming: false, timestamp: 4 } } as SessionRecordUpsert['item'];
+    replica.apply(other);
+    // Without a rebase a rebuilt stream's lower snapshot revision is rejected.
+    const settled = { ...record(2 ** 52 - 1, 'final'), turn: { ...record(1).turn, status: 'completed' } } as SessionRecordUpsert;
+    expect(replica.apply(settled)).toBeNull();
+
+    replica.rebaseRevisions();
+    replica.rebaseRevisions();
+    const turn = replica.apply(settled)!.turn!;
+    expect((turn as unknown as { status: string }).status).toBe('completed');
+    // Held content the new subscription did not resend stays, in order.
+    expect(turn.modelRounds[0].textItems.map(item => item.content).sort()).toEqual(['final', 'kept']);
+    // Within the new subscription, revisions order normally again.
+    expect(replica.apply(record(2 ** 52 - 2, 'older'))).toBeNull();
+  });
+
+  it('keeps tombstones and the rollback fence across a rebase', () => {
+    const replica = new SessionRecordReplica('session');
+    replica.apply(record(10));
+    replica.apply({ sessionId: 'session', id: 'turn/turn', revision: 11, deleted: true });
+    expect(replica.snapshot('turn').turn).toBeNull();
+    replica.rebaseRevisions();
+    expect(replica.snapshot('turn').turn).toBeNull();
+
+    const retired = new SessionRecordReplica('session');
+    retired.apply(record(10));
+    retired.retireTurns(['turn']);
+    retired.rebaseRevisions();
+    expect(retired.apply(record(1, 'replayed'))).toBeNull();
+    expect(retired.snapshot('turn').turn).toBeNull();
+  });
+
   it('merges complete blocks by stable identity without duplicating replay', () => {
     const replica = new SessionRecordReplica('session');
     replica.apply(record(1, 'first'));

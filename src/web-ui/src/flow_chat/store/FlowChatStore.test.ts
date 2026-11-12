@@ -8308,6 +8308,38 @@ describe('FlowChatStore reconcile snapshot content safety', () => {
     ).toContainEqual(expect.objectContaining({ id: 'plan-display-test' }));
   });
 
+  it.each([
+    ['adopts', 'OpenBitFun is an agentic IDE with the complete final answer.', true],
+    ['refuses', 'OpenBitFun is an', false],
+  ] as const)('%s a settled record against text painted with lost chunks', async (_case, persisted, adopted) => {
+    await hydrateSessionWithContent();
+    // Chunks lost under load leave a hole: "agentic " never arrived.
+    const painted = 'OpenBitFun is an IDE with the';
+    flowChatStore.setState(prev => {
+      const session = prev.sessions.get('history-1')!;
+      const turn = session.dialogTurns[0];
+      const round = turn.modelRounds[0];
+      return { sessions: new Map(prev.sessions).set('history-1', { ...session, dialogTurns: [{
+        ...turn, status: 'completed',
+        modelRounds: [{ ...round, items: round.items.map(item => (item.type === 'text'
+          ? { ...item, content: painted } : item)) }],
+      }] }) };
+    });
+    apiMocks.restoreSessionView.mockResolvedValueOnce({
+      session: hostSession(),
+      turns: [{
+        ...createPersistedTurn(0),
+        modelRounds: [{ ...HYDRATED_ROUND, textItems: [{ id: 'text-0', content: persisted, timestamp: 2 }] }],
+        endTime: 3,
+      }],
+      contextRestoreState: 'ready',
+    });
+
+    await expect(flowChatStore.reconcileSettledDialogTurn('history-1', 'turn-0')).resolves.toBe(adopted);
+    expect(flowChatStore.getState().sessions.get('history-1')?.dialogTurns[0].modelRounds[0].items
+      .find(item => item.type === 'text')).toMatchObject({ content: adopted ? persisted : painted });
+  });
+
   it('keeps live round timing when the settled host record lost it', async () => {
     // Older hosts rebuild the last round at Turn completion before this
     // window's checkpoint of `ModelRoundCompleted`, persisting duration 0 and
@@ -8992,6 +9024,63 @@ describe('FlowChatStore device surfaces', () => {
       await flowChatStore.loadRelaySessionHistory('peer-switch');
 
       expect(texts('peer-switch')).toHaveLength(1);
+    });
+
+    it('settles a turn that finished while unsubscribed when the host rebuilt its stream', async () => {
+      const acceptRuntimeStatus = vi.fn();
+      stateMachineManagerMock.getOrCreate.mockReturnValue({ acceptRuntimeStatus });
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-stale');
+      const liveRevision = 2 ** 52 + 3;
+      const running = { ...itemRecord('peer-stale', 0, 0, liveRevision) };
+      running.turn = { ...running.turn, status: 'inprogress' } as typeof running.turn;
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayReady?.({ sessionId: 'peer-stale', hasMore: false, oldestSeq: 1, cursor: 0 });
+        return 'peer-stale-subscription';
+      });
+      await flowChatStore.loadRelaySessionHistory('peer-stale');
+      apiMocks.relayRecord?.(running);
+      await vi.waitFor(() => expect(acceptRuntimeStatus).toHaveBeenCalled());
+      expect(acceptRuntimeStatus.mock.lastCall?.[0]).toMatchObject({ turnId: 'turn-0' });
+      expect(acceptRuntimeStatus.mock.lastCall?.[0].state).not.toBe('idle');
+
+      // Switched away; the turn completed and the unobserved host stream
+      // expired. The rebuilt stream stamps its snapshot below the live revision.
+      activateSurface(LOCAL_SURFACE_ID);
+      activateSurface(PEER_SURFACE_ID);
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord('peer-stale', 0, 0, 2 ** 52 - 1));
+        apiMocks.relayReady?.({ sessionId: 'peer-stale', hasMore: false, oldestSeq: 1, cursor: 1 });
+        return 'peer-stale-resubscription';
+      });
+      await flowChatStore.loadRelaySessionHistory('peer-stale');
+
+      expect(flowChatStore.getState().sessions.get('peer-stale')!.dialogTurns
+        .find(turn => turn.id === 'turn-0')?.status).toBe('completed');
+      expect(acceptRuntimeStatus).toHaveBeenLastCalledWith(
+        expect.objectContaining({ state: 'idle', turnId: 'turn-0', phase: null }));
+    });
+
+    it('re-reads a peer session from the host and keeps a rollback fence across subscriptions', async () => {
+      await openPeerSession('peer-reread', 2);
+      flowChatStore.retireRelaySessionTurns('peer-reread', ['turn-1']);
+      expect(turnIds('peer-reread')).toEqual(['turn-0']);
+      const subscriptions = apiMocks.subscribeRelaySession.mock.calls.length;
+
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        // The host stream has not restarted yet and still replays the retired turn.
+        apiMocks.relayRecord?.(itemRecord('peer-reread', 1, 0, 1));
+        apiMocks.relayRecord?.(itemRecord('peer-reread', 0, 1, 1));
+        apiMocks.relayReady?.({ sessionId: 'peer-reread', hasMore: false, oldestSeq: 1, cursor: 2 });
+        return 'peer-reread-resubscription';
+      });
+      await flowChatStore.reloadRelaySessionFromHost('peer-reread');
+
+      expect(apiMocks.subscribeRelaySession).toHaveBeenCalledTimes(subscriptions + 1);
+      // The retired turn stays hidden; held content is kept and the re-read adds to it.
+      expect(turnIds('peer-reread')).toEqual(['turn-0']);
+      expect(texts('peer-reread', 0).map(item => (item as { content?: string }).content))
+        .toEqual(['item 0', 'item 1']);
     });
 
     it('fails an overdue first page as retryable, keeps known history, and recovers on the late page', async () => {

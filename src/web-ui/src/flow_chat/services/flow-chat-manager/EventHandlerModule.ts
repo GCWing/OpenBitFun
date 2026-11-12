@@ -15,7 +15,7 @@ import { FlowChatStore, mergeModelRoundAttemptDiagnostics } from '../../store/Fl
 import { initializeAcpPlanState } from '../acpPlanState';
 import { isSessionTurnRetired } from '../../store/sessionMutationStore';
 import { stateMachineManager } from '../../state-machine';
-import { SessionExecutionEvent, SessionExecutionState } from '../../state-machine/types';
+import { ProcessingPhase, SessionExecutionEvent, SessionExecutionState } from '../../state-machine/types';
 import { agenticEventListener, type AgenticEventCallbacks } from '../AgenticEventListener';
 import { 
   generateTextChunkKey,
@@ -56,7 +56,7 @@ import { MCPAPI } from '@/infrastructure/api/service-api/MCPAPI';
 import { ACPClientAPI, type AcpPermissionRequestEvent } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import type { FlowChatContext, DialogTurn, ModelRound, FlowToolItem } from './types';
-import type { Session, SteeringImage } from '../../types/flow-chat';
+import type { AnyFlowItem, Session, SteeringImage } from '../../types/flow-chat';
 import {
   normalizeAiErrorDetail,
   type AiErrorDetail,
@@ -241,6 +241,7 @@ export const __test_only__ = {
   handleDialogTurnInterrupted,
   handleDialogTurnRecovered,
   handleDialogTurnCancelled,
+  finalizeTurnCompletionState,
   buildBuiltInBrowserTabOptions,
   handleOpenBuiltInBrowser,
 };
@@ -1253,6 +1254,11 @@ function flushPendingBatchedEvents(context: FlowChatContext): void {
   }
 }
 
+function isStreamingTextItem(item: AnyFlowItem): boolean {
+  return (item.type === 'text' || item.type === 'thinking')
+    && ((item as { isStreaming?: boolean }).isStreaming === true || item.status === 'streaming');
+}
+
 function finalizeTurnCompletionState(
   context: FlowChatContext,
   sessionId: string,
@@ -1283,16 +1289,27 @@ function finalizeTurnCompletionState(
   context.flowChatStore.updateDialogTurn(sessionId, turnId, turn => {
     const completedAt = Date.now();
     const updatedModelRounds = turn.modelRounds.map((round) => {
+      // A text or thinking item whose end chunk was never delivered is not in
+      // `activeTextItems`; left streaming, a trailing thinking item stays
+      // expanded and reads as the answer. The turn is settled: close it the
+      // same way its own end chunk would have.
+      const items = round.items.some(isStreamingTextItem)
+        ? round.items.map(item => (isStreamingTextItem(item)
+          ? { ...item, isStreaming: false, status: 'completed' as const,
+            ...(item.type === 'thinking' ? { isCollapsed: true } : {}) }
+          : item))
+        : round.items;
       if (round.isStreaming) {
         return {
           ...round,
+          items,
           isStreaming: false,
           isComplete: true,
           status: 'completed' as const,
           endTime: round.endTime ?? completedAt
         };
       }
-      return round;
+      return items === round.items ? round : { ...round, items };
     });
 
     return {
@@ -1888,6 +1905,41 @@ function handleImageAnalysisCompleted(_context: FlowChatContext, event: ImageAna
   log.info('Image analysis completed', { sessionId, success, durationMs });
 }
 
+/**
+ * The host runs one Turn per Session at a time, so admitting a distinct newer
+ * Turn proves the previous one settled there even when its terminal event never
+ * reached this window (a dropped stream, or a controller that missed it while
+ * detached). START cannot leave PROCESSING or FINISHING, and every event of the
+ * new Turn would then be dropped as a turn mismatch. Adopt the host fact
+ * directly instead of passing through IDLE, which would release queued input.
+ * Only a strictly newer backend index qualifies; a delayed start of an older
+ * Turn, or one without an index, never replaces the Turn being tracked.
+ */
+function adoptNewerAdmittedTurn(sessionId: string, turnId: string, turnIndex: unknown): boolean {
+  const machine = stateMachineManager.get(sessionId);
+  if (!machine || typeof turnIndex !== 'number') return false;
+  const state = machine.getCurrentState();
+  if (state !== SessionExecutionState.PROCESSING && state !== SessionExecutionState.FINISHING) return false;
+  const trackedTurnId = machine.getContext().currentDialogTurnId;
+  if (!trackedTurnId || trackedTurnId === turnId) return false;
+  const tracked = FlowChatStore.getInstance().getState().sessions.get(sessionId)?.dialogTurns
+    .find(turn => turn.id === trackedTurnId);
+  const trackedIndex = tracked?.backendTurnIndex ?? tracked?.storageTurnIndex;
+  if (trackedIndex !== undefined && turnIndex <= trackedIndex) return false;
+  log.warn('Adopting a newer host-admitted turn over a stale tracked turn', {
+    sessionId, turnId, turnIndex, trackedTurnId, trackedIndex, state,
+  });
+  machine.acceptRuntimeStatus({
+    state: SessionExecutionState.PROCESSING,
+    turnId,
+    roundId: null,
+    phase: ProcessingPhase.STARTING,
+    pendingTools: [],
+    error: null,
+  });
+  return true;
+}
+
 function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
   const { sessionId, turnId, turnIndex, userInput, originalUserInput, userMessageMetadata } = event;
 
@@ -2083,7 +2135,7 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
     context.contentBuffers.set(sessionId, new Map());
     context.activeTextItems.set(sessionId, new Map());
 
-    if (!hadTempTurn) {
+    if (!hadTempTurn && !adoptNewerAdmittedTurn(sessionId, turnId, turnIndex)) {
       stateMachineManager.transition(sessionId, SessionExecutionEvent.START, {
         taskId: sessionId,
         dialogTurnId: turnId,

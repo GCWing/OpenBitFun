@@ -75,6 +75,8 @@ const newId = (): string => {
   const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 };
+/** A stable queue Turn ID a caller can hold before submitting. */
+export const newQueueTurnId = (): string => newId();
 function messageIdentity(message: Omit<QueueMessage, 'turnId'>): string {
   // Reopening the composer can allocate fresh image IDs. An ambiguous retry
   // must send the stored payload, including its original IDs, unchanged.
@@ -178,16 +180,20 @@ export class HostDialogQueue {
         || (preparedSnapshot && this.view.snapshot?.queueEpoch !== snapshot.queueEpoch)) {
         throw new Error('queue_scope_expired: refresh the host queue; do not automatically resend');
       }
-      const identity = messageIdentity(message);
-      const previous = this.view.pending.find(record => {
-        if (record.restoreIntent || record.request.action !== 'submit') return false;
-        const { turnId: _id, ...payload } = record.request.message;
-        return messageIdentity(payload) === identity;
-      });
+      const previous = this.pendingSubmission(message);
       if (previous) return this.retryRecord(previous, snapshot);
       const turnId = requestedTurnId?.trim() || newId();
       return this.transmit({ scope: this.scope, key: JSON.stringify([this.scope, turnId]), draft,
         request: { sessionId: this.sessionId, queueEpoch: snapshot.queueEpoch, action: 'submit', message: { ...message, turnId } } });
+    });
+  }
+  /** The unresolved outbox record that submitting this payload would retry instead. */
+  pendingSubmission(message: Omit<QueueMessage, 'turnId'>): QueueOutboxRecord | undefined {
+    const identity = messageIdentity(message);
+    return this.view.pending.find(record => {
+      if (record.restoreIntent || record.request.action !== 'submit') return false;
+      const { turnId: _id, ...payload } = record.request.message;
+      return messageIdentity(payload) === identity;
     });
   }
   act(item: QueueItem, action: 'cancel' | 'promote'): Promise<QueueSnapshot> {

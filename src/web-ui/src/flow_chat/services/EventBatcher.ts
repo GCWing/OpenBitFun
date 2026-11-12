@@ -277,6 +277,20 @@ export class EventBatcher {
     this.buffer.clear();
   }
 
+  /**
+   * Drop pending events of one session only. The batcher is shared by every
+   * session in the window; clearing it all on one session's stop or failure
+   * silently discarded other sessions' unflushed chunks.
+   */
+  clearSession(sessionId: string): void {
+    for (const [key, event] of this.buffer) {
+      if ((event.payload as { sessionId?: unknown } | null)?.sessionId === sessionId) {
+        this.buffer.delete(key);
+      }
+    }
+    if (this.buffer.size === 0) this.cancelScheduledFlush();
+  }
+
   destroy(): void {
     this.clear();
   }

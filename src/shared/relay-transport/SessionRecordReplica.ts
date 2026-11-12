@@ -104,6 +104,40 @@ export class SessionRecordReplica {
     return turnId;
   }
 
+  /**
+   * Prepare for a new subscription of the same session. A host stream rebuilt
+   * after it expired restarts its revisions and may stamp a fresh snapshot at
+   * or below revisions held here, so a turn that settled meanwhile would be
+   * rejected and stay running. Held revisions move below any revision a stream
+   * issues (always >= 1) while keeping their relative order, so held content
+   * and tombstones keep their meaning and whatever the new subscription sends
+   * supersedes them. Ranks are recomputed each time, so repeated rebases never
+   * lose precision.
+   */
+  rebaseRevisions(): void {
+    const held = new Set<number>([...this.records.values(), ...this.deleted.values()]);
+    for (const turn of this.turns.values()) {
+      held.add(turn.header.revision);
+      for (const round of turn.rounds.values()) {
+        held.add(round.header.revision);
+        for (const item of round.items.values()) held.add(item.revision);
+      }
+    }
+    if (held.size === 0) return;
+    const ordered = [...held].sort((a, b) => a - b);
+    const rank = new Map(ordered.map((revision, index) => [revision, (index + 1) / (ordered.length + 1)]));
+    const rebase = (revision: number): number => rank.get(revision)!;
+    for (const [id, revision] of this.records) this.records.set(id, rebase(revision));
+    for (const [id, revision] of this.deleted) this.deleted.set(id, rebase(revision));
+    for (const turn of this.turns.values()) {
+      turn.header.revision = rebase(turn.header.revision);
+      for (const round of turn.rounds.values()) {
+        round.header.revision = rebase(round.header.revision);
+        for (const item of round.items.values()) item.revision = rebase(item.revision);
+      }
+    }
+  }
+
   /** The turn's current state; `turn` is null once it was tombstoned or never seen. */
   snapshot(turnId: string): SessionRecordChange {
     const turn = this.turns.get(turnId);

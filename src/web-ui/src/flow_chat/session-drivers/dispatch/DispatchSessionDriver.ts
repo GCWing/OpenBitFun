@@ -231,8 +231,9 @@ async function continueDispatchJob(
     startTime: Date.now(),
   });
 
+  let response: Awaited<ReturnType<typeof dispatchApi.continueJob>>;
   try {
-    const response = await dispatchApi.continueJob(
+    response = await dispatchApi.continueJob(
       jobId,
       retry.id,
       message,
@@ -244,21 +245,31 @@ async function continueDispatchJob(
         ...(turnAttachments ? { attachments: turnAttachments } : {}),
       },
     );
-    if (!response.accepted) {
-      throw new Error(
-        i18nService.t('flow-chat:chatInput.dispatch.errors.followUpRejected'),
-      );
-    }
-    // The accepted response reports the target's post-queue state. Applying
-    // it here reopens the observer's drain gate, which stays shut for a
-    // terminal job even after the outbound record leaves its terminal state.
-    dispatchJobStore.getState().markFollowUpAccepted(jobId, response.state);
   } catch (error) {
+    // The target may have queued the turn before the response was lost. Keep
+    // the retry id (the target dedupes a resend of the same intent) and let
+    // the observer pull the job's events, so an accepted turn still appears.
     context.flowChatStore.deleteDialogTurn(sessionId, optimisticTurnId);
+    settleUncertainFollowUp(jobId);
     throw error;
-  } finally {
-    releaseSubmissionRetry(CONTINUE_RETRY_SCOPE, sessionId, retry.id);
   }
+  releaseSubmissionRetry(CONTINUE_RETRY_SCOPE, sessionId, retry.id);
+  if (!response.accepted) {
+    context.flowChatStore.deleteDialogTurn(sessionId, optimisticTurnId);
+    throw new Error(
+      i18nService.t('flow-chat:chatInput.dispatch.errors.followUpRejected'),
+    );
+  }
+  // The accepted response reports the target's post-queue state. Applying
+  // it here reopens the observer's drain gate, which stays shut for a
+  // terminal job even after the outbound record leaves its terminal state.
+  dispatchJobStore.getState().markFollowUpAccepted(jobId, response.state);
+  requestDispatchJobRefresh(jobId);
+}
+
+/** A follow-up request of unknown outcome: observe the job instead of assuming either way. */
+function settleUncertainFollowUp(jobId: string): void {
+  dispatchJobStore.getState().reopenTerminalObservation(jobId);
   requestDispatchJobRefresh(jobId);
 }
 
@@ -527,21 +538,25 @@ export const dispatchSessionDriver: SessionDriver = {
         ?? globalThis.crypto?.randomUUID?.()
         ?? `dispatch-compact-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
+    let response: Awaited<ReturnType<typeof dispatchApi.continueJob>>;
     try {
-      const response = await dispatchApi.continueJob(jobId, retry.id, '', undefined, {
+      response = await dispatchApi.continueJob(jobId, retry.id, '', undefined, {
         kind: 'compact',
       });
-      if (!response.accepted) {
-        throw new Error(
-          i18nService.t('flow-chat:chatInput.dispatch.errors.compactRejected'),
-        );
-      }
-      // Same as a prompt follow-up: reopen the observer's drain gate with the
-      // target-reported state, or the compact turn's events are never pulled.
-      dispatchJobStore.getState().markFollowUpAccepted(jobId, response.state);
-    } finally {
-      releaseSubmissionRetry(COMPACT_RETRY_SCOPE, sessionId, retry.id);
+    } catch (error) {
+      // Unknown outcome: keep the id for an idempotent retry and observe.
+      settleUncertainFollowUp(jobId);
+      throw error;
     }
+    releaseSubmissionRetry(COMPACT_RETRY_SCOPE, sessionId, retry.id);
+    if (!response.accepted) {
+      throw new Error(
+        i18nService.t('flow-chat:chatInput.dispatch.errors.compactRejected'),
+      );
+    }
+    // Same as a prompt follow-up: reopen the observer's drain gate with the
+    // target-reported state, or the compact turn's events are never pulled.
+    dispatchJobStore.getState().markFollowUpAccepted(jobId, response.state);
     requestDispatchJobRefresh(jobId);
     return { accepted: true, turnId: retry.id };
   },
