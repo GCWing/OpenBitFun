@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PeerConnectionManager,
+  capabilitiesEqual,
   type PeerConnectionState,
+  type PeerHostCapabilities,
 } from './PeerConnectionManager';
 
 const KEEPALIVE_MS = 20_000;
@@ -393,6 +395,39 @@ describe('PeerConnectionManager health', () => {
     expect(connection.getState().consecutiveFailures).toBe(2);
   });
 
+});
+
+describe('capabilitiesEqual', () => {
+  it('detects a change in any negotiated capability, including later additions', () => {
+    const base = {
+      idempotentDialogSubmit: true,
+      targetedSessionRollback: false,
+      tokenUsageStatistics: false,
+      miniAppAgentContextFilesV1: false,
+      miniAppAgentImagesV1: false,
+      cancelTool: null,
+      toolCatalog: null,
+      userQuestionResponse: null,
+      hostKind: 'cli',
+      terminalCursorReplayV1: true,
+      productControlV1: true,
+      productControlNativeV1: false,
+      productControlPresentationV1: false,
+      remoteConnectControlV1: false,
+    } satisfies PeerHostCapabilities;
+    expect(capabilitiesEqual(base, { ...base })).toBe(true);
+    for (const key of [
+      'terminalCursorReplayV1',
+      'productControlV1',
+      'productControlNativeV1',
+      'productControlPresentationV1',
+      'remoteConnectControlV1',
+    ] as const) {
+      expect(capabilitiesEqual(base, { ...base, [key]: !base[key] }), key).toBe(false);
+    }
+    const { remoteConnectControlV1: _omitted, ...withoutKey } = base;
+    expect(capabilitiesEqual(base, withoutKey as PeerHostCapabilities)).toBe(false);
+  });
 });
 
 describe('PeerConnectionManager disposal', () => {

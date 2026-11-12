@@ -836,57 +836,25 @@ export class PeerConnectionManager {
 }
 
 /**
- * Shallow-compare the capability fields a React snapshot exposes. Used by the
+ * Shallow-compare every capability field a React snapshot exposes. Used by the
  * keepalive path to decide whether a fresh `publish()` is warranted when a
  * `ready` peer's host reports different capabilities (e.g. after a restart on
  * a different build) without a state transition. `null` (unknown) and a boolean
  * are intentionally distinct: an unprobed field flipping to a concrete value is
- * a change the UI should react to.
+ * a change the UI should react to. The comparison walks the union of keys so a
+ * newly negotiated capability can never be forgotten here.
  */
-function capabilitiesEqual(
+export function capabilitiesEqual(
   a: PeerHostCapabilities,
   b: PeerHostCapabilities,
 ): boolean {
-  return a.idempotentDialogSubmit === b.idempotentDialogSubmit &&
-    a.backgroundResultDeliveryV1 === b.backgroundResultDeliveryV1 &&
-    a.inlineImageAttachmentsV1 === b.inlineImageAttachmentsV1 &&
-    a.runtimeAttachmentUploadV1 === b.runtimeAttachmentUploadV1 &&
-    a.btwInitialModelSelectionV1 === b.btwInitialModelSelectionV1 &&
-    a.btwModelPoolSelectionV1 === b.btwModelPoolSelectionV1 &&
-    a.controlConversationV1 === b.controlConversationV1 &&
-    a.controlConversationResetV1 === b.controlConversationResetV1 &&
-    a.targetedSessionRollback === b.targetedSessionRollback &&
-    a.tokenUsageStatistics === b.tokenUsageStatistics &&
-    a.miniAppAgentContextFilesV1 === b.miniAppAgentContextFilesV1 &&
-    a.miniAppAgentImagesV1 === b.miniAppAgentImagesV1 &&
-    a.wslWorkspacesV1 === b.wslWorkspacesV1 &&
-    a.sshNoneAuthV1 === b.sshNoneAuthV1 &&
-    a.sshPortScopedIdentityV1 === b.sshPortScopedIdentityV1 &&
-    a.subscriptionAccountPoolsV1 === b.subscriptionAccountPoolsV1 &&
-    a.subscriptionQuotaV1 === b.subscriptionQuotaV1 &&
-    a.grokQuotaV1 === b.grokQuotaV1 &&
-    a.subscriptionModelQuotaV1 === b.subscriptionModelQuotaV1 &&
-    a.modelChannelRoutingV1 === b.modelChannelRoutingV1 &&
-    a.wholeSessionCopyV1 === b.wholeSessionCopyV1 &&
-    a.sessionTrajectoryV1 === b.sessionTrajectoryV1 &&
-    a.genUiLibrariesV1 === b.genUiLibrariesV1 &&
-    a.modelRoutingV1 === b.modelRoutingV1 &&
-    a.modelPoolSelectionV1 === b.modelPoolSelectionV1 &&
-    a.magpieDiscoveryV1 === b.magpieDiscoveryV1 &&
-    a.computerUseSharingV1 === b.computerUseSharingV1 &&
-    a.cancelTool === b.cancelTool &&
-    a.toolCatalog === b.toolCatalog &&
-    a.reviewPlatformV1 === b.reviewPlatformV1 &&
-    a.chatMcpCatalogV1 === b.chatMcpCatalogV1 &&
-    a.sessionReferenceBrowseV1 === b.sessionReferenceBrowseV1 &&
-    a.workspaceIconV1 === b.workspaceIconV1 &&
-    a.workspaceIdReferencesV1 === b.workspaceIdReferencesV1 &&
-    a.gitTrackedChangeCountV1 === b.gitTrackedChangeCountV1 &&
-    a.workspaceLatexPreviewV1 === b.workspaceLatexPreviewV1 &&
-    a.userQuestionResponse === b.userQuestionResponse &&
-    a.userQuestionInteraction === b.userQuestionInteraction &&
-    a.dialogQueueV1 === b.dialogQueueV1 &&
-    a.hostKind === b.hostKind;
+  const left = a as unknown as Record<string, unknown>;
+  const right = b as unknown as Record<string, unknown>;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if (left[key] !== right[key]) return false;
+  }
+  return true;
 }
 
 function isUnsupportedPeerCommandError(error: unknown, command: string): boolean {
