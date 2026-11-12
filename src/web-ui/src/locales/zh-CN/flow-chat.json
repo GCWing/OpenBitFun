@@ -105,6 +105,8 @@
     "title": "需要授权",
     "subagentOwner": "{{subagent}} 子智能体",
     "responseFailed": "权限回复未能送达，请重试。",
+    "responseConfirming": "正在与设备确认这次回复是否已送达…",
+    "alreadyResolved": "该请求已被处理，你的回复未发送。",
     "allowOnce": "允许一次",
     "allowAlways": "始终允许此范围",
     "allowAlwaysCommand": "始终允许此命令",
@@ -200,6 +202,7 @@
     "newerHistoryNotReady": "后续记录读取失败；当前内容仍可查看。",
     "remoteSessionMissing": "在后端找不到该会话数据。若刚重新连接过 SSH 远程工作区，请关闭并重新打开该远程项目，或新建会话后再试。",
     "synchronize": "重新同步记录",
+    "updatesPaused": "正在重新连接 {{device}}，更新已暂停。",
     "retry": "重试"
   },
   "usage": {
@@ -631,7 +634,8 @@
     "menu": {
       "switchPet": "切换宠物",
       "closePet": "关闭宠物",
-      "closeBubble": "关闭该气泡"
+      "closeBubble": "关闭该气泡",
+      "markAllRead": "全部标为已读"
     },
     "composer": {
       "openTitle": "发送消息到该会话",
@@ -671,6 +675,13 @@
     "inUseMessage": "该会话已在另一个 OpenBitFun 实例中打开。请先在那里关闭，然后重试。",
     "surfaceSwitchDroppedTitle": "消息未发送",
     "surfaceSwitchDropped": "消息尚未发出时设备已切换，且该会话的队列已满。请重新发送。",
+    "submissionConfirming": "正在与设备确认…",
+    "submissionCheckingTarget": "正在确认目标是否已收到…",
+    "submissionNotDeliveredTitle": "消息未发送",
+    "submissionNotDelivered": "设备未收到这条消息。消息已保留在队列中，重试只会发送一次。",
+    "submissionUnconfirmedTitle": "无法确认送达",
+    "submissionUnconfirmed": "OpenBitFun 无法确认设备是否已收到这条消息。消息已保留在队列中，重试不会重复执行。",
+    "dispatchNotDelivered": "目标未收到此任务。任务已保留在队列中，可以重试。",
     "retry": "重试"
   },
   "scroll": {
@@ -711,6 +722,8 @@
     "rollbackDialogBulletHistory": "删除该轮及之后的对话记录（不可恢复）",
     "rollbackSuccess": "已回滚并删除后续对话记录",
     "rollbackFailed": "回滚失败",
+    "rollbackOutcomeUnknown": "回滚结果未知。已从设备重新加载会话，请先查看历史再决定是否重试。",
+    "rollbackOutcomeUnknownNotReloaded": "回滚结果未知，且无法从设备重新加载会话。请重新打开会话后再修改。",
     "saveEdit": "保存并重跑",
     "cancelEdit": "取消",
     "editPlaceholder": "编辑你的消息...",
@@ -936,6 +949,19 @@
       "modelSyncStarted": "正在把本机的模型配置复制到远程设备…",
       "modelSyncSucceeded": "模型配置已复制，远程设备可以运行所选模型。",
       "modelSyncFailed": "无法把模型配置复制到远程设备。",
+      "transport": {
+        "unreachable": "目标不可达，正在重新连接",
+        "unreachableSince": "目标不可达，正在重新连接（上次更新：{{time}}）",
+        "notDelivered": "未送达目标",
+        "notDeliveredHint": "目标上没有此任务的记录，可以安全地重新发送。",
+        "missingOnTarget": "目标上找不到此任务",
+        "stopping": "正在停止…",
+        "stopUnconfirmed": "停止未确认",
+        "stopUnconfirmedHint": "目标未确认停止请求，任务可能仍在运行。",
+        "retryStop": "重试停止",
+        "awaitingConfirmation": "等待目标确认的审批（{{count}}）",
+        "answerSent": "回复已发送，等待目标确认"
+      },
       "errors": {
         "attachmentUnavailable": "这张图片无法发送到远程设备。请重新添加后再试。",
         "deviceAttachmentTooLarge": "通过账号设备发送的图片总大小不能超过 192 KB。请压缩图片，或改用 SSH 目标。",
@@ -947,7 +973,9 @@
         "compactWhileRunning": "请等待当前远程任务完成后再压缩上下文。",
         "compactRejected": "目标设备未能开始压缩，请稍后重试。",
         "sessionNotReady": "远程任务仍在准备中，请稍后再发送。",
-        "submissionUnconfirmed": "暂时无法确认目标是否已接收任务。请稍后检查任务状态。"
+        "submissionUnconfirmed": "暂时无法确认目标是否已接收任务。请稍后检查任务状态。",
+        "permissionNotConfirmed": "目标尚未确认此请求。请等待目标重新连接后再回复。",
+        "stopUnconfirmed": "目标未确认停止请求，任务可能仍在运行。"
       }
     },
     "harness": {
@@ -2384,7 +2412,9 @@
       "completed": "已完成",
       "submittedWaiting": "已提交，等待处理",
       "submitting": "提交中...",
+      "confirming": "正在与设备确认...",
       "submitFailed": "答案提交失败，请检查连接后重试。",
+      "alreadyResolved": "该问题已被处理，你的回答未发送。",
       "unsupportedOnPeer": "该设备的 OpenBitFun 版本暂不支持回答此问题，请更新该设备上的 OpenBitFun。",
       "waitingAnswer": "等待回答",
       "awaitingTimeoutConfirmation": "等待后端确认超时",
@@ -3944,6 +3974,16 @@
     "cancel": "移出队列",
     "refresh": "刷新",
     "unknown": "尚未确认是否送达，请先检查再重发。",
+    "notSent": "未发送，设备没有收到这条消息。",
+    "errors": {
+      "ownerRestarted": "设备已重启其队列。请先检查这条消息，再决定是否重发。",
+      "tooLate": "这条消息已开始执行，无法再修改。",
+      "conflict": "此更改与之前的请求冲突。请刷新队列后重试。",
+      "full": "设备的消息队列已满。请等待一条消息完成后再试。",
+      "blocked": "队列正在等待恢复被中断的轮次。",
+      "refreshFirst": "请先刷新队列再进行更改。",
+      "generic": "无法更新队列。请刷新后重试。"
+    },
     "retry": "重试",
     "checkRetry": "检查 / 重试",
     "copyDraft": "复制草稿到输入框",

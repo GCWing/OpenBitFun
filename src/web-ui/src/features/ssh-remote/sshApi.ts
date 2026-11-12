@@ -22,6 +22,7 @@ import type {
 
 // API adapter for Tauri/Server Mode compatibility
 import { api } from '@/infrastructure/api/service-api/ApiClient';
+import { reportSshOperationTimeout } from './sshOperationEvents';
 
 /**
  * Deadline override for the remote file transfers that expose a stop action.
@@ -36,6 +37,16 @@ import { api } from '@/infrastructure/api/service-api/ApiClient';
  * what keeps an unresponsive host from freezing the UI with no way out.
  */
 const NO_REQUEST_DEADLINE = { timeout: 0 } as const;
+
+/** Run a connection-scoped request and report a timeout to the provider. */
+async function withTimeoutSignal<T>(connectionId: string, request: () => Promise<T>): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    reportSshOperationTimeout(connectionId, error);
+    throw error;
+  }
+}
 
 export const sshApi = {
   // === Connection Management ===
@@ -142,28 +153,28 @@ export const sshApi = {
    * Read file content from remote server
    */
   async readFile(connectionId: string, path: string): Promise<string> {
-    return api.invoke<string>('remote_read_file', { connectionId, path });
+    return withTimeoutSignal(connectionId, () => api.invoke<string>('remote_read_file', { connectionId, path }));
   },
 
   /**
    * Write content to remote file
    */
   async writeFile(connectionId: string, path: string, content: string): Promise<void> {
-    return api.invoke('remote_write_file', { connectionId, path, content });
+    return withTimeoutSignal(connectionId, () => api.invoke('remote_write_file', { connectionId, path, content }));
   },
 
   /**
    * Check if remote path exists
    */
   async exists(connectionId: string, path: string): Promise<boolean> {
-    return api.invoke<boolean>('remote_exists', { connectionId, path });
+    return withTimeoutSignal(connectionId, () => api.invoke<boolean>('remote_exists', { connectionId, path }));
   },
 
   /**
    * List directory contents
    */
   async readDir(connectionId: string, path: string): Promise<RemoteFileEntry[]> {
-    return api.invoke<RemoteFileEntry[]>('remote_read_dir', { connectionId, path });
+    return withTimeoutSignal(connectionId, () => api.invoke<RemoteFileEntry[]>('remote_read_dir', { connectionId, path }));
   },
 
   /**
@@ -174,7 +185,7 @@ export const sshApi = {
     path: string,
     depth?: number
   ): Promise<RemoteTreeNode> {
-    return api.invoke<RemoteTreeNode>('remote_get_tree', { connectionId, path, depth });
+    return withTimeoutSignal(connectionId, () => api.invoke<RemoteTreeNode>('remote_get_tree', { connectionId, path, depth }));
   },
 
   /**
@@ -325,7 +336,7 @@ export const sshApi = {
     connectionId: string,
     command: string
   ): Promise<[string, string, number]> {
-    return api.invoke<[string, string, number]>('remote_execute', { connectionId, command });
+    return withTimeoutSignal(connectionId, () => api.invoke<[string, string, number]>('remote_execute', { connectionId, command }));
   },
 
   // === Remote Workspace ===

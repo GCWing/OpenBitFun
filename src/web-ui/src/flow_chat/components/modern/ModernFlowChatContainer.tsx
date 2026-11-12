@@ -27,6 +27,7 @@ import { composerPresentationToTurnRailPreview, parseComposerPresentation } from
 import { BackgroundCommandInputDialog } from '../background-command/BackgroundCommandInputDialog';
 import { WelcomePanel } from '../WelcomePanel';
 import { HistorySessionPlaceholder } from './HistorySessionPlaceholder';
+import { PeerUpdatesPausedNotice } from './PeerUpdatesPausedNotice';
 import { HistorySessionLoadingBoundary } from './HistorySessionLoadingBoundary';
 import {
   FlowChatContext,
@@ -91,7 +92,7 @@ import { scheduleAfterStartupPaint } from '@/shared/utils/startupTaskScheduling'
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import { notificationService } from '@/shared/notification-system';
 import { confirmDanger } from '@/infrastructure/confirm-dialog';
-import { getActiveSurfaceScope, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceScope, isLocalSurface, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import { deleteSessionTreeBranch } from '../../services/deleteSessionTreeBranch';
 import { resolveSessionDriverId } from '../../session-drivers/resolve';
 import {
@@ -1261,6 +1262,10 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const activeHistoryRestore = historyRestore?.sessionId === activeSession?.sessionId ? historyRestore : null;
   const showFailedHistoryPlaceholder =
     (showHistoryPlaceholder && historyState === 'failed') || activeHistoryRestore?.status === 'failed';
+  // Rendered records stay after a failed live read; without a cue they look
+  // current while nothing new arrives. The next ready clears the failed state.
+  const showUpdatesPaused = historyState === 'failed' && !showFailedHistoryPlaceholder
+    && showSessionTranscript && !isLocalSurface(surfaceScope.surfaceId);
   const showHistoryOpenIntentOverlay =
     pendingHistoryOpenSession !== null &&
     (
@@ -2014,6 +2019,14 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     }
     void FlowChatManager.getInstance().switchChatSession(sessionId);
   }, [activeSession?.sessionId, historyRestore]);
+
+  const handleRetryPausedUpdates = useCallback(() => {
+    const sessionId = activeSession?.sessionId;
+    if (!sessionId) return;
+    void flowChatStore.reloadRelaySessionFromHost(sessionId).catch(error => {
+      log.warn('Failed to resume paused device updates', { sessionId, error });
+    });
+  }, [activeSession?.sessionId]);
 
   const handleHistoryWindowBoundaryIntent = useCallback((
     direction: SessionHistoryWindowDirection,
@@ -2799,6 +2812,12 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
           onSend={handleSendBackgroundCommandInput}
         />
 
+        {showUpdatesPaused ? (
+          <PeerUpdatesPausedNotice
+            surfaceId={surfaceScope.surfaceId}
+            onRetry={handleRetryPausedUpdates}
+          />
+        ) : null}
         <div
           className="modern-flowchat-container__messages"
           data-testid="flowchat-messages"

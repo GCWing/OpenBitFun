@@ -56,6 +56,111 @@ fn chunk_text_for_telegram(text: &str) -> Vec<String> {
     out
 }
 
+/// A Telegram Bot API response with `ok: false` (or a non-success status).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TelegramApiError {
+    /// 401: the bot token was revoked or is wrong. Polling cannot recover.
+    Unauthorized(String),
+    /// 409: another `getUpdates` consumer or an active webhook owns the token.
+    Conflict(String),
+    /// 429: wait `retry_after` seconds before the next request.
+    RateLimited {
+        retry_after_secs: u64,
+        description: String,
+    },
+    /// Any other rejection.
+    Rejected { code: u16, description: String },
+}
+
+impl TelegramApiError {
+    /// `None` when the body reports `ok: true` on a success status.
+    pub fn from_body(status: u16, body: &serde_json::Value) -> Option<Self> {
+        let success = (200..300).contains(&status);
+        if success && body.get("ok").and_then(|value| value.as_bool()) == Some(true) {
+            return None;
+        }
+        let code = body
+            .get("error_code")
+            .and_then(|value| value.as_u64())
+            .and_then(|code| u16::try_from(code).ok())
+            .unwrap_or(if success { 0 } else { status });
+        let description = body
+            .get("description")
+            .and_then(|value| value.as_str())
+            .unwrap_or("invalid response")
+            .to_string();
+        Some(match code {
+            401 => Self::Unauthorized(description),
+            409 => Self::Conflict(description),
+            429 => Self::RateLimited {
+                retry_after_secs: body
+                    .pointer("/parameters/retry_after")
+                    .and_then(|value| value.as_u64())
+                    .unwrap_or(5),
+                description,
+            },
+            code => Self::Rejected { code, description },
+        })
+    }
+
+    /// Whether polling with the same token can ever succeed again.
+    pub fn is_fatal(&self) -> bool {
+        matches!(self, Self::Unauthorized(_))
+    }
+
+    fn into_send_failure(self, operation: &str) -> super::delivery::SendFailure {
+        let message = format!("Telegram {operation} failed: {self}");
+        match self {
+            Self::RateLimited {
+                retry_after_secs, ..
+            } => super::delivery::SendFailure::from_status(
+                429,
+                Some(std::time::Duration::from_secs(retry_after_secs)),
+                message,
+            ),
+            Self::Rejected { code, .. } => {
+                super::delivery::SendFailure::from_status(code, None, message)
+            }
+            Self::Unauthorized(_) | Self::Conflict(_) => {
+                super::delivery::SendFailure::permanent(message)
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for TelegramApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unauthorized(description) => write!(f, "unauthorized (401): {description}"),
+            Self::Conflict(description) => write!(f, "conflict (409): {description}"),
+            Self::RateLimited {
+                retry_after_secs,
+                description,
+            } => write!(
+                f,
+                "rate limited (429), retry after {retry_after_secs}s: {description}"
+            ),
+            Self::Rejected { code, description } => write!(f, "rejected ({code}): {description}"),
+        }
+    }
+}
+
+impl std::error::Error for TelegramApiError {}
+
+/// Turn a send response into a classified [`super::delivery::SendFailure`].
+async fn check_telegram_response(resp: reqwest::Response, operation: &str) -> Result<()> {
+    let status = resp.status().as_u16();
+    let text = resp.text().await.unwrap_or_default();
+    let body = serde_json::from_str::<serde_json::Value>(&text).unwrap_or_default();
+    if body.is_null() && (200..300).contains(&status) {
+        return Ok(());
+    }
+    match TelegramApiError::from_body(status, &body) {
+        None => Ok(()),
+        Some(error) => Err(anyhow::Error::new(error.into_send_failure(operation))),
+    }
+}
+
 impl TelegramBotApi {
     pub fn new(config: TelegramConfig) -> Self {
         Self { config }
@@ -72,23 +177,27 @@ impl TelegramBotApi {
         )
     }
 
+    /// Send `text`, split into Telegram-sized parts. Each part is retried with
+    /// backoff (honouring `retry_after`); on final failure the error is a
+    /// [`super::delivery::UndeliveredText`] holding the unsent parts.
     pub async fn send_message(&self, chat_id: i64, text: &str) -> Result<()> {
         let client = crate::reqwest_client();
-        for chunk in chunk_text_for_telegram(text) {
-            let resp = client
-                .post(self.api_url("sendMessage"))
-                .json(&serde_json::json!({
+        let url = self.api_url("sendMessage");
+        super::delivery::send_chunks(
+            chunk_text_for_telegram(text),
+            &super::delivery::RetryPolicy::default(),
+            |chunk| {
+                let request = client.post(&url).json(&serde_json::json!({
                     "chat_id": chat_id,
                     "text": chunk,
-                }))
-                .send()
-                .await?;
-
-            if !resp.status().is_success() {
-                let body = resp.text().await.unwrap_or_default();
-                return Err(anyhow!("telegram sendMessage failed: {body}"));
-            }
-        }
+                }));
+                async move {
+                    let resp = request.send().await?;
+                    check_telegram_response(resp, "sendMessage").await
+                }
+            },
+        )
+        .await?;
         debug!("Telegram message sent to chat {chat_id}");
         Ok(())
     }
@@ -123,10 +232,7 @@ impl TelegramBotApi {
             .send()
             .await?;
 
-        if !resp.status().is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(anyhow!("telegram sendMessage (keyboard) failed: {body}"));
-        }
+        check_telegram_response(resp, "sendMessage (keyboard)").await?;
         debug!("Telegram keyboard message sent to chat {chat_id}");
         Ok(())
     }
@@ -285,7 +391,14 @@ impl TelegramBotApi {
             .send()
             .await?;
 
-        let body: serde_json::Value = resp.json().await?;
+        let status = resp.status().as_u16();
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|error| anyhow!("Telegram getUpdates returned HTTP {status}: {error}"))?;
+        if let Some(error) = TelegramApiError::from_body(status, &body) {
+            return Err(anyhow::Error::new(error));
+        }
         let results = body["result"].as_array().cloned().unwrap_or_default();
 
         let mut new_last_update_id = last_update_id;
@@ -364,7 +477,81 @@ impl TelegramBotApi {
 
 #[cfg(test)]
 mod tests {
-    use super::chunk_text_for_telegram;
+    use super::{chunk_text_for_telegram, TelegramApiError};
+    use crate::remote_connect::bot::delivery::classify_send_error;
+    use serde_json::json;
+
+    #[test]
+    fn not_ok_responses_are_classified_errors() {
+        assert_eq!(
+            TelegramApiError::from_body(200, &json!({"ok": true, "result": []})),
+            None
+        );
+        let unauthorized = TelegramApiError::from_body(
+            401,
+            &json!({"ok": false, "error_code": 401, "description": "Unauthorized"}),
+        )
+        .unwrap();
+        assert!(unauthorized.is_fatal());
+        let conflict = TelegramApiError::from_body(
+            409,
+            &json!({"ok": false, "error_code": 409,
+                "description": "Conflict: terminated by other getUpdates request"}),
+        )
+        .unwrap();
+        assert!(matches!(conflict, TelegramApiError::Conflict(_)));
+        assert!(!conflict.is_fatal());
+        let limited = TelegramApiError::from_body(
+            429,
+            &json!({"ok": false, "error_code": 429, "description": "Too Many Requests",
+                "parameters": {"retry_after": 7}}),
+        )
+        .unwrap();
+        assert_eq!(
+            limited,
+            TelegramApiError::RateLimited {
+                retry_after_secs: 7,
+                description: "Too Many Requests".into()
+            }
+        );
+        // A 200 response that still says ok:false is an error, not an empty batch.
+        assert!(matches!(
+            TelegramApiError::from_body(200, &json!({"ok": false, "description": "odd"})),
+            Some(TelegramApiError::Rejected { code: 0, .. })
+        ));
+    }
+
+    #[test]
+    fn send_failures_retry_only_rate_limits_and_server_errors() {
+        let failure = |error: TelegramApiError| {
+            classify_send_error(&anyhow::Error::new(error.into_send_failure("sendMessage")))
+        };
+        assert_eq!(
+            failure(TelegramApiError::RateLimited {
+                retry_after_secs: 3,
+                description: String::new(),
+            }),
+            (true, Some(std::time::Duration::from_secs(3)))
+        );
+        assert_eq!(
+            failure(TelegramApiError::Rejected {
+                code: 502,
+                description: String::new(),
+            }),
+            (true, None)
+        );
+        assert_eq!(
+            failure(TelegramApiError::Rejected {
+                code: 400,
+                description: String::new(),
+            }),
+            (false, None)
+        );
+        assert_eq!(
+            failure(TelegramApiError::Unauthorized(String::new())),
+            (false, None)
+        );
+    }
 
     #[test]
     fn chunks_text_on_char_boundary() {

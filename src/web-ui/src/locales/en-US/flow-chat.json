@@ -105,6 +105,8 @@
     "title": "Permission required",
     "subagentOwner": "{{subagent}} subagent",
     "responseFailed": "The permission response could not be delivered. Try again.",
+    "responseConfirming": "Confirming with the device whether this answer arrived…",
+    "alreadyResolved": "This request was already resolved, so your answer was not sent.",
     "allowOnce": "Allow once",
     "allowAlways": "Always allow this scope",
     "allowAlwaysCommand": "Always allow this command",
@@ -200,6 +202,7 @@
     "newerHistoryNotReady": "Later records could not be read. The current content is still available.",
     "remoteSessionMissing": "The backend session data was not found. If you just reconnected an SSH remote workspace, close and reopen the remote project, or create a new session and try again.",
     "synchronize": "Resync records",
+    "updatesPaused": "Reconnecting to {{device}}. Updates are paused.",
     "retry": "Retry"
   },
   "usage": {
@@ -631,7 +634,8 @@
     "menu": {
       "switchPet": "Switch pet",
       "closePet": "Close pet",
-      "closeBubble": "Close this bubble"
+      "closeBubble": "Close this bubble",
+      "markAllRead": "Mark all as read"
     },
     "composer": {
       "openTitle": "Send a message to this session",
@@ -671,6 +675,13 @@
     "inUseMessage": "This session is open in another OpenBitFun instance. Close it there, then retry.",
     "surfaceSwitchDroppedTitle": "Message not sent",
     "surfaceSwitchDropped": "The device switched before this message was sent, and its queue is full. Send it again.",
+    "submissionConfirming": "Confirming with device…",
+    "submissionCheckingTarget": "Checking whether the target received this…",
+    "submissionNotDeliveredTitle": "Message not sent",
+    "submissionNotDelivered": "The device did not receive this message. It is kept in the queue; Retry sends it once.",
+    "submissionUnconfirmedTitle": "Delivery not confirmed",
+    "submissionUnconfirmed": "OpenBitFun could not confirm whether the device received this message. It is kept in the queue; Retry will not run it twice.",
+    "dispatchNotDelivered": "The target did not receive this task. It is kept in the queue so you can retry it.",
     "retry": "Retry"
   },
   "scroll": {
@@ -711,6 +722,8 @@
     "rollbackDialogBulletHistory": "Delete that turn and all following dialog records (irreversible)",
     "rollbackSuccess": "Rolled back and deleted subsequent dialog records",
     "rollbackFailed": "Rollback failed",
+    "rollbackOutcomeUnknown": "The rollback result is unknown. The session was reloaded from the device; check its history before retrying.",
+    "rollbackOutcomeUnknownNotReloaded": "The rollback result is unknown and the session could not be reloaded from the device. Reopen the session before changing it.",
     "saveEdit": "Save and rerun",
     "cancelEdit": "Cancel",
     "editPlaceholder": "Edit your message...",
@@ -936,6 +949,19 @@
       "modelSyncStarted": "Copying this device’s model configuration to the remote device…",
       "modelSyncSucceeded": "Model configuration copied; the remote device can run the selected model.",
       "modelSyncFailed": "Could not copy the model configuration to the remote device.",
+      "transport": {
+        "unreachable": "Target unreachable — reconnecting",
+        "unreachableSince": "Target unreachable — reconnecting (last update {{time}})",
+        "notDelivered": "Not delivered to the target",
+        "notDeliveredHint": "The target has no record of this task. Sending it again is safe.",
+        "missingOnTarget": "Task not found on the target",
+        "stopping": "Stopping…",
+        "stopUnconfirmed": "Stop not confirmed",
+        "stopUnconfirmedHint": "The target did not confirm the stop request. The task may still be running.",
+        "retryStop": "Retry stop",
+        "awaitingConfirmation": "Approvals waiting for the target to confirm ({{count}})",
+        "answerSent": "Answer sent — waiting for the target"
+      },
       "errors": {
         "attachmentUnavailable": "This image cannot be sent to the remote device. Add it again and retry.",
         "deviceAttachmentTooLarge": "Images sent to an account device can total at most 192 KB. Compress them or use an SSH target.",
@@ -947,7 +973,9 @@
         "compactWhileRunning": "Wait for the current remote task to finish before compacting the context.",
         "compactRejected": "The target could not start compaction. Try again shortly.",
         "sessionNotReady": "The remote task is still being prepared. Try sending again shortly.",
-        "submissionUnconfirmed": "OpenBitFun cannot yet confirm whether the target received this task. Check the task status shortly."
+        "submissionUnconfirmed": "OpenBitFun cannot yet confirm whether the target received this task. Check the task status shortly.",
+        "permissionNotConfirmed": "The target has not confirmed this request yet. Wait until it reconnects, then answer.",
+        "stopUnconfirmed": "The target did not confirm the stop request. The task may still be running."
       }
     },
     "harness": {
@@ -2384,7 +2412,9 @@
       "completed": "Completed",
       "submittedWaiting": "Submitted, waiting for processing",
       "submitting": "Submitting...",
+      "confirming": "Confirming with the device...",
       "submitFailed": "Could not submit the answer. Check the connection and try again.",
+      "alreadyResolved": "This question was already resolved, so your answer was not sent.",
       "unsupportedOnPeer": "This device's OpenBitFun version cannot answer the question. Update OpenBitFun on that device.",
       "waitingAnswer": "Waiting for answer",
       "awaitingTimeoutConfirmation": "Waiting for timeout confirmation",
@@ -3944,6 +3974,16 @@
     "cancel": "Remove from queue",
     "refresh": "Refresh",
     "unknown": "Delivery is unconfirmed. Check before sending again.",
+    "notSent": "Not sent. The device did not receive this message.",
+    "errors": {
+      "ownerRestarted": "The device restarted its queue. Check this message before sending it again.",
+      "tooLate": "This message already started, so it can no longer be changed.",
+      "conflict": "This change conflicts with an earlier request. Refresh the queue and try again.",
+      "full": "The device's message queue is full. Wait for a message to finish, then try again.",
+      "blocked": "The queue is waiting for an interrupted turn to be recovered.",
+      "refreshFirst": "Refresh the queue before changing it.",
+      "generic": "The queue could not be updated. Refresh and try again."
+    },
     "retry": "Retry",
     "checkRetry": "Check / retry",
     "copyDraft": "Copy draft to composer",

@@ -253,6 +253,12 @@ pub struct WeixinBot {
     /// Identity of this instance's proactive session-output subscription, so a
     /// replaced bot retires its own hook instead of the replacement's.
     session_output_hook_id: String,
+    /// Final replies of this bot's own turns that could not be delivered.
+    /// Resent with the peer's next message, which also carries the fresh
+    /// context_token a failed send usually lacked. The proactive backlog is
+    /// not used for them because it caps a backlog at one reply part and
+    /// would cut the tail off a long answer.
+    held_replies: super::HeldReplies<String>,
 }
 
 pub async fn weixin_qr_start(base_url_override: Option<String>) -> Result<WeixinQrStartResponse> {
@@ -298,7 +304,35 @@ impl WeixinBot {
             pending_outbound: Arc::new(Mutex::new(HashMap::new())),
             outbound_wakeup: Arc::new(Notify::new()),
             session_output_hook_id: format!("weixin_session_output_{}", uuid::Uuid::new_v4()),
+            held_replies: Default::default(),
         }
+    }
+
+    async fn deliver_final_reply(&self, peer_id: &str, text: &str) {
+        let peer = peer_id.to_string();
+        super::deliver_final_reply(&self.held_replies, &peer, text, |text| async move {
+            if !super::chat_is_paired(&self.chat_states, peer_id).await {
+                return Ok(());
+            }
+            self.send_text(peer_id, &text).await
+        })
+        .await;
+    }
+
+    async fn resend_held_replies(&self, peer_id: &str) {
+        let peer = peer_id.to_string();
+        super::resend_held_replies(&self.held_replies, &peer, |text| async move {
+            self.send_text(peer_id, &text).await
+        })
+        .await;
+    }
+
+    /// The provider rejected the iLink token. Polling cannot recover without
+    /// a new QR login, so the loop stops; `requires_login` keeps reporting the
+    /// state through the existing bot status until the user signs in again.
+    fn session_expired(resp: &Value) -> bool {
+        resp["errcode"].as_i64() == Some(WEIXIN_SESSION_EXPIRED_ERRCODE)
+            || resp["ret"].as_i64() == Some(WEIXIN_SESSION_EXPIRED_ERRCODE)
     }
 
     pub async fn restore_chat_state(&self, peer_id: &str, mut state: BotChatState) {
@@ -323,6 +357,8 @@ impl WeixinBot {
         {
             Ok(mut states) => {
                 self.runtime_fence.clear_states(&mut states);
+                // Held replies belong to the previous account's sessions.
+                self.held_replies.clear();
                 let snapshots: Vec<_> = states
                     .iter()
                     .map(|(peer_id, state)| (peer_id.clone(), state.clone()))
@@ -474,6 +510,11 @@ impl WeixinBot {
                     _ = stop.changed() => break,
                     _ = wakeup.notified() => {}
                     _ = tokio::time::sleep(Duration::from_secs(OUTBOUND_RETRY_INTERVAL_SECS)) => {}
+                }
+                if bot.api.requires_login() {
+                    // Sends cannot succeed until the user signs in again; the
+                    // backlog stays queued within its retention window.
+                    continue;
                 }
                 bot.flush_pending_outbound().await;
             }
@@ -768,11 +809,12 @@ impl WeixinBot {
         }
     }
 
-    async fn send_handle_result(&self, peer_id: &str, result: &HandleResult) {
+    /// Returns false when the peer did not receive the result.
+    async fn send_handle_result(&self, peer_id: &str, result: &HandleResult) -> bool {
         if !self.runtime_fence.is_lifecycle_current()
             || !super::chat_is_paired(&self.chat_states, peer_id).await
         {
-            return;
+            return true;
         }
         let language = current_bot_language().await;
         let text = if result.menu.items.is_empty() && result.menu.title.is_empty() {
@@ -781,11 +823,13 @@ impl WeixinBot {
             result.menu.render_plain_text(language)
         };
         if text.trim().is_empty() {
-            return;
+            return true;
         }
         if let Err(err) = self.send_text(peer_id, &text).await {
             warn!("weixin send_handle_result: {err}");
+            return false;
         }
+        true
     }
 
     async fn inbound_image_attachments_from_message(
@@ -938,24 +982,21 @@ impl WeixinBot {
             let ret = resp["ret"].as_i64().unwrap_or(0);
             let errcode = resp["errcode"].as_i64().unwrap_or(0);
             if weixin_provider::updates_failed(&resp) {
-                if errcode == WEIXIN_SESSION_EXPIRED_ERRCODE
-                    || ret == WEIXIN_SESSION_EXPIRED_ERRCODE
-                {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    continue;
+                if Self::session_expired(&resp) {
+                    error!(
+                        "weixin: iLink session expired while waiting for pairing; sign in again with a new QR login"
+                    );
+                    return Err(anyhow!("weixin_login_required: iLink session expired"));
                 }
                 warn!("weixin getupdates ret={ret} errcode={errcode}");
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 continue;
             }
 
-            if let Some(new_buf) = resp["get_updates_buf"]
+            let next_buf = resp["get_updates_buf"]
                 .as_str()
                 .filter(|buf| !buf.is_empty())
-            {
-                buf = new_buf.to_string();
-                weixin_provider::save_sync_buf(&self.api.config().bot_account_id, &buf);
-            }
+                .map(str::to_string);
 
             if let Some(msgs) = resp["msgs"].as_array() {
                 for msg in msgs {
@@ -973,9 +1014,23 @@ impl WeixinBot {
                         return Err(anyhow!("bot lifecycle replaced during pairing"));
                     }
                     if self.handle_pairing_message(&peer, &text).await {
+                        // The pairing message was handled; never replay it.
+                        if let Some(next_buf) = next_buf.as_deref() {
+                            weixin_provider::save_sync_buf(
+                                &self.api.config().bot_account_id,
+                                next_buf,
+                            );
+                        }
                         return Ok(peer);
                     }
                 }
+            }
+
+            // Persist the cursor only after the batch was handled, so a stop
+            // or crash mid-batch replays it instead of skipping it.
+            if let Some(next_buf) = next_buf {
+                buf = next_buf;
+                weixin_provider::save_sync_buf(&self.api.config().bot_account_id, &buf);
             }
         }
     }
@@ -1020,28 +1075,27 @@ impl WeixinBot {
             let ret = resp["ret"].as_i64().unwrap_or(0);
             let errcode = resp["errcode"].as_i64().unwrap_or(0);
             if weixin_provider::updates_failed(&resp) {
-                if errcode == WEIXIN_SESSION_EXPIRED_ERRCODE
-                    || ret == WEIXIN_SESSION_EXPIRED_ERRCODE
-                {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    continue;
+                if Self::session_expired(&resp) {
+                    error!(
+                        "weixin: iLink session expired; stopped polling until the user signs in again with a new QR login"
+                    );
+                    break;
                 }
+                warn!("weixin getupdates ret={ret} errcode={errcode}");
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 continue;
             }
 
-            if let Some(new_buf) = resp["get_updates_buf"]
+            let next_buf = resp["get_updates_buf"]
                 .as_str()
                 .filter(|buf| !buf.is_empty())
-            {
-                buf = new_buf.to_string();
-                weixin_provider::save_sync_buf(&self.api.config().bot_account_id, &buf);
-            }
+                .map(str::to_string);
 
-            let Some(msgs) = resp["msgs"].as_array() else {
-                continue;
-            };
-
+            let msgs = resp["msgs"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let mut admitted = true;
             for msg in msgs {
                 if !weixin_provider::is_user_message(msg) {
                     continue;
@@ -1057,11 +1111,31 @@ impl WeixinBot {
                     .entry(peer.clone())
                     .or_insert_with(|| self.spawn_inbound_peer(peer.clone(), stop.clone()));
                 tokio::select! {
-                    _ = stop.changed() => break,
+                    _ = stop.changed() => {
+                        admitted = false;
+                        break;
+                    }
                     sent = sender.send((msg.clone(), poll_identity_epoch)) => {
-                        if sent.is_err() { warn!("Weixin inbound worker stopped before message admission"); }
+                        if sent.is_err() {
+                            warn!("Weixin inbound worker stopped before message admission");
+                            admitted = false;
+                        }
                     }
                 }
+            }
+            // Persist the cursor only once the whole batch was admitted to the
+            // per-peer workers. A stop mid-batch keeps the previous cursor, so
+            // the provider replays the batch instead of skipping messages
+            // (a message admitted just before the stop may then repeat).
+            if admitted {
+                if let Some(next_buf) = next_buf {
+                    buf = next_buf;
+                    weixin_provider::save_sync_buf(&self.api.config().bot_account_id, &buf);
+                }
+            } else if let Some(next_buf) = next_buf {
+                // Keep polling forward in this process; only the durable
+                // cursor waits for admission.
+                buf = next_buf;
             }
         }
         self.unsubscribe_session_output();
@@ -1260,6 +1334,21 @@ impl WeixinBot {
         {
             return;
         }
+        if super::chat_is_paired(&self.chat_states, peer_id.as_str()).await
+            && !self.held_replies.is_empty(&peer_id)
+        {
+            // Resend in the background: a held reply under provider backoff
+            // must not delay handling this message.
+            let bot = self.clone();
+            let peer = peer_id.clone();
+            tokio::spawn(async move {
+                if bot.runtime_fence.is_lifecycle_current()
+                    && bot.runtime_fence.identity_epoch() == command_identity_epoch
+                {
+                    bot.resend_held_replies(&peer).await;
+                }
+            });
+        }
         let mut states = self.chat_states.write().await;
         self.runtime_fence.reconcile_states(&mut states);
         if !states.get(&peer_id).is_some_and(|state| state.paired) {
@@ -1404,9 +1493,8 @@ impl WeixinBot {
                         .await;
                 }
                 if !turn_result.display_text.is_empty() {
-                    if let Err(err) = bot.send_text(&peer, &turn_result.display_text).await {
-                        warn!("weixin: send final reply to peer {peer} failed: {err}");
-                    }
+                    bot.deliver_final_reply(&peer, &turn_result.display_text)
+                        .await;
                 }
                 bot.notify_files_ready(
                     &peer,
@@ -1446,12 +1534,17 @@ impl WeixinBot {
         drop(states);
 
         let result = HandleResult {
-            reply: interaction.reply,
-            actions: interaction.actions,
+            reply: interaction.reply.clone(),
+            actions: interaction.actions.clone(),
             forward_to_session: None,
-            menu: interaction.menu,
+            menu: interaction.menu.clone(),
         };
-        self.send_handle_result(&peer_id, &result).await;
+        if !self.send_handle_result(&peer_id, &result).await {
+            // Re-sent by the turn watcher's next re-presentation.
+            if let Some(state) = self.chat_states.write().await.get_mut(&peer_id) {
+                super::command_router::mark_interaction_undelivered(state, &interaction);
+            }
+        }
     }
 }
 
@@ -2237,6 +2330,25 @@ mod tests {
             .await
             .expect("pairing must finish with the scripted updates")
             .expect("pairing must succeed")
+    }
+
+    #[tokio::test]
+    async fn expired_session_stops_polling_and_reports_login_required() {
+        let (base, _sent, _provider) = mock_provider(vec![
+            json!({"ret": WEIXIN_SESSION_EXPIRED_ERRCODE, "errcode": WEIXIN_SESSION_EXPIRED_ERRCODE,
+                "errmsg": "session timeout", "msgs": []}),
+        ])
+        .await;
+        let bot = gate_bot(base).await;
+        let (_stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+
+        tokio::time::timeout(
+            Duration::from_secs(20),
+            bot.clone().run_message_loop(stop_rx),
+        )
+        .await
+        .expect("an expired session must end polling instead of retrying silently");
+        assert!(bot.requires_login());
     }
 
     #[tokio::test]

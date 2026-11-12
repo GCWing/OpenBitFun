@@ -93,6 +93,11 @@ export interface DeviceCatalogSnapshot {
   readonly error?: string;
   /** The host streams catalog hints; false means it refreshes on visibility. */
   readonly live: boolean;
+  /**
+   * The catalog stream hit a transient error and its native reader is
+   * retrying; hints may be missed until it reports live again.
+   */
+  readonly reconnecting?: boolean;
   readonly sessions: Readonly<Record<string, DeviceCatalogSessions>>;
 }
 
@@ -630,6 +635,20 @@ export class DeviceWorkspaceCatalog {
     });
   }
 
+  /**
+   * A retrying catalog reader reports `live: true` once it caught up again.
+   * Hints it missed meanwhile are covered by one refresh.
+   */
+  private onCatalogStreamReady(sourceDeviceId: string | null, payload: unknown): void {
+    const ready = payload as { sessionId?: string; live?: boolean; subscriptionId?: string } | null;
+    if (ready?.sessionId !== HOST_CATALOG_ID || ready.live !== true || sourceDeviceId === null) return;
+    const entry = this.entries.get(surfaceIdForDevice(sourceDeviceId));
+    if (!entry?.snapshot.reconnecting) return;
+    if (ready.subscriptionId && ready.subscriptionId !== entry.streamSubscriptionId) return;
+    this.update(entry, { reconnecting: false });
+    this.invalidate(entry.surfaceId);
+  }
+
   private stopStream(entry: Entry): void {
     const subscriptionId = entry.streamSubscriptionId;
     entry.streamSubscriptionId = null;
@@ -638,7 +657,7 @@ export class DeviceWorkspaceCatalog {
         log.warn('Device catalog unsubscribe failed', { surfaceId: entry.surfaceId, error });
       });
     }
-    if (entry.snapshot.live) this.update(entry, { live: false });
+    if (entry.snapshot.live || entry.snapshot.reconnecting) this.update(entry, { live: false, reconnecting: false });
   }
 
   private stop(entry: Entry): void {
@@ -656,16 +675,39 @@ export class DeviceWorkspaceCatalog {
     const disposers: Array<() => void> = [];
     // Observers only see events that have a native listener registered.
     disposers.push(this.io.listen('host-catalog-changed', () => undefined));
+    disposers.push(this.io.listen('relay://session-ready', () => undefined));
     disposers.push(this.io.listen('account://login-state', () => this.reset()));
     disposers.push(this.io.listen('account://session-sync-error', payload => {
-      const event = payload as { sessionId?: string; targetDeviceId?: string } | null;
+      const event = payload as {
+        sessionId?: string; targetDeviceId?: string; subscriptionId?: string; retrying?: boolean;
+      } | null;
       if (event?.sessionId !== HOST_CATALOG_ID || !event.targetDeviceId) return;
       const entry = this.entries.get(surfaceIdForDevice(event.targetDeviceId));
       if (!entry) return;
+      // A retired reader's late error must not touch its replacement.
+      // Untagged errors come from older native builds and match any reader.
+      if (event.subscriptionId && event.subscriptionId !== entry.streamSubscriptionId) return;
+      if (event.retrying === true) {
+        // The native reader keeps its lease and retries with backoff; keep
+        // its id so it can still be released, and say the section is
+        // reconnecting instead of dropping to visibility refresh.
+        if (!entry.snapshot.reconnecting) this.update(entry, { reconnecting: true });
+        return;
+      }
+      const subscriptionId = entry.streamSubscriptionId;
       entry.streamSubscriptionId = null;
-      this.update(entry, { live: false });
+      if (subscriptionId) {
+        void this.io.unsubscribeCatalog(subscriptionId).catch(error => {
+          log.warn('Device catalog unsubscribe failed', { surfaceId: entry.surfaceId, error });
+        });
+      }
+      this.update(entry, { live: false, reconnecting: false });
     }));
     disposers.push(observeSurfaceEvents((event, sourceDeviceId, payload) => {
+      if (event === 'relay://session-ready') {
+        this.onCatalogStreamReady(sourceDeviceId, payload);
+        return;
+      }
       if (!CATALOG_INVALIDATING_EVENTS.has(event)) return;
       const surfaceId = surfaceIdForDevice(sourceDeviceId);
       // The rendered device is drawn from its live container.

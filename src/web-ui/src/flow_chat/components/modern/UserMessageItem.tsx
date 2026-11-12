@@ -6,6 +6,8 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo, useId } from 'react';
 import { withConversationExcerptFallback } from '@/shared/utils/conversationExcerpt';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
+import { ImageLightboxCopyButton } from '@/shared/ui/ImageLightboxCopy';
+import { useImageLightboxCopy } from '@/shared/ui/useImageLightboxCopy';
 import { CircleAlert, RotateCcw, Loader2 } from 'lucide-react';
 import type { DialogTurn, FlowUserSteeringItem } from '../../types/flow-chat';
 import type { ImageContext } from '@/shared/types/context';
@@ -35,7 +37,7 @@ import {
   describeUserMessageEditImpact,
   editAndRerunUserMessage,
 } from '../../services/UserMessageEditService';
-import { rollbackSessionToTurn } from '../../services/SessionRollbackService';
+import { RollbackOutcomeUnknownError, rollbackSessionToTurn } from '../../services/SessionRollbackService';
 import { createLogger } from '@/shared/utils/logger';
 import type { SessionUsageReport } from '@/infrastructure/api/service-api/SessionAPI';
 import { SessionUsageReportCard } from '../usage/SessionUsageReportCard';
@@ -139,6 +141,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
     const [expanded, setExpanded] = useState(false);
     const [hasOverflow, setHasOverflow] = useState(false);
     const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+    const lightboxCopy = useImageLightboxCopy(lightboxImage);
     const [actionMenuOpen, setActionMenuOpen] = useState(false);
     const actionMenuAnchorRef = useRef<HTMLButtonElement>(null);
     const actionMenuId = useId();
@@ -473,6 +476,11 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
         notificationService.success(t('message.rollbackSuccess'));
       } catch (error) {
         log.error('Rollback failed', error);
+        if (error instanceof RollbackOutcomeUnknownError) {
+          // The session now shows the device's own history; nothing to restore here.
+          notificationService.warning(error.message);
+          return;
+        }
         notificationService.error(`${t('message.rollbackFailed')}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }, [actionTurnIndex, canRollback, composerPresentation, largePastes, resolvedSessionId, restoredComposerContexts, t, turnId, messageContent]);
@@ -570,7 +578,11 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
         notificationService.success(t('message.editSuccess'));
       } catch (error) {
         log.error('Message edit failed', { sessionId: resolvedSessionId, turnId, error });
-        notificationService.error(`${t('message.editFailed')}: ${error instanceof Error ? error.message : String(error)}`);
+        if (error instanceof RollbackOutcomeUnknownError) {
+          notificationService.warning(error.message);
+        } else {
+          notificationService.error(`${t('message.editFailed')}: ${error instanceof Error ? error.message : String(error)}`);
+        }
       } finally {
         setEditSubmitting(false);
       }
@@ -812,8 +824,20 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
               closeOnPointerOutside={false}
               onClick={event => { if (event.target === event.currentTarget) setLightboxImage(null); }}
             >
+              {lightboxCopy.canCopy && (
+                <ImageLightboxCopyButton
+                  className="user-message-item__lightbox-copy"
+                  copied={lightboxCopy.copied}
+                  onCopy={() => { void lightboxCopy.copy(); }}
+                />
+              )}
               <DialogClose className="user-message-item__lightbox-close" icon={<Icon name="xmark" size="md" />} />
-              <img src={lightboxImage} alt="Preview" onClick={(e) => e.stopPropagation()} />
+              <img
+                src={lightboxImage}
+                alt="Preview"
+                onClick={(e) => e.stopPropagation()}
+                onContextMenu={lightboxCopy.onContextMenu}
+              />
             </Dialog>
           )}
           {openLargePasteText !== null && (

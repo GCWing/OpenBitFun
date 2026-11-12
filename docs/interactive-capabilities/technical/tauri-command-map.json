@@ -2,12 +2,12 @@
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
   "catalogDigest": "778506ae9a8c979c4cea4de5c575be1bde0517def6ee5854dba203665098fa29",
-  "commandCount": 703,
+  "commandCount": 705,
   "coverage": {
-    "commandCount": 703,
+    "commandCount": 705,
     "documentedCommandCount": 638,
-    "implementationCommandCount": 65,
-    "implementationDigest": "1e1e2b424a391bd866585162da35a043dcca3d6f67e0a770a8f8c886007b677a"
+    "implementationCommandCount": 67,
+    "implementationDigest": "3c03db6cdd74260fd8b7203d30ea4ab7224b4cfdea4a532c11e41a587cd92b19"
   },
   "commands": [
     {
@@ -6977,6 +6977,20 @@
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
+      "id": "peer_host_bridge_ready",
+      "moduleId": "peer_host_invoke",
+      "capabilityId": "feature.remote-connect",
+      "capabilityIds": [
+        "feature.remote-connect"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::peer_host_invoke::peer_host_bridge_ready",
+      "sourceFile": "src/apps/desktop/src/api/peer_host_invoke.rs",
+      "signature": "fn peer_host_bridge_ready(request: PeerHostBridgeReadyRequest) -> Result<(), String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "peer_host_invoke_complete",
       "moduleId": "peer_host_invoke",
       "capabilityId": "feature.remote-connect",
@@ -11205,6 +11219,20 @@
       "sourceFile": "src/apps/desktop/src/api/worktree_api.rs",
       "signature": "fn worktree_remove( mut request: WorktreeRemoveRequest, ) -> Result<WorktreeRemoveResult, WorktreeError>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
+    },
+    {
+      "id": "write_clipboard_image",
+      "moduleId": "clipboard_file",
+      "capabilityId": "feature.files-editor",
+      "capabilityIds": [
+        "feature.files-editor"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "write_clipboard_image",
+      "sourceFile": "src/apps/desktop/src/api/clipboard_file_api.rs",
+      "signature": "fn write_clipboard_image( app: tauri::AppHandle, request: tauri::ipc::Request<'_>, ) -> Result<(), String>",
+      "remoteWorkspacePolicy": "LocalOnly"
     },
     {
       "id": "write_file_content",

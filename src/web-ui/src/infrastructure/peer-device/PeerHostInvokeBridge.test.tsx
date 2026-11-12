@@ -76,6 +76,17 @@ describe('PeerHostInvokeBridge', () => {
     container.remove();
   });
 
+  it('reports bridge readiness after the listener registers and withdraws it on unmount', async () => {
+    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith(
+      'peer_host_bridge_ready',
+      { request: { ready: true } },
+    ));
+    act(() => root.unmount());
+    expect(mocks.unlisten).toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenLastCalledWith('peer_host_bridge_ready', { request: { ready: false } });
+    root = createRoot(container);
+  });
+
   it('executes duplicate dialog submissions once and completes every RPC', async () => {
     const startResult = deferred<{ success: boolean }>();
     mocks.invoke.mockImplementation((command: string) => {

@@ -4,6 +4,7 @@ import { ITransportAdapter, type TransportRequestTiming } from './base';
 import { TauriTransportAdapter } from './tauri-adapter';
 import { getDeviceOpenIntent, useDeviceOpenIntent } from '@/infrastructure/peer-device/deviceOpenIntent';
 import { classifyPeerHostRefusal } from '@/infrastructure/peer-device/peerHostRefusal';
+import { isPeerReplyLost } from '@/infrastructure/peer-device/peerReplyLost';
 import {
   SurfaceChangedError,
   getActiveSurfaceScope,
@@ -274,23 +275,133 @@ export function peerInvokePriorityFor(command: string): PeerInvokePriority {
   return 'normal';
 }
 
-/** The shared account transport owns admission and acknowledged RPC deadlines. */
+/**
+ * A read attempt keeps the shared RPC deadline: many reads legitimately scan
+ * host data or wait on a slow upstream (model catalogs, statistics, MCP
+ * resources, SSH directories, large trees). Only the hot-path reads below get
+ * a tighter bound.
+ */
 export const PEER_READ_REQUEST_TIMEOUT_MS = DEFAULT_RPC_TIMEOUT_MS;
+/**
+ * A hot-path read attempt that has not answered in this long is not waiting
+ * on a slow Relay hop: the host is busy or gone. These cheap reads are bounded
+ * so a session list or config hydrate reports a retryable "host not
+ * responding" within about a minute instead of spinning through a full RPC
+ * deadline.
+ */
+export const PEER_HOT_READ_REQUEST_TIMEOUT_MS = 25_000;
+/**
+ * A read starts no further attempt (after an unsent request or a lost reply)
+ * this long after its first. A hot-path read also ends its last attempt here.
+ */
+export const PEER_READ_DEADLINE_MS = 60_000;
+/** Reads back off at most this long between attempts inside their deadline. */
+export const PEER_READ_RETRY_MAX_DELAY_MS = 4_000;
+/** The shared account transport owns admission and acknowledged mutation deadlines. */
 export const PEER_MUTATION_REQUEST_TIMEOUT_MS = DEFAULT_RPC_TIMEOUT_MS;
-export const PEER_READ_MAX_RETRIES = 4;
 export const PEER_IDEMPOTENT_MUTATION_MAX_RETRIES = 4;
 export const PEER_RETRY_BASE_DELAY_MS = 500;
+
+/**
+ * Cheap reads on the session-list, workspace and config hydrate paths. They
+ * answer from host memory or small local records, so a silent host is
+ * reported quickly. Every other read keeps the full attempt budget.
+ */
+const HOT_PATH_READ_COMMANDS = new Set([
+  'list_persisted_sessions',
+  'list_persisted_sessions_page',
+  'list_persisted_sessions_count',
+  'get_session_lineage',
+  'get_session_thread_goal',
+  'get_session_model_target',
+  'get_session_interaction_mailbox',
+  'list_pending_permission_requests',
+  'get_opened_workspaces',
+  'get_recent_workspaces',
+  'get_current_workspace',
+  'get_config',
+  'get_configs',
+  'get_available_modes',
+  'get_agent_profile_config',
+  'get_app_state',
+  'get_app_version',
+  'get_runtime_capabilities',
+]);
+
+/**
+ * Whether a read gets the short hot-path bound. A session page that asks the
+ * host to refresh external discovery scans other tools' stores, so it keeps
+ * the full budget.
+ */
+export function isPeerHotPathRead(command: string, params?: unknown): boolean {
+  if (!HOT_PATH_READ_COMMANDS.has(command)) return false;
+  const request = asRecord(asRecord(params)?.request) ?? asRecord(params);
+  return request?.refreshExternalDiscovery !== true
+    && request?.refresh_external_discovery !== true;
+}
+
+/**
+ * Transport failures that prove a read never reached the host, or lost only
+ * its reply. Repeating a read is safe for both; anything else (a delivered
+ * request that timed out, an authorization or build mismatch) is not improved
+ * by asking again within the same minute.
+ */
+const RETRYABLE_READ_TRANSPORT_ERROR = /request was not submitted|RPC target unavailable|RPC deadline elapsed before dispatch|RPC acknowledgement lost|error sending request/;
+
+/**
+ * Stable code of a read whose host did not answer within its deadline. Read
+ * owners keep their previous content and offer an explicit retry;
+ * `peerReplyLostMessage` localizes it.
+ */
+export const PEER_HOST_NOT_RESPONDING_CODE = 'peer_host_not_responding';
+
+export class PeerHostNotRespondingError extends Error {
+  readonly code = PEER_HOST_NOT_RESPONDING_CODE;
+
+  constructor(action: string, elapsed: number, cause?: unknown) {
+    super(`${PEER_HOST_NOT_RESPONDING_CODE}: Peer host did not answer '${action}' within ${Math.round(elapsed)}ms`);
+    this.name = 'PeerHostNotRespondingError';
+    if (cause !== undefined) Object.assign(this, { cause });
+  }
+}
+
+/** Attempts sent for one logical request, including the first. */
+interface PeerRpcAttempts {
+  count: number;
+}
+
+/**
+ * The Runtime's stable refusal of a Turn id it already admitted
+ * (`DIALOG_TURN_ID_ALREADY_SETTLED_MESSAGE` in the core scheduler).
+ */
+const DUPLICATE_DIALOG_TURN_ERROR = 'Dialog turn ID is already active or completed';
+
+export function isPeerDuplicateDialogTurnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return message.includes(DUPLICATE_DIALOG_TURN_ERROR);
+}
 
 interface PeerRpcPolicy {
   timeoutMs: number;
   maxRetries: number;
   retryKind: 'read' | 'idempotent-mutation' | 'none';
+  /** Reads only: no further attempt starts after this long. */
+  deadlineMs?: number;
+  /** Reads only: the last attempt also ends at the deadline (hot-path reads). */
+  attemptEndsAtDeadline?: boolean;
 }
 
 const READ_RPC_POLICY: PeerRpcPolicy = {
   timeoutMs: PEER_READ_REQUEST_TIMEOUT_MS,
-  maxRetries: PEER_READ_MAX_RETRIES,
+  maxRetries: Number.POSITIVE_INFINITY,
   retryKind: 'read',
+  deadlineMs: PEER_READ_DEADLINE_MS,
+};
+
+const HOT_PATH_READ_RPC_POLICY: PeerRpcPolicy = {
+  ...READ_RPC_POLICY,
+  timeoutMs: PEER_HOT_READ_REQUEST_TIMEOUT_MS,
+  attemptEndsAtDeadline: true,
 };
 
 const MUTATION_RPC_POLICY: PeerRpcPolicy = {
@@ -337,6 +448,8 @@ export interface PeerDeviceTransportHooks {
   /** Fired only for transport/RPC layer failures, not product command errors. */
   onHostInvokeTransportFailure?: (error: unknown, meta?: { action: string; priority: PeerInvokePriority }) => void;
   onHostInvokeSuccess?: () => void;
+  /** The host refused a request because its UI is still starting. */
+  onHostUiNotReady?: () => void;
   /**
    * Enables replay of stable dialog submissions only when the target host
    * advertises matching execution-side deduplication.
@@ -385,6 +498,48 @@ export class PeerProductCommandError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'PeerProductCommandError';
+  }
+}
+
+/**
+ * Stable prefix a Desktop host answers while its webview bridge is not
+ * registered yet (`PEER_HOST_UI_NOT_READY` in `peer_host_invoke.rs`).
+ */
+export const PEER_HOST_UI_NOT_READY_CODE = 'peer_host_ui_not_ready';
+
+/**
+ * The host refused the request before executing it because its UI is still
+ * starting. Definitely not executed, so it is never an unknown outcome.
+ */
+export class PeerHostUiNotReadyError extends PeerProductCommandError {
+  readonly code = PEER_HOST_UI_NOT_READY_CODE;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'PeerHostUiNotReadyError';
+  }
+}
+
+export function isPeerRetryableReadTransportError(error: unknown): boolean {
+  if (error instanceof PeerHostUiNotReadyError) return true;
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return isPeerReplyLost(error) || RETRYABLE_READ_TRANSPORT_ERROR.test(message);
+}
+
+function isHostUiNotReadyMessage(message: string | undefined): message is string {
+  return typeof message === 'string' && message.startsWith(`${PEER_HOST_UI_NOT_READY_CODE}:`);
+}
+
+/** Parse only replies that can be the host's not-ready refusal. */
+function hostUiNotReadyRefusal(raw: string): PeerHostUiNotReadyError | null {
+  if (!raw.includes(PEER_HOST_UI_NOT_READY_CODE)) return null;
+  try {
+    const envelope = JSON.parse(raw) as HostInvokeResultEnvelope;
+    return envelope.resp === 'host_invoke_result' && envelope.ok === false && isHostUiNotReadyMessage(envelope.error)
+      ? new PeerHostUiNotReadyError(envelope.error)
+      : null;
+  } catch {
+    return null;
   }
 }
 
@@ -990,18 +1145,20 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     const rpcPolicy = BROWSER_CONTROL_SETUP_COMMANDS.has(action)
       ? BROWSER_CONTROL_SETUP_RPC_POLICY
       : isPeerRetryableReadCommand(action)
-        ? READ_RPC_POLICY
+        ? (isPeerHotPathRead(action, params) ? HOT_PATH_READ_RPC_POLICY : READ_RPC_POLICY)
         : this.hooks.supportsIdempotentDialogSubmit === true &&
             isPeerRetryableIdempotentMutation(action, params)
           ? IDEMPOTENT_MUTATION_RPC_POLICY
           : MUTATION_RPC_POLICY;
 
+    const attempts: PeerRpcAttempts = { count: 0 };
     try {
       const raw = await this.invokeDeviceRpc(
         action,
         commandJson,
         rpcPolicy,
         issuedBindingEpoch,
+        attempts,
       );
       this.assertBindingUnchanged(issuedBindingEpoch, action);
       const envelope = JSON.parse(raw) as HostInvokeResultEnvelope;
@@ -1014,6 +1171,25 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
         throw new Error(envelope.message || 'Peer HostInvoke failed');
       }
       if (envelope.resp === 'host_invoke_result') {
+        if (!envelope.ok && attempts.count > 1
+          && rpcPolicy.retryKind === 'idempotent-mutation'
+          && isPeerDuplicateDialogTurnError(envelope.error)) {
+          // A retry of a stable (sessionId, turnId) submission reached a host
+          // whose outcome cache no longer held the first attempt; the Runtime
+          // refusing the Turn id proves that attempt was admitted.
+          log.info('Peer dialog submission was already admitted by an earlier attempt', {
+            action,
+            attempts: attempts.count,
+          });
+          this.hooks.onHostInvokeSuccess?.();
+          return (action === 'start_dialog_turn'
+            ? { success: true, message: 'Dialog turn already accepted' }
+            : undefined) as T;
+        }
+        if (!envelope.ok && isHostUiNotReadyMessage(envelope.error)) {
+          this.hooks.onHostUiNotReady?.();
+          throw new PeerHostUiNotReadyError(envelope.error);
+        }
         if (!envelope.ok) {
           // Product failure on the peer — do not count as transport loss.
           const error = new PeerProductCommandError(
@@ -1062,16 +1238,30 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     commandJson: string,
     policy: PeerRpcPolicy,
     issuedBindingEpoch: number,
+    attempts: PeerRpcAttempts = { count: 0 },
   ): Promise<string> {
+    const startedAt = nowMs();
+    const deadlineMs = policy.retryKind === 'read' ? policy.deadlineMs : undefined;
     for (let attempt = 0; ; attempt += 1) {
       this.assertBindingUnchanged(issuedBindingEpoch, action);
+      attempts.count = attempt + 1;
+      const attemptTimeoutMs = deadlineMs !== undefined && policy.attemptEndsAtDeadline === true
+        ? Math.max(1, Math.min(policy.timeoutMs, deadlineMs - elapsedMs(startedAt)))
+        : policy.timeoutMs;
       try {
         const result = await this.withTimeout(
-          this.deviceRpc(this.targetDeviceId, commandJson, policy.timeoutMs),
+          this.deviceRpc(this.targetDeviceId, commandJson, attemptTimeoutMs),
           action,
-          policy.timeoutMs,
+          attemptTimeoutMs,
         );
         this.assertBindingUnchanged(issuedBindingEpoch, action);
+        if (deadlineMs !== undefined) {
+          const notReady = hostUiNotReadyRefusal(result);
+          if (notReady) {
+            this.hooks.onHostUiNotReady?.();
+            throw notReady;
+          }
+        }
         return result;
       } catch (error) {
         if (isSurfaceChangedError(error)) {
@@ -1080,6 +1270,11 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
         // A retired binding is cancellation, not a weak relay. In particular,
         // do not keep replaying a read after another device is rendered.
         this.assertBindingUnchanged(issuedBindingEpoch, action);
+        if (deadlineMs !== undefined) {
+          await this.backOffRead(action, error, attempt, startedAt, deadlineMs);
+          this.assertBindingUnchanged(issuedBindingEpoch, action);
+          continue;
+        }
         if (attempt >= policy.maxRetries) {
           throw error;
         }
@@ -1096,6 +1291,42 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
         this.assertBindingUnchanged(issuedBindingEpoch, action);
       }
     }
+  }
+
+  /**
+   * Reads: a delivered request that timed out means the host is not
+   * answering, so it fails at once as `peer_host_not_responding`. Only an
+   * unsent request or a lost reply is retried, and never past the deadline.
+   */
+  private async backOffRead(
+    action: string,
+    error: unknown,
+    attempt: number,
+    startedAt: number,
+    deadlineMs: number,
+  ): Promise<void> {
+    if (error instanceof PeerRpcTimeoutError) {
+      throw new PeerHostNotRespondingError(action, elapsedMs(startedAt), error);
+    }
+    if (!isPeerRetryableReadTransportError(error)) {
+      throw error;
+    }
+    const delayMs = Math.min(
+      PEER_RETRY_BASE_DELAY_MS * (2 ** attempt),
+      PEER_READ_RETRY_MAX_DELAY_MS,
+    );
+    if (elapsedMs(startedAt) + delayMs >= deadlineMs) {
+      // A host that answered "still starting" did respond: keep that state.
+      if (error instanceof PeerHostUiNotReadyError) throw error;
+      throw new PeerHostNotRespondingError(action, elapsedMs(startedAt), error);
+    }
+    log.warn('Retrying recoverable Peer read', {
+      action,
+      attempt: attempt + 1,
+      delayMs,
+      error,
+    });
+    await new Promise(resolve => setTimeout(resolve, delayMs));
   }
 
   private async withTimeout<T>(

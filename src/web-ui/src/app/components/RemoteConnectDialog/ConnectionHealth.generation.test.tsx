@@ -52,6 +52,11 @@ describe('mobile connection health target generations', () => {
       .mockResolvedValueOnce(undefined);
     const manager = {
       ping,
+      relayStatus: 'connected',
+      controlTargetPresence: () => ({ online: true, lastSeenAt: null }),
+      onRecoverySignal: () => () => {},
+      onRelayStatus: () => () => {},
+      onControlTargetPresenceChange: () => () => {},
       onControlTargetChange: (listener: () => void) => {
         onTargetChange = listener;
         return () => { onTargetChange = undefined; };
@@ -84,6 +89,11 @@ describe('mobile connection health target generations', () => {
       .mockResolvedValueOnce(undefined);
     const manager = {
       ping,
+      relayStatus: 'connected',
+      controlTargetPresence: () => ({ online: true, lastSeenAt: null }),
+      onRecoverySignal: () => () => {},
+      onRelayStatus: () => () => {},
+      onControlTargetPresenceChange: () => () => {},
       onControlTargetChange: () => () => {},
     } as unknown as RemoteSessionManager;
 

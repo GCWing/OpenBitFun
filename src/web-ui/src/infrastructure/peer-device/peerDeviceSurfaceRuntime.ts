@@ -14,6 +14,7 @@ import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { FlowChatManager } from '@/flow_chat/services/FlowChatManager';
+import { ensureActivePermissionMailbox } from '@/flow_chat/services/liveSessionInteractionStore';
 import { useSceneStore } from '@/app/stores/sceneStore';
 import { clearAgentCanvasForPeerSwitch } from '@/app/components/panels/content-canvas/stores';
 import { editorManager } from '@/tools/editor/services/EditorManager';
@@ -21,7 +22,9 @@ import { TerminalService } from '@/tools/terminal/services/TerminalService';
 import { createLogger } from '@/shared/utils/logger';
 import {
   activateSurface,
+  getActiveSurfaceId,
   isSurfaceChangedError,
+  surfaceIdForDevice,
   type SurfaceScope,
 } from './deviceSurface';
 import { setActiveSurfaceDeviceId } from './deviceSurfaceRouting';
@@ -186,6 +189,14 @@ function createDependencies(): PeerDeviceSurfaceControllerDependencies {
     ),
   };
 }
+
+// Permission events emitted while this controller was not attached never
+// reached it. After a re-attach, re-read the rendered device's mailbox; a
+// background device bootstraps its mailbox when it is rendered next.
+peerConnectionManager.onReattached(deviceId => {
+  if (getActiveSurfaceId() !== surfaceIdForDevice(deviceId)) return;
+  void ensureActivePermissionMailbox(true);
+});
 
 /** Window-wide controller: connections and activation state outlive React renders. */
 export const peerDeviceSurfaceController = new PeerDeviceSurfaceController(

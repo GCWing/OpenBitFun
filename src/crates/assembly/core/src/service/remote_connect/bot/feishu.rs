@@ -104,6 +104,46 @@ pub struct FeishuBot {
     pairing_gate: PairingGate,
     chat_states: Arc<RwLock<HashMap<String, BotChatState>>>,
     runtime_fence: BotRuntimeFence,
+    /// Events already dispatched, so a redelivery does not run twice.
+    event_deduper: feishu_provider::FeishuEventDeduper,
+    /// Final replies that could not be delivered, resent with the chat's next
+    /// message.
+    held_replies: super::HeldReplies<String>,
+}
+
+/// Bound on one ping write. A half-open socket can accept writes for a while,
+/// so the read-idle check below is what detects it; this only keeps a stuck
+/// write from blocking the loop.
+const FEISHU_PING_SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// A socket that has produced nothing for this many ping intervals is treated
+/// as half-open and replaced.
+const FEISHU_IDLE_PING_INTERVALS: u32 = 2;
+
+/// What a ping tick found about the connection.
+fn feishu_connection_stale(
+    idle_for: std::time::Duration,
+    ping_interval: std::time::Duration,
+) -> bool {
+    idle_for > ping_interval.saturating_mul(FEISHU_IDLE_PING_INTERVALS)
+}
+
+/// Send one ping; an error means the connection must be replaced.
+async fn feishu_ping(
+    connection: &feishu_provider::FeishuWsConnection,
+    service_id: i32,
+    ping_interval: std::time::Duration,
+) -> Result<()> {
+    if feishu_connection_stale(connection.idle_for(), ping_interval) {
+        return Err(anyhow!(
+            "no frame received for {}s",
+            connection.idle_for().as_secs()
+        ));
+    }
+    match tokio::time::timeout(FEISHU_PING_SEND_TIMEOUT, connection.send_ping(service_id)).await {
+        Ok(result) => result,
+        Err(_) => Err(anyhow!("ping write timed out")),
+    }
 }
 
 impl FeishuBot {
@@ -154,7 +194,41 @@ impl FeishuBot {
             pairing_gate: PairingGate::new(),
             chat_states: Arc::new(RwLock::new(HashMap::new())),
             runtime_fence,
+            event_deduper: Default::default(),
+            held_replies: Default::default(),
         }
+    }
+
+    /// False when `event` was already dispatched (a redelivery). Events
+    /// without an id are always dispatched.
+    fn first_delivery(&self, event: &serde_json::Value) -> bool {
+        let Some(key) = feishu_provider::event_dedup_key(event) else {
+            return true;
+        };
+        let first = self.event_deduper.first_delivery(&key);
+        if !first {
+            info!("Feishu event redelivered; skipping duplicate {key}");
+        }
+        first
+    }
+
+    async fn deliver_final_reply(&self, chat_id: &str, text: &str) {
+        let chat = chat_id.to_string();
+        super::deliver_final_reply(&self.held_replies, &chat, text, |text| async move {
+            if !super::chat_is_paired(&self.chat_states, chat_id).await {
+                return Ok(());
+            }
+            self.api.send_message(chat_id, &text).await
+        })
+        .await;
+    }
+
+    async fn resend_held_replies(&self, chat_id: &str) {
+        let chat = chat_id.to_string();
+        super::resend_held_replies(&self.held_replies, &chat, |text| async move {
+            self.api.send_message(chat_id, &text).await
+        })
+        .await;
     }
 
     pub async fn restore_chat_state(&self, chat_id: &str, mut state: BotChatState) {
@@ -179,6 +253,8 @@ impl FeishuBot {
         {
             Ok(mut states) => {
                 self.runtime_fence.clear_states(&mut states);
+                // Held replies belong to the previous account's sessions.
+                self.held_replies.clear();
                 let snapshots: Vec<_> = states
                     .iter()
                     .map(|(chat_id, state)| (chat_id.clone(), state.clone()))
@@ -407,6 +483,9 @@ impl FeishuBot {
             return None;
         }
         let event: serde_json::Value = serde_json::from_slice(payload).ok()?;
+        if !self.first_delivery(&event) {
+            return None;
+        }
         let (chat_id, text) =
             if let Some(parsed) = feishu_provider::parse_message_event_full(&event) {
                 (parsed.chat_id, parsed.text)
@@ -443,6 +522,7 @@ impl FeishuBot {
             .unwrap_or(120);
 
         let mut ping_timer = tokio::time::interval(std::time::Duration::from_secs(ping_interval));
+        let ping_interval = std::time::Duration::from_secs(ping_interval);
 
         loop {
             tokio::select! {
@@ -453,9 +533,13 @@ impl FeishuBot {
                 msg = connection.next_event() => {
                     match msg {
                         Ok(Some(event)) => {
-                            let _ = connection.ack_event(&event).await;
+                            let acked = connection.ack_event(&event).await;
                             if let Some(chat_id) = self.handle_pairing_event_payload(event.payload()).await {
                                 return Ok(chat_id);
+                            }
+                            if let Err(e) = acked {
+                                warn!("Feishu event ack failed during pairing; reconnecting: {e}");
+                                return Err(e);
                             }
                         }
                         Ok(None) => {
@@ -468,7 +552,10 @@ impl FeishuBot {
                     }
                 }
                 _ = ping_timer.tick() => {
-                    let _ = connection.send_ping(service_id).await;
+                    if let Err(e) = feishu_ping(&connection, service_id, ping_interval).await {
+                        warn!("Feishu WebSocket unhealthy during pairing; reconnecting: {e}");
+                        return Err(e);
+                    }
                 }
             }
         }
@@ -512,6 +599,7 @@ impl FeishuBot {
 
             let mut ping_timer =
                 tokio::time::interval(std::time::Duration::from_secs(ping_interval));
+            let ping_period = std::time::Duration::from_secs(ping_interval);
 
             loop {
                 tokio::select! {
@@ -522,8 +610,14 @@ impl FeishuBot {
                     msg = connection.next_event() => {
                         match msg {
                             Ok(Some(event)) => {
-                                let _ = connection.ack_event(&event).await;
+                                let acked = connection.ack_event(&event).await;
+                                // Dispatch even when the ack failed: Feishu
+                                // redelivers it and the dedup set drops the copy.
                                 self.handle_event_payload(event.payload()).await;
+                                if let Err(e) = acked {
+                                    warn!("Feishu event ack failed; reconnecting: {e}");
+                                    break;
+                                }
                             }
                             Ok(None) => {
                                 warn!("Feishu WS closed, reconnecting...");
@@ -536,7 +630,10 @@ impl FeishuBot {
                         }
                     }
                     _ = ping_timer.tick() => {
-                        let _ = connection.send_ping(service_id).await;
+                        if let Err(e) = feishu_ping(&connection, service_id, ping_period).await {
+                            warn!("Feishu WebSocket unhealthy; reconnecting: {e}");
+                            break;
+                        }
                     }
                 }
             }
@@ -554,6 +651,9 @@ impl FeishuBot {
         let Ok(event) = serde_json::from_slice::<serde_json::Value>(payload) else {
             return;
         };
+        if !self.first_delivery(&event) {
+            return;
+        }
         let bot = self.clone();
         tokio::spawn(async move {
             bot.dispatch_event(event).await;
@@ -616,6 +716,22 @@ impl FeishuBot {
     ) {
         if !self.runtime_fence.is_lifecycle_current() {
             return;
+        }
+        if super::chat_is_paired(&self.chat_states, chat_id).await
+            && !self.held_replies.is_empty(&chat_id.to_string())
+        {
+            // Resend in the background: a held reply under provider backoff
+            // must not delay handling this message.
+            let bot = self.clone();
+            let chat = chat_id.to_string();
+            let epoch = self.runtime_fence.identity_epoch();
+            tokio::spawn(async move {
+                if bot.runtime_fence.is_lifecycle_current()
+                    && bot.runtime_fence.identity_epoch() == epoch
+                {
+                    bot.resend_held_replies(&chat).await;
+                }
+            });
         }
         let mut states = self.chat_states.write().await;
         let command_identity_epoch = self.runtime_fence.identity_epoch();
@@ -717,9 +833,7 @@ impl FeishuBot {
                         .await;
                 }
                 if !result.display_text.is_empty() {
-                    if let Err(err) = bot.send_message(&cid, &result.display_text).await {
-                        warn!("Failed to send Feishu final message to {cid}: {err}");
-                    }
+                    bot.deliver_final_reply(&cid, &result.display_text).await;
                 }
                 bot.notify_files_ready(
                     &cid,
@@ -757,12 +871,18 @@ impl FeishuBot {
         drop(states);
 
         let result = HandleResult {
-            reply: interaction.reply,
-            actions: interaction.actions,
+            reply: interaction.reply.clone(),
+            actions: interaction.actions.clone(),
             forward_to_session: None,
-            menu: interaction.menu,
+            menu: interaction.menu.clone(),
         };
-        self.send_handle_result(chat_id, &result).await.ok();
+        if let Err(error) = self.send_handle_result(chat_id, &result).await {
+            warn!("Feishu interaction prompt to {chat_id} failed: {error}");
+            // Re-sent by the turn watcher's next re-presentation.
+            if let Some(state) = self.chat_states.write().await.get_mut(chat_id) {
+                super::command_router::mark_interaction_undelivered(state, &interaction);
+            }
+        }
     }
 
     async fn persist_chat_state(&self, chat_id: &str, state: &BotChatState) {
@@ -927,7 +1047,7 @@ mod tests {
             "header": { "event_type": "im.message.receive_v1" },
             "event": {
                 "message": {
-                    "message_id": "om_fixture",
+                    "message_id": format!("om_{}", uuid::Uuid::new_v4()),
                     "message_type": message_type,
                     "chat_id": chat_id,
                     "content": content.to_string()
@@ -960,6 +1080,28 @@ mod tests {
     async fn dispatch(bot: &Arc<FeishuBot>, payload: Vec<u8>) {
         bot.dispatch_event(serde_json::from_slice(&payload).unwrap())
             .await;
+    }
+
+    #[tokio::test]
+    async fn redelivered_pairing_event_is_dispatched_once() {
+        let (fake, bot) = fake_bot();
+        bot.register_pairing(PAIRING_CODE).await.unwrap();
+        let payload = text_event(OWNER, PAIRING_CODE);
+
+        assert_eq!(
+            bot.handle_pairing_event_payload(&payload).await.as_deref(),
+            Some(OWNER)
+        );
+        let after_first = fake.sent_to(OWNER).len();
+        assert!(bot.handle_pairing_event_payload(&payload).await.is_none());
+        assert_eq!(fake.sent_to(OWNER).len(), after_first);
+
+        // A distinct event from the same chat is still dispatched.
+        let other = text_event(OWNER, PAIRING_CODE);
+        assert_eq!(
+            bot.handle_pairing_event_payload(&other).await.as_deref(),
+            Some(OWNER)
+        );
     }
 
     #[tokio::test]

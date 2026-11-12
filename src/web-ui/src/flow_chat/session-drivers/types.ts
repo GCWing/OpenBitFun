@@ -22,6 +22,7 @@ import type { SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { LineRange } from '@/shared/editor/LineRange';
 import type { SessionUsageReport } from '@/infrastructure/api/service-api/SessionAPI';
 import type { ProjectDefaultsConfig } from '@/infrastructure/config/types';
+import type { UncertainSubmission, UncertainSubmissionOutcome } from '../services/uncertainSubmission';
 
 export type { SessionDriverId } from './resolve';
 
@@ -50,6 +51,12 @@ export interface SendMessageOptions {
    * Callers should not set this directly.
    */
   bypassPendingQueue?: boolean;
+  /**
+   * The legacy pending-queue item a drain is sending. When the host outcome is
+   * unknown this item keeps the message and its FIFO position: it is removed
+   * once the host confirms the Turn and marked failed otherwise.
+   */
+  pendingQueueItemId?: string;
   /** Use the existing send-now path to steer running work when supported. */
   sendImmediately?: boolean;
   userMessageMetadata?: Record<string, unknown>;
@@ -298,6 +305,13 @@ export interface SessionDriver {
     input: StartTurnInput,
     tracker: TurnTracker,
   ): Promise<StartTurnResult>;
+
+  /** Resolve a lost submission reply using this driver's authoritative state. */
+  confirmUncertainSubmission?(
+    context: FlowChatContext,
+    submission: UncertainSubmission,
+    error: unknown,
+  ): Promise<UncertainSubmissionOutcome> | undefined;
 
   /**
    * Manually compact the session's context. Local sessions call the runtime

@@ -39,6 +39,8 @@ vi.mock('@/infrastructure/api/service-api/MCPAPI', () => ({
 
 vi.mock('@/infrastructure/i18n', () => ({
   i18nService: { t: (key: string) => key },
+  // The image lightbox's copy action.
+  useI18n: () => ({ t: (key: string) => key }),
 }));
 
 vi.mock('@/shared/utils/logger', () => ({

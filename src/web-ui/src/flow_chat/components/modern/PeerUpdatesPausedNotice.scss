@@ -1,0 +1,19 @@
+// Sits in the conversation column above the transcript, so it takes its own
+// row instead of overlaying virtualized content.
+.peer-updates-paused-notice {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--openbitfun-space-3);
+  padding: var(--openbitfun-space-2) var(--openbitfun-space-4);
+  color: var(--openbitfun-color-status-warning-content);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  text-align: center;
+}
+
+.peer-updates-paused-notice__text {
+  min-width: 0;
+}

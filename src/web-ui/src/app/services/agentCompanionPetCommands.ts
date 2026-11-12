@@ -1,4 +1,5 @@
 import { deviceWorkspaceCatalog } from '@/infrastructure/peer-device/deviceWorkspaceCatalog';
+import { markAllSessionsRead } from '@/app/services/markAllSessionsRead';
 import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import { FlowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { FlowChatStore } from '@/flow_chat/store/FlowChatStore';
@@ -24,6 +25,8 @@ export type AgentCompanionPetCommand =
   /** Bubble right-click menu: the user acknowledged this bubble. */
   /** `surfaceId` names a background device that owns the session. */
   | { type: 'dismiss-task'; sessionId: string; surfaceId?: string }
+  /** Bubble right-click menu: mark every session read, like the sidebar view menu. */
+  | { type: 'mark-all-read' }
   /** Bubble composer: send a message straight into the bubble's session. */
   | { type: 'send-message'; sessionId: string; message: string };
 
@@ -107,6 +110,9 @@ export async function handleAgentCompanionPetCommand(
       } else if (command.sessionId) {
         dismissAgentCompanionTask(command.sessionId);
       }
+      return;
+    case 'mark-all-read':
+      markAllSessionsRead();
       return;
     case 'send-message':
       if (command.sessionId) {

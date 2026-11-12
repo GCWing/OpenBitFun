@@ -83,7 +83,11 @@
       "noSessions": "尚無會話",
       "sessionUnavailable": "該裝置上已找不到這個會話。",
       "sessionActionFailed": "無法在另一台裝置上完成此操作，請重試。",
-      "connecting": "正在連線 {{name}}…"
+      "connecting": "正在連線 {{name}}…",
+      "linkReconnecting": "重新連線中",
+      "linkReconnectingLabel": "正在重新連線 {{name}}，其會話可能尚未更新。",
+      "linkStarting": "啟動中",
+      "linkStartingLabel": "{{name}} 上的 OpenBitFun 仍在啟動。"
     },
     "aria": {
       "navControl": "導航控制",
@@ -933,6 +937,8 @@
   },
   "peerConnection": {
     "reconnectingShort": "正在重新連線…",
+    "startingShort": "主機啟動中…",
+    "starting": "「{{name}}」上的 OpenBitFun 仍在啟動，就緒後即可使用。",
     "returnLocalShort": "返回本機",
     "returningShort": "正在返回…",
     "reconnecting": "正在重新連線至「{{name}}」。內容可能尚未更新。"
@@ -2378,6 +2384,8 @@
   },
   "peerHost": {
     "connectionInterrupted": "與裝置的連線中斷了，請重試。",
+    "notResponding": "該裝置沒有回應。請確認該裝置上的 OpenBitFun 正在執行，然後重試。",
+    "starting": "該裝置上的 OpenBitFun 仍在啟動，請稍後再試。",
     "unavailable": "此功能在該裝置上無法使用。",
     "updateRequired": "該裝置上的 OpenBitFun 版本不支援此功能。請嘗試在該裝置上更新 OpenBitFun。",
     "withDetail": "{{message}}（{{detail}}）"

@@ -819,6 +819,14 @@ pub async fn run() {
         .manage(startup_trace.clone())
         .on_page_load(|webview, payload| {
             let label = webview.label();
+            // A reload discards the page's HostInvoke bridge listener without
+            // running its cleanup; until the new page registers again, Peer
+            // requests must be refused as not executed instead of timing out.
+            if label == "main"
+                && matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
+            {
+                api::peer_host_invoke::set_peer_host_bridge_ready(false);
+            }
             if label.starts_with("embedded-browser-view-")
                 || label.starts_with("embedded-browser-panel-view-")
             {
@@ -1532,6 +1540,7 @@ pub async fn run() {
             retry_file_watch,
             get_clipboard_files,
             get_clipboard_image,
+            write_clipboard_image,
             api::browser_file_drop_api::resolve_browser_dropped_file_paths,
             api::file_drop_preview_api::set_file_drop_preview_target,
             paste_files,
@@ -1881,6 +1890,7 @@ pub async fn run() {
             api::pages_api::page_unpublish,
             api::pages_api::page_delete,
             api::peer_host_invoke::peer_host_invoke_complete,
+            api::peer_host_invoke::peer_host_bridge_ready,
             api::peer_host_invoke::peer_control_attach,
             api::peer_host_invoke::peer_control_detach,
             api::peer_host_invoke::peer_mode_ping,

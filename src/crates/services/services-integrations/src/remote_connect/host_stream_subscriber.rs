@@ -133,6 +133,18 @@ pub struct HostStreamSubscriber {
     unsubscribe: Option<Box<dyn FnOnce() + Send>>,
 }
 
+/// Whether the host dropped live events past `cursor`, so returning the
+/// surviving suffix would silently skip them. A fencing host reports what it
+/// evicted (and already moves such a reader to a fresh epoch). Hosts that
+/// predate the fence only mark the stream truncated, which stays set after any
+/// eviction; there the suffix starting past the cursor is the only signal.
+fn evicted_past_cursor(page: &StreamPage, cursor: u64) -> bool {
+    match page.evicted_through {
+        Some(evicted_through) => evicted_through > cursor,
+        None => page.truncated && page.oldest_seq > cursor.saturating_add(1),
+    }
+}
+
 #[derive(Clone)]
 struct Reader {
     transport: Arc<dyn StreamTransport>,
@@ -435,6 +447,15 @@ impl Reader {
                 })
                 .await?;
             if page.epoch != self.epoch {
+                return Ok(false);
+            }
+            if evicted_past_cursor(&page, self.cursor) {
+                log::warn!(
+                    "Host stream evicted records past the reader cursor: session_id={} cursor={} oldest_seq={}",
+                    self.session_id,
+                    self.cursor,
+                    page.oldest_seq
+                );
                 return Ok(false);
             }
             self.emit_page(&page, false)?;
@@ -896,6 +917,7 @@ mod tests {
             cursor: 100,
             oldest_seq: 1,
             truncated: false,
+            evicted_through: None,
             turn_history: None,
         }
     }
@@ -929,6 +951,66 @@ mod tests {
     }
     fn item(id: &str) -> serde_json::Value {
         serde_json::json!({"sessionId":"s","id":format!("item/{id}"),"turn":{"turnId":"one","sessionId":"s","status":"completed"},"round":{"id":"r","turnId":"one"},"item":{"type":"text","data":{"id":id}}})
+    }
+
+    #[tokio::test]
+    async fn legacy_host_eviction_past_the_cursor_is_a_resync_not_a_silent_skip() {
+        let mut evicted = history_page(40, vec![item("late")], false);
+        evicted.truncated = true;
+        evicted.oldest_seq = 40;
+        let mut contiguous = history_page(11, vec![item("next")], false);
+        contiguous.truncated = true;
+        contiguous.oldest_seq = 11;
+        let (mut reader, _, events) = scripted_reader(vec![evicted, contiguous]);
+        reader.epoch = 1;
+        reader.cursor = 10;
+        assert!(!reader.catch_up().await.unwrap());
+        assert!(events.lock().unwrap().is_empty(), "no partial suffix");
+        assert!(reader.catch_up().await.unwrap());
+        assert_eq!(events.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_fencing_host_resyncs_only_for_evictions_past_the_cursor() {
+        // Truncated long ago and its control events past the cursor were
+        // dropped, but no record past the cursor was evicted: keep reading.
+        let mut earlier_eviction = history_page(40, vec![item("late")], false);
+        earlier_eviction.truncated = true;
+        earlier_eviction.oldest_seq = 40;
+        earlier_eviction.evicted_through = Some(5);
+        earlier_eviction.cursor = 40;
+        let mut evicted = history_page(60, vec![item("later")], false);
+        evicted.truncated = true;
+        evicted.oldest_seq = 60;
+        evicted.evicted_through = Some(55);
+        let (mut reader, _, events) = scripted_reader(vec![earlier_eviction, evicted]);
+        reader.epoch = 1;
+        reader.cursor = 10;
+        assert!(reader.catch_up().await.unwrap());
+        assert_eq!(events.lock().unwrap().len(), 1);
+        assert!(!reader.catch_up().await.unwrap(), "evicted past the cursor");
+        assert_eq!(events.lock().unwrap().len(), 1, "no partial suffix");
+    }
+
+    #[test]
+    fn eviction_watermark_is_additive_on_the_wire() {
+        let legacy = parse_stream_page(
+            r#"{"resp":"stream_page","stream_id":"s","epoch":7,"events":[],"has_more":false,"cursor":9,"oldest_seq":4,"truncated":true}"#,
+        )
+        .unwrap();
+        assert_eq!(legacy.evicted_through, None);
+        assert!(evicted_past_cursor(&legacy, 2));
+        assert!(!evicted_past_cursor(&legacy, 3));
+
+        let mut current = legacy.clone();
+        current.evicted_through = Some(0);
+        assert!(!evicted_past_cursor(&current, 2));
+        let wire = serde_json::to_value(&current).unwrap();
+        assert_eq!(wire["evicted_through"], 0);
+        assert!(serde_json::to_value(&legacy)
+            .unwrap()
+            .get("evicted_through")
+            .is_none());
     }
 
     #[tokio::test]

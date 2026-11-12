@@ -88,6 +88,102 @@ pub struct TelegramBot {
     last_update_id: Arc<RwLock<i64>>,
     chat_states: Arc<RwLock<HashMap<i64, BotChatState>>>,
     runtime_fence: BotRuntimeFence,
+    /// Final replies that could not be delivered, resent with the chat's next
+    /// message.
+    held_replies: super::HeldReplies<i64>,
+    /// Why polling stopped for good (revoked token, competing consumer).
+    fatal_error: std::sync::Mutex<Option<String>>,
+}
+
+/// Consecutive 409 conflicts tolerated before polling stops. A replaced
+/// listener's in-flight long poll can conflict briefly during a handover; a
+/// persistent conflict means another consumer or a webhook owns the token.
+const MAX_CONSECUTIVE_CONFLICTS: u32 = 3;
+
+/// Longest wait between polls after transient failures.
+const MAX_POLL_BACKOFF_SECS: u64 = 60;
+
+/// Longest `retry_after` honoured before the next poll.
+const MAX_POLL_RETRY_AFTER_SECS: u64 = 300;
+
+#[derive(Debug, PartialEq, Eq)]
+enum PollErrorAction {
+    Retry(std::time::Duration),
+    /// Stop polling. `notify_chat` is set when the token can still send, so
+    /// the paired chat can be told why the bot went quiet.
+    Stop {
+        reason: String,
+        notify_chat: bool,
+    },
+}
+
+/// Decide how a polling loop reacts to a failed `getUpdates`.
+fn poll_error_action(
+    error: &anyhow::Error,
+    consecutive_failures: u32,
+    consecutive_conflicts: u32,
+) -> PollErrorAction {
+    use openbitfun_services_integrations::remote_connect::bot::telegram::TelegramApiError;
+    match error.downcast_ref::<TelegramApiError>() {
+        Some(TelegramApiError::Unauthorized(description)) => PollErrorAction::Stop {
+            reason: format!(
+                "Telegram rejected the bot token (401: {description}); update the token and restart the bot"
+            ),
+            notify_chat: false,
+        },
+        Some(TelegramApiError::Conflict(description))
+            if consecutive_conflicts >= MAX_CONSECUTIVE_CONFLICTS =>
+        {
+            PollErrorAction::Stop {
+                reason: format!(
+                    "Telegram reports another consumer for this bot token (409: {description}); stop the other instance or remove its webhook, then restart the bot"
+                ),
+                notify_chat: true,
+            }
+        }
+        Some(TelegramApiError::RateLimited {
+            retry_after_secs, ..
+        }) => PollErrorAction::Retry(std::time::Duration::from_secs(
+            (*retry_after_secs).clamp(1, MAX_POLL_RETRY_AFTER_SECS),
+        )),
+        _ => {
+            let factor = 1u64 << consecutive_failures.saturating_sub(1).min(4);
+            PollErrorAction::Retry(std::time::Duration::from_secs(
+                (5 * factor).min(MAX_POLL_BACKOFF_SECS),
+            ))
+        }
+    }
+}
+
+fn is_conflict(error: &anyhow::Error) -> bool {
+    use openbitfun_services_integrations::remote_connect::bot::telegram::TelegramApiError;
+    matches!(
+        error.downcast_ref::<TelegramApiError>(),
+        Some(TelegramApiError::Conflict(_))
+    )
+}
+
+/// Consecutive poll failure counters for one polling loop.
+#[derive(Default)]
+struct PollFailures {
+    failures: u32,
+    conflicts: u32,
+}
+
+impl PollFailures {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn record(&mut self, error: &anyhow::Error) -> PollErrorAction {
+        self.failures = self.failures.saturating_add(1);
+        self.conflicts = if is_conflict(error) {
+            self.conflicts.saturating_add(1)
+        } else {
+            0
+        };
+        poll_error_action(error, self.failures, self.conflicts)
+    }
 }
 
 impl TelegramBot {
@@ -107,7 +203,71 @@ impl TelegramBot {
             last_update_id: Arc::new(RwLock::new(0)),
             chat_states: Arc::new(RwLock::new(HashMap::new())),
             runtime_fence,
+            held_replies: Default::default(),
+            fatal_error: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Why polling stopped permanently, if it did. The listener task has
+    /// ended in that case, so the host reports the bot as stopped.
+    pub fn fatal_error(&self) -> Option<String> {
+        self.fatal_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    /// Record a permanent polling failure: logged once, kept for status, and
+    /// told to the paired chat when the token can still send.
+    async fn stop_polling(&self, reason: String, notify_chat: bool) {
+        error!("Telegram bot stopped polling: {reason}");
+        *self.fatal_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(reason);
+        if !notify_chat || !self.runtime_fence.is_lifecycle_current() {
+            return;
+        }
+        let notice =
+            super::locale::strings_for(current_bot_language().await).telegram_listener_conflict;
+        let chats: Vec<i64> = self
+            .chat_states
+            .read()
+            .await
+            .iter()
+            .filter(|(_, state)| state.paired)
+            .map(|(chat_id, _)| *chat_id)
+            .collect();
+        for chat_id in chats {
+            if let Err(error) = self.send_message(chat_id, notice).await {
+                warn!("Telegram stop notice to {chat_id} failed: {error}");
+            }
+        }
+    }
+
+    /// Wait `delay`, or return true if a stop was requested meanwhile.
+    async fn sleep_or_stop(
+        delay: std::time::Duration,
+        stop_rx: &mut tokio::sync::watch::Receiver<bool>,
+    ) -> bool {
+        tokio::select! {
+            _ = tokio::time::sleep(delay) => *stop_rx.borrow(),
+            _ = stop_rx.changed() => true,
+        }
+    }
+
+    async fn deliver_final_reply(&self, chat_id: i64, text: &str) {
+        super::deliver_final_reply(&self.held_replies, &chat_id, text, |text| async move {
+            if !super::chat_is_paired(&self.chat_states, &chat_id).await {
+                return Ok(());
+            }
+            self.api.send_message(chat_id, &text).await
+        })
+        .await;
+    }
+
+    async fn resend_held_replies(&self, chat_id: i64) {
+        super::resend_held_replies(&self.held_replies, &chat_id, |text| async move {
+            self.api.send_message(chat_id, &text).await
+        })
+        .await;
     }
 
     /// Restore a previously paired chat so the bot skips the pairing step.
@@ -133,6 +293,8 @@ impl TelegramBot {
         {
             Ok(mut states) => {
                 self.runtime_fence.clear_states(&mut states);
+                // Held replies belong to the previous account's sessions.
+                self.held_replies.clear();
                 let snapshots: Vec<_> = states
                     .iter()
                     .map(|(chat_id, state)| (*chat_id, state.clone()))
@@ -229,15 +391,16 @@ impl TelegramBot {
     }
 
     /// Send a `HandleResult`, using an inline keyboard when actions are present.
+    /// Returns false when the chat did not receive it.
     ///
     /// For the "Processing your message…" reply the cancel command line in the
     /// text is replaced with a friendlier prompt, and a Cancel Task button is
     /// added via the inline keyboard.
-    async fn send_handle_result(&self, chat_id: i64, result: &HandleResult) {
+    async fn send_handle_result(&self, chat_id: i64, result: &HandleResult) -> bool {
         if !self.runtime_fence.is_lifecycle_current()
             || !super::chat_is_paired(&self.chat_states, &chat_id).await
         {
-            return;
+            return true;
         }
         let text = if result.menu.items.is_empty() && result.menu.title.is_empty() {
             result.reply.clone()
@@ -248,11 +411,12 @@ impl TelegramBot {
         // `handle_chat`) must not be sent — Telegram rejects empty bodies
         // and a lone whitespace message is just noise to the user.
         if text.trim().is_empty() {
-            return;
+            return true;
         }
         if result.actions.is_empty() {
             if let Err(e) = self.send_message(chat_id, &text).await {
                 warn!("Failed to send Telegram message to {chat_id}: {e}");
+                return false;
             }
         } else if let Err(e) = self
             .send_message_with_keyboard(chat_id, &text, &result.actions)
@@ -261,8 +425,10 @@ impl TelegramBot {
             warn!("Failed to send Telegram keyboard message: {e}; falling back to plain text");
             if let Err(e2) = self.send_message(chat_id, &result.reply).await {
                 warn!("Telegram fallback plain send to {chat_id} also failed: {e2}");
+                return false;
             }
         }
+        true
     }
 
     /// Register the bot command menu visible in Telegram's "/" menu.
@@ -346,6 +512,7 @@ impl TelegramBot {
         stop_rx: &mut tokio::sync::watch::Receiver<bool>,
     ) -> Result<i64> {
         info!("Telegram bot waiting for pairing code...");
+        let mut failures = PollFailures::default();
         loop {
             if *stop_rx.borrow() {
                 return Err(anyhow!("bot stop requested"));
@@ -359,6 +526,7 @@ impl TelegramBot {
             };
             match poll_result {
                 Ok(messages) => {
+                    failures.reset();
                     for (chat_id, text, _images) in messages {
                         if *stop_rx.borrow() || !self.runtime_fence.is_lifecycle_current() {
                             return Err(anyhow!("bot lifecycle replaced during pairing"));
@@ -368,10 +536,21 @@ impl TelegramBot {
                         }
                     }
                 }
-                Err(e) => {
-                    error!("Telegram poll error: {e}");
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                }
+                Err(e) => match failures.record(&e) {
+                    PollErrorAction::Retry(delay) => {
+                        warn!(
+                            "Telegram poll error while pairing, retrying in {}s: {e}",
+                            delay.as_secs()
+                        );
+                        if Self::sleep_or_stop(delay, stop_rx).await {
+                            return Err(anyhow!("bot stop requested"));
+                        }
+                    }
+                    PollErrorAction::Stop { reason, .. } => {
+                        self.stop_polling(reason.clone(), false).await;
+                        return Err(anyhow!(reason));
+                    }
+                },
             }
         }
     }
@@ -381,6 +560,7 @@ impl TelegramBot {
     pub async fn run_message_loop(self: Arc<Self>, stop_rx: tokio::sync::watch::Receiver<bool>) {
         info!("Telegram bot message loop started");
         let mut stop = stop_rx;
+        let mut failures = PollFailures::default();
 
         loop {
             if *stop.borrow() {
@@ -398,6 +578,7 @@ impl TelegramBot {
 
             match poll_result {
                 Ok(messages) => {
+                    failures.reset();
                     for (chat_id, text, images) in messages {
                         let bot = self.clone();
                         tokio::spawn(async move {
@@ -405,10 +586,25 @@ impl TelegramBot {
                         });
                     }
                 }
-                Err(e) => {
-                    error!("Telegram poll error in message loop: {e}");
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                }
+                Err(e) => match failures.record(&e) {
+                    PollErrorAction::Retry(delay) => {
+                        warn!(
+                            "Telegram poll error in message loop, retrying in {}s: {e}",
+                            delay.as_secs()
+                        );
+                        if Self::sleep_or_stop(delay, &mut stop).await {
+                            info!("Telegram bot message loop stopped by signal");
+                            break;
+                        }
+                    }
+                    PollErrorAction::Stop {
+                        reason,
+                        notify_chat,
+                    } => {
+                        self.stop_polling(reason, notify_chat).await;
+                        break;
+                    }
+                },
             }
         }
     }
@@ -421,6 +617,21 @@ impl TelegramBot {
     ) {
         if !self.runtime_fence.is_lifecycle_current() {
             return;
+        }
+        if super::chat_is_paired(&self.chat_states, &chat_id).await
+            && !self.held_replies.is_empty(&chat_id)
+        {
+            // Resend in the background: a held reply under provider backoff
+            // must not delay handling this message.
+            let bot = self.clone();
+            let epoch = self.runtime_fence.identity_epoch();
+            tokio::spawn(async move {
+                if bot.runtime_fence.is_lifecycle_current()
+                    && bot.runtime_fence.identity_epoch() == epoch
+                {
+                    bot.resend_held_replies(chat_id).await;
+                }
+            });
         }
         let mut states = self.chat_states.write().await;
         let command_identity_epoch = self.runtime_fence.identity_epoch();
@@ -511,7 +722,7 @@ impl TelegramBot {
                         .await;
                 }
                 if !result.display_text.is_empty() {
-                    bot.send_message(chat_id, &result.display_text).await.ok();
+                    bot.deliver_final_reply(chat_id, &result.display_text).await;
                 }
                 bot.notify_files_ready(
                     chat_id,
@@ -549,12 +760,17 @@ impl TelegramBot {
         drop(states);
 
         let result = HandleResult {
-            reply: interaction.reply,
-            actions: interaction.actions,
+            reply: interaction.reply.clone(),
+            actions: interaction.actions.clone(),
             forward_to_session: None,
-            menu: interaction.menu,
+            menu: interaction.menu.clone(),
         };
-        self.send_handle_result(chat_id, &result).await;
+        if !self.send_handle_result(chat_id, &result).await {
+            // Re-sent by the turn watcher's next re-presentation.
+            if let Some(state) = self.chat_states.write().await.get_mut(&chat_id) {
+                super::command_router::mark_interaction_undelivered(state, &interaction);
+            }
+        }
     }
 
     async fn persist_chat_state(&self, chat_id: i64, state: &BotChatState) {
@@ -682,6 +898,69 @@ mod tests {
                 None => std::future::pending().await,
             }
         }
+    }
+
+    #[test]
+    fn poll_failures_back_off_honour_retry_after_and_stop_on_fatal_errors() {
+        use openbitfun_services_integrations::remote_connect::bot::telegram::TelegramApiError;
+        let api = |error: TelegramApiError| anyhow::Error::new(error);
+        let mut failures = PollFailures::default();
+
+        let transient = anyhow!("connection reset");
+        let waits: Vec<u64> = (0..6)
+            .map(|_| match failures.record(&transient) {
+                PollErrorAction::Retry(delay) => delay.as_secs(),
+                stop => panic!("transient error must retry: {stop:?}"),
+            })
+            .collect();
+        assert_eq!(waits, [5, 10, 20, 40, 60, 60]);
+        failures.reset();
+
+        assert_eq!(
+            failures.record(&api(TelegramApiError::RateLimited {
+                retry_after_secs: 17,
+                description: String::new(),
+            })),
+            PollErrorAction::Retry(std::time::Duration::from_secs(17))
+        );
+
+        let conflict = || api(TelegramApiError::Conflict("terminated".into()));
+        assert!(matches!(
+            failures.record(&conflict()),
+            PollErrorAction::Retry(_)
+        ));
+        assert!(matches!(
+            failures.record(&conflict()),
+            PollErrorAction::Retry(_)
+        ));
+        assert!(matches!(
+            failures.record(&conflict()),
+            PollErrorAction::Stop {
+                notify_chat: true,
+                ..
+            }
+        ));
+
+        failures.reset();
+        assert!(matches!(
+            failures.record(&api(TelegramApiError::Unauthorized("Unauthorized".into()))),
+            PollErrorAction::Stop {
+                notify_chat: false,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn conflict_stop_records_state_and_tells_the_paired_chat() {
+        let (fake, bot) = connected_bot().await;
+        bot.stop_polling("conflict".into(), true).await;
+        assert_eq!(bot.fatal_error().as_deref(), Some("conflict"));
+        assert!(matches!(
+            fake.sent_to(OWNER).last(),
+            Some(Sent::Text { .. })
+        ));
+        assert!(fake.sent_to(STRANGER).is_empty());
     }
 
     fn fake_bot() -> (Arc<FakeTelegram>, Arc<TelegramBot>) {

@@ -1259,7 +1259,8 @@ pub async fn status(
         connection_id,
         &json!({ "jobId": request.job_id, "cursor": request.cursor }),
     )
-    .await?;
+    .await
+    .map_err(|error| super::classify_target_status_error(&request.job_id, error))?;
     if let Err(error) = store.acknowledge_preparation(&record.job_id).await {
         log::warn!(
             "Failed to remove dispatch preparation after status confirmation: job_id={} error={}",

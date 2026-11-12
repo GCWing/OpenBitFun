@@ -8888,6 +8888,23 @@ describe('FlowChatStore device surfaces', () => {
       expect(getSubmittedMessagePreviews(scope, 'peer-preview')).toEqual([]);
     });
 
+    it('prunes turns the host no longer has when resynced after an unknown mutation', async () => {
+      await openPeerSession('peer-unknown-rollback', 3);
+      const subscriptions = apiMocks.subscribeRelaySession.mock.calls.length;
+      // The host ran the rollback; its stream sends no tombstones for it.
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord('peer-unknown-rollback', 0, 0, 1));
+        apiMocks.relayReady?.({ sessionId: 'peer-unknown-rollback', hasMore: false, oldestSeq: 1, cursor: 1 });
+        return 'peer-unknown-rollback-resync';
+      });
+
+      await flowChatStore.resyncRelaySessionFromHost('peer-unknown-rollback');
+
+      expect(apiMocks.subscribeRelaySession).toHaveBeenCalledTimes(subscriptions + 1);
+      expect(turnIds('peer-unknown-rollback')).toEqual(['turn-0']);
+      expect(flowChatStore.getState().sessions.get('peer-unknown-rollback')!.historyState).toBe('ready');
+    });
+
     it('keeps rendered turns for a host-appended gap without a replay', async () => {
       await openPeerSession('peer-source-gap', 2);
 

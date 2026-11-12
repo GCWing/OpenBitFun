@@ -54,6 +54,90 @@ pub struct FeishuBotApi {
 /// Feishu IM file-upload hard limit (30 MB).
 pub const MAX_FEISHU_FILE_BYTES: u64 = 30 * 1024 * 1024;
 
+/// Bytes of markdown per reply card. Feishu caps an interactive message body
+/// at 30 KB of JSON; JSON escaping can double the content, so stay well below.
+const MAX_FEISHU_TEXT_CHUNK: usize = 10_000;
+
+/// Open-platform codes that mean "slow down" rather than "rejected".
+const FEISHU_RATE_LIMIT_CODES: [i64; 2] = [99991400, 230020];
+
+/// How long a delivered event id is remembered for redelivery suppression.
+const FEISHU_EVENT_DEDUP_TTL: std::time::Duration = std::time::Duration::from_secs(12 * 60 * 60);
+/// Bound on remembered event ids; the oldest are forgotten first.
+const FEISHU_EVENT_DEDUP_CAPACITY: usize = 4096;
+
+/// Stable identity of a Feishu event for redelivery suppression: the
+/// envelope `event_id`, else the message id of a message event.
+pub fn event_dedup_key(event: &serde_json::Value) -> Option<String> {
+    event
+        .pointer("/header/event_id")
+        .and_then(|value| value.as_str())
+        .filter(|id| !id.is_empty())
+        .map(|id| format!("event:{id}"))
+        .or_else(|| {
+            event
+                .pointer("/event/message/message_id")
+                .and_then(|value| value.as_str())
+                .filter(|id| !id.is_empty())
+                .map(|id| format!("message:{id}"))
+        })
+}
+
+/// Bounded, TTL'd set of Feishu events already dispatched.
+///
+/// Feishu redelivers an event whose acknowledgement it did not receive (for
+/// example when the socket dropped right after delivery), which would
+/// otherwise run the same command or chat turn twice. The set lives in memory
+/// for the bot instance: redelivery happens within minutes to hours of the
+/// original, the bot has no per-bot persistence for provider event state, and
+/// a restart already reconnects with a fresh subscription.
+pub struct FeishuEventDeduper {
+    seen: std::sync::Mutex<(
+        std::collections::HashSet<String>,
+        std::collections::VecDeque<(std::time::Instant, String)>,
+    )>,
+    ttl: std::time::Duration,
+    capacity: usize,
+}
+
+impl Default for FeishuEventDeduper {
+    fn default() -> Self {
+        Self::new(FEISHU_EVENT_DEDUP_TTL, FEISHU_EVENT_DEDUP_CAPACITY)
+    }
+}
+
+impl FeishuEventDeduper {
+    pub fn new(ttl: std::time::Duration, capacity: usize) -> Self {
+        Self {
+            seen: std::sync::Mutex::new(Default::default()),
+            ttl,
+            capacity: capacity.max(1),
+        }
+    }
+
+    /// Record `key`; returns false when it was already seen within the TTL.
+    pub fn first_delivery(&self, key: &str) -> bool {
+        let mut guard = self.seen.lock().unwrap_or_else(|p| p.into_inner());
+        let (ids, order) = &mut *guard;
+        while order.front().is_some_and(|(at, _)| at.elapsed() > self.ttl) {
+            if let Some((_, id)) = order.pop_front() {
+                ids.remove(&id);
+            }
+        }
+        if ids.contains(key) {
+            return false;
+        }
+        while order.len() >= self.capacity {
+            if let Some((_, id)) = order.pop_front() {
+                ids.remove(&id);
+            }
+        }
+        ids.insert(key.to_string());
+        order.push_back((std::time::Instant::now(), key.to_string()));
+        true
+    }
+}
+
 impl FeishuBotApi {
     pub fn new(config: FeishuConfig) -> Self {
         Self {
@@ -109,7 +193,21 @@ impl FeishuBotApi {
         Ok(access_token)
     }
 
+    /// Send `content` as one or more markdown cards. Long replies are split
+    /// like the other providers; each part is retried with backoff and the
+    /// error on final failure is a [`super::delivery::UndeliveredText`].
     pub async fn send_message(&self, chat_id: &str, content: &str) -> Result<()> {
+        super::delivery::send_chunks(
+            super::delivery::chunk_text(content, MAX_FEISHU_TEXT_CHUNK),
+            &super::delivery::RetryPolicy::default(),
+            |chunk| async move { self.send_markdown_card(chat_id, &chunk).await },
+        )
+        .await?;
+        debug!("Feishu message sent to {chat_id}");
+        Ok(())
+    }
+
+    async fn send_markdown_card(&self, chat_id: &str, content: &str) -> Result<()> {
         let token = self.get_access_token().await?;
         let card = build_markdown_card(content);
         let client = crate::reqwest_client();
@@ -128,7 +226,16 @@ impl FeishuBotApi {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         if !status.is_success() {
-            return Err(anyhow!("feishu send_message HTTP {status}: {body}"));
+            return Err(anyhow::Error::new(
+                super::delivery::SendFailure::from_status(
+                    status.as_u16(),
+                    None,
+                    format!(
+                        "feishu send_message HTTP {status}: {}",
+                        truncate_for_error(&body, 200)
+                    ),
+                ),
+            ));
         }
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body) {
             if let Some(code) = parsed.get("code").and_then(|c| c.as_i64()) {
@@ -138,13 +245,17 @@ impl FeishuBotApi {
                         .and_then(|m| m.as_str())
                         .unwrap_or("unknown");
                     warn!("Feishu send_message API error: code={code}, msg={msg}");
-                    return Err(anyhow!(
-                        "feishu send_message API error: code={code}, msg={msg}"
+                    let message = format!("feishu send_message API error: code={code}, msg={msg}");
+                    return Err(anyhow::Error::new(
+                        if FEISHU_RATE_LIMIT_CODES.contains(&code) {
+                            super::delivery::SendFailure::from_status(429, None, message)
+                        } else {
+                            super::delivery::SendFailure::permanent(message)
+                        },
                     ));
                 }
             }
         }
-        debug!("Feishu message sent to {chat_id}");
         Ok(())
     }
 
@@ -415,6 +526,7 @@ impl FeishuBotApi {
         Ok(FeishuWsConnection {
             write: Arc::new(RwLock::new(write)),
             read,
+            last_read: std::time::Instant::now(),
         })
     }
 }
@@ -433,12 +545,25 @@ impl FeishuWsEvent {
 pub struct FeishuWsConnection {
     write: Arc<RwLock<FeishuWsWrite>>,
     read: futures::stream::SplitStream<FeishuWsStream>,
+    /// When the socket last produced any frame (data, control or ping).
+    last_read: std::time::Instant,
 }
 
 impl FeishuWsConnection {
+    /// Time since the server last sent anything. The server answers every
+    /// client ping, so a socket silent for well over a ping interval is
+    /// half-open (typically after the host slept) and must be replaced.
+    pub fn idle_for(&self) -> std::time::Duration {
+        self.last_read.elapsed()
+    }
+
     async fn next_frame(&mut self) -> Result<Option<FeishuFrame>> {
         loop {
-            match self.read.next().await {
+            let message = self.read.next().await;
+            if matches!(message, Some(Ok(_))) {
+                self.last_read = std::time::Instant::now();
+            }
+            match message {
                 Some(Ok(WsMessage::Binary(data))) => {
                     if let Some(frame) = decode_frame(&data) {
                         return Ok(Some(frame));
@@ -1095,6 +1220,31 @@ fn encode_frame(frame: &FeishuFrame) -> Vec<u8> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn redelivered_events_are_suppressed_within_a_bounded_window() {
+        let event = serde_json::json!({
+            "header": {"event_id": "ev-1", "event_type": "im.message.receive_v1"},
+            "event": {"message": {"message_id": "om-1"}}
+        });
+        assert_eq!(event_dedup_key(&event).as_deref(), Some("event:ev-1"));
+        let legacy = serde_json::json!({"event": {"message": {"message_id": "om-2"}}});
+        assert_eq!(event_dedup_key(&legacy).as_deref(), Some("message:om-2"));
+        assert_eq!(event_dedup_key(&serde_json::json!({})), None);
+
+        let deduper = FeishuEventDeduper::new(std::time::Duration::from_secs(60), 2);
+        assert!(deduper.first_delivery("event:ev-1"));
+        assert!(!deduper.first_delivery("event:ev-1"));
+        assert!(deduper.first_delivery("event:ev-2"));
+        // Capacity evicts the oldest id instead of growing without bound.
+        assert!(deduper.first_delivery("event:ev-3"));
+        assert!(deduper.first_delivery("event:ev-1"));
+        assert!(!deduper.first_delivery("event:ev-3"));
+
+        let expiring = FeishuEventDeduper::new(std::time::Duration::ZERO, 8);
+        assert!(expiring.first_delivery("event:ev-4"));
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        assert!(expiring.first_delivery("event:ev-4"));
+    }
     #[test]
     fn artifact_delivery_checks_provider_success_even_for_http_success() {
         assert!(ensure_feishu_success(&serde_json::json!({"code": 0}), "image message").is_ok());

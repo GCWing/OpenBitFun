@@ -14,10 +14,19 @@ const log = createLogger('RelaySessionHistory');
 const RECORD_FLUSH_DELAY_MS = 16;
 
 /**
- * How long opening may wait for the host's first page. Past it, opening fails
- * with a retryable error instead of parking the surface in hydration.
+ * How long opening may wait for the host's first page once the subscription
+ * was granted. Past it, opening fails with a retryable error instead of
+ * parking the surface in hydration.
  */
 const FIRST_PAGE_TIMEOUT_MS = 15_000;
+
+/**
+ * How long the subscribe request itself may take. On a large session or a slow
+ * relay the grant can legitimately use the whole relay RPC budget (120 s), and
+ * a retry would only wait for the same grant again, so the first-page deadline
+ * starts after the grant. The ceiling still ends a grant the host never sends.
+ */
+const SUBSCRIBE_GRANT_TIMEOUT_MS = 130_000;
 
 /** The host did not deliver the first page in time; retrying opens a fresh read. */
 export class RelayHistoryFirstPageOverdueError extends Error {
@@ -304,26 +313,46 @@ export class RelaySessionHistory {
     if (this.resumeInteraction) void this.resumeInteraction().catch(error => {
       log.warn('Session interaction mailbox refresh failed', { sessionId: this.sessionId, error });
     });
+    // Each phase has a deadline, including a subscribe request the host never
+    // answers; otherwise a stalled grant parks hydration forever.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const deadline = (ms: number) => {
+      if (timer !== null) clearTimeout(timer);
+      return new Promise<'overdue'>(resolve => { timer = setTimeout(() => resolve('overdue'), ms); });
+    };
     try {
       // A stream warmed by the click: what it buffered is applied first, in order.
       const warm = this.warm;
       if (warm) for (const event of warm.events.splice(0)) this.handlers[event.kind]?.(event.value);
-      const id = warm
-        ? await warm.subscription.catch(() => remoteConnectAPI.subscribeSession(this.scope.surfaceId, this.sessionId))
-        : await remoteConnectAPI.subscribeSession(this.scope.surfaceId, this.sessionId);
+      const subscribing = warm
+        ? warm.subscription.catch(() => remoteConnectAPI.subscribeSession(this.scope.surfaceId, this.sessionId))
+        : remoteConnectAPI.subscribeSession(this.scope.surfaceId, this.sessionId);
+      const granted = await Promise.race([subscribing.then(id => ({ id })), deadline(SUBSCRIBE_GRANT_TIMEOUT_MS)]);
+      if (granted === 'overdue') {
+        // The grant may still arrive; release it so the host lease does not leak.
+        void subscribing.then(
+          id => remoteConnectAPI.unsubscribeSession(id),
+          () => undefined,
+        ).catch(error => log.warn('Session unsubscribe failed', { error }));
+        this.firstPageOverdue();
+      }
+      const id = granted.id;
       if (!this.isCurrent()) {
         await remoteConnectAPI.unsubscribeSession(id);
         this.scope.assertCurrent('finish opening relay session history');
         throw new Error('Session subscription is closed');
       }
       this.subscriptionId = id;
+      const overdue = deadline(FIRST_PAGE_TIMEOUT_MS);
       for (const event of this.pendingOwnedEvents.splice(0)) this.handlers[event.kind]?.(event.value);
-      await this.waitForFirstPage();
+      await this.waitForFirstPage(overdue);
       this.scheduleHistoryPrefetch();
     } catch (error) {
       this.rejectReady(error);
       this.close();
       throw error;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
     }
   }
 
@@ -333,17 +362,13 @@ export class RelaySessionHistory {
    * stay rendered, the interaction mailbox is read directly so a blocking
    * question stays answerable, and opening fails with a retryable error.
    */
-  private async waitForFirstPage(): Promise<void> {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const overdue = new Promise<'overdue'>(resolve => {
-      timer = setTimeout(() => resolve('overdue'), FIRST_PAGE_TIMEOUT_MS);
-    });
-    try {
-      const outcome = await Promise.race([this.firstPage.then(() => 'ready' as const), overdue]);
-      if (outcome === 'ready') return;
-    } finally {
-      if (timer !== null) clearTimeout(timer);
-    }
+  private async waitForFirstPage(overdue: Promise<'overdue'>): Promise<void> {
+    const outcome = await Promise.race([this.firstPage.then(() => 'ready' as const), overdue]);
+    if (outcome === 'ready') return;
+    this.firstPageOverdue();
+  }
+
+  private firstPageOverdue(): never {
     const error = new RelayHistoryFirstPageOverdueError(this.sessionId);
     if (!this.isCurrent()) throw error;
     log.warn('Relay session first page overdue; failing the open as retryable', { sessionId: this.sessionId });

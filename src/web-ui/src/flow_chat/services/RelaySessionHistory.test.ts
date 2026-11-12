@@ -249,6 +249,59 @@ describe('RelaySessionHistory', () => {
     expect(fixture.ready).toBeNull();
   });
 
+  it('fails as overdue when the subscribe request itself never answers, and releases a late grant', async () => {
+    vi.useFakeTimers();
+    let grant!: (id: string) => void;
+    fixture.subscribe.mockImplementationOnce(() => new Promise<string>(resolve => { grant = resolve; }));
+    const error = vi.fn();
+    const ready = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), ready, error, async () => {});
+    const outcome = expect(history.open()).rejects.toMatchObject({
+      name: 'RelayHistoryFirstPageOverdueError', retryable: true,
+    });
+    // A slow grant is not a stalled first page: it may use the relay RPC budget.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(error).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await outcome;
+    expect(error).toHaveBeenCalledOnce();
+    expect(ready).not.toHaveBeenCalled();
+    expect(fixture.unsubscribe).not.toHaveBeenCalled();
+    grant('late-subscription');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fixture.unsubscribe).toHaveBeenCalledExactlyOnceWith('late-subscription');
+  });
+
+  it('adopts a slow grant and starts the first-page deadline only after it', async () => {
+    vi.useFakeTimers();
+    let grant!: (id: string) => void;
+    fixture.subscribe.mockImplementationOnce(() => new Promise<string>(resolve => { grant = resolve; }));
+    const ready = vi.fn();
+    const error = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), ready, error, async () => {});
+    const opening = history.open();
+    await vi.advanceTimersByTimeAsync(60_000);
+    grant('slow-subscription');
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(error).not.toHaveBeenCalled();
+    fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 3 });
+    await opening;
+    expect(ready).toHaveBeenCalledOnce();
+    expect(fixture.unsubscribe).not.toHaveBeenCalled();
+
+    // The page deadline still applies after a slow grant.
+    let lateGrant!: (id: string) => void;
+    fixture.subscribe.mockImplementationOnce(() => new Promise<string>(resolve => { lateGrant = resolve; }));
+    const stalled = new RelaySessionHistory('session-b', vi.fn(), vi.fn(), vi.fn(), async () => {});
+    const stalledOutcome = expect(stalled.open()).rejects.toMatchObject({ name: 'RelayHistoryFirstPageOverdueError' });
+    await vi.advanceTimersByTimeAsync(60_000);
+    lateGrant('stalled-subscription');
+    await vi.advanceTimersByTimeAsync(15_000);
+    await stalledOutcome;
+    expect(fixture.unsubscribe).toHaveBeenCalledWith('stalled-subscription');
+    history.close();
+  });
+
   it('keeps a first page that arrives before the deadline and clears the deadline', async () => {
     vi.useFakeTimers();
     fixture.subscribe.mockResolvedValueOnce('subscription');

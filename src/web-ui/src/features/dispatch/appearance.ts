@@ -12,5 +12,5 @@ export const dispatchResultDialogAppearanceDescriptor: AppearanceSurfaceDescript
 
 export const dispatchTargetPickerAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'dispatch-target-picker',
-  parts: [{ id: 'root' }, { id: 'trigger' }, { id: 'menu' }, { id: 'option' }],
+  parts: [{ id: 'root' }, { id: 'trigger' }, { id: 'menu' }, { id: 'option' }, { id: 'transport' }],
 };

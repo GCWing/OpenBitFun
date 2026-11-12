@@ -83,7 +83,11 @@
       "noSessions": "No sessions yet",
       "sessionUnavailable": "This session is no longer on that device.",
       "sessionActionFailed": "Couldn't do that on the other device. Try again.",
-      "connecting": "Connecting to {{name}}…"
+      "connecting": "Connecting to {{name}}…",
+      "linkReconnecting": "Reconnecting",
+      "linkReconnectingLabel": "Reconnecting to {{name}}. Its sessions may be out of date.",
+      "linkStarting": "Starting",
+      "linkStartingLabel": "{{name}} is still starting OpenBitFun."
     },
     "aria": {
       "navControl": "Navigation controls",
@@ -933,6 +937,8 @@
   },
   "peerConnection": {
     "reconnectingShort": "Reconnecting…",
+    "startingShort": "Host starting…",
+    "starting": "{{name}} is still starting OpenBitFun. Requests will work once it is ready.",
     "returnLocalShort": "Go local",
     "returningShort": "Returning…",
     "reconnecting": "Reconnecting to {{name}}. Content may be out of date."
@@ -2378,6 +2384,8 @@
   },
   "peerHost": {
     "connectionInterrupted": "The connection to the device was interrupted. Try again.",
+    "notResponding": "That device is not responding. Check that OpenBitFun is running there, then try again.",
+    "starting": "OpenBitFun on that device is still starting. Try again in a moment.",
     "unavailable": "This feature is not available on that device.",
     "updateRequired": "The OpenBitFun version on that device does not support this feature. Try updating OpenBitFun on that device.",
     "withDetail": "{{message}} ({{detail}})"

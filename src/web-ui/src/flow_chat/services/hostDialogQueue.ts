@@ -54,6 +54,11 @@ export function hostDialogQueue(sessionId: string): HostDialogQueue {
         if (intent) finishSubmittedMessageScrollIntent(intent);
         throw error;
       }
+    }, undefined, {
+      resolveUnconfirmed: true,
+      // Only the surface this client belongs to can vouch for its transcript.
+      hasTurn: turnId => scope.isCurrent() && FlowChatStore.getInstance().getState().sessions
+        .get(sessionId)?.dialogTurns.some(turn => turn.id === turnId) === true,
     });
     clients.set(key, client);
   }

@@ -24,6 +24,7 @@ import {
   isLocalSurface,
   isSurfaceChangedError,
   type DeviceSurfaceId,
+  type SurfaceScope,
 } from '@/infrastructure/peer-device/deviceSurface';
 import type { FlowChatContext } from './types';
 import { isProjectedSessionEmpty } from '../../utils/flowChatTurnIdentity';
@@ -35,11 +36,11 @@ import {
   isRuntimeSessionProjectionStale,
   subscribeRuntimeSessionAttachmentFinished,
 } from '@/infrastructure/peer-device/runtimeSessionEventGate';
-import { isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandError';
+import { isOutcomeUnknownError, isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandError';
 import { i18nService } from '@/infrastructure/i18n';
 import { driverForSession } from '../../session-drivers/registry';
 import { assertSessionConversationCanSubmit, getSessionConversationCapability } from '../../session-drivers/conversationCapability';
-import type { SendMessageOptions, SubmissionDraft, TurnTracker } from '../../session-drivers/types';
+import type { SendMessageOptions, SessionDriver, StartTurnResult, SubmissionDraft, TurnTracker } from '../../session-drivers/types';
 import { assertSessionSubmissionAllowed } from '../../store/sessionMutationStore';
 import { hasInterruptedTurnHoldingQueue } from '../../utils/interruptedTurnRecovery';
 import { interruptedTurnRecoveryGate } from '../interruptedTurnRecoveryGate';
@@ -57,6 +58,12 @@ import { finishSubmittedMessageScrollIntent, peekSubmittedMessageScrollIntent } 
 import { FLOWCHAT_MESSAGE_SUBMITTED_EVENT } from '../../events/flowchatNavigation';
 import { forkChatSession } from './SessionModule';
 import { viewedExternalForkTurn } from '../../utils/externalHistory';
+import {
+  confirmUncertainPeerSubmission,
+  isAdmittedTurnRefusal,
+  isUncertainDispatchSubmitFailure,
+  type UncertainSubmission,
+} from '../uncertainSubmission';
 
 export { syncSessionModelSelection } from '../../utils/modelSync';
 export { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
@@ -130,11 +137,73 @@ export function inFlightSubmissionCount(): number {
   return inFlightSubmissions;
 }
 
-/** The retained queue item owns recovery after its device stops being rendered. */
+/**
+ * The retained queue item owns recovery: its device stopped being rendered, or
+ * the host outcome is unknown and the item settles once the host confirms it.
+ */
 class RetiredQueueSubmission extends Error {
   constructor(readonly outcomeUnknown: boolean) {
-    super('Queued submission outlived its device surface');
+    super('Queued submission retained for recovery');
   }
+}
+
+/**
+ * The host accepted a draft's first Turn: the session is real from now on.
+ * When `turnId` is given, only the draft that reserved it is cleared.
+ */
+async function adoptAcceptedDraft(
+  context: FlowChatContext,
+  scope: SurfaceScope,
+  sessionId: string,
+  turnId?: string,
+): Promise<void> {
+  if (!scope.isCurrent()) return;
+  let cleared = false;
+  context.flowChatStore.setState(state => {
+    const current = state.sessions.get(sessionId);
+    if (!current?.draft || (turnId !== undefined && current.draft.turnId !== turnId)) return state;
+    cleared = true;
+    return { ...state, sessions: new Map(state.sessions).set(sessionId, { ...current, draft: undefined }) };
+  });
+  if (!cleared && turnId !== undefined) return;
+  // Navigation failure cannot undo an accepted message or cause it to be resent.
+  try {
+    const { activateMainSession } = await import('../sessionActivation');
+    if (scope.isCurrent() && context.flowChatStore.getState().activeSessionId === sessionId) {
+      await activateMainSession(sessionId, { isCurrent: () => scope.isCurrent()
+        && context.flowChatStore.getState().activeSessionId === sessionId });
+    }
+  } catch (error) {
+    log.warn('Accepted draft could not activate its workspace', { sessionId, error });
+  }
+}
+
+/**
+ * A retry of a Turn whose earlier attempt the host admitted (its reply was
+ * lost) is refused as a duplicate Turn id. That refusal proves delivery: keep
+ * the Turn and let the host's records settle it. The re-read replaces a
+ * replica that may already hold the Turn's revision, so a Turn that finished
+ * meanwhile settles instead of staying pending. Device surfaces only: their
+ * submissions are the ones with an unknown outcome.
+ */
+function acceptAdmittedTurnRefusal(
+  context: FlowChatContext,
+  scope: SurfaceScope,
+  sessionId: string,
+  turnTracker: TurnTracker,
+  error: unknown,
+): boolean {
+  const turnId = turnTracker.createdLocalTurnId;
+  if (!turnId || !turnTracker.hostSubmitStarted || turnTracker.hostAcceptedTurn
+    || isLocalSurface(scope.surfaceId) || !scope.isCurrent() || !isAdmittedTurnRefusal(error, turnId)) {
+    return false;
+  }
+  log.info('Host already holds the retried Turn; treating it as delivered', { sessionId, turnId });
+  turnTracker.hostAcceptedTurn = true;
+  void context.flowChatStore.reloadRelaySessionFromHost(sessionId).catch(reloadError => {
+    log.warn('Failed to re-read a session after a duplicate Turn refusal', { sessionId, turnId, error: reloadError });
+  });
+  return true;
 }
 
 /**
@@ -537,6 +606,9 @@ async function sendMessageInternal(
   const surfaceIdAtSend = surfaceScopeAtSend.surfaceId;
   const draftSubmissionKey = session.draft ? surfaceScopeAtSend.key('draft-submit', sessionId) : undefined;
   let previewTurnId: string | undefined;
+  let submittingDriver: SessionDriver | undefined;
+  /** The draft Turn id this submission materializes, if it is a draft's first message. */
+  let submittedDraftTurnId: string | undefined;
   if (draftSubmissionKey) {
     if (draftSubmissions.has(draftSubmissionKey)) throw new Error('Draft submission is already in progress');
     draftSubmissions.add(draftSubmissionKey);
@@ -555,6 +627,7 @@ async function sendMessageInternal(
     const currentAgentType = (agentType?.trim() || refreshedSession.mode || 'Standard').trim();
     const acpClientId = acpClientIdFromMode(currentAgentType);
     const driver = driverForSession(sessionId, refreshedSession);
+    submittingDriver = driver;
     if (
       options?.execution?.kind === 'fresh_external_subagent'
       && (acpClientId || driver.id !== 'local')
@@ -621,24 +694,31 @@ async function sendMessageInternal(
 
     if (readySession.draft) {
       options = { ...options, turnId: readySession.draft.turnId };
+      submittedDraftTurnId = readySession.draft.turnId;
       updateSessionDraft(context, sessionId, { phase: 'submitting' });
     }
 
-    const outcome = await driver.startTurn(
-      context,
-      {
-        surfaceScope: surfaceScopeAtSend,
-        sessionId,
-        message,
-        displayMessage,
-        currentAgentType,
-        acpClientId,
-        isFirstMessage,
-        readySession,
-        options,
-      },
-      turnTracker,
-    );
+    let outcome: StartTurnResult;
+    try {
+      outcome = await driver.startTurn(
+        context,
+        {
+          surfaceScope: surfaceScopeAtSend,
+          sessionId,
+          message,
+          displayMessage,
+          currentAgentType,
+          acpClientId,
+          isFirstMessage,
+          readySession,
+          options,
+        },
+        turnTracker,
+      );
+    } catch (error) {
+      if (!acceptAdmittedTurnRefusal(context, surfaceScopeAtSend, sessionId, turnTracker, error)) throw error;
+      outcome = 'completed';
+    }
     if (outcome === 'detached') {
       if (previewTurnId) finishSubmittedMessagePreview(surfaceScopeAtSend, sessionId, previewTurnId);
       // The message steered or continued target-owned work; the shared
@@ -652,22 +732,7 @@ async function sendMessageInternal(
     }
 
     if (readySession.draft && turnTracker.hostAcceptedTurn) {
-      context.flowChatStore.setState(state => {
-        const current = state.sessions.get(sessionId);
-        return current ? { ...state, sessions: new Map(state.sessions).set(sessionId, {
-          ...current, draft: undefined,
-        }) } : state;
-      });
-      // Navigation failure cannot undo an accepted message or cause it to be resent.
-      try {
-        const { activateMainSession } = await import('../sessionActivation');
-        if (surfaceScopeAtSend.isCurrent() && context.flowChatStore.getState().activeSessionId === sessionId) {
-          await activateMainSession(sessionId, { isCurrent: () => surfaceScopeAtSend.isCurrent()
-            && context.flowChatStore.getState().activeSessionId === sessionId });
-        }
-      } catch (error) {
-        log.warn('Accepted draft could not activate its workspace', { sessionId, error });
-      }
+      await adoptAcceptedDraft(context, surfaceScopeAtSend, sessionId);
     }
 
     completeSessionSend(
@@ -707,6 +772,56 @@ async function sendMessageInternal(
       if (options?.bypassPendingQueue && !turnTracker.hostAcceptedTurn) {
         throw new RetiredQueueSubmission(turnTracker.hostSubmitStarted === true);
       }
+      return;
+    }
+
+    const uncertainTurnId = turnTracker.createdLocalTurnId;
+    const uncertainKind = uncertainTurnId && turnTracker.hostSubmitStarted && !turnTracker.hostAcceptedTurn
+      && !options?.preserveTurnOnStartError
+      ? submittingDriver?.id === 'dispatch'
+        ? isUncertainDispatchSubmitFailure(error) ? 'dispatch' : null
+        : !isLocalSurface(surfaceIdAtSend) && isOutcomeUnknownError(error) ? 'peer' : null
+      : null;
+    if (uncertainTurnId && uncertainKind) {
+      // The host may already own this Turn. Keep it, confirm with the host, and
+      // never hand the text back to the composer for a duplicating resend.
+      log.warn('Turn start outcome is unknown; confirming with the host', {
+        sessionId, turnId: uncertainTurnId, kind: uncertainKind,
+      });
+      if (previewTurnId) finishSubmittedMessagePreview(surfaceScopeAtSend, sessionId, previewTurnId);
+      // A drained queue item keeps the message and its FIFO position while the
+      // outcome is unknown; a retained copy would land behind later messages.
+      const queueItemId = options?.bypassPendingQueue ? options.pendingQueueItemId : undefined;
+      const uncertain: UncertainSubmission = {
+        scope: surfaceScopeAtSend,
+        sessionId,
+        turnId: uncertainTurnId,
+        retained: {
+          content: message,
+          displayMessage,
+          agentType,
+          imageContexts: options?.imageContexts,
+          imageDisplayData: options?.imageDisplayData,
+          composerDraft: options?.pendingQueueDraft,
+          userMessageMetadata: options?.userMessageMetadata,
+        },
+        queueItemId,
+      };
+      const resolution = submittingDriver?.confirmUncertainSubmission?.(context, uncertain, error)
+        ?? confirmUncertainPeerSubmission(context, uncertain);
+      void resolution.then(async resolved => {
+        // A confirmed first message materialized the draft exactly as an
+        // acknowledged one: its Turn id must not be reused by the next send.
+        if (resolved === 'delivered' && submittedDraftTurnId === uncertainTurnId) {
+          await adoptAcceptedDraft(context, surfaceScopeAtSend, sessionId, uncertainTurnId);
+        }
+      }).catch(resolveError => {
+        log.error('Failed to resolve a submission with an unknown outcome', { sessionId, error: resolveError });
+      });
+      if (latestSendBySession.get(sendCoordinationKey) === sendAttempt) {
+        latestSendBySession.delete(sendCoordinationKey);
+      }
+      if (queueItemId) throw new RetiredQueueSubmission(true);
       return;
     }
 
@@ -807,6 +922,7 @@ async function sendMessageInternal(
 }
 
 export async function cancelSessionTask(context: FlowChatContext, requestedSessionId?: string): Promise<boolean> {
+  let driverId: string | undefined;
   try {
     const state = context.flowChatStore.getState();
     const sessionId = requestedSessionId || state.activeSessionId;
@@ -817,9 +933,17 @@ export async function cancelSessionTask(context: FlowChatContext, requestedSessi
     }
 
     const session = state.sessions.get(sessionId);
-    return await driverForSession(sessionId, session).cancel(context, sessionId);
+    const driver = driverForSession(sessionId, session);
+    driverId = driver.id;
+    return await driver.cancel(context, sessionId);
   } catch (error) {
     log.error('Failed to cancel current task', error);
+    // A dispatch stop crosses the network: after its retries the driver
+    // reports, in translated copy, that the stop was not confirmed. Silence
+    // would leave the user believing the job stopped (or that it did not).
+    if (driverId === 'dispatch' && error instanceof Error && error.message) {
+      notificationService.error(error.message, { duration: 6000 });
+    }
     return false;
   }
 }
@@ -927,6 +1051,7 @@ export async function drainPendingQueue(
         pendingQueueDraft: next.composerDraft,
         userMessageMetadata: next.userMessageMetadata,
         bypassPendingQueue: true,
+        pendingQueueItemId: next.id,
       },
     );
     // Only remove the item AFTER sendMessage completes successfully so we keep

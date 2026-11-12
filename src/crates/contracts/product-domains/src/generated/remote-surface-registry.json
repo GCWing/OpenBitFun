@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:9fb2c42fa23d9fee",
+  "digest": "fnv1a64:ab13282fb7012e10",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -58,7 +58,8 @@
       "user_question_interaction_v1",
       "ssh_none_auth_v1",
       "terminal_cursor_replay_v1",
-      "git_tracked_change_count_v1"
+      "git_tracked_change_count_v1",
+      "peer_attachment_status_v1"
     ],
     "desktop": [
       "gen_ui_libraries_v1",
@@ -109,7 +110,8 @@
       "user_question_response",
       "user_question_interaction_v1",
       "ssh_none_auth_v1",
-      "git_tracked_change_count_v1"
+      "git_tracked_change_count_v1",
+      "peer_attachment_status_v1"
     ],
     "cli": [
       "model_routing_v1",
@@ -139,7 +141,8 @@
       "user_question_response",
       "user_question_interaction_v1",
       "terminal_cursor_replay_v1",
-      "git_tracked_change_count_v1"
+      "git_tracked_change_count_v1",
+      "peer_attachment_status_v1"
     ]
   },
   "operations": [
@@ -5486,6 +5489,18 @@
       }
     },
     {
+      "id": "peer_host_bridge_ready",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "controller_local"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the controller keeps this command; peer hosts refuse it before dispatch"
+      }
+    },
+    {
       "id": "peer_host_invoke_complete",
       "surface": "tauri_command",
       "remoteWorkspace": "WorkspaceAgnostic",
@@ -8607,6 +8622,18 @@
       "cliPeer": {
         "kind": "unsupported",
         "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "write_clipboard_image",
+      "surface": "tauri_command",
+      "remoteWorkspace": "LocalOnly",
+      "peer": {
+        "kind": "controller_local"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the controller keeps this command; peer hosts refuse it before dispatch"
       }
     },
     {

@@ -1345,16 +1345,25 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     await Promise.all([refreshData(), loadWorkspaceList()]);
   };
   const catalogSubscriptionRef = useRef<ReturnType<typeof subscribeHostCatalog> | null>(null);
+  const catalogTranslateRef = useRef(t);
+  catalogTranslateRef.current = t;
   useEffect(() => {
     if (targetInitializing) return;
     const targetEpoch = captureSessionListEpoch();
     if (targetEpoch === null) return;
+    // The banner text this subscription set, so a recovered catalog clears its
+    // own error and never one another action reported since.
+    let shownError: string | null = null;
     const subscription = subscribeHostCatalog(sessionMgr, async () => {
       if (isSessionListCurrent(targetEpoch)) await catalogReadRef.current();
     }, (error) => {
       if (isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(error)) {
-        setError(error instanceof Error ? error.message : String(error));
+        shownError = describeRemoteError(error, catalogTranslateRef.current);
+        setError(shownError);
       }
+    }, () => {
+      if (shownError !== null && useMobileStore.getState().error === shownError) setError(null);
+      shownError = null;
     });
     catalogSubscriptionRef.current = subscription;
     const onVisible = () => {

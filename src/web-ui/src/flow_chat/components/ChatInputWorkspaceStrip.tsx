@@ -852,6 +852,7 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
             } : undefined}
             onSelectLocal={dispatchControl.onSelectLocal}
             onSelectTarget={dispatchControl.onSelectTarget}
+            jobId={dispatchControl.syncableJobId}
           />
         ) : null}
         {!showDispatchPicker && showWorktreeToggle

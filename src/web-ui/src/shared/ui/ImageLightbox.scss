@@ -19,7 +19,8 @@
   }
 }
 
-.image-lightbox-close {
+.image-lightbox-close,
+.image-lightbox-copy {
   position: absolute;
   top: 16px;
   right: 16px;
@@ -45,6 +46,11 @@
   }
 }
 
+/* Copy sits to the left of the close control. */
+.image-lightbox-copy {
+  right: 64px;
+}
+
 @keyframes image-lightbox-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -55,7 +61,8 @@
     animation: none;
   }
 
-  .image-lightbox-close {
+  .image-lightbox-close,
+  .image-lightbox-copy {
     transition-duration: 0ms;
   }
 }
@@ -80,7 +87,8 @@
   animation: none;
 }
 
-.image-lightbox-close[data-openbitfun-component='icon-button'] {
+.image-lightbox-close[data-openbitfun-component='icon-button'],
+.image-lightbox-copy[data-openbitfun-component='icon-button'] {
   &::before { content: none; }
   > [data-openbitfun-part='icon'] { display: contents; }
 }

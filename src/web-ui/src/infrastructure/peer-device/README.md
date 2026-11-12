@@ -287,8 +287,28 @@ notification metadata.
     host deletion event or an authoritative missing metadata record. A failed
     readback or a still-present record keeps the session and unsent drafts.
     Dialog submissions reuse `(sessionId, turnId)` so an ambiguous acknowledgement
-    does not create another turn. A failed session list must leave loading state
-    and offer an explicit retry.
+    does not create another turn; a retry the host refuses as an already admitted
+    Turn id is accepted, never a definite failure. Hosts replay only an accepted
+    (or admitted) submission: a refusal before admission is forgotten once
+    settled, so an explicit retry runs again. A failed session list must
+    leave loading state and offer an explicit retry.
+
+    Reads never spin through several full RPC deadlines: an attempt keeps the
+    shared 120 s deadline (slow reads such as model catalogs, statistics, MCP
+    resources and SSH directories must keep succeeding), only an explicit
+    hot-path allowlist of cheap session-list and config hydrate reads uses 25 s
+    attempts that end at 60 s, retries happen only for unsent requests and lost
+    replies within 60 s, and a silent host ends in a typed
+    `peer_host_not_responding` error. `peer_host_ui_not_ready` means the host
+    refused before executing (its UI is starting; a Desktop host first waits
+    about 10 s for it, so older controllers that treat the refusal as final
+    rarely see it): reads retry within the budget, mutations fail as not
+    executed, and the status shows the host as starting. A disconnect whose
+    detach did not reach the host retries it in the background (and as soon as
+    the host is seen online again) a bounded number of times; a reconnect
+    retires that retry. A ping reporting `caller_attached: false` (capability
+    `peer_attachment_status_v1`) triggers a re-attach and a permission mailbox
+    re-read; a capability change of any key publishes a new snapshot.
 
 14. **History navigation uses the same canonical replica.** Latest-page loading,
     older-page prefetch and explicit full-history requests share the subscription.

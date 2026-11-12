@@ -286,9 +286,15 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
 
   // Remote connection status — optional: safe if not inside SSHRemoteProvider
   const sshContext = useContext(SSHContext);
-  const remoteConnStatus = workspace.connectionId && sshContext
+  const reportedConnStatus = workspace.connectionId && sshContext
     ? sshContext.workspaceStatuses[workspace.connectionId]
     : undefined;
+  // A link being re-verified after a wake, a network change or a timed-out
+  // operation is not shown as connected until the probe answers.
+  const remoteConnStatus = reportedConnStatus === 'connected'
+    && workspace.connectionId && sshContext?.verifyingConnectionIds?.[workspace.connectionId]
+    ? 'connecting'
+    : reportedConnStatus;
 
   const remoteMeta = useMemo(() => {
     if (!workspaceIsRemote) {

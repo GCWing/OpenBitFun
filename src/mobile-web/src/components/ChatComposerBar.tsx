@@ -37,6 +37,10 @@ interface ChatComposerBarProps {
   onAcceptPromptSuggestion?: (suggestion: string) => void;
   onSendPromptSuggestion?: (suggestion: string) => void;
   remoteUnavailable: boolean;
+  /** Sending waits on a state the composer explains through `composerStatus`. */
+  sendBlocked?: boolean;
+  /** One-line progress or wait state shown above the composer. */
+  composerStatus?: string | null;
   streaming: boolean;
 }
 
@@ -64,17 +68,22 @@ export default function ChatComposerBar({
   onAcceptPromptSuggestion,
   onSendPromptSuggestion,
   remoteUnavailable,
+  sendBlocked = false,
+  composerStatus = null,
   streaming,
 }: ChatComposerBarProps) {
   const { t } = useI18n();
   const attachDisabled = imageAnalyzing || pendingImages.length >= 5;
-  const visibleSuggestion = promptSuggestion && onAcceptPromptSuggestion && !input && !streaming && !sending && !imageAnalyzing && !remoteUnavailable
+  const visibleSuggestion = promptSuggestion && onAcceptPromptSuggestion && !input && !streaming && !sending && !imageAnalyzing && !remoteUnavailable && !sendBlocked
     ? promptSuggestion
     : null;
 
   return (
     <div className={`chat-page__input-wrap ${expanded ? 'is-expanded' : ''}`} ref={containerRef}>
       {queueContent}
+      {composerStatus ? (
+        <p className="chat-page__composer-status" role="status" aria-live="polite">{composerStatus}</p>
+      ) : null}
       {visibleSuggestion ? (
         <div className="chat-page__prompt-suggestion">
           <MobileButton
@@ -121,7 +130,7 @@ export default function ChatComposerBar({
                 appearance="plain"
                 aria-label={t('common.submit')}
                 className="chat-page__send-btn"
-                disabled={remoteUnavailable || sending || (!input.trim() && pendingImages.length === 0)}
+                disabled={remoteUnavailable || sendBlocked || sending || (!input.trim() && pendingImages.length === 0)}
                 icon={(
                   <LucideArrowUp width="12" height="12" aria-hidden="true" />
                 )}

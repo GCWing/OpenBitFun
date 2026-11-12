@@ -2547,7 +2547,8 @@
   object-fit: contain;
 }
 
-.user-message-item__lightbox-close {
+.user-message-item__lightbox-close,
+.user-message-item__lightbox-copy {
   position: absolute;
   top: 16px;
   right: 16px;
@@ -2563,12 +2564,19 @@
   cursor: pointer;
   transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.user-message-item__lightbox-close:hover {
+.user-message-item__lightbox-close:hover,
+.user-message-item__lightbox-copy:hover {
   background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 30%, transparent);
 }
-.user-message-item__lightbox-close:focus-visible {
+.user-message-item__lightbox-close:focus-visible,
+.user-message-item__lightbox-copy:focus-visible {
   outline: 2px solid var(--openbitfun-color-content-on-dark);
   outline-offset: 2px;
+}
+
+/* Copy sits to the left of the close control. */
+.user-message-item__lightbox-copy {
+  right: 64px;
 }
 
 @keyframes user-message-lightbox-fade-in {
@@ -2590,7 +2598,8 @@
   .user-message-item__copy-btn,
   .user-message-item__edit-rollback-btn,
   .user-message-item__image-thumb,
-  .user-message-item__lightbox-close {
+  .user-message-item__lightbox-close,
+  .user-message-item__lightbox-copy {
     transition-duration: 0ms;
   }
   .user-message-item__lightbox {
@@ -2617,10 +2626,12 @@
   animation: none;
 }
 
-.user-message-item__lightbox-close[data-openbitfun-component=icon-button]::before {
+.user-message-item__lightbox-close[data-openbitfun-component=icon-button]::before,
+.user-message-item__lightbox-copy[data-openbitfun-component=icon-button]::before {
   content: none;
 }
-.user-message-item__lightbox-close[data-openbitfun-component=icon-button] > [data-openbitfun-part=icon] {
+.user-message-item__lightbox-close[data-openbitfun-component=icon-button] > [data-openbitfun-part=icon],
+.user-message-item__lightbox-copy[data-openbitfun-component=icon-button] > [data-openbitfun-part=icon] {
   display: contents;
 }
 

@@ -549,6 +549,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("peer_control_attach",                                        Agnostic,    HostControlPlane, HANDLED),
     op("peer_control_detach",                                        Agnostic,    HostControlPlane, HANDLED),
     op("peer_controller_set_active",                                 Agnostic,    ControllerLocal,  REFUSED),
+    op("peer_host_bridge_ready",                                     Agnostic,    ControllerLocal,  REFUSED),
     op("peer_host_invoke_complete",                                  Agnostic,    ControllerLocal,  REFUSED),
     op("peer_mode_ping",                                             Agnostic,    HostControlPlane, HANDLED),
     op("plan_external_hook_import_command",                          Unsupported, Proxied,          CLI_NOT_IMPLEMENTED),
@@ -815,6 +816,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("worktree_promote",                                           Unsupported, Proxied,          CLI_NOT_IMPLEMENTED),
     op("worktree_recreate",                                          Unsupported, Proxied,          CLI_NOT_IMPLEMENTED),
     op("worktree_remove",                                            Unsupported, Proxied,          CLI_NOT_IMPLEMENTED),
+    op("write_clipboard_image",                                      LocalOnly,   ControllerLocal,  REFUSED),
     op("write_file_content",                                         Routed,      Proxied,          HANDLED),
 ];
 
