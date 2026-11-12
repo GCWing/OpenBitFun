@@ -79,7 +79,8 @@ async fn host_queue_reads_degrade_for_a_session_not_loaded_on_the_host() {
         Some("queued-a")
     );
 
-    // A mutation still refuses to accept user work for an unloaded session.
+    // Nothing was persisted here, so the session cannot be restored and a
+    // mutation still refuses to accept user work for it.
     let submit = scheduler
         .manage_host_queue(request(
             Some(&epoch),
@@ -107,6 +108,65 @@ async fn host_queue_reads_degrade_for_a_session_not_loaded_on_the_host() {
     assert_eq!(
         promote.message,
         "Session is not loaded on the execution host"
+    );
+}
+
+/// An idle session released from host memory is still the session a remote
+/// controller shows. Its next queued message restores it from persistence
+/// instead of failing (and failing again on every retry).
+#[tokio::test]
+async fn host_queue_mutation_restores_an_idle_session_released_from_memory() {
+    let (scheduler, sessions, _, root) = test_scheduler_with_persistence(true);
+    let session_id = "host-queue-session";
+    let workspace = fixture_workspace_dir(root.path().join("released-workspace"));
+    sessions
+        .create_session_with_id(
+            Some(session_id.to_string()),
+            "Released".to_string(),
+            "Standard".to_string(),
+            SessionConfig {
+                tool_presentation_mode: Default::default(),
+                workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create session");
+    assert!(sessions
+        .unload_session_from_memory(session_id)
+        .await
+        .expect("unload idle session"));
+    assert!(sessions.get_session(session_id).is_none());
+
+    // Passive reads answer without loading the session.
+    let list = scheduler
+        .manage_host_queue(request(None, Action::List))
+        .await
+        .unwrap();
+    assert_eq!(list.active_turn_id, None);
+    assert!(
+        sessions.get_session(session_id).is_none(),
+        "a queue poll must not load the session"
+    );
+
+    // Keep the accepted message parked so the test does not execute a model.
+    scheduler
+        .active_turns
+        .insert(session_id.into(), desktop_active_turn("parking-turn"));
+    let accepted = scheduler
+        .manage_host_queue(request(
+            Some(&list.queue_epoch),
+            Action::Submit {
+                message: message("after-release"),
+            },
+        ))
+        .await
+        .expect("a released idle session is restored before admission");
+    assert!(sessions.get_session(session_id).is_some());
+    assert_eq!(accepted.queue_epoch, list.queue_epoch);
+    assert_eq!(
+        accepted.receipt.as_ref().map(|item| item.turn_id.as_str()),
+        Some("after-release")
     );
 }
 

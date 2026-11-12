@@ -219,6 +219,18 @@ notification metadata.
     turn. Stop requests capture their device activation and turn before awaiting
     preparation; a late response cannot settle another turn or device's buffers.
 
+    A new subscription of a session rebases the replica's held revisions below
+    any stream revision (order kept, content kept): a host stream rebuilt after it
+    expired restamps its snapshot at or below them, and must still settle a turn
+    that finished while nothing was subscribed. Because the host runs one turn per
+    session, a start with a newer backend index adopts the controller's machine
+    even if the previous turn's terminal event never arrived. A stop that has not
+    settled after the host's drain window re-reads the session from the host,
+    whose record projects a turn without a live executor as settled. A host queue
+    mutation for a session released from host memory restores it first; only a
+    session the host cannot restore is refused, and the controller then treats the
+    refusal as proof that nothing runs and sends through the normal path.
+
     Legacy frontend queues wait for canonical peer history to be ready; local
     Runtime replay fences do not gate peer queues. An authoritative terminal
     record releases a pending cancellation gate. Interrupted-turn recovery and

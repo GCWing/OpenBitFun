@@ -52,12 +52,16 @@ const mockHostQueueSupported = vi.fn(() => false);
 const mockHostQueueSubmit = vi.fn();
 const mockHostQueueAct = vi.fn();
 const mockSubmitSteering = vi.fn();
+const mockDiscardRefusedHostSubmission = vi.fn();
 
 vi.mock('../hostDialogQueue', () => ({
   hostQueueSupported: (...args: unknown[]) => mockHostQueueSupported(...args),
   hostDialogQueue: () => ({ submit: mockHostQueueSubmit, act: mockHostQueueAct,
     refresh: vi.fn(async () => ({ queueEpoch: 'host-epoch' })) }),
   queueImageAttachments: () => [],
+  newQueueTurnId: () => 'generated-queue-turn',
+  isHostSessionNotLoadedRefusal: (error: unknown) => String(error).includes('Session is not loaded on the execution host'),
+  discardRefusedHostSubmission: (...args: unknown[]) => mockDiscardRefusedHostSubmission(...args),
 }));
 
 vi.mock('../steeringSubmission', () => ({
@@ -1351,6 +1355,62 @@ describe('MessageModule immediate follow-ups', () => {
     expect(mockStartDialogTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'answer-owner', userInput: 'Question\nAnswer' }));
     expect(mockSubmitSteering).not.toHaveBeenCalled();
     expect(mockPendingEnqueue).not.toHaveBeenCalled();
+  });
+
+  it('sends directly when the host refuses to queue behind a stale turn of an unloaded session', async () => {
+    mockHostQueueSupported.mockReturnValue(true);
+    let state = 'processing';
+    const acceptRuntimeStatus = vi.fn((status: { state: string }) => { state = status.state; });
+    mockGetCurrentState.mockImplementation(() => state);
+    mockGetStateMachine.mockReturnValue({
+      getContext: () => ({ currentDialogTurnId: 'stale-turn', version: 7 }),
+      getCurrentState: () => state,
+      acceptRuntimeStatus,
+    } as any);
+    const context = { ...contextForFollowUp(), userCancelledSessionIds: new Set(['answer-owner']) };
+    mockHostQueueSubmit
+      .mockRejectedValueOnce(new Error('Session is not loaded on the execution host'))
+      .mockResolvedValueOnce({ receipt: { turnId: 'direct-turn', status: 'started' } });
+
+    await sendMessage(context, 'Continue', 'answer-owner');
+
+    expect(acceptRuntimeStatus).toHaveBeenCalledWith(expect.objectContaining({ state: 'idle', turnId: null }));
+    expect(context.userCancelledSessionIds.has('answer-owner')).toBe(false);
+    expect(mockDiscardRefusedHostSubmission).toHaveBeenCalledWith(expect.anything(),
+      expect.objectContaining({ content: 'Continue' }), 'generated-queue-turn');
+    // The direct path loads the session on the host before submitting again.
+    expect(mockEnsureBackendSession).toHaveBeenCalled();
+    expect(mockHostQueueSubmit).toHaveBeenCalledTimes(2);
+    expect(mockPendingEnqueue).not.toHaveBeenCalled();
+  });
+
+  it('reports the refusal when a newer host fact changed the session meanwhile', async () => {
+    mockHostQueueSupported.mockReturnValue(true);
+    let version = 7;
+    const acceptRuntimeStatus = vi.fn();
+    mockGetStateMachine.mockReturnValue({
+      getContext: () => ({ currentDialogTurnId: 'stale-turn', version }),
+      getCurrentState: () => 'processing',
+      acceptRuntimeStatus,
+    } as any);
+    mockHostQueueSubmit.mockImplementationOnce(async () => {
+      version = 8;
+      throw new Error('Session is not loaded on the execution host');
+    });
+
+    await expect(sendMessage(contextForFollowUp(), 'Continue', 'answer-owner'))
+      .rejects.toThrow('Session is not loaded on the execution host');
+    expect(acceptRuntimeStatus).not.toHaveBeenCalled();
+    expect(mockDiscardRefusedHostSubmission).not.toHaveBeenCalled();
+    expect(mockHostQueueSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an ambiguous host queue failure as the queue owner reported it', async () => {
+    mockHostQueueSupported.mockReturnValue(true);
+    mockHostQueueSubmit.mockRejectedValueOnce(new Error('Connection lost'));
+    await expect(sendMessage(contextForFollowUp(), 'Continue', 'answer-owner')).rejects.toThrow('Connection lost');
+    expect(mockDiscardRefusedHostSubmission).not.toHaveBeenCalled();
+    expect(mockHostQueueSubmit).toHaveBeenCalledTimes(1);
   });
 
   it('stops before promotion if the active surface changes during submission', async () => {

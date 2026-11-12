@@ -6510,6 +6510,7 @@ export class FlowChatStore {
     if (isUnmaterializedSessionDraft(surface.state.sessions.get(sessionId))) return;
     let history = surface.relaySessionHistory.get(sessionId);
     if (!history) {
+      this.rebaseRelaySessionReplica(sessionId);
       history = new RelaySessionHistory(sessionId,
         record => this.applyRelaySessionRecord(record),
         ready => {
@@ -6552,6 +6553,38 @@ export class FlowChatStore {
       if (surface.relaySessionHistory.get(sessionId) === history) surface.relaySessionHistory.delete(sessionId);
       throw error;
     }
+  }
+
+  /**
+   * A new subscription reads the session from the host again. When the host's
+   * previous stream expired while nothing was subscribed (switched away, slept,
+   * failed open), it rebuilds the stream and stamps the snapshot with revisions
+   * the replica already holds or exceeds, so a turn that finished meanwhile
+   * would be rejected and keep running. The new subscription's records must
+   * supersede what earlier subscriptions delivered. This is not a host resync:
+   * held content, pending turns and rendered turns all stay.
+   */
+  private rebaseRelaySessionReplica(sessionId: string): void {
+    this.activeSurface.relaySessionRecords.get(sessionId)?.rebaseRevisions();
+  }
+
+  /**
+   * Re-read the session from the host when a controller fact can no longer be
+   * trusted, e.g. a stop that the host acknowledged without settling anything.
+   * The host projects a turn without a live executor as settled, so this is
+   * the authoritative way back from a stale running state. A subscription still
+   * waiting for its first page is already reading the host and is left alone.
+   */
+  public async reloadRelaySessionFromHost(sessionId: string): Promise<void> {
+    const surface = this.activeSurface;
+    if (surface.surfaceId === 'local' || !surface.state.sessions.has(sessionId)) return;
+    const history = surface.relaySessionHistory.get(sessionId);
+    if (history?.awaitingFirstPage()) return;
+    if (history) {
+      surface.relaySessionHistory.delete(sessionId);
+      history.close();
+    }
+    await this.loadRelaySessionHistory(sessionId);
   }
 
   private refreshRelayInteractionMailbox(sessionId: string): Promise<void> {

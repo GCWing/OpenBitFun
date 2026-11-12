@@ -15,7 +15,7 @@ import { FlowChatStore, mergeModelRoundAttemptDiagnostics } from '../../store/Fl
 import { initializeAcpPlanState } from '../acpPlanState';
 import { isSessionTurnRetired } from '../../store/sessionMutationStore';
 import { stateMachineManager } from '../../state-machine';
-import { SessionExecutionEvent, SessionExecutionState } from '../../state-machine/types';
+import { ProcessingPhase, SessionExecutionEvent, SessionExecutionState } from '../../state-machine/types';
 import { agenticEventListener, type AgenticEventCallbacks } from '../AgenticEventListener';
 import { 
   generateTextChunkKey,
@@ -1888,6 +1888,41 @@ function handleImageAnalysisCompleted(_context: FlowChatContext, event: ImageAna
   log.info('Image analysis completed', { sessionId, success, durationMs });
 }
 
+/**
+ * The host runs one Turn per Session at a time, so admitting a distinct newer
+ * Turn proves the previous one settled there even when its terminal event never
+ * reached this window (a dropped stream, or a controller that missed it while
+ * detached). START cannot leave PROCESSING or FINISHING, and every event of the
+ * new Turn would then be dropped as a turn mismatch. Adopt the host fact
+ * directly instead of passing through IDLE, which would release queued input.
+ * Only a strictly newer backend index qualifies; a delayed start of an older
+ * Turn, or one without an index, never replaces the Turn being tracked.
+ */
+function adoptNewerAdmittedTurn(sessionId: string, turnId: string, turnIndex: unknown): boolean {
+  const machine = stateMachineManager.get(sessionId);
+  if (!machine || typeof turnIndex !== 'number') return false;
+  const state = machine.getCurrentState();
+  if (state !== SessionExecutionState.PROCESSING && state !== SessionExecutionState.FINISHING) return false;
+  const trackedTurnId = machine.getContext().currentDialogTurnId;
+  if (!trackedTurnId || trackedTurnId === turnId) return false;
+  const tracked = FlowChatStore.getInstance().getState().sessions.get(sessionId)?.dialogTurns
+    .find(turn => turn.id === trackedTurnId);
+  const trackedIndex = tracked?.backendTurnIndex ?? tracked?.storageTurnIndex;
+  if (trackedIndex !== undefined && turnIndex <= trackedIndex) return false;
+  log.warn('Adopting a newer host-admitted turn over a stale tracked turn', {
+    sessionId, turnId, turnIndex, trackedTurnId, trackedIndex, state,
+  });
+  machine.acceptRuntimeStatus({
+    state: SessionExecutionState.PROCESSING,
+    turnId,
+    roundId: null,
+    phase: ProcessingPhase.STARTING,
+    pendingTools: [],
+    error: null,
+  });
+  return true;
+}
+
 function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
   const { sessionId, turnId, turnIndex, userInput, originalUserInput, userMessageMetadata } = event;
 
@@ -2083,7 +2118,7 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
     context.contentBuffers.set(sessionId, new Map());
     context.activeTextItems.set(sessionId, new Map());
 
-    if (!hadTempTurn) {
+    if (!hadTempTurn && !adoptNewerAdmittedTurn(sessionId, turnId, turnIndex)) {
       stateMachineManager.transition(sessionId, SessionExecutionEvent.START, {
         taskId: sessionId,
         dialogTurnId: turnId,

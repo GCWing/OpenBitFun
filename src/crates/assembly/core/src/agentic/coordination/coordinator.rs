@@ -10168,6 +10168,44 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         self.reconcile_restored_session(session_id, session).await
     }
 
+    /// Load a persisted user session back into this runtime before accepting
+    /// user work for it. Idle sessions may be released from memory while a
+    /// remote controller keeps showing them; its next message must find the
+    /// same session instead of being refused.
+    ///
+    /// The storage binding committed when this process admitted the session
+    /// wins. Without one (e.g. after a host restart) the persisted workspace
+    /// binding selects storage and takes runtime ownership, exactly as a
+    /// mobile remote submission does.
+    pub(crate) async fn restore_unloaded_session_for_admission(
+        &self,
+        session_id: &str,
+    ) -> OpenBitFunResult<()> {
+        if self.session_manager.get_session(session_id).is_some() {
+            return Ok(());
+        }
+        if let Some(storage_path) = self
+            .session_manager
+            .committed_session_storage_path_for(session_id)
+        {
+            self.restore_session_from_storage_path(&storage_path, session_id)
+                .await?;
+            return Ok(());
+        }
+        let binding = self
+            .session_manager
+            .resolve_session_workspace_binding(session_id)
+            .await
+            .ok_or_else(|| {
+                OpenBitFunError::NotFound(format!(
+                    "Session workspace is unavailable on this host: {session_id}"
+                ))
+            })?;
+        self.restore_session_for_workspace_binding(&binding, session_id)
+            .await?;
+        Ok(())
+    }
+
     /// Restore a persisted session through its resolved workspace binding.
     pub async fn restore_session_for_workspace_binding(
         &self,

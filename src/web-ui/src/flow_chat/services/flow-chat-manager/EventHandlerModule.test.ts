@@ -152,6 +152,37 @@ describe('late dialog start events', () => {
     });
     expect(stateMachineManager.get('session-1')?.getContext().currentDialogTurnId).toBe('turn-2');
   });
+
+  it.each([SessionExecutionState.PROCESSING, SessionExecutionState.FINISHING])(
+    'adopts a newer host-admitted turn over a stale %s turn', async state => {
+      createSessionWithTurn({ ...createFinishingTurn(), status: 'processing', backendTurnIndex: 1 });
+      await stateMachineManager.transition('session-1', SessionExecutionEvent.START, {
+        taskId: 'session-1', dialogTurnId: 'turn-1',
+      });
+      if (state === SessionExecutionState.FINISHING) {
+        await stateMachineManager.transition('session-1', SessionExecutionEvent.BACKEND_STREAM_COMPLETED);
+      }
+      expect(stateMachineManager.getCurrentState('session-1')).toBe(state);
+
+      __test_only__.handleDialogTurnStarted(createFlowChatContext(), {
+        sessionId: 'session-1', turnId: 'turn-2', turnIndex: 2, userInput: 'After the stale turn',
+      });
+
+      expect(stateMachineManager.getCurrentState('session-1')).toBe(SessionExecutionState.PROCESSING);
+      expect(stateMachineManager.get('session-1')?.getContext().currentDialogTurnId).toBe('turn-2');
+    },
+  );
+
+  it('does not adopt a start without a backend index over a tracked turn', async () => {
+    createSessionWithTurn({ ...createFinishingTurn(), status: 'processing', backendTurnIndex: 1 });
+    await stateMachineManager.transition('session-1', SessionExecutionEvent.START, {
+      taskId: 'session-1', dialogTurnId: 'turn-1',
+    });
+    __test_only__.handleDialogTurnStarted(createFlowChatContext(), {
+      sessionId: 'session-1', turnId: 'turn-legacy', userInput: 'Legacy start',
+    });
+    expect(stateMachineManager.get('session-1')?.getContext().currentDialogTurnId).toBe('turn-1');
+  });
 });
 
 describe('Claw bootstrap cancellation', () => {

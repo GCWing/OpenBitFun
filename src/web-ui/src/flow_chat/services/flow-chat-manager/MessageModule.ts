@@ -1,4 +1,11 @@
-import { hostQueueSupported, hostDialogQueue, queueImageAttachments } from '../hostDialogQueue';
+import {
+  discardRefusedHostSubmission,
+  hostDialogQueue,
+  hostQueueSupported,
+  isHostSessionNotLoadedRefusal,
+  newQueueTurnId,
+  queueImageAttachments,
+} from '../hostDialogQueue';
 /**
  * Message handling module
  * Shared submission choreography: busy-gate planning, queueing, mode
@@ -128,6 +135,43 @@ class RetiredQueueSubmission extends Error {
   constructor(readonly outcomeUnknown: boolean) {
     super('Queued submission outlived its device surface');
   }
+}
+
+/**
+ * Adopt the host's refusal as the fact that this session is not executing
+ * there. Only when nothing changed the machine while the refused request was
+ * in flight: a newer turn start or settlement is a fresher host fact, and the
+ * caller then reports the refusal instead of sending around it. Returns
+ * whether the session is now idle for a direct send.
+ */
+function settleStaleBusyStateAfterHostRefusal(
+  context: FlowChatContext,
+  sessionId: string,
+  machineVersionAtSubmit: number | undefined,
+): boolean {
+  const machine = stateMachineManager.get(sessionId);
+  if (!machine) {
+    context.userCancelledSessionIds?.delete(sessionId);
+    return true;
+  }
+  if (machine.getContext().version !== machineVersionAtSubmit) return false;
+  const state = machine.getCurrentState();
+  context.userCancelledSessionIds?.delete(sessionId);
+  if (state !== SessionExecutionState.PROCESSING && state !== SessionExecutionState.FINISHING) return true;
+  log.warn('Settling a stale busy state after the host refused an unloaded session', {
+    sessionId,
+    state,
+    staleTurnId: machine.getContext().currentDialogTurnId,
+  });
+  machine.acceptRuntimeStatus({
+    state: SessionExecutionState.IDLE,
+    turnId: null,
+    roundId: null,
+    phase: null,
+    pendingTools: [],
+    error: null,
+  });
+  return true;
 }
 
 /**
@@ -373,14 +417,19 @@ async function sendMessageInternal(
         await driverForSession(sessionId, session).steer(context, sessionId, draft);
         return;
       }
+      let hostRefusedUnloadedSession = false;
       if (hostQueueSupported(sessionId)) {
+        const queue = hostDialogQueue(sessionId);
+        const queueMessage = { content: message, displayContent: displayMessage,
+          agentType: agentType?.trim() || session.mode || 'Standard',
+          attachments: queueImageAttachments(options?.imageContexts), metadata: options?.userMessageMetadata ?? {} };
+        // Held so a refused submission can release exactly its own outbox copy.
+        const queueTurnId = options?.turnId?.trim() || newQueueTurnId();
+        const machineVersionAtSubmit = stateMachineManager.get(sessionId)?.getContext().version;
         beginSubmission();
         try {
-          const queue = hostDialogQueue(sessionId);
-          const accepted = await queue.submit({ content: message, displayContent: displayMessage,
-            agentType: agentType?.trim() || session.mode || 'Standard',
-            attachments: queueImageAttachments(options?.imageContexts), metadata: options?.userMessageMetadata ?? {} },
-            { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData }, options?.turnId);
+          const accepted = await queue.submit(queueMessage,
+            { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData }, queueTurnId);
           surfaceScopeAtSend.assertCurrent('accept queued message');
           if (options?.sendImmediately) {
             await promoteAcceptedHostMessage(queue, accepted);
@@ -388,60 +437,75 @@ async function sendMessageInternal(
           }
           completeSessionSend(sendCoordinationKey, sendAttempt);
           return;
+        } catch (error) {
+          // The host refused before creating a receipt: the session is not
+          // loaded there (an older host does not load it for a queue mutation),
+          // so nothing of it is executing and the busy state here is stale.
+          // Queueing behind that phantom turn can never succeed; send directly,
+          // which restores the session on the host first. A local legacy queue
+          // keeps its FIFO order, so it is not bypassed.
+          if (hasPendingQueue || !isHostSessionNotLoadedRefusal(error)) throw error;
+          surfaceScopeAtSend.assertCurrent('recover refused queued message');
+          if (!settleStaleBusyStateAfterHostRefusal(context, sessionId, machineVersionAtSubmit)) throw error;
+          await discardRefusedHostSubmission(queue, queueMessage, queueTurnId);
+          surfaceScopeAtSend.assertCurrent('send refused queued message directly');
+          hostRefusedUnloadedSession = true;
         } finally { endSubmission(); }
       }
-      const dialogTurnId = stateMachineManager.get(sessionId)?.getContext().currentDialogTurnId;
-      if (options?.sendImmediately && dialogTurnId && !isAcpFlowSession(session)
-        && driverForSession(sessionId, session).id === 'local') {
-        beginSubmission();
+      if (!hostRefusedUnloadedSession) {
+        const dialogTurnId = stateMachineManager.get(sessionId)?.getContext().currentDialogTurnId;
+        if (options?.sendImmediately && dialogTurnId && !isAcpFlowSession(session)
+          && driverForSession(sessionId, session).id === 'local') {
+          beginSubmission();
+          try {
+            await submitSteeringMessage({
+              sessionId,
+              dialogTurnId,
+              content: message,
+              displayContent: displayMessage ?? message,
+              imageContexts: options.imageContexts,
+              userMessageMetadata: options.userMessageMetadata,
+            }, options.imageDisplayData);
+            completeSessionSend(sendCoordinationKey, sendAttempt);
+            return;
+          } finally { endSubmission(); }
+        }
         try {
-          await submitSteeringMessage({
+          const item = pendingQueueManager.enqueue({
             sessionId,
-            dialogTurnId,
+            turnId: options?.turnId,
             content: message,
-            displayContent: displayMessage ?? message,
-            imageContexts: options.imageContexts,
-            userMessageMetadata: options.userMessageMetadata,
-          }, options.imageDisplayData);
-          completeSessionSend(sendCoordinationKey, sendAttempt);
-          return;
-        } finally { endSubmission(); }
+            displayMessage,
+            agentType,
+            imageContexts: options?.imageContexts,
+            imageDisplayData: options?.imageDisplayData,
+            composerDraft: options?.pendingQueueDraft,
+            userMessageMetadata: options?.userMessageMetadata,
+          });
+          log.info('Message enqueued: session busy or queue non-empty', {
+            sessionId,
+            state: machineState,
+            queuedItemId: item.id,
+            queueDepth: pendingQueueManager.list(sessionId).length,
+          });
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : 'Failed to queue message';
+          log.error('Failed to enqueue pending message', { sessionId, error });
+          notificationService.error(reason, {
+            title: 'Queue full',
+            duration: 4000,
+          });
+          throw error;
+        }
+        completeSessionSend(
+          sendCoordinationKey,
+          sendAttempt,
+          options?.fromSessionConflictRetry
+            ? options.onSessionConflictRetrySuccess
+            : undefined,
+        );
+        return;
       }
-      try {
-        const item = pendingQueueManager.enqueue({
-          sessionId,
-          turnId: options?.turnId,
-          content: message,
-          displayMessage,
-          agentType,
-          imageContexts: options?.imageContexts,
-          imageDisplayData: options?.imageDisplayData,
-          composerDraft: options?.pendingQueueDraft,
-          userMessageMetadata: options?.userMessageMetadata,
-        });
-        log.info('Message enqueued: session busy or queue non-empty', {
-          sessionId,
-          state: machineState,
-          queuedItemId: item.id,
-          queueDepth: pendingQueueManager.list(sessionId).length,
-        });
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : 'Failed to queue message';
-        log.error('Failed to enqueue pending message', { sessionId, error });
-        notificationService.error(reason, {
-          title: 'Queue full',
-          duration: 4000,
-        });
-        throw error;
-      }
-      completeSessionSend(
-        sendCoordinationKey,
-        sendAttempt,
-        options?.fromSessionConflictRetry
-          ? options.onSessionConflictRetrySuccess
-          : undefined,
-      );
-      return;
     }
   }
 
