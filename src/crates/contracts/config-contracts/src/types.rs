@@ -1879,15 +1879,18 @@ pub const DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS: u32 = 128_128;
 pub const MIN_MODEL_CONTEXT_WINDOW_TOKENS: u32 = 32_000;
 pub const MAX_CONFIGURED_OUTPUT_TOKENS_RATIO_PERCENT: u32 = 40;
 const AUTOMATIC_MAX_OUTPUT_TOKEN_TIERS: [u32; 5] = [8_000, 16_000, 24_000, 32_000, 64_000];
+const MAX_OUTPUT_64K_MIN_CONTEXT_WINDOW: u32 = 400_000;
 
 /// Chooses the largest supported output tier that does not exceed one quarter
-/// of the model context window.
+/// of the model context window. The 64k tier requires a context window of at
+/// least 400k.
 pub fn automatic_max_output_tokens(context_window: u32) -> u32 {
     let quarter_context = context_window / 4;
     AUTOMATIC_MAX_OUTPUT_TOKEN_TIERS
         .iter()
         .rev()
         .copied()
+        .filter(|tier| *tier != 64_000 || context_window >= MAX_OUTPUT_64K_MIN_CONTEXT_WINDOW)
         .find(|tier| *tier <= quarter_context)
         .unwrap_or(quarter_context)
 }
