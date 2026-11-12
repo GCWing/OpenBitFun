@@ -552,6 +552,30 @@ describe('PeerConnectionManager disposal', () => {
     expect(rpc.commands().length).toBe(afterDispose);
   });
 
+  it('completes a manual disconnect when the detach cannot reach the host', async () => {
+    const rpc = createRpc();
+    const manager = createManager(rpc.deviceRpc);
+    await manager.connect('peer-1', 'Studio');
+
+    rpc.failAll();
+    await expect(manager.dispose('peer-1')).resolves.toBeUndefined();
+    expect(rpc.commands()).toContain('peer_control_detach');
+    expect(manager.get('peer-1')).toBeUndefined();
+  });
+
+  it('surfaces a detach the host answered with a refusal', async () => {
+    const rpc = createRpc();
+    const manager = createManager(async (target, commandJson, timeoutMs) => {
+      if (commandJson.includes('peer_control_detach')) {
+        return JSON.stringify({ resp: 'host_invoke_result', ok: false, error: 'Failed to cancel Peer permission requests' });
+      }
+      return rpc.deviceRpc(target, commandJson, timeoutMs);
+    });
+    await manager.connect('peer-1', 'Studio');
+
+    await expect(manager.dispose('peer-1')).rejects.toThrow('Failed to cancel Peer permission requests');
+  });
+
   it('skips the detach RPC for a peer that is already gone', async () => {
     const rpc = createRpc();
     const manager = createManager(rpc.deviceRpc);
@@ -777,7 +801,7 @@ describe('PeerConnectionManager disposal', () => {
 });
 
 function createManager(
-  deviceRpc: ReturnType<typeof createRpc>['deviceRpc'],
+  deviceRpc: (target: string, commandJson: string, timeoutMs?: number) => Promise<string>,
 ): PeerConnectionManager {
   return new PeerConnectionManager({
     deviceRpc,

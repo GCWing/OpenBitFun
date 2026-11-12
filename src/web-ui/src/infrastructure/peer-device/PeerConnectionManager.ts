@@ -299,6 +299,14 @@ interface ConnectionEntry {
 
 export type PeerReattachListener = (deviceId: string) => void;
 
+/** The host answered a control-plane command and refused it. */
+class PeerControlRefusalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PeerControlRefusalError';
+  }
+}
+
 class PeerConnectionDisposedError extends Error {
   constructor(deviceId: string) {
     super(`Peer connection '${deviceId}' was disposed during attachment`);
@@ -397,11 +405,12 @@ export class PeerConnectionManager {
    * End a control link for good: stop its timers, settle everything still
    * waiting on its transport, then tell the peer.
    *
-   * The detach RPC is last and its failure is re-thrown because the controller
-   * cannot otherwise confirm that the Host removed its delivery subscription
-   * and finalized controller-scoped interactions. Host-accepted work remains
-   * Host-owned and keeps running either way. Local teardown has already
-   * completed before the RPC settles.
+   * The detach RPC is last. A host refusal is re-thrown because the
+   * controller cannot otherwise confirm that the Host removed its delivery
+   * subscription and finalized controller-scoped interactions. A transport
+   * failure is not: a host this controller cannot reach drops it through
+   * presence loss, and the user's disconnect already completed locally.
+   * Host-accepted work remains Host-owned and keeps running either way.
    */
   async dispose(deviceId: string, options: PeerDisposeOptions = {}): Promise<void> {
     const entry = this.entries.get(deviceId);
@@ -430,9 +439,17 @@ export class PeerConnectionManager {
     log.info('Peer connection disposed', { deviceId });
 
     if (options.notifyPeer !== false) {
-      await this.hostInvoke(deviceId, 'peer_control_detach', {
-        controller_device_id: await this.controllerId(),
-      });
+      try {
+        await this.hostInvoke(deviceId, 'peer_control_detach', {
+          controller_device_id: await this.controllerId(),
+        });
+      } catch (error) {
+        if (error instanceof PeerControlRefusalError) throw error;
+        log.warn('Peer detach could not reach the host; it drops this controller on presence loss', {
+          deviceId,
+          error,
+        });
+      }
     }
   }
 
@@ -911,10 +928,10 @@ export class PeerConnectionManager {
     );
     const envelope = JSON.parse(raw) as HostInvokeEnvelope;
     if (envelope.resp === 'error') {
-      throw new Error(envelope.message || `Peer '${command}' failed`);
+      throw new PeerControlRefusalError(envelope.message || `Peer '${command}' failed`);
     }
     if (envelope.resp === 'host_invoke_result' && !envelope.ok) {
-      throw new Error(envelope.error || `Peer '${command}' failed`);
+      throw new PeerControlRefusalError(envelope.error || `Peer '${command}' failed`);
     }
     return envelope.value as T | undefined;
   }
