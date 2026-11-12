@@ -302,6 +302,9 @@ impl RemoteConnectService {
 
     /// Resolve the endpoint and start the local host only for LAN. Every
     /// endpoint subsequently uses account login and the same device transport.
+    ///
+    /// Preparing the endpoint this service already serves changes nothing, so
+    /// asking for its invitation again never drops a connection.
     pub async fn prepare_relay(&self, method: &ConnectionMethod) -> Result<String> {
         let _lifecycle = self.relay_lifecycle.lock().await;
         if self.active_method.read().await.as_ref() == Some(method) {
@@ -317,6 +320,18 @@ impl RemoteConnectService {
             ConnectionMethod::OpenBitFunServer => self.config.openbitfun_server_url.clone(),
             _ => anyhow::bail!("connection method does not use a relay"),
         };
+        // A restored sign-in connects device routing before any invitation is
+        // asked for, so no method is active yet. The official endpoint needs
+        // no local host: when routing already serves it, it is adopted as it
+        // is instead of being torn down and connected again.
+        if matches!(method, ConnectionMethod::OpenBitFunServer)
+            && self.active_method.read().await.is_none()
+            && self.device_routing_serves(&url).await
+        {
+            *self.prepared_relay_url.write().await = Some(url.clone());
+            *self.active_method.write().await = Some(method.clone());
+            return Ok(url);
+        }
         self.stop_relay_inner().await;
         if matches!(method, ConnectionMethod::Lan { .. }) {
             if let Err(error) = self
@@ -950,6 +965,49 @@ impl RemoteConnectService {
 
     pub async fn active_method(&self) -> Option<ConnectionMethod> {
         self.active_method.read().await.clone()
+    }
+
+    /// The method this service is serving, when [`requested`] asks for the
+    /// endpoint it already serves. A caller that gets one asks for the
+    /// invitation with it ([`Self::start`]) instead of preparing the endpoint
+    /// again, which would restart a local relay and drop its devices.
+    ///
+    /// A LAN relay is one endpoint per interface it advertises. A request that
+    /// names no interface is served by whichever one is running; a request
+    /// that names one is served only when that is the interface in use, also
+    /// when it was chosen automatically at start. A request for a different
+    /// interface gets `None`.
+    pub async fn serving_method(&self, requested: &ConnectionMethod) -> Option<ConnectionMethod> {
+        let active = self.active_method.read().await.clone()?;
+        if active == *requested {
+            return Some(active);
+        }
+        let (ConnectionMethod::Lan { .. }, ConnectionMethod::Lan { ip: requested_ip }) =
+            (&active, requested)
+        else {
+            return None;
+        };
+        let Some(requested_ip) = requested_ip else {
+            return Some(active);
+        };
+        let advertised = self.prepared_relay_url.read().await.clone()?;
+        let named = lan::build_lan_relay_url_with_ip(self.config.lan_port, requested_ip).ok()?;
+        (advertised == named).then_some(active)
+    }
+
+    /// Whether authenticated device routing is up on the endpoint of [`url`].
+    async fn device_routing_serves(&self, url: &str) -> bool {
+        if self.authenticated_device_id.read().await.is_none() {
+            return false;
+        }
+        self.device_relay_url
+            .read()
+            .await
+            .as_deref()
+            .is_some_and(|connected| {
+                openbitfun_product_domains::account::relay_endpoint_base(connected)
+                    == openbitfun_product_domains::account::relay_endpoint_base(url)
+            })
     }
 
     /// Check whether a specific bot type is currently running.

@@ -685,3 +685,243 @@ async fn peer_preview_fixture(benchmark: bool) {
     host.stop().await;
     *get_account_context().write().await = previous_context;
 }
+
+/// `remote_connect_start` on a route that is already connected only returns
+/// its invitation. The dialog asks for it whenever "Add a device" opens, so
+/// asking must not sign in again, reconnect, restart the LAN Relay, replace
+/// the routing owner or detach controllers.
+///
+/// Runs through the real Relay router and device routing in a separate
+/// process with temporary product storage. The Relay is the loopback fixture
+/// bound to 127.0.0.1: this does not exercise the production Relay or a
+/// physical LAN interface, and a LAN route whose interface was chosen
+/// automatically is covered by the Core `host_lifecycle_tests` instead.
+#[tokio::test]
+async fn starting_a_connected_route_again_only_returns_its_invitation() {
+    const TEST: &str = "api::remote_connect_api::relay_routes_tests::starting_a_connected_route_again_only_returns_its_invitation";
+    if std::env::var_os("OPENBITFUN_RELAY_ROUTE_TEST_CHILD").is_none() {
+        let root = tempfile::tempdir().unwrap();
+        let mut command = openbitfun_services_core::process_manager::create_tokio_command(
+            std::env::current_exe().unwrap(),
+        );
+        command
+            .args([TEST, "--exact", "--nocapture"])
+            .env("OPENBITFUN_RELAY_ROUTE_TEST_CHILD", "1")
+            .env("NO_PROXY", "127.0.0.1,localhost")
+            .env("no_proxy", "127.0.0.1,localhost")
+            .env("OPENBITFUN_HOME", root.path())
+            .env(
+                "OPENBITFUN_DEVICE_IDENTITY_PATH",
+                root.path().join("device_identity.json"),
+            )
+            .kill_on_drop(true);
+        let output = tokio::time::timeout(std::time::Duration::from_secs(90), command.output())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+            "child fixture must actually run"
+        );
+        return;
+    }
+    let _test_guard = sync_state_tests::ACCOUNT_CONTEXT_TEST_LOCK.lock().await;
+    let attach = serde_json::json!({"cmd":"host_invoke","command":"peer_control_attach","args":{}});
+    let ping = serde_json::json!({"cmd":"ping"});
+    let official = FixtureHost::new("/v/1.0.2").await;
+    let id = current_device_identity().unwrap().device_id;
+    let host_session = official.credential(&id, [1; 32]).await;
+    let controller = official.credential("controller", [3; 32]).await;
+    official.start(official.port, None).await.unwrap();
+
+    // A restored sign-in: device routing connects before any invitation is
+    // asked for, so the service has not prepared an endpoint yet.
+    *RelayRoute::Official.service().write().await = Some(
+        RemoteConnectService::new(
+            RemoteConnectConfig {
+                openbitfun_server_url: official.url(),
+                ..RemoteConnectConfig::default()
+            },
+            Arc::new(DesktopEmbeddedRelayHost::default()),
+        )
+        .unwrap(),
+    );
+    *get_account_context().write().await = Some(AccountContextState {
+        session: host_session.clone(),
+        relay_url: official.url(),
+    });
+    let generation = account_context_generation();
+    account_connect_devices().await.unwrap();
+    let owner = current_device_routing_owner_snapshot().unwrap();
+    let saved = session_store::load_session_detailed().unwrap().unwrap();
+    let start_official = || {
+        remote_connect_start(StartRemoteConnectRequest {
+            method: "openbitfun_server".into(),
+            lan_ip: None,
+        })
+    };
+
+    // Asked right after connecting, whether or not presence has arrived yet.
+    let first = start_official().await.unwrap();
+    assert_eq!(first.method, ConnectionMethod::OpenBitFunServer);
+    let link = first.qr_url.expect("the legacy invitation link");
+    assert!(
+        link.starts_with(&format!("http://127.0.0.1:{}/v/1.0.2", official.port)),
+        "{link}"
+    );
+    assert!(link.ends_with(&format!("#/pair?did={id}")), "{link}");
+    assert_eq!(
+        current_device_routing_owner_snapshot().unwrap(),
+        owner,
+        "the first invitation after a restored sign-in must not reconnect"
+    );
+
+    // A controller attaches. Asking again, any number of times, returns the
+    // same link and leaves the route, its owner and the controller alone.
+    assert_eq!(
+        rpc(&official, &controller, &id, attach.clone()).await["ok"],
+        true
+    );
+    for _ in 0..3 {
+        let again = start_official().await.unwrap();
+        assert_eq!(again.qr_url.as_deref(), Some(link.as_str()));
+        assert_eq!(current_device_routing_owner_snapshot().unwrap(), owner);
+    }
+    // While the transport reconnects by itself the presence list is empty.
+    // That is not a reason to replace the route either.
+    assert!(replace_device_presence_if_owner(&owner, Vec::new()));
+    assert_eq!(
+        start_official().await.unwrap().qr_url.as_deref(),
+        Some(link.as_str())
+    );
+    assert_eq!(current_device_routing_owner_snapshot().unwrap(), owner);
+    assert_eq!(
+        crate::api::peer_host_invoke::attached_route_controllers(RelayRoute::Official),
+        vec!["controller"]
+    );
+    assert_eq!(
+        account_context_generation(),
+        generation,
+        "nobody was signed in again"
+    );
+    assert_eq!(
+        session_store::load_session_detailed()
+            .unwrap()
+            .unwrap()
+            .token,
+        saved.token
+    );
+    assert!(db::AuthToken::find(&official.database, &host_session.token)
+        .await
+        .unwrap()
+        .is_some());
+    assert_eq!(
+        rpc(&official, &controller, &id, ping.clone()).await["resp"],
+        "pong"
+    );
+
+    // ── A LAN route that is running is reused for the interface it uses ────
+    let lan = FixtureHost::new("").await;
+    let lan_session = lan.credential(&id, [2; 32]).await;
+    let lan_controller = lan.credential("controller", [4; 32]).await;
+    let bound = ConnectionMethod::Lan {
+        ip: Some("127.0.0.1".into()),
+    };
+    let lan_service = RemoteConnectService::new(
+        RemoteConnectConfig {
+            lan_port: lan.port,
+            ..RemoteConnectConfig::default()
+        },
+        lan.clone(),
+    )
+    .unwrap();
+    lan_service.prepare_relay(&bound).await.unwrap();
+    *RelayRoute::Lan.service().write().await = Some(lan_service);
+    RelayRoute::replace_lan_context(Some(AccountContextState {
+        session: lan_session.clone(),
+        relay_url: lan.url(),
+    }))
+    .await;
+    connect_route_devices(RelayRoute::Lan).await.unwrap();
+    let lan_owner = with_route_state(RelayRoute::Lan, |state| state.owner.clone()).unwrap();
+    let lan_generation = RelayRoute::Lan.generation();
+    assert_eq!(
+        rpc(&lan, &lan_controller, &id, attach.clone()).await["ok"],
+        true
+    );
+
+    // The interface it uses, no interface at all, and the empty value an
+    // unset form field sends: none of them restarts the embedded Relay.
+    for lan_ip in [Some("127.0.0.1".to_string()), None, Some(String::new())] {
+        let invitation = remote_connect_start(StartRemoteConnectRequest {
+            method: "lan".into(),
+            lan_ip: lan_ip.clone(),
+        })
+        .await
+        .unwrap_or_else(|error| panic!("{lan_ip:?}: {error}"));
+        assert_eq!(invitation.method, bound, "{lan_ip:?}");
+        assert!(invitation
+            .qr_url
+            .unwrap()
+            .starts_with(&format!("http://127.0.0.1:{}/", lan.port)));
+        assert_eq!(
+            with_route_state(RelayRoute::Lan, |state| state.owner.clone()).as_ref(),
+            Some(&lan_owner),
+            "{lan_ip:?}"
+        );
+        assert_eq!(
+            RelayRoute::Lan.generation(),
+            lan_generation,
+            "the LAN sign-in was not replaced for {lan_ip:?}"
+        );
+    }
+    assert!(db::AuthToken::find(&lan.database, &lan_session.token)
+        .await
+        .unwrap()
+        .is_some());
+    assert_eq!(
+        crate::api::peer_host_invoke::attached_route_controllers(RelayRoute::Lan),
+        vec!["controller"]
+    );
+    assert_eq!(
+        rpc(&lan, &lan_controller, &id, ping.clone()).await["resp"],
+        "pong"
+    );
+    assert_eq!(current_device_routing_owner_snapshot().unwrap(), owner);
+
+    // A request for another interface asks to move the route there, so the
+    // running route is stopped first, as it always was. This fixture has no
+    // such interface: the move fails and the LAN route stays stopped.
+    assert!(remote_connect_start(StartRemoteConnectRequest {
+        method: "lan".into(),
+        lan_ip: Some("invalid-interface".into()),
+    })
+    .await
+    .is_err());
+    assert!(with_route_state(RelayRoute::Lan, |state| state.owner.clone()).is_none());
+    assert!(RelayRoute::Lan
+        .context(RelayRoute::Lan.generation())
+        .await
+        .is_err());
+    assert!(db::AuthToken::find(&lan.database, &lan_session.token)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(crate::api::peer_host_invoke::attached_route_controllers(RelayRoute::Lan).is_empty());
+
+    // None of that touched the official route.
+    assert_eq!(current_device_routing_owner_snapshot().unwrap(), owner);
+    assert_eq!(
+        start_official().await.unwrap().qr_url.as_deref(),
+        Some(link.as_str())
+    );
+    assert_eq!(current_device_routing_owner_snapshot().unwrap(), owner);
+    assert_eq!(rpc(&official, &controller, &id, ping).await["resp"], "pong");
+    official.stop().await;
+}
