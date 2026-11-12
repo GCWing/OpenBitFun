@@ -252,3 +252,18 @@ test('chat errors are classified into translated copy; host answers keep their t
   assert.equal(isUnknownOutcomeFailure(new RemoteHostCommandError('operation has timed out')), false, 'a host answer is an outcome');
   assert.equal(isNotSubmittedFailure(new Error('RPC deadline elapsed before dispatch')), true);
 });
+
+test('connection state names the cause and needs two missed pings before blaming the desktop', async () => {
+  const { deriveConnectionState } = await import(await moduleUrl('../src/services/connectionState.ts'));
+  const base = { browserOnline: true, relayStatus: 'connected', presence: { online: true, lastSeenAt: 100 }, missedPings: 0, answered: true };
+  assert.deepEqual(deriveConnectionState(base), { health: 'connected', issue: null });
+  assert.deepEqual(deriveConnectionState({ ...base, missedPings: 1 }), { health: 'connected', issue: null }, 'one lost ping is noise');
+  assert.deepEqual(deriveConnectionState({ ...base, missedPings: 2 }).issue, { kind: 'unreachable' });
+  assert.deepEqual(deriveConnectionState({ ...base, missedPings: 2, relayStatus: 'disconnected' }).issue, { kind: 'relay' });
+  assert.deepEqual(deriveConnectionState({ ...base, browserOnline: false }).issue, { kind: 'offline' }, 'no network is reported at once');
+  assert.deepEqual(deriveConnectionState({ ...base, presence: { online: false, lastSeenAt: 90 }, missedPings: 1 }).issue,
+    { kind: 'host-offline', lastSeenAt: 90 });
+  assert.deepEqual(deriveConnectionState({ ...base, presence: { online: false, lastSeenAt: 90 } }), { health: 'connected', issue: null },
+    'a stale offline listing does not hide a desktop that answers');
+  assert.deepEqual(deriveConnectionState({ ...base, answered: false }), { health: 'checking', issue: null });
+});

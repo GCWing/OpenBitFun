@@ -604,6 +604,23 @@ export class RemoteSessionManager {
     return () => { stopRecovery(); stopHints(); };
   }
 
+  /** Status of the account's Relay connection; `connected` when unknown. */
+  get relayStatus(): 'connecting' | 'connected' | 'disconnected' | 'closed' {
+    const client = this.client as Partial<Pick<RelayHttpClient, 'relayStatus'>>;
+    return client.relayStatus ?? 'connected';
+  }
+
+  onRelayStatus(listener: () => void): () => void {
+    const client = this.client as Partial<Pick<RelayHttpClient, 'onRelayStatus'>>;
+    return client.onRelayStatus?.(() => listener()) ?? (() => {});
+  }
+
+  /** Directory updates that may change `controlTargetPresence()`. */
+  onControlTargetPresenceChange(listener: () => void): () => void {
+    const client = this.client as Partial<Pick<RelayHttpClient, 'onDeviceDirectorySnapshot'>>;
+    return client.onDeviceDirectorySnapshot?.(() => listener()) ?? (() => {});
+  }
+
   /** Last directory presence of the control target, when the directory lists it. */
   controlTargetPresence(): { online: boolean; lastSeenAt: number | null } | null {
     const deviceId = this.client.targetDeviceId;
