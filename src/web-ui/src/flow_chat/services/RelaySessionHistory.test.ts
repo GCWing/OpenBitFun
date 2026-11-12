@@ -249,6 +249,26 @@ describe('RelaySessionHistory', () => {
     expect(fixture.ready).toBeNull();
   });
 
+  it('fails as overdue when the subscribe request itself never answers, and releases a late grant', async () => {
+    vi.useFakeTimers();
+    let grant!: (id: string) => void;
+    fixture.subscribe.mockImplementationOnce(() => new Promise<string>(resolve => { grant = resolve; }));
+    const error = vi.fn();
+    const ready = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), ready, error, async () => {});
+    const outcome = expect(history.open()).rejects.toMatchObject({
+      name: 'RelayHistoryFirstPageOverdueError', retryable: true,
+    });
+    await vi.advanceTimersByTimeAsync(15_000);
+    await outcome;
+    expect(error).toHaveBeenCalledOnce();
+    expect(ready).not.toHaveBeenCalled();
+    expect(fixture.unsubscribe).not.toHaveBeenCalled();
+    grant('late-subscription');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fixture.unsubscribe).toHaveBeenCalledExactlyOnceWith('late-subscription');
+  });
+
   it('keeps a first page that arrives before the deadline and clears the deadline', async () => {
     vi.useFakeTimers();
     fixture.subscribe.mockResolvedValueOnce('subscription');
