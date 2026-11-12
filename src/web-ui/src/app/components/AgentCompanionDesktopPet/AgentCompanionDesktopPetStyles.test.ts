@@ -95,6 +95,21 @@ describe('AgentCompanionDesktopPet styles', () => {
     expect(bubbles).toContain('scrollbarVisibility="hidden"');
   });
 
+  it('shortens context-menu rows with menu tokens in compact density only', () => {
+    const stylesheet = readStylesheet();
+    const menu = extractBlock(stylesheet, '&__context-menu');
+    const compactMenu = extractBlock(stylesheet, ":where([data-density='compact']) &__context-menu");
+
+    expect(menu).not.toMatch(/--openbitfun-(?:overlay-menu-item-height|control-height-sm)\s*:/);
+    expect(compactMenu).toContain(
+      '--openbitfun-overlay-menu-item-height: var(--openbitfun-overlay-menu-heading-height);',
+    );
+    expect(compactMenu).toContain(
+      '--openbitfun-control-height-sm: var(--openbitfun-overlay-menu-heading-height);',
+    );
+    expect(`${menu}\n${compactMenu}`).not.toMatch(/height[\w-]*\s*:\s*\d+px/);
+  });
+
   it('delegates context-menu foregrounds and interaction states to the public menu item', () => {
     const source = readSource();
     const stylesheet = readStylesheet();

@@ -99,13 +99,18 @@
     --openbitfun-overlay-menu-min-inline-size: 0px;
     --openbitfun-overlay-menu-surface-padding: var(--openbitfun-space-1);
     --openbitfun-overlay-menu-surface-radius: var(--openbitfun-radius-base);
-    --openbitfun-overlay-menu-item-height: 24px;
-    --openbitfun-control-height-sm: 24px;
     --openbitfun-overlay-menu-item-radius: var(--openbitfun-radius-sm);
     --openbitfun-type-label-md-font-size: var(--openbitfun-type-label-sm-font-size);
 
     border: none;
     background: color-mix(in srgb, var(--openbitfun-color-surface-panel) 80%, transparent);
+  }
+
+  /* Compact density only: rows shrink to the menu's own compact row (its
+     heading height); other densities keep their row and hit-target heights. */
+  :where([data-density='compact']) &__context-menu {
+    --openbitfun-overlay-menu-item-height: var(--openbitfun-overlay-menu-heading-height);
+    --openbitfun-control-height-sm: var(--openbitfun-overlay-menu-heading-height);
   }
 
   /* Input bar shown inside the bubble the user replied from: one pill field
