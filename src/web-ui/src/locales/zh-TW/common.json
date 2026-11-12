@@ -678,8 +678,7 @@
           "connected": "已連線",
           "connecting": "連線中",
           "disconnected": "已中斷",
-          "error": "連線異常",
-          "unknown": "狀態未知"
+          "error": "連線異常"
         }
       },
       "actions": {
