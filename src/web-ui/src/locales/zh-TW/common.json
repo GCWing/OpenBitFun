@@ -518,7 +518,11 @@
       "discoveryWarningTitle": "外部工作階段探索",
       "discoveryReadFailed": "部分 {{source}} 工作階段記錄無法讀取，既有工作階段仍可使用。",
       "discoveryWorkspaceUnresolved": "部分 {{source}} 工作階段無法對應到工作區，既有工作階段仍可使用。",
-      "discoveringExternal": "正在探索外部工作階段…"
+      "discoveringExternal": "正在探索外部工作階段…",
+      "deleteFailed": "刪除會話失敗",
+      "archiveFailed": "歸檔會話失敗",
+      "renameFailed": "重新命名會話失敗",
+      "workspaceBindingMismatch": "此會話屬於其他工作區，無法在此處修改。請重新開啟 OpenBitFun，會話會在其所屬工作區下重新載入。"
     },
     "scheduledJobs": {
       "title": "定時任務",

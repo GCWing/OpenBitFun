@@ -518,7 +518,11 @@
       "discoveryWarningTitle": "外部会话发现",
       "discoveryReadFailed": "部分 {{source}} 会话记录无法读取，已有会话仍可使用。",
       "discoveryWorkspaceUnresolved": "部分 {{source}} 会话无法匹配到工作区，已有会话仍可使用。",
-      "discoveringExternal": "正在发现外部会话…"
+      "discoveringExternal": "正在发现外部会话…",
+      "deleteFailed": "删除会话失败",
+      "archiveFailed": "归档会话失败",
+      "renameFailed": "重命名会话失败",
+      "workspaceBindingMismatch": "该会话属于其他工作区，无法在此处修改。请重新打开 OpenBitFun，会话会在其所属工作区下重新加载。"
     },
     "scheduledJobs": {
       "title": "定时任务",

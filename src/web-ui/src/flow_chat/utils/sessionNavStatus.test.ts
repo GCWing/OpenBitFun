@@ -113,6 +113,11 @@ describe('session navigation status', () => {
   it('keeps an unavailable status explicit', () => {
     expect(deriveSessionNavStatus({ session: session(), unavailable: true }).kind).toBe('syncing');
   });
+
+  it('keeps a delivered approval answerable while activity is unavailable', () => {
+    expect(deriveSessionNavStatus({ session: session([turn('work', 'processing')]), unavailable: true,
+      permissions: [permission()] })).toEqual({ kind: 'approval', pendingCount: 1 });
+  });
   it('shows execution for ordinary project sessions as well as selected sessions', () => {
     const value = session([turn('work', 'processing')]);
     expect(deriveSessionNavStatus({ session: value }).kind).toBe('running');

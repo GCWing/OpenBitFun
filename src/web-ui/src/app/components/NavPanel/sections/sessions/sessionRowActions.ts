@@ -9,6 +9,7 @@
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { resolveSessionDriverId } from '@/flow_chat/session-drivers/resolve';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import { sessionMutationFailureMessage } from '@/flow_chat/utils/sessionMutationFailure';
 import { isOutcomeUnknownError } from '@/infrastructure/api/errors/TauriCommandError';
 import { i18nService } from '@/infrastructure/i18n';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
@@ -73,12 +74,7 @@ export async function duplicateSessionRow(sessionId: string, t: SessionRowTransl
   } catch (error) {
     if (isSurfaceChangedError(error)) return;
     log.error('Failed to copy session', { sessionId, error });
-    notificationService.error(
-      error instanceof Error && error.message
-        ? error.message
-        : t('nav.sessions.duplicateFailed'),
-      { duration: 4000 },
-    );
+    notificationService.error(sessionMutationFailureMessage('duplicate', error), { duration: 4000 });
   }
 }
 
@@ -87,8 +83,11 @@ export async function renameSessionRow(sessionId: string, title: string, t: Sess
   try {
     await flowChatManager.renameChatSessionTitle(sessionId, title);
   } catch (err) {
+    if (isSurfaceChangedError(err)) return;
     log.error('Failed to update session title', { sessionId, error: err });
-    if (isOutcomeUnknownError(err)) {
+    if (!isOutcomeUnknownError(err)) {
+      notificationService.error(sessionMutationFailureMessage('rename', err), { duration: 4000 });
+    } else {
       notificationService.warning(t('nav.sessions.renameOutcomeUnknown'), { duration: 6000 });
       try {
         await flowChatManager.reloadSessionTitle(sessionId);

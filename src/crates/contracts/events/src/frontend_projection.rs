@@ -85,17 +85,41 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
             user_input,
             original_user_input,
             user_message_metadata,
-        } => Some(AgenticFrontendEvent::new(
-            "agentic://dialog-turn-started",
-            json!({
+            session_binding,
+        } => {
+            let mut payload = json!({
                 "sessionId": session_id,
                 "turnId": turn_id,
                 "turnIndex": turn_index,
                 "userInput": user_input,
                 "originalUserInput": original_user_input,
                 "userMessageMetadata": user_message_metadata,
-            }),
-        )),
+            });
+            // Same keys as `agentic://session-created`, so a surface that has
+            // not loaded the session attributes it to its owning workspace.
+            if let (Some(binding), Some(fields)) = (session_binding, payload.as_object_mut()) {
+                let binding_fields = [
+                    ("workspacePath", json!(binding.workspace_path)),
+                    (
+                        "projectWorkspacePath",
+                        json!(binding.project_workspace_path),
+                    ),
+                    ("executionTarget", json!(binding.execution_target)),
+                    ("workspaceId", json!(binding.workspace_id)),
+                    ("remoteConnectionId", json!(binding.remote_connection_id)),
+                    ("remoteSshHost", json!(binding.remote_ssh_host)),
+                ];
+                for (key, value) in binding_fields {
+                    if !value.is_null() {
+                        fields.insert(key.to_string(), value);
+                    }
+                }
+            }
+            Some(AgenticFrontendEvent::new(
+                "agentic://dialog-turn-started",
+                payload,
+            ))
+        }
         AgenticEvent::SubagentSessionLinked {
             session_id,
             subagent_dialog_turn_id,
@@ -605,6 +629,56 @@ mod tests {
         assert_eq!(projected.payload["projectWorkspacePath"], "/repo");
         assert_eq!(projected.payload["executionTarget"]["worktreeId"], "wt-1");
         assert_eq!(projected.payload["workspaceId"], "workspace-wt-1");
+    }
+
+    #[test]
+    fn dialog_turn_started_projects_owning_workspace_binding() {
+        let projected = project_agentic_frontend_event(AgenticEvent::DialogTurnStarted {
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            turn_index: 20,
+            user_input: "continue".to_string(),
+            original_user_input: None,
+            user_message_metadata: None,
+            session_binding: Some(crate::SessionWorkspaceBinding {
+                workspace_path: Some("D:/repo".to_string()),
+                project_workspace_path: Some("D:/repo".to_string()),
+                execution_target: None,
+                workspace_id: Some("workspace-repo".to_string()),
+                remote_connection_id: None,
+                remote_ssh_host: None,
+            }),
+        })
+        .expect("projected");
+
+        assert_eq!(projected.event_name, "agentic://dialog-turn-started");
+        assert_eq!(projected.payload["workspacePath"], "D:/repo");
+        assert_eq!(projected.payload["projectWorkspacePath"], "D:/repo");
+        assert_eq!(projected.payload["workspaceId"], "workspace-repo");
+        let fields = projected.payload.as_object().expect("object payload");
+        assert!(!fields.contains_key("executionTarget"));
+        assert!(!fields.contains_key("remoteConnectionId"));
+    }
+
+    #[test]
+    fn dialog_turn_started_without_binding_keeps_legacy_payload() {
+        // An older host serializes the event without `session_binding`.
+        let legacy = serde_json::json!({
+            "type": "DialogTurnStarted",
+            "session_id": "session-1",
+            "turn_id": "turn-1",
+            "turn_index": 0,
+            "user_input": "hello",
+            "original_user_input": null,
+            "user_message_metadata": null,
+        });
+        let event: AgenticEvent = serde_json::from_value(legacy).expect("legacy event");
+        let projected = project_agentic_frontend_event(event).expect("projected");
+
+        let fields = projected.payload.as_object().expect("object payload");
+        assert!(!fields.contains_key("workspacePath"));
+        assert!(!fields.contains_key("workspaceId"));
+        assert_eq!(projected.payload["sessionId"], "session-1");
     }
 
     #[test]

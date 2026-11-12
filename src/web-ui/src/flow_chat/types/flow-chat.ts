@@ -661,6 +661,13 @@ export interface Session {
 
   /** Transient UI session backed by a real agent session. */
   agentBackedTransient?: boolean;
+
+  /**
+   * Created from a remote-driven event before this surface loaded the
+   * session. It adopts the host's persisted metadata when that arrives and
+   * never writes its own placeholder title over the persisted one.
+   */
+  externalPlaceholder?: boolean;
 }
 
 export interface SessionConfig {

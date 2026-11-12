@@ -50,6 +50,7 @@ export const SessionStatusMark = memo(function SessionStatusMark({
       data-status={status.kind}
       role="img"
       aria-label={label}
+      title={label}
     >
       <Icon
         {...('glyph' in appearance

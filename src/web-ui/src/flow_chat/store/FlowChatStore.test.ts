@@ -891,6 +891,64 @@ describe('FlowChatStore metadata persistence callbacks', () => {
   });
 });
 
+describe('FlowChatStore remote-driven placeholder adoption', () => {
+  beforeEach(() => { resetStore(); apiMocks.loadSessionMetadata.mockReset(); });
+  afterEach(() => { resetStore(); });
+
+  const addPlaceholder = (workspaceId: string) => {
+    flowChatStore.addExternalSession('persisted-session', 'Remote Session', 'Standard', 'D:/repo', {
+      workspaceId, projectWorkspacePath: 'D:/repo', externalPlaceholder: true, persistedHistory: true,
+    });
+    flowChatStore.addDialogTurn('persisted-session', {
+      id: 'harmony-turn-1', sessionId: 'persisted-session', status: 'processing', modelRounds: [],
+      userMessage: { id: 'user-1', content: 'Continue', timestamp: 1 }, startTime: 1, backendTurnIndex: 20,
+    } as any);
+  };
+
+  it('hydrates history on open and adopts the persisted title, mode and binding', async () => {
+    const workspaceId = fixtureWorkspaceId('D:/repo');
+    addPlaceholder(workspaceId);
+    expect(flowChatStore.getState().sessions.get('persisted-session')).toMatchObject({
+      externalPlaceholder: true, isHistorical: true, historyState: 'metadata-only',
+    });
+    apiMocks.loadSessionMetadata.mockResolvedValueOnce({
+      sessionId: 'persisted-session', sessionName: 'Fuse gate kernels', agentType: 'Claw',
+      modelName: 'primary', createdAt: 10, lastActiveAt: 20, turnCount: 21, messageCount: 42,
+      toolCallCount: 0, status: 'active', workspacePath: 'D:/repo', workspaceId,
+    });
+
+    await expect(flowChatStore.ensurePersistedSessionMetadata('persisted-session', workspaceId, true))
+      .resolves.toBe(true);
+
+    const adopted = flowChatStore.getState().sessions.get('persisted-session');
+    expect(adopted).toMatchObject({
+      title: 'Fuse gate kernels', mode: 'Claw', workspaceId, historyState: 'metadata-only', isHistorical: true,
+    });
+    expect(adopted?.externalPlaceholder).toBeUndefined();
+    expect(adopted?.dialogTurns.map(turn => turn.id)).toEqual(['harmony-turn-1']);
+  });
+
+  it('rebinds a placeholder created before the owning workspace was known', () => {
+    flowChatStore.addExternalSession('persisted-session', 'Remote Session', 'Standard', 'C:/assistant', {
+      workspaceId: 'assistant-workspace', externalPlaceholder: true,
+    });
+    flowChatStore.rebindExternalPlaceholder('persisted-session', {
+      workspaceId: 'project-workspace', workspacePath: 'D:/repo', persistedHistory: true,
+    });
+    expect(flowChatStore.getState().sessions.get('persisted-session')).toMatchObject({
+      workspaceId: 'project-workspace', workspacePath: 'D:/repo', projectWorkspacePath: 'D:/repo',
+      historyState: 'metadata-only', config: expect.objectContaining({ workspaceId: 'project-workspace' }),
+    });
+  });
+
+  it('never rebinds a session loaded from the host', () => {
+    const session = createSession();
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
+    flowChatStore.rebindExternalPlaceholder(session.sessionId, { workspaceId: 'other-workspace' });
+    expect(flowChatStore.getState().sessions.get(session.sessionId)).toBe(session);
+  });
+});
+
 describe('FlowChatStore session removal active selection', () => {
   beforeEach(() => {
     resetStore();
