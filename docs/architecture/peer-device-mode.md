@@ -510,20 +510,29 @@ FS) and must not be mixed with Peer Device Mode.
   in-flight count limit or reserved slot. Actual admission belongs to the Relay
   memory budget. Mutation deadlines use the same 120s `DEFAULT_RPC_TIMEOUT_MS`
   contract as `AccountRealtime`; explicit caller deadlines continue to flow to
-  the native transport and server. Reads are bounded: a 25s attempt (60s for
-  scanning reads) inside a 60s overall deadline, retrying only a request that
-  was never submitted or whose reply was lost, then a typed
-  `peer_host_not_responding` error that the read owner presents with a retry.
+  the native transport and server. Reads keep the 120s attempt by default, so
+  slow but legitimate reads (provider model lists, usage reports, statistics,
+  large file trees, remote-workspace directories) still complete. Only a named
+  hot-path set (session and workspace lists, config hydrate, the permission
+  mailbox, app state) uses a 25s attempt inside a 60s overall deadline. Reads
+  retry only a request that was never submitted or whose reply was lost; a
+  silent host ends in a typed `peer_host_not_responding` error that the read
+  owner presents with a retry.
   Explicitly idempotent dialog submissions reuse their stable session/turn
-  identity for up to five attempts; both hosts keep the outcome for 15 minutes,
-  longer than that whole retry budget, and report the Runtime's duplicate Turn
-  id refusal for the same identity as accepted. Ordinary mutations remain
-  single-shot because a missing acknowledgement is an unknown outcome.
+  identity for up to five attempts; both hosts coalesce retries of an attempt
+  still in flight and keep a settled outcome for 15 minutes only when it was
+  accepted (a CLI failure after Runtime admission also stays cached), so an
+  explicit Retry after a transient failure runs again. The Runtime's duplicate
+  Turn id refusal for the same identity is reported as accepted. Ordinary
+  mutations remain single-shot because a missing acknowledgement is an unknown
+  outcome.
 - A Desktop host executes product commands through its webview bridge, which
   reports readiness with `peer_host_bridge_ready`. Until then the host refuses
-  product commands with `peer_host_ui_not_ready:` (definitely not executed) and
+  product commands with `peer_host_ui_not_ready:` (definitely not executed),
+  after waiting up to 10s for a webview that is still starting, and
   `peer_mode_ping` reports `host_ui_ready: false`; the controller shows the host
-  as starting and polls it. Older hosts omit the field and are treated as ready.
+  as starting and polls it. A main-webview reload clears readiness again. Older
+  hosts omit the field and are treated as ready.
 - Hosts advertising `peer_attachment_status_v1` answer `peer_mode_ping` with
   `caller_attached` for the calling controller (Desktop by route and source
   device, CLI by the `controller_device_id` argument). A controller that is no
@@ -531,7 +540,10 @@ FS) and must not be mixed with Peer Device Mode.
   mailbox instead of reporting a link that receives no events as ready.
 - Relay route loss on a host (a blip, a routing restart, a stopped route) only
   clears controller delivery targets. Pending permission requests stay with the
-  Runtime; only an explicit final `peer_control_detach` fails them closed.
+  Runtime; a `peer_control_detach` that leaves no attached controller fails them
+  closed, including after a route loss already removed that controller. A
+  controller whose detach fails on transport still disconnects locally and
+  retries the detach in the background, and again when the host reappears.
 - Mobile delegated-auth recovery retries only a Relay HTTP 401. A decrypted host
   application error mentioning an upstream 401 must not repeat a mutation.
   Captured account and target identities fence credential refresh and delivery.
