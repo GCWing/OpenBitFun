@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type React from 'react';
-import { Copy } from 'lucide-react';
 import { Icon } from '@openbitfun/ui';
-import { i18nService } from '@/infrastructure/i18n';
+import { useI18n } from '@/infrastructure/i18n';
 import { contextMenuController } from '@/shared/context-menu-system/core/ContextMenuController';
 import { ContextType, type CustomContext, type MenuItem } from '@/shared/context-menu-system/types';
 import { notificationService } from '@/shared/notification-system';
@@ -17,6 +16,7 @@ const COPIED_FEEDBACK_MS = 1500;
  * a right-click menu on the image. Both report the outcome with a toast.
  */
 export function useImageLightboxCopy(source: string | null | undefined) {
+  const { t } = useI18n('components');
   const [copied, setCopied] = useState(false);
   const resetTimerRef = useRef<number | null>(null);
 
@@ -31,12 +31,12 @@ export function useImageLightboxCopy(source: string | null | undefined) {
       setCopied(true);
       if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
       resetTimerRef.current = window.setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
-      notificationService.success(i18nService.t('components:imageLightbox.copySuccess'), { duration: 2000 });
+      notificationService.success(t('imageLightbox.copySuccess'), { duration: 2000 });
     } catch (error) {
       log.warn('Failed to copy image to clipboard', { error });
-      notificationService.error(i18nService.t('components:imageLightbox.copyFailed'), { duration: 4000 });
+      notificationService.error(t('imageLightbox.copyFailed'), { duration: 4000 });
     }
-  }, [source]);
+  }, [source, t]);
 
   const onContextMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
     if (!source) return;
@@ -47,8 +47,8 @@ export function useImageLightboxCopy(source: string | null | undefined) {
     const position = { x: event.clientX, y: event.clientY };
     const items: MenuItem[] = [{
       id: 'image-lightbox-copy',
-      label: i18nService.t('components:imageLightbox.copy'),
-      icon: <Icon glyph={Copy} size="sm" />,
+      label: t('imageLightbox.copy'),
+      icon: <Icon name="duplicate" size="sm" />,
       onClick: () => { void copy(); },
     }];
     const context: CustomContext = {
@@ -61,7 +61,7 @@ export function useImageLightboxCopy(source: string | null | undefined) {
       timestamp: Date.now(),
     };
     void contextMenuController.show(position, items, context);
-  }, [copy, source]);
+  }, [copy, source, t]);
 
   return { copied, copy, onContextMenu };
 }

@@ -1,6 +1,5 @@
-import { Check, Copy } from 'lucide-react';
 import { Icon, IconButton } from '@openbitfun/ui';
-import { i18nService } from '@/infrastructure/i18n';
+import { useI18n } from '@/infrastructure/i18n';
 
 /** Lightbox chrome button; the owning lightbox positions it beside its close control. */
 export function ImageLightboxCopyButton({ className, copied, onCopy }: {
@@ -8,13 +7,14 @@ export function ImageLightboxCopyButton({ className, copied, onCopy }: {
   copied: boolean;
   onCopy: () => void;
 }) {
-  const label = i18nService.t('components:imageLightbox.copy');
+  const { t } = useI18n('components');
+  const label = t('imageLightbox.copy');
   return (
     <IconButton
       className={className}
       aria-label={label}
       title={label}
-      icon={<Icon glyph={copied ? Check : Copy} size="md" />}
+      icon={<Icon name={copied ? 'check-line' : 'duplicate'} size="md" />}
       size="sm"
       variant="quiet"
       onClick={event => {

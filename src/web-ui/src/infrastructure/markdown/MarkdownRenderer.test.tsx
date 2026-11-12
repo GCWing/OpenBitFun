@@ -64,6 +64,8 @@ vi.mock('@/infrastructure/i18n', () => ({
   i18nService: {
     t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
   },
+  // The image lightbox's copy action.
+  useI18n: () => ({ t: (key: string) => key }),
 }));
 
 vi.mock('@/infrastructure/appearance', () => ({
