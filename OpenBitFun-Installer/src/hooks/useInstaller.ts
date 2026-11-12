@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import i18n from '../i18n';
@@ -70,6 +70,10 @@ function isSameInstallPath(left: string, right: string): boolean {
 }
 
 export function useInstaller(): UseInstallerReturn {
+  const operation = useRef<'install' | 'uninstall' | null>(null);
+  const diskRequest = useRef(0);
+  const installedPath = useRef<string | null>(null);
+  const cleanupPending = useRef(false);
   const [previewOnly, setPreviewOnly] = useState(false);
   const [step, setStep] = useState<InstallStep>('lang');
   const [options, setOptions] = useState<InstallOptions>(DEFAULT_OPTIONS);
@@ -146,6 +150,7 @@ export function useInstaller(): UseInstallerReturn {
   useEffect(() => {
     const unlisten = listen<InstallProgress>('install-progress', (event) => {
       setProgress(event.payload);
+      if (operation.current === 'uninstall') setUninstallProgress(event.payload.percent);
     });
     return () => { unlisten.then((fn) => fn()); };
   }, []);
@@ -153,10 +158,6 @@ export function useInstaller(): UseInstallerReturn {
   const clearInstallError = useCallback(() => {
     setError(null);
   }, []);
-
-  useEffect(() => {
-    setError(null);
-  }, [options.installPath, step]);
 
   const readExistingInstall = useCallback(async (): Promise<ExistingInstallation> => {
     try {
@@ -218,11 +219,14 @@ export function useInstaller(): UseInstallerReturn {
   }, [step]);
 
   const refreshDiskSpace = useCallback(async (path: string) => {
+    const request = ++diskRequest.current;
+    setDiskSpace(null);
     try {
       const info = await invoke<DiskSpaceInfo>('get_disk_space', { path });
-      setDiskSpace(info);
+      if (request === diskRequest.current) setDiskSpace(info);
     } catch (err) {
       console.warn('Failed to get disk space:', err);
+      if (request === diskRequest.current) setError(String(err));
     }
   }, []);
 
@@ -254,6 +258,11 @@ export function useInstaller(): UseInstallerReturn {
   }, [refreshExistingInstall]);
 
   const install = useCallback(async () => {
+    if (operation.current) return;
+    operation.current = 'install';
+    ++diskRequest.current;
+    installedPath.current = null;
+    cleanupPending.current = false;
     setError(null);
 
     setIsInstalling(true);
@@ -264,7 +273,7 @@ export function useInstaller(): UseInstallerReturn {
       const validated = await invoke<InstallPathValidation>('validate_install_path', {
         path: options.installPath,
       });
-      const isUpdate = Boolean(
+      const detectedUpdate = Boolean(
         detectedInstall.detected
         && detectedInstall.mainBinaryPresent
         && detectedInstall.installLocation
@@ -279,8 +288,16 @@ export function useInstaller(): UseInstallerReturn {
       }
       setStep('progress');
       setProgress({ step: 'prepare', percent: 0, message: '' });
-      await invoke('start_installation', { options: effectiveOptions });
+      const result = await invoke<{ isUpdate: boolean; cleanupPending: boolean; warning?: string } | null>('start_installation', { options: effectiveOptions });
+      installedPath.current = effectiveOptions.installPath;
+      cleanupPending.current = result?.cleanupPending === true;
       setInstallationCompleted(true);
+      const isUpdate = result?.isUpdate ?? detectedUpdate;
+      if (result?.cleanupPending) {
+        setError(i18n.t('errors.maintenance.cleanupPending'));
+        return;
+      }
+      if (result?.warning) { setError(result.warning); return; }
       if (isUpdate) {
         if (options.launchAfterInstall) {
           await invoke('launch_application', { installPath: effectiveOptions.installPath });
@@ -299,6 +316,7 @@ export function useInstaller(): UseInstallerReturn {
       const raw = typeof err === 'string' ? err : err?.message;
       setError((raw && String(raw).trim()) ? String(raw) : i18n.t('errors.install.failed'));
     } finally {
+      operation.current = null;
       setIsInstalling(false);
     }
   }, [options, readExistingInstall, refreshExistingInstall]);
@@ -310,7 +328,14 @@ export function useInstaller(): UseInstallerReturn {
   }, [canConfirmProgress]);
 
   const retryInstall = useCallback(async () => {
-    if (isInstalling) return;
+    if (isInstalling || operation.current) return;
+    if (installedPath.current && !cleanupPending.current) {
+      try {
+        await invoke('launch_application', { installPath: installedPath.current });
+        await invoke('close_installer');
+      } catch (error) { setError(String(error)); }
+      return;
+    }
     await install();
   }, [install, isInstalling]);
 
@@ -335,41 +360,28 @@ export function useInstaller(): UseInstallerReturn {
   }, [options.installPath]);
 
   const closeInstaller = useCallback(() => {
+    if (operation.current) return;
     invoke('close_installer');
   }, []);
 
   const startUninstall = useCallback(async () => {
-    if (isUninstalling) return;
+    if (operation.current) return;
+    operation.current = 'uninstall';
+    ++diskRequest.current;
     setUninstallError(null);
     setUninstallCompleted(false);
     setIsUninstalling(true);
     setUninstallProgress(0);
     try {
-      await new Promise<void>((resolve) => {
-        const durationMs = 1800;
-        const startedAt = Date.now();
-        const timer = window.setInterval(() => {
-          const elapsed = Date.now() - startedAt;
-          const ratio = Math.min(elapsed / durationMs, 1);
-          const percent = Math.round(ratio * 85);
-          setUninstallProgress(percent);
-          if (ratio >= 1) {
-            window.clearInterval(timer);
-            resolve();
-          }
-        }, 80);
-      });
-
-      await invoke('uninstall', { installPath: options.installPath });
+      const result = await invoke<{ cleanupPending: boolean } | null>('uninstall', { installPath: options.installPath });
       setUninstallProgress(100);
       setUninstallCompleted(true);
-      window.setTimeout(() => {
-        closeInstaller();
-      }, 600);
+      if (result?.cleanupPending) setUninstallError(i18n.t('errors.maintenance.cleanupPending'));
     } catch (err: any) {
       setUninstallError(typeof err === 'string' ? err : err.message || 'Uninstall failed');
       setUninstallProgress(0);
     } finally {
+      operation.current = null;
       setIsUninstalling(false);
     }
   }, [closeInstaller, isUninstalling, options.installPath]);

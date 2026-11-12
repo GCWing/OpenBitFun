@@ -87,6 +87,7 @@ export function AppUpdatePanel() {
       <DialogFooter separator className="openbitfun-update-details__footer">
         <div className="openbitfun-update-panel__actions" data-openbitfun-component="about-dialog" data-openbitfun-part="updateActions">
           {downloading ? (
+            <>
             <div className="openbitfun-update-progress__bar openbitfun-update-panel__progress"
               role="progressbar" aria-label={t('update.downloadingTitle')}
               aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent ?? undefined}
@@ -95,6 +96,8 @@ export function AppUpdatePanel() {
                 style={fraction == null ? undefined : { transform: `scaleX(${fraction})` }}
                 data-openbitfun-component="about-dialog" data-openbitfun-part="progressFill" />
             </div>
+            <Button variant="fill" size="md" onClick={() => void state.cancelDownload()}>{t('actions.cancel')}</Button>
+            </>
           ) : (
             <>
               {canSkip && target && <Button size="md" variant="fill" disabled={busy}

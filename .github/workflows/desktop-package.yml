@@ -895,6 +895,7 @@ jobs:
             --assets-dir release-assets \
             --version "${{ needs.prepare.outputs.version }}" \
             --out-dir release-updater-assets \
+            --windows-installer-dir release-manual-assets \
             --required-platforms "${REQUIRED_UPDATER_PLATFORMS}"
 
       - name: Generate Linux binaries manifest

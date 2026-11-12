@@ -48,6 +48,7 @@ pub mod runtime;
 pub mod sleep_prevention;
 pub mod startup_trace;
 pub mod tray;
+mod update_maintenance;
 mod webview_recovery;
 mod window_material;
 mod window_state_support;
@@ -904,59 +905,8 @@ pub async fn run() {
                 );
             }
 
-            // Ensure the Tauri NSIS registry install-location key points to the
-            // actual install directory, so that auto-updates respect the custom
-            // install path chosen during initial installation.
-            #[cfg(target_os = "windows")]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x08000000;
-                let step_started = Instant::now();
-
-                if let Ok(exe) = std::env::current_exe() {
-                    if let Some(install_dir) = exe.parent() {
-                        let dir_str = install_dir.to_string_lossy();
-                        let need_update =
-                            match std::process::Command::new("reg")
-                                .args([
-                                    "query",
-                                    r"HKCU\Software\OpenBitFun Team\OpenBitFun",
-                                    "/ve",
-                                ])
-                                .creation_flags(CREATE_NO_WINDOW)
-                                .output()
-                            {
-                                Ok(output) => {
-                                    let stdout = String::from_utf8_lossy(&output.stdout);
-                                    !stdout.contains(dir_str.as_ref())
-                                }
-                                Err(_) => true,
-                            };
-                        if need_update {
-                            let _ = std::process::Command::new("reg")
-                                .args([
-                                    "add",
-                                    r"HKCU\Software\OpenBitFun Team\OpenBitFun",
-                                    "/ve",
-                                    "/d",
-                                    &dir_str,
-                                    "/f",
-                                ])
-                                .creation_flags(CREATE_NO_WINDOW)
-                                .status();
-                            log::info!(
-                                "Synced Tauri install-location registry to: {}",
-                                install_dir.display()
-                            );
-                        }
-                    }
-                }
-                startup_trace.record_elapsed_step(
-                    "native_setup",
-                    "sync_install_location_registry",
-                    step_started,
-                );
-            }
+            // Installation scope and registration belong to the installer.
+            // Development and portable launches must not rewrite installed paths.
             for step in startup_timings.steps() {
                 log::debug!(
                     "Desktop startup step completed: step={}, duration_ms={}",
@@ -1859,6 +1809,7 @@ pub async fn run() {
             check_for_updates,
             install_update,
             api::update_api::download_update,
+            api::update_api::cancel_app_update_download,
             api::update_api::get_pending_update,
             api::update_api::install_pending_update,
             api::system_api::open_html_file_in_browser,

@@ -250,10 +250,18 @@ fn uninstall_platform_service() -> Result<String> {
         return Ok("Auto-start service is not installed.".to_string());
     }
     // disable --now stops and disables; ignore failure when already stopped.
-    let _ = run_systemctl_user(&["disable", "--now", SYSTEMD_UNIT_NAME]);
+    let stopped = run_systemctl_user(&["disable", "--now", SYSTEMD_UNIT_NAME])?;
+    if !stopped.status.success() && platform_service_active() != Some(false) {
+        return Err(anyhow!(
+            "Cannot stop the daemon; service registration was retained"
+        ));
+    }
     std::fs::remove_file(&unit_path)
         .with_context(|| format!("remove systemd unit {}", unit_path.display()))?;
-    let _ = run_systemctl_user(&["daemon-reload"]);
+    let reloaded = run_systemctl_user(&["daemon-reload"])?;
+    if !reloaded.status.success() {
+        return Err(anyhow!("Service file was removed but systemd reload failed; run systemctl --user daemon-reload"));
+    }
     Ok("Stopped and removed the systemd user service.".to_string())
 }
 
@@ -264,10 +272,15 @@ fn uninstall_platform_service() -> Result<String> {
         return Ok("Auto-start service is not installed.".to_string());
     }
     let uid = unsafe { libc::getuid() };
-    let _ = run_command(
+    let stopped = run_command(
         "launchctl",
         &["bootout", &format!("gui/{uid}/{LAUNCH_AGENT_LABEL}")],
-    );
+    )?;
+    if !stopped.status.success() && platform_service_active() != Some(false) {
+        return Err(anyhow!(
+            "Cannot stop the LaunchAgent; its definition was retained"
+        ));
+    }
     std::fs::remove_file(&plist_path)
         .with_context(|| format!("remove LaunchAgent {}", plist_path.display()))?;
     Ok("Stopped and removed the LaunchAgent.".to_string())
@@ -283,7 +296,18 @@ fn uninstall_platform_service() -> Result<String> {
 #[cfg(all(unix, not(target_os = "macos")))]
 fn platform_service_active() -> Option<bool> {
     let output = run_systemctl_user(&["is-active", SYSTEMD_UNIT_NAME]).ok()?;
-    Some(output.status.success())
+    systemd_activity(output.status.success(), &output.stdout)
+}
+
+#[cfg(any(test, all(unix, not(target_os = "macos"))))]
+fn systemd_activity(success: bool, stdout: &[u8]) -> Option<bool> {
+    if success {
+        return Some(true);
+    }
+    match String::from_utf8_lossy(stdout).trim() {
+        "inactive" | "failed" | "unknown" => Some(false),
+        _ => None,
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -294,7 +318,14 @@ fn platform_service_active() -> Option<bool> {
         &["print", &format!("gui/{uid}/{LAUNCH_AGENT_LABEL}")],
     )
     .ok()?;
-    Some(output.status.success())
+    if output.status.success() {
+        return Some(true);
+    }
+    // A missing user GUI domain or denied query is an unknown state, not proof
+    // that the daemon stopped. Retain its registration in that case.
+    run_command("launchctl", &["print", &format!("gui/{uid}")])
+        .ok()
+        .and_then(|domain| domain.status.success().then_some(false))
 }
 
 #[cfg(not(unix))]
@@ -330,7 +361,9 @@ pub(super) fn install_service_for_provisioning() -> Result<String> {
     let executable = current_exe_path()?;
     let message = install_platform_service(&executable)?;
     if let Err(error) = ensure_platform_service_persistent() {
-        let _ = uninstall_platform_service();
+        if let Err(recovery) = uninstall_platform_service() {
+            return Err(error.context(format!("Daemon provisioning rollback failed; service registration was retained: {recovery:#}")));
+        }
         return Err(error);
     }
     Ok(message)
@@ -399,6 +432,15 @@ pub(crate) fn print_status() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn service_query_failure_does_not_claim_the_daemon_is_stopped() {
+        assert_eq!(systemd_activity(false, b""), None);
+        assert_eq!(systemd_activity(false, b"deactivating\n"), None);
+        assert_eq!(systemd_activity(false, b"inactive\n"), Some(false));
+        assert_eq!(systemd_activity(false, b"failed\n"), Some(false));
+        assert_eq!(systemd_activity(true, b"active\n"), Some(true));
+    }
 
     #[test]
     fn systemd_unit_runs_daemon_run_and_restarts_on_failure() {

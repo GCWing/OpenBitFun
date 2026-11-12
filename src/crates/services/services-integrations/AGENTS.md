@@ -2,6 +2,11 @@
 
 Scope: this guide applies to `src/crates/services/services-integrations`.
 
+For remote CLI installation scripts and recovery behavior, run
+`cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::dispatch_ssh::tests`.
+Generated Bash execution tests require Unix; Windows covers protocol and script
+assembly checks. These fixtures do not establish live SSH behavior.
+
 `openbitfun-services-integrations` owns reviewed integration contracts and runtime
 slices that are outside pure product logic but still platform-neutral.
 

@@ -88,7 +88,7 @@ pub(crate) enum UpdateOutcome {
 }
 
 pub(crate) async fn run_manual(check_only: bool) -> Result<UpdateOutcome> {
-    let _lock = if check_only {
+    let _lock = if check_only || current_platform_key().is_none() {
         None
     } else {
         Some(InstallLock::acquire()?)
@@ -241,77 +241,44 @@ fn report_background_failure() {
 
 /// Guards against two `openbitfun update` runs swapping the binary at once.
 struct InstallLock {
-    path: PathBuf,
+    _file: fs::File,
 }
 
 impl InstallLock {
     fn path() -> Option<PathBuf> {
-        crate::config::CliConfig::config_dir()
-            .ok()
-            .map(|dir| dir.join("update.lock"))
+        std::env::current_exe()
+            .ok()?
+            .parent()
+            .map(|parent| parent.join(".openbitfun-cli-install.lock"))
     }
 
-    /// A lock older than this is treated as abandoned by a killed process.
-    const STALE_AFTER: Duration = Duration::from_secs(60 * 60);
-
     fn is_held() -> bool {
-        let Some(path) = Self::path() else {
-            return false;
-        };
-        let Ok(modified) = fs::metadata(&path).and_then(|meta| meta.modified()) else {
-            return false;
-        };
-        SystemTime::now()
-            .duration_since(modified)
-            .is_ok_and(|age| age < Self::STALE_AFTER)
+        Self::acquire().is_err()
     }
 
     fn acquire() -> Result<Self> {
-        let path =
-            Self::path().ok_or_else(|| anyhow!("cannot resolve the CLI update lock location"))?;
-        if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        // `create_new` is the whole point: a check-then-write leaves a window in
-        // which two `openbitfun update` processes both see no lock, and interleaving
-        // their backup/stage/swap renames can leave no working binary at all.
-        // Only a stale lock is cleared, and only then is the create retried.
-        match fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
+        let path = Self::path()
+            .ok_or_else(|| anyhow!("cannot resolve the CLI installation lock location"))?;
+        let mut options = fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(windows)]
         {
-            Ok(mut file) => {
-                use std::io::Write as _;
-                let _ = write!(file, "{}", std::process::id());
-                Ok(Self { path })
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                if Self::is_held() {
-                    return Err(anyhow!(
-                        "another OpenBitFun CLI update is already running ({})",
-                        path.display()
-                    ));
-                }
-                fs::remove_file(&path)
-                    .with_context(|| format!("clear stale lock {}", path.display()))?;
-                let mut file = fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&path)
-                    .with_context(|| format!("create {}", path.display()))?;
-                use std::io::Write as _;
-                let _ = write!(file, "{}", std::process::id());
-                Ok(Self { path })
-            }
-            Err(error) => Err(error).with_context(|| format!("create {}", path.display())),
+            use std::os::windows::fs::OpenOptionsExt;
+            options.share_mode(0);
         }
-    }
-}
-
-impl Drop for InstallLock {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        let file = options.open(&path).with_context(|| {
+            format!(
+                "open installation lock {}; check directory permissions",
+                path.display()
+            )
+        })?;
+        file.try_lock().with_context(|| {
+            format!(
+                "another OpenBitFun CLI installation or update is already running ({})",
+                path.display()
+            )
+        })?;
+        Ok(Self { _file: file })
     }
 }
 
@@ -1021,6 +988,9 @@ fn install_archive(archive: &[u8], current_exe: &Path) -> Result<()> {
         ))
     };
 
+    // Failed rollback must retain the only recovery copies instead of allowing
+    // TempDir's destructor to erase them during unwinding.
+    let retained_stage = stage.keep();
     fs::rename(current_exe, &primary_backup).context("back up current openbitfun")?;
     if plugin_host_existed {
         if let Err(error) = fs::rename(&plugin_host_target, &plugin_host_backup) {
@@ -1115,6 +1085,12 @@ fn install_archive(archive: &[u8], current_exe: &Path) -> Result<()> {
             "the previous CLI could NOT be put back ({}); reinstall OpenBitFun manually",
             rollback_failures.join("; ")
         )));
+    }
+    if let Err(error) = fs::remove_dir_all(&retained_stage) {
+        tracing::warn!(
+            "CLI update completed; cleanup remains at {}: {error}",
+            retained_stage.display()
+        );
     }
     Ok(())
 }

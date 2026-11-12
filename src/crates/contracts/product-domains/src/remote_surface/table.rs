@@ -139,6 +139,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("btw_ask_stream",                                             Routed,      Proxied,          HANDLED),
     op("btw_cancel",                                                 Routed,      Proxied,          HANDLED),
     op("cancel_acp_dialog_turn",                                     Unaudited,   Proxied,          CLI_NO_ACP_CLIENT_HOST),
+    op("cancel_app_update_download",                                 Agnostic,    ControllerLocal,  REFUSED),
     op("cancel_dialog_turn",                                         Agnostic,    Proxied,          HANDLED),
     op("cancel_insights_generation",                                 LocalOnly,   ControllerLocal,  REFUSED),
     op("cancel_mcp_remote_oauth",                                    Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),

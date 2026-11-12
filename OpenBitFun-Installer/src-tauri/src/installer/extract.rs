@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::io;
 use std::io::Cursor;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Estimated install size in bytes (~200MB for typical Tauri app with WebView)
 pub(super) const ESTIMATED_INSTALL_SIZE: u64 = 200 * 1024 * 1024;
@@ -38,9 +38,9 @@ fn extract_zip_archive<R: io::Read + io::Seek>(
 ) -> Result<()> {
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        let rel_path: PathBuf = file
-            .mangled_name()
-            .context("Failed to decode zip entry path")?;
+        let name = file.name().context("Failed to decode zip entry path")?;
+        let name = name.trim_end_matches('/');
+        let rel_path = super::transaction::relative_path(name).map_err(anyhow::Error::msg)?;
         if !should_extract(&rel_path) {
             continue;
         }
@@ -87,6 +87,12 @@ fn copy_directory_internal(
         let name = entry.file_name();
         let rel = relative_prefix.join(&name);
         let dest = target.join(&name);
+
+        anyhow::ensure!(
+            !file_type.is_symlink(),
+            "Payload contains a symbolic link: {}",
+            entry.path().display()
+        );
 
         if file_type.is_dir() {
             bytes_copied += copy_directory_internal(&entry.path(), &dest, &rel, should_copy_file)?;

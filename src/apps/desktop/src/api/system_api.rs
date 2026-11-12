@@ -1,18 +1,15 @@
 //! System API
 
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 
 use crate::api::app_state::AppState;
 use crate::startup_trace::DesktopStartupTrace;
 use openbitfun_core::service::system;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, Position, Size, State};
+use tauri::{AppHandle, Manager, Position, Size, State};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
-
-/// Emitted during `install_update` download; matches `installUpdateWithProgress` / frontend listener.
-const UPDATE_PROGRESS_EVENT: &str = "openbitfun-update-progress";
 
 /// Updater origins, in configured (fallback) order. Kept in step with
 /// `scripts/desktop-tauri-build.mjs`, which bakes the same pair into the bundle.
@@ -241,16 +238,9 @@ pub(super) async fn ranked_updater(
             app.updater_builder()
         }
     };
-    crate::api::update_api::with_update_exit_cleanup(builder, app)
+    crate::api::update_api::configure_updater(builder)
         .build()
         .map_err(|error| error.to_string())
-}
-
-#[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UpdateProgressPayload {
-    downloaded: u64,
-    total: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -345,53 +335,14 @@ pub struct InstallUpdateRequest {}
 #[tauri::command]
 pub async fn install_update(app: AppHandle, request: InstallUpdateRequest) -> Result<(), String> {
     let _ = request;
-    let updater = ranked_updater(&app).await?;
-    let update = updater.check().await.map_err(|e| e.to_string())?;
-    let Some(update) = update else {
-        return Err("No update available".to_string());
-    };
-    let app_handle = app.clone();
-    let progress = Arc::new(Mutex::new((0u64, None::<u64>)));
-    let progress_chunk = Arc::clone(&progress);
-    let app_chunk = app_handle.clone();
-    let bytes = update
-        .download(
-            move |chunk_len, content_len| {
-                let (downloaded, total) = {
-                    let mut g = progress_chunk
-                        .lock()
-                        .expect("update progress mutex poisoned");
-                    g.0 = g.0.saturating_add(chunk_len as u64);
-                    g.1 = g.1.or(content_len);
-                    (g.0, g.1)
-                };
-                let _ = app_chunk.emit(
-                    UPDATE_PROGRESS_EVENT,
-                    UpdateProgressPayload { downloaded, total },
-                );
-            },
-            {
-                let app_done = app_handle.clone();
-                let progress_done = Arc::clone(&progress);
-                move || {
-                    let (downloaded, total) = {
-                        let g = progress_done
-                            .lock()
-                            .expect("update progress mutex poisoned");
-                        (g.0, g.1)
-                    };
-                    let _ = app_done.emit(
-                        UPDATE_PROGRESS_EVENT,
-                        UpdateProgressPayload { downloaded, total },
-                    );
-                }
-            },
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-    tokio::task::spawn_blocking(move || update.install(bytes).map_err(|e| e.to_string()))
-        .await
-        .map_err(|e| e.to_string())?
+    let pending = super::update_api::download_update(app.clone(), Default::default()).await?;
+    super::update_api::install_pending_update(
+        app,
+        super::update_api::InstallPendingUpdateRequest {
+            version: pending.version,
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]

@@ -4,13 +4,14 @@ import { selectHasUpdateAttention, useUpdateInstallStore } from './updateInstall
 import { selectUpdateDownloadStatus } from './updateDownloadProgress';
 import { readAppUpdateSnapshot, recordSkipThisVersion, writeAppUpdateSnapshot } from './appUpdateStorage';
 
-const mocks = vi.hoisted(() => ({ pending: vi.fn(), download: vi.fn(), install: vi.fn(), check: vi.fn(), current: vi.fn(), enabled: vi.fn() }));
+const mocks = vi.hoisted(() => ({ pending: vi.fn(), download: vi.fn(), install: vi.fn(), check: vi.fn(), current: vi.fn(), enabled: vi.fn(), cancel: vi.fn() }));
 vi.mock('@/infrastructure/api/service-api/SystemAPI', () => ({ systemAPI: {
   getPendingUpdate: mocks.pending,
   installPendingUpdate: mocks.install,
   checkForUpdates: mocks.check,
   getLocalAppVersion: mocks.current,
   getAutoUpdateEnabled: mocks.enabled,
+  cancelUpdateDownload: mocks.cancel,
 } }));
 vi.mock('./installUpdateWithProgress', () => ({ installUpdateWithProgress: mocks.download }));
 vi.mock('@/shared/utils/logger', () => ({ createLogger: () => ({ error: vi.fn(), warn: vi.fn() }) }));
@@ -47,6 +48,26 @@ afterEach(() => {
 });
 
 describe('staged app update', () => {
+  it('requests backend cancellation and waits for transfer termination before clearing download state', async () => {
+    let reject!: (error: Error) => void;
+    mocks.download.mockImplementationOnce(() => new Promise((_, no) => { reject = no; }));
+    mocks.cancel.mockResolvedValueOnce(undefined);
+    const download = state().startInstall();
+    await vi.waitFor(() => expect(state().status).toBe('downloading'));
+    await state().cancelDownload();
+    expect(mocks.cancel).toHaveBeenCalledOnce();
+    expect(state().status).toBe('downloading');
+    reject(new Error('Update download canceled'));
+    await download;
+    expect(state()).toMatchObject({ status: 'idle', error: null, downloadVersion: null });
+    expect(mocks.install).not.toHaveBeenCalled();
+  });
+
+  it('restores a persisted installer failure with the still-pending package', async () => {
+    mocks.pending.mockResolvedValueOnce({ version: '2.0.0', installError: 'Administrator authorization was canceled' });
+    await state().initialize();
+    expect(state()).toMatchObject({ status: 'ready', version: '2.0.0', error: 'Administrator authorization was canceled' });
+  });
   it('starts development without cached discovery or automatic checks and still allows a manual check', async () => {
     vi.stubEnv('DEV', true);
     writeAppUpdateSnapshot({ result: available(), checkedAt: Date.now() });

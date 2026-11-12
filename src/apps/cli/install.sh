@@ -157,7 +157,7 @@ assert_plugin_host_resources() {
   done
 }
 
-install_bundle() {
+install_bundle() (
   local primary_source="$1"
   local plugin_host_source="$2"
   local destination="$3"
@@ -169,6 +169,16 @@ install_bundle() {
   local failed=0
 
   mkdir -p "$destination"
+  if command -v flock >/dev/null 2>&1; then
+    exec 9>"$destination/.openbitfun-cli-install.lock"
+    flock -n 9 || { echo "Error: another CLI installation or update is running." >&2; return 1; }
+  elif command -v shlock >/dev/null 2>&1; then
+    shlock -p "$$" -f "$destination/.openbitfun-cli-install.lock" || { echo "Error: another CLI installation is running." >&2; return 1; }
+    trap 'rm -f "$destination/.openbitfun-cli-install.lock"' EXIT
+  else
+    echo "Error: a native installation lock (flock or shlock) is required." >&2
+    return 1
+  fi
   stage_dir="$(mktemp -d "${destination}/.openbitfun-install.XXXXXX")"
   staged_primary="${stage_dir}/openbitfun"
   staged_plugin_host="${stage_dir}/ext-host"
@@ -209,12 +219,17 @@ install_bundle() {
   fi
 
   if [ "$failed" -ne 0 ]; then
-    if [ "$plugin_host_committed" -eq 1 ]; then rm -rf "$plugin_host_target"; fi
-    if [ "$primary_committed" -eq 1 ]; then rm -f "$primary_target"; fi
-    if [ "$primary_backed_up" -eq 1 ]; then mv "$primary_backup" "$primary_target"; fi
+    local recovery_failed=0
+    if [ "$plugin_host_committed" -eq 1 ]; then rm -rf "$plugin_host_target" || recovery_failed=1; fi
+    if [ "$primary_committed" -eq 1 ]; then rm -f "$primary_target" || recovery_failed=1; fi
+    if [ "$primary_backed_up" -eq 1 ]; then mv "$primary_backup" "$primary_target" || recovery_failed=1; fi
     if [ "$plugin_host_backed_up" -eq 1 ]; then
       mkdir -p "$(dirname "$plugin_host_target")"
-      mv "$plugin_host_backup" "$plugin_host_target"
+      mv "$plugin_host_backup" "$plugin_host_target" || recovery_failed=1
+    fi
+    if [ "$recovery_failed" -ne 0 ]; then
+      echo "Error: CLI rollback failed; recovery copies retained at $stage_dir" >&2
+      return 1
     fi
     rm -rf "$stage_dir"
     echo "Error: CLI installation failed; the previous OpenBitFun CLI was restored." >&2
@@ -222,7 +237,7 @@ install_bundle() {
   fi
 
   rm -rf "$stage_dir"
-}
+)
 
 # A running daemon keeps executing the previous binary (old inode) until it is
 # restarted; `systemctl enable --now` does NOT restart an already-active

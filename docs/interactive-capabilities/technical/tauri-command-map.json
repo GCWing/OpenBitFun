@@ -2,10 +2,10 @@
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
   "catalogDigest": "778506ae9a8c979c4cea4de5c575be1bde0517def6ee5854dba203665098fa29",
-  "commandCount": 702,
+  "commandCount": 703,
   "coverage": {
-    "commandCount": 702,
-    "documentedCommandCount": 637,
+    "commandCount": 703,
+    "documentedCommandCount": 638,
     "implementationCommandCount": 65,
     "implementationDigest": "1e1e2b424a391bd866585162da35a043dcca3d6f67e0a770a8f8c886007b677a"
   },
@@ -803,6 +803,22 @@
       "sourceFile": "src/apps/desktop/src/api/acp_client_api.rs",
       "signature": "fn cancel_acp_dialog_turn( state: State<'_, AppState>, request: CancelAcpDialogTurnRequest, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "cancel_app_update_download",
+      "moduleId": "update",
+      "capabilityId": "setting.application.general",
+      "capabilityIds": [
+        "setting.application.general"
+      ],
+      "documentedItemIds": [
+        "setting.application.general:manual-update"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::update_api::cancel_app_update_download",
+      "sourceFile": "src/apps/desktop/src/api/update_api.rs",
+      "signature": "fn cancel_app_update_download(request: PendingUpdateRequest) -> Result<(), String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "cancel_dialog_turn",

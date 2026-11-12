@@ -7,13 +7,14 @@ import { useTranslation } from 'react-i18next';
  * Window controls — matches the OpenBitFun main app style.
  * 32x32 transparent buttons with SVG icons, subtle hover bg.
  */
-export function WindowControls() {
+export function WindowControls({ busy = false }: { busy?: boolean }) {
   const { t } = useTranslation();
   const handleMinimize = () => {
     getCurrentWindow().minimize();
   };
 
   const handleClose = () => {
+    if (busy) return;
     getCurrentWindow().close();
   };
 
@@ -28,6 +29,7 @@ export function WindowControls() {
       />
       <IconButton
         className="window-controls__btn window-controls__btn--close"
+        disabled={busy}
         onClick={handleClose}
         aria-label={t('window.close')}
         title={t('window.close')}

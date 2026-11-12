@@ -2,6 +2,7 @@ import { Button, PageHeader } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
 import { BrandMark } from '../components/BrandMark';
 import { ProgressBar } from '../components/ProgressBar';
+import { InstallErrorPanel } from '../components/InstallErrorPanel';
 
 interface UninstallPageProps {
   previewOnly?: boolean;
@@ -36,7 +37,7 @@ export function UninstallPage({
             <span className="section-label">{t('uninstall.installPath')}</span>
             <span className="selectable-path">{installPath || t('uninstall.pathUnknown')}</span>
           </div>
-          {uninstallError && <div className="install-error" role="alert">{uninstallError}</div>}
+          {uninstallError && <InstallErrorPanel message={uninstallError} variant="bare" />}
           {uninstallCompleted && <p className="status-success" role="status">{t('uninstall.completed')}</p>}
           {(isUninstalling || uninstallCompleted) && (
             <div className="uninstall-progress">
@@ -48,7 +49,7 @@ export function UninstallPage({
       </div>
 
       <div className="page-footer">
-        <Button variant={uninstallCompleted ? 'primary' : 'fill'} onClick={onClose}>
+        <Button variant={uninstallCompleted ? 'primary' : 'fill'} disabled={isUninstalling} onClick={onClose}>
           {t(uninstallCompleted ? 'uninstall.close' : 'uninstall.cancel')}
         </Button>
         {!uninstallCompleted && (

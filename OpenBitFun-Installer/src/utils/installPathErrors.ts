@@ -4,7 +4,10 @@ import type { TFunction } from 'i18next';
 export const INSTALL_PATH_ERROR_PREFIX = 'INSTALL_PATH::';
 
 export function parseInstallPathErrorCode(message: string | null | undefined): string | null {
-  if (!message || !message.startsWith(INSTALL_PATH_ERROR_PREFIX)) return null;
+  if (!message) return null;
+  if (/recovery failed|repair required|recovery needs repair|backup.*preserv|cleanup.*pending|files.*remain/i.test(message)) return null;
+  if (/access is denied|permission denied|os error 5\b/i.test(message)) return 'directory_not_writable';
+  if (!message.startsWith(INSTALL_PATH_ERROR_PREFIX)) return null;
   return message.slice(INSTALL_PATH_ERROR_PREFIX.length);
 }
 
@@ -18,7 +21,16 @@ function snakeToCamelKey(s: string): string {
  */
 export function formatInstallPathError(message: string, t: TFunction): string {
   const code = parseInstallPathErrorCode(message);
-  if (!code) return message;
+  if (!code) {
+    if (/recovery failed|repair required|recovery needs repair|backup.*preserv/i.test(message)) return t('errors.maintenance.recovery', { detail: message });
+    if (/cleanup.*pending|files.*remain/i.test(message)) return t('errors.maintenance.cleanupPending');
+    if (/another maintenance/i.test(message)) return t('errors.maintenance.busy');
+    if (/authorization.*cancel|canceled|cancelled/i.test(message)) return t('errors.maintenance.canceled');
+    if (/close the application|used by another process|os error 32/i.test(message)) return t('errors.maintenance.fileLocked');
+    if (/insufficient disk space/i.test(message)) return t('errors.maintenance.space');
+    if (/disk space|target drive/i.test(message)) return t('errors.maintenance.diskUnknown');
+    return t('errors.maintenance.failed', { detail: message });
+  }
   const key = `errors.installPath.${snakeToCamelKey(code)}`;
   const translated = t(key);
   if (translated === key) return message;
