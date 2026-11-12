@@ -5090,6 +5090,20 @@ test('vendored Wry is external only at its reviewed version and stays in feature
 });
 
 
+test('vendored updater stays external only at the reviewed identity and version', () => {
+  const owner = packageAt('owner', 'src/apps/example/Cargo.toml');
+  const vendor = { ...packageAt('tauri-plugin-updater', 'third_party/tauri-plugin-updater/Cargo.toml'), version: '2.10.1' };
+  const collect = (pkg = vendor) => collectCargoMetadataGraph({
+    root: TEST_ROOT, manifestPaths: [join(TEST_ROOT, 'Cargo.toml')],
+    loadMetadata: () => ({ packages: [owner, pkg], workspace_members: [owner.id],
+      resolve: { nodes: [{ id: pkg.id, features: ['rustls-tls'], deps: [] }] } }),
+  });
+  assert.deepEqual(collect().packages.map(pkg => pkg.name), ['owner']);
+  assert.ok(collect().resolvedPackageFeatures.some(pkg => pkg.name === 'tauri-plugin-updater'));
+  assert.ok(collect({ ...vendor, version: '2.11.0' }).packages.some(pkg => pkg.name === vendor.name));
+  assert.ok(collect({ ...vendor, name: 'product-owner' }).packages.some(pkg => pkg.name === 'product-owner'));
+});
+
 test('workspace transfer admits IO without process or networking capabilities', () => {
   const pkg = {
     name: 'openbitfun-services-core',

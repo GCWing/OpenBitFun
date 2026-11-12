@@ -7,6 +7,31 @@ import test from 'node:test';
 
 const root = path.resolve(import.meta.dirname, '..');
 
+test('Windows updater uses the signed transactional installer and rejects old protocol payloads', t => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'openbitfun-transactional-updater-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const assets = path.join(temp, 'assets');
+  const manual = path.join(temp, 'manual');
+  const out = path.join(temp, 'updater');
+  fs.mkdirSync(assets); fs.mkdirSync(manual);
+  fs.writeFileSync(path.join(assets, 'OpenBitFun_1.2.3_x64-setup.exe'), 'legacy');
+  fs.writeFileSync(path.join(assets, 'OpenBitFun_1.2.3_x64-setup.exe.sig'), 'legacy signature');
+  const source = path.join(manual, 'OpenBitFun_1.2.3_windows-x86_64-installer.exe');
+  const args = ['--assets-dir', assets, '--version', '1.2.3', '--out-dir', out,
+    '--required-platforms', 'windows-x86_64', '--windows-installer-dir', manual];
+  fs.writeFileSync(source, 'old payload');
+  fs.writeFileSync(`${source}.sig`, 'signed custom bytes');
+  assert.match(run('scripts/collect-tauri-updater-assets.mjs', args).stderr, /maintenance protocol/);
+  const payload = Buffer.from('MZ signed payload OPENBITFUN_MAINTENANCE_V1');
+  fs.writeFileSync(source, payload);
+  const result = run('scripts/collect-tauri-updater-assets.mjs', args);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(fs.readFileSync(path.join(out, 'OpenBitFun_1.2.3_windows-x86_64-setup.exe')), payload);
+  assert.equal(fs.readFileSync(path.join(out, 'OpenBitFun_1.2.3_windows-x86_64-setup.exe.sig'), 'utf8'), 'signed custom bytes');
+  fs.unlinkSync(`${source}.sig`);
+  assert.match(run('scripts/collect-tauri-updater-assets.mjs', args).stderr, /signature is missing/);
+});
+
 test('desktop and mobile release metadata are synchronized within their own groups', () => {
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
   const result = run('scripts/verify-release-version-sync.mjs', [

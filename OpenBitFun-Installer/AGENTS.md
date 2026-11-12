@@ -74,6 +74,12 @@ For ZIP dependency or extraction changes, verify compatibility with old installe
 cargo test --manifest-path OpenBitFun-Installer/src-tauri/Cargo.toml --lib installer::extract::tests
 ```
 
+For transaction recovery, lock contention, locked Windows files and downgrade
+admission, run `cargo test --manifest-path OpenBitFun-Installer/src-tauri/Cargo.toml --lib`.
+The filesystem fixtures use temporary roots; they do not exercise real UAC or
+an existing user installation. Frontend race and retry checks are included in
+`pnpm --dir OpenBitFun-Installer run test`.
+
 Run the full installer build only for packaging, payload, native bundling,
 install/uninstall flow, registry, shortcut, or extraction changes:
 

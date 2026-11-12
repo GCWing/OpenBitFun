@@ -80,6 +80,7 @@ export interface RemoteModelInfo {
 
 /** Installation options sent to the Rust backend */
 export interface InstallOptions {
+  allUsers?: boolean;
   installPath: string;
   desktopShortcut: boolean;
   startMenu: boolean;

@@ -163,14 +163,13 @@ export function ModelSetup({ options, setOptions, onSkip, onNext, onTestConnecti
   );
 
   const handleBaseUrlOptionSelect = useCallback(
-    (url: string) => {
-      setBaseUrl(url);
+    (value: string) => {
+      const opt = template?.baseUrlOptions?.find((option) => `${option.format}:${option.url}` === value);
+      if (!opt) return;
+      setBaseUrl(opt.url);
+      setApiFormat(opt.format);
       resetTestState();
       resetRemoteDiscovery();
-      if (template?.baseUrlOptions) {
-        const opt = template.baseUrlOptions.find((o) => o.url === url.trim());
-        if (opt) setApiFormat(opt.format);
-      }
     },
     [template, resetTestState, resetRemoteDiscovery],
   );
@@ -221,7 +220,7 @@ export function ModelSetup({ options, setOptions, onSkip, onNext, onTestConnecti
   const baseUrlOptions = useMemo<SelectOption[]>(() => {
     if (!template?.baseUrlOptions?.length) return [];
     return template.baseUrlOptions.map((opt) => ({
-      value: opt.url,
+      value: `${opt.format}:${opt.url}`,
       label: opt.noteKey
         ? t(opt.noteKey, { defaultValue: opt.noteKey.split('.').pop() })
         : opt.format.toUpperCase(),
@@ -338,7 +337,7 @@ export function ModelSetup({ options, setOptions, onSkip, onNext, onTestConnecti
                 {baseUrlOptions.length > 0 && (
                   <Field label={t('model.endpointPreset')} orientation="horizontal" labelWidth="sm" controlWidth="fill">
                     <Select
-                      value={template?.baseUrlOptions?.some((option) => option.url === effectiveBaseUrl) ? effectiveBaseUrl : ''}
+                      value={template?.baseUrlOptions?.some((option) => option.url === effectiveBaseUrl && option.format === resolvedApiFormat) ? `${resolvedApiFormat}:${effectiveBaseUrl}` : ''}
                       options={baseUrlOptions}
                       placeholder={t('model.baseUrlPlaceholder')}
                       aria-label={t('model.endpointPreset')}

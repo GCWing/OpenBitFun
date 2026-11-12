@@ -18,6 +18,9 @@ export function formatUpdateInstallError(
 
   if (isUpdateVersionChangedError(raw)) return t('update.errors.versionChanged');
   if (lower.includes('installer metadata')) return t('update.errors.installMetadata');
+  // TLS errors often contain "connection" or "reqwest" too. Preserve their
+  // actionable diagnosis before the broader network fallback.
+  if (/certificate|tls|ssl|certif/i.test(lower)) return t('update.errors.tls');
 
   if (
     /network|fetch failed|connection|timeout|timed out|failed to send request|reqwest|error sending request|dns|econnrefused|enetunreach/i.test(
@@ -34,9 +37,6 @@ export function formatUpdateInstallError(
   }
   if (/404|not found|status: 404/i.test(lower)) {
     return t('update.errors.notFound');
-  }
-  if (/certificate|tls|ssl|certif/i.test(lower)) {
-    return t('update.errors.tls');
   }
 
   const detail = s.length > 200 ? `${s.slice(0, 200)}…` : s;

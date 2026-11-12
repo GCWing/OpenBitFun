@@ -144,6 +144,12 @@ pnpm run cli:install
 
 ## Verification
 
+For CLI installer concurrency, publication rollback and retained recovery copies,
+run `node --test src/apps/cli/install.test.mjs` from the repository root. Run on
+Windows for PowerShell and Linux for Bash; fixtures never touch the real install.
+For self-update network and integrity behavior, run
+`cargo test --locked -p openbitfun-cli --bin openbitfun self_update::tests`.
+
 Run the smallest checks matching the changed path:
 
 ```bash

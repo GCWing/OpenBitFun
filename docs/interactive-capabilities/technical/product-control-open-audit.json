@@ -2332,6 +2332,7 @@
       "evidence": [
         "command:check_for_updates",
         "command:download_update",
+        "command:cancel_app_update_download",
         "command:get_pending_update",
         "command:install_pending_update",
         "command:get_app_version"

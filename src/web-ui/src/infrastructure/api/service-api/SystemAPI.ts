@@ -28,6 +28,7 @@ export interface CheckForUpdatesResponse {
 
 export interface PendingUpdateResponse {
   version: string;
+  installError?: string;
 }
 
 /** Matches `toggle_main_window_fullscreen` / desktop `ToggleMainWindowFullscreenResponse`. */
@@ -134,10 +135,14 @@ export class SystemAPI {
     }
   }
 
+  async cancelUpdateDownload(): Promise<void> {
+    await api.invoke('cancel_app_update_download', { request: {} }, { retries: 0, timeout: 10000 });
+  }
+
   async installPendingUpdate(version: string): Promise<void> {
     try {
       await api.invoke('install_pending_update', { request: { version } }, {
-        timeout: 120000,
+        timeout: 300000,
         retries: 0,
       });
     } catch (error) {

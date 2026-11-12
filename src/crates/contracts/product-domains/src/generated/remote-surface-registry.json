@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:86aabcc23554987b",
+  "digest": "fnv1a64:9fb2c42fa23d9fee",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -725,6 +725,18 @@
       "cliPeer": {
         "kind": "unsupported",
         "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
+      }
+    },
+    {
+      "id": "cancel_app_update_download",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "controller_local"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the controller keeps this command; peer hosts refuse it before dispatch"
       }
     },
     {

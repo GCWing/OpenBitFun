@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'fs';
 import { basename, join } from 'path';
 
 const args = parseArgs(process.argv.slice(2));
 const assetsDir = requireArg(args, 'assets-dir');
 const version = requireArg(args, 'version');
 const outDir = requireArg(args, 'out-dir');
+const windowsInstallerDir = args['windows-installer-dir'];
 
 const requiredPlatforms = parseListArg(
   args['required-platforms'] ||
@@ -27,6 +28,7 @@ for (const sigPath of walkFiles(assetsDir).filter((file) => file.endsWith('.sig'
   }
 
   const platform = inferPlatform(bundlePath);
+  if (windowsInstallerDir && platform?.startsWith('windows-')) continue;
   if (!platform) {
     console.warn(`[collect-updater] Skipping artifact with unknown platform: ${bundlePath}`);
     continue;
@@ -50,6 +52,20 @@ for (const sigPath of walkFiles(assetsDir).filter((file) => file.endsWith('.sig'
     signature: outputSigPath,
   };
   console.log(`[collect-updater] ${platform}: ${basename(outputPath)}`);
+}
+
+if (windowsInstallerDir) {
+  const candidates = walkFiles(windowsInstallerDir).filter(file => file.endsWith('_windows-x86_64-installer.exe'));
+  if (candidates.length !== 1) fail('Expected exactly one signed transactional Windows installer');
+  const source = candidates[0];
+  if (!existsSync(`${source}.sig`)) fail('Transactional Windows updater signature is missing');
+  if (!readFileSync(source).includes(Buffer.from('OPENBITFUN_MAINTENANCE_V1'))) {
+    fail('Windows installer does not support the native maintenance protocol');
+  }
+  const output = join(outDir, updaterOutputName(source, version, 'windows-x86_64'));
+  copyFileSync(source, output);
+  copyFileSync(`${source}.sig`, `${output}.sig`);
+  collected['windows-x86_64'] = { source, output, signature: `${output}.sig` };
 }
 
 const missing = requiredPlatforms.filter((platform) => !collected[platform]);

@@ -12,6 +12,16 @@
       "directoryNotWritable": "The installation folder is not writable. Choose another location or run the installer as administrator (see below).",
       "parentNotWritable": "The parent folder is not writable. System folders such as Program Files often require administrator rights (see below).",
       "adminHint": "To install under protected locations (for example Program Files), close this installer, right-click the installer executable, choose \"Run as administrator\", then try again. Alternatively install under your user profile, for example %LOCALAPPDATA%\\Programs, which does not require elevation."
+    },
+    "maintenance": {
+      "cleanupPending": "The operation completed, but some maintenance files remain. Retry cleanup before removing the installation folder.",
+      "busy": "Another installation, update or uninstall is running. Wait for it to finish and retry.",
+      "canceled": "Administrator authorization was canceled. No installation files were changed.",
+      "recovery": "Automatic recovery needs repair. Keep the backup files and share these details: {{detail}}",
+      "fileLocked": "An application or background process is using installed files. Close it and retry. The previous files were retained.",
+      "space": "There is not enough disk space for staging. Free space on the target drive and retry.",
+      "diskUnknown": "Available disk space could not be determined. Check that the drive is connected and accessible, then retry.",
+      "failed": "The operation could not complete. Details: {{detail}}"
     }
   },
   "options": {
@@ -36,7 +46,8 @@
     "existingInstallVersion": "Installed version: {{version}}",
     "existingInstallLocation": "Install location: {{path}}",
     "existingInstallBinaryMissing": "The installed app is missing. Reinstall to repair it.",
-    "existingInstallRunUninstaller": "Run uninstaller"
+    "existingInstallRunUninstaller": "Run uninstaller",
+    "allUsers": "Install for all users (administrator authorization required)"
   },
   "model": {
     "title": "Connect a model",
@@ -46,7 +57,7 @@
     "modelName": "Model name (e.g. deepseek-v4-flash)",
     "skip": "Skip for now",
     "nextTheme": "Next: Theme",
-    "description": "Manage default models, providers, subscriptions, catalog data, and network connections.",
+    "description": "Connect model providers and choose models for each type of task",
     "providerLabel": "Select Model Provider",
     "selectProvider": "or select a preset provider",
     "customProvider": "Custom Configuration",
@@ -57,8 +68,8 @@
         "name": "OpenBitFun Service",
         "description": "OpenBitFun Model Platform",
         "urlOptions": {
-          "default": "Anthropic Format - Default",
-          "openai": "OpenAI Compatible Format"
+          "default": "Official API",
+          "openai": "Official API"
         }
       },
       "gemini": {
@@ -73,40 +84,41 @@
         "name": "MiniMax",
         "description": "MiniMax series models",
         "urlOptions": {
-          "default": "China - Anthropic Format - Default",
-          "openai": "China - OpenAI Compatible",
-          "intl": "Global - Anthropic Format",
-          "intlOpenai": "Global - OpenAI Compatible"
+          "default": "China - Default",
+          "openai": "China",
+          "intl": "Global",
+          "intlOpenai": "Global"
         }
       },
       "moonshot": {
         "name": "Moonshot AI",
         "description": "Moonshot Kimi series models",
         "urlOptions": {
-          "default": "China - OpenAI Format - Default",
-          "anthropic": "China - Anthropic Format",
-          "intl": "Global - OpenAI Format",
-          "intlAnthropic": "Global - Anthropic Format",
-          "kimiForCoding": "Kimi For Coding plan (models: k3 / kimi-for-coding)"
+          "default": "China - Default",
+          "anthropic": "China",
+          "intl": "Global",
+          "intlAnthropic": "Global",
+          "kimiForCoding": "Kimi For Coding plan (models: k3 / kimi-for-coding)",
+          "kimiForCodingAnthropic": "Kimi For Coding plan"
         }
       },
       "deepseek": {
         "name": "DeepSeek",
         "description": "DeepSeek series models",
         "urlOptions": {
-          "default": "OpenAI Format - Default",
-          "anthropic": "Anthropic Format"
+          "default": "Official API - Default",
+          "anthropic": "Official API"
         }
       },
       "zhipu": {
         "name": "Zhipu AI",
         "description": "Zhipu AI GLM series models",
         "urlOptions": {
-          "default": "China - OpenAI Format - Default",
-          "anthropic": "China - Anthropic Format",
+          "default": "China - Default",
+          "anthropic": "China",
           "codingPlan": "China - Coding Plan",
-          "intl": "Global (Z.AI) - OpenAI Format",
-          "intlAnthropic": "Global (Z.AI) - Anthropic Format",
+          "intl": "Global (Z.AI)",
+          "intlAnthropic": "Global (Z.AI)",
           "intlCodingPlan": "Global (Z.AI) - Coding Plan"
         }
       },
@@ -114,10 +126,10 @@
         "name": "Qwen",
         "description": "Alibaba Cloud Bailian Model Platform",
         "urlOptions": {
-          "default": "China - OpenAI Format - Default",
+          "default": "China - Default",
           "codingPlan": "China - Coding Plan",
-          "codingPlanAnthropic": "China - Coding Plan - Anthropic Format",
-          "intl": "Global (International) - OpenAI Format",
+          "codingPlanAnthropic": "China - Coding Plan",
+          "intl": "Global (International)",
           "intlCodingPlan": "Global - Coding Plan"
         }
       },
@@ -134,9 +146,9 @@
         "name": "SiliconFlow",
         "description": "SiliconFlow Model Platform",
         "urlOptions": {
-          "default": "China - OpenAI Format - Default",
-          "anthropic": "China - Anthropic Format",
-          "intl": "Global - OpenAI Format"
+          "default": "China - Default",
+          "anthropic": "China",
+          "intl": "Global"
         }
       },
       "nvidia": {
@@ -150,6 +162,42 @@
       "tokendance": {
         "name": "TokenDance",
         "description": "Unified AI model gateway"
+      },
+      "magpie": {
+        "name": "Magpie",
+        "description": "Models and routing groups from your Magpie gateway",
+        "urlOptions": {
+          "openai": "Magpie gateway",
+          "responses": "Magpie gateway",
+          "anthropic": "Magpie gateway"
+        }
+      },
+      "opencode-zen": {
+        "name": "OpenCode Zen",
+        "description": "OpenCode models with free access and pay-as-you-go API keys."
+      },
+      "opencode-go": {
+        "name": "OpenCode Go",
+        "description": "A model subscription plan from OpenCode."
+      },
+      "openai": {
+        "name": "OpenAI",
+        "description": "OpenAI GPT and reasoning models",
+        "urlOptions": {
+          "default": "Official API",
+          "chatCompletions": "Official API"
+        }
+      },
+      "xiaomi": {
+        "name": "Xiaomi MiMo",
+        "description": "Xiaomi MiMo models. API and Token Plan keys are separate.",
+        "urlOptions": {
+          "default": "API - Default",
+          "responses": "API",
+          "anthropic": "API",
+          "tokenPlan": "China - Token Plan",
+          "tokenPlanAnthropic": "China - Token Plan"
+        }
       }
     },
     "modelNameSelectPlaceholder": "Select model",

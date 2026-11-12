@@ -5,6 +5,8 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InstallOptions {
+    #[serde(default)]
+    pub all_users: bool,
     /// Target installation directory
     pub install_path: String,
     /// Create a desktop shortcut
@@ -151,6 +153,7 @@ pub(crate) struct DiskSpaceInfo {
 impl Default for InstallOptions {
     fn default() -> Self {
         Self {
+            all_users: false,
             install_path: String::new(),
             desktop_shortcut: true,
             start_menu: true,

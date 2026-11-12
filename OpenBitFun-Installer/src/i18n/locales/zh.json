@@ -12,6 +12,16 @@
       "directoryNotWritable": "安装目录不可写入。请更换路径，或以管理员身份运行安装器（见下方说明）。",
       "parentNotWritable": "上级目录不可写入。系统目录（如 Program Files）通常需要管理员权限（见下方说明）。",
       "adminHint": "若需安装到受保护位置（例如 Program Files），请关闭本安装器，在安装程序上右键选择「以管理员身份运行」后重新安装。也可安装到当前用户目录（例如 %LOCALAPPDATA%\\Programs），一般无需管理员权限。"
+    },
+    "maintenance": {
+      "cleanupPending": "操作已完成，但部分维护文件仍待清理。请重试清理后再移除安装文件夹。",
+      "busy": "另一个安装、更新或卸载操作正在运行，请等待完成后重试。",
+      "canceled": "已取消管理员授权，未更改安装文件。",
+      "recovery": "自动恢复需要修复。请保留备份文件，并提供以下详情：{{detail}}",
+      "fileLocked": "应用或后台进程正在使用安装文件，请关闭相关程序后重试。原有文件已保留。",
+      "space": "暂存所需磁盘空间不足，请释放目标磁盘空间后重试。",
+      "diskUnknown": "无法确定可用磁盘空间，请检查磁盘已连接且可访问后重试。",
+      "failed": "操作未能完成。详情：{{detail}}"
     }
   },
   "options": {
@@ -36,7 +46,8 @@
     "existingInstallVersion": "已安装版本：{{version}}",
     "existingInstallLocation": "安装位置：{{path}}",
     "existingInstallBinaryMissing": "检测到安装记录，主程序缺失，可重新安装修复。",
-    "existingInstallRunUninstaller": "运行卸载程序"
+    "existingInstallRunUninstaller": "运行卸载程序",
+    "allUsers": "为所有用户安装（需要管理员授权）"
   },
   "model": {
     "title": "连接模型",
@@ -46,7 +57,7 @@
     "modelName": "模型名称（如 deepseek-v4-flash）",
     "skip": "稍后配置",
     "nextTheme": "下一步：主题",
-    "description": "管理默认模型、模型服务、订阅账户、模型目录与网络连接",
+    "description": "连接模型服务，并选择各类任务使用的模型",
     "providerLabel": "选择模型提供商",
     "selectProvider": "或选择预设提供商",
     "customProvider": "自定义配置",
@@ -57,8 +68,8 @@
         "name": "OpenBitFun 服务",
         "description": "OpenBitFun 大模型平台",
         "urlOptions": {
-          "default": "Anthropic格式-默认",
-          "openai": "OpenAI兼容格式"
+          "default": "官方接口",
+          "openai": "官方接口"
         }
       },
       "gemini": {
@@ -73,40 +84,41 @@
         "name": "MiniMax",
         "description": "MiniMax 系列模型",
         "urlOptions": {
-          "default": "国内-Anthropic格式-默认",
-          "openai": "国内-OpenAI兼容格式",
-          "intl": "海外-Anthropic格式",
-          "intlOpenai": "海外-OpenAI兼容格式"
+          "default": "国内-默认",
+          "openai": "国内",
+          "intl": "海外",
+          "intlOpenai": "海外"
         }
       },
       "moonshot": {
         "name": "月之暗面",
         "description": "月之暗面 Kimi 系列模型",
         "urlOptions": {
-          "default": "国内-OpenAI格式-默认",
-          "anthropic": "国内-Anthropic格式",
-          "intl": "海外-OpenAI格式",
-          "intlAnthropic": "海外-Anthropic格式",
-          "kimiForCoding": "Kimi For Coding 套餐（模型 k3 / kimi-for-coding）"
+          "default": "国内-默认",
+          "anthropic": "国内",
+          "intl": "海外",
+          "intlAnthropic": "海外",
+          "kimiForCoding": "Kimi For Coding 套餐（模型 k3 / kimi-for-coding）",
+          "kimiForCodingAnthropic": "Kimi For Coding 套餐"
         }
       },
       "deepseek": {
         "name": "DeepSeek",
         "description": "DeepSeek 系列模型",
         "urlOptions": {
-          "default": "OpenAI格式-默认",
-          "anthropic": "Anthropic格式"
+          "default": "官方接口-默认",
+          "anthropic": "官方接口"
         }
       },
       "zhipu": {
         "name": "智谱AI",
         "description": "智谱AI GLM 系列模型",
         "urlOptions": {
-          "default": "国内-OpenAI格式-默认",
-          "anthropic": "国内-Anthropic格式",
+          "default": "国内-默认",
+          "anthropic": "国内",
           "codingPlan": "国内-Coding Plan",
-          "intl": "海外(Z.AI)-OpenAI格式",
-          "intlAnthropic": "海外(Z.AI)-Anthropic格式",
+          "intl": "海外(Z.AI)",
+          "intlAnthropic": "海外(Z.AI)",
           "intlCodingPlan": "海外(Z.AI)-Coding Plan"
         }
       },
@@ -114,10 +126,10 @@
         "name": "通义千问",
         "description": "阿里云百炼大模型平台",
         "urlOptions": {
-          "default": "国内-OpenAI格式-默认",
+          "default": "国内-默认",
           "codingPlan": "国内-Coding Plan",
-          "codingPlanAnthropic": "国内-Coding Plan-Anthropic格式",
-          "intl": "海外(国际站)-OpenAI格式",
+          "codingPlanAnthropic": "国内-Coding Plan",
+          "intl": "海外(国际站)",
           "intlCodingPlan": "海外-Coding Plan"
         }
       },
@@ -134,9 +146,9 @@
         "name": "硅基流动",
         "description": "硅基流动大模型平台",
         "urlOptions": {
-          "default": "国内-OpenAI格式-默认",
-          "anthropic": "国内-Anthropic格式",
-          "intl": "海外-OpenAI格式"
+          "default": "国内-默认",
+          "anthropic": "国内",
+          "intl": "海外"
         }
       },
       "nvidia": {
@@ -150,6 +162,42 @@
       "tokendance": {
         "name": "词元跳动",
         "description": "统一的大模型 API 网关"
+      },
+      "magpie": {
+        "name": "Magpie",
+        "description": "使用 Magpie 网关中的模型和路由组",
+        "urlOptions": {
+          "openai": "Magpie 网关",
+          "responses": "Magpie 网关",
+          "anthropic": "Magpie 网关"
+        }
+      },
+      "opencode-zen": {
+        "name": "OpenCode Zen",
+        "description": "OpenCode 模型服务，支持免费模型和按量付费 API Key。"
+      },
+      "opencode-go": {
+        "name": "OpenCode Go",
+        "description": "OpenCode 推出的模型订阅套餐"
+      },
+      "openai": {
+        "name": "OpenAI",
+        "description": "OpenAI GPT 与推理模型",
+        "urlOptions": {
+          "default": "官方接口",
+          "chatCompletions": "官方接口"
+        }
+      },
+      "xiaomi": {
+        "name": "Xiaomi MiMo",
+        "description": "小米 MiMo 系列模型，API 与 Token Plan 密钥不可混用",
+        "urlOptions": {
+          "default": "API-默认",
+          "responses": "API",
+          "anthropic": "API",
+          "tokenPlan": "国内 - Token Plan",
+          "tokenPlanAnthropic": "国内 - Token Plan"
+        }
       }
     },
     "modelNameSelectPlaceholder": "选择模型",
@@ -221,7 +269,7 @@
     "followSystem": "跟随系统",
     "themeNames": {
       "openbitfun-dark": "暗色",
-      "openbitfun-light": "亮色",
+      "openbitfun-light": "浅色",
       "openbitfun-midnight": "午夜",
       "openbitfun-china-style": "墨韵",
       "openbitfun-china-night": "墨夜",

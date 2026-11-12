@@ -9,9 +9,37 @@ use tauri_plugin_updater::{Update, UpdaterBuilder, UpdaterExt};
 
 const PROGRESS_EVENT: &str = "openbitfun-update-progress";
 const RECORD_NAME: &str = "pending.json";
+const RECEIPT_NAME: &str = "install-result.json";
 
 // Serialize downloads and installs at the host, including calls from multiple windows.
 static UPDATE: OnceLock<tokio::sync::Mutex<Option<Update>>> = OnceLock::new();
+static CANCEL_DOWNLOAD: OnceLock<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
+    OnceLock::new();
+
+struct DownloadCancellation;
+impl Drop for DownloadCancellation {
+    fn drop(&mut self) {
+        if let Ok(mut sender) = CANCEL_DOWNLOAD.get_or_init(Default::default).lock() {
+            sender.take();
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn cancel_app_update_download(request: PendingUpdateRequest) -> Result<(), String> {
+    let _ = request;
+    let sender = CANCEL_DOWNLOAD
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|_| "Download cancellation state is unavailable".to_string())?
+        .take();
+    if let Some(sender) = sender {
+        let _ = sender.send(());
+        Ok(())
+    } else {
+        Err("No cancellable update download is running; package finalization may already be in progress".into())
+    }
+}
 
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +75,8 @@ pub struct InstallPendingUpdateRequest {
 #[serde(rename_all = "camelCase")]
 pub struct PendingUpdateResponse {
     pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_error: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -56,12 +86,15 @@ struct PendingUpdateRecord {
     platform: String,
     signature: String,
     sha256: String,
+    #[serde(default)]
+    package_kind: Option<String>,
 }
 
 impl PendingUpdateRecord {
     fn response(&self) -> PendingUpdateResponse {
         PendingUpdateResponse {
             version: self.version.clone(),
+            install_error: None,
         }
     }
 
@@ -80,6 +113,56 @@ impl PendingUpdateRecord {
 
 fn platform() -> String {
     format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+fn package_kind() -> &'static str {
+    use tauri::utils::config::BundleType;
+    match tauri::utils::platform::bundle_type() {
+        Some(BundleType::Deb) => "deb",
+        Some(BundleType::Rpm) => "rpm",
+        Some(BundleType::AppImage) => "appimage",
+        Some(BundleType::App) => "app",
+        Some(BundleType::Nsis) => "nsis",
+        Some(BundleType::Msi) => "msi",
+        _ => "unbundled",
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallationReceipt {
+    version: String,
+    success: bool,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+fn pending_response(
+    dir: &Path,
+    record: PendingUpdateRecord,
+) -> Result<PendingUpdateResponse, String> {
+    let mut response = record.response();
+    match std::fs::read(dir.join(RECEIPT_NAME)) {
+        Ok(bytes) => {
+            let receipt: InstallationReceipt = serde_json::from_slice(&bytes).map_err(|e| {
+                format!("Cannot read update installation result; preserved for repair: {e}")
+            })?;
+            // A matching pending record is offered only while the running
+            // version is older. Even exit code zero must not hide that fact.
+            if receipt.version == record.version {
+                response.install_error = Some(receipt.error.unwrap_or_else(|| {
+                    if receipt.success {
+                        "The installer finished, but the running version is still older; restart or repair the installation".into()
+                    } else {
+                        "The previous update installation failed; retry or reinstall manually".into()
+                    }
+                }));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("Cannot read update installation result: {error}")),
+    }
+    Ok(response)
 }
 
 fn cache_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -109,6 +192,9 @@ fn read_record(
         .map_err(|e| format!("Cannot read pending update metadata: {e}"))?;
     if !record.applies_to(current, platform)? {
         return Ok(None);
+    }
+    if record.package_kind.as_deref() != Some(package_kind()) {
+        return Err("Update package belongs to another installation format or has legacy metadata; download it again".into());
     }
     let package = dir.join(record.package_name()?);
     if !package.is_file() {
@@ -160,6 +246,38 @@ fn verify_package(bytes: &[u8], record: &PendingUpdateRecord, pubkey: &str) -> R
 }
 
 pub(super) fn with_update_exit_cleanup(builder: UpdaterBuilder, app: &AppHandle) -> UpdaterBuilder {
+    #[cfg(windows)]
+    let builder = if std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        .is_some_and(|directory| windows_machine_install(&directory))
+    {
+        builder.installer_arg("/ALLUSERS")
+    } else {
+        builder
+    };
+    #[cfg(windows)]
+    let builder = match (
+        std::env::var_os("LOCALAPPDATA"),
+        std::env::var_os("PROGRAMDATA"),
+    ) {
+        (Some(user), Some(machine)) => {
+            let namespace = openbitfun_services_core::product_identity::data_namespace();
+            builder.maintenance_result_roots(
+                std::path::PathBuf::from(user)
+                    .join(namespace)
+                    .join("maintenance/results"),
+                std::path::PathBuf::from(machine)
+                    .join(namespace)
+                    .join("maintenance/results"),
+            )
+        }
+        _ => builder,
+    };
+    let builder = match cache_dir(app) {
+        Ok(dir) => builder.installation_receipt(dir.join(RECEIPT_NAME)),
+        Err(_) => builder,
+    };
     let app = app.clone();
     builder.on_before_exit(move || {
         // The updater calls this on Windows immediately before launching the
@@ -172,6 +290,23 @@ pub(super) fn with_update_exit_cleanup(builder: UpdaterBuilder, app: &AppHandle)
     })
 }
 
+#[cfg(any(windows, test))]
+fn windows_machine_install(directory: &Path) -> bool {
+    let read = |path: &Path| {
+        std::fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+    };
+    read(&directory.join(".openbitfun-installed.json")).is_some_and(|value| {
+        value.get("allUsers").and_then(serde_json::Value::as_bool) == Some(true)
+    }) || read(&directory.join(".openbitfun-maintenance/journal.json")).is_some_and(|value| {
+        value
+            .pointer("/integrations/registry/machine")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+    })
+}
+
 #[tauri::command]
 pub async fn get_pending_update(
     app: AppHandle,
@@ -181,7 +316,9 @@ pub async fn get_pending_update(
     let dir = cache_dir(&app)?;
     let current = app.package_info().version.clone();
     tokio::task::spawn_blocking(move || {
-        read_record(&dir, &current, &platform()).map(|r| r.map(|r| r.response()))
+        read_record(&dir, &current, &platform())?
+            .map(|r| pending_response(&dir, r))
+            .transpose()
     })
     .await
     .map_err(|e| e.to_string())?
@@ -196,32 +333,48 @@ pub async fn download_update(
         .get_or_init(Default::default)
         .try_lock()
         .map_err(|_| "An update operation is already in progress".to_string())?;
-    let updater = super::system_api::ranked_updater(&app).await?;
-    let update = updater
-        .check()
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "No update available".to_string())?;
-    request.validate_version(&update.version)?;
-    let mut downloaded = 0u64;
-    let bytes = update
-        .download(
-            |chunk, total| {
-                downloaded = downloaded.saturating_add(chunk as u64);
-                let _ = app.emit(
-                    PROGRESS_EVENT,
-                    serde_json::json!({ "downloaded": downloaded, "total": total }),
-                );
-            },
-            || {},
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+    *CANCEL_DOWNLOAD
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|_| "Download cancellation state is unavailable".to_string())? = Some(cancel_tx);
+    let cancellation = DownloadCancellation;
+    let transfer = async {
+        let updater = super::system_api::ranked_updater(&app).await?;
+        let update = updater
+            .check()
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "No update available".to_string())?;
+        request.validate_version(&update.version)?;
+        let mut downloaded = 0u64;
+        let bytes = update
+            .download(
+                |chunk, total| {
+                    downloaded = downloaded.saturating_add(chunk as u64);
+                    let _ = app.emit(
+                        PROGRESS_EVENT,
+                        serde_json::json!({ "downloaded": downloaded, "total": total }),
+                    );
+                },
+                || {},
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok::<_, String>((update, bytes))
+    };
+    let (update, bytes) = tokio::select! {
+        result = transfer => result?,
+        _ = cancel_rx => return Err("Update download canceled".into()),
+    };
+    // Finalization cannot be canceled midway through committing pending.json.
+    drop(cancellation);
     let record = PendingUpdateRecord {
         version: update.version.clone(),
         platform: platform(),
         signature: update.signature.clone(),
         sha256: format!("{:x}", Sha256::digest(&bytes)),
+        package_kind: Some(package_kind().into()),
     };
     let response = record.response();
     let dir = cache_dir(&app)?;
@@ -296,6 +449,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn machine_installs_request_elevation_even_in_writable_custom_directories() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(!windows_machine_install(root.path()));
+        std::fs::write(
+            root.path().join(".openbitfun-installed.json"),
+            br#"{"allUsers":true}"#,
+        )
+        .unwrap();
+        assert!(windows_machine_install(root.path()));
+        std::fs::remove_file(root.path().join(".openbitfun-installed.json")).unwrap();
+        std::fs::create_dir(root.path().join(".openbitfun-maintenance")).unwrap();
+        std::fs::write(
+            root.path().join(".openbitfun-maintenance/journal.json"),
+            br#"{"integrations":{"registry":{"machine":true}}}"#,
+        )
+        .unwrap();
+        assert!(windows_machine_install(root.path()));
+    }
+
+    #[test]
     fn download_request_preserves_legacy_payloads_and_checks_the_selected_version() {
         let legacy: DownloadUpdateRequest = serde_json::from_str("{}").unwrap();
         assert!(legacy.validate_version("2.0.0").is_ok());
@@ -317,6 +490,7 @@ mod tests {
             platform: "test".into(),
             signature: "invalid".into(),
             sha256: format!("{:x}", Sha256::digest(bytes)),
+            package_kind: Some(package_kind().into()),
         }
     }
 
@@ -406,5 +580,55 @@ mod tests {
         let roundtrip: PendingUpdateRecord =
             serde_json::from_slice(&serde_json::to_vec(&decoded).unwrap()).unwrap();
         assert_eq!(roundtrip.version, "2.0.0");
+    }
+
+    #[test]
+    fn legacy_and_other_package_formats_are_preserved_for_explicit_redownload() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut record = record(b"package");
+        for kind in [None, Some("other-format".into())] {
+            record.package_kind = kind;
+            save_package(dir.path(), &record, b"package").unwrap();
+            assert!(read_record(dir.path(), &"1.0.0".parse().unwrap(), "test")
+                .unwrap_err()
+                .contains("installation format"));
+            assert!(dir.path().join(record.package_name().unwrap()).is_file());
+        }
+        let mut legacy = serde_json::to_value(&record).unwrap();
+        legacy.as_object_mut().unwrap().remove("packageKind");
+        let decoded: PendingUpdateRecord = serde_json::from_value(legacy).unwrap();
+        assert!(decoded.package_kind.is_none());
+    }
+
+    #[test]
+    fn installation_receipts_report_failures_and_a_still_running_old_version() {
+        let dir = tempfile::tempdir().unwrap();
+        for success in [false, true] {
+            std::fs::write(
+                dir.path().join(RECEIPT_NAME),
+                serde_json::to_vec(&serde_json::json!({"version":"2.0.0", "success":success}))
+                    .unwrap(),
+            )
+            .unwrap();
+            assert!(pending_response(dir.path(), record(b"package"))
+                .unwrap()
+                .install_error
+                .is_some());
+        }
+        std::fs::write(
+            dir.path().join(RECEIPT_NAME),
+            br#"{"version":"1.5.0", "success":false,"error":"old failure"}"#,
+        )
+        .unwrap();
+        assert!(pending_response(dir.path(), record(b"package"))
+            .unwrap()
+            .install_error
+            .is_none());
+        std::fs::write(dir.path().join(RECEIPT_NAME), b"invalid").unwrap();
+        assert!(pending_response(dir.path(), record(b"package")).is_err());
+        assert_eq!(
+            std::fs::read(dir.path().join(RECEIPT_NAME)).unwrap(),
+            b"invalid"
+        );
     }
 }

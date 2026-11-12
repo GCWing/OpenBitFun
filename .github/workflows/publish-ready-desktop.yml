@@ -107,6 +107,7 @@ jobs:
           node scripts/write-minisign-public-key.mjs --out release-assets/minisign.pub
           node scripts/collect-tauri-updater-assets.mjs --assets-dir release-assets \
             --version "$RELEASE_VERSION" --out-dir release-updater-assets \
+            --windows-installer-dir release-manual-assets \
             --required-platforms windows-x86_64,linux-x86_64,linux-aarch64,linux-x86_64-deb,linux-aarch64-deb,linux-x86_64-rpm,linux-aarch64-rpm
           node scripts/generate-linux-binaries-manifest.mjs --assets-dir linux-release-assets \
             --version "$RELEASE_VERSION" --tag "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \

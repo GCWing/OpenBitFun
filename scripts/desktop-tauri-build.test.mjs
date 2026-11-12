@@ -22,6 +22,12 @@ const FAILED_BUILD = { status: 1 };
 const DMG_ARGS = ['--target', 'x86_64-apple-darwin', '--bundles', 'app,dmg'];
 const ROOT = join(import.meta.dirname, '..');
 
+test('desktop startup leaves installation registration to its maintenance owner', () => {
+  const source = readFileSync(join(ROOT, 'src/apps/desktop/src/lib.rs'), 'utf8');
+  assert.doesNotMatch(source, /sync_install_location_registry|Synced Tauri install-location registry/);
+  assert.doesNotMatch(source, /HKCU\\Software\\OpenBitFun Team\\OpenBitFun/);
+});
+
 test('modern icon tooling is required only for macOS bundles, including bundle-only builds', () => {
   assert.equal(requestsMacosBundle([], 'darwin'), true);
   assert.equal(requestsMacosBundle(['--bundle-only', '--target=aarch64-apple-darwin'], 'darwin'), true);
