@@ -66,10 +66,29 @@ export async function pdfBytesHash(bytes: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/** pdf-lib can neither decrypt existing strings nor encrypt the objects it adds. */
+export class PdfReviewEncryptedError extends Error {
+  constructor() {
+    super('An annotated copy cannot be written into an encrypted PDF.');
+    this.name = 'PdfReviewEncryptedError';
+  }
+}
+export interface PdfReviewSource {
+  /** Viewing and sidecar notes still work; only annotated copies are unavailable. */
+  encrypted: boolean;
+  embedded?: { data: PdfReviewData; bytes: Uint8Array };
+}
+// Our exports are never encrypted. pdf-lib keeps the original /Encrypt entry when it
+// saves, so readers would "decrypt" every string it adds into garbage.
+async function loadPdf(bytes: Uint8Array) {
+  const lib = await import('pdf-lib');
+  return { lib, pdf: await lib.PDFDocument.load(bytes, { ignoreEncryption: true }) };
+}
+
 /** Write standard editable PDF annotations, including Unicode popup comments and replies. */
 export async function exportReviewedPdf(base: Uint8Array, review: PdfReviewData): Promise<Uint8Array> {
-  const { PDFDocument, PDFName, PDFHexString } = await import('pdf-lib');
-  const pdf = await PDFDocument.load(base);
+  const { lib: { PDFName, PDFHexString }, pdf } = await loadPdf(base);
+  if (pdf.isEncrypted) throw new PdfReviewEncryptedError();
   const pages = pdf.getPages();
   if (review.annotations.some(annotation => annotation.page > pages.length)) {
     throw new Error('Some review pages no longer exist. Reposition or remove those annotations before exporting.');
@@ -111,8 +130,8 @@ export async function exportReviewedPdf(base: Uint8Array, review: PdfReviewData)
 
 /** Embedded review state allows a saved PDF to reopen with editable threads. */
 export async function readEmbeddedPdfReview(bytes: Uint8Array): Promise<PdfReviewData | undefined> {
-  const { PDFDocument, PDFName, PDFHexString } = await import('pdf-lib');
-  const pdf = await PDFDocument.load(bytes);
+  const { lib: { PDFName, PDFHexString }, pdf } = await loadPdf(bytes);
+  if (pdf.isEncrypted) return undefined;
   const value = pdf.catalog.get(PDFName.of('OpenBitFunReview'));
   if (value === undefined) return undefined;
   const text = pdf.context.lookup(value, PDFHexString).decodeText();
@@ -129,16 +148,19 @@ function removeOwnedAnnotations(pdf: import('pdf-lib').PDFDocument, PDFName: typ
     }
   }
 }
-/** Remove our saved appearance before overlay editing, so deletes and recoloring are visible immediately. */
-export async function extractReviewedPdf(bytes: Uint8Array): Promise<{ data: PdfReviewData; bytes: Uint8Array } | undefined> {
-  const { PDFDocument, PDFName, PDFHexString } = await import('pdf-lib');
-  const pdf = await PDFDocument.load(bytes);
+/**
+ * Inspect an opened PDF once. An embedded review comes back with our saved appearances
+ * removed, so deletes and recoloring are visible immediately during overlay editing.
+ */
+export async function readPdfReviewSource(bytes: Uint8Array): Promise<PdfReviewSource> {
+  const { lib: { PDFName, PDFHexString }, pdf } = await loadPdf(bytes);
+  if (pdf.isEncrypted) return { encrypted: true };
   const value = pdf.catalog.get(PDFName.of('OpenBitFunReview'));
-  if (value === undefined) return undefined;
+  if (value === undefined) return { encrypted: false };
   const data = parsePdfReview(pdf.context.lookup(value, PDFHexString).decodeText());
   removeOwnedAnnotations(pdf, PDFName);
   pdf.catalog.delete(PDFName.of('OpenBitFunReview'));
-  return { data, bytes: await pdf.save() };
+  return { encrypted: false, embedded: { data, bytes: await pdf.save() } };
 }
 export function encodePdfBytes(bytes: Uint8Array): string {
   let binary = '';

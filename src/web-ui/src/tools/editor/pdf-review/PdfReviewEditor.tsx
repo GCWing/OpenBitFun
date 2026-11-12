@@ -7,10 +7,15 @@ import { savePdfFile } from '@/infrastructure/file-export/savePdfFile';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { useEditorDocument, type EditorDocument } from '../services/EditorDocument';
 import PdfViewer, { type PdfViewerProps } from '../components/PdfViewer';
-import { getPdfReviewSession, PdfReviewExportConflict } from './PdfReviewSession';
+import { getPdfReviewSession, PdfReviewConflictError, PdfReviewExportConflict } from './PdfReviewSession';
 import { confirmDialog } from '@/infrastructure/confirm-dialog';
-import { extractReviewedPdf, encodePdfBytes, type PdfReviewAnnotation, type PdfReviewColor, type PdfReviewTool } from './pdfReview';
+import { createLogger } from '@/shared/utils/logger';
+import { encodePdfBytes, PdfReviewEncryptedError, readPdfReviewSource, type PdfReviewAnnotation, type PdfReviewColor, type PdfReviewTool } from './pdfReview';
 import './PdfReviewEditor.scss';
+
+const log = createLogger('PdfReviewEditor');
+/** Overlay notes and the sidecar keep working; only annotated PDF copies are blocked. */
+type AnnotatedCopyBlock = 'encrypted' | 'unreadable';
 
 export interface PdfReviewEditorProps extends PdfViewerProps { onDirtyStateChange?: (dirty: boolean) => void }
 export default function PdfReviewEditor(props: PdfReviewEditorProps) {
@@ -33,8 +38,10 @@ function DocumentPdfReviewEditor({ document, onDirtyStateChange, ...props }: Pdf
   const [pdf, setPdf] = useState<PDFDocumentProxy>();
   const [fingerprint, setFingerprint] = useState('');
   const [preparedPdf, setPreparedPdf] = useState<{ input: string; base64: string }>();
+  const [copyBlock, setCopyBlock] = useState<AnnotatedCopyBlock>();
   const activePdfRef = useRef<PDFDocumentProxy>();
   const [operation, setOperation] = useState<'save' | 'export'>();
+  const [resolving, setResolving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const onDirtyRef = useRef(onDirtyStateChange);
@@ -52,22 +59,29 @@ function DocumentPdfReviewEditor({ document, onDirtyStateChange, ...props }: Pdf
   const commitDraftRef = useRef(commitDraft);
   commitDraftRef.current = commitDraft;
   useEffect(() => document.registerSaveParticipant(`pdf-review-draft:${props.filePath}`, async () => {
-    commitDraftRef.current(); await session.save();
+    commitDraftRef.current();
+    // An unreadable review with nothing to write must not fail the source's Save All.
+    const { dirty, saving } = session.getSnapshot();
+    if (dirty || saving) await session.save();
     onDirtyRef.current?.(session.getSnapshot().dirty || !!draftRef.current.trim());
   }), [document, props.filePath, session]);
   const onLoaded = useCallback((pdf: PDFDocumentProxy) => {
-    setPdf(pdf); activePdfRef.current = pdf;
+    setPdf(pdf); activePdfRef.current = pdf; setCopyBlock(undefined);
     void (async () => {
       try {
         await session.load();
         const sourceBytes = await pdf.getData();
         await session.observePdfBytes(sourceBytes);
-        const embedded = await extractReviewedPdf(sourceBytes);
-        if (activePdfRef.current !== pdf || !embedded) return;
-        session.importEmbedded(embedded.data);
-        setPreparedPdf({ input: props.pdfBase64 ?? props.filePath, base64: encodePdfBytes(embedded.bytes) });
+        const source = await readPdfReviewSource(sourceBytes);
+        if (activePdfRef.current !== pdf) return;
+        if (source.encrypted) { setCopyBlock('encrypted'); return; }
+        if (!source.embedded) return;
+        session.importEmbedded(source.embedded.data);
+        setPreparedPdf({ input: props.pdfBase64 ?? props.filePath, base64: encodePdfBytes(source.embedded.bytes) });
       } catch (failure) {
-        if (activePdfRef.current === pdf) setError(String(failure));
+        // The viewer already rendered this file; only annotated copies need pdf-lib to parse it.
+        log.warn('PDF could not be prepared for annotated copies', { error: failure });
+        if (activePdfRef.current === pdf) setCopyBlock('unreadable');
       }
     })();
     const value = pdf.fingerprints[0] ?? '';
@@ -117,10 +131,21 @@ function DocumentPdfReviewEditor({ document, onDirtyStateChange, ...props }: Pdf
         }
       }
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      if (failure instanceof PdfReviewEncryptedError) setCopyBlock('encrypted');
+      // The conflict notice already explains the paused write and offers both choices.
+      else if (!(failure instanceof PdfReviewConflictError)) setError(failure instanceof Error ? failure.message : String(failure));
     } finally { setOperation(undefined); }
   };
+  const resolveConflict = async (choice: 'local' | 'host') => {
+    setResolving(true);
+    setError('');
+    try { await (choice === 'local' ? session.keepLocalChanges() : session.reloadFromHost()); }
+    catch (failure) {
+      if (!(failure instanceof PdfReviewConflictError)) setError(failure instanceof Error ? failure.message : String(failure));
+    } finally { setResolving(false); }
+  };
   const enabled = snapshot.loaded && !snapshot.readOnly && document.isCurrent() && props.isActiveTab !== false;
+  const copyEnabled = !!pdf && !operation && enabled && !copyBlock;
   const tools: Array<[PdfReviewTool, typeof MousePointer2]> = [
     ['select', MousePointer2], ['highlight', Highlighter], ['note', MessageSquareText], ['ink', Pencil],
   ];
@@ -147,16 +172,26 @@ function DocumentPdfReviewEditor({ document, onDirtyStateChange, ...props }: Pdf
           <IconButton size="sm" icon={<MessageSquareText size={15} />} aria-label={t('editor.pdfReview.comments')}
             aria-pressed={commentsOpen} onClick={() => setCommentsOpen(value => !value)} />
         </Tooltip>
-        <Button size="sm" variant="outline" leadingIcon={<Save size={14} />} disabled={!pdf || !!operation || !enabled}
+        <Button size="sm" variant="outline" leadingIcon={<Save size={14} />} disabled={!copyEnabled}
           onClick={() => void run('save')}>{t(operation === 'save' ? 'editor.pdfReview.saving' : 'editor.pdfReview.savePdf')}</Button>
         <Tooltip content={t('editor.pdfReview.export')} placement="bottom">
           <IconButton size="sm" icon={<Download size={15} />} aria-label={t('editor.pdfReview.export')}
-            disabled={!pdf || !!operation || !enabled} onClick={() => void run('export')} />
+            disabled={!copyEnabled} onClick={() => void run('export')} />
         </Tooltip>
       </div>
     </div>
-    {stale && <div className="pdf-review-editor__notice" role="status">{t('editor.pdfReview.recompiled')}</div>}
-    {(snapshot.error || error) && <div className="pdf-review-editor__notice" role="alert">
+    {copyBlock && <div className="pdf-review-editor__notice" role="status">
+      {t(copyBlock === 'encrypted' ? 'editor.pdfReview.encrypted' : 'editor.pdfReview.exportUnavailable')}
+    </div>}
+    {stale && <div className="pdf-review-editor__notice" role="status">
+      {t('editor.pdfReview.recompiled')}
+      <Button size="sm" disabled={!enabled} onClick={() => session.confirmCurrentLayout()}>{t('editor.pdfReview.confirmLayout')}</Button>
+    </div>}
+    {snapshot.conflict ? <div className="pdf-review-editor__notice" role="alert">
+      {t('editor.pdfReview.conflict')} {error && <span>{error}</span>}
+      <Button size="sm" disabled={!enabled || resolving} onClick={() => void resolveConflict('local')}>{t('editor.pdfReview.keepMine')}</Button>
+      <Button size="sm" disabled={!enabled || resolving} onClick={() => void resolveConflict('host')}>{t('editor.pdfReview.reloadFile')}</Button>
+    </div> : (snapshot.error || error) && <div className="pdf-review-editor__notice" role="alert">
       {t('editor.pdfReview.saveFailed')} <span>{snapshot.error || error}</span>
       <Button size="sm" onClick={() => { void session.retry().catch(() => undefined); }}>{t('editor.common.retry')}</Button>
     </div>}

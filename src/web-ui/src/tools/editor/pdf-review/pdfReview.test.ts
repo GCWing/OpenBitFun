@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PDFDocument, PDFName, PDFDict, PDFHexString, PDFArray } from 'pdf-lib';
-import { exportReviewedPdf, extractReviewedPdf, readEmbeddedPdfReview, parsePdfReview, type PdfReviewAnnotation } from './pdfReview';
+import { exportReviewedPdf, PdfReviewEncryptedError, readEmbeddedPdfReview, readPdfReviewSource,
+  parsePdfReview, type PdfReviewAnnotation } from './pdfReview';
+import { encryptedPdf } from './pdfReview.test-support';
 
 export function note(id = 'note-1'): PdfReviewAnnotation {
   return { id, kind: 'note', page: 1, rect: [20, 30, 40, 50], color: 'yellow',
@@ -61,13 +63,23 @@ describe('portable PDF review data', () => {
     const review = { version: 1 as const, fingerprint: 'original', annotations: [note()] };
     const saved = await exportReviewedPdf(await original.save(), review);
     expect(await readEmbeddedPdfReview(saved)).toEqual(review);
-    const opened = await extractReviewedPdf(saved);
+    const opened = (await readPdfReviewSource(saved)).embedded;
     expect(opened?.data).toEqual(review);
     expect((await PDFDocument.load(opened!.bytes)).getPage(0).node.Annots()?.size()).toBe(0);
     const revised = await exportReviewedPdf(saved, { ...review, annotations: [] });
     expect((await PDFDocument.load(revised)).getPage(0).node.Annots()?.size()).toBe(0);
     const savedAgain = await exportReviewedPdf(saved, review);
     expect((await PDFDocument.load(savedAgain)).getPage(0).node.Annots()?.size()).toBe(1);
+    expect(await readPdfReviewSource(await original.save())).toEqual({ encrypted: false });
+  });
+  it('opens an encrypted PDF as having no embedded review instead of failing', async () => {
+    const bytes = await encryptedPdf();
+    await expect(readEmbeddedPdfReview(bytes)).resolves.toBeUndefined();
+    await expect(readPdfReviewSource(bytes)).resolves.toEqual({ encrypted: true });
+  });
+  it('refuses to write unencrypted annotation strings into an encrypted PDF', async () => {
+    await expect(exportReviewedPdf(await encryptedPdf(), { version: 1, fingerprint: '', annotations: [note()] }))
+      .rejects.toBeInstanceOf(PdfReviewEncryptedError);
   });
 
 });

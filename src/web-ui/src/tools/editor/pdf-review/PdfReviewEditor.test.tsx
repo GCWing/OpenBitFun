@@ -3,17 +3,27 @@
 import { webcrypto } from 'node:crypto';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { PDFDocument } from 'pdf-lib';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { EditorDocument, EditorDocumentContext } from '../services/EditorDocument';
 import PdfReviewEditor from './PdfReviewEditor';
 import { getPdfReviewSession } from './PdfReviewSession';
 import { parsePdfReview, type PdfReviewAnnotation } from './pdfReview';
+import { encryptedPdf } from './pdfReview.test-support';
+
+const viewer = vi.hoisted(() => ({ pdf: undefined as unknown }));
 
 vi.mock('@/infrastructure/i18n', () => ({
   useI18n: () => ({ t: (key: string) => key, formatNumber: String }),
 }));
-vi.mock('../components/PdfViewer', () => ({ default: () => <div data-pdf-viewer /> }));
+vi.mock('../components/PdfViewer', async () => {
+  const { useEffect } = await import('react');
+  return { default: ({ onDocumentLoaded }: { onDocumentLoaded?: (pdf: unknown) => void }) => {
+    useEffect(() => { if (viewer.pdf) onDocumentLoaded?.(viewer.pdf); }, []);
+    return <div data-pdf-viewer />;
+  } };
+});
 
 let container: HTMLDivElement;
 let root: Root;
@@ -48,6 +58,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  viewer.pdf = undefined;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -56,6 +67,25 @@ async function click(selector: string) {
   const button = container.querySelector<HTMLButtonElement>(selector);
   if (!button) throw new Error(`Missing review control: ${selector}`);
   await act(async () => button.click());
+}
+function buttonWithText(text: string) {
+  const button = [...container.querySelectorAll('button')].find(candidate => candidate.textContent === text);
+  if (!button) throw new Error(`Missing review control: ${text}`);
+  return button;
+}
+/** Asynchronous PDF inspection and host writes settle outside the triggering event. */
+async function waitUntil(condition: () => boolean) {
+  for (let attempt = 0; attempt < 100 && !condition(); attempt++) {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+  }
+  expect(condition()).toBe(true);
+}
+async function openLoadedPdf(bytes: Uint8Array, fingerprint = 'compiled-b') {
+  viewer.pdf = { fingerprints: [fingerprint], getData: async () => bytes.slice() };
+  await act(async () => root.render(null));
+  await act(async () => root.render(<EditorDocumentContext.Provider value={document}>
+    <PdfReviewEditor filePath={path} />
+  </EditorDocumentContext.Provider>));
 }
 const thread = (index: number) => `.pdf-review-editor__thread:nth-child(${index})`;
 async function writeDraft(value: string) {
@@ -138,4 +168,55 @@ it('keeps a collapsed comment draft and includes it in document Save All', async
   const writes = vi.mocked(document.invoke).mock.calls;
   const content = writes[writes.length - 1]![1].request.content as string;
   expect(parsePdfReview(content).annotations[0]!.comments.at(-1)?.body).toBe('Pending reply while the comments are closed');
+});
+
+it('keeps an encrypted PDF reviewable without offering a broken annotated copy', async () => {
+  await openLoadedPdf(await encryptedPdf());
+  await waitUntil(() => container.textContent?.includes('editor.pdfReview.encrypted') ?? false);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(buttonWithText('editor.pdfReview.savePdf').disabled).toBe(true);
+  expect(container.querySelector<HTMLButtonElement>('[aria-label="editor.pdfReview.export"]')?.disabled).toBe(true);
+});
+
+it('keeps the recompiled-layout notice until the user confirms the positions', async () => {
+  const session = getPdfReviewSession(document, path);
+  session.setFingerprint('compiled-a');
+  session.replace([...session.getSnapshot().data.annotations, note('third')]);
+  await session.save();
+  const pdf = await PDFDocument.create(); pdf.addPage();
+  await openLoadedPdf(await pdf.save(), 'compiled-b');
+  await waitUntil(() => container.textContent?.includes('editor.pdfReview.recompiled') ?? false);
+  await act(async () => buttonWithText('editor.pdfReview.confirmLayout').click());
+  await waitUntil(() => !container.textContent?.includes('editor.pdfReview.recompiled'));
+  expect(session.getSnapshot().data.fingerprint).toBe('compiled-b');
+});
+
+it('asks which notes to keep after the review file changes on the host', async () => {
+  const session = getPdfReviewSession(document, path);
+  const theirs = JSON.stringify({ version: 1, fingerprint: '', annotations: [note('theirs')] }, null, 2) + '\n';
+  vi.spyOn(document.files, 'readFileContent').mockResolvedValue(theirs);
+  vi.mocked(document.invoke).mockRejectedValueOnce(new Error('FILE_CONFLICT: File changed after it was read; refresh before saving'));
+  await act(async () => {
+    session.replace([note('mine')]);
+    await session.save().catch(() => undefined);
+  });
+  expect(container.textContent).toContain('editor.pdfReview.conflict');
+  expect(container.textContent).not.toContain('editor.common.retry');
+  await act(async () => buttonWithText('editor.pdfReview.keepMine').click());
+  await waitUntil(() => !container.textContent?.includes('editor.pdfReview.conflict'));
+  const writes = vi.mocked(document.invoke).mock.calls;
+  expect(parsePdfReview(writes.at(-1)![1].request.content as string).annotations.map(item => item.id)).toEqual(['mine']);
+});
+
+it('does not fail document Save All for an unreadable review file without edits', async () => {
+  const blocked = new EditorDocument('review-blocked', { surfaceId: 'local', workspaceId: 'workspace-a' }, path);
+  vi.spyOn(blocked.files, 'getFileMetadata').mockRejectedValue(new Error('Permission denied'));
+  const write = vi.spyOn(blocked, 'invoke').mockResolvedValue(undefined);
+  await act(async () => root.render(<EditorDocumentContext.Provider value={blocked}>
+    <PdfReviewEditor filePath={path} />
+  </EditorDocumentContext.Provider>));
+  await act(async () => { await getPdfReviewSession(blocked, path).load(); });
+  expect(getPdfReviewSession(blocked, path).getSnapshot().readOnly).toBe(true);
+  await expect(blocked.saveAll()).resolves.toBeUndefined();
+  expect(write).not.toHaveBeenCalled();
 });

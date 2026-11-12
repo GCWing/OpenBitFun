@@ -3,7 +3,7 @@ import { webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { EditorDocument } from '../services/EditorDocument';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
-import { PdfReviewSession, PdfReviewExportConflict } from './PdfReviewSession';
+import { getPdfReviewSession, PdfReviewSession, PdfReviewExportConflict } from './PdfReviewSession';
 import { PDFDocument } from 'pdf-lib';
 export function note(id = 'note-1'): PdfReviewAnnotation {
   return { id, kind: 'note', page: 1, rect: [20, 30, 40, 50], color: 'yellow',
@@ -108,4 +108,78 @@ it('requires an exact approved version before replacing a pre-existing annotated
   const expectedHash = await pdfBytesHash(bytes);
   await session.savePdf(bytes, expectedHash);
   expect(upload).toHaveBeenCalledWith(expect.objectContaining({ path: '/paper/main.annotated.pdf', workspaceId: 'workspace-a', expectedHash }));
+});
+
+const theirs = JSON.stringify({ version: 1, fingerprint: '', annotations: [note('theirs')] }, null, 2) + '\n';
+const lastWrite = (write: ReturnType<typeof createSession>['write']) => write.mock.calls.at(-1)![1].request;
+const savedIds = (write: ReturnType<typeof createSession>['write']) =>
+  parsePdfReview(lastWrite(write).content as string).annotations.map(item => item.id);
+
+it.each([
+  ['refused by the host', 'FILE_CONFLICT: File already exists; refresh before replacing it'],
+  ['after a lost response', 'Connection lost after write'],
+])('holds unsaved notes in a conflict when another writer changed the file (%s)', async (_case, failure) => {
+  const { document, session, write } = createSession(); await session.load();
+  vi.spyOn(document.files, 'readFileContent').mockResolvedValue(theirs);
+  write.mockRejectedValueOnce(new Error(failure));
+  session.replace([note('mine')]);
+  await expect(session.save()).rejects.toThrow();
+  await expect(session.save()).rejects.toThrow();
+  expect(session.getSnapshot()).toMatchObject({ conflict: true, dirty: true });
+  expect(session.getSnapshot().data.annotations.map(item => item.id)).toEqual(['mine']);
+  expect(write).toHaveBeenCalledTimes(1);
+});
+
+async function conflictedSession() {
+  const setup = createSession(); await setup.session.load();
+  vi.spyOn(setup.document.files, 'readFileContent').mockResolvedValue(theirs);
+  setup.write.mockRejectedValueOnce(new Error('FILE_CONFLICT: File changed after it was read; refresh before saving'));
+  setup.session.replace([note('mine')]);
+  await expect(setup.session.save()).rejects.toThrow();
+  return setup;
+}
+
+it('replaces the changed review file with local notes only when the user keeps them', async () => {
+  const { session, write } = await conflictedSession();
+  await session.keepLocalChanges();
+  expect(session.getSnapshot()).toMatchObject({ conflict: false, dirty: false });
+  expect(lastWrite(write).expectedHash).toBe(await pdfBytesHash(new TextEncoder().encode(theirs)));
+  expect(savedIds(write)).toEqual(['mine']);
+});
+
+it('loads the changed review file on request and can undo back to the local notes', async () => {
+  const { session, write } = await conflictedSession();
+  await session.reloadFromHost();
+  expect(session.getSnapshot()).toMatchObject({ conflict: false, dirty: false });
+  expect(session.getSnapshot().data.annotations.map(item => item.id)).toEqual(['theirs']);
+  session.undo(); await session.save();
+  expect(lastWrite(write).expectedHash).toBe(await pdfBytesHash(new TextEncoder().encode(theirs)));
+  expect(savedIds(write)).toEqual(['mine']);
+});
+
+it('keeps the earlier PDF fingerprint until the user confirms the recompiled layout', async () => {
+  const { session, write } = createSession(); await session.load();
+  const savedFingerprint = () => parsePdfReview(lastWrite(write).content as string).fingerprint;
+  session.setFingerprint('compiled-a');
+  session.replace([note('first')]); await session.save();
+  expect(savedFingerprint()).toBe('compiled-a');
+  session.setFingerprint('compiled-b');
+  session.replace([note('first'), note('second')]); await session.save();
+  expect(session.getSnapshot().data.fingerprint).toBe('compiled-a');
+  expect(savedFingerprint()).toBe('compiled-a');
+  const pdf = await PDFDocument.create(); pdf.addPage();
+  await session.savePdf(await pdf.save());
+  expect(session.getSnapshot().data.fingerprint).toBe('compiled-a');
+  session.confirmCurrentLayout(); await session.save();
+  expect(session.getSnapshot().data.fingerprint).toBe('compiled-b');
+  expect(savedFingerprint()).toBe('compiled-b');
+});
+
+it('does not let an unedited review path block document Save All', async () => {
+  const document = new EditorDocument('review-paths', { surfaceId: 'local', workspaceId: 'workspace-a' }, '/paper/main.tex');
+  vi.spyOn(document.files, 'getFileMetadata').mockRejectedValue(new Error('Permission denied'));
+  const write = vi.spyOn(document, 'invoke').mockResolvedValue(undefined);
+  getPdfReviewSession(document, '/paper/ch');
+  await expect(document.saveAll()).resolves.toBeUndefined();
+  expect(write).not.toHaveBeenCalled();
 });
