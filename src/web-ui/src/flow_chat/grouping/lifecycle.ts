@@ -13,11 +13,12 @@ export function isFlowGroupMemberActive(item: FlowItem): boolean {
 /**
  * Members a running group shows while its disclosure is automatic.
  *
- * Only settled tool calls fold into the header summary; the assistant's own
- * text and thinking inside the group stay where they are. A serial run shows
- * the call in flight, a parallel batch the calls still running, and a call
- * waiting on approval always stays visible. Between two serial calls the most
- * recent call stays, so the group does not empty and refill for each step.
+ * Settled tool calls and settled thinking fold into the header; the
+ * assistant's own text stays where it is. A serial run shows the call in
+ * flight, a parallel batch the calls still running, and a call waiting on
+ * approval always stays visible. Between two serial calls the most recent call
+ * stays, so the group does not empty and refill for each step. Thinking that
+ * just finished stays while nothing follows it, so its reveal is not cut off.
  */
 export function liveFlowGroupMembers(
   items: readonly FlowItem[],
@@ -32,7 +33,12 @@ export function liveFlowGroupMembers(
     latestTool = item;
     if (isLiveTool(item)) hasLiveTool = true;
   }
-  return items.filter(item => item.type !== 'tool' || (hasLiveTool ? isLiveTool(item) : item === latestTool));
+  const trailing = items[items.length - 1];
+  return items.filter(item => {
+    if (item.type === 'tool') return hasLiveTool ? isLiveTool(item) : item === latestTool;
+    if (item.type === 'thinking') return isFlowGroupMemberActive(item) || item === trailing;
+    return true;
+  });
 }
 
 const lifecycleCache = new WeakMap<readonly FlowItem[], {

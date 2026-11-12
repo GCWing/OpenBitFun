@@ -486,8 +486,10 @@ not establish browser performance.
 ## Running tool group presentation
 
 A running group's automatic disclosure lists only its in-flight tool calls below a
-collapsed header that keeps the group summary; the assistant's text and thinking
-inside the group stay visible. A serial run therefore shows one call, and a
+collapsed header that keeps the group summary. Settled thinking folds with the
+finished calls; the assistant's text and any thinking still streaming stay visible,
+and a thought that just finished stays while nothing follows it so its reveal is
+not cut off. A serial run therefore shows one call, and a
 parallel batch shows the calls still running. Between two serial calls the most
 recent call stays, so the group does not empty and refill for each step. A member
 awaiting approval stays visible even in a group the reader folded. The reader's

@@ -356,6 +356,20 @@ describe('desktop conversation document', () => {
       expect(shown(rows)).toEqual(['note', 'c']);
     });
 
+    it('folds settled thinking with finished calls and keeps the live thought', () => {
+      const thought = (id: string, isStreaming = false) => ({ id, type: 'thinking', content: `Thinking ${id}`,
+        isStreaming, isCollapsed: true, status: isStreaming ? 'streaming' : 'completed', timestamp: 1 }) as FlowItem;
+      const rows = new ConversationDocumentProjection().project([live([
+        thought('t1'), tool('a'), thought('t2'), tool('b'), thought('t3'), tool('c', 'running'), thought('t4', true),
+      ])], options());
+      expect(shown(rows)).toEqual(['c', 't4']);
+      // A thought that just finished stays until something follows it.
+      const settledThought = new ConversationDocumentProjection().project([live([
+        thought('t1'), tool('a'), thought('t2'),
+      ])], options());
+      expect(shown(settledThought)).toEqual(['a', 't2']);
+    });
+
     it('folds a settled group to its header', () => {
       const rows = new ConversationDocumentProjection().project([source([tool('a'), tool('b'), tool('c')])], options());
       expect(header(rows)).toMatchObject({ expanded: false });
