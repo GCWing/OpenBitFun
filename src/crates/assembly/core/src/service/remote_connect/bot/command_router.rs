@@ -4290,9 +4290,14 @@ async fn execute_remote_forward(
         let mut wait = std::time::Duration::from_secs(2);
         match poll {
             Ok(poll) if poll["resp"] == "session_poll" => {
+                let recovered_after = reachability.failed_polls;
                 if reachability.on_success() {
-                    log::info!("Bot remote turn host is reachable again");
                     notify(s.remote_host_recovered.to_string()).await;
+                }
+                if recovered_after >= REMOTE_OFFLINE_NOTICE_AFTER {
+                    log::info!(
+                        "Bot remote turn host is reachable again after {recovered_after} failed polls"
+                    );
                 }
                 version = poll["version"].as_u64().unwrap_or(0);
                 if let Some(turn) = observe_turn(&poll, &turn_id) {
@@ -4350,11 +4355,13 @@ async fn execute_remote_forward(
                 if reachability.failed_polls == 1 {
                     log::warn!("Bot remote turn poll interrupted: {error}");
                 }
-                if announce_offline {
+                if reachability.failed_polls == REMOTE_OFFLINE_NOTICE_AFTER {
                     log::warn!(
                         "Bot remote turn host unreachable after {} polls; still checking: {error}",
                         reachability.failed_polls
                     );
+                }
+                if announce_offline {
                     notify(s.remote_host_offline.to_string()).await;
                 }
                 wait = delay;
@@ -4371,28 +4378,37 @@ async fn execute_remote_forward(
 }
 
 /// Consecutive poll failures of one remote turn's host, and whether the chat
-/// was told it is unreachable.
+/// was told it is unreachable. A turn has no wall-clock cap, so a flaky link
+/// can drop many times: the chat is told about the first outage and its
+/// recovery only, and later outages are logged.
 #[derive(Debug, Default)]
 struct RemoteReachability {
     failed_polls: u32,
+    /// The chat was told about the outage in progress.
     offline_announced: bool,
+    /// The chat was already told about an outage during this turn.
+    outage_announced_for_turn: bool,
 }
 
 impl RemoteReachability {
     /// Record a failed poll. Returns the wait before the next poll and
-    /// whether the chat should now be told the host is unreachable (once).
+    /// whether the chat should now be told the host is unreachable (at most
+    /// once per turn).
     fn on_failure(&mut self) -> (std::time::Duration, bool) {
         self.failed_polls = self.failed_polls.saturating_add(1);
-        let announce = self.failed_polls >= REMOTE_OFFLINE_NOTICE_AFTER && !self.offline_announced;
+        let announce =
+            self.failed_polls >= REMOTE_OFFLINE_NOTICE_AFTER && !self.outage_announced_for_turn;
         self.offline_announced |= announce;
+        self.outage_announced_for_turn |= announce;
         (remote_poll_backoff(self.failed_polls), announce)
     }
 
     /// Record a successful poll. Returns whether the chat should be told the
-    /// host is reachable again.
+    /// host is reachable again, which pairs with an announced outage.
     fn on_success(&mut self) -> bool {
         let recovered = self.offline_announced;
-        *self = Self::default();
+        self.failed_polls = 0;
+        self.offline_announced = false;
         recovered
     }
 }
@@ -5202,6 +5218,38 @@ mod state_tests {
         // A short blip below the threshold neither warns nor announces recovery.
         assert!(!reachability.on_failure().1);
         assert!(!reachability.on_success());
+    }
+
+    #[test]
+    fn repeated_outages_of_one_turn_are_announced_only_once() {
+        let mut reachability = RemoteReachability::default();
+        let mut notices = Vec::new();
+        for _ in 0..5 {
+            for _ in 0..(REMOTE_OFFLINE_NOTICE_AFTER + 2) {
+                let (wait, announce) = reachability.on_failure();
+                if announce {
+                    notices.push("offline");
+                }
+                // Backoff still restarts with every outage.
+                assert!(wait <= REMOTE_POLL_MAX_BACKOFF);
+            }
+            if reachability.on_success() {
+                notices.push("recovered");
+            }
+            assert_eq!(reachability.failed_polls, 0);
+        }
+        assert_eq!(notices, ["offline", "recovered"]);
+        assert_eq!(
+            reachability.on_failure().0,
+            std::time::Duration::from_secs(2)
+        );
+        // A new turn starts with fresh state and may announce again.
+        let mut next_turn = RemoteReachability::default();
+        let announced = (0..REMOTE_OFFLINE_NOTICE_AFTER)
+            .map(|_| next_turn.on_failure().1)
+            .filter(|announce| *announce)
+            .count();
+        assert_eq!(announced, 1);
     }
 
     #[test]
