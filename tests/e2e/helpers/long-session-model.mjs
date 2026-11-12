@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 
 /** Text-only loopback Anthropic SSE. No credentials, tools, shell assumptions or product-store mocks. */
-export async function createLongSessionModel({ intervalMs = 90, paragraphChars = 480 } = {}) {
+export async function createLongSessionModel({ intervalMs = 90, paragraphChars = 480, controlled = false } = {}) {
   if (!Number.isInteger(intervalMs) || intervalMs < 1 || !Number.isInteger(paragraphChars) || paragraphChars < 32) {
     throw new Error('Invalid model workload');
   }
@@ -28,7 +28,8 @@ export async function createLongSessionModel({ intervalMs = 90, paragraphChars =
         state.emitted++; state.bytes += Buffer.byteLength(text); state.lastEmittedAt = Date.now();
         send(response, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } });
       };
-      emit(); state.timer = setInterval(emit, intervalMs);
+      state.emit = emit;
+      if (!controlled) { emit(); state.timer = setInterval(emit, intervalMs); }
       response.on('close', () => { state.connected = false; clearInterval(state.timer); });
     } catch (error) { errors.push(String(error)); response.statusCode = response.headersSent ? 200 : 400; response.end(); }
   });
@@ -38,6 +39,16 @@ export async function createLongSessionModel({ intervalMs = 90, paragraphChars =
     return state ? Object.fromEntries(['emitted', 'bytes', 'blockedWrites', 'connected', 'finished', 'startedAt', 'lastEmittedAt'].map(key => [key, state[key]])) : null;
   };
   return { url: `http://127.0.0.1:${server.address().port}`, errors, snapshot,
+    release(marker, count) {
+      const state = streams.get(marker);
+      if (!controlled || !state?.connected || state.finished || state.remaining > 0 || !Number.isInteger(count) || count < 1) throw new Error('Invalid controlled stream release');
+      state.remaining = count;
+      state.timer = setInterval(() => {
+        const before = state.emitted; state.emit();
+        state.remaining -= state.emitted - before;
+        if (!state.remaining) clearInterval(state.timer);
+      }, intervalMs);
+    },
     finish(marker) {
       const state = streams.get(marker);
       if (!state || state.finished) return;

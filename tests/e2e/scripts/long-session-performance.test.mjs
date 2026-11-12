@@ -67,6 +67,45 @@ test('unexpected auxiliary model traffic fails visibly rather than becoming a va
   } finally { await fixture.close(); }
 });
 
+test('controlled SSE delivers equal finite batches without ending either runtime stream', async () => {
+  const fixture = await createLongSessionModel({ intervalMs: 5, paragraphChars: 64, controlled: true });
+  const controller = new AbortController();
+  const until = async predicate => {
+    const deadline = Date.now() + 2000;
+    while (!predicate()) {
+      assert.ok(Date.now() < deadline, 'Controlled SSE did not advance');
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+  };
+  try {
+    const responses = await Promise.all(['a', 'b'].map(id => fetch(fixture.url, {
+      method: 'POST', signal: controller.signal, body: JSON.stringify({ messages: [{ role: 'user', content: `LONG_SESSION_STREAM:${id}` }] }),
+    })));
+    const bodies = responses.map(response => response.text());
+    for (const id of ['a', 'b']) {
+      assert.equal(fixture.snapshot(id).emitted, 0);
+      fixture.release(id, 3);
+      assert.throws(() => fixture.release(id, 1), /Invalid controlled/);
+    }
+    await until(() => ['a', 'b'].every(id => fixture.snapshot(id).emitted === 3));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    for (const id of ['a', 'b']) {
+      assert.equal(fixture.snapshot(id).emitted, 3);
+      assert.equal(fixture.snapshot(id).finished, false);
+      assert.equal(fixture.snapshot(id).connected, true);
+      fixture.release(id, 2);
+    }
+    await until(() => ['a', 'b'].every(id => fixture.snapshot(id).emitted === 5));
+    for (const id of ['a', 'b']) fixture.finish(id);
+    for (const [index, body] of (await Promise.all(bodies)).entries()) {
+      assert.equal((body.match(/"type":"text_delta"/g) ?? []).length, 6);
+      assert.ok(body.includes(`LONG_SESSION_COMPLETE:${['a', 'b'][index]}`));
+    }
+    assert.throws(() => fixture.release('a', 1), /Invalid controlled/);
+    assert.deepEqual(fixture.errors, []);
+  } finally { controller.abort(); await fixture.close(); }
+});
+
 test('multi-tool CLI writes 100 diverse calls across 26 rounds in every historical turn', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'openbitfun-multi-tool-contract-'));
   const execute = promisify(execFile), workspace = path.join(root, 'workspace');

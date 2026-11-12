@@ -473,8 +473,10 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     setSubmissionKey(key);
   }, []);
   const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
-  const [viewportHeightPx, setViewportHeightPx] = useState(0);
-  const [viewportWidthPx, setViewportWidthPx] = useState(0);
+  // Reservations only: native resize observation still replaces this box.
+  // Reopening need not first render a zero-height window and zero-width estimates.
+  const [viewportHeightPx, setViewportHeightPx] = useState(retainedRows?.viewportRect?.height ?? 0);
+  const [viewportWidthPx, setViewportWidthPx] = useState(retainedRows?.viewportRect?.width ?? 0);
   useLayoutEffect(() => {
     if (scrollerElement && extentElementRef.current) centerFlowChatExtent(scrollerElement, extentElementRef.current);
   }, [scrollerElement, viewportWidthPx, endOrigin]);
@@ -606,16 +608,22 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     getViewportAnchorKey: () => measurementAnchorKeyRef.current(),
     retainedItemSizes: retainedRows?.sizes,
     retainedItemWidthPx: retainedRows?.widthPx,
+    retainedViewportRect: retainedRows?.viewportRect,
   });
   const snapshotItemSizes = virtualizer.snapshotItemSizes;
   const measuredWidthRef = useRef(availableWidthPx);
   measuredWidthRef.current = availableWidthPx;
+  const retainedViewportRectRef = useRef(retainedRows?.viewportRect);
+  if (isUsableFlowChatViewportRect({ width: viewportWidthPx, height: viewportHeightPx })) {
+    retainedViewportRectRef.current = { width: viewportWidthPx, height: viewportHeightPx };
+  }
   useLayoutEffect(() => {
     retainedTranscriptRowSizes.take(reader);
-    // Sizes only: no geometry is read, so unmount-phase DOM cannot skew them.
+    // Observed sizes only: unmount reads no geometry from a changing DOM.
     return () => retainedTranscriptRowSizes.put(reader, {
       sizes: snapshotItemSizes(),
       widthPx: measuredWidthRef.current > 0 ? measuredWidthRef.current : undefined,
+      viewportRect: retainedViewportRectRef.current,
     });
   }, [reader, snapshotItemSizes]);
 

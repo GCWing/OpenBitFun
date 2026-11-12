@@ -62,6 +62,25 @@ Select the denser `multi-tool` template with:
 pnpm --dir tests/e2e run test:perf:long-session --scenario multi-tool
 ```
 
+For a repeatable streaming-switch comparison, use
+`--suite streaming-switch --scenario multi-tool --repeats 16`. Both runtime streams
+start connected without output, receive 96 initial paragraphs together, and both
+transcripts are opened before measurement. Each alternating real session click
+releases 16 more paragraphs per stream at the configured interval. Outside the
+timed window, the test waits for both batches and the active transcript's final
+paragraph before the next click. This keeps output volume equal across builds;
+it is a separate protocol from the continuously growing full matrix. Both streams
+must advance during each switch and finish into persisted history. Compare
+matching protocols/native binaries in independent processes without concurrent builds.
+After measurement, the suite checks reading-position restoration, draft retention,
+reader takeover while more output arrives, search navigation and bounded row DOM.
+
+Optional Windows WebView2 diagnostics: set `OPENBITFUN_LONG_SESSION_CDP_PORT` to a
+free debugging port to save `switch.cpuprofile` and `switch-trace.json` for this
+suite. `OPENBITFUN_LONG_SESSION_SELECTOR_STATS=1` adds expensive CSS selector and
+invalidation tracking. Such reports are marked instrumented; use separate runs
+with these variables unset for performance acceptance. RAF is not compositor FPS.
+
 Every historical turn in all four long sessions then has **26 model rounds**:
 25 rounds containing a 320-character Markdown explanation followed by Read,
 Edit, Write and ExecCommand, and one final Markdown summary controlled by

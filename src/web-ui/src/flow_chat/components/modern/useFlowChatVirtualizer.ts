@@ -298,6 +298,8 @@ export interface UseFlowChatVirtualizerOptions<T> {
    * still reserve space, but no longer count as measurements.
    */
   retainedItemWidthPx?: number;
+  /** Rebuildable viewport dimensions; the native observer replaces them on mount. */
+  retainedViewportRect?: { width: number; height: number };
 }
 
 export interface FlowChatVirtualizer {
@@ -457,6 +459,7 @@ export function useFlowChatVirtualizer<T>({
   shiftViewport = () => false,
   getViewportAnchorKey,
   retainedItemSizes,
+  retainedViewportRect,
   retainedItemWidthPx,
 }: UseFlowChatVirtualizerOptions<T>): FlowChatVirtualizer {
   const items = useMemo(() => endOrigin ? [...sourceItems].reverse() : sourceItems, [sourceItems, endOrigin]);
@@ -657,6 +660,7 @@ export function useFlowChatVirtualizer<T>({
     // at 1540.3 -> 806.7ms. These are single-trace timings, not paint guarantees.
     // Keep an empty hydration from consuming the one-time initial offset.
     enabled: !initialTailRef.current || hasInitialItemsRef.current,
+    initialRect: retainedViewportRect,
     // Reservations rather than raw estimates: a reopened transcript seeds from
     // the sizes it retained. Without any, a reservation is that same estimate.
     initialOffset: () => !endOrigin && initialTailRef.current
