@@ -3,7 +3,9 @@ import { agentAPI } from '@/infrastructure/api';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { createLogger } from '@/shared/utils/logger';
 import { flowChatStore } from '../store/FlowChatStore';
-import { getActiveSurfaceScope, type SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceScope, isLocalSurface, type SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { isOutcomeUnknownError } from '@/infrastructure/api/errors/TauriCommandError';
+import { i18nService } from '@/infrastructure/i18n';
 import { finishSubmittedMessagePreview } from './submittedMessagePresentation';
 import {
   assertSessionMutationLease,
@@ -47,6 +49,45 @@ async function reloadAuthoritativeSession(sessionId: string, scope: SurfaceScope
   });
   scope.assertCurrent('finish rollback history reload');
   completeSessionMutationReconciliation(sessionId);
+}
+
+/**
+ * The rollback request may or may not have run on the host. The session was
+ * reloaded from its authoritative record; its current history is the outcome.
+ */
+export class RollbackOutcomeUnknownError extends Error {
+  readonly outcomeUnknown = true;
+  constructor(readonly reloaded: boolean, readonly cause?: unknown) {
+    super(i18nService.t(reloaded
+      ? 'flow-chat:message.rollbackOutcomeUnknown'
+      : 'flow-chat:message.rollbackOutcomeUnknownNotReloaded'));
+    this.name = 'RollbackOutcomeUnknownError';
+  }
+}
+
+async function reconcileUnknownRollback(
+  sessionId: string,
+  scope: SurfaceScope,
+  lease: SessionMutationLease,
+  cause: unknown,
+): Promise<never> {
+  log.warn('Rollback reply was lost; reloading the session from its host', { sessionId });
+  // Nothing may be submitted against a history whose shape is unknown.
+  requireSessionMutationReconciliation(lease, 'Rollback outcome is unknown');
+  let reloaded = false;
+  try {
+    // A device surface renders a host replica that a history load reuses;
+    // re-read it so a rollback that did run is reflected.
+    if (!isLocalSurface(scope.surfaceId)) {
+      await flowChatStore.reloadRelaySessionFromHost(sessionId);
+      scope.assertCurrent('reload session after unknown rollback');
+    }
+    await reloadAuthoritativeSession(sessionId, scope);
+    reloaded = true;
+  } catch (error) {
+    log.warn('Failed to reload the session after an unknown rollback outcome', { sessionId, error });
+  }
+  throw new RollbackOutcomeUnknownError(reloaded, cause);
 }
 
 function refreshFiles(paths: string[]): void {
@@ -165,13 +206,19 @@ export async function rollbackSessionToTurn(
 
     const workspaceId = session.workspaceId ?? session.config.workspaceId;
     if (!workspaceId) throw new Error('Session workspace ID is unavailable; reload the workspace catalog');
-    const outcome = await agentAPI.rollbackSessionToTurn({
-      workspaceId,
-      sessionId: request.sessionId,
-      targetTurnId: request.targetTurnId,
-      expectedStorageTurnIndex,
-      expectedCatalogRevision,
-    });
+    let outcome: Awaited<ReturnType<typeof agentAPI.rollbackSessionToTurn>>;
+    try {
+      outcome = await agentAPI.rollbackSessionToTurn({
+        workspaceId,
+        sessionId: request.sessionId,
+        targetTurnId: request.targetTurnId,
+        expectedStorageTurnIndex,
+        expectedCatalogRevision,
+      });
+    } catch (error) {
+      if (!isOutcomeUnknownError(error) || !scope.isCurrent()) throw error;
+      return await reconcileUnknownRollback(request.sessionId, scope, lease, error);
+    }
     scope.assertCurrent('apply session rollback');
     if (outcome.status === 'recovery_required') {
       refreshFiles(outcome.affectedFiles);

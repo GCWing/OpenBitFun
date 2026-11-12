@@ -720,6 +720,8 @@
     "rollbackDialogBulletHistory": "删除该轮及之后的对话记录（不可恢复）",
     "rollbackSuccess": "已回滚并删除后续对话记录",
     "rollbackFailed": "回滚失败",
+    "rollbackOutcomeUnknown": "回滚结果未知。已从设备重新加载会话，请先查看历史再决定是否重试。",
+    "rollbackOutcomeUnknownNotReloaded": "回滚结果未知，且无法从设备重新加载会话。请重新打开会话后再修改。",
     "saveEdit": "保存并重跑",
     "cancelEdit": "取消",
     "editPlaceholder": "编辑你的消息...",

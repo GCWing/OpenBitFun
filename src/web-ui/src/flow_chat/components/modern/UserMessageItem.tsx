@@ -35,7 +35,7 @@ import {
   describeUserMessageEditImpact,
   editAndRerunUserMessage,
 } from '../../services/UserMessageEditService';
-import { rollbackSessionToTurn } from '../../services/SessionRollbackService';
+import { RollbackOutcomeUnknownError, rollbackSessionToTurn } from '../../services/SessionRollbackService';
 import { createLogger } from '@/shared/utils/logger';
 import type { SessionUsageReport } from '@/infrastructure/api/service-api/SessionAPI';
 import { SessionUsageReportCard } from '../usage/SessionUsageReportCard';
@@ -473,6 +473,11 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
         notificationService.success(t('message.rollbackSuccess'));
       } catch (error) {
         log.error('Rollback failed', error);
+        if (error instanceof RollbackOutcomeUnknownError) {
+          // The session now shows the device's own history; nothing to restore here.
+          notificationService.warning(error.message);
+          return;
+        }
         notificationService.error(`${t('message.rollbackFailed')}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }, [actionTurnIndex, canRollback, composerPresentation, largePastes, resolvedSessionId, restoredComposerContexts, t, turnId, messageContent]);
@@ -570,7 +575,11 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
         notificationService.success(t('message.editSuccess'));
       } catch (error) {
         log.error('Message edit failed', { sessionId: resolvedSessionId, turnId, error });
-        notificationService.error(`${t('message.editFailed')}: ${error instanceof Error ? error.message : String(error)}`);
+        if (error instanceof RollbackOutcomeUnknownError) {
+          notificationService.warning(error.message);
+        } else {
+          notificationService.error(`${t('message.editFailed')}: ${error instanceof Error ? error.message : String(error)}`);
+        }
       } finally {
         setEditSubmitting(false);
       }
