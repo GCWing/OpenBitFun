@@ -423,3 +423,10 @@
   font-size: var(--openbitfun-type-label-sm-font-size);
   line-height: var(--openbitfun-type-label-sm-line-height);
 }
+
+// Reader freshness notice: catching up after a failed read, or a host that
+// cannot serve streams. Clears itself once the host has been read again.
+.chat-page__stream-notice {
+  flex: none;
+  margin: var(--size-gap-2) var(--size-gap-4) 0;
+}

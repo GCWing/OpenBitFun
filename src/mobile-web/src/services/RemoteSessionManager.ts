@@ -383,6 +383,9 @@ export class RemoteSessionModelWriteUnconfirmedError extends Error {
   }
 }
 
+/** Why a stalled reader is asked to try again now. */
+export type RecoveryReason = 'relay-reconnect' | 'host-online' | 'visible' | 'online' | 'hint';
+
 export class RemoteSessionManager {
   private client: RelayHttpClient;
   private hostCapabilities: HostCapabilitySnapshot;
@@ -466,6 +469,19 @@ export class RemoteSessionManager {
       capabilities: RemoteSessionManager.capabilitySet(capabilities),
     };
     this.notifyHostCapabilities();
+  }
+
+  /**
+   * The host may have restarted or been updated: keep the last capability set
+   * for presentation, but require a fresh answer before the next send or
+   * stream subscription chooses a path from it, and start that probe now.
+   */
+  forgetHostCapabilities(): void {
+    const current = this.currentHostCapabilities();
+    if (!current?.known) return;
+    this.hostCapabilities = { ...current, known: false };
+    this.notifyHostCapabilities();
+    void this.probeHostCapabilities();
   }
 
   /**
@@ -555,6 +571,82 @@ export class RemoteSessionManager {
 
   onControlTargetChange(listener: () => void): () => void {
     return this.client.onControlTargetChange(listener);
+  }
+
+  private recoveryListeners = new Set<(reason: RecoveryReason) => void>();
+  private stopRecoverySources: (() => void) | null = null;
+
+  /**
+   * Moments when a stalled reader should try again at once instead of waiting
+   * out its backoff: the Relay reconnected, the page became visible, the
+   * browser came back online, or the controlled host came back online (which
+   * may be a restarted or updated host, so its capabilities are forgotten).
+   */
+  onRecoverySignal(listener: (reason: RecoveryReason) => void): () => void {
+    this.recoveryListeners.add(listener);
+    if (!this.stopRecoverySources) this.stopRecoverySources = this.bindRecoverySources();
+    return () => {
+      this.recoveryListeners.delete(listener);
+      if (this.recoveryListeners.size === 0 && this.stopRecoverySources) {
+        this.stopRecoverySources();
+        this.stopRecoverySources = null;
+      }
+    };
+  }
+
+  /** Recovery signals plus hints naming `streamId` from the current target. */
+  onStreamRecoverySignal(streamId: string, listener: (reason: RecoveryReason) => void): () => void {
+    const stopRecovery = this.onRecoverySignal(listener);
+    const client = this.client as Partial<Pick<RelayHttpClient, 'onStreamHint'>>;
+    const stopHints = client.onStreamHint?.(hint => {
+      if (hint.stream_id === streamId && hint.sourceDeviceId === this.client.targetDeviceId) listener('hint');
+    }) ?? (() => {});
+    return () => { stopRecovery(); stopHints(); };
+  }
+
+  /** Last directory presence of the control target, when the directory lists it. */
+  controlTargetPresence(): { online: boolean; lastSeenAt: number | null } | null {
+    const deviceId = this.client.targetDeviceId;
+    const client = this.client as Partial<Pick<RelayHttpClient, 'devicePresence'>>;
+    const device = deviceId && client.devicePresence ? client.devicePresence(deviceId) : null;
+    return device ? { online: device.online, lastSeenAt: device.last_seen_at ?? null } : null;
+  }
+
+  private emitRecovery(reason: RecoveryReason): void {
+    for (const listener of [...this.recoveryListeners]) {
+      try { listener(reason); } catch (error) { console.error('[RemoteSessionManager] recovery listener failed', error); }
+    }
+  }
+
+  private bindRecoverySources(): () => void {
+    const stops: Array<() => void> = [];
+    const client = this.client as Partial<Pick<RelayHttpClient, 'onRelayReconnect' | 'onDeviceDirectorySnapshot'>>;
+    if (client.onRelayReconnect) stops.push(client.onRelayReconnect(() => this.emitRecovery('relay-reconnect')));
+    if (client.onDeviceDirectorySnapshot) {
+      let lastOnline = this.controlTargetPresence()?.online ?? null;
+      let lastTarget = this.client.targetDeviceId;
+      stops.push(client.onDeviceDirectorySnapshot(devices => {
+        const target = this.client.targetDeviceId;
+        const online = devices.find(device => device.device_id === target)?.online ?? null;
+        const cameBack = target === lastTarget && lastOnline === false && online === true;
+        lastOnline = online;
+        lastTarget = target;
+        if (!cameBack) return;
+        this.forgetHostCapabilities();
+        this.emitRecovery('host-online');
+      }));
+    }
+    if (typeof document !== 'undefined') {
+      const visible = () => { if (document.visibilityState === 'visible') this.emitRecovery('visible'); };
+      document.addEventListener('visibilitychange', visible);
+      stops.push(() => document.removeEventListener('visibilitychange', visible));
+    }
+    if (typeof window !== 'undefined') {
+      const online = () => this.emitRecovery('online');
+      window.addEventListener('online', online);
+      stops.push(() => window.removeEventListener('online', online));
+    }
+    return () => { for (const stop of stops) stop(); };
   }
 
   private ensureControlTargetCurrent(snapshot: ControlTargetSnapshot): void {
@@ -716,8 +808,16 @@ export class RemoteSessionManager {
    * device over encrypted RPC and never cached by the Relay or this client. */
   async subscribeSessionStream(streamId: string, callbacks: SessionStreamCallbacks): Promise<SessionStreamHandle> {
     const target = this.client.getControlTargetSnapshot();
+    const learnedEarlier = this.hostCapabilitiesKnown;
     await this.ensureHostCapabilitiesKnown(target);
     this.ensureControlTargetCurrent(target);
+    if (!this.supportsHostStreams() && learnedEarlier) {
+      // "Unsupported" may describe a host that has since been updated. Ask
+      // again before repeating it; callers retry only on recovery signals.
+      this.forgetHostCapabilities();
+      await this.ensureHostCapabilitiesKnown(target);
+      this.ensureControlTargetCurrent(target);
+    }
     if (!this.supportsHostStreams()) throw new Error(UNSUPPORTED_HOST_MESSAGE);
     return this.client.subscribeHostStream(streamId, callbacks);
   }
@@ -1327,4 +1427,4 @@ export class RemoteSessionManager {
 
 }
 
-export { SessionSynchronizer } from './SessionSynchronizer';
+export { SessionSynchronizer, type SessionSyncState } from './SessionSynchronizer';

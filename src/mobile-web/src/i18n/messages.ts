@@ -255,6 +255,8 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: 'Opening workspace...',
     },
     chat: {
+      catchingUp: 'Catching up…',
+      hostStreamUnsupported: 'The desktop runs an older OpenBitFun version that cannot stream this session. Update OpenBitFun on that device; this page checks again when it comes back online.',
       checkingHost: 'Checking desktop…',
       session: 'Session',
       loadingSession: 'Loading session...',
@@ -634,6 +636,8 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: '正在打开工作区...',
     },
     chat: {
+      catchingUp: '正在同步最新内容…',
+      hostStreamUnsupported: '桌面端的 OpenBitFun 版本过旧，无法同步此会话。请在该设备上更新 OpenBitFun；设备重新上线后此页面会再次检查。',
       checkingHost: '正在检查桌面端…',
       session: '会话',
       loadingSession: '正在加载会话...',
@@ -1013,6 +1017,8 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: '正在打開工作區...',
     },
     chat: {
+      catchingUp: '正在同步最新內容…',
+      hostStreamUnsupported: '桌面端的 OpenBitFun 版本過舊，無法同步此會話。請在該裝置上更新 OpenBitFun；裝置重新上線後此頁面會再次檢查。',
       checkingHost: '正在檢查桌面端…',
       session: '會話',
       loadingSession: '正在加載會話...',

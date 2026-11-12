@@ -4,7 +4,7 @@ import { PermissionMailbox } from '../components/PermissionMailbox';
 import { QuestionInteractionContext } from "../components/ChatAskQuestionCard";
 import { ChevronDown as LucideChevronDown } from 'lucide-react';
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { MobileButton, MobileConfirmSheet, MobileIconButton, MobileStatus, MobileTextarea } from '@openbitfun/ui/mobile';
+import { MobileBanner, MobileButton, MobileConfirmSheet, MobileIconButton, MobileStatus, MobileTextarea } from '@openbitfun/ui/mobile';
 import { useI18n } from '../i18n';
 import { useControlTargetEpoch } from '../hooks/useControlTargetEpoch';
 import { useHostCapabilityRevision } from '../hooks/useHostCapabilityRevision';
@@ -14,6 +14,7 @@ import {
   RemoteSessionManager,
   RemoteSessionModelWriteUnconfirmedError,
   SessionSynchronizer,
+  type SessionSyncState,
   type PollResponse,
   type ChatMessage,
   type RemoteModelCatalog,
@@ -42,6 +43,7 @@ import ChatFeedback from '../components/ChatFeedback';
 import { copyToClipboard } from '../components/ChatMarkdown';
 import { ArtifactImageReader } from '../components/RemoteArtifactImage';
 import ChatTranscript from '../components/ChatTranscript';
+import { describeRemoteError } from '../services/remoteErrorPresentation';
 
 function reportRemoteSessionError(
   error: unknown,
@@ -158,6 +160,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [transcriptHydrating, setTranscriptHydrating] = useState(true);
+  const [streamState, setStreamState] = useState<SessionSyncState>('loading');
+  const [streamIssue, setStreamIssue] = useState<unknown>(null);
   const isLoadingMoreRef = useRef(false);
   const hasMoreRef = useRef(true);
   const controlTargetEpoch = useControlTargetEpoch(sessionMgr);
@@ -271,6 +275,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
       setSelectedModelId('auto');
       setMessages(sessionId, []);
       setTranscriptHydrating(true);
+      setStreamState('loading');
+      setStreamIssue(null);
       setMenuMessage(null);
       setDeletingMsg(false);
       setRollbackTarget(null);
@@ -906,9 +912,21 @@ const ChatPage: React.FC<ChatPageProps> = ({
           if (resp.prompt_suggestion !== undefined) setPromptSuggestion(resp.prompt_suggestion);
           setActiveTurn(resp.active_turn ?? null);
         }, 0, history => { if(isInitCurrent()){setHasMore(history.hasMore);hasMoreRef.current=history.hasMore;} }, () => { if(isInitCurrent())setMailboxInvalidation(value=>value+1); },
-        // Stream failures are stated, not hidden: an older host or a lost
-        // connection shows up in the same banner as any other remote error.
-        error => { if (isInitCurrent()) { reportRemoteSessionError(error, setError); setTranscriptHydrating(false); } });
+        // Stream failures are stated, not hidden, but they belong to the
+        // reader: the notice says the transcript is catching up and clears
+        // itself once the host has been read again.
+        error => {
+          if (!isInitCurrent() || isRemoteControlTargetChangedError(error)) return;
+          setStreamIssue(error);
+          setTranscriptHydrating(false);
+        },
+        {
+          onSyncState: state => {
+            if (!isInitCurrent()) return;
+            setStreamState(state);
+            if (state === 'live') setStreamIssue(null);
+          },
+        });
 
         synchronizer.start(initialMsgCount);
         streamRef.current = synchronizer;
@@ -1210,6 +1228,20 @@ const ChatPage: React.FC<ChatPageProps> = ({
       />
 
       <PermissionMailbox key={`${sessionId}:${controlTargetEpoch}`} manager={sessionMgr} sessionId={sessionId} invalidation={mailboxInvalidation} />
+      {(streamState === 'unsupported' || streamState === 'catching-up' || streamIssue !== null) && (
+        <MobileBanner
+          className="chat-page__stream-notice"
+          data-stream-state={streamState}
+          role="status"
+          tone={streamState === 'unsupported' ? 'danger' : 'warning'}
+        >
+          {streamState === 'unsupported'
+            ? t('chat.hostStreamUnsupported')
+            : streamIssue !== null
+              ? `${t('chat.catchingUp')} ${describeRemoteError(streamIssue, t)}`
+              : t('chat.catchingUp')}
+        </MobileBanner>
+      )}
       {/* Messages */}
       <div className="chat-page__messages" ref={messagesContainerRef} onScroll={handleScroll}>
         {transcriptHydrating && messages.length === 0 ? (

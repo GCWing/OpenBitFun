@@ -4,7 +4,7 @@ import {
   type HostStreamOptions, type SessionStreamHandle, type StreamHint, type StreamReadRequest,
 } from '../../../shared/relay-transport/HostStream';
 /** Account directory plus the shared Socket.IO encrypted RPC transport. */
-import { AccountRealtime, type DeviceEventEnvelope } from '../../../shared/relay-transport/AccountRealtime';
+import { AccountRealtime, type ConnectionStatus, type DeviceEventEnvelope } from '../../../shared/relay-transport/AccountRealtime';
 import { deriveDeviceMessageKey, encrypt, decrypt, fromB64 } from './E2EEncryption';
 import { normalizeRelayUrl } from './pairingLink';
 
@@ -99,6 +99,30 @@ export class RelayHttpClient {
   private peerEncodings = new Set<string>();
   private deviceMessageKeys = new Map<string, { expires: number; key: Promise<Uint8Array> }>();
   private streamHintListeners = new Set<(hint: StreamHint) => void>();
+  private relayStatusValue: ConnectionStatus = 'closed';
+  private relayStatusListeners = new Set<(status: ConnectionStatus) => void>();
+  private relayReconnectListeners = new Set<() => void>();
+
+  /** Status of the account's realtime Relay connection (not of any device). */
+  get relayStatus(): ConnectionStatus { return this.relayStatusValue; }
+  onRelayStatus(listener: (status: ConnectionStatus) => void): () => void {
+    this.relayStatusListeners.add(listener);
+    return () => { this.relayStatusListeners.delete(listener); };
+  }
+  /** The Relay connection re-authenticated after a drop; host state may have moved. */
+  onRelayReconnect(listener: () => void): () => void {
+    this.relayReconnectListeners.add(listener);
+    return () => { this.relayReconnectListeners.delete(listener); };
+  }
+  private setRelayStatus(status: ConnectionStatus): void {
+    if (this.relayStatusValue === status) return;
+    this.relayStatusValue = status;
+    for (const listener of [...this.relayStatusListeners]) listener(status);
+  }
+  /** Last directory entry for a device, or null when the directory has not listed it. */
+  devicePresence(deviceId: string): RelayDeviceInfo | null {
+    return this.directorySnapshot.find(item => item.device_id === deviceId) ?? null;
+  }
 
   constructor(relayUrl: string, identity: AccountIdentity) {
     const endpoint = normalizeRelayUrl(relayUrl);
@@ -117,15 +141,20 @@ export class RelayHttpClient {
     this.identity?.masterKey.fill(0);
     this.identity = { ...identity, masterKey: identity.masterKey.slice(), generation: ++this.identityGeneration };
     prepareRelayEncoding();
-    this.realtime = new AccountRealtime({ url: this.relayUrl, token: identity.token });
+    const realtime = new AccountRealtime({ url: this.relayUrl, token: identity.token });
+    this.realtime = realtime;
     const notifyDirectory = () => {
       this.peerEncodings = new Set();
       for (const listener of this.directoryListeners) listener();
     };
-    this.realtime.onDeviceDirectoryChanged(notifyDirectory);
-    this.realtime.onReconnect(notifyDirectory);
-    this.realtime.onStatus(status => {
+    realtime.onDeviceDirectoryChanged(notifyDirectory);
+    realtime.onReconnect(() => {
+      notifyDirectory();
+      if (this.realtime === realtime) for (const listener of [...this.relayReconnectListeners]) listener();
+    });
+    realtime.onStatus(status => {
       if (status === 'disconnected') this.peerEncodings = new Set();
+      if (this.realtime === realtime) this.setRelayStatus(status);
     });
     this.realtime.onDeviceEvent(envelope => { void this.receiveDeviceEvent(envelope); });
     this.accountEpochValue += 1;
@@ -142,6 +171,7 @@ export class RelayHttpClient {
   resetConnectionIdentity(): void {
     this.realtime?.close();
     this.realtime = null;
+    this.setRelayStatus('closed');
     this.identity?.masterKey.fill(0);
     this.identity = null;
     this.identityGeneration += 1;

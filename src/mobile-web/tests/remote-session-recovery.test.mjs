@@ -32,6 +32,14 @@ const managerUrl = await moduleUrl('../src/services/RemoteSessionManager.ts', {
   './workspaceIdentity': workspaceIdentity,
 });
 const { RemoteSessionManager } = await import(managerUrl);
+const synchronizerUrl = await moduleUrl('../src/services/SessionSynchronizer.ts', {
+  '../../../shared/relay-transport/HostStream': hostStream,
+  '../../../shared/relay-transport/SessionRecordReplica': await moduleUrl('../../shared/relay-transport/SessionRecordReplica.ts'),
+  './SessionRecordPresentation': await moduleUrl('../src/services/SessionRecordPresentation.ts'),
+});
+const { SessionSynchronizer } = await import(synchronizerUrl);
+const { UNSUPPORTED_HOST_MESSAGE } = await import(hostStream);
+const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function fakeClient(handler) {
   const client = {
@@ -89,4 +97,131 @@ test('hosts without the queue capability keep the legacy send path', async () =>
   }));
   assert.equal(await manager.sendMessage('session', 'hello', 'Standard'), 'legacy-turn');
   assert.deepEqual(calls, ['get_workspace_info', 'send_message']);
+});
+
+/** A manager double whose stream subscriptions and recovery signals the test drives. */
+function streamManager(outcomes) {
+  const manager = {
+    subscriptions: [], signals: new Set(), forgotten: 0,
+    onStreamRecoverySignal(streamId, listener) { manager.signals.add(listener); return () => manager.signals.delete(listener); },
+    signal(reason = 'relay-reconnect') { for (const listener of [...manager.signals]) listener(reason); },
+    forgetHostCapabilities() { manager.forgotten += 1; },
+    async subscribeSessionStream(streamId, callbacks) {
+      const outcome = outcomes.shift() ?? 'open';
+      const handle = { closed: false, wakes: 0, callbacks, close() { handle.closed = true; }, wake() { handle.wakes += 1; }, async loadOlder() {} };
+      manager.subscriptions.push(handle);
+      if (outcome instanceof Error) throw outcome;
+      return handle;
+    },
+  };
+  return manager;
+}
+function synchronizer(manager) {
+  const states = [], errors = [];
+  const sync = new SessionSynchronizer(manager, 's1', () => {}, 0, undefined, undefined, error => errors.push(error),
+    { onSyncState: state => states.push(state) });
+  return { sync, states, errors };
+}
+
+test('a stalled reader restarts on a recovery signal instead of waiting out its backoff', async () => {
+  const manager = streamManager([]);
+  const { sync, states, errors } = synchronizer(manager);
+  sync.start(); await tick();
+  const first = manager.subscriptions[0];
+  first.callbacks.onCaughtUp(); assert.equal(sync.state, 'live');
+  first.callbacks.onError(new Error('Relay connection changed; delivery outcome is unknown'));
+  assert.equal(sync.state, 'catching-up', 'the chat can say it is catching up');
+  assert.equal(errors.length, 1);
+  manager.signal('relay-reconnect'); await tick();
+  assert.equal(first.closed, true, 'the backing-off reader is replaced');
+  assert.equal(manager.subscriptions.length, 2);
+  manager.subscriptions[1].callbacks.onCaughtUp();
+  assert.equal(sync.state, 'live');
+  assert.deepEqual(states, ['live', 'catching-up', 'live']);
+  manager.signal('hint'); await tick();
+  assert.equal(manager.subscriptions.length, 2, 'a healthy reader follows hints itself');
+  sync.stop();
+  assert.equal(manager.signals.size, 0);
+});
+
+test('a pending subscribe retry is cut short by a hint and the delay resets', async () => {
+  const manager = streamManager([new Error('timed out'), new Error('timed out')]);
+  const { sync } = synchronizer(manager);
+  sync.start(); await tick();
+  assert.equal(manager.subscriptions.length, 1);
+  manager.signal('hint'); await tick();
+  assert.equal(manager.subscriptions.length, 2, 'no 1 s wait after a hint');
+  manager.signal('visible'); await tick();
+  assert.equal(manager.subscriptions.length, 3);
+  manager.subscriptions[2].callbacks.onCaughtUp();
+  assert.equal(sync.state, 'live');
+  sync.stop();
+});
+
+test('unsupported hosts are re-probed on recovery signals, never on a timer', async () => {
+  const manager = streamManager([new Error(UNSUPPORTED_HOST_MESSAGE)]);
+  const { sync } = synchronizer(manager);
+  sync.start(); await tick();
+  assert.equal(sync.state, 'unsupported');
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  assert.equal(manager.subscriptions.length, 1, 'no timer retry against an unsupported host');
+  manager.signal('host-online'); await tick();
+  assert.equal(manager.subscriptions.length, 2, 'an updated host gets another chance');
+  manager.subscriptions[1].callbacks.onCaughtUp();
+  assert.equal(sync.state, 'live');
+  sync.stop();
+});
+
+test('a host stream restart forgets capabilities, and refreshed() settles on the next catch-up', async () => {
+  const manager = streamManager([]);
+  const { sync } = synchronizer(manager);
+  sync.start(); await tick();
+  const handle = manager.subscriptions[0];
+  handle.callbacks.onCaughtUp();
+  handle.callbacks.onGap('host stream restarted');
+  assert.equal(manager.forgotten, 1);
+  let settled = false;
+  const refreshed = sync.refreshed(5000).then(() => { settled = true; });
+  assert.equal(handle.wakes, 1, 'refreshed() asks the host again');
+  await tick(); assert.equal(settled, false);
+  handle.callbacks.onCaughtUp(); await refreshed;
+  assert.equal(settled, true);
+  sync.stop();
+});
+
+test('a host that comes back online forgets capabilities and signals recovery', async () => {
+  let directory;
+  const calls = [];
+  const client = fakeClient(async (device, cmd) => {
+    calls.push(cmd.cmd);
+    return { resp: 'workspace_info', has_workspace: false, capabilities: calls.length > 1 ? ['host_stream_v1'] : [] };
+  });
+  client.onDeviceDirectorySnapshot = listener => { directory = listener; return () => { directory = null; }; };
+  client.onRelayReconnect = () => () => {};
+  const manager = new RemoteSessionManager(client, []);
+  const reasons = [];
+  const stop = manager.onRecoverySignal(reason => reasons.push(reason));
+  directory([{ device_id: 'desktop-a', online: false }]);
+  assert.deepEqual(reasons, []);
+  directory([{ device_id: 'desktop-a', online: true }]);
+  assert.deepEqual(reasons, ['host-online']);
+  assert.equal(manager.hostCapabilitiesKnown, false, 'the returning host may be a different build');
+  await tick(); await tick();
+  assert.equal(manager.hostCapabilitiesKnown, true, 'capabilities are probed again at once');
+  stop();
+  assert.equal(directory, null, 'sources are released with the last listener');
+});
+
+test('a host learned as unsupported is asked again before the stream is refused', async () => {
+  let streams = 0;
+  const calls = [];
+  const client = fakeClient(async (device, cmd) => {
+    calls.push(cmd.cmd);
+    return { resp: 'workspace_info', has_workspace: false, capabilities: ['host_stream_v1'] };
+  });
+  client.subscribeHostStream = async () => { streams += 1; return { close() {}, wake() {}, async loadOlder() {} }; };
+  const manager = new RemoteSessionManager(client, []);
+  await manager.subscribeSessionStream('s1', { onEvent() {}, onError() {} });
+  assert.deepEqual(calls, ['get_workspace_info']);
+  assert.equal(streams, 1);
 });
