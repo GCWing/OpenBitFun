@@ -107,6 +107,43 @@ describe('PeerHostInvokeIdempotencyCache', () => {
     expect(secondOperation).toHaveBeenCalledTimes(1);
   });
 
+  it('runs an explicit retry again after a failed submission settles', async () => {
+    const failure: PeerHostInvokeExecutionResult = {
+      ok: false,
+      value: null,
+      error: 'Failed to start dialog turn: model provider unavailable',
+    };
+    let resolveFirst!: (result: PeerHostInvokeExecutionResult) => void;
+    const first = vi.fn(() => new Promise<PeerHostInvokeExecutionResult>(resolve => {
+      resolveFirst = resolve;
+    }));
+    const concurrent = vi.fn(async () => successResult());
+    const retry = vi.fn(async () => successResult());
+    const cache = new PeerHostInvokeIdempotencyCache();
+
+    const pending = cache.execute('start_dialog_turn', startTurnArgs(), first);
+    // A retry of the in-flight attempt still observes that attempt.
+    expect(cache.execute('start_dialog_turn', startTurnArgs(), concurrent)).toBe(pending);
+    await Promise.resolve();
+    resolveFirst(failure);
+    await expect(pending).resolves.toEqual(failure);
+    expect(concurrent).not.toHaveBeenCalled();
+
+    await expect(cache.execute('start_dialog_turn', startTurnArgs(), retry))
+      .resolves.toEqual(successResult());
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('forgets an operation that rejected instead of answering', async () => {
+    const cache = new PeerHostInvokeIdempotencyCache();
+    await expect(cache.execute('start_dialog_turn', startTurnArgs(), async () => {
+      throw new Error('bridge failed');
+    })).rejects.toThrow('bridge failed');
+    const retry = vi.fn(async () => successResult());
+    await cache.execute('start_dialog_turn', startTurnArgs(), retry);
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a submission replayable for the controller\'s whole retry budget', async () => {
     let backoffMs = 0;
     for (let attempt = 0; attempt < PEER_IDEMPOTENT_MUTATION_MAX_RETRIES; attempt += 1) {

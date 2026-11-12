@@ -53,9 +53,11 @@ export function peerHostInvokeIdempotencyKey(
 export const PEER_HOST_INVOKE_IDEMPOTENCY_TTL_MS = 15 * 60_000;
 
 /**
- * Coalesces concurrent retries and caches the completed result. The
- * controller can therefore replay the same turn submission after an
- * ambiguous Relay failure without executing the prompt twice on the host.
+ * Coalesces concurrent retries and caches an accepted result. The controller
+ * can therefore replay the same turn submission after an ambiguous Relay
+ * failure without executing the prompt twice on the host. A failed
+ * submission was not admitted, so it is forgotten once settled: an explicit
+ * retry after a transient failure runs again instead of replaying the error.
  */
 export class PeerHostInvokeIdempotencyCache {
   private readonly entries = new Map<string, CachedExecution>();
@@ -83,11 +85,20 @@ export class PeerHostInvokeIdempotencyCache {
     }
 
     const promise = Promise.resolve().then(operation);
-    this.entries.set(key, {
+    const entry: CachedExecution = {
       expiresAt: this.now() + this.ttlMs,
       promise,
-    });
+    };
+    this.entries.set(key, entry);
     this.enforceCapacity();
+    const forget = () => {
+      if (this.entries.get(key) === entry) {
+        this.entries.delete(key);
+      }
+    };
+    promise.then(result => {
+      if (!result.ok) forget();
+    }, forget);
     return promise;
   }
 

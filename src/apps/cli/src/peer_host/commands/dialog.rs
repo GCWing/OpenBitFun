@@ -16,7 +16,7 @@ use openbitfun_runtime_ports::{
 use crate::peer_host::args::{get_string, optional_string, request_value};
 use crate::peer_host::state::{PeerHostState, PeerTurnKey};
 
-/// How long a settled submission stays replayable.
+/// How long an accepted submission stays replayable.
 ///
 /// It must outlive the controller's whole retry budget for one idempotent
 /// submission: five attempts of up to 120 s each plus backoff, about 10.2
@@ -25,6 +25,8 @@ use crate::peer_host::state::{PeerHostState, PeerTurnKey};
 const DIALOG_SUBMISSION_TTL: Duration = Duration::from_secs(15 * 60);
 const MAX_CACHED_DIALOG_SUBMISSIONS: usize = 128;
 
+/// The settled outcome of one submission the Runtime admitted. A refusal
+/// before admission leaves it empty, so an explicit retry runs again.
 type DialogSubmissionOutcome = Arc<AsyncMutex<Option<Result<Value, String>>>>;
 
 struct CachedDialogSubmission {
@@ -147,12 +149,66 @@ pub(crate) async fn start_dialog_turn(
         return submit_dialog_turn(state, args).await;
     };
     let outcome_slot = dialog_submission_slot(&session_id, &turn_id)?;
-    let mut outcome = outcome_slot.lock().await;
+    settle_dialog_submission(&outcome_slot, || submit_admitted_dialog_turn(state, args)).await
+}
+
+/// A dialog submission failure, and whether the Runtime had already admitted
+/// the Turn (a retry could then only meet its duplicate-id refusal).
+#[derive(Debug)]
+struct DialogSubmissionFailure {
+    message: String,
+    admitted: bool,
+}
+
+impl DialogSubmissionFailure {
+    fn before_admission(message: String) -> Self {
+        Self {
+            message,
+            admitted: false,
+        }
+    }
+
+    fn after_admission(message: String) -> Self {
+        Self {
+            message,
+            admitted: true,
+        }
+    }
+}
+
+impl From<String> for DialogSubmissionFailure {
+    fn from(message: String) -> Self {
+        Self::before_admission(message)
+    }
+}
+
+/// Run one `(sessionId, turnId)` submission at most once while it can still
+/// be admitted.
+///
+/// A replay waits for the attempt in flight and observes its settled outcome.
+/// A refusal before admission (an unavailable model, a lost event stream) is
+/// not recorded: the Turn never started, so an explicit retry after a
+/// transient failure must run again rather than replay the old error.
+async fn settle_dialog_submission<F, Fut>(
+    slot: &DialogSubmissionOutcome,
+    submit: F,
+) -> Result<Value, String>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<Value, DialogSubmissionFailure>>,
+{
+    let mut outcome = slot.lock().await;
     if let Some(settled) = outcome.as_ref() {
         return settled.clone();
     }
-    let result = accept_duplicate_submission(submit_dialog_turn(state, args).await);
-    *outcome = Some(result.clone());
+    let (result, record) = match submit().await {
+        Ok(value) => (Ok(value), true),
+        Err(failure) => (Err(failure.message), failure.admitted),
+    };
+    let result = accept_duplicate_submission(result);
+    if record || result.is_ok() {
+        *outcome = Some(result.clone());
+    }
     result
 }
 
@@ -183,6 +239,15 @@ fn accept_duplicate_submission(result: Result<Value, String>) -> Result<Value, S
 }
 
 async fn submit_dialog_turn(state: &PeerHostState, args: &Value) -> Result<Value, String> {
+    submit_admitted_dialog_turn(state, args)
+        .await
+        .map_err(|failure| failure.message)
+}
+
+async fn submit_admitted_dialog_turn(
+    state: &PeerHostState,
+    args: &Value,
+) -> Result<Value, DialogSubmissionFailure> {
     let request = request_value(args);
     let session_id = get_string(request, "sessionId")?;
     let user_input = get_string(request, "userInput")?;
@@ -214,7 +279,11 @@ async fn submit_dialog_turn(state: &PeerHostState, args: &Value) -> Result<Value
         .is_event_stream_generation_current(stream_generation)
     {
         state.turns.finish_turn(&turn);
-        return Err("Peer event stream continuity was lost before dialog submission".to_string());
+        return Err(
+            "Peer event stream continuity was lost before dialog submission"
+                .to_string()
+                .into(),
+        );
     }
 
     let policy = DialogSubmissionPolicy::for_source(DialogTriggerSource::DesktopUi);
@@ -241,10 +310,10 @@ async fn submit_dialog_turn(state: &PeerHostState, args: &Value) -> Result<Value
         .await;
     if let Err(error) = submit_result {
         state.turns.finish_turn(&turn);
-        return Err(format!(
+        return Err(DialogSubmissionFailure::before_admission(format!(
             "Failed to start dialog turn: {}",
             error.into_message()
-        ));
+        )));
     }
     if !state
         .turns
@@ -264,11 +333,13 @@ async fn submit_dialog_turn(state: &PeerHostState, args: &Value) -> Result<Value
             .await;
         if let Err(error) = cancellation {
             let error = error.into_message();
-            return Err(format!(
+            return Err(DialogSubmissionFailure::after_admission(format!(
                 "Peer continuity was lost after dialog submission and cancellation could not be confirmed: session_id={session_id}, turn_id={turn_id}, error={error}"
-            ));
+            )));
         }
-        return Err("Peer event stream lost continuity while starting the dialog turn".to_string());
+        return Err(DialogSubmissionFailure::after_admission(
+            "Peer event stream lost continuity while starting the dialog turn".to_string(),
+        ));
     }
 
     Ok(json!({ "success": true, "message": "Dialog turn started" }))
@@ -403,7 +474,8 @@ mod tests {
 
     use super::{
         accept_duplicate_submission, dialog_submission_slot, parse_user_answer_submission,
-        peer_dialog_metadata, DIALOG_SUBMISSION_TTL,
+        peer_dialog_metadata, settle_dialog_submission, DialogSubmissionFailure,
+        DIALOG_SUBMISSION_TTL,
     };
 
     #[test]
@@ -530,6 +602,50 @@ mod tests {
         let other_session =
             dialog_submission_slot("session-2", "turn-1").expect("other session slot");
         assert!(other_session.lock().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_retry_after_a_refusal_before_admission_runs_again() {
+        let slot = dialog_submission_slot("retry-session", "turn-1").expect("slot");
+        let refused = settle_dialog_submission(&slot, || async {
+            Err(DialogSubmissionFailure::before_admission(
+                "Failed to start dialog turn: provider unavailable".to_string(),
+            ))
+        })
+        .await;
+        assert_eq!(
+            refused,
+            Err("Failed to start dialog turn: provider unavailable".to_string())
+        );
+        assert!(slot.lock().await.is_none(), "a refusal is not replayed");
+
+        let retried =
+            settle_dialog_submission(&slot, || async { Ok(json!({ "success": true })) }).await;
+        assert_eq!(retried, Ok(json!({ "success": true })));
+
+        // Once accepted, a further replay observes it instead of running.
+        let replay = settle_dialog_submission(&slot, || async {
+            panic!("an accepted submission must not run twice")
+        })
+        .await;
+        assert_eq!(replay, Ok(json!({ "success": true })));
+    }
+
+    #[tokio::test]
+    async fn a_failure_after_admission_is_replayed_as_it_happened() {
+        let slot = dialog_submission_slot("admitted-session", "turn-1").expect("slot");
+        let failed = settle_dialog_submission(&slot, || async {
+            Err(DialogSubmissionFailure::after_admission(
+                "Peer event stream lost continuity while starting the dialog turn".to_string(),
+            ))
+        })
+        .await;
+        let replay = settle_dialog_submission(&slot, || async {
+            panic!("an admitted submission must not run twice")
+        })
+        .await;
+        assert_eq!(replay, failed);
+        assert!(replay.is_err());
     }
 }
 
