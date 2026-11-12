@@ -27,7 +27,27 @@ export type QueueAction = { action: 'list' } | { action: 'get'; turnId: string }
   | { action: 'cancel'; turnId: string; operationId: string }
   | { action: 'promote'; turnId: string; operationId: string; expectedActiveTurnId: string | null };
 export type QueueRequest = QueueAction & { sessionId: string; queueEpoch?: string };
-export interface QueueOutboxRecord { key: string; scope: string; request: QueueRequest; accepted?: boolean; restoreIntent?: boolean; draft?: unknown }
+export interface QueueOutboxRecord {
+  key: string; scope: string; request: QueueRequest; accepted?: boolean; restoreIntent?: boolean; draft?: unknown;
+  /**
+   * The current queue owner confirmed it has no receipt for this submit: it was
+   * not sent, as opposed to an unconfirmed delivery. Additive; older builds
+   * ignore it and treat the record as unconfirmed.
+   */
+  notSubmitted?: boolean;
+}
+export interface HostDialogQueueOptions {
+  /**
+   * Whether the session transcript already holds this Turn. A message that
+   * already ran needs no delivery recovery, even after the owner restarted.
+   */
+  hasTurn?: (turnId: string) => boolean;
+  /**
+   * Resolve unconfirmed submits on refresh by asking the current owner for
+   * their receipt. Opt-in so existing callers keep explicit retry recovery.
+   */
+  resolveUnconfirmed?: boolean;
+}
 export interface QueueStorage {
   list(scope: string): Promise<QueueOutboxRecord[]>;
   put(record: QueueOutboxRecord): Promise<void>;
@@ -92,7 +112,8 @@ export class HostDialogQueue {
   private inFlight = new Set<string>();
   private pendingRead = 0;
   constructor(readonly scope: string, readonly sessionId: string,
-    private invoke: (request: QueueRequest) => Promise<QueueSnapshot>, private storage: QueueStorage = queueStorage) {}
+    private invoke: (request: QueueRequest) => Promise<QueueSnapshot>, private storage: QueueStorage = queueStorage,
+    private options: HostDialogQueueOptions = {}) {}
   getSnapshot = (): QueueView => this.view;
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener); return () => { this.listeners.delete(listener); };
@@ -125,7 +146,18 @@ export class HostDialogQueue {
         const records = await this.storage.list(this.scope);
         const current = this.view.snapshot!;
         for (const record of records) {
-          if (this.inFlight.has(record.key) || !record.accepted || record.restoreIntent || record.request.action !== 'submit') continue;
+          if (this.inFlight.has(record.key) || record.restoreIntent || record.request.action !== 'submit') continue;
+          if (this.options.hasTurn?.(record.request.message.turnId)) {
+            // The message already ran; its transcript Turn is the outcome.
+            await this.storage.remove(record.key);
+            continue;
+          }
+          if (!record.accepted) {
+            if (this.options.resolveUnconfirmed && record.request.queueEpoch === current.queueEpoch) {
+              await this.resolveUnconfirmed(record, current.queueEpoch);
+            }
+            continue;
+          }
           if (record.request.queueEpoch !== current.queueEpoch) {
             // A restarted owner cannot vouch for an accepted in-memory message.
             // Preserve the original draft and require an explicit user decision.
@@ -141,12 +173,36 @@ export class HostDialogQueue {
     })();
     return this.refreshing;
   }
+  /**
+   * Ask the owner that issued this epoch for the submit's receipt. A receipt
+   * means it was accepted; none means this owner never received it.
+   */
+  private async resolveUnconfirmed(record: QueueOutboxRecord, queueEpoch: string): Promise<void> {
+    if (record.request.action !== 'submit') return;
+    const turnId = record.request.message.turnId;
+    let result: QueueSnapshot;
+    try {
+      result = await this.invoke({ sessionId: this.sessionId, queueEpoch, action: 'get', turnId });
+    } catch {
+      return; // Still unconfirmed; a later refresh asks again.
+    }
+    if (result.queueEpoch !== queueEpoch || this.inFlight.has(record.key)) return;
+    if (result.receipt?.turnId === turnId) {
+      this.accept(result, false);
+      const { notSubmitted: _notSubmitted, ...accepted } = record;
+      await this.storage.put({ ...accepted, accepted: true });
+    } else if (!record.notSubmitted) {
+      await this.storage.put({ ...record, notSubmitted: true });
+    }
+  }
   private serialize<T>(run: () => Promise<T>): Promise<T> {
     const result = this.mutation.then(run, run);
     this.mutation = result.catch(() => undefined);
     return result;
   }
-  private async transmit(record: QueueOutboxRecord): Promise<QueueSnapshot> {
+  private async transmit(sending: QueueOutboxRecord): Promise<QueueSnapshot> {
+    // A new attempt reopens the outcome; never carry an older "not sent" fact.
+    const { notSubmitted: _notSubmitted, ...record } = sending;
     this.inFlight.add(record.key);
     try {
       // The transaction commits before an RPC is permitted to leave this client.
@@ -238,7 +294,8 @@ export class HostDialogQueue {
         action: 'get', turnId: record.request.message.turnId });
       if (result.receipt) {
         this.accept(result, false);
-        await this.storage.put({ ...record, accepted: true });
+        const { notSubmitted: _notSubmitted, ...accepted } = record;
+        await this.storage.put({ ...accepted, accepted: true });
         await this.publishPending();
         return result;
       }
