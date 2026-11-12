@@ -2,6 +2,7 @@ import { MobileHostQueue } from '../components/MobileHostQueue';
 import { downloadRuntimeFile } from '../services/RuntimeFileDownload';
 import { PermissionMailbox } from '../components/PermissionMailbox';
 import { QuestionInteractionContext } from "../components/ChatAskQuestionCard";
+import { InteractionVerifyContext, MailboxQuestionOwnerContext } from '../components/InteractionVerification';
 import { ChevronDown as LucideChevronDown } from 'lucide-react';
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { MobileBanner, MobileButton, MobileConfirmSheet, MobileIconButton, MobileStatus, MobileTextarea } from '@openbitfun/ui/mobile';
@@ -330,14 +331,18 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const handleAnswerQuestion = useCallback(async (toolId: string, answers: any) => {
     const targetEpoch = captureChatTargetEpoch();
     if (targetEpoch === null) throw new RemoteControlTargetChangedError();
-    try {
-      await sessionMgr.answerQuestion(toolId, answers);
-      if (!isChatTargetCurrent(targetEpoch)) throw new RemoteControlTargetChangedError();
-    } catch (err) {
-      reportRemoteSessionError(err, setError, t);
-      throw err;
-    }
-  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionMgr, setError, t]);
+    // The question card owns the failure: it states it inline, re-reads the
+    // host, and offers Retry while the question is still pending.
+    await sessionMgr.answerQuestion(toolId, answers);
+    if (!isChatTargetCurrent(targetEpoch)) throw new RemoteControlTargetChangedError();
+    streamRef.current?.nudge();
+  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionMgr]);
+
+  const [mailboxQuestionIds, setMailboxQuestionIds] = useState<ReadonlySet<string>>(() => new Set());
+  const verifyInteractions = useCallback(async () => {
+    setMailboxInvalidation(value => value + 1);
+    await streamRef.current?.refreshed();
+  }, []);
 
   const handleApproveTool = useCallback(async (toolId: string, updatedInput?: Record<string, unknown>) => {
     const targetEpoch = captureChatTargetEpoch();
@@ -1227,7 +1232,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
         workspaceName={workspaceName}
       />
 
-      <PermissionMailbox key={`${sessionId}:${controlTargetEpoch}`} manager={sessionMgr} sessionId={sessionId} invalidation={mailboxInvalidation} />
+      <PermissionMailbox key={`${sessionId}:${controlTargetEpoch}`} manager={sessionMgr} sessionId={sessionId} invalidation={mailboxInvalidation} onQuestionIds={setMailboxQuestionIds} />
       {(streamState === 'unsupported' || streamState === 'catching-up' || streamIssue !== null) && (
         <MobileBanner
           className="chat-page__stream-notice"
@@ -1253,6 +1258,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
         )}
 
         <QuestionInteractionContext.Provider value={handleQuestionInteraction}>
+        <InteractionVerifyContext.Provider value={verifyInteractions}>
+        <MailboxQuestionOwnerContext.Provider value={mailboxQuestionIds}>
         <ArtifactImageReader.Provider value={readArtifactImage}>
           <ChatTranscript
             key={`${sessionId}:${controlTargetEpoch}`}
@@ -1287,6 +1294,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
             }}
           />
         </ArtifactImageReader.Provider>
+        </MailboxQuestionOwnerContext.Provider>
+        </InteractionVerifyContext.Provider>
         </QuestionInteractionContext.Provider>
           </>
         )}

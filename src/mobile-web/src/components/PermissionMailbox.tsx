@@ -1,7 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MobileBanner, MobileButton, MobileTextarea } from '@openbitfun/ui/mobile';
 import type { RemoteSessionManager } from '../services/RemoteSessionManager';
 import ChatAskQuestionCard, {QuestionInteractionContext} from './ChatAskQuestionCard';
+import { InteractionVerifyContext } from './InteractionVerification';
+import { describeChatError, isUnknownOutcomeFailure } from '../services/chatErrorPresentation';
 import { useI18n } from '../i18n';
 
 interface PermissionRequest {
@@ -10,35 +12,62 @@ interface PermissionRequest {
 }
 interface PendingQuestion {toolId:string;sessionId:string;questions:Record<string,unknown>}
 interface InteractionMailbox {sessionId:string;permissions:{revision:number;requests:PermissionRequest[]};userQuestions:{revision:number;questions:PendingQuestion[]}}
-/** Runtime mailbox identity is requestId. A tool call is only an optional display association. */
-export function PermissionMailbox({manager,sessionId,invalidation}:{manager:RemoteSessionManager;sessionId:string;invalidation:number}) {
+type MailboxFailure =
+  | {operation:'load';message:string}
+  | {operation:'reply';message:string}
+  /** The reply was lost and the request is still pending after a re-read. */
+  | {operation:'unconfirmed';requestId:string};
+
+/** Runtime mailbox identity is requestId. A tool call is only an optional display association.
+ *
+ * `onQuestionIds` reports the question tool IDs this mailbox renders, so the
+ * transcript does not render a second card for the same question. */
+export function PermissionMailbox({manager,sessionId,invalidation,onQuestionIds}:{manager:RemoteSessionManager;sessionId:string;invalidation:number;onQuestionIds?:(ids:ReadonlySet<string>)=>void}) {
   const {t}=useI18n();
   const [questions,setQuestions]=useState<PendingQuestion[]>([]);
   const [requests,setRequests]=useState<PermissionRequest[]>([]);
-  const [failed,setFailed]=useState<{operation: 'load' | 'reply'; message: string} | null>(null);
+  const [failed,setFailed]=useState<MailboxFailure | null>(null);
   const [busy,setBusy]=useState<string|null>(null);
+  const [checking,setChecking]=useState<string|null>(null);
   const [editId,setEditId]=useState<string|null>(null);
   const [input,setInput]=useState('{}');
   const epoch=useRef(0);
-  const running=useRef(false);
+  const running=useRef<Promise<InteractionMailbox|null>|null>(null);
   const dirty=useRef(false);
-  async function refresh() {
+  const onQuestionIdsRef=useRef(onQuestionIds);
+  onQuestionIdsRef.current=onQuestionIds;
+  /** Re-read the mailbox; resolves with the newest copy, or null when it could not be read. */
+  const refresh=useCallback(():Promise<InteractionMailbox|null>=>{
     dirty.current=true;
-    if(running.current)return;
-    running.current=true;
+    if(running.current)return running.current;
     const ticket=epoch.current;
-    try {
-      while(dirty.current&&ticket===epoch.current){
-        dirty.current=false;
-        const next=await manager.invokeHost<InteractionMailbox>('get_session_interaction_mailbox',{sessionId});
-        if(next.sessionId!==sessionId)throw new Error('Interaction mailbox session mismatch');
-        if(ticket===epoch.current){setRequests(next.permissions.requests.filter(request=>request.sessionId===sessionId));setQuestions(next.userQuestions.questions.filter(question=>question.sessionId===sessionId));setFailed(null);}
-      }
-    }catch(error){if(ticket===epoch.current)setFailed({operation:'load',message:error instanceof Error?error.message:String(error)});}
-    finally{running.current=false;}
-  }
+    const run=(async()=>{
+      let latest:InteractionMailbox|null=null;
+      try {
+        while(dirty.current&&ticket===epoch.current){
+          dirty.current=false;
+          const next=await manager.invokeHost<InteractionMailbox>('get_session_interaction_mailbox',{sessionId});
+          if(next.sessionId!==sessionId)throw new Error('Interaction mailbox session mismatch');
+          if(ticket!==epoch.current)break;
+          latest=next;
+          const owned=next.userQuestions.questions.filter(question=>question.sessionId===sessionId);
+          setRequests(next.permissions.requests.filter(request=>request.sessionId===sessionId));
+          setQuestions(owned);
+          onQuestionIdsRef.current?.(new Set(owned.map(question=>question.toolId)));
+          setFailed(current=>current?.operation==='load'?null:current);
+        }
+        return latest;
+      }catch(error){
+        if(ticket===epoch.current)setFailed({operation:'load',message:describeChatError(error,t)});
+        return null;
+      }finally{running.current=null;}
+    })();
+    running.current=run;
+    return run;
+  },[manager,sessionId,t]);
   useEffect(()=>{void refresh();},[invalidation]);
-  useEffect(()=>()=>{epoch.current++;},[]);
+  useEffect(()=>()=>{epoch.current++;onQuestionIdsRef.current?.(new Set());},[]);
+  const verify=useCallback(async()=>{await refresh();},[refresh]);
   async function reply(requestId:string,answer:'once'|'reject') {
     if(busy)return;
     const ticket=epoch.current;
@@ -48,20 +77,39 @@ export function PermissionMailbox({manager,sessionId,invalidation}:{manager:Remo
       if(updatedInput!==undefined&&(!updatedInput||typeof updatedInput!=='object'||Array.isArray(updatedInput)))throw new Error('Input must be a JSON object');
       await manager.invokeHost('respond_permission',{requestId,reply:answer,updatedInput});
       if(ticket===epoch.current){setEditId(null);await refresh();}
-    }catch(error){if(ticket===epoch.current)setFailed({operation:'reply',message:error instanceof Error?error.message:String(error)});}
+    }catch(error){
+      if(ticket!==epoch.current)return;
+      if(isUnknownOutcomeFailure(error)){
+        // The decision may have arrived. Re-read the mailbox before offering the
+        // buttons again: a request that left it was answered.
+        setChecking(requestId);
+        const next=await refresh();
+        if(ticket!==epoch.current)return;
+        setChecking(null);
+        if(next&&!next.permissions.requests.some(request=>request.requestId===requestId)){setEditId(null);return;}
+        setFailed({operation:'unconfirmed',requestId});
+      }else{
+        setFailed({operation:'reply',message:error instanceof SyntaxError?'':describeChatError(error,t)});
+        void refresh();
+      }
+    }
     finally{if(ticket===epoch.current)setBusy(null);}
   }
   if(!requests.length&&!questions.length&&!failed)return null;
   return <section aria-label={t('chat.approvalRequired')}>
-    {failed&&<MobileBanner tone="danger">{t(failed.operation==='load'?'chat.interactionLoadFailed':'chat.approvalFailed')} {failed.message}<MobileButton onClick={()=>void refresh()}>{t('devices.retry')}</MobileButton></MobileBanner>}
+    {failed&&failed.operation!=='unconfirmed'&&<MobileBanner tone="danger">{t(failed.operation==='load'?'chat.interactionLoadFailed':'chat.approvalFailed')} {failed.message}<MobileButton onClick={()=>void refresh()}>{t('devices.retry')}</MobileButton></MobileBanner>}
+    <InteractionVerifyContext.Provider value={verify}>
     <QuestionInteractionContext.Provider value={toolId=>manager.startQuestionInteraction(sessionId,toolId)}>
-      {questions.map(question=><ChatAskQuestionCard key={question.toolId} tool={{id:question.toolId,name:'AskUserQuestion',status:'running',tool_input:question.questions}}
+      {questions.map(question=><ChatAskQuestionCard key={question.toolId} owner="mailbox" tool={{id:question.toolId,name:'AskUserQuestion',status:'running',tool_input:question.questions}}
         onAnswer={async(toolId,answers)=>{await manager.answerQuestion(toolId,answers);await refresh();}}/>)}
     </QuestionInteractionContext.Provider>
+    </InteractionVerifyContext.Provider>
     {requests.map(request=><div key={request.requestId}>
       <h3>{request.source?.identity||request.action}</h3>
       <p>{request.action}</p><pre>{request.resources.join('\n')}</pre>
       {editId===request.requestId&&<MobileTextarea aria-label={t('chat.toolRequest')} value={input} onChange={event=>setInput(event.target.value)} disabled={!!busy}/>}
+      {checking===request.requestId&&<p role="status">{t('chat.decisionChecking')}</p>}
+      {failed?.operation==='unconfirmed'&&failed.requestId===request.requestId&&<p role="alert">{t('chat.decisionUnconfirmed')}</p>}
       <MobileButton disabled={!!busy} onClick={()=>{setEditId(request.requestId);setInput('{}');}}>{t('chat.editApproval')}</MobileButton>
       <MobileButton disabled={!!busy} onClick={()=>void reply(request.requestId,'once')}>{t('chat.approve')}</MobileButton>
       <MobileButton disabled={!!busy} onClick={()=>void reply(request.requestId,'reject')}>{t('chat.reject')}</MobileButton>
