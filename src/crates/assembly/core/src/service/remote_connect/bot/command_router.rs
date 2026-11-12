@@ -43,7 +43,8 @@ const INTERACTION_REPRESENT_SECS: u64 = 240;
 const LOCAL_TURN_TICK: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// How often a local watcher reads the persisted turn while the tracker shows
-/// another turn, so a settlement whose event was lost is still observed.
+/// neither it nor another running turn, so a settlement whose event was lost
+/// is still observed and a turn that will never run ends the watch.
 const LOCAL_SETTLE_PROBE: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// After this long the chat is told the turn is still running. The watcher
@@ -3753,7 +3754,7 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
     let mut tick = tokio::time::interval(LOCAL_TURN_TICK);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_settle_probe = std::time::Instant::now();
-    let mut unavailable_probes = 0u32;
+    let mut settle_watch = LocalSettleWatch::default();
     let failed = |interactions: &TurnInteractions, error: &str| {
         let msg = format!("{}{}", s.error_prefix, error);
         ForwardedTurnResult {
@@ -3797,10 +3798,14 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                             full_text: String::new(),
                         };
                     }
-                    let settled = match tracker
-                        .snapshot_active_turn()
-                        .filter(|turn| turn.turn_id == target_turn_id)
-                    {
+                    let snapshot = tracker.snapshot_active_turn();
+                    let ours_active = snapshot
+                        .as_ref()
+                        .is_some_and(|turn| turn.turn_id == target_turn_id);
+                    let other_running = snapshot.as_ref().is_some_and(|turn| {
+                        turn.turn_id != target_turn_id && turn.status == "active"
+                    });
+                    let settled = match snapshot.filter(|turn| turn.turn_id == target_turn_id) {
                         Some(turn) => {
                             present_blocked_tools(
                                 &turn.tools,
@@ -3819,36 +3824,49 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                                 _ => false,
                             }
                         }
+                        // Another turn is running: ours is queued behind it or
+                        // settled already, and is read once nothing runs.
+                        None if other_running
+                            && local_session_busy_or_queued(&forward.session_id) =>
+                        {
+                            false
+                        }
                         None if last_settle_probe.elapsed() >= LOCAL_SETTLE_PROBE => {
                             last_settle_probe = std::time::Instant::now();
                             let probe =
                                 probe_local_turn(&dispatcher, &forward.session_id, &target_turn_id)
                                     .await;
-                            // A session deleted or moved off this host never
-                            // settles its turn here. Without a wall-clock cap the
-                            // watcher must end on that fact instead of probing
-                            // forever; two reads rule out a transient failure.
-                            unavailable_probes = match probe {
-                                LocalTurnProbe::SessionUnavailable => unavailable_probes + 1,
-                                _ => 0,
-                            };
-                            if unavailable_probes >= 2 {
-                                warn!(
-                                    "Bot turn watcher ended: session is no longer available on this host: session_id={}, turn_id={}",
-                                    forward.session_id, target_turn_id
-                                );
-                                // The turn was not cancelled; say what is known.
-                                return ended(&interactions, s.session_unavailable_on_host);
-                            }
-                            match probe.observed().filter(|turn| turn.terminal()) {
-                                Some(turn) if matches!(turn.status.as_str(), "failed" | "error") => {
-                                    return failed(&interactions, &turn.error.unwrap_or_default())
+                            // Without a wall-clock cap the watcher must end on
+                            // facts instead of probing forever.
+                            match settle_watch
+                                .observe(probe, local_session_busy_or_queued(&forward.session_id))
+                            {
+                                LocalSettleVerdict::Wait => false,
+                                LocalSettleVerdict::Settled(turn) => match turn.status.as_str() {
+                                    "failed" | "error" => {
+                                        return failed(
+                                            &interactions,
+                                            &turn.error.unwrap_or_default(),
+                                        )
+                                    }
+                                    "cancelled" => return cancelled(&interactions),
+                                    _ => true,
+                                },
+                                LocalSettleVerdict::SessionUnavailable => {
+                                    warn!(
+                                        "Bot turn watcher ended: session is no longer available on this host: session_id={}, turn_id={}",
+                                        forward.session_id, target_turn_id
+                                    );
+                                    // The turn was not cancelled; say what is known.
+                                    return ended(&interactions, s.session_unavailable_on_host);
                                 }
-                                Some(turn) if turn.status == "cancelled" => {
-                                    return cancelled(&interactions)
+                                LocalSettleVerdict::NotRun => {
+                                    warn!(
+                                        "Bot turn watcher ended: turn is neither queued nor running on this host: session_id={}, turn_id={}",
+                                        forward.session_id, target_turn_id
+                                    );
+                                    return ended(&interactions, s.turn_not_run);
                                 }
-                                Some(_) => true,
-                                None => false,
                             }
                         }
                         None => false,
@@ -3865,7 +3883,12 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                         }
                         break;
                     }
-                    if !still_running_sent && started.elapsed() >= STILL_RUNNING_NOTICE_AFTER {
+                    // Only a turn seen running is said to be still running; a
+                    // message still queued behind other work is not.
+                    if !still_running_sent
+                        && ours_active
+                        && started.elapsed() >= STILL_RUNNING_NOTICE_AFTER
+                    {
                         still_running_sent = true;
                         if let Some(sender) = message_sender.as_ref() {
                             sender(s.turn_still_running.to_string()).await;
@@ -4038,6 +4061,79 @@ impl LocalTurnProbe {
             _ => None,
         }
     }
+}
+
+/// What a local watcher concludes from a read of its turn while the tracker
+/// does not show the turn running.
+#[derive(Debug)]
+enum LocalSettleVerdict {
+    Wait,
+    Settled(openbitfun_services_integrations::remote_connect::bot::remote_turn::ObservedTurn),
+    /// The host can no longer serve the session (deleted or moved).
+    SessionUnavailable,
+    /// The turn is neither queued nor running, e.g. it was dropped from the
+    /// queue after an earlier turn failed, and will never settle here.
+    NotRun,
+}
+
+/// Consecutive reads behind a [`LocalSettleVerdict`]. Each conclusion that
+/// ends the watch needs [`Self::CONFIRMATIONS`] reads in a row, ruling out a
+/// transient read failure or the moment between dequeue and start.
+#[derive(Debug, Default)]
+struct LocalSettleWatch {
+    unavailable: u8,
+    absent: u8,
+}
+
+impl LocalSettleWatch {
+    const CONFIRMATIONS: u8 = 2;
+
+    /// `session_busy_or_queued` is the scheduler's view of the session read
+    /// after `probe`; while it is busy, the turn may still be ahead.
+    fn observe(
+        &mut self,
+        probe: LocalTurnProbe,
+        session_busy_or_queued: bool,
+    ) -> LocalSettleVerdict {
+        match probe {
+            LocalTurnProbe::SessionUnavailable => {
+                self.absent = 0;
+                self.unavailable = self.unavailable.saturating_add(1);
+                if self.unavailable >= Self::CONFIRMATIONS {
+                    LocalSettleVerdict::SessionUnavailable
+                } else {
+                    LocalSettleVerdict::Wait
+                }
+            }
+            LocalTurnProbe::Observed(turn) if turn.terminal() => {
+                *self = Self::default();
+                LocalSettleVerdict::Settled(turn)
+            }
+            // Not persisted yet, or persisted without settling: only an idle
+            // session proves the turn will not run or finish.
+            LocalTurnProbe::NotObserved | LocalTurnProbe::Observed(_) => {
+                self.unavailable = 0;
+                if session_busy_or_queued {
+                    self.absent = 0;
+                    return LocalSettleVerdict::Wait;
+                }
+                self.absent = self.absent.saturating_add(1);
+                if self.absent >= Self::CONFIRMATIONS {
+                    LocalSettleVerdict::NotRun
+                } else {
+                    LocalSettleVerdict::Wait
+                }
+            }
+        }
+    }
+}
+
+/// Whether this host's scheduler is running or holds queued work for
+/// `session_id`. Unknown (no scheduler) counts as busy, so the watcher keeps
+/// waiting rather than ending on a guess.
+fn local_session_busy_or_queued(session_id: &str) -> bool {
+    crate::agentic::coordination::get_global_scheduler()
+        .is_none_or(|scheduler| scheduler.is_session_busy_or_queued(session_id))
 }
 
 async fn probe_local_turn(
@@ -5225,6 +5321,66 @@ mod state_tests {
         // A short blip below the threshold neither warns nor announces recovery.
         assert!(!reachability.on_failure().1);
         assert!(!reachability.on_success());
+    }
+
+    #[test]
+    fn local_watch_ends_only_on_confirmed_absence_or_unavailability() {
+        use openbitfun_services_integrations::remote_connect::bot::remote_turn::ObservedTurn;
+        let observed = |status: &str| {
+            LocalTurnProbe::Observed(ObservedTurn {
+                status: status.into(),
+                ..Default::default()
+            })
+        };
+        let is_wait = |verdict: LocalSettleVerdict| matches!(verdict, LocalSettleVerdict::Wait);
+
+        // Queued behind other work: never ends while the session is busy.
+        let mut watch = LocalSettleWatch::default();
+        for _ in 0..10 {
+            assert!(is_wait(watch.observe(LocalTurnProbe::NotObserved, true)));
+        }
+        // Dropped from the queue: an idle session without the turn ends the
+        // watch on the second read, not the first.
+        assert!(is_wait(watch.observe(LocalTurnProbe::NotObserved, false)));
+        assert!(matches!(
+            watch.observe(LocalTurnProbe::NotObserved, false),
+            LocalSettleVerdict::NotRun
+        ));
+
+        // The turn started between two reads: absence is not confirmed.
+        let mut watch = LocalSettleWatch::default();
+        assert!(is_wait(watch.observe(LocalTurnProbe::NotObserved, false)));
+        assert!(is_wait(watch.observe(observed("running"), true)));
+        assert!(is_wait(watch.observe(LocalTurnProbe::NotObserved, false)));
+
+        // A persisted, unsettled turn with nothing running never finishes.
+        let mut watch = LocalSettleWatch::default();
+        assert!(is_wait(watch.observe(observed("running"), false)));
+        assert!(matches!(
+            watch.observe(observed("running"), false),
+            LocalSettleVerdict::NotRun
+        ));
+
+        // A settlement whose event was lost is delivered at once.
+        let mut watch = LocalSettleWatch::default();
+        assert!(matches!(
+            watch.observe(observed("completed"), false),
+            LocalSettleVerdict::Settled(turn) if turn.status == "completed"
+        ));
+
+        // Unavailability needs two reads in a row.
+        let mut watch = LocalSettleWatch::default();
+        assert!(is_wait(
+            watch.observe(LocalTurnProbe::SessionUnavailable, true)
+        ));
+        assert!(is_wait(watch.observe(LocalTurnProbe::NotObserved, true)));
+        assert!(is_wait(
+            watch.observe(LocalTurnProbe::SessionUnavailable, true)
+        ));
+        assert!(matches!(
+            watch.observe(LocalTurnProbe::SessionUnavailable, true),
+            LocalSettleVerdict::SessionUnavailable
+        ));
     }
 
     #[test]
