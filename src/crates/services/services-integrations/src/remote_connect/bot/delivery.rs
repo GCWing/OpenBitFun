@@ -6,7 +6,7 @@
 //! unsent remainder ([`UndeliveredText`]) so the caller can keep it and resume
 //! from the failed chunk instead of resending (or losing) the whole reply.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::hash::Hash;
 use std::sync::Mutex as StdMutex;
@@ -240,6 +240,7 @@ const HELD_REPLY_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// chat selection, not conversation content.
 pub struct HeldReplies<K> {
     chats: StdMutex<HashMap<K, VecDeque<HeldReply>>>,
+    resending: StdMutex<HashSet<K>>,
 }
 
 /// One reply held for a chat. It keeps the time it was first held across
@@ -261,10 +262,27 @@ impl HeldReply {
     }
 }
 
+/// Claims the resend of one chat's held replies; released on drop.
+pub struct ResendGuard<'a, K: Eq + Hash + Clone> {
+    held: &'a HeldReplies<K>,
+    chat: K,
+}
+
+impl<K: Eq + Hash + Clone> Drop for ResendGuard<'_, K> {
+    fn drop(&mut self) {
+        self.held
+            .resending
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&self.chat);
+    }
+}
+
 impl<K: Eq + Hash + Clone> Default for HeldReplies<K> {
     fn default() -> Self {
         Self {
             chats: StdMutex::new(HashMap::new()),
+            resending: StdMutex::new(HashSet::new()),
         }
     }
 }
@@ -324,6 +342,20 @@ impl<K: Eq + Hash + Clone> HeldReplies<K> {
             }
         }
         enforce_held_bounds(queue)
+    }
+
+    /// Claim the resend of `chat`'s held replies, so resends started by
+    /// messages in quick succession cannot interleave or reorder them. `None`
+    /// while another resend of the chat is running.
+    pub fn begin_resend(&self, chat: &K) -> Option<ResendGuard<'_, K>> {
+        self.resending
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(chat.clone())
+            .then(|| ResendGuard {
+                held: self,
+                chat: chat.clone(),
+            })
     }
 
     pub fn is_empty(&self, chat: &K) -> bool {
@@ -502,6 +534,18 @@ mod tests {
         assert_eq!(texts(held.take(&chat)), vec!["older", "newer"]);
         assert_eq!(held.hold(&chat, "   ".into()), 0);
         assert!(held.is_empty(&chat));
+    }
+
+    #[test]
+    fn one_resend_per_chat_at_a_time() {
+        let held = HeldReplies::<String>::default();
+        let chat = "chat".to_string();
+        let other = "other".to_string();
+        let first = held.begin_resend(&chat).unwrap();
+        assert!(held.begin_resend(&chat).is_none());
+        assert!(held.begin_resend(&other).is_some());
+        drop(first);
+        assert!(held.begin_resend(&chat).is_some());
     }
 
     #[test]

@@ -717,8 +717,21 @@ impl FeishuBot {
         if !self.runtime_fence.is_lifecycle_current() {
             return;
         }
-        if super::chat_is_paired(&self.chat_states, chat_id).await {
-            self.resend_held_replies(chat_id).await;
+        if super::chat_is_paired(&self.chat_states, chat_id).await
+            && !self.held_replies.is_empty(&chat_id.to_string())
+        {
+            // Resend in the background: a held reply under provider backoff
+            // must not delay handling this message.
+            let bot = self.clone();
+            let chat = chat_id.to_string();
+            let epoch = self.runtime_fence.identity_epoch();
+            tokio::spawn(async move {
+                if bot.runtime_fence.is_lifecycle_current()
+                    && bot.runtime_fence.identity_epoch() == epoch
+                {
+                    bot.resend_held_replies(&chat).await;
+                }
+            });
         }
         let mut states = self.chat_states.write().await;
         let command_identity_epoch = self.runtime_fence.identity_epoch();

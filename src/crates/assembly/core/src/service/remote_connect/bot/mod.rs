@@ -470,7 +470,8 @@ pub(crate) async fn deliver_final_reply<K, F, Fut>(
 /// Resend replies held for `chat`, oldest first. A reply that still fails is
 /// kept (from its undelivered part, with its original hold time) together
 /// with every later one. A reply the provider now refuses permanently is
-/// dropped and the chat is told once.
+/// dropped and the chat is told once. Adapters run this in the background, so
+/// only one resend per chat runs at a time to keep held replies in order.
 pub(crate) async fn resend_held_replies<K, F, Fut>(held: &HeldReplies<K>, chat: &K, send: F)
 where
     K: Eq + Hash + Clone,
@@ -483,6 +484,9 @@ where
     if held.is_empty(chat) {
         return;
     }
+    let Some(_resend) = held.begin_resend(chat) else {
+        return;
+    };
     let s = locale::strings_for(locale::current_bot_language().await);
     let replies = held.take(chat);
     let mut resent = 0usize;

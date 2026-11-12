@@ -1334,8 +1334,20 @@ impl WeixinBot {
         {
             return;
         }
-        if super::chat_is_paired(&self.chat_states, peer_id.as_str()).await {
-            self.resend_held_replies(&peer_id).await;
+        if super::chat_is_paired(&self.chat_states, peer_id.as_str()).await
+            && !self.held_replies.is_empty(&peer_id)
+        {
+            // Resend in the background: a held reply under provider backoff
+            // must not delay handling this message.
+            let bot = self.clone();
+            let peer = peer_id.clone();
+            tokio::spawn(async move {
+                if bot.runtime_fence.is_lifecycle_current()
+                    && bot.runtime_fence.identity_epoch() == command_identity_epoch
+                {
+                    bot.resend_held_replies(&peer).await;
+                }
+            });
         }
         let mut states = self.chat_states.write().await;
         self.runtime_fence.reconcile_states(&mut states);
