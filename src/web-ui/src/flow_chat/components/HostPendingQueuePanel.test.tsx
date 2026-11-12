@@ -313,6 +313,10 @@ it('translates queue failures, labels not-sent records, and retires a stale fail
     await selectQueueMenuAction(container, 'edit');
     alert = container.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain('hostQueue.noDraft');
+    // A poll of the unchanged queue publishes a new snapshot object but is
+    // not a newer queue state.
+    await act(async () => { await queue.refresh(); });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('hostQueue.noDraft');
     revision = 1;
     await act(async () => { await queue.refresh(); });
     expect(container.querySelector('[role="alert"]')).toBeNull();

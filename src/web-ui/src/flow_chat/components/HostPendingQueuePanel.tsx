@@ -11,7 +11,7 @@ import { usePendingQueueDisclosure } from './usePendingQueueDisclosure';
 import { hostQueueErrorKey } from '../utils/hostQueueErrors';
 import { createLogger } from '@/shared/utils/logger';
 import { hostQueuePresentation, observePresentedHostQueue } from '../services/hostQueuePresentation';
-import { HostDialogQueue, type QueueOutboxRecord, type QueueItem } from '../../../../shared/dialog-queue/HostDialogQueue';
+import { HostDialogQueue, type QueueOutboxRecord, type QueueItem, type QueueSnapshot } from '../../../../shared/dialog-queue/HostDialogQueue';
 import {
   ChatComposerQueue, ChatComposerQueueHeader, ChatComposerQueueTitle, ChatComposerQueueToggle,
   ChatComposerQueueList, ChatComposerQueueItem, ChatComposerQueueItemContent, ChatComposerQueueItemMessage, ChatComposerQueueItemActions,
@@ -19,6 +19,14 @@ import {
 } from '@openbitfun/ui/flow-chat';
 
 const log = createLogger('HostPendingQueuePanel');
+
+/**
+ * The queue state a snapshot describes. Every poll publishes a new snapshot
+ * object, so object identity cannot tell whether anything changed.
+ */
+function snapshotVersion(snapshot: QueueSnapshot | null): string | null {
+  return snapshot ? `${snapshot.queueEpoch}:${snapshot.revision}` : null;
+}
 
 /** A failure this panel already describes with its own translated copy. */
 class QueuePanelError extends Error {
@@ -40,19 +48,20 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
   const [showHelp, setShowHelp] = useState(false);
   const listId = useId();
   const [busy, setBusy] = useState(false);
-  // The snapshot a failed operation was judged against. A later successful
-  // read publishes a newer snapshot, which retires the stale failure.
-  const [error, setError] = useState<{ key: string | null; snapshot: unknown } | null>(null);
+  // The queue version a failed operation was judged against. A later read of
+  // a changed queue (new epoch or revision) retires the stale failure.
+  const [error, setError] = useState<{ key: string | null; version: string | null } | null>(null);
+  const version = snapshotVersion(view.snapshot);
   useEffect(() => observePresentedHostQueue(queue), [queue]);
   useEffect(() => {
-    if (error && !busy && view.error === null && view.snapshot !== error.snapshot) setError(null);
-  }, [busy, error, view.error, view.snapshot]);
+    if (error && !busy && view.error === null && version !== error.version) setError(null);
+  }, [busy, error, view.error, version]);
   const run = async (operation: () => Promise<unknown>) => {
     setBusy(true); setError(null);
     try { await operation(); } catch (e) {
       log.warn('Host queue operation failed', { sessionId: queue.sessionId, error: e });
       setError({ key: e instanceof QueuePanelError ? e.key : hostQueueErrorKey(String(e)),
-        snapshot: queue.getSnapshot().snapshot });
+        version: snapshotVersion(queue.getSnapshot().snapshot) });
     }
     finally { setBusy(false); }
   };
