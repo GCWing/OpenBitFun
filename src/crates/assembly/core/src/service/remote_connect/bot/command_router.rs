@@ -3749,25 +3749,24 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
     // surfaces blocked tools, and observes a settlement whose event was lost.
     let started = std::time::Instant::now();
     let mut still_running_sent = false;
-    let mut shown = std::collections::HashMap::<String, std::time::Instant>::new();
+    let mut interactions = TurnInteractions::default();
     let mut tick = tokio::time::interval(LOCAL_TURN_TICK);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_settle_probe = std::time::Instant::now();
     let mut unavailable_probes = 0u32;
-    let failed = |shown: &std::collections::HashMap<String, std::time::Instant>, error: &str| {
+    let failed = |interactions: &TurnInteractions, error: &str| {
         let msg = format!("{}{}", s.error_prefix, error);
         ForwardedTurnResult {
-            completed_remote_tools: shown.keys().cloned().collect(),
+            completed_remote_tools: interactions.tool_ids(),
             display_text: msg.clone(),
             full_text: msg,
         }
     };
-    let cancelled =
-        |shown: &std::collections::HashMap<String, std::time::Instant>| ForwardedTurnResult {
-            completed_remote_tools: shown.keys().cloned().collect(),
-            display_text: s.task_cancelled.to_string(),
-            full_text: s.task_cancelled.to_string(),
-        };
+    let cancelled = |interactions: &TurnInteractions| ForwardedTurnResult {
+        completed_remote_tools: interactions.tool_ids(),
+        display_text: s.task_cancelled.to_string(),
+        full_text: s.task_cancelled.to_string(),
+    };
     {
         let mut response = String::new();
         let mut thinking_buf = String::new();
@@ -3800,16 +3799,16 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                             present_blocked_tools(
                                 &turn.tools,
                                 None,
-                                &mut shown,
+                                &mut interactions,
                                 interaction_handler.as_ref(),
                                 s,
                             )
                             .await;
                             match turn.status.as_str() {
                                 "failed" => {
-                                    return failed(&shown, &turn.error.unwrap_or_default())
+                                    return failed(&interactions, &turn.error.unwrap_or_default())
                                 }
-                                "cancelled" => return cancelled(&shown),
+                                "cancelled" => return cancelled(&interactions),
                                 "completed" => true,
                                 _ => false,
                             }
@@ -3832,14 +3831,14 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                                     "Bot turn watcher ended: session is no longer available on this host: session_id={}, turn_id={}",
                                     forward.session_id, target_turn_id
                                 );
-                                return cancelled(&shown);
+                                return cancelled(&interactions);
                             }
                             match probe.observed().filter(|turn| turn.terminal()) {
                                 Some(turn) if matches!(turn.status.as_str(), "failed" | "error") => {
-                                    return failed(&shown, &turn.error.unwrap_or_default())
+                                    return failed(&interactions, &turn.error.unwrap_or_default())
                                 }
                                 Some(turn) if turn.status == "cancelled" => {
-                                    return cancelled(&shown)
+                                    return cancelled(&interactions)
                                 }
                                 Some(_) => true,
                                 None => false,
@@ -3933,7 +3932,7 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                                     };
                                     if let Some(handler) = interaction_handler.as_ref() {
                                         handler(request).await;
-                                        shown.insert(tool_id, std::time::Instant::now());
+                                        interactions.record(&tool_id);
                                     }
                                 }
                             }
@@ -3955,12 +3954,12 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                     }
                     TrackerEvent::TurnFailed { turn_id, error } => {
                         if turn_id == target_turn_id {
-                            return failed(&shown, &error);
+                            return failed(&interactions, &error);
                         }
                     }
                     TrackerEvent::TurnCancelled { turn_id } => {
                         if turn_id == target_turn_id {
-                            return cancelled(&shown);
+                            return cancelled(&interactions);
                         }
                     }
                 },
@@ -3990,7 +3989,7 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
         let display_text = full_text.clone();
 
         ForwardedTurnResult {
-            completed_remote_tools: shown.into_keys().collect(),
+            completed_remote_tools: interactions.tool_ids(),
             display_text: if display_text.is_empty() {
                 s.no_response.to_string()
             } else {
@@ -4110,29 +4109,73 @@ fn blocked_tool_interaction(
     None
 }
 
+/// The prompts one turn presented to the chat.
+#[derive(Debug, Default)]
+struct TurnInteractions {
+    /// Every tool presented during the turn. The chat retires these prompts
+    /// when the turn ends, however the watcher ends.
+    presented: Vec<String>,
+    /// Tools still blocking the turn at its latest observation, with when each
+    /// was last presented. Only these are re-presented.
+    blocked: std::collections::HashMap<String, std::time::Instant>,
+}
+
+impl TurnInteractions {
+    fn record(&mut self, tool_id: &str) {
+        if !self.presented.iter().any(|id| id == tool_id) {
+            self.presented.push(tool_id.to_string());
+        }
+        self.blocked
+            .insert(tool_id.to_string(), std::time::Instant::now());
+    }
+
+    fn presentation_due(&self, tool_id: &str) -> bool {
+        self.blocked
+            .get(tool_id)
+            .is_none_or(|at| at.elapsed().as_secs() >= INTERACTION_REPRESENT_SECS)
+    }
+
+    /// Whether a tool that still blocks the turn is due to be re-presented.
+    fn representation_due(&self) -> bool {
+        self.blocked
+            .values()
+            .any(|at| at.elapsed().as_secs() >= INTERACTION_REPRESENT_SECS)
+    }
+
+    /// Forget tools that no longer block the turn so they are never
+    /// re-presented; they stay in [`Self::tool_ids`] for retirement.
+    fn retain_blocked(&mut self, blocked: &[&str]) {
+        self.blocked.retain(|id, _| blocked.contains(&id.as_str()));
+    }
+
+    fn tool_ids(&self) -> Vec<String> {
+        self.presented.clone()
+    }
+}
+
 /// Present every tool blocking a turn on the user. A prompt already shown is
-/// re-presented after [`INTERACTION_REPRESENT_SECS`] so it stays answerable
-/// past the menu TTL (and is re-sent if its earlier delivery failed).
+/// re-presented after [`INTERACTION_REPRESENT_SECS`] while it still blocks the
+/// turn, so it stays answerable past the menu TTL (and is re-sent if its
+/// earlier delivery failed).
 async fn present_blocked_tools(
     tools: &[openbitfun_services_integrations::remote_connect::RemoteToolStatus],
     target: Option<&RemoteBotTarget>,
-    shown: &mut std::collections::HashMap<String, std::time::Instant>,
+    interactions: &mut TurnInteractions,
     interaction_handler: Option<&BotInteractionHandler>,
     s: &'static BotStrings,
 ) {
     let Some(handler) = interaction_handler else {
         return;
     };
+    let mut blocked = Vec::new();
     for tool in tools {
-        if shown
-            .get(&tool.id)
-            .is_some_and(|at| at.elapsed().as_secs() < INTERACTION_REPRESENT_SECS)
-        {
-            continue;
-        }
         let Some((mut view, pending_action)) = blocked_tool_interaction(tool, s) else {
             continue;
         };
+        blocked.push(tool.id.as_str());
+        if !interactions.presentation_due(&tool.id) {
+            continue;
+        }
         if let Some(target) = target {
             view.title = format!(
                 "{} · {} · {}",
@@ -4147,8 +4190,9 @@ async fn present_blocked_tools(
             pending_action,
         })
         .await;
-        shown.insert(tool.id.clone(), std::time::Instant::now());
+        interactions.record(&tool.id);
     }
+    interactions.retain_blocked(&blocked);
 }
 
 async fn execute_remote_forward(
@@ -4218,7 +4262,7 @@ async fn execute_remote_forward(
     let started = std::time::Instant::now();
     let mut still_running_sent = false;
     let mut version = 0;
-    let mut shown = std::collections::HashMap::<String, std::time::Instant>::new();
+    let mut interactions = TurnInteractions::default();
     let mut reachability = RemoteReachability::default();
     let notify = |text: String| {
         let sender = message_sender.clone();
@@ -4233,10 +4277,10 @@ async fn execute_remote_forward(
         if !current() {
             return empty();
         }
-        if shown
-            .values()
-            .any(|at| at.elapsed().as_secs() >= INTERACTION_REPRESENT_SECS)
-        {
+        // An unchanged session answers without its turn, so re-reading the
+        // full projection is needed only to re-present a prompt that still
+        // blocks the turn and is due.
+        if interactions.representation_due() {
             version = 0;
         }
         let poll = target.poll(version).await;
@@ -4262,7 +4306,7 @@ async fn execute_remote_forward(
                             _ => turn.text.clone(),
                         };
                         return ForwardedTurnResult {
-                            completed_remote_tools: shown.into_keys().collect(),
+                            completed_remote_tools: interactions.tool_ids(),
                             display_text,
                             full_text: turn.text,
                         };
@@ -4270,7 +4314,7 @@ async fn execute_remote_forward(
                     present_blocked_tools(
                         &turn.tools,
                         Some(target),
-                        &mut shown,
+                        &mut interactions,
                         interaction_handler.as_ref(),
                         s,
                     )
@@ -5085,9 +5129,13 @@ mod state_tests {
                 {"id": "reading", "name": "Read", "status": "running"}
             ]))
             .unwrap();
-        let mut shown = std::collections::HashMap::new();
+        let mut interactions = TurnInteractions::default();
+        let overdue = || {
+            std::time::Instant::now()
+                - std::time::Duration::from_secs(INTERACTION_REPRESENT_SECS + 1)
+        };
 
-        present_blocked_tools(&tools, None, &mut shown, Some(&handler), s).await;
+        present_blocked_tools(&tools, None, &mut interactions, Some(&handler), s).await;
         {
             let presented = presented.lock().unwrap();
             assert_eq!(presented.len(), 2);
@@ -5105,16 +5153,33 @@ mod state_tests {
             ));
         }
 
-        present_blocked_tools(&tools, None, &mut shown, Some(&handler), s).await;
+        present_blocked_tools(&tools, None, &mut interactions, Some(&handler), s).await;
         assert_eq!(presented.lock().unwrap().len(), 2);
+        assert!(!interactions.representation_due());
 
-        shown.insert(
-            "approval".into(),
-            std::time::Instant::now()
-                - std::time::Duration::from_secs(INTERACTION_REPRESENT_SECS + 1),
-        );
-        present_blocked_tools(&tools, None, &mut shown, Some(&handler), s).await;
+        interactions.blocked.insert("approval".into(), overdue());
+        assert!(interactions.representation_due());
+        present_blocked_tools(&tools, None, &mut interactions, Some(&handler), s).await;
         assert_eq!(presented.lock().unwrap().len(), 3);
+        assert!(!interactions.representation_due());
+
+        // Once answered, an overdue prompt neither forces a full re-read of the
+        // turn nor is presented again, but the turn still retires it.
+        let mut answered = tools.clone();
+        answered[0].status = "confirmed".into();
+        interactions.blocked.insert("approval".into(), overdue());
+        present_blocked_tools(&answered, None, &mut interactions, Some(&handler), s).await;
+        assert_eq!(presented.lock().unwrap().len(), 3);
+        assert!(!interactions.blocked.contains_key("approval"));
+        assert!(!interactions.representation_due());
+        assert_eq!(interactions.tool_ids(), vec!["approval", "question"]);
+
+        // A still-blocked prompt keeps its own schedule.
+        interactions.blocked.insert("question".into(), overdue());
+        assert!(interactions.representation_due());
+        present_blocked_tools(&answered, None, &mut interactions, Some(&handler), s).await;
+        assert_eq!(presented.lock().unwrap().len(), 4);
+        assert!(!interactions.representation_due());
     }
 
     #[test]
