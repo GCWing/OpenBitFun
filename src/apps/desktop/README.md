@@ -155,10 +155,15 @@ when moving or sharing the project. **Save PDF** writes an editable
 on the viewing device. Saved PDFs embed their review state so notes and threads
 can be edited again when reopened in OpenBitFun; other PDF applications see
 standard PDF annotations. Replacing an existing output checks its current
-version and asks before overwriting an externally changed file.
+version and asks before overwriting an externally changed file. If the review
+file changes elsewhere while this window has unsaved notes, saving pauses until
+you choose **Replace with my notes** or **Load the file's notes**; Undo restores
+the notes replaced by loading. Encrypted PDFs can be reviewed, but **Save PDF**
+and **Export annotated PDF** are unavailable for them.
 
 Annotations retain PDF page coordinates across compilation. Check their positions
-when a revision changes the layout; the preview shows a reminder after recompiling.
+when a revision changes the layout; after recompiling, the preview shows a
+reminder until you select **Positions checked**.
 LaTeX source remains the place to change manuscript text and figures.
 
 ![LaTeX source, PDF preview, and review notes in a sample writing workspace](../../../docs/images/paper-writing-workbench.png)
