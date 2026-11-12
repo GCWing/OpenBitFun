@@ -425,14 +425,16 @@ mod tests {
     }
 
     #[test]
-    fn derives_the_largest_output_tier_within_one_quarter_of_context() {
+    fn derives_the_largest_output_tier_within_one_quarter_of_context_with_64k_context_gate() {
         for (context_window, expected_max_tokens) in [
             (32_000, 8_000),
             (48_000, 8_000),
             (64_000, 16_000),
             (128_000, 32_000),
             (128_128, 32_000),
-            (256_000, 64_000),
+            (256_000, 32_000),
+            (399_999, 32_000),
+            (400_000, 64_000),
             (1_000_000, 64_000),
         ] {
             let mut model = base_model_config();
