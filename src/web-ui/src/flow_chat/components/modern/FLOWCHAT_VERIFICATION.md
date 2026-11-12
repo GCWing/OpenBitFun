@@ -63,6 +63,7 @@ each missing what the other had.
 | `VirtualMessageList.session-boundary.test.tsx` | prepend compensation, consecutive paging with/without queued input, passive scroll suppression, navigation-target current Turn with gesture/follow/session handoff, search placement only outside the readable viewport, and real viewport-register acknowledgement before trajectory details/highlights commit for user/search/model/folded-tool/history targets |
 | `VirtualMessageList.resize.test.tsx` | first-frame node and screen-position retention during repeated CSS-only width previews, release, fractional row geometry, native clamping, both row/container observer orders and delayed scroll delivery; same-size viewport recovery observes suspended mounts without further output, manual re-render or scrolling in live/history layouts; completed follow and reader-owned positions on local/simulated peer surfaces, not native or live-transport evidence |
 | `VirtualMessageList.history-prepend.test.tsx` | full list with real virtualization/follow/ownership: stable row identity and screen offset through short/long completed answers, consecutive/dense prepends, delayed measurement/native scroll and reader-chosen positions on local/simulated peer surfaces; supplied row/DOM geometry, not native or live-transport evidence |
+| `VirtualMessageList.session-switch.test.tsx`, `useConversationTimeline.retention.test.tsx` | reopening one of the three most recently left sessions reuses its projection rows and measured row sizes: zero size corrections, fewer commits and row mounts, no dropped rows in the native-history layout, the same settled placement, eviction of older sessions, and a single correction for a row that changed while hidden; supplied DOM geometry on the local surface, not native switching time, paint or remote evidence |
 | `VirtualMessageList.timeline-prepend.test.tsx`, `FlowChatPrependSnapshot.test.tsx` | production timeline whole/compound/single-Turn pages; native bottom-origin continuity before observer delivery and zero passive scroll writes, stable hydration lifetime, fractional measurements, bounded long histories, empty-projection navigation, chronological navigation, legacy whole-text and section bookmark coordinates, live handoff and reader-selected block retention; settled host ID replacement retains measured row nodes/positions on every frame and uses canonical bookmarks across reopen; supplied DOM geometry on local/simulated Peer, not native paint or live transport evidence |
 | `flowChatScrollbarMask.test.ts`, `VirtualMessageList.session-boundary.test.tsx` | idle gutter masking with symmetric, one-sided and overlay scrollbars; overflow restoration and content/viewport resizing without scroll writes; supplied DOM geometry, not native rendering or live remote evidence |
 | `VirtualMessageList.edgeFade.test.ts`, `VirtualMessageList.session-boundary.test.tsx` | repeated scroll-away/back restores the opaque top edge even when an earlier native listener synchronously commits a virtual window; fractional/top-overscroll offsets, one follow notification per event, current gesture callbacks and old-session cleanup; DOM/CSS contracts, not native repaint or live remote evidence |
@@ -433,6 +434,12 @@ forced colors. Automated DOM/CSS checks do not establish this paint behavior.
 6. From that reading position, switch to Settings and back. The session scene
    remains mounted with usable geometry while inactive, and the viewport must
    not enter host suspension or move to the tail.
+7. Alternate between two long sessions several times. Each reopen must paint
+   its rows at their final heights, with no settling movement or scrollbar-thumb
+   jump. Repeat after resizing the pane while the other session is shown. Then
+   visit three other sessions and return: that reopen may settle as a first
+   open does. Pending: native switching time has not been measured with
+   retention.
 
 ### Submitting and revealing
 
