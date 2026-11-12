@@ -2,10 +2,10 @@ import { isOutcomeUnknownError } from '../errors/TauriCommandError';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PEER_BROWSER_CONTROL_SETUP_TIMEOUT_MS,
+  PEER_HOT_READ_REQUEST_TIMEOUT_MS,
   PEER_MUTATION_REQUEST_TIMEOUT_MS,
   PEER_READ_DEADLINE_MS,
   PEER_READ_REQUEST_TIMEOUT_MS,
-  PEER_SLOW_READ_REQUEST_TIMEOUT_MS,
   PeerHostNotRespondingError,
   PeerHostUiNotReadyError,
   PEER_RETRY_BASE_DELAY_MS,
@@ -580,7 +580,7 @@ describe('PeerDeviceTransportAdapter queue', () => {
       expect(deviceRpc).toHaveBeenCalledWith(
         'peer-1',
         expect.any(String),
-        PEER_READ_REQUEST_TIMEOUT_MS,
+        PEER_HOT_READ_REQUEST_TIMEOUT_MS,
       );
     } finally {
       vi.useRealTimers();
@@ -975,7 +975,7 @@ describe('PeerDeviceTransportAdapter queue', () => {
     expect(deviceRpc).toHaveBeenCalledTimes(1);
   });
 
-  it('reports a hung read as a host that is not responding after one bounded attempt', async () => {
+  it('reports a hung hot-path read as a host that is not responding after one bounded attempt', async () => {
     vi.useFakeTimers();
     try {
       const deviceRpc = vi.fn(
@@ -990,23 +990,63 @@ describe('PeerDeviceTransportAdapter queue', () => {
       });
       const rejection = expect(request).rejects.toBeInstanceOf(PeerHostNotRespondingError);
 
-      await vi.advanceTimersByTimeAsync(PEER_READ_REQUEST_TIMEOUT_MS);
+      await vi.advanceTimersByTimeAsync(PEER_HOT_READ_REQUEST_TIMEOUT_MS);
       await rejection;
       await expect(request).rejects.toThrow(/^peer_host_not_responding:/);
       expect(deviceRpc).toHaveBeenCalledTimes(1);
-      expect(deviceRpc).toHaveBeenCalledWith('peer-1', expect.any(String), PEER_READ_REQUEST_TIMEOUT_MS);
+      expect(deviceRpc).toHaveBeenCalledWith('peer-1', expect.any(String), PEER_HOT_READ_REQUEST_TIMEOUT_MS);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('gives scanning reads the whole read deadline in one attempt', async () => {
-    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
-      resp: 'host_invoke_result', ok: true, value: [],
-    }));
-    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
-    await adapter.request('search_session_content', { request: { query: 'x' } });
-    expect(deviceRpc).toHaveBeenCalledWith('peer-1', expect.any(String), PEER_SLOW_READ_REQUEST_TIMEOUT_MS);
+  it('lets slow reads outside the hot path finish past the hot-path bound', async () => {
+    vi.useFakeTimers();
+    try {
+      const slowReads: Array<[string, Record<string, unknown>]> = [
+        ['list_ai_models_by_config', { request: { config: {} } }],
+        ['get_session_usage_report', { request: { sessionId: 's' } }],
+        ['get_statistics', {}],
+        ['get_all_modified_files', { request: { sessionId: 's' } }],
+        ['read_mcp_resource', { request: { serverId: 'm', uri: 'r' } }],
+        ['list_skill_market', { request: {} }],
+        ['get_directory_children', { request: { path: '/remote' } }],
+        ['get_file_tree', { request: { path: '/repo' } }],
+        ['search_session_content', { request: { query: 'x' } }],
+        // An explicit external discovery refresh scans other tools' stores.
+        ['list_persisted_sessions_page', { request: { workspaceId: 'w', refreshExternalDiscovery: true } }],
+      ];
+      for (const [command, params] of slowReads) {
+        const deviceRpc = vi.fn(() => new Promise<string>(resolve => {
+          setTimeout(() => resolve(JSON.stringify({
+            resp: 'host_invoke_result', ok: true, value: command,
+          })), PEER_READ_DEADLINE_MS + 30_000);
+        }));
+        const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+        const request = adapter.request(command, params);
+        await vi.advanceTimersByTimeAsync(PEER_READ_DEADLINE_MS + 30_000);
+        await expect(request).resolves.toBe(command);
+        expect(deviceRpc).toHaveBeenCalledTimes(1);
+        expect(deviceRpc).toHaveBeenCalledWith('peer-1', expect.any(String), PEER_READ_REQUEST_TIMEOUT_MS);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still reports a silent host for a slow read once its full attempt elapses', async () => {
+    vi.useFakeTimers();
+    try {
+      const deviceRpc = vi.fn(() => new Promise<string>(() => {}));
+      const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+      const request = adapter.request('list_ai_models_by_config', { request: { config: {} } });
+      const rejection = expect(request).rejects.toBeInstanceOf(PeerHostNotRespondingError);
+      await vi.advanceTimersByTimeAsync(PEER_READ_REQUEST_TIMEOUT_MS);
+      await rejection;
+      expect(deviceRpc).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('stops retrying an unsent read at the overall deadline', async () => {

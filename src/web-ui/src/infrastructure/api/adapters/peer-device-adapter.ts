@@ -276,15 +276,24 @@ export function peerInvokePriorityFor(command: string): PeerInvokePriority {
 }
 
 /**
- * A read attempt that has not answered in this long is not waiting on a slow
- * Relay hop: the host is busy or gone. Reads are bounded so a session list or
- * settings page reports a retryable "host not responding" within about a
- * minute instead of spinning through several full RPC deadlines.
+ * A read attempt keeps the shared RPC deadline: many reads legitimately scan
+ * host data or wait on a slow upstream (model catalogs, statistics, MCP
+ * resources, SSH directories, large trees). Only the hot-path reads below get
+ * a tighter bound.
  */
-export const PEER_READ_REQUEST_TIMEOUT_MS = 25_000;
-/** Reads that scan host data (search, statistics, trees) may use the whole budget. */
-export const PEER_SLOW_READ_REQUEST_TIMEOUT_MS = 60_000;
-/** Overall deadline of one read, retries included. */
+export const PEER_READ_REQUEST_TIMEOUT_MS = DEFAULT_RPC_TIMEOUT_MS;
+/**
+ * A hot-path read attempt that has not answered in this long is not waiting
+ * on a slow Relay hop: the host is busy or gone. These cheap reads are bounded
+ * so a session list or config hydrate reports a retryable "host not
+ * responding" within about a minute instead of spinning through a full RPC
+ * deadline.
+ */
+export const PEER_HOT_READ_REQUEST_TIMEOUT_MS = 25_000;
+/**
+ * A read starts no further attempt (after an unsent request or a lost reply)
+ * this long after its first. A hot-path read also ends its last attempt here.
+ */
 export const PEER_READ_DEADLINE_MS = 60_000;
 /** Reads back off at most this long between attempts inside their deadline. */
 export const PEER_READ_RETRY_MAX_DELAY_MS = 4_000;
@@ -293,12 +302,43 @@ export const PEER_MUTATION_REQUEST_TIMEOUT_MS = DEFAULT_RPC_TIMEOUT_MS;
 export const PEER_IDEMPOTENT_MUTATION_MAX_RETRIES = 4;
 export const PEER_RETRY_BASE_DELAY_MS = 500;
 
-const SLOW_READ_COMMANDS = new Set([
-  'search_session_content',
-  'get_token_usage_statistics',
-  'get_file_tree',
-  'load_session_trajectory',
+/**
+ * Cheap reads on the session-list, workspace and config hydrate paths. They
+ * answer from host memory or small local records, so a silent host is
+ * reported quickly. Every other read keeps the full attempt budget.
+ */
+const HOT_PATH_READ_COMMANDS = new Set([
+  'list_persisted_sessions',
+  'list_persisted_sessions_page',
+  'list_persisted_sessions_count',
+  'get_session_lineage',
+  'get_session_thread_goal',
+  'get_session_model_target',
+  'get_session_interaction_mailbox',
+  'list_pending_permission_requests',
+  'get_opened_workspaces',
+  'get_recent_workspaces',
+  'get_current_workspace',
+  'get_config',
+  'get_configs',
+  'get_available_modes',
+  'get_agent_profile_config',
+  'get_app_state',
+  'get_app_version',
+  'get_runtime_capabilities',
 ]);
+
+/**
+ * Whether a read gets the short hot-path bound. A session page that asks the
+ * host to refresh external discovery scans other tools' stores, so it keeps
+ * the full budget.
+ */
+export function isPeerHotPathRead(command: string, params?: unknown): boolean {
+  if (!HOT_PATH_READ_COMMANDS.has(command)) return false;
+  const request = asRecord(asRecord(params)?.request) ?? asRecord(params);
+  return request?.refreshExternalDiscovery !== true
+    && request?.refresh_external_discovery !== true;
+}
 
 /**
  * Transport failures that prove a read never reached the host, or lost only
@@ -345,8 +385,10 @@ interface PeerRpcPolicy {
   timeoutMs: number;
   maxRetries: number;
   retryKind: 'read' | 'idempotent-mutation' | 'none';
-  /** Reads only: overall deadline across attempts. */
+  /** Reads only: no further attempt starts after this long. */
   deadlineMs?: number;
+  /** Reads only: the last attempt also ends at the deadline (hot-path reads). */
+  attemptEndsAtDeadline?: boolean;
 }
 
 const READ_RPC_POLICY: PeerRpcPolicy = {
@@ -356,9 +398,10 @@ const READ_RPC_POLICY: PeerRpcPolicy = {
   deadlineMs: PEER_READ_DEADLINE_MS,
 };
 
-const SLOW_READ_RPC_POLICY: PeerRpcPolicy = {
+const HOT_PATH_READ_RPC_POLICY: PeerRpcPolicy = {
   ...READ_RPC_POLICY,
-  timeoutMs: PEER_SLOW_READ_REQUEST_TIMEOUT_MS,
+  timeoutMs: PEER_HOT_READ_REQUEST_TIMEOUT_MS,
+  attemptEndsAtDeadline: true,
 };
 
 const MUTATION_RPC_POLICY: PeerRpcPolicy = {
@@ -1102,7 +1145,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     const rpcPolicy = BROWSER_CONTROL_SETUP_COMMANDS.has(action)
       ? BROWSER_CONTROL_SETUP_RPC_POLICY
       : isPeerRetryableReadCommand(action)
-        ? (SLOW_READ_COMMANDS.has(action) ? SLOW_READ_RPC_POLICY : READ_RPC_POLICY)
+        ? (isPeerHotPathRead(action, params) ? HOT_PATH_READ_RPC_POLICY : READ_RPC_POLICY)
         : this.hooks.supportsIdempotentDialogSubmit === true &&
             isPeerRetryableIdempotentMutation(action, params)
           ? IDEMPOTENT_MUTATION_RPC_POLICY
@@ -1202,9 +1245,9 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     for (let attempt = 0; ; attempt += 1) {
       this.assertBindingUnchanged(issuedBindingEpoch, action);
       attempts.count = attempt + 1;
-      const attemptTimeoutMs = deadlineMs === undefined
-        ? policy.timeoutMs
-        : Math.max(1, Math.min(policy.timeoutMs, deadlineMs - elapsedMs(startedAt)));
+      const attemptTimeoutMs = deadlineMs !== undefined && policy.attemptEndsAtDeadline === true
+        ? Math.max(1, Math.min(policy.timeoutMs, deadlineMs - elapsedMs(startedAt)))
+        : policy.timeoutMs;
       try {
         const result = await this.withTimeout(
           this.deviceRpc(this.targetDeviceId, commandJson, attemptTimeoutMs),
