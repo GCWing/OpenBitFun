@@ -386,7 +386,9 @@ export class RemoteSessionModelWriteUnconfirmedError extends Error {
 export class RemoteSessionManager {
   private client: RelayHttpClient;
   private hostCapabilities: HostCapabilitySnapshot;
-  private hostCapabilityProbe: Promise<void> | null = null;
+  private hostCapabilityProbe: { epoch: number; promise: Promise<void> } | null = null;
+  private hostCapabilityListeners = new Set<() => void>();
+  private hostCapabilityRevisionValue = 0;
   private sessionModelWrites = new Map<string, Set<SessionModelWrite>>();
   private modelWriteFenceCapability: { epoch: number; supported: boolean } | null = null;
 
@@ -434,6 +436,28 @@ export class RemoteSessionManager {
     return this.currentHostCapabilities()?.known ?? false;
   }
 
+  /** A probe for the current control target is in flight. */
+  get hostCapabilityProbing(): boolean {
+    return this.hostCapabilityProbe?.epoch === this.client.controlTargetEpoch;
+  }
+
+  /** Changes whenever the capability snapshot or its probe state changes. */
+  get hostCapabilityRevision(): number {
+    return this.hostCapabilityRevisionValue;
+  }
+
+  onHostCapabilitiesChange(listener: () => void): () => void {
+    this.hostCapabilityListeners.add(listener);
+    return () => { this.hostCapabilityListeners.delete(listener); };
+  }
+
+  private notifyHostCapabilities(): void {
+    this.hostCapabilityRevisionValue += 1;
+    for (const listener of [...this.hostCapabilityListeners]) {
+      try { listener(); } catch (error) { console.error('[RemoteSessionManager] capability listener failed', error); }
+    }
+  }
+
   private replaceHostCapabilities(capabilities: string[] | undefined, epoch: number): void {
     if (epoch !== this.client.controlTargetEpoch) return;
     this.hostCapabilities = {
@@ -441,6 +465,21 @@ export class RemoteSessionManager {
       known: true,
       capabilities: RemoteSessionManager.capabilitySet(capabilities),
     };
+    this.notifyHostCapabilities();
+  }
+
+  /**
+   * Learn the current target's capabilities if they are unknown. Resolves
+   * false when the host could not be asked; callers keep their own fallback
+   * and the next ID-bearing or send command probes again.
+   */
+  async probeHostCapabilities(): Promise<boolean> {
+    try {
+      await this.ensureHostCapabilitiesKnown(this.client.getControlTargetSnapshot());
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -451,17 +490,29 @@ export class RemoteSessionManager {
   private async ensureHostCapabilitiesKnown(target: ControlTargetSnapshot): Promise<void> {
     this.ensureControlTargetCurrent(target);
     if (this.hostCapabilitiesKnown) return;
-    if (!this.hostCapabilityProbe) {
-      this.hostCapabilityProbe = this.request<{ capabilities?: string[] }>(
-        { cmd: 'get_workspace_info' },
-        target,
-      ).then((resp) => {
-        this.replaceHostCapabilities(resp.capabilities, target.epoch);
-      }).finally(() => {
-        this.hostCapabilityProbe = null;
-      });
+    // A probe belongs to one control target; a switched target probes again
+    // instead of waiting on the previous target's answer.
+    let probe = this.hostCapabilityProbe;
+    if (!probe || probe.epoch !== target.epoch) {
+      const created: { epoch: number; promise: Promise<void> } = {
+        epoch: target.epoch,
+        promise: this.request<{ capabilities?: string[] }>(
+          { cmd: 'get_workspace_info' },
+          target,
+        ).then((resp) => {
+          this.replaceHostCapabilities(resp.capabilities, target.epoch);
+        }).finally(() => {
+          if (this.hostCapabilityProbe === created) {
+            this.hostCapabilityProbe = null;
+            this.notifyHostCapabilities();
+          }
+        }),
+      };
+      probe = created;
+      this.hostCapabilityProbe = created;
+      this.notifyHostCapabilities();
     }
-    await this.hostCapabilityProbe;
+    await probe.promise;
     this.ensureControlTargetCurrent(target);
   }
 
@@ -999,6 +1050,11 @@ export class RemoteSessionManager {
       await this.getModelCatalog(sessionId);
       this.ensureControlTargetCurrent(target);
     }
+    // The idempotent queue and the legacy `send_message` are chosen from the
+    // host's advertised capabilities. An unknown snapshot must not fall through
+    // to the non-idempotent legacy command, so learn it first; a failed probe
+    // fails the send before anything is submitted.
+    await this.ensureHostCapabilitiesKnown(target);
     if (this.supportsHostCapability('dialog_queue_v1')) {
       const result = await this.dialogQueue(sessionId).submit({ content, agentType: agentType || 'Standard',
         attachments: (imageContexts ?? []).map(image => ({ kind: 'remote_image', id: image.id,

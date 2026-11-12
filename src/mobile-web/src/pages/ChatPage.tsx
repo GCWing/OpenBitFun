@@ -7,6 +7,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMe
 import { MobileButton, MobileConfirmSheet, MobileIconButton, MobileStatus, MobileTextarea } from '@openbitfun/ui/mobile';
 import { useI18n } from '../i18n';
 import { useControlTargetEpoch } from '../hooks/useControlTargetEpoch';
+import { useHostCapabilityRevision } from '../hooks/useHostCapabilityRevision';
 import {
   isRemoteControlTargetChangedError,
   RemoteControlTargetChangedError,
@@ -160,7 +161,15 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const isLoadingMoreRef = useRef(false);
   const hasMoreRef = useRef(true);
   const controlTargetEpoch = useControlTargetEpoch(sessionMgr);
+  useHostCapabilityRevision(sessionMgr);
   const queueSupported = sessionMgr.supportsHostCapability('dialog_queue_v1');
+  // The send path (idempotent queue vs legacy command) depends on the host's
+  // capabilities. While they are being learned, sending waits instead of
+  // guessing; a failed probe re-enables sending, which probes again first.
+  const checkingHost = !sessionMgr.hostCapabilitiesKnown && sessionMgr.hostCapabilityProbing;
+  useEffect(() => {
+    if (!sessionMgr.hostCapabilitiesKnown) void sessionMgr.probeHostCapabilities();
+  }, [sessionMgr, controlTargetEpoch]);
   const hostQueue = useMemo(() => queueSupported ? sessionMgr.dialogQueue(sessionId) : null,
     [sessionMgr, sessionId, controlTargetEpoch, queueSupported]);
   const cacheScope = useMemo(() => createRemoteCacheScope(
@@ -1001,6 +1010,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
     // Attachments belong to the draft, which a suggestion leaves untouched.
     const imgs = explicitText === null ? pendingImages : [];
     if ((!text && imgs.length === 0) || imageAnalyzing || sendInFlightRef.current) return;
+    if (!sessionMgr.hostCapabilitiesKnown && sessionMgr.hostCapabilityProbing) return;
     const targetEpoch = captureChatTargetEpoch();
     if (targetEpoch === null) return;
     const wasStreaming = isStreaming;
@@ -1334,6 +1344,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
         input={input}
         inputRef={inputRef}
         remoteUnavailable={connectionHealth === 'unreachable'}
+        sendBlocked={checkingHost}
+        composerStatus={checkingHost ? t('chat.checkingHost') : null}
         modelControls={(
           <>
             {modelCatalogFailed && !modelCatalog && (

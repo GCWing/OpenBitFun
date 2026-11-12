@@ -255,6 +255,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: 'Opening workspace...',
     },
     chat: {
+      checkingHost: 'Checking desktop…',
       session: 'Session',
       loadingSession: 'Loading session...',
       loadingOlderMessages: 'Loading older messages...',
@@ -633,6 +634,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: '正在打开工作区...',
     },
     chat: {
+      checkingHost: '正在检查桌面端…',
       session: '会话',
       loadingSession: '正在加载会话...',
       loadingOlderMessages: '正在加载更早的消息...',
@@ -1011,6 +1013,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: '正在打開工作區...',
     },
     chat: {
+      checkingHost: '正在檢查桌面端…',
       session: '會話',
       loadingSession: '正在加載會話...',
       loadingOlderMessages: '正在加載更早的消息...',
