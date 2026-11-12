@@ -815,20 +815,23 @@ pub(super) fn retire_completed_remote_tools(
 }
 
 fn finish_bot_interaction(state: &mut BotChatState, s: &'static BotStrings) -> HandleResult {
+    advance_bot_interaction(state, s.answers_submitted.to_string())
+}
+
+/// Retire the current interaction and present the next queued one, led by
+/// `notice`. A queued prompt was never sent to the chat when it was queued, so
+/// it is rendered here instead of being installed silently.
+fn advance_bot_interaction(state: &mut BotChatState, notice: String) -> HandleResult {
     let mut queued = std::mem::take(&mut state.pending_interactions);
     state.clear_pending();
     if let Some(next) = queued.pop_front() {
         apply_interactive_request(state, &next);
         state.pending_interactions = queued;
         let mut view = next.menu;
-        view.body = Some(format!(
-            "{}\n\n{}",
-            s.answers_submitted,
-            view.body.unwrap_or_default()
-        ));
+        view.body = Some(format!("{notice}\n\n{}", view.body.unwrap_or_default()));
         result_from_menu(state, view)
     } else {
-        result_from_menu(state, MenuView::plain(s.answers_submitted))
+        result_from_menu(state, MenuView::plain(notice))
     }
 }
 
@@ -3125,15 +3128,9 @@ async fn answer_local_tool_confirmation(
         RemoteResponse::Error { message } => {
             // The approval is no longer pending on the host (answered
             // elsewhere or the turn ended); do not keep a dead prompt.
-            let mut queued = std::mem::take(&mut state.pending_interactions);
-            state.clear_pending();
-            if let Some(next) = queued.pop_front() {
-                apply_interactive_request(state, &next);
-                state.pending_interactions = queued;
-            }
-            result_from_menu(
+            advance_bot_interaction(
                 state,
-                MenuView::plain(format!("{}{message}", s.answers_submit_failed_prefix)),
+                format!("{}{message}", s.answers_submit_failed_prefix),
             )
         }
         _ => result_from_menu(
@@ -5001,6 +4998,52 @@ mod state_tests {
             next.pending_action,
             PendingAction::ConfirmRemoteTool { ref tool_id, .. } if tool_id == "approval-b"
         ));
+    }
+
+    #[tokio::test]
+    async fn failed_local_approval_presents_the_next_queued_prompt() {
+        let s = strings_for(BotLanguage::EnUS);
+        let mut state = BotChatState::new("chat".into());
+        assert!(apply_interactive_request(
+            &mut state,
+            &local_approval("approval-a")
+        ));
+        // Queued behind the first prompt, so it was never sent to the chat.
+        assert!(!apply_interactive_request(
+            &mut state,
+            &local_approval("approval-b")
+        ));
+        let pending = state.pending_action.clone().unwrap();
+
+        // No host turn owns `approval-a` here, as when it was answered
+        // elsewhere or retired with its turn: the answer is refused.
+        let result = route_pending(&mut state, pending, "approve-tool:approval-a", s).await;
+
+        assert_eq!(result.menu.title, s.tool_approval_title);
+        assert!(result
+            .menu
+            .body
+            .as_deref()
+            .is_some_and(|body| body.starts_with(s.answers_submit_failed_prefix)
+                && body.contains("Bash\nrm build")));
+        assert_eq!(
+            result.menu.numeric_commands(),
+            vec!["approve-tool:approval-b", "reject-tool:approval-b"]
+        );
+        assert_eq!(result.actions.len(), 2);
+        assert!(matches!(
+            state.pending_action,
+            Some(PendingAction::ConfirmRemoteTool { ref tool_id, .. }) if tool_id == "approval-b"
+        ));
+        assert!(state.pending_interactions.is_empty());
+        assert_eq!(state.last_menu_commands, result.menu.numeric_commands());
+
+        // With nothing queued the failure is reported on its own.
+        let pending = state.pending_action.clone().unwrap();
+        let result = route_pending(&mut state, pending, "2", s).await;
+        assert!(result.reply.starts_with(s.answers_submit_failed_prefix));
+        assert!(result.actions.is_empty());
+        assert!(state.pending_action.is_none());
     }
 
     #[tokio::test]
