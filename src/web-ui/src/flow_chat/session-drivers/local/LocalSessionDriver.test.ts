@@ -516,9 +516,10 @@ describe('stop of a turn the host no longer runs', () => {
       machineMocks.state = 'idle';
     });
     await localSessionDriver.cancel(context, sessionId);
+    await vi.advanceTimersByTimeAsync(7000);
     expect(context.flowChatStore.reloadRelaySessionFromHost).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(1000);
 
     expect(context.flowChatStore.reloadRelaySessionFromHost).toHaveBeenCalledExactlyOnceWith(sessionId);
     expect(context.userCancelledSessionIds.has(sessionId)).toBe(false);
@@ -529,14 +530,14 @@ describe('stop of a turn the host no longer runs', () => {
     const settled = stopContext(() => undefined);
     await localSessionDriver.cancel(settled.context, sessionId);
     machineMocks.state = 'idle';
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(8000);
     expect(settled.context.flowChatStore.reloadRelaySessionFromHost).not.toHaveBeenCalled();
 
     activateSurface(LOCAL_SURFACE_ID);
     machineMocks.state = 'processing';
     const local = stopContext(() => undefined);
     await localSessionDriver.cancel(local.context, sessionId);
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(8000);
     expect(local.context.flowChatStore.reloadRelaySessionFromHost).not.toHaveBeenCalled();
   });
 });

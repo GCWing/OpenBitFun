@@ -3017,6 +3017,25 @@ impl SessionManager {
         self.sessions.get(session_id).map(|s| s.clone())
     }
 
+    /// Owning workspace facts for Turn lifecycle events, read without cloning
+    /// the session. `None` when this host has not loaded the session.
+    pub fn session_workspace_binding(
+        &self,
+        session_id: &str,
+    ) -> Option<openbitfun_events::SessionWorkspaceBinding> {
+        self.sessions.get(session_id).map(|session| {
+            let config = &session.config;
+            openbitfun_events::SessionWorkspaceBinding {
+                workspace_path: config.workspace_path.clone(),
+                project_workspace_path: config.project_workspace_path.clone(),
+                execution_target: config.execution_target.clone(),
+                workspace_id: config.workspace_id.clone(),
+                remote_connection_id: config.remote_connection_id.clone(),
+                remote_ssh_host: config.remote_ssh_host.clone(),
+            }
+        })
+    }
+
     /// Read selector facts without restoring history, reserving runtime capacity,
     /// or waiting for an executing Turn's mutation permit. An omitted locator
     /// supports legacy callers only when this host already owns the session.

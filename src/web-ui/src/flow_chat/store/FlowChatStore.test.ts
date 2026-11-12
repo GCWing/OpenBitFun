@@ -8308,6 +8308,38 @@ describe('FlowChatStore reconcile snapshot content safety', () => {
     ).toContainEqual(expect.objectContaining({ id: 'plan-display-test' }));
   });
 
+  it.each([
+    ['adopts', 'OpenBitFun is an agentic IDE with the complete final answer.', true],
+    ['refuses', 'OpenBitFun is an', false],
+  ] as const)('%s a settled record against text painted with lost chunks', async (_case, persisted, adopted) => {
+    await hydrateSessionWithContent();
+    // Chunks lost under load leave a hole: "agentic " never arrived.
+    const painted = 'OpenBitFun is an IDE with the';
+    flowChatStore.setState(prev => {
+      const session = prev.sessions.get('history-1')!;
+      const turn = session.dialogTurns[0];
+      const round = turn.modelRounds[0];
+      return { sessions: new Map(prev.sessions).set('history-1', { ...session, dialogTurns: [{
+        ...turn, status: 'completed',
+        modelRounds: [{ ...round, items: round.items.map(item => (item.type === 'text'
+          ? { ...item, content: painted } : item)) }],
+      }] }) };
+    });
+    apiMocks.restoreSessionView.mockResolvedValueOnce({
+      session: hostSession(),
+      turns: [{
+        ...createPersistedTurn(0),
+        modelRounds: [{ ...HYDRATED_ROUND, textItems: [{ id: 'text-0', content: persisted, timestamp: 2 }] }],
+        endTime: 3,
+      }],
+      contextRestoreState: 'ready',
+    });
+
+    await expect(flowChatStore.reconcileSettledDialogTurn('history-1', 'turn-0')).resolves.toBe(adopted);
+    expect(flowChatStore.getState().sessions.get('history-1')?.dialogTurns[0].modelRounds[0].items
+      .find(item => item.type === 'text')).toMatchObject({ content: adopted ? persisted : painted });
+  });
+
   it('keeps live round timing when the settled host record lost it', async () => {
     // Older hosts rebuild the last round at Turn completion before this
     // window's checkpoint of `ModelRoundCompleted`, persisting duration 0 and

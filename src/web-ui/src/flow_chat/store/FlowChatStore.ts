@@ -768,6 +768,23 @@ function belongsToSupersededAttempt(item: AnyFlowItem, superseded: Set<string>):
 }
 
 /**
+ * Whether persisted round text accounts for what a live item painted. Live
+ * delivery is best-effort under load: chunks can be lost from the middle of a
+ * stream, leaving painted text with holes that is no longer a substring of the
+ * record. Its characters still appear in the record in order, while a record
+ * missing the round's later work cannot contain text painted beyond it.
+ */
+function paintedStreamTextIsCovered(settled: string, painted: string): boolean {
+  if (settled.includes(painted)) return true;
+  if (painted.length > settled.length) return false;
+  let next = 0;
+  for (let index = 0; index < settled.length && next < painted.length; index += 1) {
+    if (settled.charCodeAt(index) === painted.charCodeAt(next)) next += 1;
+  }
+  return next === painted.length;
+}
+
+/**
  * Whether a settled persisted Turn carries everything the projection painted.
  *
  * The persisted record of a settled Turn is built by the Runtime, while the
@@ -816,7 +833,7 @@ function settledReadCoversProjectedTurn(
       }
       if (item.type === 'text' || item.type === 'thinking') {
         const painted = comparableStreamText((item as RunningStreamItem).content);
-        if (painted && !settledText[item.type].includes(painted)) {
+        if (painted && !paintedStreamTextIsCovered(settledText[item.type], painted)) {
           return false;
         }
         continue;

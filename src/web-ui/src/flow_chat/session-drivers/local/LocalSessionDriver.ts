@@ -82,8 +82,11 @@ async function syncCreatedSessionTitle(
   }
 }
 
-/** Long enough for a genuine stop's terminal event, which the host emits within its drain window. */
-const STALE_STOP_REPAIR_DELAY_MS = 3000;
+/**
+ * Long enough for a genuine stop's terminal event to cross a slow relay link:
+ * the host's drain window plus several round trips.
+ */
+const STALE_STOP_REPAIR_DELAY_MS = 8000;
 
 /**
  * A stop for a turn the host no longer runs settles nothing there: the host
@@ -123,6 +126,15 @@ function scheduleStaleStopRepair(
       }
     }).catch(error => {
       log.warn('Failed to re-read the session after an unsettled stop', { sessionId, turnId, error });
+      // The re-read replaced the live subscription. Hand it to the regular
+      // reconnect path (backoff retry) instead of leaving the session unread.
+      // Lazy import: the refresh module reaches the driver registry.
+      if (scope.isCurrent()) {
+        void import('../../services/flow-chat-manager/PeerSessionRefreshModule')
+          .then(({ requestRuntimeProjectionRepair }) => {
+            if (scope.isCurrent()) requestRuntimeProjectionRepair(sessionId);
+          });
+      }
     });
   }, STALE_STOP_REPAIR_DELAY_MS);
 }

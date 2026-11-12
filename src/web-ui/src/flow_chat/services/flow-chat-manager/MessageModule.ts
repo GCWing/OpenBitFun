@@ -393,6 +393,7 @@ async function sendMessageInternal(
     imageContexts: options?.imageContexts,
   };
 
+  let refusedOutboxDiscard: (() => Promise<void>) | null = null;
   if (!options?.bypassPendingQueue) {
     const machineState = stateMachineManager.getCurrentState(sessionId);
     const sessionBusy =
@@ -423,19 +424,23 @@ async function sendMessageInternal(
         const queueMessage = { content: message, displayContent: displayMessage,
           agentType: agentType?.trim() || session.mode || 'Standard',
           attachments: queueImageAttachments(options?.imageContexts), metadata: options?.userMessageMetadata ?? {} };
+        const queueDraft = { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts,
+          imageDisplayData: options?.imageDisplayData };
         // Held so a refused submission can release exactly its own outbox copy.
         const queueTurnId = options?.turnId?.trim() || newQueueTurnId();
         const machineVersionAtSubmit = stateMachineManager.get(sessionId)?.getContext().version;
-        beginSubmission();
-        try {
-          const accepted = await queue.submit(queueMessage,
-            { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData }, queueTurnId);
+        const submitToHostQueue = async () => {
+          const accepted = await queue.submit(queueMessage, queueDraft, queueTurnId);
           surfaceScopeAtSend.assertCurrent('accept queued message');
           if (options?.sendImmediately) {
             await promoteAcceptedHostMessage(queue, accepted);
             surfaceScopeAtSend.assertCurrent('accept immediate message');
           }
           completeSessionSend(sendCoordinationKey, sendAttempt);
+        };
+        beginSubmission();
+        try {
+          await submitToHostQueue();
           return;
         } catch (error) {
           // The host refused before creating a receipt: the session is not
@@ -446,9 +451,17 @@ async function sendMessageInternal(
           // keeps its FIFO order, so it is not bypassed.
           if (hasPendingQueue || !isHostSessionNotLoadedRefusal(error)) throw error;
           surfaceScopeAtSend.assertCurrent('recover refused queued message');
-          if (!settleStaleBusyStateAfterHostRefusal(context, sessionId, machineVersionAtSubmit)) throw error;
-          await discardRefusedHostSubmission(queue, queueMessage, queueTurnId);
-          surfaceScopeAtSend.assertCurrent('send refused queued message directly');
+          if (!settleStaleBusyStateAfterHostRefusal(context, sessionId, machineVersionAtSubmit)) {
+            // A fresher host fact arrived meanwhile, typically a concurrent send
+            // that restored the session and started its turn. The host can now
+            // admit this message behind it; the queue retries the same outbox
+            // record after reading its receipt, so nothing is submitted twice.
+            await submitToHostQueue();
+            return;
+          }
+          // Release the refused outbox copy only once the direct send is
+          // accepted; until then it is a recovery copy of the composer draft.
+          refusedOutboxDiscard = () => discardRefusedHostSubmission(queue, queueMessage, queueTurnId);
           hostRefusedUnloadedSession = true;
         } finally { endSubmission(); }
       }
@@ -664,6 +677,13 @@ async function sendMessageInternal(
         ? options.onSessionConflictRetrySuccess
         : undefined,
     );
+    if (refusedOutboxDiscard) {
+      // Cleanup after an accepted send must never turn it into a failure.
+      const discard = refusedOutboxDiscard;
+      void Promise.resolve().then(discard).catch(error => {
+        log.warn('Failed to release a refused host queue copy after a direct send', { sessionId, error });
+      });
+    }
 
   } catch (error) {
     // The window moved to another device mid-submission. That is not a turn

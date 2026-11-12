@@ -772,7 +772,7 @@ describe('MessageModule cancellation', () => {
         getState: () => ({ sessions: new Map([[session.sessionId, session]]) }),
       },
       userCancelledSessionIds: new Set<string>(),
-      eventBatcher: { getBufferSize: vi.fn(() => 0), clear: vi.fn() },
+      eventBatcher: { getBufferSize: vi.fn(() => 0), clear: vi.fn(), clearSession: vi.fn() },
       pendingTurnCompletions: new Map(),
       runtimeStatusTimers: new Map(),
       handledTerminalTurnEvents: new Set<string>(),
@@ -1373,6 +1373,7 @@ describe('MessageModule immediate follow-ups', () => {
       .mockResolvedValueOnce({ receipt: { turnId: 'direct-turn', status: 'started' } });
 
     await sendMessage(context, 'Continue', 'answer-owner');
+    await vi.waitFor(() => expect(mockDiscardRefusedHostSubmission).toHaveBeenCalled());
 
     expect(acceptRuntimeStatus).toHaveBeenCalledWith(expect.objectContaining({ state: 'idle', turnId: null }));
     expect(context.userCancelledSessionIds.has('answer-owner')).toBe(false);
@@ -1384,25 +1385,29 @@ describe('MessageModule immediate follow-ups', () => {
     expect(mockPendingEnqueue).not.toHaveBeenCalled();
   });
 
-  it('reports the refusal when a newer host fact changed the session meanwhile', async () => {
+  it('queues behind a turn that a concurrent send started after restoring the session', async () => {
     mockHostQueueSupported.mockReturnValue(true);
     let version = 7;
     const acceptRuntimeStatus = vi.fn();
     mockGetStateMachine.mockReturnValue({
-      getContext: () => ({ currentDialogTurnId: 'stale-turn', version }),
+      getContext: () => ({ currentDialogTurnId: 'concurrent-turn', version }),
       getCurrentState: () => 'processing',
       acceptRuntimeStatus,
     } as any);
-    mockHostQueueSubmit.mockImplementationOnce(async () => {
-      version = 8;
-      throw new Error('Session is not loaded on the execution host');
-    });
+    mockHostQueueSubmit
+      .mockImplementationOnce(async () => {
+        version = 8;
+        throw new Error('Session is not loaded on the execution host');
+      })
+      .mockResolvedValueOnce({ receipt: { turnId: 'generated-queue-turn', status: 'queued' } });
 
-    await expect(sendMessage(contextForFollowUp(), 'Continue', 'answer-owner'))
-      .rejects.toThrow('Session is not loaded on the execution host');
+    await sendMessage(contextForFollowUp(), 'Continue', 'answer-owner');
+
     expect(acceptRuntimeStatus).not.toHaveBeenCalled();
     expect(mockDiscardRefusedHostSubmission).not.toHaveBeenCalled();
-    expect(mockHostQueueSubmit).toHaveBeenCalledTimes(1);
+    expect(mockHostQueueSubmit).toHaveBeenCalledTimes(2);
+    expect(mockHostQueueSubmit.mock.calls[1][2]).toBe('generated-queue-turn');
+    expect(mockEnsureBackendSession).not.toHaveBeenCalled();
   });
 
   it('keeps an ambiguous host queue failure as the queue owner reported it', async () => {

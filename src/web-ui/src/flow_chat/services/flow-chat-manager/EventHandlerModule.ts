@@ -56,7 +56,7 @@ import { MCPAPI } from '@/infrastructure/api/service-api/MCPAPI';
 import { ACPClientAPI, type AcpPermissionRequestEvent } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import type { FlowChatContext, DialogTurn, ModelRound, FlowToolItem } from './types';
-import type { Session, SteeringImage } from '../../types/flow-chat';
+import type { AnyFlowItem, Session, SteeringImage } from '../../types/flow-chat';
 import {
   normalizeAiErrorDetail,
   type AiErrorDetail,
@@ -241,6 +241,7 @@ export const __test_only__ = {
   handleDialogTurnInterrupted,
   handleDialogTurnRecovered,
   handleDialogTurnCancelled,
+  finalizeTurnCompletionState,
   buildBuiltInBrowserTabOptions,
   handleOpenBuiltInBrowser,
 };
@@ -1071,17 +1072,9 @@ function handleSessionCreated(context: FlowChatContext, event: any): void {
 
   const store = FlowChatStore.getInstance();
   const existing = store.getState().sessions.get(sessionId);
-  const { workspaceId, workspacePath } = resolveExternalSessionWorkspace(context, event);
-  const projectWorkspacePath =
-    (typeof event.projectWorkspacePath === 'string' && event.projectWorkspacePath)
-    || (typeof event.project_workspace_path === 'string' && event.project_workspace_path)
-    || workspacePath;
-  const executionTarget =
-    event.executionTarget && typeof event.executionTarget === 'object'
-      ? event.executionTarget
-      : event.execution_target && typeof event.execution_target === 'object'
-        ? event.execution_target
-        : undefined;
+  const {
+    workspaceId, workspacePath, projectWorkspacePath, executionTarget,
+  } = resolveExternalSessionBinding(context, event);
   const remoteConnectionId = extractEventRemoteConnectionId(event);
   const remoteSshHost = extractEventRemoteSshHost(event);
 
@@ -1100,6 +1093,32 @@ function handleSessionCreated(context: FlowChatContext, event: any): void {
     remoteConnectionId,
     remoteSshHost
   );
+}
+
+/**
+ * Owning workspace, persistence root and execution target of an external
+ * session, read from the facts the host attaches to `session-created` and
+ * (from newer hosts) `dialog-turn-started`.
+ */
+function resolveExternalSessionBinding(
+  context: FlowChatContext,
+  event: Record<string, any>,
+): ExternalSessionWorkspace & {
+  projectWorkspacePath?: string;
+  executionTarget?: Session['config']['executionTarget'];
+} {
+  const workspace = resolveExternalSessionWorkspace(context, event);
+  const projectWorkspacePath =
+    (typeof event.projectWorkspacePath === 'string' && event.projectWorkspacePath)
+    || (typeof event.project_workspace_path === 'string' && event.project_workspace_path)
+    || workspace.workspacePath;
+  const executionTarget =
+    event.executionTarget && typeof event.executionTarget === 'object'
+      ? event.executionTarget
+      : event.execution_target && typeof event.execution_target === 'object'
+        ? event.execution_target
+        : undefined;
+  return { ...workspace, projectWorkspacePath, executionTarget };
 }
 
 interface ExternalSessionWorkspace {
@@ -1253,6 +1272,11 @@ function flushPendingBatchedEvents(context: FlowChatContext): void {
   }
 }
 
+function isStreamingTextItem(item: AnyFlowItem): boolean {
+  return (item.type === 'text' || item.type === 'thinking')
+    && ((item as { isStreaming?: boolean }).isStreaming === true || item.status === 'streaming');
+}
+
 function finalizeTurnCompletionState(
   context: FlowChatContext,
   sessionId: string,
@@ -1283,16 +1307,27 @@ function finalizeTurnCompletionState(
   context.flowChatStore.updateDialogTurn(sessionId, turnId, turn => {
     const completedAt = Date.now();
     const updatedModelRounds = turn.modelRounds.map((round) => {
+      // A text or thinking item whose end chunk was never delivered is not in
+      // `activeTextItems`; left streaming, a trailing thinking item stays
+      // expanded and reads as the answer. The turn is settled: close it the
+      // same way its own end chunk would have.
+      const items = round.items.some(isStreamingTextItem)
+        ? round.items.map(item => (isStreamingTextItem(item)
+          ? { ...item, isStreaming: false, status: 'completed' as const,
+            ...(item.type === 'thinking' ? { isCollapsed: true } : {}) }
+          : item))
+        : round.items;
       if (round.isStreaming) {
         return {
           ...round,
+          items,
           isStreaming: false,
           isComplete: true,
           status: 'completed' as const,
           endTime: round.endTime ?? completedAt
         };
       }
-      return round;
+      return items === round.items ? round : { ...round, items };
     });
 
     return {
@@ -1984,7 +2019,10 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
       ? userMessageMetadata.appId
       : undefined;
     log.warn('DialogTurnStarted: session not in store, creating placeholder', { sessionId, sessionsCount: state.sessions.size, isMiniAppAgentRun });
-    const workspace = resolveExternalSessionWorkspace(context, event);
+    // Newer hosts attach the session's owning workspace. Without it the
+    // placeholder falls back to the current workspace, which misattributes a
+    // persisted session driven from another surface (remote control, bot).
+    const workspace = resolveExternalSessionBinding(context, event);
     store.addExternalSession(
       sessionId,
       isMiniAppAgentRun ? (miniAppId ? `MiniApp: ${miniAppId}` : 'MiniApp Agent') : isBtwRun ? 'Side thread' : 'Remote Session',
@@ -1995,7 +2033,11 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
         : isBtwRun
           ? { sessionKind: 'btw', isTransient: true, agentBackedTransient: true,
               parentSessionId: userMessageMetadata.parentSessionId, workspaceId: workspace.workspaceId }
-        : { workspaceId: workspace.workspaceId },
+        : {
+            workspaceId: workspace.workspaceId,
+            projectWorkspacePath: workspace.projectWorkspacePath,
+            executionTarget: workspace.executionTarget,
+          },
       extractEventRemoteConnectionId(event),
       extractEventRemoteSshHost(event)
     );

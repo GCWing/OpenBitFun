@@ -123,6 +123,66 @@ describe('external BTW turn projection', () => {
   });
 });
 
+describe('remote-driven turn on an unloaded session', () => {
+  beforeEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+  afterEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+
+  const onAssistantWorkspace = (): FlowChatContext => ({
+    ...createFlowChatContext(),
+    currentWorkspaceId: 'assistant-workspace',
+    currentWorkspacePath: 'C:/Users/u/.openbitfun/personal_assistant/workspace',
+  });
+
+  it('attributes the placeholder to the owning workspace the host reports', () => {
+    __test_only__.handleDialogTurnStarted(onAssistantWorkspace(), {
+      sessionId: 'persisted-session', turnId: 'harmony-turn-1', turnIndex: 20, userInput: 'Continue',
+      workspacePath: 'D:/repo', projectWorkspacePath: 'D:/repo', workspaceId: 'project-workspace',
+    });
+    const session = FlowChatStore.getInstance().getState().sessions.get('persisted-session');
+    expect(session?.workspaceId).toBe('project-workspace');
+    expect(session?.workspacePath).toBe('D:/repo');
+    expect(session?.config.workspaceId).toBe('project-workspace');
+    expect(session?.projectWorkspacePath).toBe('D:/repo');
+    expect(session?.config.projectWorkspacePath).toBe('D:/repo');
+  });
+
+  it('keeps the current-workspace fallback for an older host without binding facts', () => {
+    __test_only__.handleDialogTurnStarted(onAssistantWorkspace(), {
+      sessionId: 'legacy-session', turnId: 'turn-1', turnIndex: 0, userInput: 'Hello',
+    });
+    const session = FlowChatStore.getInstance().getState().sessions.get('legacy-session');
+    expect(session?.workspaceId).toBe('assistant-workspace');
+  });
+});
+
+describe('turn finalization', () => {
+  beforeEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+  afterEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+
+  it('closes text and thinking items whose end chunk never arrived', () => {
+    createSessionWithTurn({
+      ...createFinishingTurn(),
+      modelRounds: [{
+        ...makeRound('round-1'),
+        isStreaming: true,
+        items: [
+          { id: 'thinking-1', type: 'thinking', content: 'Reconsider scope', isStreaming: true,
+            isCollapsed: false, status: 'streaming', timestamp: 1 } as any,
+          { id: 'text-1', type: 'text', content: 'Partial answer', isStreaming: true,
+            status: 'streaming', timestamp: 2 } as any,
+        ],
+      }],
+    });
+
+    __test_only__.finalizeTurnCompletionState(createFlowChatContext(), 'session-1', 'turn-1');
+
+    const items = FlowChatStore.getInstance().getState().sessions.get('session-1')!
+      .dialogTurns[0].modelRounds[0].items as any[];
+    expect(items[0]).toMatchObject({ isStreaming: false, isCollapsed: true, status: 'completed' });
+    expect(items[1]).toMatchObject({ isStreaming: false, status: 'completed' });
+  });
+});
+
 describe('late dialog start events', () => {
   beforeEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
   afterEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
