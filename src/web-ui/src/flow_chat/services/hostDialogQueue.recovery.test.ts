@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   HostDialogQueue,
   type QueueOutboxRecord,
@@ -14,6 +14,7 @@ function fixture(options?: ConstructorParameters<typeof HostDialogQueue>[4]) {
   const calls: QueueRequest[] = [];
   let epoch = 'owner-1';
   let loseSubmit: 'after-accept' | 'before-accept' | null = null;
+  let holdGets: Promise<void> | null = null;
   const snapshot = (receipt: QueueSnapshot['receipt']): QueueSnapshot => ({
     sessionId: 'session-a', queueEpoch: epoch, revision: receipts.size, activeTurnId: 'running',
     items: [...receipts.values()].filter(item => item.status === 'queued'),
@@ -31,7 +32,10 @@ function fixture(options?: ConstructorParameters<typeof HostDialogQueue>[4]) {
       if (loseSubmit === 'after-accept') { loseSubmit = null; throw new Error('outcome_unknown: reply lost'); }
       return snapshot(receipts.get(request.message.turnId)!);
     }
-    if (request.action === 'get') return snapshot(receipts.get(request.turnId) ?? null);
+    if (request.action === 'get') {
+      if (holdGets) await holdGets;
+      return snapshot(receipts.get(request.turnId) ?? null);
+    }
     return snapshot(null);
   };
   const storage = {
@@ -44,10 +48,75 @@ function fixture(options?: ConstructorParameters<typeof HostDialogQueue>[4]) {
     create: () => new HostDialogQueue('scope', 'session-a', invoke, storage, options),
     lose: (when: 'after-accept' | 'before-accept') => { loseSubmit = when; },
     restart: () => { epoch = 'owner-2'; receipts.clear(); },
+    holdReceiptReads: () => {
+      let release!: () => void;
+      holdGets = new Promise(resolve => { release = resolve; });
+      return () => { holdGets = null; release(); };
+    },
   };
 }
 
+const receiptReads = (calls: QueueRequest[]) => calls.filter(call => call.action === 'get').length;
+
 describe('HostDialogQueue recovery', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('confirms an unacknowledged submit the owner lists without reading its receipt', async () => {
+    const f = fixture({ resolveUnconfirmed: true });
+    const queue = f.create();
+    f.lose('after-accept');
+    await expect(queue.submit(message)).rejects.toThrow('outcome_unknown');
+
+    await queue.refresh();
+    expect(queue.getSnapshot().pending).toEqual([]);
+    expect([...f.records.values()][0].accepted).toBe(true);
+    expect(receiptReads(f.calls)).toBe(0);
+  });
+
+  it('backs off receipt reads for a record the owner never received', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000_000);
+    const f = fixture({ resolveUnconfirmed: true });
+    const queue = f.create();
+    f.lose('before-accept');
+    await expect(queue.submit(message)).rejects.toThrow('Connection lost');
+
+    await queue.refresh();
+    expect(queue.getSnapshot().pending[0].notSubmitted).toBe(true);
+    expect(receiptReads(f.calls)).toBe(1);
+    await queue.refresh();
+    await queue.refresh();
+    expect(receiptReads(f.calls)).toBe(1);
+
+    vi.setSystemTime(1_000_000 + 5_000);
+    await queue.refresh();
+    expect(receiptReads(f.calls)).toBe(2);
+    vi.setSystemTime(1_000_000 + 5_000 + 9_000);
+    await queue.refresh();
+    expect(receiptReads(f.calls)).toBe(2);
+    vi.setSystemTime(1_000_000 + 5_000 + 10_000);
+    await queue.refresh();
+    expect(receiptReads(f.calls)).toBe(3);
+    // The record stays visible for an explicit decision throughout.
+    expect(queue.getSnapshot().pending).toHaveLength(1);
+  });
+
+  it('does not make a new submit wait behind receipt reads for older records', async () => {
+    const f = fixture({ resolveUnconfirmed: true });
+    const queue = f.create();
+    f.lose('before-accept');
+    await expect(queue.submit(message)).rejects.toThrow('Connection lost');
+    const release = f.holdReceiptReads();
+    const background = queue.refresh();
+    await vi.waitFor(() => expect(receiptReads(f.calls)).toBe(1));
+
+    const accepted = await queue.submit({ ...message, content: 'next' }, undefined, 'next-turn');
+    expect(accepted.receipt?.turnId).toBe('next-turn');
+    expect(receiptReads(f.calls)).toBe(1);
+    release();
+    await background;
+  });
+
   it('confirms an unacknowledged submit on refresh when the owner has its receipt', async () => {
     const f = fixture({ resolveUnconfirmed: true });
     const queue = f.create();

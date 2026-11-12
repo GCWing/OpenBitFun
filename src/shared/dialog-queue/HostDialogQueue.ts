@@ -53,6 +53,13 @@ export interface QueueStorage {
   put(record: QueueOutboxRecord): Promise<void>;
   remove(key: string): Promise<void>;
 }
+/**
+ * Receipt reads for one unconfirmed submit back off after each read that found
+ * no receipt (or failed), so a long-lived "not sent" record does not cost an
+ * RPC on every refresh. Retrying the record starts a new attempt.
+ */
+const RECEIPT_READ_BASE_DELAY_MS = 5_000;
+const RECEIPT_READ_MAX_DELAY_MS = 5 * 60_000;
 const DB_NAME = 'openbitfun.host-dialog-queue.v1';
 const STORE = 'outbox';
 function openDatabase(): Promise<IDBDatabase> {
@@ -111,6 +118,8 @@ export class HostDialogQueue {
   // delivery needs recovery UI; a new page has no live RPCs and shows all of it.
   private inFlight = new Set<string>();
   private pendingRead = 0;
+  /** Next allowed receipt read per unconfirmed outbox key. In memory only. */
+  private receiptReads = new Map<string, { misses: number; nextAtMs: number }>();
   constructor(readonly scope: string, readonly sessionId: string,
     private invoke: (request: QueueRequest) => Promise<QueueSnapshot>, private storage: QueueStorage = queueStorage,
     private options: HostDialogQueueOptions = {}) {}
@@ -139,39 +148,65 @@ export class HostDialogQueue {
   }
   async refresh(): Promise<QueueSnapshot> {
     if (this.refreshing) return this.refreshing;
-    this.refreshing = (async () => {
-      try {
-        const snapshot = await this.invoke({ sessionId: this.sessionId, action: 'list' });
-        this.accept(snapshot, true);
-        const records = await this.storage.list(this.scope);
-        const current = this.view.snapshot!;
-        for (const record of records) {
-          if (this.inFlight.has(record.key) || record.restoreIntent || record.request.action !== 'submit') continue;
-          if (this.options.hasTurn?.(record.request.message.turnId)) {
-            // The message already ran; its transcript Turn is the outcome.
-            await this.storage.remove(record.key);
-            continue;
-          }
-          if (!record.accepted) {
-            if (this.options.resolveUnconfirmed && record.request.queueEpoch === current.queueEpoch) {
-              await this.resolveUnconfirmed(record, current.queueEpoch);
-            }
-            continue;
-          }
-          if (record.request.queueEpoch !== current.queueEpoch) {
-            // A restarted owner cannot vouch for an accepted in-memory message.
-            // Preserve the original draft and require an explicit user decision.
-            await this.storage.put({ ...record, accepted: false });
-          } else if (!current.items.some(item => item.turnId === (record.request as Extract<QueueRequest, { action: 'submit' }>).message.turnId)) {
-            await this.storage.remove(record.key);
-          }
-        }
-        await this.publishPending();
-        return current;
-      } catch (error) { this.publish({ error: String(error) }); throw error; }
-      finally { this.refreshing = null; }
-    })();
+    this.refreshing = this.readAndReconcile(true).finally(() => { this.refreshing = null; });
     return this.refreshing;
+  }
+  /**
+   * Read the owner's queue and reconcile the outbox with it. Receipt reads for
+   * unconfirmed submits are optional: a submit only needs the current epoch and
+   * must not wait behind recovery of older records.
+   */
+  private async readAndReconcile(readReceipts: boolean): Promise<QueueSnapshot> {
+    try {
+      const snapshot = await this.invoke({ sessionId: this.sessionId, action: 'list' });
+      this.accept(snapshot, true);
+      const records = await this.storage.list(this.scope);
+      const current = this.view.snapshot!;
+      for (const record of records) {
+        if (this.inFlight.has(record.key) || record.restoreIntent || record.request.action !== 'submit') continue;
+        const turnId = record.request.message.turnId;
+        if (this.options.hasTurn?.(turnId)) {
+          // The message already ran; its transcript Turn is the outcome.
+          await this.storage.remove(record.key);
+          this.receiptReads.delete(record.key);
+          continue;
+        }
+        const listed = current.items.some(item => item.turnId === turnId);
+        if (!record.accepted) {
+          if (!this.options.resolveUnconfirmed || record.request.queueEpoch !== current.queueEpoch) continue;
+          if (listed) {
+            // The owner's own list holds the Turn: that is its receipt.
+            await this.markAccepted(record);
+          } else if (readReceipts && this.receiptReadDue(record.key)) {
+            await this.resolveUnconfirmed(record, current.queueEpoch);
+          }
+          continue;
+        }
+        if (record.request.queueEpoch !== current.queueEpoch) {
+          // A restarted owner cannot vouch for an accepted in-memory message.
+          // Preserve the original draft and require an explicit user decision.
+          await this.storage.put({ ...record, accepted: false });
+        } else if (!listed) {
+          await this.storage.remove(record.key);
+        }
+      }
+      await this.publishPending();
+      return current;
+    } catch (error) { this.publish({ error: String(error) }); throw error; }
+  }
+  private receiptReadDue(key: string): boolean {
+    const next = this.receiptReads.get(key);
+    return !next || Date.now() >= next.nextAtMs;
+  }
+  private deferReceiptRead(key: string): void {
+    const misses = (this.receiptReads.get(key)?.misses ?? 0) + 1;
+    const delay = Math.min(RECEIPT_READ_BASE_DELAY_MS * 2 ** (misses - 1), RECEIPT_READ_MAX_DELAY_MS);
+    this.receiptReads.set(key, { misses, nextAtMs: Date.now() + delay });
+  }
+  private async markAccepted(record: QueueOutboxRecord): Promise<void> {
+    const { notSubmitted: _notSubmitted, ...accepted } = record;
+    this.receiptReads.delete(record.key);
+    await this.storage.put({ ...accepted, accepted: true });
   }
   /**
    * Ask the owner that issued this epoch for the submit's receipt. A receipt
@@ -184,16 +219,18 @@ export class HostDialogQueue {
     try {
       result = await this.invoke({ sessionId: this.sessionId, queueEpoch, action: 'get', turnId });
     } catch {
-      return; // Still unconfirmed; a later refresh asks again.
+      // Still unconfirmed; a later refresh asks again.
+      this.deferReceiptRead(record.key);
+      return;
     }
     if (result.queueEpoch !== queueEpoch || this.inFlight.has(record.key)) return;
     if (result.receipt?.turnId === turnId) {
       this.accept(result, false);
-      const { notSubmitted: _notSubmitted, ...accepted } = record;
-      await this.storage.put({ ...accepted, accepted: true });
-    } else if (!record.notSubmitted) {
-      await this.storage.put({ ...record, notSubmitted: true });
+      await this.markAccepted(record);
+      return;
     }
+    this.deferReceiptRead(record.key);
+    if (!record.notSubmitted) await this.storage.put({ ...record, notSubmitted: true });
   }
   private serialize<T>(run: () => Promise<T>): Promise<T> {
     const result = this.mutation.then(run, run);
@@ -204,6 +241,7 @@ export class HostDialogQueue {
     // A new attempt reopens the outcome; never carry an older "not sent" fact.
     const { notSubmitted: _notSubmitted, ...record } = sending;
     this.inFlight.add(record.key);
+    this.receiptReads.delete(record.key);
     try {
       // The transaction commits before an RPC is permitted to leave this client.
       await this.storage.put(record);
@@ -231,7 +269,7 @@ export class HostDialogQueue {
   submit(message: Omit<QueueMessage, 'turnId'>, draft?: unknown, requestedTurnId?: string,
     preparedSnapshot?: QueueSnapshot): Promise<QueueSnapshot> {
     return this.serialize(async () => {
-      const snapshot = preparedSnapshot ?? await this.refresh();
+      const snapshot = preparedSnapshot ?? await this.readAndReconcile(false);
       if (snapshot.sessionId !== this.sessionId || !snapshot.queueEpoch
         || (preparedSnapshot && this.view.snapshot?.queueEpoch !== snapshot.queueEpoch)) {
         throw new Error('queue_scope_expired: refresh the host queue; do not automatically resend');
@@ -282,7 +320,8 @@ export class HostDialogQueue {
     });
   }
   retry(record: QueueOutboxRecord): Promise<QueueSnapshot> {
-    return this.serialize(async () => this.retryRecord(record, await this.refresh()));
+    // The retried record reads its own receipt; do not wait for the others'.
+    return this.serialize(async () => this.retryRecord(record, await this.readAndReconcile(false)));
   }
   private async retryRecord(record: QueueOutboxRecord, snapshot: QueueSnapshot): Promise<QueueSnapshot> {
     if (record.scope !== this.scope || record.request.sessionId !== this.sessionId) throw new Error('Queue target changed');
@@ -294,8 +333,7 @@ export class HostDialogQueue {
         action: 'get', turnId: record.request.message.turnId });
       if (result.receipt) {
         this.accept(result, false);
-        const { notSubmitted: _notSubmitted, ...accepted } = record;
-        await this.storage.put({ ...accepted, accepted: true });
+        await this.markAccepted(record);
         await this.publishPending();
         return result;
       }
