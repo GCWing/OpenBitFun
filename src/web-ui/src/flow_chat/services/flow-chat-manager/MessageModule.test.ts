@@ -1880,6 +1880,122 @@ describe('MessageModule device surface switch', () => {
     }
   });
 
+  it.each([
+    ['delivered', true],
+    ['not delivered', false],
+  ])('keeps a drained item in its FIFO place while a lost reply is confirmed (%s)', async (_label, hostHasTurn) => {
+    activateSurface('peer-a');
+    const { context, session } = switchingContext('session-drained-lost');
+    (session as any).historyState = 'ready';
+    context.userCancelledSessionIds = new Set();
+    const head = { id: 'head', turnId: 'head-turn', sessionId: 'session-drained-lost',
+      content: 'First queued', status: 'queued', retryCount: 0 };
+    const later = { id: 'later', sessionId: 'session-drained-lost',
+      content: 'Second queued', status: 'queued', retryCount: 0 };
+    const items: any[] = [head, later];
+    mockPendingList.mockImplementation(() => items);
+    mockPendingSetStatus.mockImplementation((_session, id, status) => {
+      const item = items.find(value => value.id === id);
+      if (item) item.status = status;
+    });
+    mockPendingRemove.mockImplementation((_session, id) => {
+      const index = items.findIndex(value => value.id === id);
+      if (index >= 0) items.splice(index, 1);
+    });
+    mockStartDialogTurn.mockRejectedValue(new Error('outcome_unknown: host invoke reply lost'));
+    const reads: string[] = [];
+    context.flowChatStore.relayHostHasTurn = vi.fn(() => reads.length > 0 && hostHasTurn);
+    context.flowChatStore.reloadRelaySessionFromHost = vi.fn(async () => { reads.push('reload'); });
+    context.flowChatStore.loadRelaySessionHistory = vi.fn(async () => {});
+
+    await drainPendingQueue(context, head.sessionId);
+    // While the host is consulted the head blocks the queue in place.
+    expect(items.map(item => item.id)).toEqual(hostHasTurn ? ['later'] : ['head', 'later']);
+    await vi.waitFor(() => expect(getRuntimeStatus('session-drained-lost')).toBeUndefined());
+
+    expect(mockStartDialogTurn).toHaveBeenCalledTimes(1);
+    expect(mockStartDialogTurn.mock.calls[0][0].turnId).toBe('head-turn');
+    expect(mockPendingEnqueueForSurface).not.toHaveBeenCalled();
+    if (hostHasTurn) {
+      expect(items).toEqual([later]);
+      expect(later.status).toBe('queued');
+    } else {
+      expect(items.map(item => [item.id, item.status])).toEqual([['head', 'failed'], ['later', 'queued']]);
+      expect(mockNotificationWarning).toHaveBeenCalledWith(
+        'flow-chat:session.submissionNotDelivered', expect.anything());
+    }
+    expect(mockNotificationError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['session manager', (turnId: string) => `Dialog turn already exists: ${turnId}`],
+    ['scheduler', (turnId: string) =>
+      `Failed to start dialog turn: Dialog turn ID is already active or completed: session_id=s, turn_id=${turnId}`],
+  ])('treats a retry the host refuses as an admitted Turn as delivered (%s)', async (_label, refusal) => {
+    activateSurface('peer-a');
+    const { context, session } = switchingContext('session-retry-admitted');
+    (session as any).historyState = 'ready';
+    context.userCancelledSessionIds = new Set();
+    const retained = { id: 'retained', turnId: 'admitted-turn', sessionId: 'session-retry-admitted',
+      content: 'Run once', status: 'queued', retryCount: 0 };
+    const items: any[] = [retained];
+    mockPendingList.mockImplementation(() => items);
+    mockPendingRemove.mockImplementation((_session, id) => {
+      const index = items.findIndex(value => value.id === id);
+      if (index >= 0) items.splice(index, 1);
+    });
+    mockStartDialogTurn.mockImplementation(async (request: { turnId: string }) => {
+      throw new Error(refusal(request.turnId));
+    });
+    context.flowChatStore.reloadRelaySessionFromHost = vi.fn(async () => {});
+
+    await drainPendingQueue(context, retained.sessionId);
+
+    expect(items).toEqual([]);
+    expect(session.dialogTurns.map((turn: any) => turn.id)).toEqual(['admitted-turn']);
+    expect(context.flowChatStore.deleteDialogTurn).not.toHaveBeenCalled();
+    expect(context.flowChatStore.reloadRelaySessionFromHost).toHaveBeenCalledWith('session-retry-admitted');
+    expect(mockNotificationError).not.toHaveBeenCalled();
+  });
+
+  it('keeps reporting a duplicate refusal that names another Turn', async () => {
+    activateSurface('peer-a');
+    const { context } = switchingContext('session-other-turn');
+    mockStartDialogTurn.mockRejectedValue(new Error('Dialog turn already exists: some-other-turn'));
+    context.flowChatStore.reloadRelaySessionFromHost = vi.fn(async () => {});
+
+    await expect(sendMessage(context, 'Run once', 'session-other-turn'))
+      .rejects.toThrow('Dialog turn already exists');
+    expect(context.flowChatStore.deleteDialogTurn).toHaveBeenCalled();
+    expect(context.flowChatStore.reloadRelaySessionFromHost).not.toHaveBeenCalled();
+    expect(mockNotificationError).toHaveBeenCalled();
+  });
+
+  it('materializes a draft whose first message the host confirms after a lost reply', async () => {
+    activateSurface('peer-a');
+    const { context, session } = switchingContext('draft-lost-reply');
+    let state: any = { activeSessionId: 'draft-lost-reply', sessions: new Map([['draft-lost-reply', {
+      ...session, draft: { workspaceId: 'b', phase: 'ready', turnId: 'reserved-first-turn' },
+    }]]) };
+    context.flowChatStore.getState = () => state;
+    context.flowChatStore.setState = (update: any) => { state = update(state); };
+    context.flowChatStore.addDialogTurn = vi.fn((id: string, turn: any) => {
+      const current = state.sessions.get(id);
+      state.sessions.set(id, { ...current, dialogTurns: [...current.dialogTurns, turn] });
+    });
+    mockStartDialogTurn.mockRejectedValue(new Error('outcome_unknown: host invoke reply lost'));
+    context.flowChatStore.relayHostHasTurn = vi.fn(() => true);
+    context.flowChatStore.reloadRelaySessionFromHost = vi.fn(async () => {});
+    context.flowChatStore.loadRelaySessionHistory = vi.fn(async () => {});
+
+    await sendMessage(context, 'First message', 'draft-lost-reply');
+
+    expect(mockStartDialogTurn.mock.calls[0][0].turnId).toBe('reserved-first-turn');
+    await vi.waitFor(() => expect(state.sessions.get('draft-lost-reply').draft).toBeUndefined());
+    await vi.waitFor(() => expect(mockActivateMainSession).toHaveBeenCalledWith('draft-lost-reply', expect.any(Object)));
+    expect(mockPendingEnqueueForSurface).not.toHaveBeenCalled();
+  });
+
   it('still reports ordinary failures when the surface did not change', async () => {
     const { context } = switchingContext('session-normal');
     mockStartDialogTurn.mockRejectedValue(new Error('backend exploded'));

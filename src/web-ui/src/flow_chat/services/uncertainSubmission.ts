@@ -11,6 +11,8 @@
  * - The host does not have it, or the read-back fails: remove the optimistic
  *   turn and retain the message in the pending queue as `failed` with the same
  *   Turn id, so an explicit Retry is deduplicated by `(sessionId, turnId)`.
+ *   A message drained from the pending queue keeps its original item and FIFO
+ *   position instead; that item is removed once the host confirms the Turn.
  *
  * Dispatch submissions are settled by the dispatch observer instead: the job
  * state in `dispatchJobStore` says whether the target received the job.
@@ -37,6 +39,26 @@ export interface UncertainSubmission {
   turnId: string;
   /** Retained for an explicit retry when the host does not have the turn. */
   retained: Omit<EnqueueInput, 'sessionId' | 'turnId' | 'initialStatus' | 'retryCount'>;
+  /**
+   * The pending-queue item that carried this message, on `scope.surfaceId`.
+   * It stays in place as the retained copy: removed when delivered, marked
+   * failed otherwise. A copy is never appended behind later queued messages.
+   */
+  queueItemId?: string;
+}
+
+/**
+ * The host's refusal of a Turn id it already holds: the core scheduler's
+ * `Dialog turn ID is already active or completed: ..., turn_id=<id>` or the
+ * session manager's `Dialog turn already exists: <id>`. Only a refusal that
+ * names this exact Turn proves that an earlier attempt was admitted.
+ */
+export function isAdmittedTurnRefusal(error: unknown, turnId: string): boolean {
+  const message = typeof error === 'string' ? error : String((error as { message?: unknown } | null)?.message ?? '');
+  const refusedTurnId = message.includes('Dialog turn ID is already active or completed')
+    ? /turn_id=([^\s,]+)/.exec(message)?.[1]
+    : /Dialog turn already exists: ([^\s,]+)/.exec(message)?.[1];
+  return !!turnId && refusedTurnId === turnId;
 }
 
 function confirmingRoundId(turnId: string): string {
@@ -49,6 +71,29 @@ function showConfirming(sessionId: string, turnId: string, label: string): void 
 
 function clearConfirming(sessionId: string, turnId: string): void {
   clearRuntimeStatusState({ sessionId, turnId, roundId: confirmingRoundId(turnId) });
+}
+
+/** The host owns the Turn: nothing is left to retry. */
+function settleDelivered(submission: UncertainSubmission): void {
+  const { scope, sessionId, turnId, queueItemId } = submission;
+  clearConfirming(sessionId, turnId);
+  if (queueItemId) pendingQueueManager.removeForSurface(scope.surfaceId, sessionId, queueItemId);
+}
+
+/**
+ * Keep the message for an explicit retry. A drained queue item is marked
+ * failed in place (a user who deleted it meanwhile keeps that choice); any
+ * other submission is appended as a failed item under its Turn id.
+ */
+function retainMessage(submission: UncertainSubmission): void {
+  const { scope, sessionId, turnId, queueItemId } = submission;
+  if (queueItemId) {
+    pendingQueueManager.setStatusForSurface(scope.surfaceId, sessionId, queueItemId, 'failed');
+    return;
+  }
+  pendingQueueManager.enqueueForSurface(scope.surfaceId, {
+    ...submission.retained, sessionId, turnId, initialStatus: 'failed', retryCount: 1,
+  });
 }
 
 /**
@@ -65,9 +110,7 @@ async function retainForRetry(
   clearConfirming(sessionId, turnId);
   if (!scope.isCurrent()) {
     // The surface left: keep the turn there and retain the draft on its queue.
-    pendingQueueManager.enqueueForSurface(scope.surfaceId, {
-      ...submission.retained, sessionId, turnId, initialStatus: 'failed', retryCount: 1,
-    });
+    retainMessage(submission);
     return;
   }
   const machine = stateMachineManager.get(sessionId);
@@ -81,9 +124,7 @@ async function retainForRetry(
     context.flowChatStore.deleteDialogTurn(sessionId, turnId);
   }
   try {
-    pendingQueueManager.enqueueForSurface(scope.surfaceId, {
-      ...submission.retained, sessionId, turnId, initialStatus: 'failed', retryCount: 1,
-    });
+    retainMessage(submission);
   } catch (error) {
     log.error('Failed to retain an unconfirmed message', { sessionId, turnId, error });
   }
@@ -115,7 +156,7 @@ export async function confirmUncertainPeerSubmission(
   }
   log.info('Resolved a submission with an unknown outcome', { sessionId, turnId, outcome });
   if (outcome === 'delivered') {
-    clearConfirming(sessionId, turnId);
+    settleDelivered(submission);
     return outcome;
   }
   await retainForRetry(context, submission, outcome, outcome === 'not_delivered'
@@ -195,7 +236,8 @@ export function confirmUncertainDispatchSubmission(
       if (graceTimer !== null) clearTimeout(graceTimer);
       scope.signal.removeEventListener('abort', abort);
       if (!act || outcome === 'delivered') {
-        clearConfirming(sessionId, turnId);
+        if (outcome === 'delivered') settleDelivered(submission);
+        else clearConfirming(sessionId, turnId);
         resolve(outcome);
         return;
       }

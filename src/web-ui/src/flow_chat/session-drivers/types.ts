@@ -51,6 +51,12 @@ export interface SendMessageOptions {
    * Callers should not set this directly.
    */
   bypassPendingQueue?: boolean;
+  /**
+   * The legacy pending-queue item a drain is sending. When the host outcome is
+   * unknown this item keeps the message and its FIFO position: it is removed
+   * once the host confirms the Turn and marked failed otherwise.
+   */
+  pendingQueueItemId?: string;
   /** Use the existing send-now path to steer running work when supported. */
   sendImmediately?: boolean;
   userMessageMetadata?: Record<string, unknown>;
