@@ -6471,7 +6471,7 @@ export class FlowChatStore {
       history = new RelaySessionHistory(sessionId,
         record => this.applyRelaySessionRecord(record),
         ready => {
-          this.finishRelaySessionResync(sessionId);
+          if (ready.live !== true) this.finishRelaySessionResync(sessionId);
           this.setState(previous => {
             const session = previous.sessions.get(sessionId);
             if (!session) return previous;
@@ -6484,7 +6484,12 @@ export class FlowChatStore {
             return { ...previous, sessions };
           });
           if (!ready.hasMore) this.refreshRelayTurnCatalog(sessionId);
-        }, error => {
+        }, (error, options) => {
+          if (options?.retrying) {
+            log.warn('Relay session sync interrupted; retaining subscription for recovery', { sessionId, error });
+            this.setSessionHistoryState(sessionId, 'failed');
+            return;
+          }
           log.error('Relay session history failed', { sessionId, error });
           this.setSessionHistoryState(sessionId, 'failed');
           // Retrying opens a fresh replay owner; a failed owner must not turn

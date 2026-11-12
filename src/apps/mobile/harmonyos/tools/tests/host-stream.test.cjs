@@ -304,3 +304,47 @@ test('lazy disk history keeps JS-safe backward cursors separate from live update
     assert.equal(c.errors.length, 0);
   } finally { stream.close(); }
 });
+
+// Use the production account client factory as well as the stream reader: the
+// subscription acknowledgement is a wire capability, not a reader-only flag.
+test('account stream cleanup negotiates independent leases and leaves old hosts to expiry', async () => {
+  const clientSource = fs.readFileSync(path.join(__dirname, '../../entry/src/main/ets/services/CloudAccountClient.ets'), 'utf8');
+  const exported = {}; let nextId = 0;
+  new Function('require', 'exports', ts.transpileModule(clientSource, { compilerOptions: {
+    target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
+  } }).outputText)(name => ({
+    './HostSessionStream': exportsObject,
+    './Encoding': { Encoding: { randomId: () => 'reader-' + ++nextId } },
+    './RemoteCrypto': { HarmonyRemoteCryptoCipher: class {} },
+  }[name] || {}), exported);
+  for (const scoped of [true, false]) {
+    const client = new exported.CloudAccountClient(false), commands = [];
+    const socket = { onReconnect: () => () => {} };
+    client.realtime = socket;
+    client.connection = () => { client.realtime = socket; return socket; };
+    client.observeStreamHints = () => () => {};
+    client.deviceRpc = async (_url, _session, _target, command) => {
+      commands.push(command);
+      return { resp: 'stream_page', stream_id: 's', epoch: 1, cursor: 0, oldest_seq: 1,
+        events: [], has_more: false, truncated: false,
+        ...(scoped ? { subscription_id: command.subscription_id } : {}) };
+    };
+    const first = callbacks(), second = callbacks();
+    const a = client.subscribeSession('relay', {}, 'desktop', 's', first.hooks);
+    const b = client.subscribeSession('relay', {}, 'desktop', 's', second.hooks);
+    try {
+      await settle(() => first.caught === 1 && second.caught === 1);
+      assert.notEqual(commands[0].subscription_id, commands[1].subscription_id);
+      a.close(); await tick();
+      const cleanup = commands.filter(command => command.cmd === 'unsubscribe_stream');
+      assert.equal(cleanup.length, scoped ? 1 : 0);
+      if (scoped) assert.equal(cleanup[0].subscription_id, commands[0].subscription_id);
+      const newAccountSocket = { onReconnect: () => () => {} };
+      client.realtime = newAccountSocket;
+      const count = commands.length;
+      b.close(); await tick();
+      assert.equal(commands.length, count, 'retired cleanup cannot invoke on a new account');
+      assert.equal(client.realtime, newAccountSocket, 'retired cleanup cannot reopen its old account');
+    } finally { a.close(); b.close(); }
+  }
+});

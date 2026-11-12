@@ -3947,6 +3947,11 @@ pub async fn account_load_older_session(request: UnsubscribeSessionRequest) -> R
 pub async fn account_subscribe_session(request: SubscribeSessionRequest) -> Result<String, String> {
     let generation = account_context_generation();
     let (session, relay) = read_account_context_for_generation(generation).await?;
+    // Events can arrive before this command returns. Give every attempt an
+    // identity so a late error/page from a retired reader cannot poison its successor.
+    let id = uuid::Uuid::new_v4().to_string();
+    let event_subscription_id = id.clone();
+    let error_subscription_id = id.clone();
     let source = request.target_device_id.clone();
     let error_source = source.clone();
     let error_session_id = request.session_id.clone();
@@ -3960,21 +3965,23 @@ pub async fn account_subscribe_session(request: SubscribeSessionRequest) -> Resu
                 if !account_context_is_current(generation) {
                     anyhow::bail!("account subscription retired");
                 }
-                emit_account_event(&event.event, tag_peer_event_source(event.payload, &source));
+                let mut payload = tag_peer_event_source(event.payload, &source);
+                payload["subscriptionId"] = event_subscription_id.clone().into();
+                emit_account_event(&event.event, payload);
                 Ok(())
             }),
             Arc::new(move |error| {
                 if account_context_is_current(generation) {
                     emit_account_event(
                         "account://session-sync-error",
-                        serde_json::json!({"message":error,"sessionId":error_session_id,"targetDeviceId":error_source}),
+                        serde_json::json!({"message":error,"sessionId":error_session_id,"targetDeviceId":error_source,
+                            "subscriptionId":error_subscription_id,"retrying":true}),
                     );
                 }
             }),
         )
         .await
         .map_err(|e| e.to_string())?;
-    let id = uuid::Uuid::new_v4().to_string();
     let mut subscriptions = SESSION_SUBSCRIPTIONS
         .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
         .lock()

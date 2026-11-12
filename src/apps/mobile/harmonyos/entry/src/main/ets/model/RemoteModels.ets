@@ -188,6 +188,7 @@ export interface RemoteCommand {
   before?: number;
   epoch?: number;
   subscribe?: boolean;
+  subscription_id?: string;
 }
 
 export interface PairChallengeResponse {

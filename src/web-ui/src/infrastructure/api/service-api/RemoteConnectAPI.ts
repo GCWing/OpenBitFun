@@ -501,11 +501,11 @@ class RemoteConnectAPIService {
     return api.listen('session-interaction-changed', callback);
   }
 
-  onSessionReady(callback: (event: { sessionId: string; hasMore: boolean; oldestSeq: number; cursor: number; historyBatches?: boolean }) => void): () => void {
+  onSessionReady(callback: (event: { sessionId: string; hasMore: boolean; oldestSeq: number; cursor: number; historyBatches?: boolean; live?: boolean; subscriptionId?: string }) => void): () => void {
     return api.listen('relay://session-ready', callback);
   }
 
-  onSessionSyncError(callback: (event: { sessionId: string; targetDeviceId: string; message: string }) => void): () => void {
+  onSessionSyncError(callback: (event: { sessionId: string; targetDeviceId: string; message: string; retrying?: boolean; subscriptionId?: string }) => void): () => void {
     return api.listen('account://session-sync-error', callback);
   }
 

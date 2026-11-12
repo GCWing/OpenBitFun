@@ -86,7 +86,7 @@ async fn catalog_reads_materialize_the_stream_and_later_appends_reach_the_reader
         .await
         .expect("handled")
     {
-        RemoteResponse::StreamPage { page } => page,
+        RemoteResponse::StreamPage { page, .. } => page,
         other => panic!("unexpected response: {other:?}"),
     };
     assert_eq!(page.stream_id, HOST_CATALOG_ID);
@@ -125,7 +125,7 @@ async fn catalog_reads_materialize_the_stream_and_later_appends_reach_the_reader
     .await
     .expect("handled")
     {
-        RemoteResponse::StreamPage { page } => page,
+        RemoteResponse::StreamPage { page, .. } => page,
         other => panic!("unexpected response: {other:?}"),
     };
     assert!(next
@@ -136,6 +136,7 @@ async fn catalog_reads_materialize_the_stream_and_later_appends_reach_the_reader
         Some(&hub),
         "phone",
         &RemoteCommand::UnsubscribeStream {
+            subscription_id: None,
             stream_id: HOST_CATALOG_ID.into(),
         },
     )
@@ -167,4 +168,57 @@ async fn stopping_device_routing_closes_the_hub() {
     hub.close();
     assert!(*closed.borrow_and_update());
     assert!(hub.active_stream_ids().is_empty());
+}
+
+#[tokio::test]
+async fn scoped_readers_survive_late_cleanup_and_legacy_clients_keep_their_lease() {
+    let hub = start_host_stream_hub(Arc::new(Recorder(Mutex::new(Vec::new()))));
+    let command = |id: Option<&str>, cmd: &str| -> RemoteCommand {
+        let mut value = serde_json::json!({"cmd":cmd,"stream_id":HOST_CATALOG_ID,"subscribe":true});
+        if let Some(id) = id {
+            value["subscription_id"] = id.into();
+        }
+        serde_json::from_value(value).unwrap()
+    };
+    for id in [Some("retired"), Some("current"), None] {
+        let reply =
+            handle_host_stream_command(Some(&hub), "controller", &command(id, "read_stream"))
+                .await
+                .unwrap();
+        let wire = serde_json::to_value(&reply).unwrap();
+        assert_eq!(wire.get("subscription_id").and_then(|id| id.as_str()), id);
+        let _: RemoteResponse = serde_json::from_value(wire).unwrap();
+    }
+    // New clients are separate leases on one authenticated controller. Legacy
+    // cleanup targets only the legacy lease, even after new readers appeared.
+    for id in [Some("retired"), None, Some("retired")] {
+        handle_host_stream_command(Some(&hub), "controller", &command(id, "unsubscribe_stream"))
+            .await
+            .unwrap();
+        assert_eq!(hub.subscriber_count(HOST_CATALOG_ID), 1);
+    }
+    handle_host_stream_command(
+        Some(&hub),
+        "another-controller",
+        &command(Some("current"), "unsubscribe_stream"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(hub.subscriber_count(HOST_CATALOG_ID), 1);
+    handle_host_stream_command(
+        Some(&hub),
+        "controller",
+        &command(Some("current"), "unsubscribe_stream"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(hub.subscriber_count(HOST_CATALOG_ID), 0);
+    // The pre-upgrade payload still decodes, registers and releases normally.
+    handle_host_stream_command(Some(&hub), "legacy", &command(None, "read_stream"))
+        .await
+        .unwrap();
+    handle_host_stream_command(Some(&hub), "legacy", &command(None, "unsubscribe_stream"))
+        .await
+        .unwrap();
+    assert_eq!(hub.subscriber_count(HOST_CATALOG_ID), 0);
 }

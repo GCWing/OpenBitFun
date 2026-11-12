@@ -2842,6 +2842,8 @@ pub enum RemoteCommand {
     },
     UnsubscribeStream {
         stream_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subscription_id: Option<String>,
     },
     GetWorkspaceInfo,
     GetWorkspaceIcon {
@@ -3142,6 +3144,8 @@ pub enum RemoteResponse {
     StreamPage {
         #[serde(flatten)]
         page: host_stream::StreamPage,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subscription_id: Option<String>,
     },
     StreamUnsubscribed {
         stream_id: String,

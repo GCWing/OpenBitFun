@@ -77,6 +77,30 @@ class HostStreamTest {
         return received to job
     }
 
+    @Test fun finalHintDuringOpeningReadIsNotLost() = runTest {
+        val host = FakeHost("s1")
+        host.append("session-record", turnRecord("initial", 1))
+        val hints = MutableSharedFlow<StreamHint>()
+        val reads = object : HostStreamReads by host {
+            override suspend fun read(after: Long?, before: Long?, epoch: Long?): StreamPageWire {
+                val page = host.read(after, before, epoch)
+                if (after == null && before == null) {
+                    host.append("session-record", turnRecord("completed", 2))
+                    hints.emit(StreamHint("desktop-1", "s1", host.epoch, host.cursor))
+                }
+                return page
+            }
+        }
+        val received = mutableListOf<JsonObject>()
+        val job = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            hostStream("s1", "desktop-1", hints, emptyFlow(), reads, Channel(), { throw it }, {})
+                .collect { received += it }
+        }
+        runCurrent()
+        assertEquals(listOf("initial", "completed"), emittedTurnIds(received))
+        job.cancelAndJoin()
+    }
+
     @Test fun jsSafeHistoryCursorsDoNotMoveTheForwardCursor() = runTest {
         val ceiling = 1L shl 52
         val host = FakeHost("s1", pageSize = 2)

@@ -216,6 +216,26 @@ notification metadata.
     Lifecycle and approval events may update controls, but raw token/tool-body
     events cannot overwrite the canonical content owner.
 
+    Native subscription events carry a controller-local `subscriptionId` so a
+    retired reader cannot fail its replacement. Untagged legacy events remain
+    accepted. A failed live read retains the cursor and retries with capped
+    backoff even when no further hint arrives, including during older-page IO.
+    `retrying: true` errors keep the reader alive; `live: true` ready events
+    restore availability without completing an unrelated historical page.
+    These fields do not change the Relay or host wire protocol. Older-page
+    failures retain the live reader and discard only the incomplete page.
+
+    All stream readers install hint/reconnect listeners before the first read,
+    retaining invalidations that arrive while the initial page is in flight.
+    Host stream leases additionally negotiate an optional wire `subscription_id`:
+    `read_stream` offers a per-reader ID and a supporting host echoes it in the
+    `stream_page` envelope. Only an acknowledged ID may be sent with
+    `unsubscribe_stream`. The host removes that exact lease; a legacy unscoped
+    unsubscribe removes only the legacy lease. Readers connected to older hosts
+    omit cleanup and let the existing ten-minute lease expire, so delayed cleanup
+    cannot cancel a replacement. Hints remain coalesced per controller device.
+    The Relay still forwards opaque encrypted payloads and holds no stream state.
+
     `get_session_interaction_mailbox` returns the Runtime's revisioned pending
     questions and permissions on attach/reconnect. Apply it with a captured
     Surface scope and newer-event fence. Answers carry the owning session and

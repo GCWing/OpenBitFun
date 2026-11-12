@@ -1303,22 +1303,31 @@ pub async fn handle_host_stream_command(
                     crate::service_agent_runtime::CoreServiceAgentRuntime::load_relay_history_batch(&request.stream_id, before)
                 }).await;
                 return Some(match page {
-                    Ok(page) => RemoteResponse::StreamPage { page },
+                    Ok(page) => RemoteResponse::StreamPage {
+                        page,
+                        subscription_id: request.subscription_id.clone(),
+                    },
                     Err(error) => RemoteResponse::Error {
                         message: error.to_string(),
                     },
                 });
             }
             Some(match hub.read(source_device_id, request) {
-                Ok(page) => RemoteResponse::StreamPage { page },
+                Ok(page) => RemoteResponse::StreamPage {
+                    page,
+                    subscription_id: request.subscription_id.clone(),
+                },
                 Err(error) => RemoteResponse::Error {
                     message: error.to_string(),
                 },
             })
         }
-        RemoteCommand::UnsubscribeStream { stream_id } => {
+        RemoteCommand::UnsubscribeStream {
+            stream_id,
+            subscription_id,
+        } => {
             if let Some(hub) = hub {
-                hub.unsubscribe(source_device_id, stream_id);
+                hub.unsubscribe_scoped(source_device_id, stream_id, subscription_id.as_deref());
             }
             Some(RemoteResponse::StreamUnsubscribed {
                 stream_id: stream_id.clone(),
