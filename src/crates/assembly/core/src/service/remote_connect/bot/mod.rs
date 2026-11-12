@@ -420,3 +420,118 @@ pub(crate) async fn retire_remote_interactions<K: Eq + Hash>(
     let state = states.get_mut(chat_id).filter(|state| state.paired)?;
     command_router::retire_completed_remote_tools(state, target, tool_ids)
 }
+
+pub(crate) use openbitfun_services_integrations::remote_connect::bot::delivery::HeldReplies;
+
+/// Deliver a turn's final reply. The provider client already retried each
+/// part; whatever is still undelivered is held for the chat's next inbound
+/// message, and the chat is told (best effort) that the reply was not
+/// delivered and how to get it.
+pub(crate) async fn deliver_final_reply<K, F, Fut>(
+    held: &HeldReplies<K>,
+    chat: &K,
+    text: &str,
+    send: F,
+) where
+    K: Eq + Hash + Clone,
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
+    use openbitfun_services_integrations::remote_connect::bot::delivery::undelivered_remainder;
+    if text.trim().is_empty() {
+        return;
+    }
+    let Err(error) = send(text.to_string()).await else {
+        return;
+    };
+    log::warn!("Bot final reply was not delivered; holding it for the next message: {error}");
+    let dropped = held.hold(chat, undelivered_remainder(&error, text));
+    if dropped > 0 {
+        log::warn!("Bot held-reply backlog exceeded its bound; dropped {dropped} older reply(s)");
+    }
+    let notice = locale::strings_for(locale::current_bot_language().await).reply_undelivered;
+    if let Err(error) = send(notice.to_string()).await {
+        log::debug!("Bot undelivered-reply notice also failed: {error}");
+    }
+}
+
+/// Resend replies held for `chat`, oldest first. A reply that still fails is
+/// kept (from its undelivered part) together with every later one.
+pub(crate) async fn resend_held_replies<K, F, Fut>(held: &HeldReplies<K>, chat: &K, send: F)
+where
+    K: Eq + Hash + Clone,
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
+    use openbitfun_services_integrations::remote_connect::bot::delivery::undelivered_remainder;
+    if held.is_empty(chat) {
+        return;
+    }
+    let header = locale::strings_for(locale::current_bot_language().await).held_reply_resent;
+    let replies = held.take(chat);
+    for (index, reply) in replies.iter().enumerate() {
+        let message = format!("{header}\n\n{reply}");
+        if let Err(error) = send(message.clone()).await {
+            let remainder = undelivered_remainder(&error, &message);
+            let first = if remainder == message {
+                reply.clone()
+            } else {
+                remainder
+            };
+            let mut keep = vec![first];
+            keep.extend(replies[index + 1..].iter().cloned());
+            held.restore(chat, keep);
+            log::warn!("Bot held reply still could not be delivered: {error}");
+            return;
+        }
+    }
+    log::info!("Bot resent {} held reply(s)", replies.len());
+}
+
+#[cfg(test)]
+mod delivery_tests {
+    use super::*;
+    use openbitfun_services_integrations::remote_connect::bot::delivery::UndeliveredText;
+    use std::sync::Mutex as TestMutex;
+
+    #[tokio::test]
+    async fn undelivered_final_reply_is_held_and_resent_from_the_failed_part() {
+        let held = HeldReplies::<String>::default();
+        let chat = "chat".to_string();
+        let sent = TestMutex::new(Vec::<String>::new());
+        let fail = TestMutex::new(true);
+        let send = |text: String| {
+            let failing = *fail.lock().unwrap();
+            let outcome = if failing && text.starts_with("part one") {
+                sent.lock().unwrap().push("part one ".into());
+                Err(anyhow::Error::new(UndeliveredText {
+                    delivered_chunks: 1,
+                    remaining: vec!["part two".into()],
+                    cause: "HTTP 502".into(),
+                }))
+            } else if failing {
+                Err(anyhow::anyhow!("offline"))
+            } else {
+                sent.lock().unwrap().push(text);
+                Ok(())
+            };
+            async move { outcome }
+        };
+
+        deliver_final_reply(&held, &chat, "part one part two", &send).await;
+        assert!(!held.is_empty(&chat));
+        assert_eq!(*sent.lock().unwrap(), vec!["part one "]);
+
+        // Still offline: the reply stays held, unchanged.
+        resend_held_replies(&held, &chat, &send).await;
+        assert!(!held.is_empty(&chat));
+
+        *fail.lock().unwrap() = false;
+        resend_held_replies(&held, &chat, &send).await;
+        assert!(held.is_empty(&chat));
+        let sent = sent.lock().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert!(sent[1].ends_with("part two"));
+        assert!(!sent[1].contains("part one"));
+    }
+}
