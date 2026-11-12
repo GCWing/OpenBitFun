@@ -32,18 +32,22 @@ export interface SidebarDeviceSlot {
 export type SidebarDeviceLinkState = 'reconnecting' | 'starting';
 
 /**
- * How long a device that left presence keeps its section. A relay or routing
- * reconnect briefly reports an empty roster; dropping and re-adding every
- * section then makes the whole list jump.
+ * How long a device that left presence keeps its section, counted from when
+ * it was first seen offline. A relay or routing reconnect briefly reports an
+ * empty roster; dropping and re-adding every section then makes the whole
+ * list jump.
  */
 export const SIDEBAR_PRESENCE_GAP_GRACE_MS = 15_000;
 
-/** Last time each device was reported online, window-wide. */
-const lastSeenOnline = new Map<string, number>();
+/** Devices reported online since they last left presence, window-wide. */
+const seenOnline = new Set<string>();
+/** When each of those devices was first seen offline, window-wide. */
+const offlineSince = new Map<string, number>();
 
 /** Tests only. */
 export function resetSidebarPresenceGapsForTest(): void {
-  lastSeenOnline.clear();
+  seenOnline.clear();
+  offlineSince.clear();
 }
 
 interface PresenceGaps {
@@ -58,14 +62,22 @@ function presenceGaps(devices: ReadonlyArray<{ device_id: string; online?: boole
   let nextExpiry: number | null = null;
   for (const device of devices) {
     if (device.online) {
-      lastSeenOnline.set(device.device_id, now);
+      seenOnline.add(device.device_id);
+      offlineSince.delete(device.device_id);
       continue;
     }
-    const seen = lastSeenOnline.get(device.device_id);
-    if (seen === undefined) continue;
-    const expiry = seen + SIDEBAR_PRESENCE_GAP_GRACE_MS;
+    if (!seenOnline.has(device.device_id)) continue;
+    // The grace starts when the device drops, not at the last roster that
+    // happened to list it online: that one may be much older.
+    let since = offlineSince.get(device.device_id);
+    if (since === undefined) {
+      since = now;
+      offlineSince.set(device.device_id, since);
+    }
+    const expiry = since + SIDEBAR_PRESENCE_GAP_GRACE_MS;
     if (expiry <= now) {
-      lastSeenOnline.delete(device.device_id);
+      seenOnline.delete(device.device_id);
+      offlineSince.delete(device.device_id);
       continue;
     }
     ids.add(device.device_id);
