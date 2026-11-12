@@ -283,7 +283,13 @@ test('connection state names the cause and needs two missed pings before blaming
   assert.deepEqual(deriveConnectionState({ ...base, missedPings: 1 }), { health: 'connected', issue: null }, 'one lost ping is noise');
   assert.deepEqual(deriveConnectionState({ ...base, missedPings: 2 }).issue, { kind: 'unreachable' });
   assert.deepEqual(deriveConnectionState({ ...base, missedPings: 2, relayStatus: 'disconnected' }).issue, { kind: 'relay' });
-  assert.deepEqual(deriveConnectionState({ ...base, browserOnline: false }).issue, { kind: 'offline' }, 'no network is reported at once');
+  assert.deepEqual(deriveConnectionState({ ...base, browserOnline: false }), { health: 'connected', issue: null },
+    'a wrong navigator.onLine does not hide a desktop that answers');
+  assert.deepEqual(deriveConnectionState({ ...base, browserOnline: false, missedPings: 1 }).issue, { kind: 'offline' },
+    'one missed ping is enough evidence for no network');
+  assert.deepEqual(deriveConnectionState({ ...base, browserOnline: false, relayStatus: 'disconnected' }).issue, { kind: 'offline' });
+  assert.deepEqual(deriveConnectionState({ ...base, browserOnline: false, answered: false }).issue, { kind: 'offline' },
+    'without an answer there are no working pings to trust');
   assert.deepEqual(deriveConnectionState({ ...base, presence: { online: false, lastSeenAt: 90 }, missedPings: 1 }).issue,
     { kind: 'host-offline', lastSeenAt: 90 });
   assert.deepEqual(deriveConnectionState({ ...base, presence: { online: false, lastSeenAt: 90 } }), { health: 'connected', issue: null },
@@ -369,4 +375,36 @@ test('a desktop that comes back online is not shown as unreachable before it ans
   manager.signal('host-online');
   await manager.answer();
   assert.deepEqual(last(), { health: 'connected', issue: null });
+});
+
+test('a recovery signal leaves an in-flight ping to answer and re-asks at once if it fails', async t => {
+  const { manager, states, last } = await connectionHealthHarness(t);
+  assert.equal(manager.pings.length, 1);
+  manager.signal('visible'); manager.signal('online'); manager.signal('relay-reconnect');
+  assert.equal(manager.pings.length, 1, 'no overlapping pings discard the one in flight');
+  const before = states.length;
+  manager.pings[0].reject(new Error('Relay connection changed; delivery outcome is unknown'));
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(manager.pings.length, 2, 'a ping that failed across a recovery is retried at once');
+  assert.equal(states.length, before, 'and is not counted as a miss');
+  await manager.answer();
+  assert.deepEqual(last(), { health: 'connected', issue: null });
+});
+
+test('a wrong "offline" from the browser needs a missed ping before it hides a desktop that answers', async t => {
+  const hadWindow = 'window' in globalThis;
+  globalThis.window = new EventTarget();
+  Object.defineProperty(globalThis.navigator, 'onLine', { value: true, configurable: true });
+  t.after(() => {
+    delete globalThis.navigator.onLine;
+    if (!hadWindow) delete globalThis.window;
+  });
+  const { manager, last } = await connectionHealthHarness(t);
+  await manager.answer();
+  Object.defineProperty(globalThis.navigator, 'onLine', { value: false, configurable: true });
+  globalThis.window.dispatchEvent(new Event('offline'));
+  assert.deepEqual(last(), { health: 'connected', issue: null }, 'working pings outweigh navigator.onLine');
+  assert.equal(manager.pings.length, 2, 'the desktop is asked at once');
+  await manager.answer(false);
+  assert.deepEqual(last(), { health: 'unreachable', issue: 'offline' }, 'a missed ping confirms no network');
 });

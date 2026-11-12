@@ -19,10 +19,15 @@ export interface ConnectionFacts {
  * wins: no network, then a desktop the Relay lists as offline (only while it
  * also misses pings, since a stale listing must not hide a reachable host),
  * then a Relay reconnect, then a desktop that is listed but does not answer.
+ *
+ * `navigator.onLine` can be wrong (captive portals, VPNs, some WebViews), so
+ * "no network" also needs evidence before it hides a desktop that answers:
+ * a missed ping, a Relay that is not connected, or no answer yet.
  */
 export function deriveConnectionState(facts: ConnectionFacts): { health: ConnectionHealth; issue: ConnectionIssue | null } {
   let issue: ConnectionIssue | null = null;
-  if (!facts.browserOnline) {
+  const pingsWork = facts.answered && facts.missedPings === 0 && facts.relayStatus === 'connected';
+  if (!facts.browserOnline && !pingsWork) {
     issue = { kind: 'offline' };
   } else if (facts.presence?.online === false && facts.missedPings > 0) {
     issue = { kind: 'host-offline', lastSeenAt: facts.presence.lastSeenAt };

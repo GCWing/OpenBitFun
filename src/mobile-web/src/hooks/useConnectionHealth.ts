@@ -47,6 +47,10 @@ export function useConnectionHealth(sessionMgr: RemoteSessionManager | null) {
     let loopGeneration = 0;
     let missedPings = 0;
     let answered = false;
+    /** Generation of the ping awaiting an answer, if any. */
+    let inFlight: number | null = null;
+    /** A recovery signal arrived while a ping was in flight. */
+    let recheck = false;
 
     if (!sessionMgr) {
       setConnectionHealth('unpaired');
@@ -79,33 +83,49 @@ export function useConnectionHealth(sessionMgr: RemoteSessionManager | null) {
 
     const loop = async (generation: number) => {
       if (cancelled || generation !== loopGeneration) return;
+      inFlight = generation;
+      recheck = false;
+      let outcome: 'answered' | 'missed' | 'ownership';
       try {
         await pingWithTimeout(sessionMgr, PING_TIMEOUT);
-        if (cancelled || generation !== loopGeneration) return;
+        outcome = 'answered';
+      } catch (error: unknown) {
+        outcome = isRemoteControlTargetChangedError(error) || isAccountIdentityChangedError(error)
+          ? 'ownership'
+          : 'missed';
+      } finally {
+        if (inFlight === generation) inFlight = null;
+      }
+      if (cancelled || generation !== loopGeneration) return;
+      if (outcome === 'answered') {
         missedPings = 0;
         answered = true;
         evaluate();
         schedule(generation, PING_INTERVAL);
-      } catch (error: unknown) {
-        if (cancelled || generation !== loopGeneration) return;
-        if (
-          isRemoteControlTargetChangedError(error)
-          || isAccountIdentityChangedError(error)
-        ) {
-          setConnectionHealth('checking');
-          schedule(generation, OWNERSHIP_RETRY_DELAY);
-          return;
-        }
-        // A single miss keeps the last answered state; the second one reports.
-        missedPings += 1;
-        evaluate();
-        schedule(generation, PING_INTERVAL);
+        return;
       }
+      if (outcome === 'ownership') {
+        setConnectionHealth('checking');
+        schedule(generation, OWNERSHIP_RETRY_DELAY);
+        return;
+      }
+      if (recheck) {
+        // This ping was sent before the recovery; ask again at once instead
+        // of counting a miss the recovered path may not have caused.
+        schedule(generation, 0);
+        return;
+      }
+      // A single miss keeps the last answered state; the second one reports.
+      missedPings += 1;
+      evaluate();
+      schedule(generation, PING_INTERVAL);
     };
 
-    /** Ping now without hiding the current state behind "checking". */
+    /** Ping now without hiding the current state behind "checking". A ping
+     * already in flight is left to answer; a failed one is retried at once. */
     const pingNow = () => {
       if (cancelled) return;
+      if (inFlight === loopGeneration) { recheck = true; return; }
       loopGeneration += 1;
       if (timerRef.current) clearTimeout(timerRef.current);
       void loop(loopGeneration);
@@ -133,7 +153,9 @@ export function useConnectionHealth(sessionMgr: RemoteSessionManager | null) {
       lastHostOnline = online;
       evaluate();
     };
-    const onOffline = () => evaluate();
+    // "No network" waits for evidence; ask the desktop now rather than at the
+    // next interval. A ping already in flight is that evidence, so it counts.
+    const onOffline = () => { evaluate(); if (inFlight !== loopGeneration) pingNow(); };
     const unlisten = sessionMgr.onControlTargetChange(restart);
     const stopRecovery = sessionMgr.onRecoverySignal(pingNow);
     const stopRelayStatus = sessionMgr.onRelayStatus(onRelayStatus);
