@@ -38,6 +38,51 @@ const DEFAULT_MAX_EVENTS_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_EVENT_BYTES: usize = 96 * 1024;
 const MAX_STATUS_PAGE_BYTES: u64 = 128 * 1024;
 const MAX_STATUS_PAGE_EVENTS: usize = 512;
+
+/// Wire marker that tells a controller the job does not exist on this target,
+/// as opposed to a transport failure. Keep in sync with the controller's
+/// `DISPATCH_JOB_NOT_FOUND_MARKER`. The legacy text follows the marker so
+/// controllers that predate it still recognize the condition.
+pub(crate) const DISPATCH_JOB_NOT_FOUND_MARKER: &str = "[dispatch_job_not_found]";
+
+/// The job directory, or its commit marker, does not exist on this target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DispatchJobNotFound {
+    pub(crate) job_id: String,
+    /// The directory exists but the submit never committed its record.
+    pub(crate) uncommitted: bool,
+}
+
+impl std::fmt::Display for DispatchJobNotFound {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.uncommitted {
+            write!(
+                formatter,
+                "{DISPATCH_JOB_NOT_FOUND_MARKER} dispatch job is not committed: {}",
+                self.job_id
+            )
+        } else {
+            write!(
+                formatter,
+                "{DISPATCH_JOB_NOT_FOUND_MARKER} dispatch job not found: {}",
+                self.job_id
+            )
+        }
+    }
+}
+
+fn job_lookup_error(error: std::io::Error, job_id: &str, uncommitted: bool) -> anyhow::Error {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        anyhow::Error::new(error).context(DispatchJobNotFound {
+            job_id: job_id.to_string(),
+            uncommitted,
+        })
+    } else if uncommitted {
+        anyhow::Error::new(error).context(format!("inspect dispatch job commit marker: {job_id}"))
+    } else {
+        anyhow::Error::new(error).context(format!("inspect dispatch job directory: {job_id}"))
+    }
+}
 const MAX_PENDING_PERMISSION_BYTES: u64 = 48 * 1024;
 const MAX_PENDING_PERMISSIONS_BYTES: u64 = 64 * 1024;
 const MAX_PENDING_PERMISSIONS: usize = 64;
@@ -1696,14 +1741,14 @@ impl DispatchStore {
 
     fn existing_job_dir(&self, job_id: &str) -> Result<PathBuf> {
         let path = self.job_dir(job_id)?;
-        let metadata = fs::symlink_metadata(&path)
-            .with_context(|| format!("dispatch job not found: {job_id}"))?;
+        let metadata =
+            fs::symlink_metadata(&path).map_err(|error| job_lookup_error(error, job_id, false))?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() {
             bail!("dispatch job path is not a private directory: {job_id}");
         }
         let record_path = path.join(JOB_RECORD_FILE);
         let record_metadata = fs::symlink_metadata(&record_path)
-            .with_context(|| format!("dispatch job is not committed: {job_id}"))?;
+            .map_err(|error| job_lookup_error(error, job_id, true))?;
         if record_metadata.file_type().is_symlink() || !record_metadata.is_file() {
             bail!("dispatch job commit marker is not a regular file: {job_id}");
         }
@@ -2265,6 +2310,37 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = DispatchStore::open(dir.path().join("dispatch")).expect("store");
         (dir, store)
+    }
+
+    #[test]
+    fn unknown_job_reports_a_typed_not_found_with_the_legacy_text() {
+        let (_dir, store) = store();
+        let error = store.load_state("job-missing").unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<DispatchJobNotFound>(),
+            Some(&DispatchJobNotFound {
+                job_id: "job-missing".into(),
+                uncommitted: false,
+            })
+        );
+        let wire = format!("{error:#}");
+        // Current controllers key on the marker; older ones on the text after it.
+        assert!(wire.starts_with(DISPATCH_JOB_NOT_FOUND_MARKER), "{wire}");
+        assert!(
+            wire.contains("dispatch job not found: job-missing"),
+            "{wire}"
+        );
+
+        fs::create_dir_all(store.root.join("jobs").join("job-staged")).unwrap();
+        let error = store.load_state("job-staged").unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<DispatchJobNotFound>(),
+            Some(&DispatchJobNotFound {
+                job_id: "job-staged".into(),
+                uncommitted: true,
+            })
+        );
+        assert!(format!("{error:#}").contains("dispatch job is not committed: job-staged"));
     }
 
     fn permission_request(job_id: &str) -> PermissionRequest {

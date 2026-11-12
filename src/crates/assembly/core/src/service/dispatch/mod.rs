@@ -18,6 +18,7 @@ mod controller;
 mod device_controller;
 #[cfg(feature = "agent-runtime")]
 mod preparation;
+mod status_error;
 mod target;
 
 use std::path::{Path, PathBuf};
@@ -77,6 +78,10 @@ pub use device_controller::{
 pub use openbitfun_services_core::dispatch_contract::{
     DispatchAccountDaemonIdentity, DispatchAccountDaemonProvisionRequest,
     DISPATCH_ACCOUNT_DAEMON_PROVISIONING_SCHEMA_VERSION,
+};
+pub use status_error::{
+    classify_target_status_error, is_target_job_not_found_message, DispatchJobNotFoundOnTarget,
+    DISPATCH_JOB_NOT_FOUND_MARKER,
 };
 pub use target::{DispatchTarget, DispatchTargetRequest, DispatchWorkspaceDelivery};
 
