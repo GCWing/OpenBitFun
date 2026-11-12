@@ -9,7 +9,7 @@ import sharp from 'sharp';
 import { expect, it } from 'vitest';
 import { VisualSkinRuntime } from './runtime';
 import { VisualSkinPackageParser } from './parser';
-import { browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
+import { BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, BROWSER_FIXTURE_TEST_TIMEOUT_MS, browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
 
 const browser = process.env.OPENBITFUN_TEST_BROWSER ?? ['C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium'].find(existsSync);
 it.skipIf(!browser).each(['light','dark'])('keeps artwork clear behind glyphs and applies the shadow without changing boxes in %s', async mode => {
@@ -35,7 +35,7 @@ it.skipIf(!browser).each(['light','dark'])('keeps artwork clear behind glyphs an
     document.documentElement.removeAttribute('data-openbitfun-skin-id');result.original=measure();document.documentElement.dataset.openbitfunSkinId='local';document.getElementById('result').textContent=JSON.stringify(result);
     </script></body></html>`);
     const args=[...browserFixtureFlags(), '--headless=new','--disable-gpu','--hide-scrollbars','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--window-size=500,400','--force-device-scale-factor=1','--virtual-time-budget=600',`--screenshot=${shot}`,'--dump-dom',pathToFileURL(file).href];
-    const out=execFileSync(browser!,args,{encoding:'utf8',windowsHide:true,timeout:20000,stdio:'pipe'});
+    const out=execFileSync(browser!,args,{encoding:'utf8',windowsHide:true,timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS,stdio:'pipe'});
     const result=JSON.parse(out.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
     expect(result.before).toEqual(result.original);expect(result.selectedShadow).toBe('none');expect(result.outsideTarget).not.toBe('reader');
     const {data,info}=await sharp(readFileSync(shot)).removeAlpha().raw().toBuffer({resolveWithObject:true});
@@ -47,4 +47,4 @@ it.skipIf(!browser).each(['light','dark'])('keeps artwork clear behind glyphs an
     expect(pixel(93,110)).toEqual([200,40,80]); // no plate or box-shadow around the reader
     const glyphs=[];for(let y=80;y<100;y++)for(let x=100;x<220;x++)glyphs.push(pixel(x,y));expect(glyphs.some(p=>p.every(v=>v>230))).toBe(true);
   }finally{runtime.dispose();document.body.innerHTML='';document.head.querySelectorAll('style').forEach(n=>n.remove());document.documentElement.removeAttribute('data-color-scheme');await cleanupBrowserFixture(scratch);}
-},30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);

@@ -8,7 +8,7 @@ import { compile } from 'sass';
 import { expect, it } from 'vitest';
 import { VisualSkinPackageParser } from './parser';
 import { VisualSkinRuntime } from './runtime';
-import { browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
+import { BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, BROWSER_FIXTURE_TEST_TIMEOUT_MS, browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
 import type { VisualSkinPackage } from './types';
 
 const browser = process.env.OPENBITFUN_TEST_BROWSER ?? ['C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium'].find(existsSync);
@@ -60,7 +60,7 @@ it.skipIf(!browser)('reveals chat artwork while loading, preserving opaque defau
       document.getElementById('result').textContent=JSON.stringify(results);
     </script></body>`;
     const file = resolve(scratch, 'history.html'); writeFileSync(file, html);
-    const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--no-first-run', `--user-data-dir=${resolve(scratch, 'profile')}`, '--dump-dom', pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
+    const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--no-first-run', `--user-data-dir=${resolve(scratch, 'profile')}`, '--dump-dom', pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, stdio: 'pipe' });
     const results = JSON.parse(output.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
     expect(results).toHaveLength(cases.length);
     for (const result of results) {
@@ -75,4 +75,4 @@ it.skipIf(!browser)('reveals chat artwork while loading, preserving opaque defau
     document.documentElement.removeAttribute('data-color-scheme');
     await cleanupBrowserFixture(scratch);
   }
-}, 30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);

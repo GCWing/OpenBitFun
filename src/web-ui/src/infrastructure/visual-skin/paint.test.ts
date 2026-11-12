@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
+import { BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, BROWSER_FIXTURE_TEST_TIMEOUT_MS, browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
 import { readFileSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -119,7 +119,7 @@ describe('skin paint ownership', () => {
       </script></body></html>`;
       const path = resolve(scratch, 'paint.html');
       writeFileSync(path, html);
-      const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--no-first-run', '--disable-background-networking', '--disable-extensions', `--user-data-dir=${resolve(scratch, 'profile')}`, '--dump-dom', pathToFileURL(path).href], { windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
+      const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--no-first-run', '--disable-background-networking', '--disable-extensions', `--user-data-dir=${resolve(scratch, 'profile')}`, '--dump-dom', pathToFileURL(path).href], { windowsHide: true, encoding: 'utf8', timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, stdio: 'pipe' });
       const result = JSON.parse(output.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
       const canvas = 'rgba(0, 0, 0, 0)';
       expect(result).toEqual({ editor:'rgb(243, 237, 225)', monaco:canvas, group:canvas, widget:'rgb(10, 20, 30)', other:'rgb(10, 20, 30)', position:'absolute', zIndex:'7', backdrop:'auto', scrim:'auto', filter:owner === 'local' ? 'none' : 'blur(8px)', transcript:owner === 'local' ? canvas : 'rgb(10, 20, 30)',card:'rgb(10, 20, 30)',restored:'rgba(0, 0, 0, 0)' });
@@ -127,5 +127,5 @@ describe('skin paint ownership', () => {
       await runtime.remove('paint');
       await cleanupBrowserFixture(scratch);
     }
-  }, 30000);
+  }, BROWSER_FIXTURE_TEST_TIMEOUT_MS);
 });

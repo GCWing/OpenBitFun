@@ -1,4 +1,4 @@
-import { browserFixtureFlags, cleanupBrowserFixture } from './browser-fixture.test-support';
+import { BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, BROWSER_FIXTURE_TEST_TIMEOUT_MS, browserFixtureFlags, cleanupBrowserFixture } from './browser-fixture.test-support';
 // @vitest-environment jsdom
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -135,7 +135,7 @@ it.skipIf(!browser).each([
       }catch(error){document.getElementById('result').textContent=JSON.stringify({error:String(error),stack:error.stack});}})();
     </script></body></html>`);
     // Explicit input capabilities exercise both media-query branches on every host.
-    const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new','--disable-gpu','--no-first-run',`--blink-settings=primaryPointerType=${pointer},primaryHoverType=${hover}`,`--user-data-dir=${resolve(scratch,'profile')}`,'--virtual-time-budget=500','--dump-dom',pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
+    const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new','--disable-gpu','--no-first-run',`--blink-settings=primaryPointerType=${pointer},primaryHoverType=${hover}`,`--user-data-dir=${resolve(scratch,'profile')}`,'--virtual-time-budget=500','--dump-dom',pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, stdio: 'pipe' });
     const encoded = output.match(/<pre id="result">(.*?)<\/pre>/s)![1];
     const results = JSON.parse(encoded);
     expect(Array.isArray(results), JSON.stringify(results)).toBe(true);
@@ -152,7 +152,7 @@ it.skipIf(!browser).each([
       else expect(results[index + 1].paint.item[2]).toBe(results[index].paint.item[2]);
     }
   } finally { await cleanupBrowserFixture(scratch); }
-}, 30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);
 
 it.skipIf(!browser)('composes image alpha on the real Button paint layer without fading content or changing geometry', async () => {
   const published = await import(/* @vite-ignore */ pathToFileURL(resolve('../../design-system/packages/ui/dist/index.js')).href);
@@ -176,7 +176,7 @@ it.skipIf(!browser)('composes image alpha on the real Button paint layer without
       const track=document.querySelector('[data-openbitfun-part="track"]'),input=document.querySelector('input');result.checked=getComputedStyle(track).backgroundPosition;input.checked=false;result.unchecked=getComputedStyle(track).backgroundPosition;
       document.documentElement.removeAttribute('data-openbitfun-skin-id');result.original=measure();document.documentElement.setAttribute('data-openbitfun-skin-id','material');document.getElementById('result').textContent=JSON.stringify(result);
     </script></body></html>`);
-    const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new','--disable-gpu','--hide-scrollbars','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--window-size=400,300','--force-device-scale-factor=1','--virtual-time-budget=500',`--screenshot=${screenshot}`,'--dump-dom',pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
+    const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new','--disable-gpu','--hide-scrollbars','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--window-size=400,300','--force-device-scale-factor=1','--virtual-time-budget=500',`--screenshot=${screenshot}`,'--dump-dom',pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, stdio: 'pipe' });
     const result = JSON.parse(output.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
     expect(result.paint).toEqual(result.original); expect(result.opacity).toBe('1'); expect(result.textOpacity).toBe('1'); expect(result.textColor).toBe('rgb(204, 0, 0)'); expect(result.image).toContain('linear-gradient');
     expect(result.checked).toBe('60% 60%'); expect(result.unchecked).toBe('10% 10%');
@@ -184,4 +184,4 @@ it.skipIf(!browser)('composes image alpha on the real Button paint layer without
     const pixel = [...data.subarray((26 * info.width + 100) * info.channels, (26 * info.width + 100) * info.channels + 3)];
     pixel.forEach((value, i) => expect(Math.abs(value - [191,191,255][i]), JSON.stringify({pixel,result})).toBeLessThanOrEqual(2));
   } finally { await cleanupBrowserFixture(scratch); }
-}, 30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);

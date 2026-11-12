@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { browserFixtureFlags, cleanupBrowserFixture } from './browser-fixture.test-support';
+import { BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, BROWSER_FIXTURE_TEST_TIMEOUT_MS, browserFixtureFlags, cleanupBrowserFixture } from './browser-fixture.test-support';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -76,7 +76,7 @@ it.skipIf(!browser).each([
       '--window-size=1000,1100', '--virtual-time-budget=200',
       `--user-data-dir=${resolve(scratch, 'profile')}`, `--screenshot=${screenshot}`,
       '--dump-dom', pathToFileURL(html).href,
-    ], { encoding: 'utf8', windowsHide: true, timeout: 20000, stdio: 'pipe' });
+    ], { encoding: 'utf8', windowsHide: true, timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, stdio: 'pipe' });
     const result = JSON.parse(output.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
     expect(result.wrapped).toEqual(result.original);
     expect(result.skinned).toEqual(result.original);
@@ -99,4 +99,4 @@ it.skipIf(!browser).each([
   } finally {
     await cleanupBrowserFixture(scratch);
   }
-}, 30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);
