@@ -876,6 +876,7 @@ async function sendMessageInternal(
 }
 
 export async function cancelSessionTask(context: FlowChatContext, requestedSessionId?: string): Promise<boolean> {
+  let driverId: string | undefined;
   try {
     const state = context.flowChatStore.getState();
     const sessionId = requestedSessionId || state.activeSessionId;
@@ -886,9 +887,17 @@ export async function cancelSessionTask(context: FlowChatContext, requestedSessi
     }
 
     const session = state.sessions.get(sessionId);
-    return await driverForSession(sessionId, session).cancel(context, sessionId);
+    const driver = driverForSession(sessionId, session);
+    driverId = driver.id;
+    return await driver.cancel(context, sessionId);
   } catch (error) {
     log.error('Failed to cancel current task', error);
+    // A dispatch stop crosses the network: after its retries the driver
+    // reports, in translated copy, that the stop was not confirmed. Silence
+    // would leave the user believing the job stopped (or that it did not).
+    if (driverId === 'dispatch' && error instanceof Error && error.message) {
+      notificationService.error(error.message, { duration: 6000 });
+    }
     return false;
   }
 }
