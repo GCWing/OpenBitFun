@@ -45,7 +45,15 @@ export function peerHostInvokeIdempotencyKey(
 }
 
 /**
- * Coalesces concurrent retries and briefly caches the completed result. The
+ * How long a settled submission stays replayable on this host. It must outlive
+ * the controller's whole retry budget for one idempotent submission (five
+ * attempts of up to 120 s plus backoff, about 10.2 minutes); a shorter TTL let
+ * a late retry miss the cache and run into the Runtime's duplicate-turn refusal.
+ */
+export const PEER_HOST_INVOKE_IDEMPOTENCY_TTL_MS = 15 * 60_000;
+
+/**
+ * Coalesces concurrent retries and caches the completed result. The
  * controller can therefore replay the same turn submission after an
  * ambiguous Relay failure without executing the prompt twice on the host.
  */
@@ -53,7 +61,7 @@ export class PeerHostInvokeIdempotencyCache {
   private readonly entries = new Map<string, CachedExecution>();
 
   constructor(
-    private readonly ttlMs = 2 * 60_000,
+    private readonly ttlMs = PEER_HOST_INVOKE_IDEMPOTENCY_TTL_MS,
     private readonly maxEntries = 128,
     private readonly now: () => number = Date.now,
   ) {}

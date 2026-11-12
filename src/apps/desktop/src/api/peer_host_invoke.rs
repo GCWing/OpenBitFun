@@ -449,13 +449,46 @@ pub async fn dispatch(command: &str, args: Value) -> HostInvokeBridgeResult {
                     }
                 }
             }
-            result
+            accept_duplicate_dialog_submission(command, result)
         }
         Err(error) => HostInvokeBridgeResult {
             ok: false,
             value: None,
             error: Some(error),
         },
+    }
+}
+
+/// Stable prefix of the Runtime's refusal of a Turn id it already admitted
+/// (`DIALOG_TURN_ID_ALREADY_SETTLED_MESSAGE` in the core scheduler).
+const DIALOG_TURN_ALREADY_ADMITTED: &str = "Dialog turn ID is already active or completed";
+
+/// `start_dialog_turn` carries a controller-generated `(sessionId, turnId)`.
+/// When the Runtime refuses that id as already admitted, an earlier attempt of
+/// the same submission is running or finished (typically a late controller
+/// retry that missed the webview's outcome cache), so report it as accepted.
+fn accept_duplicate_dialog_submission(
+    command: &str,
+    result: HostInvokeBridgeResult,
+) -> HostInvokeBridgeResult {
+    let duplicate = command == "start_dialog_turn"
+        && !result.ok
+        && result
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains(DIALOG_TURN_ALREADY_ADMITTED));
+    if !duplicate {
+        return result;
+    }
+    log::info!("Peer dialog submission was already admitted; reporting it as accepted");
+    HostInvokeBridgeResult {
+        ok: true,
+        value: Some(serde_json::json!({
+            "success": true,
+            "message": "Dialog turn already accepted",
+            "duplicate": true,
+        })),
+        error: None,
     }
 }
 
@@ -936,6 +969,30 @@ mod tests {
         retain_online_in_state(&mut state, RelayRoute::Official, &HashSet::new());
         assert!(state.controllers.is_empty());
         assert!(state.permission_request_ids.contains("request-1"));
+    }
+
+    #[test]
+    fn a_retry_of_an_admitted_dialog_turn_is_reported_as_accepted() {
+        let refused = |error: &str| HostInvokeBridgeResult {
+            ok: false,
+            value: None,
+            error: Some(error.to_string()),
+        };
+        let duplicate = refused(
+            "Failed to start dialog turn: Dialog turn ID is already active or completed: session_id=s, turn_id=t",
+        );
+        let accepted = accept_duplicate_dialog_submission("start_dialog_turn", duplicate.clone());
+        assert!(accepted.ok);
+        assert_eq!(
+            accepted.value.as_ref().and_then(|v| v.get("duplicate")),
+            Some(&Value::Bool(true))
+        );
+        // Other commands and other failures keep their error.
+        assert!(!accept_duplicate_dialog_submission("delete_session", duplicate).ok);
+        assert!(
+            !accept_duplicate_dialog_submission("start_dialog_turn", refused("Session not found"))
+                .ok
+        );
     }
 
     #[test]

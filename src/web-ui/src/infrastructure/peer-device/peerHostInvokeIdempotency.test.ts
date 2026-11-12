@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  PEER_IDEMPOTENT_MUTATION_MAX_RETRIES,
+  PEER_MUTATION_REQUEST_TIMEOUT_MS,
+  PEER_RETRY_BASE_DELAY_MS,
+} from '@/infrastructure/api/adapters/peer-device-adapter';
+import {
+  PEER_HOST_INVOKE_IDEMPOTENCY_TTL_MS,
   PeerHostInvokeIdempotencyCache,
   peerHostInvokeIdempotencyKey,
   type PeerHostInvokeExecutionResult,
@@ -99,5 +105,24 @@ describe('PeerHostInvokeIdempotencyCache', () => {
     )).resolves.toEqual(secondResult);
     expect(firstOperation).toHaveBeenCalledTimes(1);
     expect(secondOperation).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a submission replayable for the controller\'s whole retry budget', async () => {
+    let backoffMs = 0;
+    for (let attempt = 0; attempt < PEER_IDEMPOTENT_MUTATION_MAX_RETRIES; attempt += 1) {
+      backoffMs += PEER_RETRY_BASE_DELAY_MS * (2 ** attempt);
+    }
+    const controllerBudgetMs =
+      (PEER_IDEMPOTENT_MUTATION_MAX_RETRIES + 1) * PEER_MUTATION_REQUEST_TIMEOUT_MS + backoffMs;
+    expect(PEER_HOST_INVOKE_IDEMPOTENCY_TTL_MS).toBeGreaterThan(controllerBudgetMs);
+
+    let now = 0;
+    const cache = new PeerHostInvokeIdempotencyCache(undefined, 128, () => now);
+    const first = vi.fn(async () => successResult());
+    const late = vi.fn(async () => successResult());
+    await cache.execute('start_dialog_turn', startTurnArgs(), first);
+    now += controllerBudgetMs;
+    await cache.execute('start_dialog_turn', startTurnArgs(), late);
+    expect(late).not.toHaveBeenCalled();
   });
 });

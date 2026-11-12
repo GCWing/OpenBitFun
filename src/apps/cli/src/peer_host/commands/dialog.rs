@@ -16,9 +16,13 @@ use openbitfun_runtime_ports::{
 use crate::peer_host::args::{get_string, optional_string, request_value};
 use crate::peer_host::state::{PeerHostState, PeerTurnKey};
 
-/// How long a settled submission stays replayable. The controller's own
-/// bounded retry window is far shorter; this only has to outlive it.
-const DIALOG_SUBMISSION_TTL: Duration = Duration::from_secs(120);
+/// How long a settled submission stays replayable.
+///
+/// It must outlive the controller's whole retry budget for one idempotent
+/// submission: five attempts of up to 120 s each plus backoff, about 10.2
+/// minutes. A shorter TTL lets a late retry miss the cache and reach the
+/// Runtime, which then refuses the already-running Turn id.
+const DIALOG_SUBMISSION_TTL: Duration = Duration::from_secs(15 * 60);
 const MAX_CACHED_DIALOG_SUBMISSIONS: usize = 128;
 
 type DialogSubmissionOutcome = Arc<AsyncMutex<Option<Result<Value, String>>>>;
@@ -147,9 +151,35 @@ pub(crate) async fn start_dialog_turn(
     if let Some(settled) = outcome.as_ref() {
         return settled.clone();
     }
-    let result = submit_dialog_turn(state, args).await;
+    let result = accept_duplicate_submission(submit_dialog_turn(state, args).await);
     *outcome = Some(result.clone());
     result
+}
+
+/// Stable prefix of the Runtime's refusal of a Turn id it already admitted
+/// (`DIALOG_TURN_ID_ALREADY_SETTLED_MESSAGE` in the core scheduler).
+const DIALOG_TURN_ALREADY_ADMITTED: &str = "Dialog turn ID is already active or completed";
+/// This host's own tracker refusal for a Turn id it is already running.
+const PEER_TURN_ALREADY_TRACKED: &str = "Peer turn is already tracked";
+
+/// A refusal of the same `(sessionId, turnId)` means an earlier attempt of
+/// this submission was admitted, typically when a late controller retry missed
+/// the outcome cache. Report it as accepted instead of failing a running Turn.
+fn accept_duplicate_submission(result: Result<Value, String>) -> Result<Value, String> {
+    match result {
+        Err(error)
+            if error.contains(DIALOG_TURN_ALREADY_ADMITTED)
+                || error.contains(PEER_TURN_ALREADY_TRACKED) =>
+        {
+            tracing::info!("Peer dialog submission was already admitted; reporting it as accepted");
+            Ok(json!({
+                "success": true,
+                "message": "Dialog turn already accepted",
+                "duplicate": true,
+            }))
+        }
+        other => other,
+    }
 }
 
 async fn submit_dialog_turn(state: &PeerHostState, args: &Value) -> Result<Value, String> {
@@ -371,7 +401,38 @@ pub(crate) async fn submit_user_answers(
 mod tests {
     use serde_json::json;
 
-    use super::{dialog_submission_slot, parse_user_answer_submission, peer_dialog_metadata};
+    use super::{
+        accept_duplicate_submission, dialog_submission_slot, parse_user_answer_submission,
+        peer_dialog_metadata, DIALOG_SUBMISSION_TTL,
+    };
+
+    #[test]
+    fn submission_cache_outlives_the_controller_retry_budget() {
+        // Five 120 s attempts plus 0.5 + 1 + 2 + 4 s of backoff.
+        let controller_budget = std::time::Duration::from_millis(5 * 120_000 + 7_500);
+        assert!(DIALOG_SUBMISSION_TTL > controller_budget);
+    }
+
+    #[test]
+    fn a_retry_of_an_admitted_turn_is_reported_as_accepted() {
+        for error in [
+            "Failed to start dialog turn: Dialog turn ID is already active or completed: session_id=s, turn_id=t",
+            "Peer turn is already tracked",
+        ] {
+            let accepted = accept_duplicate_submission(Err(error.to_string()))
+                .expect("duplicate is accepted");
+            assert_eq!(accepted["success"], json!(true));
+            assert_eq!(accepted["duplicate"], json!(true));
+        }
+        assert_eq!(
+            accept_duplicate_submission(Err("Peer event stream is closed".to_string())),
+            Err("Peer event stream is closed".to_string())
+        );
+        assert_eq!(
+            accept_duplicate_submission(Ok(json!({ "success": true }))),
+            Ok(json!({ "success": true }))
+        );
+    }
 
     #[test]
     fn user_answer_submission_accepts_legacy_and_session_scoped_payloads() {

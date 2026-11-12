@@ -927,6 +927,51 @@ describe('PeerDeviceTransportAdapter queue', () => {
     }
   });
 
+  it('accepts a retried dialog submission whose first attempt the host already admitted', async () => {
+    vi.useFakeTimers();
+    try {
+      const deviceRpc = vi.fn()
+        .mockRejectedValueOnce(new Error('Relay connection closed before the reply arrived; delivery outcome is unknown'))
+        .mockResolvedValueOnce(JSON.stringify({
+          resp: 'host_invoke_result',
+          ok: false,
+          error: 'Failed to start dialog turn: Dialog turn ID is already active or completed: session_id=session-1, turn_id=turn-1',
+        }));
+      const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc, {
+        supportsIdempotentDialogSubmit: true,
+      });
+
+      const request = adapter.request('start_dialog_turn', {
+        request: { sessionId: 'session-1', turnId: 'turn-1', userInput: 'hello' },
+      });
+      await vi.advanceTimersByTimeAsync(500);
+
+      await expect(request).resolves.toEqual({
+        success: true,
+        message: 'Dialog turn already accepted',
+      });
+      expect(deviceRpc).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a first-attempt duplicate turn refusal as the host reported it', async () => {
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
+      resp: 'host_invoke_result',
+      ok: false,
+      error: 'Dialog turn ID is already active or completed: session_id=session-1, turn_id=turn-1',
+    }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc, {
+      supportsIdempotentDialogSubmit: true,
+    });
+
+    await expect(adapter.request('start_dialog_turn', {
+      request: { sessionId: 'session-1', turnId: 'turn-1', userInput: 'hello' },
+    })).rejects.toBeInstanceOf(PeerProductCommandError);
+    expect(deviceRpc).toHaveBeenCalledTimes(1);
+  });
+
   it('bounds a hung read and rejects after its retry budget', async () => {
     vi.useFakeTimers();
     try {

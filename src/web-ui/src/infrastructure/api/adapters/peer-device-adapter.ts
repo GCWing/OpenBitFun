@@ -281,6 +281,22 @@ export const PEER_READ_MAX_RETRIES = 4;
 export const PEER_IDEMPOTENT_MUTATION_MAX_RETRIES = 4;
 export const PEER_RETRY_BASE_DELAY_MS = 500;
 
+/** Attempts sent for one logical request, including the first. */
+interface PeerRpcAttempts {
+  count: number;
+}
+
+/**
+ * The Runtime's stable refusal of a Turn id it already admitted
+ * (`DIALOG_TURN_ID_ALREADY_SETTLED_MESSAGE` in the core scheduler).
+ */
+const DUPLICATE_DIALOG_TURN_ERROR = 'Dialog turn ID is already active or completed';
+
+export function isPeerDuplicateDialogTurnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return message.includes(DUPLICATE_DIALOG_TURN_ERROR);
+}
+
 interface PeerRpcPolicy {
   timeoutMs: number;
   maxRetries: number;
@@ -996,12 +1012,14 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
           ? IDEMPOTENT_MUTATION_RPC_POLICY
           : MUTATION_RPC_POLICY;
 
+    const attempts: PeerRpcAttempts = { count: 0 };
     try {
       const raw = await this.invokeDeviceRpc(
         action,
         commandJson,
         rpcPolicy,
         issuedBindingEpoch,
+        attempts,
       );
       this.assertBindingUnchanged(issuedBindingEpoch, action);
       const envelope = JSON.parse(raw) as HostInvokeResultEnvelope;
@@ -1014,6 +1032,21 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
         throw new Error(envelope.message || 'Peer HostInvoke failed');
       }
       if (envelope.resp === 'host_invoke_result') {
+        if (!envelope.ok && attempts.count > 1
+          && rpcPolicy.retryKind === 'idempotent-mutation'
+          && isPeerDuplicateDialogTurnError(envelope.error)) {
+          // A retry of a stable (sessionId, turnId) submission reached a host
+          // whose outcome cache no longer held the first attempt; the Runtime
+          // refusing the Turn id proves that attempt was admitted.
+          log.info('Peer dialog submission was already admitted by an earlier attempt', {
+            action,
+            attempts: attempts.count,
+          });
+          this.hooks.onHostInvokeSuccess?.();
+          return (action === 'start_dialog_turn'
+            ? { success: true, message: 'Dialog turn already accepted' }
+            : undefined) as T;
+        }
         if (!envelope.ok) {
           // Product failure on the peer — do not count as transport loss.
           const error = new PeerProductCommandError(
@@ -1062,9 +1095,11 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     commandJson: string,
     policy: PeerRpcPolicy,
     issuedBindingEpoch: number,
+    attempts: PeerRpcAttempts = { count: 0 },
   ): Promise<string> {
     for (let attempt = 0; ; attempt += 1) {
       this.assertBindingUnchanged(issuedBindingEpoch, action);
+      attempts.count = attempt + 1;
       try {
         const result = await this.withTimeout(
           this.deviceRpc(this.targetDeviceId, commandJson, policy.timeoutMs),
