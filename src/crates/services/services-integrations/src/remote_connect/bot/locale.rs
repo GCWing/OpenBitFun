@@ -140,6 +140,8 @@ pub struct BotStrings {
     pub task_no_active: &'static str,
     pub timeout_one_hour: &'static str,
     pub turn_still_running: &'static str,
+    /// The watched session can no longer be served by this host.
+    pub session_unavailable_on_host: &'static str,
     pub reply_undelivered: &'static str,
     /// The provider refused the reply permanently, so it is not held.
     pub reply_rejected: &'static str,
@@ -320,6 +322,7 @@ const STRINGS_ZH: BotStrings = BotStrings {
     task_no_active: "当前没有正在运行的任务。",
     timeout_one_hour: "等待响应超时（1 小时）。",
     turn_still_running: "任务已运行超过 1 小时，仍在主机上继续执行。完成后会把结果发给你。",
+    session_unavailable_on_host: "该会话在此主机上已不可用，因此不会有结果。",
     reply_undelivered: "回复未能送达。发送下一条消息时会重新发送；完整内容也保留在会话记录中（/resume）。",
     reply_rejected: "回复被平台拒收，无法送达。完整内容保留在会话记录中（/resume）。",
     held_reply_resent: "之前未送达的回复：",
@@ -498,6 +501,7 @@ const STRINGS_ZH_TW: BotStrings = BotStrings {
     task_no_active: "當前沒有正在運行的任務。",
     timeout_one_hour: "等待響應超時（1 小時）。",
     turn_still_running: "任務已運行超過 1 小時，仍在主機上繼續執行。完成後會把結果傳給你。",
+    session_unavailable_on_host: "此會話在這台主機上已無法使用，因此不會有結果。",
     reply_undelivered: "回覆未能送達。傳送下一則訊息時會重新傳送；完整內容也保留在會話記錄中（/resume）。",
     reply_rejected: "回覆遭平台拒收，無法送達。完整內容保留在會話記錄中（/resume）。",
     held_reply_resent: "之前未送達的回覆：",
@@ -677,6 +681,7 @@ Open Remote Connect in OpenBitFun Desktop and send the 6-digit pairing code here
     task_no_active: "No active task to cancel.",
     timeout_one_hour: "Response timed out after 1 hour.",
     turn_still_running: "This task has been running for over an hour and is still running on the host. The result will be sent here when it finishes.",
+    session_unavailable_on_host: "The session is no longer available on this host, so no result will be sent.",
     reply_undelivered: "The reply could not be delivered. It will be sent again with your next message; the full answer is also kept in the session history (/resume).",
     reply_rejected: "The platform rejected the reply, so it cannot be delivered. The full answer is kept in the session history (/resume).",
     held_reply_resent: "Previously undelivered reply:",

@@ -3767,6 +3767,12 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
         display_text: s.task_cancelled.to_string(),
         full_text: s.task_cancelled.to_string(),
     };
+    // The watcher stops without a turn result; `notice` tells the chat why.
+    let ended = |interactions: &TurnInteractions, notice: &str| ForwardedTurnResult {
+        completed_remote_tools: interactions.tool_ids(),
+        display_text: notice.to_string(),
+        full_text: String::new(),
+    };
     {
         let mut response = String::new();
         let mut thinking_buf = String::new();
@@ -3831,7 +3837,8 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                                     "Bot turn watcher ended: session is no longer available on this host: session_id={}, turn_id={}",
                                     forward.session_id, target_turn_id
                                 );
-                                return cancelled(&interactions);
+                                // The turn was not cancelled; say what is known.
+                                return ended(&interactions, s.session_unavailable_on_host);
                             }
                             match probe.observed().filter(|turn| turn.terminal()) {
                                 Some(turn) if matches!(turn.status.as_str(), "failed" | "error") => {
