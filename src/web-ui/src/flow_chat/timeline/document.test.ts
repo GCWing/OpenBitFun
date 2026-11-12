@@ -332,6 +332,30 @@ describe('desktop conversation document', () => {
       expect(shown(rows)).toEqual(['b']);
     });
 
+    it('keeps a held running group on its live call instead of expanding it', () => {
+      const projection = new ConversationDocumentProjection();
+      const opts = options();
+      const input = live([tool('a'), tool('b'), tool('c', 'running')]);
+      const id = header(projection.project([input], opts)).group!.groupId;
+      // A revealing member and an on-screen reader both hold the group.
+      const release = opts.reader.holdGroup(id, 'reveal:text');
+      expect(shown(projection.project([input], opts))).toEqual(['c']);
+      // Settling under the hold keeps what the reader sees until it releases.
+      const settled = source([tool('a'), tool('b'), tool('c')]);
+      const held = projection.project([settled], opts);
+      expect(header(held).liveMembers).toBe(true);
+      expect(shown(held)).toEqual(['c']);
+      release();
+      expect(shown(projection.project([settled], opts))).toEqual([]);
+    });
+
+    it('keeps the assistant narrative visible while finished calls fold', () => {
+      const note = { id: 'note', type: 'text', content: 'Checking the branch.', isMarkdown: true, isStreaming: false,
+        status: 'completed', timestamp: 1 } as FlowItem;
+      const rows = new ConversationDocumentProjection().project([live([tool('a'), note, tool('b'), tool('c', 'running')])], options());
+      expect(shown(rows)).toEqual(['note', 'c']);
+    });
+
     it('folds a settled group to its header', () => {
       const rows = new ConversationDocumentProjection().project([source([tool('a'), tool('b'), tool('c')])], options());
       expect(header(rows)).toMatchObject({ expanded: false });

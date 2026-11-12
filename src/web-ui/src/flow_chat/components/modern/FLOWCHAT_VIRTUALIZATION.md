@@ -485,14 +485,21 @@ not establish browser performance.
 
 ## Running tool group presentation
 
-A running group's automatic disclosure lists only its in-flight members below a
-collapsed header that keeps the group summary. A serial run therefore shows one
-call, and a parallel batch shows the calls still running. Between two serial calls
-the most recent call stays, so the group does not empty and refill for each step.
-A member awaiting approval stays visible even in a group the reader folded. The
-reader's explicit expansion, a held group, an expanded member capsule and a failed
-file revision still list every member; a settled group folds to its header as
-before. This is a timeline projection choice (`readerMemberPresentation` in
+A running group's automatic disclosure lists only its in-flight tool calls below a
+collapsed header that keeps the group summary; the assistant's text and thinking
+inside the group stay visible. A serial run therefore shows one call, and a
+parallel batch shows the calls still running. Between two serial calls the most
+recent call stays, so the group does not empty and refill for each step. A member
+awaiting approval stays visible even in a group the reader folded. The reader's
+explicit expansion, an expanded member capsule and a failed file revision still
+list every member; a settled group folds to its header as before.
+
+A hold (a revealing text member, or member rows on screen while the reader is not
+following) never widens a live group: a group that settles under a hold keeps its
+live presentation until the hold releases, and a held folded group still opens.
+Treating every hold as expansion flipped a running group between its live call and
+every finished call on each streamed reveal, which moved the transcript across the
+viewport edge and toggled the scrollbar thumb. This is a timeline projection choice (`readerMemberPresentation` in
 `timeline/document.ts`, `liveFlowGroupMembers` in `grouping/lifecycle.ts`). It
 does not change group membership, lifecycle, persisted records or the embedded
 inline renderer.

@@ -13,8 +13,9 @@ export function isFlowGroupMemberActive(item: FlowItem): boolean {
 /**
  * Members a running group shows while its disclosure is automatic.
  *
- * Settled members fold into the header summary: a serial run shows the call
- * in flight, a parallel batch shows only the calls still running, and a call
+ * Only settled tool calls fold into the header summary; the assistant's own
+ * text and thinking inside the group stay where they are. A serial run shows
+ * the call in flight, a parallel batch the calls still running, and a call
  * waiting on approval always stays visible. Between two serial calls the most
  * recent call stays, so the group does not empty and refill for each step.
  */
@@ -22,13 +23,16 @@ export function liveFlowGroupMembers(
   items: readonly FlowItem[],
   pendingPermissionToolCallIds?: ReadonlySet<string>,
 ): FlowItem[] {
-  const live = items.filter(item => isFlowGroupMemberActive(item)
-    || (item.type === 'tool' && pendingPermissionToolCallIds?.has((item as FlowToolItem).toolCall.id) === true));
-  if (live.length > 0) return live;
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    if (items[index].type === 'tool') return [items[index]];
+  const isLiveTool = (item: FlowItem) => isFlowGroupMemberActive(item)
+    || pendingPermissionToolCallIds?.has((item as FlowToolItem).toolCall.id) === true;
+  let latestTool: FlowItem | undefined;
+  let hasLiveTool = false;
+  for (const item of items) {
+    if (item.type !== 'tool') continue;
+    latestTool = item;
+    if (isLiveTool(item)) hasLiveTool = true;
   }
-  return [];
+  return items.filter(item => item.type !== 'tool' || (hasLiveTool ? isLiveTool(item) : item === latestTool));
 }
 
 const lifecycleCache = new WeakMap<readonly FlowItem[], {

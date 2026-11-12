@@ -69,16 +69,22 @@ function capsuleExpansionIndex(options: TimelineProjectionOptions): ExpandedCaps
 }
 
 /**
- * `all` lists every member, `live` only the ones still running, `none` only
- * the header. Automatic disclosure of a running group is `live`: a long serial
- * run no longer spreads every finished call through the transcript. A reader's
- * explicit choice, a held group, an expanded member capsule and a failed file
+ * `all` lists every member, `live` only the tool calls still running, `none`
+ * only the header. Automatic disclosure of a running group is `live`: a long
+ * serial run no longer spreads every finished call through the transcript. A
+ * reader's explicit expansion, an expanded member capsule and a failed file
  * revision keep the full list.
+ *
+ * A hold never widens a live group. Holds come from a revealing text member
+ * and from rows on screen while the reader is not following, so treating one
+ * as "expand" flipped a running group between its live call and every finished
+ * call on each streamed reveal. A held folded group still opens as before.
  */
 type GroupMemberPresentation = 'none' | 'live' | 'all';
 
 function readerMemberPresentation(
-  group: FlowGroupData, turnId: string, options: TimelineProjectionOptions, expandedCapsules?: ExpandedCapsuleIndex,
+  group: FlowGroupData, turnId: string, options: TimelineProjectionOptions,
+  expandedCapsules: ExpandedCapsuleIndex | undefined, previous: GroupMemberPresentation | undefined,
 ): GroupMemberPresentation {
   const choice = getFlowGroupDisclosureChoice(group, options.groupStates);
   if (choice === true) return 'all';
@@ -88,12 +94,15 @@ function readerMemberPresentation(
   if (permission) return 'live';
   if (choice === false) return 'none';
   const expandedMembers = expandedCapsules?.get(turnId);
-  if (options.reader.isGroupHeld(group.groupId)
-    || (expandedMembers !== undefined && group.allItems.some(item => expandedMembers.has(item.id)))) return 'all';
-  if (!isFlowGroupExpanded(group, options.groupStates)) return 'none';
-  const running = group.phase === 'collecting' || group.phase === 'settling'
-    || (group.phase === undefined && group.isGroupStreaming);
-  return running && !(group.category === 'file-edit' && group.needsAttention === true) ? 'live' : 'all';
+  if (expandedMembers !== undefined && group.allItems.some(item => expandedMembers.has(item.id))) return 'all';
+  if (isFlowGroupExpanded(group, options.groupStates)) {
+    const running = group.phase === 'collecting' || group.phase === 'settling'
+      || (group.phase === undefined && group.isGroupStreaming);
+    return running && !(group.category === 'file-edit' && group.needsAttention === true) ? 'live' : 'all';
+  }
+  // A hold opens a folded group (search, selection), but a live one stays live.
+  if (options.reader.isGroupHeld(group.groupId)) return previous === 'live' ? 'live' : 'all';
+  return 'none';
 }
 
 type RoundItem = Extract<VirtualItem, { type: 'model-round' }>;
@@ -266,7 +275,10 @@ export class ConversationDocumentProjection {
         if (group.type === 'critical') { if (isFlowItemVisible(group.item)) critical.push(group.item); return; }
         flush();
         const data = buildInlineToolGroupData(source.data.id, group, source.isLastRound && group.isLast);
-        const presentation = readerMemberPresentation(data, source.turnId, options, expandedCapsules);
+        const previousHeader = this.previous.get(`${source.turnId}:group:${data.groupId}`)?.timeline;
+        const previousPresentation: GroupMemberPresentation | undefined = previousHeader?.kind !== 'group-header' ? undefined
+          : previousHeader.liveMembers ? 'live' : previousHeader.expanded ? 'all' : 'none';
+        const presentation = readerMemberPresentation(data, source.turnId, options, expandedCapsules, previousPresentation);
         const expanded = presentation === 'all';
         const liveMembers = presentation === 'live' ? true : undefined;
         add('group-header', `group:${data.groupId}`, emptyItems, { group: data, expanded, liveMembers });
