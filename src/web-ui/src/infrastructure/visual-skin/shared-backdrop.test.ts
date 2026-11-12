@@ -8,7 +8,7 @@ import { compile } from 'sass';
 import { afterEach, expect, it } from 'vitest';
 import { VisualSkinPackageParser } from './parser';
 import { VisualSkinRuntime } from './runtime';
-import { browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
+import { BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, BROWSER_FIXTURE_TEST_TIMEOUT_MS, browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
 import { validateVisualSkinPackage } from './validator';
 import type { VisualSkinPackage } from './types';
 
@@ -74,7 +74,7 @@ it.skipIf(!browser)('renders shared chrome, translucent reader and collapsed cor
     result.activeAlpha=alpha(style('frame').backgroundColor);document.getElementById('frame').dataset.openbitfunState='empty';result.emptyAlpha=alpha(style('frame').backgroundColor);delete document.getElementById('frame').dataset.openbitfunState;result.restoredAlpha=alpha(style('frame').backgroundColor);document.documentElement.removeAttribute('data-openbitfun-skin-id');result.original=rect();document.getElementById('result').textContent=JSON.stringify(result);
     </script></body></html>`;
     const file = resolve(scratch, 'shared.html'); writeFileSync(file, html);
-    const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--no-first-run', `--user-data-dir=${resolve(scratch, 'profile')}`, '--dump-dom', pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: 20000, stdio: 'pipe' });
+    const output = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--no-first-run', `--user-data-dir=${resolve(scratch, 'profile')}`, '--dump-dom', pathToFileURL(file).href], { windowsHide: true, encoding: 'utf8', timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, stdio: 'pipe' });
     const result = JSON.parse(output.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
     expect(result.activeAlpha).toBeCloseTo(0.5, 2); expect(result.emptyAlpha).toBe(0); expect(result.restoredAlpha).toBeCloseTo(0.5, 2);
     expect(result.expandedUnderlay).toBe('color(srgb 0.909804 0.862745 0.768627 / 0.8)');
@@ -82,4 +82,4 @@ it.skipIf(!browser)('renders shared chrome, translucent reader and collapsed cor
     for (const key of ['toolbar','viewport','underlay','text','session']) expect(result[key]).toBe('rgba(0, 0, 0, 0)');
     expect(result.menu).toBe('rgb(255, 252, 243)'); expect(result.card).toBe(result.menu);
   } finally { await cleanupBrowserFixture(scratch); }
-}, 30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);

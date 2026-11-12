@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { browserFixtureFlags } from './browser-fixture.test-support';
+import { BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, BROWSER_FIXTURE_TEST_TIMEOUT_MS, browserFixtureFlags } from './browser-fixture.test-support';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
@@ -27,7 +27,7 @@ function runBrowser(html:string) {
   const dir=mkdtempSync(resolve(tmpdir(),'skin-sidebar-')),file=resolve(dir,'fixture.html'),shot=resolve(dir,'fixture.png');
   writeFileSync(file,html);
   try {
-    const dom=execFileSync(browser!,[...browserFixtureFlags(), '--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(dir,'profile')}`,'--force-device-scale-factor=1','--window-size=900,800','--virtual-time-budget=250',`--screenshot=${shot}`,'--dump-dom',pathToFileURL(file).href],{encoding:'utf8',windowsHide:true,timeout:20000,stdio:'pipe'});
+    const dom=execFileSync(browser!,[...browserFixtureFlags(), '--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(dir,'profile')}`,'--force-device-scale-factor=1','--window-size=900,800','--virtual-time-budget=250',`--screenshot=${shot}`,'--dump-dom',pathToFileURL(file).href],{encoding:'utf8',windowsHide:true,timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS,stdio:'pipe'});
     return {result:JSON.parse(dom.match(/<pre id="result">(.*?)<\/pre>/s)![1]),pixels:readFileSync(shot)};
   } finally {rmSync(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 }
@@ -71,7 +71,7 @@ it.skipIf(!browser).each(['light','dark'])('keeps actual picker paint inside the
       }
     }
   }finally{runtime.dispose();document.body.innerHTML='';document.head.querySelectorAll('style').forEach(e=>e.remove());delete document.documentElement.dataset.colorScheme;}
-},30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);
 
 it.skipIf(!browser).each(['light','dark'])('reveals sidebar scene canvases only for a materialized frame in %s',mode=>{
   const global=compile(resolve('src/app/styles/visual-skin.scss')).css;
@@ -96,4 +96,4 @@ it.skipIf(!browser).each(['light','dark'])('reveals sidebar scene canvases only 
   expect(result.cards.every((c:string)=>c=== (mode==='light'?'rgb(250, 250, 250)':'rgb(40, 40, 40)'))).toBe(true);
   expect(result.shadows.every((s:string)=>s!=='none')).toBe(true);
   expect(result.headings.every((c:string)=>['none','normal'].includes(c))).toBe(true);
-},30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);

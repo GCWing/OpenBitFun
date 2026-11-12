@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
+import { BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, BROWSER_FIXTURE_TEST_TIMEOUT_MS, browserFixtureFlags, cleanupBrowserFixture, rehostSkinImages } from './browser-fixture.test-support';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -121,7 +121,7 @@ it.skipIf(!browser).each([
   try {
     const file = resolve(scratch, 'surface.html'); const screenshot = resolve(scratch, 'surface.png');
     writeFileSync(file, `<!doctype html><html data-openbitfun-skin-id="surface"><head><style>body{margin:0}#frame::after{content:'';position:absolute;left:180px;top:140px;width:20px;height:20px;background:magenta}${styles}</style>${rehostSkinImages(document.head.innerHTML, runtimes.at(-1)!.getSnapshot().activeSkin)}</head><body>${document.body.innerHTML}</body></html>`);
-    execFileSync(browser!, [...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', `--user-data-dir=${resolve(scratch, 'profile')}`, '--window-size=400,300', '--force-device-scale-factor=1', '--virtual-time-budget=1000', `--screenshot=${screenshot}`, pathToFileURL(file).href], { windowsHide: true, timeout: 20000, stdio: 'pipe' });
+    execFileSync(browser!, [...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', `--user-data-dir=${resolve(scratch, 'profile')}`, '--window-size=400,300', '--force-device-scale-factor=1', '--virtual-time-budget=1000', `--screenshot=${screenshot}`, pathToFileURL(file).href], { windowsHide: true, timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, stdio: 'pipe' });
     const { data, info } = await sharp(readFileSync(screenshot)).removeAlpha().raw().toBuffer({ resolveWithObject: true });
     const pixel = (x: number, y: number) => [...data.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3)];
     pixel(10, 20).forEach((channel, i) => expect(Math.abs(channel - navPixels[i])).toBeLessThanOrEqual(2));
@@ -137,7 +137,7 @@ it.skipIf(!browser).each([
   } finally {
     await cleanupBrowserFixture(scratch);
   }
-}, 30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);
 
 
 it.skipIf(!browser).each(['light', 'dark'] as const)('shares one shell image across chrome, navigation and scene in %s mode', async mode => {
@@ -161,7 +161,7 @@ it.skipIf(!browser).each(['light', 'dark'] as const)('shares one shell image acr
   try {
     const file=resolve(scratch,'whole.html'), screenshot=resolve(scratch,'whole.png');
     writeFileSync(file,`<!doctype html><html data-openbitfun-skin-id="surface"><head><style>body{margin:0}${styles}</style>${rehostSkinImages(document.head.innerHTML, runtimes.at(-1)!.getSnapshot().activeSkin)}</head><body>${document.body.innerHTML}</body></html>`);
-    execFileSync(browser!,[...browserFixtureFlags(), '--headless=new','--disable-gpu','--hide-scrollbars','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--window-size=500,400','--force-device-scale-factor=1','--virtual-time-budget=500',`--screenshot=${screenshot}`,pathToFileURL(file).href],{windowsHide:true,timeout:20000,stdio:'pipe'});
+    execFileSync(browser!,[...browserFixtureFlags(), '--headless=new','--disable-gpu','--hide-scrollbars','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--window-size=500,400','--force-device-scale-factor=1','--virtual-time-budget=500',`--screenshot=${screenshot}`,pathToFileURL(file).href],{windowsHide:true,timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS,stdio:'pipe'});
     const {data,info}=await sharp(readFileSync(screenshot)).removeAlpha().raw().toBuffer({resolveWithObject:true});
     const pixel=(x:number,y:number)=>[...data.subarray((y*info.width+x)*info.channels,(y*info.width+x)*info.channels+3)];
     const close=(value:number[],expected:number[])=>value.forEach((v,i)=>expect(Math.abs(v-expected[i])).toBeLessThanOrEqual(2));
@@ -174,7 +174,7 @@ it.skipIf(!browser).each(['light', 'dark'] as const)('shares one shell image acr
     close(pixel(230,100),[20,100,200]); // image origin does not restart in the main area
     expect(pixel(275,205)).toEqual([0,255,0]); // content controls retain their own fill
   } finally { await cleanupBrowserFixture(scratch); }
-},30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);
 
 it.skipIf(!browser).each([0, 80, 140])('keeps corner paint on the actual scene edge at nav width %ipx', async navWidth => {
   document.body.innerHTML = `<main class="openbitfun-workspace-body" data-openbitfun-surface="workbench" style="width:400px;height:200px;--nav-width:300px;--openbitfun-layout-split-view-content-panel-radius:24px;background:#cc2850">
@@ -185,7 +185,7 @@ it.skipIf(!browser).each([0, 80, 140])('keeps corner paint on the actual scene e
   try {
     const file = resolve(scratch, 'corner.html'), screenshot = resolve(scratch, 'corner.png');
     writeFileSync(file, `<!doctype html><html data-openbitfun-skin-id="surface"><head><style>body{margin:0}${styles}.openbitfun-workspace-body__scene-surface{background:transparent!important;box-shadow:none}</style>${rehostSkinImages(document.head.innerHTML, runtimes.at(-1)!.getSnapshot().activeSkin)}</head><body>${document.body.innerHTML}</body></html>`);
-    execFileSync(browser!, [...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', `--user-data-dir=${resolve(scratch, 'profile')}`, '--window-size=500,400', '--force-device-scale-factor=1', '--virtual-time-budget=500', `--screenshot=${screenshot}`, pathToFileURL(file).href], { windowsHide: true, timeout: 20000, stdio: 'pipe' });
+    execFileSync(browser!, [...browserFixtureFlags(), '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', `--user-data-dir=${resolve(scratch, 'profile')}`, '--window-size=500,400', '--force-device-scale-factor=1', '--virtual-time-budget=500', `--screenshot=${screenshot}`, pathToFileURL(file).href], { windowsHide: true, timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, stdio: 'pipe' });
     const { data, info } = await sharp(readFileSync(screenshot)).removeAlpha().raw().toBuffer({ resolveWithObject: true });
     const pixel = (x: number, y: number) => [...data.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3)];
     // Once navigation collapses its corner material must reveal the shell,
@@ -195,4 +195,4 @@ it.skipIf(!browser).each([0, 80, 140])('keeps corner paint on the actual scene e
     expect(pixel(navWidth + 1, 100)).toEqual([204, 40, 80]); // no tinted stripe inside the scene
     expect(pixel(302, 199)).toEqual([204, 40, 80]); // no stale default-width corner
   } finally { await cleanupBrowserFixture(scratch); }
-}, 30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);

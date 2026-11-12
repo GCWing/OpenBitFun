@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { browserFixtureFlags, cleanupBrowserFixture } from './browser-fixture.test-support';
+import { BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS, BROWSER_FIXTURE_TEST_TIMEOUT_MS, browserFixtureFlags, cleanupBrowserFixture } from './browser-fixture.test-support';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -78,7 +78,7 @@ it.skipIf(!browser).each(['light','dark'])('protects real settings, skill and ca
       document.documentElement.removeAttribute('data-openbitfun-skin-id');
       document.getElementById('result').textContent=JSON.stringify({restingMaterial,focusedMaterial,toolbarColor,calendarPlanes,headingPlates,headingColor,shadow,before,after:targets.map(measure),paints,gap,disabled:targets.map(e=>getComputedStyle(e,'::before').content)});
       </script></body></html>`);
-    const out = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--virtual-time-budget=200','--dump-dom',pathToFileURL(html).href], {encoding:'utf8',windowsHide:true,timeout:20000,stdio:'pipe'});
+    const out = execFileSync(browser!, [...browserFixtureFlags(), '--headless=new','--disable-gpu','--no-first-run',`--user-data-dir=${resolve(scratch,'profile')}`,'--virtual-time-budget=200','--dump-dom',pathToFileURL(html).href], {encoding:'utf8',windowsHide:true,timeout: BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS,stdio:'pipe'});
     const result=JSON.parse(out.match(/<pre id="result">(.*?)<\/pre>/s)![1]);
     expect(result.calendarPlanes).toEqual(['openbitfun-todos__calendar-body']);
     expect(result.paints.length).toBeGreaterThan(0);
@@ -92,4 +92,4 @@ it.skipIf(!browser).each(['light','dark'])('protects real settings, skill and ca
     expect(result.headingColor).toBe('rgb(23, 37, 52)');expect(result.shadow).toContain('2px');
     expect(result.disabled.every((content:string)=>['none','normal'].includes(content))).toBe(true);
   } finally { await cleanupBrowserFixture(scratch); }
-}, 30000);
+}, BROWSER_FIXTURE_TEST_TIMEOUT_MS);

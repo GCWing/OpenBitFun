@@ -6,6 +6,15 @@ export function browserFixtureFlags(platform = process.platform, environment: { 
   return platform === 'linux' && environment.CI === 'true' ? ['--no-sandbox'] : [];
 }
 
+/**
+ * Budget for one headless Chromium launch. A cold start on a loaded hosted
+ * runner (the full web UI suite runs in parallel) can exceed 20 s by itself.
+ */
+export const BROWSER_FIXTURE_LAUNCH_TIMEOUT_MS = 60_000;
+
+/** Budget for a test that launches the browser fixture and reads its output. */
+export const BROWSER_FIXTURE_TEST_TIMEOUT_MS = 90_000;
+
 /** Chromium subprocesses can still flush their profile after the launcher exits. */
 export async function cleanupBrowserFixture(directory: string): Promise<void> {
   await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
