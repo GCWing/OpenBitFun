@@ -290,3 +290,83 @@ test('connection state names the cause and needs two missed pings before blaming
     'a stale offline listing does not hide a desktop that answers');
   assert.deepEqual(deriveConnectionState({ ...base, answered: false }), { health: 'checking', issue: null });
 });
+
+/** Load the connection-health hook with an effect that runs at once and a recording store. */
+async function connectionHealthHarness(t) {
+  const states = [];
+  const cleanups = [];
+  globalThis.__connectionHealthTest = { states, cleanups };
+  const hookUrl = await moduleUrl('../src/hooks/useConnectionHealth.ts', {
+    react: dataModule(`export function useEffect(effect) { const cleanup = effect(); if (cleanup) globalThis.__connectionHealthTest.cleanups.push(cleanup); }
+      export function useRef(value) { return { current: value }; }`),
+    '../services/RelayHttpClient': dataModule('export const isAccountIdentityChangedError = () => false;'),
+    '../services/RemoteSessionManager': dataModule('export const isRemoteControlTargetChangedError = () => false; export class RemoteSessionManager {}'),
+    '../services/store': dataModule(`const store = {
+      setConnectionHealth: health => globalThis.__connectionHealthTest.states.push({ health, issue: null }),
+      setConnectionState: (health, issue) => globalThis.__connectionHealthTest.states.push({ health, issue: issue?.kind ?? null }),
+    };
+    export const useMobileStore = selector => selector(store);`),
+    '../services/connectionState': await moduleUrl('../src/services/connectionState.ts'),
+  });
+  const { useConnectionHealth } = await import(hookUrl);
+  const listeners = { recovery: new Set(), relay: new Set(), presence: new Set(), target: new Set() };
+  const on = set => listener => { set.add(listener); return () => set.delete(listener); };
+  const manager = {
+    relayStatus: 'connected',
+    presence: { online: true, lastSeenAt: 10 },
+    pings: [],
+    ping() { return new Promise((resolve, reject) => manager.pings.push({ resolve, reject })); },
+    controlTargetPresence() { return manager.presence; },
+    onControlTargetChange: on(listeners.target),
+    onRecoverySignal: on(listeners.recovery),
+    onRelayStatus: on(listeners.relay),
+    onControlTargetPresenceChange: on(listeners.presence),
+    setRelay(status) { manager.relayStatus = status; for (const listener of [...listeners.relay]) listener(); },
+    setHostOnline(online) { manager.presence = { online, lastSeenAt: 10 }; for (const listener of [...listeners.presence]) listener(); },
+    signal(reason) { for (const listener of [...listeners.recovery]) listener(reason); },
+    async answer(ok = true) {
+      const ping = manager.pings.at(-1);
+      if (ok) ping.resolve(); else ping.reject(new Error('Relay connection timed out'));
+      await tick(); await tick();
+    },
+    async miss() { manager.signal('visible'); await manager.answer(false); },
+  };
+  useConnectionHealth(manager);
+  const last = () => states.at(-1);
+  // Stop the hook even when an assertion fails, and settle outstanding pings
+  // so their timeout timers are cleared.
+  t.after(async () => {
+    for (const cleanup of cleanups.splice(0)) cleanup();
+    for (const ping of manager.pings) ping.resolve();
+    await tick();
+  });
+  return { manager, states, last };
+}
+
+test('a reconnected Relay lets the recovery ping decide instead of flashing "unreachable"', async t => {
+  const { manager, last } = await connectionHealthHarness(t);
+  await manager.answer();
+  assert.deepEqual(last(), { health: 'connected', issue: null });
+  manager.setRelay('disconnected');
+  await manager.miss(); await manager.miss();
+  assert.deepEqual(last(), { health: 'unreachable', issue: 'relay' });
+  manager.setRelay('connected');
+  assert.deepEqual(last(), { health: 'connected', issue: null }, 'the stale misses no longer blame the desktop');
+  manager.signal('relay-reconnect');
+  assert.equal(manager.pings.length, 4, 'the recovery ping is sent');
+  await manager.answer(false);
+  assert.deepEqual(last(), { health: 'unreachable', issue: 'unreachable' }, 'a failed recovery ping still reports');
+});
+
+test('a desktop that comes back online is not shown as unreachable before it answers', async t => {
+  const { manager, last } = await connectionHealthHarness(t);
+  await manager.answer();
+  manager.setHostOnline(false);
+  await manager.miss(); await manager.miss();
+  assert.deepEqual(last(), { health: 'unreachable', issue: 'host-offline' });
+  manager.setHostOnline(true);
+  assert.deepEqual(last(), { health: 'connected', issue: null });
+  manager.signal('host-online');
+  await manager.answer();
+  assert.deepEqual(last(), { health: 'connected', issue: null });
+});

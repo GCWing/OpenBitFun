@@ -32,6 +32,10 @@ function browserOnline(): boolean {
  * it: the browser's network, the account Relay connection, the Relay's device
  * directory, and pings to the controlled desktop. Pings run immediately after
  * a reconnect, resume, network return or the desktop coming back online.
+ *
+ * When the Relay reconnects or the desktop comes back online, the misses
+ * counted while that path was down no longer describe it: they are capped at
+ * one, so the recovery ping decides instead of a stale "unreachable".
  */
 export function useConnectionHealth(sessionMgr: RemoteSessionManager | null) {
   const setConnectionHealth = useMobileStore((s) => s.setConnectionHealth);
@@ -48,6 +52,10 @@ export function useConnectionHealth(sessionMgr: RemoteSessionManager | null) {
       setConnectionHealth('unpaired');
       return;
     }
+
+    let lastRelayStatus = sessionMgr.relayStatus;
+    let lastHostOnline = sessionMgr.controlTargetPresence()?.online ?? null;
+    const forgiveMissedPings = () => { missedPings = Math.min(missedPings, 1); };
 
     const evaluate = () => {
       if (cancelled) return;
@@ -106,17 +114,30 @@ export function useConnectionHealth(sessionMgr: RemoteSessionManager | null) {
     const restart = () => {
       missedPings = 0;
       answered = false;
+      lastHostOnline = sessionMgr.controlTargetPresence()?.online ?? null;
       loopGeneration += 1;
       if (timerRef.current) clearTimeout(timerRef.current);
       setConnectionHealth('checking');
       void loop(loopGeneration);
     };
 
+    const onRelayStatus = () => {
+      const status = sessionMgr.relayStatus;
+      if (status === 'connected' && lastRelayStatus !== 'connected') forgiveMissedPings();
+      lastRelayStatus = status;
+      evaluate();
+    };
+    const onPresence = () => {
+      const online = sessionMgr.controlTargetPresence()?.online ?? null;
+      if (online === true && lastHostOnline === false) forgiveMissedPings();
+      lastHostOnline = online;
+      evaluate();
+    };
     const onOffline = () => evaluate();
     const unlisten = sessionMgr.onControlTargetChange(restart);
     const stopRecovery = sessionMgr.onRecoverySignal(pingNow);
-    const stopRelayStatus = sessionMgr.onRelayStatus(evaluate);
-    const stopPresence = sessionMgr.onControlTargetPresenceChange(evaluate);
+    const stopRelayStatus = sessionMgr.onRelayStatus(onRelayStatus);
+    const stopPresence = sessionMgr.onControlTargetPresenceChange(onPresence);
     if (typeof window !== 'undefined') window.addEventListener('offline', onOffline);
     restart();
 
