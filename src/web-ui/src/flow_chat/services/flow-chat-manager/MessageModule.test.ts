@@ -46,7 +46,11 @@ const mockEnsureBackendSession = vi.fn();
 const mockForkChatSession = vi.fn();
 const mockNotificationError = vi.fn();
 const mockNotificationWarning = vi.fn();
-const mockDispatchJobs = vi.hoisted(() => ({ jobs: {} as Record<string, { state: string }>, listeners: new Set<() => void>() }));
+const mockDispatchJobs = vi.hoisted(() => ({
+  jobs: {} as Record<string, { state: string }>,
+  transport: {} as Record<string, { reachability: string }>,
+  listeners: new Set<() => void>(),
+}));
 const mockNotificationDismiss = vi.fn();
 const mockPendingList = vi.fn((): unknown[] => []);
 const mockPendingEnqueue = vi.fn();
@@ -121,12 +125,16 @@ vi.mock('@/features/dispatch/dispatchJobStore', () => ({
     },
     getState: () => ({
       jobs: mockDispatchJobs.jobs,
+      transportByJobId: mockDispatchJobs.transport,
       updateProgress: (...args: unknown[]) => mockDispatchProgress(...args),
       reopenTerminalObservation: (...args: unknown[]) => mockDispatchReopenObservation(...args),
       markFollowUpAccepted: (...args: unknown[]) => mockDispatchFollowUpAccepted(...args),
     }),
   },
 }));
+
+// Transport facts leak across tests through the shared hoisted store mock.
+beforeEach(() => { mockDispatchJobs.transport = {}; });
 
 vi.mock('@/features/dispatch/DispatchJobObserver', () => ({
   requestDispatchJobRefresh: (...args: unknown[]) => mockDispatchRefresh(...args),
@@ -1287,12 +1295,16 @@ describe('MessageModule detached dispatch', () => {
 
   it('retains a dispatch turn the observer reports as not delivered', async () => {
     mockDispatchJobs.jobs = { 'job-1': { state: 'submission_unknown' } };
+    mockDispatchJobs.transport = {};
     const { context, session } = createDispatchContext('reject-and-report');
     withStoreSubscription(context);
     mockDispatchSubmit.mockRejectedValueOnce(new Error('outcome_unknown: response lost'));
 
     await sendMessage(context, 'run remote checks', 'dispatch-session');
-    mockDispatchJobs.jobs = { 'job-1': { state: 'not_delivered' } };
+    expect(session.dialogTurns.map(turn => turn.id)).toEqual(['dispatch_pending_job-1']);
+    // The target answered that it has no such job: the state stays
+    // unacknowledged, the observer records `notFound` reachability.
+    mockDispatchJobs.transport = { 'job-1': { reachability: 'notFound' } };
     mockDispatchJobs.listeners.forEach(listener => listener());
     await vi.waitFor(() => expect(session.dialogTurns).toEqual([]));
     expect(mockPendingEnqueueForSurface).toHaveBeenCalledWith('local', expect.objectContaining({

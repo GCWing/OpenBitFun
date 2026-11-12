@@ -65,6 +65,7 @@ import {
   type UncertainSubmission,
 } from '../uncertainSubmission';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
+import { dispatchJobDeliveryStatus } from '@/features/dispatch/dispatchTransport';
 
 export { syncSessionModelSelection } from '../../utils/modelSync';
 export { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
@@ -751,8 +752,11 @@ async function sendMessageInternal(
       const jobId = context.flowChatStore.getState().sessions.get(sessionId)?.config.dispatchJobId;
       const resolution = uncertainKind === 'dispatch' && jobId
         ? confirmUncertainDispatchSubmission(context, uncertain, {
-          read: () => dispatchJobStore.getState().jobs?.[jobId]?.state
-            ?? context.flowChatStore.getState().sessions.get(sessionId)?.config.dispatchJobState,
+          // The observer reports a job the target never received as
+          // `notFound` reachability while its state stays unacknowledged.
+          read: () => (dispatchJobDeliveryStatus(jobId) === 'notDelivered' ? 'not_delivered'
+            : dispatchJobStore.getState().jobs?.[jobId]?.state
+              ?? context.flowChatStore.getState().sessions.get(sessionId)?.config.dispatchJobState),
           subscribe: listener => {
             const unsubscribeJobs = dispatchJobStore.subscribe(listener);
             const unsubscribeSession = context.flowChatStore.subscribe(listener);
