@@ -38,6 +38,20 @@ pnpm --dir tests/e2e exec wdio run ./config/wdio.conf.ts --spec "./specs/<file>.
 
 Prefer the narrowest relevant spec first, then broaden only if needed.
 
+For the static/streaming long-session performance matrix, see the workload and
+measurement definitions in [README.md](README.md#long-session-performance).
+After building Desktop and production frontend assets, run
+`pnpm --dir tests/e2e run test:perf:long-session`. Its isolated runner measures
+first entry, repeated switching, bidirectional continuous wheel input and distant
+turn-rail jumps. Validate metric aggregation and the private SSE model with
+`pnpm --dir tests/e2e run test:perf:long-session:contract`.
+`--scenario multi-tool` selects 26 model rounds and exactly 100 recorded tool
+calls per historical turn (25 each of Read, Edit, Write and ExecCommand). The
+same contract test validates generated files and preserves the old template.
+Keep failed evidence; compare matching workloads/native profiles and avoid
+concurrent builds. RAF is not compositor FPS. This is local desktop coverage;
+none of the four remote scenarios is exercised.
+
 For historical FlowChat scroll continuity, build Desktop and current frontend
 assets, then run:
 

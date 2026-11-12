@@ -4,6 +4,7 @@ import fsSync from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { MULTI_TOOL_TEMPLATE, makeMultiToolModelRounds, resolveTemplateToolItems } from './long-session-multi-tool-template.mjs';
 
 const SESSION_STORAGE_SCHEMA_VERSION = 2;
 const MAX_PROJECT_SLUG_LEN = 120;
@@ -141,9 +142,10 @@ function parseArgs(argv) {
   if (!options.sessionPrefix.trim()) {
     throw new Error('--session-prefix cannot be empty');
   }
-  if (!['explore-only', 'mixed-visible', 'dense-visible', 'tool-heavy', 'rich-text', 'code-block', 'user-only-latest'].includes(options.scenario)) {
-    throw new Error('--scenario must be one of: explore-only, mixed-visible, dense-visible, tool-heavy, rich-text, code-block, user-only-latest');
+  if (!['explore-only', 'mixed-visible', 'dense-visible', 'tool-heavy', 'multi-tool', 'rich-text', 'code-block', 'user-only-latest'].includes(options.scenario)) {
+    throw new Error('--scenario must be one of: explore-only, mixed-visible, dense-visible, tool-heavy, multi-tool, rich-text, code-block, user-only-latest');
   }
+  options.toolItems = resolveTemplateToolItems(options.scenario, options.toolItems, argv.includes('--tool-items'));
   return options;
 }
 
@@ -160,12 +162,13 @@ Options:
   --short-turns <n>         Turn count for other sessions. Default: 1
   --assistant-chars <n>     Assistant text chars per turn. Default: 2000
   --tool-result-chars <n>   Raw tool result chars per tool item. Default: 12000
-  --tool-items <n>          Tool item count per turn. Default: 2
+  --tool-items <n>          Tool item count per turn. Default: 2 (multi-tool: fixed 100)
   --dense-groups <n>        Groups in the latest dense-visible turn. Default: 160
   --last-active-at-base <n> Epoch-ms lastActiveAt for session index 0. Default: Date.now()
   --last-active-step-ms <n> lastActiveAt decrement per session index. Default: 1000
   --session-prefix <text>   Session id prefix. Default: perf-long-session
-  --scenario <name>         Fixture shape: mixed-visible, dense-visible, tool-heavy, rich-text, code-block, explore-only, or user-only-latest. Default: mixed-visible
+  --scenario <name>         Fixture shape: mixed-visible, dense-visible, tool-heavy, multi-tool, rich-text, code-block, explore-only, or user-only-latest. Default: mixed-visible
+                           multi-tool: every turn has 26 model rounds and 25 calls each of Read/Edit/Write/ExecCommand.
   --openbitfun-home <path>      OpenBitFun home root. Default: OPENBITFUN_E2E_HOME or isolated tests/e2e/.openbitfun/runtime/home; OPENBITFUN_HOME is used only with OPENBITFUN_E2E_USE_REAL_PROFILE=1
   --openbitfun-user-root <path> OpenBitFun user config root for seeding active workspace. Default: OPENBITFUN_E2E_USER_ROOT or isolated tests/e2e/.openbitfun/runtime/user-root; skipped for real profile unless provided
   --cleanup                 Remove generated sessions for the prefix.
@@ -264,6 +267,7 @@ function makeMetadata({ sessionId, sessionName, workspacePath, createdAt, lastAc
       generatedBy: 'tests/e2e/scripts/generate-long-session-fixture.mjs',
       fixtureVersion: 2,
       fixtureScenario: scenario,
+      ...(scenario === MULTI_TOOL_TEMPLATE.id ? { fixtureTemplate: MULTI_TOOL_TEMPLATE } : {}),
       lastFinishedAt: lastActiveAt,
     },
     relationship: null,
@@ -483,9 +487,12 @@ function makeTurn({
   denseGroups,
 }) {
   const turnId = `${sessionId}-turn-${String(turnIndex).padStart(4, '0')}`;
-  const toolItemsData = makeToolItems({ turnId, turnIndex, timestamp, toolResultChars, toolItems });
+  const toolItemsData = scenario === MULTI_TOOL_TEMPLATE.id ? []
+    : makeToolItems({ turnId, turnIndex, timestamp, toolResultChars, toolItems });
   const isLatestTurn = turnIndex === totalTurns - 1;
-  const modelRounds = scenario === 'user-only-latest' && isLatestTurn
+  const modelRounds = scenario === MULTI_TOOL_TEMPLATE.id
+    ? makeMultiToolModelRounds({ turnId, turnIndex, timestamp, assistantChars, toolResultChars })
+    : scenario === 'user-only-latest' && isLatestTurn
     ? []
     : (scenario === 'dense-visible' || scenario === 'tool-heavy') && isLatestTurn
     ? makeDenseLatestModelRounds({
@@ -573,8 +580,8 @@ function makeTurn({
     },
     modelRounds,
     startTime: timestamp,
-    endTime: timestamp + 30,
-    durationMs: 30,
+    endTime: scenario === MULTI_TOOL_TEMPLATE.id ? modelRounds.at(-1).endTime : timestamp + 30,
+    durationMs: scenario === MULTI_TOOL_TEMPLATE.id ? modelRounds.at(-1).endTime - timestamp : 30,
     status: 'completed',
   };
 }
@@ -802,6 +809,7 @@ async function generate(options) {
     assistantChars: options.assistantChars,
     toolResultChars: options.toolResultChars,
     toolItems: options.toolItems,
+    ...(options.scenario === MULTI_TOOL_TEMPLATE.id ? { template: MULTI_TOOL_TEMPLATE } : {}),
     denseGroups: options.denseGroups,
   };
 }
