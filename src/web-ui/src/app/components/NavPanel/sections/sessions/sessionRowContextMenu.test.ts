@@ -59,7 +59,8 @@ describe('SessionsSection session row context menu', () => {
     expect(actions).toContain('await flowChatManager.duplicateChatSession(sessionId)');
     expect(actions).toContain("t('nav.sessions.duplicateSuccess'");
     expect(actions).toContain('{ name: copied.sessionName }');
-    expect(actions).toContain("t('nav.sessions.duplicateFailed')");
+    // Failure copy is localized (`nav.sessions.duplicateFailed`), never raw host text.
+    expect(actions).toContain("sessionMutationFailureMessage('duplicate', error)");
   });
 
   it('keeps copy unavailable while a turn runs or another device owns the session', () => {

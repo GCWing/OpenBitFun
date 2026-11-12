@@ -15,7 +15,8 @@ pub mod types;
 pub use agentic::{
     AgenticEvent, AgenticEventEnvelope, AgenticEventPriority, DeepReviewQueueReason,
     DeepReviewQueueState, DeepReviewQueueStatus, ModelRoundAttemptDiagnostic,
-    ModelRoundAttemptToolDiagnostic, SubagentParentInfo, ToolEventData, ToolEventIdentity,
+    ModelRoundAttemptToolDiagnostic, SessionWorkspaceBinding, SubagentParentInfo, ToolEventData,
+    ToolEventIdentity,
 };
 pub use backend::{
     BackgroundCommandLifecycleInfo, ToolExecutionCompletedInfo, ToolExecutionErrorInfo,

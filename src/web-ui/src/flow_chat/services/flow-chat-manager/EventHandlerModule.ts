@@ -231,6 +231,7 @@ export const __test_only__ = {
   mergeParamsPartialEventData,
   findSubagentParentInfoByRound,
   handleDialogTurnStarted,
+  handleImageAnalysisStarted,
   handleDialogTurnFailed,
   handleSubagentSessionLinked,
   handleModelRoundStart,
@@ -1071,17 +1072,9 @@ function handleSessionCreated(context: FlowChatContext, event: any): void {
 
   const store = FlowChatStore.getInstance();
   const existing = store.getState().sessions.get(sessionId);
-  const { workspaceId, workspacePath } = resolveExternalSessionWorkspace(context, event);
-  const projectWorkspacePath =
-    (typeof event.projectWorkspacePath === 'string' && event.projectWorkspacePath)
-    || (typeof event.project_workspace_path === 'string' && event.project_workspace_path)
-    || workspacePath;
-  const executionTarget =
-    event.executionTarget && typeof event.executionTarget === 'object'
-      ? event.executionTarget
-      : event.execution_target && typeof event.execution_target === 'object'
-        ? event.execution_target
-        : undefined;
+  const {
+    workspaceId, workspacePath, projectWorkspacePath, executionTarget,
+  } = resolveExternalSessionBinding(context, event);
   const remoteConnectionId = extractEventRemoteConnectionId(event);
   const remoteSshHost = extractEventRemoteSshHost(event);
 
@@ -1100,6 +1093,51 @@ function handleSessionCreated(context: FlowChatContext, event: any): void {
     remoteConnectionId,
     remoteSshHost
   );
+}
+
+/**
+ * Owning workspace, persistence root and execution target of an external
+ * session, read from the facts the host attaches to `session-created` and
+ * (from newer hosts) `dialog-turn-started`.
+ */
+function resolveExternalSessionBinding(
+  context: FlowChatContext,
+  event: Record<string, any>,
+): ExternalSessionWorkspace & {
+  projectWorkspacePath?: string;
+  executionTarget?: Session['config']['executionTarget'];
+} {
+  const workspace = resolveExternalSessionWorkspace(context, event);
+  const projectWorkspacePath =
+    (typeof event.projectWorkspacePath === 'string' && event.projectWorkspacePath)
+    || (typeof event.project_workspace_path === 'string' && event.project_workspace_path)
+    || workspace.workspacePath;
+  const executionTarget =
+    event.executionTarget && typeof event.executionTarget === 'object'
+      ? event.executionTarget
+      : event.execution_target && typeof event.execution_target === 'object'
+        ? event.execution_target
+        : undefined;
+  return { ...workspace, projectWorkspacePath, executionTarget };
+}
+
+function hasExternalSessionBindingFacts(event: Record<string, any>): boolean {
+  return [event.workspaceId, event.workspace_id, event.workspacePath, event.workspace_path]
+    .some(value => typeof value === 'string' && value.trim().length > 0);
+}
+
+/**
+ * Replace a remote-driven placeholder's guessed title and identity with the
+ * host's persisted record. A missing record (a session that is genuinely new)
+ * keeps the placeholder; it is never an error to surface.
+ */
+function adoptPersistedPlaceholderMetadata(sessionId: string, workspaceId: string | undefined): void {
+  if (!workspaceId) return;
+  void FlowChatStore.getInstance()
+    .ensurePersistedSessionMetadata(sessionId, workspaceId, true)
+    .catch(error => {
+      log.debug('Remote placeholder metadata is not available yet', { sessionId, workspaceId, error });
+    });
 }
 
 interface ExternalSessionWorkspace {
@@ -1783,7 +1821,7 @@ function handleImageAnalysisStarted(context: FlowChatContext, event: ImageAnalys
       'Remote Session',
       'Standard',
       workspace.workspacePath,
-      { workspaceId: workspace.workspaceId },
+      { workspaceId: workspace.workspaceId, externalPlaceholder: true },
       extractEventRemoteConnectionId(event as any),
       extractEventRemoteSshHost(event as any)
     );
@@ -1949,7 +1987,10 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
       ? userMessageMetadata.appId
       : undefined;
     log.warn('DialogTurnStarted: session not in store, creating placeholder', { sessionId, sessionsCount: state.sessions.size, isMiniAppAgentRun });
-    const workspace = resolveExternalSessionWorkspace(context, event);
+    // Newer hosts attach the session's owning workspace. Without it the
+    // placeholder falls back to the current workspace, which misattributes a
+    // persisted session driven from another surface (remote control, bot).
+    const workspace = resolveExternalSessionBinding(context, event);
     store.addExternalSession(
       sessionId,
       isMiniAppAgentRun ? (miniAppId ? `MiniApp: ${miniAppId}` : 'MiniApp Agent') : isBtwRun ? 'Side thread' : 'Remote Session',
@@ -1960,10 +2001,26 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
         : isBtwRun
           ? { sessionKind: 'btw', isTransient: true, agentBackedTransient: true,
               parentSessionId: userMessageMetadata.parentSessionId, workspaceId: workspace.workspaceId }
-        : { workspaceId: workspace.workspaceId },
+        : {
+            workspaceId: workspace.workspaceId,
+            projectWorkspacePath: workspace.projectWorkspacePath,
+            executionTarget: workspace.executionTarget,
+            externalPlaceholder: true,
+            persistedHistory: typeof turnIndex === 'number' && turnIndex > 0,
+          },
       extractEventRemoteConnectionId(event),
       extractEventRemoteSshHost(event)
     );
+    if (!isMiniAppAgentRun && !isBtwRun) adoptPersistedPlaceholderMetadata(sessionId, workspace.workspaceId);
+  } else if (session.externalPlaceholder && hasExternalSessionBindingFacts(event)) {
+    const workspace = resolveExternalSessionBinding(context, event);
+    store.rebindExternalPlaceholder(sessionId, {
+      ...workspace,
+      remoteConnectionId: extractEventRemoteConnectionId(event),
+      remoteSshHost: extractEventRemoteSshHost(event),
+      persistedHistory: typeof turnIndex === 'number' && turnIndex > 0,
+    });
+    adoptPersistedPlaceholderMetadata(sessionId, workspace.workspaceId);
   }
 
   // Extract image display data from metadata (sent by coordinator for all platforms)

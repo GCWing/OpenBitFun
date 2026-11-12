@@ -196,6 +196,27 @@ describe('PersistenceModule', () => {
     }
   });
 
+  it('skips a full checkpoint when the stored record cannot be read', async () => {
+    mockSaveSessionMetadata.mockClear();
+    mockLoadSessionMetadata.mockReset().mockRejectedValue(new Error('SSH channel closed'));
+    await updateSessionMetadata(createContext(createDialogTurn('completed')), SESSION_ID);
+    expect(mockSaveSessionMetadata).not.toHaveBeenCalled();
+  });
+
+  it('never writes a remote placeholder title over the persisted session name', async () => {
+    mockSaveSessionMetadata.mockClear();
+    mockLoadSessionMetadata.mockReset().mockResolvedValue({ sessionId: SESSION_ID, sessionName: 'Fuse gate kernels' });
+    await updateSessionMetadata(
+      createContext(createDialogTurn('completed'), { title: 'Remote Session', externalPlaceholder: true }),
+      SESSION_ID,
+    );
+    expect(mockSaveSessionMetadata).toHaveBeenCalledTimes(1);
+    const fields = mockSaveSessionMetadata.mock.calls[0][2] as string[];
+    expect(fields).not.toContain('sessionName');
+    expect(fields).not.toContain('titleMetadata');
+    expect(fields).toContain('needsUserAttention');
+  });
+
   it('preserves actual routing facts in frontend checkpoints', () => {
     const turn = createDialogTurn('completed');
     turn.modelRounds = [{ id: 'r', index: 0, items: [], isStreaming: false, isComplete: true, startTime: 1,

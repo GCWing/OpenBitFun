@@ -518,7 +518,11 @@
       "discoveryWarningTitle": "External session discovery",
       "discoveryReadFailed": "Some {{source}} session records could not be read. Existing sessions remain available.",
       "discoveryWorkspaceUnresolved": "Some {{source}} sessions could not be matched to a workspace. Existing sessions remain available.",
-      "discoveringExternal": "Discovering external sessions…"
+      "discoveringExternal": "Discovering external sessions…",
+      "deleteFailed": "Failed to delete session",
+      "archiveFailed": "Failed to archive session",
+      "renameFailed": "Failed to rename session",
+      "workspaceBindingMismatch": "This session belongs to a different workspace, so it cannot be changed from here. Reopen OpenBitFun to reload it under its own workspace."
     },
     "scheduledJobs": {
       "title": "Scheduled Jobs",

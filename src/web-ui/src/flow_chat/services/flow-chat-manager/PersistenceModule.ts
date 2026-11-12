@@ -605,8 +605,12 @@ export async function updateSessionMetadata(
           sessionId,
           requireSessionOwningWorkspaceId(session));
       }
-    } catch {
-      // ignore
+    } catch (error) {
+      // A full checkpoint merges into the stored record. Without it (an
+      // unreachable remote workspace, a transient read failure) the write
+      // would reset tags and title facts; the next checkpoint retries.
+      log.debug('Skipped session metadata checkpoint: stored record unreadable', { sessionId, error });
+      return;
     }
     if (!scope.isCurrent()) return;
 
@@ -625,17 +629,15 @@ export async function updateSessionMetadata(
       }
     }
 
+    // A remote-driven placeholder knows only a guessed title; until it adopts
+    // the host's record it must not rename the persisted session.
+    const defaultFields: UiSessionMetadataField[] = session.externalPlaceholder
+      ? ['tags', 'todos', 'unreadCompletion', 'needsUserAttention']
+      : ['sessionName', 'tags', 'todos', 'unreadCompletion', 'needsUserAttention', 'titleMetadata'];
     await sessionAPI.saveSessionMetadata(
       metadata,
       requireSessionOwningWorkspaceId(session),
-      fields ?? [
-        'sessionName',
-        'tags',
-        'todos',
-        'unreadCompletion',
-        'needsUserAttention',
-        'titleMetadata',
-      ]);
+      fields ?? defaultFields);
   } catch (error) {
     log.warn('Failed to update session metadata', { sessionId, error });
   }

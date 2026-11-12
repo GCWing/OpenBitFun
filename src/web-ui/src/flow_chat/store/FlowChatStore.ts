@@ -2262,6 +2262,30 @@ function sessionFromPersistedMetadata(metadata: any, context: {
   };
 }
 
+/**
+ * A remote-driven placeholder becomes the persisted session: identity, title,
+ * binding and mode come from the host's record; the live Turns it already
+ * projected stay. Earlier Turns hydrate on open like any unopened session.
+ */
+function adoptPersistedMetadataIntoPlaceholder(placeholder: Session, persisted: Session): Session {
+  const hasEarlierTurns = (persisted.persistedTurnCount ?? 0) > placeholder.dialogTurns.length;
+  return {
+    ...persisted,
+    dialogTurns: placeholder.dialogTurns,
+    status: placeholder.status,
+    error: placeholder.error,
+    lastFinishedAt: placeholder.lastFinishedAt ?? persisted.lastFinishedAt,
+    lastActiveAt: Math.max(placeholder.lastActiveAt ?? 0, persisted.lastActiveAt ?? 0),
+    currentTokenUsage: placeholder.currentTokenUsage ?? persisted.currentTokenUsage,
+    btwThreads: placeholder.btwThreads ?? persisted.btwThreads,
+    isHistorical: placeholder.isHistorical || hasEarlierTurns,
+    historyState: placeholder.historyState === 'new' && !hasEarlierTurns
+      ? placeholder.historyState
+      : persisted.historyState,
+    externalPlaceholder: undefined,
+  };
+}
+
 const EMPTY_SESSION_MAP: ReadonlyMap<string, Session> = new Map();
 
 /** The host's record of an unread result, as its read receipt must name it. */
@@ -4842,6 +4866,10 @@ export class FlowChatStore {
       continuationPolicy?: Session['continuationPolicy'];
       isTransient?: boolean;
       agentBackedTransient?: boolean;
+      /** See `Session.externalPlaceholder`. */
+      externalPlaceholder?: boolean;
+      /** The host already holds earlier Turns; opening must hydrate them. */
+      persistedHistory?: boolean;
       deepReviewRunManifest?: Session['deepReviewRunManifest'];
       focusedReviewDisplayLabel?: Session['focusedReviewDisplayLabel'];
       reviewTargetEvidence?: Session['reviewTargetEvidence'];
@@ -4891,8 +4919,9 @@ export class FlowChatStore {
         mode: mode || 'Standard',
         lastUserDialogMode: undefined,
         lastSubmittedMode: undefined,
-        isHistorical: false,
-        historyState: 'new',
+        isHistorical: meta?.persistedHistory === true,
+        historyState: meta?.persistedHistory ? 'metadata-only' : 'new',
+        externalPlaceholder: meta?.externalPlaceholder || undefined,
         workspacePath,
         projectWorkspacePath: meta?.projectWorkspacePath,
         workspaceId: meta?.workspaceId,
@@ -4921,6 +4950,50 @@ export class FlowChatStore {
         ...prev,
         sessions: newSessions,
       };
+    });
+  }
+
+  /**
+   * Correct a remote-driven placeholder once an event names its owning
+   * workspace (an earlier event, such as image analysis, may have carried no
+   * binding). Sessions loaded from the host are never rebound here.
+   */
+  public rebindExternalPlaceholder(sessionId: string, binding: {
+    workspaceId?: string;
+    workspacePath?: string;
+    projectWorkspacePath?: string;
+    executionTarget?: Session['config']['executionTarget'];
+    remoteConnectionId?: string;
+    remoteSshHost?: string;
+    persistedHistory?: boolean;
+  }): void {
+    this.setState(prev => {
+      const existing = prev.sessions.get(sessionId);
+      if (!existing?.externalPlaceholder || !binding.workspaceId) return prev;
+      const historyState = binding.persistedHistory && existing.historyState === 'new'
+        ? 'metadata-only' as const
+        : existing.historyState;
+      if (existing.workspaceId === binding.workspaceId && historyState === existing.historyState) return prev;
+      const projectWorkspacePath = binding.projectWorkspacePath || binding.workspacePath;
+      const sessions = new Map(prev.sessions);
+      sessions.set(sessionId, {
+        ...existing,
+        workspaceId: binding.workspaceId,
+        workspacePath: binding.workspacePath ?? existing.workspacePath,
+        projectWorkspacePath: projectWorkspacePath ?? existing.projectWorkspacePath,
+        remoteConnectionId: binding.remoteConnectionId,
+        remoteSshHost: binding.remoteSshHost,
+        isHistorical: existing.isHistorical || historyState === 'metadata-only',
+        historyState,
+        config: {
+          ...existing.config,
+          workspaceId: binding.workspaceId,
+          workspacePath: binding.workspacePath ?? existing.config.workspacePath,
+          projectWorkspacePath: projectWorkspacePath ?? existing.config.projectWorkspacePath,
+          executionTarget: binding.executionTarget ?? existing.config.executionTarget,
+        },
+      });
+      return { ...prev, sessions };
     });
   }
 
@@ -7998,6 +8071,7 @@ export class FlowChatStore {
         const seededSession = this.isRebuildableSeed(metadata.sessionId);
         const existingSession = seededSession ? undefined : this.state.sessions.get(metadata.sessionId);
         if ((existingSession?.workspaceId || existingSession?.config.workspaceId)
+          && !existingSession?.externalPlaceholder
           && !(existingSession?.sessionKind === 'subagent' && existingSession.continuationPolicy === undefined)
           && !existingSession?.externalHistory && !existingSession?.externalBranchOf
           && !metadata.customMetadata?.externalHistoryMode && !metadata.customMetadata?.externalBranchOf) {
@@ -8049,6 +8123,16 @@ export class FlowChatStore {
           if (!scope.isCurrent()) return prev;
           const existing = seededSession ? undefined : prev.sessions.get(metadata.sessionId);
           this.activeSurface.seededSessions.delete(metadata.sessionId);
+          if (existing?.externalPlaceholder) {
+            const sessions = new Map(prev.sessions);
+            sessions.set(metadata.sessionId, adoptPersistedMetadataIntoPlaceholder(
+              existing,
+              sessionFromPersistedMetadata(metadata, {
+                workspaceId, projectWorkspaceId, workspacePath, remoteConnectionId, remoteSshHost, maxContextTokens,
+              }),
+            ));
+            return { ...prev, sessions };
+          }
           if (existing) {
             const continuationPolicy = existing.continuationPolicy ?? relationship.continuationPolicy;
             const importedSource = metadata.customMetadata?.importedFrom ?? existing.importedSource;

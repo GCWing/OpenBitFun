@@ -42,7 +42,6 @@ export function deriveSessionNavStatus({
   session, machine, permissions = [], reachability, activity, unavailable,
 }: SessionNavStatusInput): SessionNavStatus {
   if (!session) return status('idle');
-  if (unavailable) return status('syncing');
   const latestTurn = lastUserDialogTurn(session);
   const trackedId = machine?.context.currentDialogTurnId;
   const turn = trackedId && latestTurn?.id !== trackedId
@@ -69,6 +68,9 @@ export function deriveSessionNavStatus({
         && terminalToolStates.has(item.status)));
   });
   if (pending.length > 0) return status('approval', new Set(pending.map(request => request.requestId)).size);
+  // A delivered approval is answerable even while the activity read cannot
+  // describe the session; only then does the row fall back to syncing.
+  if (unavailable) return status('syncing');
 
   // An unopened Session has no transcript/state-machine projection. The host
   // summary also corrects old hydrated history after a reconnect or restart.
