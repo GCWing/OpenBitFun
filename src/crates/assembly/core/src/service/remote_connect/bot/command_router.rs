@@ -35,6 +35,28 @@ pub use openbitfun_services_integrations::remote_connect::bot::{
 /// How many invalid replies are tolerated before pending state is auto-cleared.
 const PENDING_INVALID_LIMIT: u8 = 3;
 
+/// A still-blocked host interaction is re-presented this often. It stays below
+/// the five-minute menu TTL so the prompt remains answerable.
+const INTERACTION_REPRESENT_SECS: u64 = 240;
+
+/// How often a local turn watcher checks for blocked tools and lost events.
+const LOCAL_TURN_TICK: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// How often a local watcher reads the persisted turn while the tracker shows
+/// another turn, so a settlement whose event was lost is still observed.
+const LOCAL_SETTLE_PROBE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// After this long the chat is told the turn is still running. The watcher
+/// keeps waiting and delivers the result when the turn settles.
+const STILL_RUNNING_NOTICE_AFTER: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Consecutive failed polls of a remote host before the chat is told it is
+/// unreachable.
+const REMOTE_OFFLINE_NOTICE_AFTER: u32 = 3;
+
+/// Longest wait between polls of an unreachable remote host.
+const REMOTE_POLL_MAX_BACKOFF: std::time::Duration = std::time::Duration::from_secs(30);
+
 // ── Global delegated identity provider (set by desktop layer) ─────
 
 /// Returns `(relay_url, token, master_key)` if the desktop is logged into an
@@ -684,7 +706,14 @@ fn same_interaction(
 }
 
 pub fn apply_interactive_request(state: &mut BotChatState, req: &BotInteractiveRequest) -> bool {
-    if state.pending_expired() {
+    // An expired menu is discarded, but an expired host interaction is still
+    // blocking its turn and keeps its place (and its queue).
+    if state.pending_expired()
+        && !state
+            .pending_action
+            .as_ref()
+            .is_some_and(|action| interaction_tool(action).is_some())
+    {
         state.clear_pending();
     }
     if let Some(current) = state
@@ -698,6 +727,15 @@ pub fn apply_interactive_request(state: &mut BotChatState, req: &BotInteractiveR
             &req.pending_action,
             req.remote_target.as_ref(),
         ) {
+            if state.pending_presentation_failed {
+                // The user never saw the earlier prompt: install and send
+                // this presentation so its buttons match the state.
+                state.set_pending(req.pending_action.clone());
+                state.pending_presentation_failed = false;
+                state.last_menu_commands =
+                    req.menu.items.iter().map(|i| i.command.clone()).collect();
+                return true;
+            }
             // Keep a remotely blocked interaction answerable while preserving
             // its partially collected answers and original button token.
             state.set_pending(current.clone());
@@ -717,22 +755,45 @@ pub fn apply_interactive_request(state: &mut BotChatState, req: &BotInteractiveR
     }
     state.set_pending(req.pending_action.clone());
     state.pending_remote_target = req.remote_target.clone();
+    state.pending_presentation_failed = false;
     state.last_menu_commands = req.menu.items.iter().map(|i| i.command.clone()).collect();
     true
 }
 
+/// Record that the chat never received `req` although it is the current
+/// interaction, so its next re-presentation sends it again.
+pub fn mark_interaction_undelivered(state: &mut BotChatState, req: &BotInteractiveRequest) {
+    if state.pending_action.as_ref().is_some_and(|current| {
+        same_interaction(
+            current,
+            state.pending_remote_target.as_ref(),
+            &req.pending_action,
+            req.remote_target.as_ref(),
+        )
+    }) {
+        state.pending_presentation_failed = true;
+    }
+}
+
 /// Return the next still-pending prompt for the adapter to install and display.
+/// `target` is the turn's device, or `None` for a turn that ran on this host.
 pub(super) fn retire_completed_remote_tools(
     state: &mut BotChatState,
-    target: &RemoteBotTarget,
+    target: Option<&RemoteBotTarget>,
     tool_ids: &[String],
 ) -> Option<BotInteractiveRequest> {
     let completed = |action: &PendingAction, origin: Option<&RemoteBotTarget>| {
-        origin.is_some_and(|origin| {
-            origin.relay_url == target.relay_url
-                && origin.device_id == target.device_id
-                && origin.session_id == target.session_id
-        }) && interaction_tool(action).is_some_and(|id| tool_ids.iter().any(|tool| tool == id))
+        let same_origin = match (origin, target) {
+            (Some(origin), Some(target)) => {
+                origin.relay_url == target.relay_url
+                    && origin.device_id == target.device_id
+                    && origin.session_id == target.session_id
+            }
+            (None, None) => true,
+            _ => false,
+        };
+        same_origin
+            && interaction_tool(action).is_some_and(|id| tool_ids.iter().any(|tool| tool == id))
     };
     state
         .pending_interactions
@@ -810,12 +871,25 @@ async fn dispatch(
     let language = current_bot_language().await;
     let s = strings_for(language);
 
-    // Auto-expire pending actions before any branch.
+    // Auto-expire pending actions before any branch. A host interaction
+    // (question or approval) is owned by its blocked turn, not by the menu
+    // TTL: the turn watcher retires it when the turn settles, so keep it
+    // answerable instead of discarding a question the host still waits on.
     if state.pending_expired() {
-        state.clear_pending();
-        let mut view = main_menu_view(state, s);
-        view = view.with_body(s.pending_expired);
-        return result_from_menu(state, view);
+        if let Some(current) = state
+            .pending_action
+            .clone()
+            .filter(|action| interaction_tool(action).is_some())
+        {
+            let invalid_count = state.pending_invalid_count;
+            state.set_pending(current);
+            state.pending_invalid_count = invalid_count;
+        } else {
+            state.clear_pending();
+            let mut view = main_menu_view(state, s);
+            view = view.with_body(s.pending_expired);
+            return result_from_menu(state, view);
+        }
     }
 
     // Universal escape hatches: /menu and /start always return the main menu
@@ -2831,8 +2905,8 @@ async fn route_pending(
                 _ => return Box::pin(pending_invalid(state, s)).await,
             };
             let Some(target) = state.pending_remote_target.clone() else {
-                state.clear_pending();
-                return result_from_menu(state, MenuView::plain(s.devices_account_required));
+                // A local turn's approval: answer the permission on this host.
+                return answer_local_tool_confirmation(state, &command, s).await;
             };
             match target.rpc(command).await {
                 Ok(reply) if reply["resp"] == "interaction_accepted" => {
@@ -3023,6 +3097,52 @@ async fn route_pending(
                 }
             }
         }
+    }
+}
+
+/// Answer a tool approval of a turn running on this host through the same
+/// interaction owner the mobile and relay surfaces use.
+async fn answer_local_tool_confirmation(
+    state: &mut BotChatState,
+    command: &Value,
+    s: &'static BotStrings,
+) -> HandleResult {
+    use openbitfun_services_integrations::remote_connect::{
+        handle_remote_interaction_command, RemoteCommand, RemoteResponse,
+    };
+    let command = match serde_json::from_value::<RemoteCommand>(command.clone()) {
+        Ok(command) => command,
+        Err(error) => {
+            return result_from_menu(
+                state,
+                MenuView::plain(format!("{}{error}", s.answers_submit_failed_prefix)),
+            )
+        }
+    };
+    let host = crate::service_agent_runtime::CoreServiceAgentRuntime::remote_interaction_host();
+    match handle_remote_interaction_command(&host, &command).await {
+        RemoteResponse::InteractionAccepted { .. } => finish_bot_interaction(state, s),
+        RemoteResponse::Error { message } => {
+            // The approval is no longer pending on the host (answered
+            // elsewhere or the turn ended); do not keep a dead prompt.
+            let mut queued = std::mem::take(&mut state.pending_interactions);
+            state.clear_pending();
+            if let Some(next) = queued.pop_front() {
+                apply_interactive_request(state, &next);
+                state.pending_interactions = queued;
+            }
+            result_from_menu(
+                state,
+                MenuView::plain(format!("{}{message}", s.answers_submit_failed_prefix)),
+            )
+        }
+        _ => result_from_menu(
+            state,
+            MenuView::plain(format!(
+                "{}Invalid interaction response",
+                s.answers_submit_failed_prefix
+            )),
+        ),
     }
 }
 
@@ -3585,6 +3705,7 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
         return execute_remote_forward(
             forward,
             interaction_handler,
+            message_sender,
             runtime_fence,
             identity_epoch,
             submission_finished,
@@ -3625,7 +3746,31 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
         };
     }
 
-    let result = tokio::time::timeout(std::time::Duration::from_secs(3600), async {
+    // No wall-clock cap: a long turn keeps running on this host, so the chat
+    // is told once that it is still running and receives the result when the
+    // turn settles. The tick keeps the watcher fenced to the bot lifecycle,
+    // surfaces blocked tools, and observes a settlement whose event was lost.
+    let started = std::time::Instant::now();
+    let mut still_running_sent = false;
+    let mut shown = std::collections::HashMap::<String, std::time::Instant>::new();
+    let mut tick = tokio::time::interval(LOCAL_TURN_TICK);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut last_settle_probe = std::time::Instant::now();
+    let failed = |shown: &std::collections::HashMap<String, std::time::Instant>, error: &str| {
+        let msg = format!("{}{}", s.error_prefix, error);
+        ForwardedTurnResult {
+            completed_remote_tools: shown.keys().cloned().collect(),
+            display_text: msg.clone(),
+            full_text: msg,
+        }
+    };
+    let cancelled =
+        |shown: &std::collections::HashMap<String, std::time::Instant>| ForwardedTurnResult {
+            completed_remote_tools: shown.keys().cloned().collect(),
+            display_text: s.task_cancelled.to_string(),
+            full_text: s.task_cancelled.to_string(),
+        };
+    {
         let mut response = String::new();
         let mut thinking_buf = String::new();
 
@@ -3637,7 +3782,80 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
         };
 
         loop {
-            match event_rx.recv().await {
+            let received = tokio::select! {
+                received = event_rx.recv() => received,
+                _ = tick.tick() => {
+                    if !runtime_fence.is_lifecycle_current()
+                        || runtime_fence.identity_epoch() != identity_epoch
+                    {
+                        return ForwardedTurnResult {
+                            completed_remote_tools: Vec::new(),
+                            display_text: String::new(),
+                            full_text: String::new(),
+                        };
+                    }
+                    let settled = match tracker
+                        .snapshot_active_turn()
+                        .filter(|turn| turn.turn_id == target_turn_id)
+                    {
+                        Some(turn) => {
+                            present_blocked_tools(
+                                &turn.tools,
+                                None,
+                                &mut shown,
+                                interaction_handler.as_ref(),
+                                s,
+                            )
+                            .await;
+                            match turn.status.as_str() {
+                                "failed" => {
+                                    return failed(&shown, &turn.error.unwrap_or_default())
+                                }
+                                "cancelled" => return cancelled(&shown),
+                                "completed" => true,
+                                _ => false,
+                            }
+                        }
+                        None if last_settle_probe.elapsed() >= LOCAL_SETTLE_PROBE => {
+                            last_settle_probe = std::time::Instant::now();
+                            match read_local_turn(&dispatcher, &forward.session_id, &target_turn_id)
+                                .await
+                                .filter(|turn| turn.terminal())
+                            {
+                                Some(turn) if matches!(turn.status.as_str(), "failed" | "error") => {
+                                    return failed(&shown, &turn.error.unwrap_or_default())
+                                }
+                                Some(turn) if turn.status == "cancelled" => {
+                                    return cancelled(&shown)
+                                }
+                                Some(_) => true,
+                                None => false,
+                            }
+                        }
+                        None => false,
+                    };
+                    if settled {
+                        // Keep streamed text that is still queued behind the
+                        // settlement observed here.
+                        while let Ok(event) = event_rx.try_recv() {
+                            if let TrackerEvent::TextChunk(text) = event {
+                                if streams_our_turn() {
+                                    response.push_str(&text);
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    if !still_running_sent && started.elapsed() >= STILL_RUNNING_NOTICE_AFTER {
+                        still_running_sent = true;
+                        if let Some(sender) = message_sender.as_ref() {
+                            sender(s.turn_still_running.to_string()).await;
+                        }
+                    }
+                    continue;
+                }
+            };
+            match received {
                 Ok(event) => match event {
                     TrackerEvent::ThinkingChunk(chunk) => {
                         if !streams_our_turn() {
@@ -3692,7 +3910,7 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                                         actions,
                                         menu: view,
                                         pending_action: PendingAction::AskUserQuestion {
-                                            tool_id,
+                                            tool_id: tool_id.clone(),
                                             questions,
                                             current_index: 0,
                                             answers: Vec::new(),
@@ -3702,6 +3920,7 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                                     };
                                     if let Some(handler) = interaction_handler.as_ref() {
                                         handler(request).await;
+                                        shown.insert(tool_id, std::time::Instant::now());
                                     }
                                 }
                             }
@@ -3723,21 +3942,12 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                     }
                     TrackerEvent::TurnFailed { turn_id, error } => {
                         if turn_id == target_turn_id {
-                            let msg = format!("{}{}", s.error_prefix, error);
-                            return ForwardedTurnResult {
-                                completed_remote_tools: Vec::new(),
-                                display_text: msg.clone(),
-                                full_text: msg,
-                            };
+                            return failed(&shown, &error);
                         }
                     }
                     TrackerEvent::TurnCancelled { turn_id } => {
                         if turn_id == target_turn_id {
-                            return ForwardedTurnResult {
-                                completed_remote_tools: Vec::new(),
-                                display_text: s.task_cancelled.to_string(),
-                                full_text: s.task_cancelled.to_string(),
-                            };
+                            return cancelled(&shown);
                         }
                     }
                 },
@@ -3752,26 +3962,8 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
 
         // Read the submitted turn by identity. Another controller may already
         // have started the next turn and replaced the tracker's text buffer.
-        let poll_host =
-            crate::service_agent_runtime::CoreServiceAgentRuntime::remote_poll_host(&dispatcher);
-        let poll = openbitfun_services_integrations::remote_connect::handle_remote_poll_command(
-            &poll_host,
-            &openbitfun_services_integrations::remote_connect::RemoteCommand::PollSession {
-                session_id: forward.session_id.clone(),
-                since_version: 0,
-                known_msg_count: 0,
-                known_model_catalog_version: None,
-            },
-        )
-        .await;
-        let full_text = serde_json::to_value(poll)
-            .ok()
-            .and_then(|poll| {
-                openbitfun_services_integrations::remote_connect::bot::remote_turn::observe_turn(
-                    &poll,
-                    &target_turn_id,
-                )
-            })
+        let full_text = read_local_turn(&dispatcher, &forward.session_id, &target_turn_id)
+            .await
             .map(|turn| turn.text)
             .filter(|text| !text.is_empty())
             .unwrap_or(response);
@@ -3785,7 +3977,7 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
         let display_text = full_text.clone();
 
         ForwardedTurnResult {
-            completed_remote_tools: Vec::new(),
+            completed_remote_tools: shown.into_keys().collect(),
             display_text: if display_text.is_empty() {
                 s.no_response.to_string()
             } else {
@@ -3793,19 +3985,122 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
             },
             full_text,
         }
-    })
-    .await;
+    }
+}
 
-    result.unwrap_or_else(|_| ForwardedTurnResult {
-        completed_remote_tools: Vec::new(),
-        display_text: s.timeout_one_hour.to_string(),
-        full_text: String::new(),
+/// The persisted or live projection of one local turn, read by identity.
+async fn read_local_turn(
+    dispatcher: &crate::service::remote_connect::remote_server::RemoteExecutionDispatcher,
+    session_id: &str,
+    turn_id: &str,
+) -> Option<openbitfun_services_integrations::remote_connect::bot::remote_turn::ObservedTurn> {
+    let poll_host =
+        crate::service_agent_runtime::CoreServiceAgentRuntime::remote_poll_host(dispatcher);
+    let poll = openbitfun_services_integrations::remote_connect::handle_remote_poll_command(
+        &poll_host,
+        &openbitfun_services_integrations::remote_connect::RemoteCommand::PollSession {
+            session_id: session_id.to_string(),
+            since_version: 0,
+            known_msg_count: 0,
+            known_model_catalog_version: None,
+        },
+    )
+    .await;
+    serde_json::to_value(poll).ok().and_then(|poll| {
+        openbitfun_services_integrations::remote_connect::bot::remote_turn::observe_turn(
+            &poll, turn_id,
+        )
     })
+}
+
+/// The chat prompt for a tool that blocks its turn on the user, shared by
+/// local and account-routed turns.
+fn blocked_tool_interaction(
+    tool: &openbitfun_services_integrations::remote_connect::RemoteToolStatus,
+    s: &'static BotStrings,
+) -> Option<(MenuView, PendingAction)> {
+    if tool.status == "pending_confirmation" {
+        let action_token = uuid::Uuid::new_v4().to_string();
+        let description = format!(
+            "{}\n{}",
+            tool.name,
+            tool.input_preview.clone().unwrap_or_default()
+        );
+        return Some((
+            remote_tool_view(&action_token, &description, s),
+            PendingAction::ConfirmRemoteTool {
+                tool_id: tool.id.clone(),
+                action_token,
+                description,
+            },
+        ));
+    }
+    if tool.name == "AskUserQuestion" && tool.status == "running" {
+        let questions = tool
+            .tool_input
+            .as_ref()
+            .and_then(|input| input.get("questions"))
+            .and_then(|value| serde_json::from_value::<Vec<BotQuestion>>(value.clone()).ok())?;
+        return Some((
+            build_question_view(s, &questions, 0, false),
+            PendingAction::AskUserQuestion {
+                tool_id: tool.id.clone(),
+                questions,
+                current_index: 0,
+                answers: vec![],
+                awaiting_custom_text: false,
+                pending_answer: None,
+            },
+        ));
+    }
+    None
+}
+
+/// Present every tool blocking a turn on the user. A prompt already shown is
+/// re-presented after [`INTERACTION_REPRESENT_SECS`] so it stays answerable
+/// past the menu TTL (and is re-sent if its earlier delivery failed).
+async fn present_blocked_tools(
+    tools: &[openbitfun_services_integrations::remote_connect::RemoteToolStatus],
+    target: Option<&RemoteBotTarget>,
+    shown: &mut std::collections::HashMap<String, std::time::Instant>,
+    interaction_handler: Option<&BotInteractionHandler>,
+    s: &'static BotStrings,
+) {
+    let Some(handler) = interaction_handler else {
+        return;
+    };
+    for tool in tools {
+        if shown
+            .get(&tool.id)
+            .is_some_and(|at| at.elapsed().as_secs() < INTERACTION_REPRESENT_SECS)
+        {
+            continue;
+        }
+        let Some((mut view, pending_action)) = blocked_tool_interaction(tool, s) else {
+            continue;
+        };
+        if let Some(target) = target {
+            view.title = format!(
+                "{} · {} · {}",
+                target.device_name, target.session_id, view.title
+            );
+        }
+        handler(BotInteractiveRequest {
+            remote_target: target.cloned(),
+            reply: view.render_text_block(),
+            actions: view.items.iter().cloned().map(BotAction::from).collect(),
+            menu: view,
+            pending_action,
+        })
+        .await;
+        shown.insert(tool.id.clone(), std::time::Instant::now());
+    }
 }
 
 async fn execute_remote_forward(
     forward: ForwardRequest,
     interaction_handler: Option<BotInteractionHandler>,
+    message_sender: Option<BotMessageSender>,
     fence: &super::BotRuntimeFence,
     epoch: u64,
     submission_finished: Option<tokio::sync::oneshot::Sender<()>>,
@@ -3863,151 +4158,154 @@ async fn execute_remote_forward(
             }
         }
     };
-    let result = tokio::time::timeout(std::time::Duration::from_secs(3600), async {
-        let mut version = 0;
-        let mut shown = std::collections::HashMap::<String, std::time::Instant>::new();
-        loop {
-            if !current() {
-                return empty();
+    // No wall-clock cap: the device keeps running a long turn, so the chat is
+    // told once that it is still running and receives the result when the
+    // turn settles. The lifecycle fence ends the watcher with the bot.
+    let started = std::time::Instant::now();
+    let mut still_running_sent = false;
+    let mut version = 0;
+    let mut shown = std::collections::HashMap::<String, std::time::Instant>::new();
+    let mut reachability = RemoteReachability::default();
+    let notify = |text: String| {
+        let sender = message_sender.clone();
+        let device_name = target.device_name.clone();
+        async move {
+            if let Some(sender) = sender {
+                sender(format!("{device_name} · {text}")).await;
             }
-            if shown.values().any(|at| at.elapsed().as_secs() >= 240) {
-                version = 0;
-            }
-            let poll = target.poll(version).await;
-            if !current() {
-                return empty();
-            }
-            match poll {
-                Ok(poll) if poll["resp"] == "session_poll" => {
-                    version = poll["version"].as_u64().unwrap_or(0);
-                    if let Some(turn) = observe_turn(&poll, &turn_id) {
-                        if turn.terminal() {
-                            let display_text = match turn.status.as_str() {
-                                "failed" | "error" => {
-                                    format!("{}{}", s.error_prefix, turn.error.unwrap_or_default())
-                                }
-                                "cancelled" => s.task_cancelled.to_string(),
-                                _ if turn.text.is_empty() => s.no_response.to_string(),
-                                _ => turn.text.clone(),
-                            };
-                            return ForwardedTurnResult {
-                                completed_remote_tools: shown.into_keys().collect(),
-                                display_text,
-                                full_text: turn.text,
-                            };
-                        }
-                        for tool in turn.tools {
-                            // Pending menus expire after five minutes; re-present a
-                            // still-blocked interaction so it remains answerable.
-                            if shown
-                                .get(&tool.id)
-                                .is_some_and(|at| at.elapsed().as_secs() < 240)
-                            {
-                                continue;
-                            }
-                            let (mut view, pending_action) = if tool.status
-                                == "pending_confirmation"
-                            {
-                                let action_token = uuid::Uuid::new_v4().to_string();
-                                let description = format!(
-                                    "{}\n{}",
-                                    tool.name,
-                                    tool.input_preview.unwrap_or_default()
-                                );
-                                (
-                                    remote_tool_view(&action_token, &description, s),
-                                    PendingAction::ConfirmRemoteTool {
-                                        tool_id: tool.id.clone(),
-                                        action_token,
-                                        description,
-                                    },
-                                )
-                            } else if tool.name == "AskUserQuestion" && tool.status == "running" {
-                                let Some(questions) = tool
-                                    .tool_input
-                                    .as_ref()
-                                    .and_then(|p| p.get("questions"))
-                                    .and_then(|v| {
-                                        serde_json::from_value::<Vec<BotQuestion>>(v.clone()).ok()
-                                    })
-                                else {
-                                    continue;
-                                };
-                                (
-                                    build_question_view(s, &questions, 0, false),
-                                    PendingAction::AskUserQuestion {
-                                        tool_id: tool.id.clone(),
-                                        questions,
-                                        current_index: 0,
-                                        answers: vec![],
-                                        awaiting_custom_text: false,
-                                        pending_answer: None,
-                                    },
-                                )
-                            } else {
-                                continue;
-                            };
-                            view.title = format!(
-                                "{} · {} · {}",
-                                target.device_name, target.session_id, view.title
-                            );
-                            if let Some(handler) = &interaction_handler {
-                                handler(BotInteractiveRequest {
-                                    remote_target: Some(target.clone()),
-                                    reply: view.render_text_block(),
-                                    actions: view
-                                        .items
-                                        .iter()
-                                        .cloned()
-                                        .map(BotAction::from)
-                                        .collect(),
-                                    menu: view,
-                                    pending_action,
-                                })
-                                .await;
-                                shown.insert(tool.id, std::time::Instant::now());
-                            }
-                        }
-                    }
+        }
+    };
+    loop {
+        if !current() {
+            return empty();
+        }
+        if shown
+            .values()
+            .any(|at| at.elapsed().as_secs() >= INTERACTION_REPRESENT_SECS)
+        {
+            version = 0;
+        }
+        let poll = target.poll(version).await;
+        if !current() {
+            return empty();
+        }
+        let mut wait = std::time::Duration::from_secs(2);
+        match poll {
+            Ok(poll) if poll["resp"] == "session_poll" => {
+                if reachability.on_success() {
+                    log::info!("Bot remote turn host is reachable again");
+                    notify(s.remote_host_recovered.to_string()).await;
                 }
-                Ok(reply) => {
-                    return ForwardedTurnResult {
-                        completed_remote_tools: Vec::new(),
-                        display_text: format!(
-                            "{}{}",
-                            s.error_prefix,
-                            reply["message"]
-                                .as_str()
-                                .unwrap_or("Invalid remote poll response")
-                        ),
-                        full_text: String::new(),
-                    }
-                }
-                Err(error) => {
-                    if crate::service::remote_connect::account::error_indicates_expired_token(
-                        &error,
-                    ) || error.contains("HTTP 403")
-                    {
+                version = poll["version"].as_u64().unwrap_or(0);
+                if let Some(turn) = observe_turn(&poll, &turn_id) {
+                    if turn.terminal() {
+                        let display_text = match turn.status.as_str() {
+                            "failed" | "error" => {
+                                format!("{}{}", s.error_prefix, turn.error.unwrap_or_default())
+                            }
+                            "cancelled" => s.task_cancelled.to_string(),
+                            _ if turn.text.is_empty() => s.no_response.to_string(),
+                            _ => turn.text.clone(),
+                        };
                         return ForwardedTurnResult {
-                            completed_remote_tools: Vec::new(),
-                            display_text: format!("{}{error}", s.error_prefix),
-                            full_text: String::new(),
+                            completed_remote_tools: shown.into_keys().collect(),
+                            display_text,
+                            full_text: turn.text,
                         };
                     }
-                    log::warn!("Bot remote turn poll interrupted: {error}");
-                    // Read-only replay after a disconnect, without another send.
-                    version = 0;
+                    present_blocked_tools(
+                        &turn.tools,
+                        Some(target),
+                        &mut shown,
+                        interaction_handler.as_ref(),
+                        s,
+                    )
+                    .await;
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            Ok(reply) => {
+                return ForwardedTurnResult {
+                    completed_remote_tools: Vec::new(),
+                    display_text: format!(
+                        "{}{}",
+                        s.error_prefix,
+                        reply["message"]
+                            .as_str()
+                            .unwrap_or("Invalid remote poll response")
+                    ),
+                    full_text: String::new(),
+                }
+            }
+            Err(error) => {
+                if crate::service::remote_connect::account::error_indicates_expired_token(&error)
+                    || error.contains("HTTP 403")
+                {
+                    return ForwardedTurnResult {
+                        completed_remote_tools: Vec::new(),
+                        display_text: format!("{}{error}", s.error_prefix),
+                        full_text: String::new(),
+                    };
+                }
+                let (delay, announce_offline) = reachability.on_failure();
+                if reachability.failed_polls == 1 {
+                    log::warn!("Bot remote turn poll interrupted: {error}");
+                }
+                if announce_offline {
+                    log::warn!(
+                        "Bot remote turn host unreachable after {} polls; still checking: {error}",
+                        reachability.failed_polls
+                    );
+                    notify(s.remote_host_offline.to_string()).await;
+                }
+                wait = delay;
+                // Read-only replay after a disconnect, without another send.
+                version = 0;
+            }
         }
-    })
-    .await;
-    result.unwrap_or_else(|_| ForwardedTurnResult {
-        completed_remote_tools: Vec::new(),
-        display_text: s.timeout_one_hour.to_string(),
-        full_text: String::new(),
-    })
+        if !still_running_sent && started.elapsed() >= STILL_RUNNING_NOTICE_AFTER {
+            still_running_sent = true;
+            notify(s.turn_still_running.to_string()).await;
+        }
+        tokio::time::sleep(wait).await;
+    }
+}
+
+/// Consecutive poll failures of one remote turn's host, and whether the chat
+/// was told it is unreachable.
+#[derive(Debug, Default)]
+struct RemoteReachability {
+    failed_polls: u32,
+    offline_announced: bool,
+}
+
+impl RemoteReachability {
+    /// Record a failed poll. Returns the wait before the next poll and
+    /// whether the chat should now be told the host is unreachable (once).
+    fn on_failure(&mut self) -> (std::time::Duration, bool) {
+        self.failed_polls = self.failed_polls.saturating_add(1);
+        let announce = self.failed_polls >= REMOTE_OFFLINE_NOTICE_AFTER && !self.offline_announced;
+        self.offline_announced |= announce;
+        (remote_poll_backoff(self.failed_polls), announce)
+    }
+
+    /// Record a successful poll. Returns whether the chat should be told the
+    /// host is reachable again.
+    fn on_success(&mut self) -> bool {
+        let recovered = self.offline_announced;
+        *self = Self::default();
+        recovered
+    }
+}
+
+/// Delay before the next poll of a remote host after `failed_polls`
+/// consecutive failures: 2 s doubling up to [`REMOTE_POLL_MAX_BACKOFF`].
+fn remote_poll_backoff(failed_polls: u32) -> std::time::Duration {
+    let factor = 1u32
+        .checked_shl(failed_polls.saturating_sub(1).min(16))
+        .unwrap_or(u32::MAX);
+    std::time::Duration::from_secs(2)
+        .saturating_mul(factor)
+        .min(REMOTE_POLL_MAX_BACKOFF)
 }
 
 fn remote_tool_view(tool_id: &str, description: &str, s: &'static BotStrings) -> MenuView {
@@ -4585,6 +4883,160 @@ mod parse_command_tests {
 mod state_tests {
     use super::*;
 
+    fn local_approval(tool_id: &str) -> BotInteractiveRequest {
+        let s = strings_for(BotLanguage::EnUS);
+        let view = remote_tool_view(tool_id, "Bash\nrm build", s);
+        BotInteractiveRequest {
+            remote_target: None,
+            reply: view.render_text_block(),
+            actions: vec![],
+            menu: view,
+            pending_action: PendingAction::ConfirmRemoteTool {
+                tool_id: tool_id.into(),
+                action_token: tool_id.into(),
+                description: "Bash\nrm build".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn expired_host_interaction_keeps_its_queue_and_is_resent_after_a_failed_delivery() {
+        let mut state = BotChatState::new("chat".into());
+        let first = local_approval("approval-a");
+        let second = local_approval("approval-b");
+        assert!(apply_interactive_request(&mut state, &first));
+        // The menu TTL elapsed while the host still waits on the approval.
+        state.pending_expires_at = 0;
+        assert!(!apply_interactive_request(&mut state, &second));
+        assert_eq!(state.pending_interactions.len(), 1);
+        assert!(matches!(
+            state.pending_action,
+            Some(PendingAction::ConfirmRemoteTool { ref tool_id, .. }) if tool_id == "approval-a"
+        ));
+
+        // Re-presentation refreshes the prompt without sending it again...
+        assert!(!apply_interactive_request(&mut state, &first));
+        assert!(!state.pending_expired());
+        // ...unless the chat never received it.
+        mark_interaction_undelivered(&mut state, &first);
+        assert!(apply_interactive_request(&mut state, &first));
+        assert!(!state.pending_presentation_failed);
+        assert!(!apply_interactive_request(&mut state, &first));
+
+        // A remote turn's completion never retires a local prompt.
+        let remote = RemoteBotTarget {
+            relay_url: "https://relay.invalid".into(),
+            device_id: "device".into(),
+            device_name: "device".into(),
+            session_id: "session".into(),
+            account: crate::service::remote_connect::AccountSession::new(
+                "token".into(),
+                String::new(),
+                [5; 32],
+            ),
+        };
+        let ids = vec!["approval-a".to_string()];
+        assert!(retire_completed_remote_tools(&mut state, Some(&remote), &ids).is_none());
+        assert!(state.pending_action.is_some());
+        // The settled local turn retires its prompt and promotes the queue.
+        let next = retire_completed_remote_tools(&mut state, None, &ids).unwrap();
+        assert!(matches!(
+            next.pending_action,
+            PendingAction::ConfirmRemoteTool { ref tool_id, .. } if tool_id == "approval-b"
+        ));
+    }
+
+    #[tokio::test]
+    async fn expired_host_interaction_survives_the_menu_ttl_but_menus_do_not() {
+        let mut state = BotChatState::new("chat".into());
+        state.paired = true;
+        state.set_pending(local_approval("approval-a").pending_action);
+        state.pending_expires_at = 0;
+        handle_command(&mut state, BotCommand::Help, vec![]).await;
+        assert!(state.pending_action.is_some());
+        assert!(!state.pending_expired());
+
+        state.clear_pending();
+        state.set_pending(PendingAction::SelectModel {
+            options: vec![("primary".into(), "Primary".into())],
+            current_model_id: None,
+        });
+        state.pending_expires_at = 0;
+        handle_command(&mut state, BotCommand::Help, vec![]).await;
+        assert!(state.pending_action.is_none());
+    }
+
+    #[tokio::test]
+    async fn blocked_tools_are_presented_and_represented_after_the_window() {
+        let s = strings_for(BotLanguage::EnUS);
+        let presented = Arc::new(std::sync::Mutex::new(Vec::<BotInteractiveRequest>::new()));
+        let sink = presented.clone();
+        let handler: BotInteractionHandler = Arc::new(move |request| {
+            sink.lock().unwrap().push(request);
+            Box::pin(async {})
+        });
+        let tools: Vec<openbitfun_services_integrations::remote_connect::RemoteToolStatus> =
+            serde_json::from_value(serde_json::json!([
+                {"id": "approval", "name": "Bash", "status": "pending_confirmation",
+                    "input_preview": "rm build"},
+                {"id": "question", "name": "AskUserQuestion", "status": "running",
+                    "tool_input": {"questions": [{"question": "Format?",
+                        "options": [{"label": "PNG"}]}]}},
+                {"id": "reading", "name": "Read", "status": "running"}
+            ]))
+            .unwrap();
+        let mut shown = std::collections::HashMap::new();
+
+        present_blocked_tools(&tools, None, &mut shown, Some(&handler), s).await;
+        {
+            let presented = presented.lock().unwrap();
+            assert_eq!(presented.len(), 2);
+            assert!(presented
+                .iter()
+                .all(|request| request.remote_target.is_none()));
+            assert!(matches!(
+                presented[0].pending_action,
+                PendingAction::ConfirmRemoteTool { ref tool_id, ref description, .. }
+                    if tool_id == "approval" && description.contains("rm build")
+            ));
+            assert!(matches!(
+                presented[1].pending_action,
+                PendingAction::AskUserQuestion { ref tool_id, .. } if tool_id == "question"
+            ));
+        }
+
+        present_blocked_tools(&tools, None, &mut shown, Some(&handler), s).await;
+        assert_eq!(presented.lock().unwrap().len(), 2);
+
+        shown.insert(
+            "approval".into(),
+            std::time::Instant::now()
+                - std::time::Duration::from_secs(INTERACTION_REPRESENT_SECS + 1),
+        );
+        present_blocked_tools(&tools, None, &mut shown, Some(&handler), s).await;
+        assert_eq!(presented.lock().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn unreachable_remote_host_is_announced_once_with_backoff_and_recovery() {
+        let mut reachability = RemoteReachability::default();
+        let mut announced = 0;
+        let mut waits = Vec::new();
+        for _ in 0..8 {
+            let (wait, announce) = reachability.on_failure();
+            announced += usize::from(announce);
+            waits.push(wait.as_secs());
+        }
+        assert_eq!(announced, 1);
+        assert_eq!(waits[..5], [2, 4, 8, 16, 30]);
+        assert_eq!(waits[7], REMOTE_POLL_MAX_BACKOFF.as_secs());
+        assert!(reachability.on_success());
+        assert!(!reachability.on_success());
+        // A short blip below the threshold neither warns nor announces recovery.
+        assert!(!reachability.on_failure().1);
+        assert!(!reachability.on_success());
+    }
+
     #[test]
     fn pending_expires_after_ttl() {
         let mut state = BotChatState::new("c".into());
@@ -5020,12 +5472,9 @@ mod handle_chat_tests {
         let ids = vec!["same-tool-id".to_string()];
         assert!(apply_interactive_request(&mut state, &first));
         assert!(!apply_interactive_request(&mut state, &next));
-        assert!(retire_completed_remote_tools(
-            &mut state,
-            next.remote_target.as_ref().unwrap(),
-            &ids
-        )
-        .is_none());
+        assert!(
+            retire_completed_remote_tools(&mut state, next.remote_target.as_ref(), &ids).is_none()
+        );
         assert!(state.pending_interactions.is_empty());
         assert_eq!(
             state.pending_remote_target.as_ref().unwrap().device_id,
@@ -5033,17 +5482,13 @@ mod handle_chat_tests {
         );
         assert!(!apply_interactive_request(&mut state, &next));
         let promoted =
-            retire_completed_remote_tools(&mut state, first.remote_target.as_ref().unwrap(), &ids)
-                .unwrap();
+            retire_completed_remote_tools(&mut state, first.remote_target.as_ref(), &ids).unwrap();
         assert!(state.pending_action.is_none());
         assert!(state.last_menu_commands.is_empty());
         assert!(apply_interactive_request(&mut state, &promoted));
-        assert!(retire_completed_remote_tools(
-            &mut state,
-            first.remote_target.as_ref().unwrap(),
-            &ids
-        )
-        .is_none());
+        assert!(
+            retire_completed_remote_tools(&mut state, first.remote_target.as_ref(), &ids).is_none()
+        );
         assert_eq!(
             state.pending_remote_target.as_ref().unwrap().device_id,
             "device-b"
