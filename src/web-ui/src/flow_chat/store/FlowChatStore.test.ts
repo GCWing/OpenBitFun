@@ -2277,6 +2277,102 @@ describe('FlowChatStore historical session hydration state', () => {
     vi.unstubAllGlobals();
   });
 
+  it.each(['metadata-only', 'hydrating', undefined] as const)(
+    'does not cache a guessed live ordinal before history hydration (%s)', historyState => {
+      const session = createSession({ sessionId: 'history-1', isHistorical: true, historyState, persistedTurnCount: 80 });
+      const live = { id: 'live-81', sessionId: session.sessionId, backendTurnIndex: 80,
+        userMessage: { id: 'live-user', content: 'Continue', timestamp: 81 }, modelRounds: [],
+        status: 'processing', startTime: 81 } as any;
+      flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
+      flowChatStore.addDialogTurn(session.sessionId, live);
+      expect(flowChatStore.getState().sessions.get(session.sessionId)?.dialogTurns).toEqual([live]);
+      expect(flowChatStore.getSessionHistoryViewState(session.sessionId)?.loadedRanges ?? []).toEqual([]);
+    },
+  );
+
+  it.each([false, true])('retains known live ordinals with a sparse catalog (legacy field: %s)', legacy => {
+    const session = createSession({ sessionId: 'history-1', isHistorical: true, historyState: 'metadata-only',
+      turnCatalog: { ...createTurnCatalog(3), entries: [
+        { ordinal: 0, storageTurnIndex: 1, turnId: 'old', previewTruncated: false },
+        { ordinal: 2, storageTurnIndex: 9, turnId: 'live', previewTruncated: false },
+      ] } });
+    const live = { id: 'live', sessionId: session.sessionId,
+      ...(legacy ? { backendTurnIndex: 9 } : { storageTurnIndex: 9 }),
+      userMessage: { id: 'live-user', content: 'Continue', timestamp: 1 }, modelRounds: [], status: 'processing', startTime: 1 } as any;
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
+    flowChatStore.addDialogTurn(session.sessionId, live);
+    expect(flowChatStore.getSessionHistoryViewState(session.sessionId)?.loadedRanges).toMatchObject([
+      { startOrdinal: 2, endOrdinalExclusive: 3, turns: [{ id: 'live' }] },
+    ]);
+  });
+
+  it('retains live ranges for a legacy complete session with non-contiguous storage slots', () => {
+    const old = { id: 'old', storageTurnIndex: 3, userMessage: { id: 'u-old', content: 'old', timestamp: 1 },
+      modelRounds: [], status: 'completed', startTime: 1 } as any;
+    const live = { ...old, id: 'live', storageTurnIndex: 9, status: 'processing' };
+    const session = createSession({ sessionId: 'history-1', dialogTurns: [old] });
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
+    flowChatStore.addDialogTurn(session.sessionId, live);
+    expect(flowChatStore.getSessionHistoryViewState(session.sessionId)?.loadedRanges).toMatchObject([
+      { startOrdinal: 1, endOrdinalExclusive: 2, turns: [{ id: 'live' }] },
+    ]);
+  });
+
+  it('retains a known partial-tail ordinal on legacy hosts without a catalog', () => {
+    const tail = { id: 'turn-79', backendTurnIndex: 79, userMessage: { id: 'u-old', content: 'old', timestamp: 1 },
+      modelRounds: [], status: 'completed', startTime: 1 } as any;
+    const live = { ...tail, id: 'turn-80', backendTurnIndex: 80, status: 'processing' };
+    const session = createSession({ sessionId: 'history-1', dialogTurns: [tail], historyState: 'ready',
+      isPartial: true, totalTurnCount: 80 });
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
+    flowChatStore.addDialogTurn(session.sessionId, live);
+    expect(flowChatStore.getSessionHistoryViewState(session.sessionId)?.loadedRanges).toMatchObject([
+      { startOrdinal: 80, endOrdinalExclusive: 81, turns: [{ id: 'turn-80' }] },
+    ]);
+  });
+
+  it('reloads a conflicting cached slot when a legacy catalog omits Turn IDs', async () => {
+    const catalog: NonNullable<Session['turnCatalog']> = createTurnCatalog(81);
+    delete catalog.entries[0].turnId;
+    const live = { id: 'turn-80', backendTurnIndex: 80, sessionId: 'history-1',
+      userMessage: { id: 'live-user', content: 'Continue', timestamp: 81 }, modelRounds: [], status: 'processing', startTime: 81 } as any;
+    const session = createSession({ sessionId: 'history-1', dialogTurns: [live], isPartial: true,
+      totalTurnCount: 81, historyState: 'ready', turnCatalog: catalog });
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
+    (flowChatStore as any).cacheSessionLoadedTurnRange(session.sessionId, {
+      startOrdinal: 0, endOrdinalExclusive: 1, turns: [live], source: 'live', lastAccessedAt: 1,
+    }, catalog);
+    apiMocks.loadSessionTurnWindow.mockResolvedValueOnce({ status: 'ready', catalogRevision: catalog.revision,
+      totalTurnCount: 81, startOrdinal: 0, endOrdinalExclusive: 1, targetTurnId: 'turn-0', turns: [createPersistedTurn(0)] });
+    const result = await flowChatStore.loadSessionTurnWindow(session.sessionId, 0);
+    expect(result).toMatchObject({ status: 'ready', cacheHit: false, targetTurnId: 'turn-0' });
+    expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledTimes(1);
+    expect(flowChatStore.getState().sessions.get(session.sessionId)?.dialogTurns[0]).toBe(live);
+  });
+
+  it.each(['seed', 'authoritative'] as const)('discards unversioned ranges on first catalog adoption (%s)', source => {
+    const live = { id: 'turn-80', storageTurnIndex: 80, sessionId: 'history-1',
+      userMessage: { id: 'live-user', content: 'Continue', timestamp: 81 }, modelRounds: [], status: 'processing', startTime: 81 } as any;
+    const session = createSession({ sessionId: 'history-1', dialogTurns: [live], totalTurnCount: 1 });
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
+    (flowChatStore as any).cacheSessionLoadedTurnRange(session.sessionId, {
+      startOrdinal: 0, endOrdinalExclusive: 1, turns: [live], source: 'live', lastAccessedAt: 1,
+    }, null);
+    const catalog = createTurnCatalog(81);
+    if (source === 'seed') {
+      flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, {
+        ...session, isPartial: true, totalTurnCount: 81, turnCatalog: catalog,
+      }]]) }));
+      (flowChatStore as any).seedSessionHistoryLoadedRanges(session.sessionId);
+    } else {
+      (flowChatStore as any).updateAuthoritativeSessionTurnCatalog(session.sessionId, catalog);
+    }
+    const ranges = flowChatStore.getSessionHistoryViewState(session.sessionId)!.loadedRanges;
+    expect(ranges.some(range => range.startOrdinal === 0 && range.turns.some(turn => turn.id === live.id))).toBe(false);
+    expect(flowChatStore.getState().sessions.get(session.sessionId)?.dialogTurns[0]).toBe(live);
+    if (source === 'seed') expect(ranges).toMatchObject([{ startOrdinal: 80, endOrdinalExclusive: 81, turns: [{ id: live.id }] }]);
+  });
+
   it.each([0, 3, undefined])('loads persisted metadata as metadata-only historical sessions (turns=%s)', async turnCount => {
     apiMocks.listSessions.mockResolvedValueOnce([
       {

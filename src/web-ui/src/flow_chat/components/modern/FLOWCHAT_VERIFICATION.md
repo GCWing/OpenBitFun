@@ -16,6 +16,7 @@ each missing what the other had.
 
 | Test | Contract it holds |
 |---|---|
+| `../../store/FlowChatStore.test.ts`, `ModernFlowChatContainer.history-restore.test.tsx` | live arrival before hydration never caches a guessed global ordinal; first catalog adoption drops unversioned ranges while retaining canonical live bodies; catalog IDs and sparse legacy storage slots keep the first history Turn reachable on local/simulated Peer surfaces, including legacy `backendTurnIndex` payloads; not live remote evidence |
 | `flowChatTurnSummaries.test.ts`, `../../utils/flowChatTurnIdentity.test.ts`, `../../utils/flowChatTurnOrdinal.test.ts` | stable summary identity across streamed body updates; append/rollback, catalog and storage-index corrections, partial-tail offsets, catalog-only/empty history windows, provisional usage reports and legacy identity compatibility; batched catalog lookup without per-Turn rescans |
 | `../../timeline/useTimelineInteraction.test.tsx` | selection/focus retention and cleanup; mutation/resize bursts coalesce before dimension reads, inactive viewports keep leases without measurement and refresh on reveal, while explicit active selection/focus changes retain immediately; supplied DOM geometry, not native performance evidence |
 | `flowItemRhythm.test.ts`, `../../../tools/generative-ui/genUISpacing.test.ts` | mixed agent-card full-row children and exact generated-content gap matching through nested stacks, hidden children and insert/remove snapshots; native invalidation and performance are verified separately |

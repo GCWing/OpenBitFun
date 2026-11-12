@@ -2880,6 +2880,15 @@ export class FlowChatStore {
     const existing = this.sessionHistoryViews.get(sessionId);
     if (existing) {
       if (catalog !== undefined && existing.catalog === null) {
+        if (catalog && existing.loadedRanges.length > 0) {
+          // First catalog adoption versions previously unlocated live bodies.
+          // Their local offsets cannot vouch for global history ordinals.
+          existing.navigationGeneration += 1;
+          existing.pendingTargetOrdinal = null;
+          existing.activeRange = null;
+          existing.loadedRanges = [];
+          this.sessionHistoryTurnAccessTimes.delete(sessionId);
+        }
         existing.catalog = catalog;
       }
       return existing;
@@ -3834,8 +3843,12 @@ export class FlowChatStore {
       const canonicalOrdinal = canonicalTarget
         ? resolveDialogTurnIdentity(session, canonicalTarget)?.ordinal
         : undefined;
+      const cachedStorageTurnIndex = cachedTarget
+        ? resolveStorageTurnIndex(session, cachedTarget)
+        : undefined;
       if (cachedTarget && (entry
-        ? !entry.turnId || cachedTarget.id === entry.turnId
+        ? (!entry.turnId || cachedTarget.id === entry.turnId)
+          && (cachedStorageTurnIndex === undefined || cachedStorageTurnIndex === entry.storageTurnIndex)
         : canonicalOrdinal === normalizedTargetOrdinal)) {
         const selected = selectTargetHistoryPresentationRange(
           cachedRange,
@@ -6305,6 +6318,15 @@ export class FlowChatStore {
       const catalog = updatedSession.turnCatalog?.sessionId === sessionId
         ? updatedSession.turnCatalog
         : undefined;
+      const storageTurnIndex = resolveStorageTurnIndex(updatedSession, dialogTurn);
+      const hasCatalogIdentity = catalog?.entries.some(entry => entry.turnId === dialogTurn.id
+        || (!entry.turnId && storageTurnIndex !== undefined && entry.storageTurnIndex === storageTurnIndex)) === true;
+      const historyUnresolved = updatedSession.historyState === 'metadata-only'
+        || updatedSession.historyState === 'hydrating'
+        || (updatedSession.isHistorical === true && updatedSession.isPartial !== true);
+      // Keep the live Turn in canonical state while lazy history is unknown.
+      // A local fallback ordinal is for presentation, not a global cache key.
+      if (historyUnresolved && !hasCatalogIdentity) return;
       const identity = resolveDialogTurnIdentity(updatedSession, dialogTurn);
       if (!identity) {
         return;

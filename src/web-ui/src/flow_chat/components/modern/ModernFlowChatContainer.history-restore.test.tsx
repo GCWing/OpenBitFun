@@ -2,7 +2,7 @@
 import React, { act, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Session, SessionHistoryPresentation } from '../../types/flow-chat';
+import type { Session, SessionHistoryPresentation, SessionHistoryViewState } from '../../types/flow-chat';
 import type { VirtualMessageList } from './VirtualMessageList';
 import type { FlowChatTurnRail } from './FlowChatTurnRail';
 
@@ -17,13 +17,14 @@ const fixture = vi.hoisted(() => ({
   synchronize: vi.fn(),
   extend: vi.fn(),
   present: null as ((sessionId: string, presentation: SessionHistoryPresentation) => void) | null,
+  loadedRanges: [] as SessionHistoryViewState['loadedRanges'],
 }));
 vi.mock('../../store/FlowChatStore', () => ({ flowChatStore: {
   getState: () => ({ activeSessionId: fixture.session?.sessionId, sessions: new Map(fixture.session ? [[fixture.session.sessionId, fixture.session]] : []) }),
   retainSessionHistory: () => () => {},
   subscribeSelector: () => () => {},
   getSessionHistoryViewState: () => ({
-    catalog: fixture.session?.turnCatalog ?? null, loadedRanges: [], activeRange: fixture.cached?.range ?? null,
+    catalog: fixture.session?.turnCatalog ?? null, loadedRanges: fixture.loadedRanges, activeRange: fixture.cached?.range ?? null,
   }),
   synchronizeSessionHistory: (...args: unknown[]) => fixture.synchronize(...args),
   reactivateSessionHistoryWindow: () => fixture.cached,
@@ -63,7 +64,7 @@ vi.mock('@/flow_chat/services/FlowChatManager', () => ({ FlowChatManager: {} }))
 vi.mock('./FlowChatHeader', () => ({ FlowChatHeader: ({ visible }: { visible: boolean }) => visible ? <header data-testid="history-header" /> : null }));
 vi.mock('./FlowChatTurnRail', () => ({ FlowChatTurnRail: ({ turns, onNavigate }: ComponentProps<typeof FlowChatTurnRail>) => (
   <nav data-testid="turn-rail">{turns.map(turn => (
-    <button key={turn.itemKey} data-rail-ordinal={turn.ordinal} onClick={() => onNavigate(turn)}>{turn.turnIndex}</button>
+    <button key={turn.itemKey} data-rail-ordinal={turn.ordinal} data-rail-turn-id={turn.turnId} onClick={() => onNavigate(turn)}>{turn.turnIndex}</button>
   ))}</nav>
 ) }));
 vi.mock('../background-command/BackgroundCommandInputDialog', () => ({ BackgroundCommandInputDialog: () => null }));
@@ -170,6 +171,7 @@ describe('FlowChat reader restoration across history rewrites', () => {
     fixture.listProps = null;
     fixture.viewportSettled = true;
     fixture.present = null;
+    fixture.loadedRanges = [];
     vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
     host = document.createElement('div');
     document.body.append(host);
@@ -437,6 +439,30 @@ describe('FlowChat reader restoration across history rewrites', () => {
     await render();
     expectPresented();
     expect(fixture.restore).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['local', true], ['local', false], ['peer-device', true], ['peer-device', false],
+  ] as const)('keeps the catalog first turn reachable despite a stale live range on %s (catalog IDs: %s)', async (surface, knownIds) => {
+    activateSurface(surface);
+    fixture.cached = null;
+    fixture.session = sessionWithCatalog(81, 'catalog-after-live');
+    const live = fixture.session.dialogTurns[0];
+    // Older projections expose backendTurnIndex and catalog slots without IDs.
+    if (knownIds) live.storageTurnIndex = 80;
+    else {
+      live.backendTurnIndex = 80;
+      delete fixture.session.turnCatalog!.entries[0].turnId;
+    }
+    fixture.loadedRanges = [{ startOrdinal: 0, endOrdinalExclusive: 1, turns: [live], source: 'live', lastAccessedAt: 1 }];
+    await render();
+    expect(host.querySelector('[data-rail-ordinal="0"]')?.getAttribute('data-rail-turn-id')).toBe(knownIds ? 'turn-0' : null);
+    fixture.cached = presentation(0, 1);
+    fixture.loadTurnWindow.mockResolvedValueOnce({ status: 'ready', isCurrent: true, targetOrdinal: 0,
+      targetTurnId: 'turn-0', navigationGeneration: 1 });
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-rail-ordinal="0"]')!.click());
+    expect(fixture.loadTurnWindow).toHaveBeenCalledWith('session-a', 0, { source: 'target' });
+    expect(host.querySelector('.virtual-message-list [data-turn-id="turn-0"]')).not.toBeNull();
   });
 
   it('keeps earlier history reachable when a ready internal tail deliberately projects no rows', async () => {

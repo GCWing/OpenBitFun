@@ -1146,13 +1146,15 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       ...(historyView?.loadedRanges.flatMap(range => range.turns) ?? []),
     ];
     const dialogTurnById = new Map(loadedTurns.map(turn => [turn.id, turn]));
-    const loadedByStorageIndex = new Map<number, { turnId: string; content: string; capsulePreview?: FlowChatTurnRailItem['capsulePreview'] }>();
-    const loadedByOrdinal = new Map<number, { turnId: string; content: string; capsulePreview?: FlowChatTurnRailItem['capsulePreview'] }>();
+    type LoadedRailTurn = { turnId: string; content: string; storageTurnIndex?: number; capsulePreview?: FlowChatTurnRailItem['capsulePreview'] };
+    const loadedByStorageIndex = new Map<number, LoadedRailTurn>();
+    const loadedByOrdinal = new Map<number, LoadedRailTurn>();
     for (const range of historyView?.loadedRanges ?? []) {
       range.turns.forEach((turn, index) => {
         const loaded = {
           turnId: turn.id,
           content: turn.userMessage?.content ?? '',
+          storageTurnIndex: turn.storageTurnIndex ?? turn.backendTurnIndex,
           capsulePreview: turnRailPreviewFor(turn),
         };
         loadedByOrdinal.set(range.startOrdinal + index, loaded);
@@ -1167,6 +1169,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       const loaded = {
         turnId: summary.turnId,
         content: dialogTurn?.userMessage?.content ?? '',
+        storageTurnIndex: summary.storageTurnIndex,
         capsulePreview: turnRailPreviewFor(dialogTurn),
       };
       loadedByOrdinal.set(Math.max(0, summary.turnIndex - 1), loaded);
@@ -1186,13 +1189,19 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       const catalogDialogTurn = catalogEntry?.turnId
         ? dialogTurnById.get(catalogEntry.turnId)
         : undefined;
-      const loaded = loadedByStorageIndex.get(storageTurnIndex)
-        ?? (catalogEntry?.turnId && catalogDialogTurn ? {
+      const loaded = [loadedByStorageIndex.get(storageTurnIndex),
+        catalogEntry?.turnId && catalogDialogTurn ? {
           turnId: catalogEntry.turnId,
           content: catalogDialogTurn.userMessage?.content ?? '',
+          storageTurnIndex: catalogDialogTurn.storageTurnIndex ?? catalogDialogTurn.backendTurnIndex,
           capsulePreview: turnRailPreviewFor(catalogDialogTurn),
-        } : undefined)
-        ?? loadedByOrdinal.get(ordinal);
+        } : undefined, loadedByOrdinal.get(ordinal),
+      ].find(candidate => {
+        if (!candidate) return false;
+        if (!catalogEntry) return true;
+        if (catalogEntry.turnId && candidate.turnId !== catalogEntry.turnId) return false;
+        return candidate.storageTurnIndex === undefined || candidate.storageTurnIndex === catalogEntry.storageTurnIndex;
+      });
       const turnId = loaded?.turnId ?? catalogEntry?.turnId ?? null;
       if (loaded?.turnId) {
         usedLoadedTurnIds.add(loaded.turnId);
