@@ -64,6 +64,12 @@ pub struct StreamPage {
     /// Older history was evicted from host memory; `has_more=false` then means
     /// "unavailable", not "complete".
     pub truncated: bool,
+    /// Highest live sequence the host's memory budget evicted. Sent only by
+    /// hosts that fence a forward reader behind evicted records with a fresh
+    /// epoch; older hosts omit it, and controllers then infer eviction from
+    /// `truncated` and `oldest_seq`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evicted_through: Option<u64>,
     /// Present only when the host accepted the optional single-Turn read offer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_history: Option<TurnHistoryPage>,
@@ -427,6 +433,7 @@ impl StreamLog {
             cursor: self.latest(),
             oldest_seq: self.oldest(),
             truncated: self.truncated,
+            evicted_through: Some(self.evicted_through),
             turn_history: None,
         })
     }
@@ -1779,6 +1786,11 @@ mod tests {
         let current = hub.read("d", &request("s")).unwrap();
         assert!(current.truncated && current.oldest_seq > slow.cursor + 1);
         assert_eq!(current.epoch, slow.epoch, "eviction alone keeps the epoch");
+        // The fencing host reports its eviction watermark for controllers.
+        let watermark = current
+            .evicted_through
+            .expect("fencing host reports evictions");
+        assert!(watermark > slow.cursor && watermark < current.oldest_seq);
         // A reader already past the evicted range keeps reading normally.
         let caught_up = hub
             .read(

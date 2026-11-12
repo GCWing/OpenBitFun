@@ -286,6 +286,7 @@ impl StreamLog {
             cursor: snapshot.cursor,
             oldest_seq: snapshot.cursor,
             truncated: false,
+            evicted_through: None,
             turn_history: Some(TurnHistoryPage {
                 version: VERSION,
                 snapshot_id: id.to_owned(),
