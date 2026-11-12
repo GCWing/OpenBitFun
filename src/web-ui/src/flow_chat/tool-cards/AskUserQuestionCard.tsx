@@ -25,6 +25,8 @@ import React, {
 import { useTranslation } from 'react-i18next';
 import { i18nService } from '@/infrastructure/i18n';
 import { toolAPI } from '@/infrastructure/api/service-api/ToolAPI';
+import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
+import { needsInteractionAnswerReadback } from '../utils/interactionAnswerOutcome';
 import {
   getActiveSurfaceScope,
   isSurfaceChangedError,
@@ -235,6 +237,7 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
           ? 'submitted'
           : 'asking';
   const [submissionFailed, setSubmissionFailed] = useState(false);
+  const [confirmingSubmission, setConfirmingSubmission] = useState(false);
   const [interactionFailed, setInteractionFailed] = useState(false);
   const interactionAttempt = useRef<number | null>(null);
   const startInteraction = useCallback(() => {
@@ -441,6 +444,26 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
       if (scope !== submissionScope.current) return;
       setSubmissionPhase('submitted');
     } catch (error) {
+      // A lost reply may hide an accepted answer, and a question that already
+      // settled refuses every retry. Ask the host whether it still waits.
+      if (!canFollowUp && sessionId && needsInteractionAnswerReadback(error)
+        && !isSurfaceChangedError(error)) {
+        if (scope === submissionScope.current) setConfirmingSubmission(true);
+        try {
+          const mailbox = await agentAPI.getSessionInteractionMailbox(sessionId);
+          activeSurfaceScope.assertCurrent('confirm submitted answers');
+          const stillPending = mailbox.userQuestions.questions.some(question => question.toolId === toolId);
+          if (!stillPending) {
+            log.info('Answer outcome confirmed from the interaction mailbox', { toolId, sessionId });
+            if (scope === submissionScope.current) setSubmissionPhase('submitted');
+            return;
+          }
+        } catch (readError) {
+          log.warn('Failed to confirm answers after an unknown outcome', { toolId, sessionId, error: readError });
+        } finally {
+          if (scope === submissionScope.current) setConfirmingSubmission(false);
+        }
+      }
       if (canFollowUp && draftKey) {
         askUserQuestionDraftStore.getState().setSubmissionPhase(draftKey, 'idle');
       }
@@ -576,7 +599,9 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
       : isSubmitted
         ? t('toolCards.askUser.submittedWaiting')
         : isSubmitting
-          ? t('toolCards.askUser.submitting')
+          ? confirmingSubmission
+            ? t('toolCards.askUser.confirming')
+            : t('toolCards.askUser.submitting')
           : interactionFailed
             ? t('toolCards.askUser.interactionFailed')
           : submissionFailed

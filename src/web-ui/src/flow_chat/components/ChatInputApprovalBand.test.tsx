@@ -152,6 +152,29 @@ describe('ChatInputApprovalBand', () => {
     );
   });
 
+  it('shows a confirming note while a lost answer is read back from the device', async () => {
+    let finish!: () => void;
+    const onRespond = vi.fn((_id: string, _reply: string, _feedback?: string, hooks?: { onConfirming?: () => void }) => {
+      hooks?.onConfirming?.();
+      return new Promise<void>(resolve => { finish = resolve; });
+    });
+    await act(async () => {
+      root.render(
+        <ChatInputApprovalBand
+          requests={[request()]}
+          onRespond={onRespond}
+          onRespondBatch={vi.fn(async () => undefined)}
+        />
+      );
+    });
+    await click('chat-input-approval-allow');
+    expect(container.querySelector('[data-openbitfun-part="confirming"]')).not.toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="error"]')).toBeNull();
+    await act(async () => { finish(); });
+    expect(container.querySelector('[data-openbitfun-part="confirming"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="error"]')).toBeNull();
+  });
+
   it('answers only the request in front of the reader by default', async () => {
     const onRespond = vi.fn(async () => undefined);
     const onRespondBatch = vi.fn(async () => undefined);
@@ -170,7 +193,7 @@ describe('ChatInputApprovalBand', () => {
     expect(container.querySelector('[data-testid="chat-input-approval-pending-count"]')).toBeNull();
 
     await click('chat-input-approval-allow');
-    expect(onRespond).toHaveBeenCalledWith('request-1', 'once', undefined);
+    expect(onRespond).toHaveBeenCalledWith('request-1', 'once', undefined, expect.any(Object));
     expect(onRespondBatch).not.toHaveBeenCalled();
   });
 
@@ -222,7 +245,7 @@ describe('ChatInputApprovalBand', () => {
     expect(container.querySelector('[data-testid="chat-input-approval-allow-always"]')).toBeNull();
 
     await click('chat-input-approval-reject');
-    expect(onRespondBatch).toHaveBeenCalledWith('request-1', 'reject', undefined);
+    expect(onRespondBatch).toHaveBeenCalledWith('request-1', 'reject', undefined, expect.any(Object));
     expect(onRespond).not.toHaveBeenCalled();
   });
 
@@ -267,11 +290,11 @@ describe('ChatInputApprovalBand', () => {
     ).toBe(false);
 
     await click('chat-input-approval-reject');
-    expect(onRespond).toHaveBeenLastCalledWith('request-1', 'reject', undefined);
+    expect(onRespond).toHaveBeenLastCalledWith('request-1', 'reject', undefined, expect.any(Object));
     expect(onRejectReasonConsumed).not.toHaveBeenCalled();
 
     await click('chat-input-approval-reject-with-reason');
-    expect(onRespond).toHaveBeenLastCalledWith('request-1', 'reject', 'use rg instead');
+    expect(onRespond).toHaveBeenLastCalledWith('request-1', 'reject', 'use rg instead', expect.any(Object));
     expect(onRejectReasonConsumed).toHaveBeenCalledTimes(1);
   });
 
@@ -328,7 +351,7 @@ describe('ChatInputApprovalBand', () => {
     );
 
     await click('chat-input-approval-allow-always');
-    expect(onRespond).toHaveBeenCalledWith('request-1', 'always', undefined);
+    expect(onRespond).toHaveBeenCalledWith('request-1', 'always', undefined, expect.any(Object));
     expect(onRespondBatch).not.toHaveBeenCalled();
   });
 

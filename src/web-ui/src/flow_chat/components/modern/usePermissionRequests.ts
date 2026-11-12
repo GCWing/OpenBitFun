@@ -12,9 +12,32 @@ import {
 import { FlowChatStore } from '../../store/FlowChatStore';
 import { driverForSession } from '../../session-drivers/registry';
 import {
+  confirmPermissionsStillPending,
   ensureActivePermissionMailbox,
   liveSessionInteractionStore,
 } from '../../services/liveSessionInteractionStore';
+import { needsInteractionAnswerReadback } from '../../utils/interactionAnswerOutcome';
+
+export interface PermissionAnswerHooks {
+  /** The reply was lost or refused as settled; the host mailbox is being read. */
+  onConfirming?: () => void;
+}
+
+/**
+ * A lost reply may hide an accepted answer, and a retry of a settled request
+ * can never succeed. Read the host's pending requests: an answer is complete
+ * once none of its requests are pending; otherwise the original error stands.
+ */
+async function confirmAfterFailedAnswer(
+  error: unknown,
+  requestIds: readonly string[],
+  hooks: PermissionAnswerHooks | undefined,
+): Promise<void> {
+  if (!needsInteractionAnswerReadback(error)) throw error;
+  hooks?.onConfirming?.();
+  const stillPending = await confirmPermissionsStillPending(requestIds);
+  if (stillPending.length > 0) throw error;
+}
 
 const EMPTY_EXTERNAL_REQUESTS: PermissionRequest[] = [];
 const noopSubscribe = () => () => {};
@@ -49,8 +72,19 @@ export function usePermissionRequests(sessionId?: string) {
   }, [isLiveSource, liveMailbox.surfaceId]);
 
   const respond = useCallback(
-    async (requestId: string, reply: PermissionReplyKind, feedback?: string) => {
-      await driver.respondPermission(sessionId ?? '', requestId, reply, feedback);
+    async (
+      requestId: string,
+      reply: PermissionReplyKind,
+      feedback?: string,
+      hooks?: PermissionAnswerHooks,
+    ) => {
+      try {
+        await driver.respondPermission(sessionId ?? '', requestId, reply, feedback);
+      } catch (error) {
+        if (!isLiveSource) throw error;
+        await confirmAfterFailedAnswer(error, [requestId], hooks);
+        return;
+      }
       if (isLiveSource) {
         liveSessionInteractionStore.markPermissionResolved(liveMailbox.surfaceId, requestId);
       }
@@ -59,13 +93,30 @@ export function usePermissionRequests(sessionId?: string) {
   );
 
   const respondBatch = useCallback(
-    async (requestId: string, reply: PermissionReplyKind, feedback?: string) => {
-      const resolvedRequestIds = await driver.respondPermissionBatch(
-        sessionId ?? '',
-        requestId,
-        reply,
-        feedback,
-      );
+    async (
+      requestId: string,
+      reply: PermissionReplyKind,
+      feedback?: string,
+      hooks?: PermissionAnswerHooks,
+    ) => {
+      // Captured before answering: a lost reply leaves no resolved id list.
+      const batchIds = new Set([requestId, ...(isLiveSource
+        ? selectActivePermissionBatch(liveMailbox.requests, sessionId)?.requests
+          .map(request => request.requestId) ?? []
+        : [])]);
+      let resolvedRequestIds: string[];
+      try {
+        resolvedRequestIds = await driver.respondPermissionBatch(
+          sessionId ?? '',
+          requestId,
+          reply,
+          feedback,
+        );
+      } catch (error) {
+        if (!isLiveSource) throw error;
+        await confirmAfterFailedAnswer(error, [...batchIds], hooks);
+        return;
+      }
       if (isLiveSource) {
         resolvedRequestIds.forEach((requestId) => {
           liveSessionInteractionStore.markPermissionResolved(
@@ -75,7 +126,7 @@ export function usePermissionRequests(sessionId?: string) {
         });
       }
     },
-    [driver, sessionId, isLiveSource, liveMailbox.surfaceId],
+    [driver, sessionId, isLiveSource, liveMailbox.surfaceId, liveMailbox.requests],
   );
 
   const effectiveRequests = isLiveSource ? liveMailbox.requests : externalRequests;

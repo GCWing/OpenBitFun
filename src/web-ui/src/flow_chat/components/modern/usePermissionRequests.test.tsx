@@ -289,6 +289,58 @@ describe('usePermissionRequests', () => {
     expect(controller?.requests.map((item) => item.requestId)).toEqual(['first']);
   });
 
+  it('confirms a lost permission reply from the host mailbox before reporting it', async () => {
+    await renderHarness(root, 'session-1', (next) => {
+      controller = next;
+    });
+    const direct = request('lost-reply', 'session-1');
+    emit({ event: 'asked', request: direct });
+    agentApiMock.respondPermission.mockRejectedValue(new Error('outcome_unknown: reply lost'));
+    agentApiMock.listPendingPermissionRequests.mockResolvedValue([]);
+    const onConfirming = vi.fn();
+
+    await act(async () => {
+      await controller?.respond(direct.requestId, 'once', undefined, { onConfirming });
+    });
+
+    expect(onConfirming).toHaveBeenCalledOnce();
+    expect(controller?.requests).toEqual([]);
+  });
+
+  it('reports a lost or settled-refused answer when the host still waits for it', async () => {
+    await renderHarness(root, 'session-1', (next) => {
+      controller = next;
+    });
+    const first = request('first', 'session-1');
+    const second = { ...request('second', 'session-1'), order: 1 };
+    emit({ event: 'asked', request: first });
+    emit({ event: 'asked', request: second });
+    agentApiMock.respondPermissionBatch.mockRejectedValue(new Error('outcome_unknown: reply lost'));
+    agentApiMock.listPendingPermissionRequests.mockResolvedValue([second]);
+
+    await act(async () => {
+      await expect(controller?.respondBatch('first', 'once')).rejects.toThrow('outcome_unknown');
+    });
+    // The read-back settled the first request and kept the one still pending.
+    expect(controller?.requests.map((item) => item.requestId)).toEqual(['second']);
+
+    agentApiMock.respondPermission.mockRejectedValue(new Error('Pending permission request not found: second'));
+    agentApiMock.listPendingPermissionRequests.mockResolvedValue([]);
+    await act(async () => {
+      await controller?.respond('second', 'once');
+    });
+    expect(controller?.requests).toEqual([]);
+
+    // An ordinary failure is reported without a read-back.
+    emit({ event: 'asked', request: request('third', 'session-1') });
+    agentApiMock.listPendingPermissionRequests.mockClear();
+    agentApiMock.respondPermission.mockRejectedValue(new Error('offline'));
+    await act(async () => {
+      await expect(controller?.respond('third', 'once')).rejects.toThrow('offline');
+    });
+    expect(agentApiMock.listPendingPermissionRequests).not.toHaveBeenCalled();
+  });
+
   it('answers every request in the active remote dispatch batch', async () => {
     const first = request('first', 'session-1');
     const second = { ...request('second', 'session-1'), order: 1 };

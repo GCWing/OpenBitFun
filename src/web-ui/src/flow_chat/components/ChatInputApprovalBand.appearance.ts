@@ -8,7 +8,7 @@ import type { AppearanceSurfaceDescriptor } from '@/infrastructure/appearance';
 export const chatInputApprovalBandAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'permission-request-panel',
   parts: [
-    { id: 'root' }, { id: 'request' }, { id: 'risk' }, { id: 'error' },
+    { id: 'root' }, { id: 'request' }, { id: 'risk' }, { id: 'confirming' }, { id: 'error' },
     { id: 'actions' }, { id: 'scope' }, { id: 'grantScope' },
   ],
   states: [

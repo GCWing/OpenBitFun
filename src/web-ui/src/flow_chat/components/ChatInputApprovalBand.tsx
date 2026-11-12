@@ -35,6 +35,7 @@ import type {
 } from '@/infrastructure/api/service-api/AgentAPI';
 import { useCopyTextAction } from '../hooks/useCopyTextAction';
 import { CopyableTextPreview } from './CopyableTextPreview';
+import type { PermissionAnswerHooks } from './modern/usePermissionRequests';
 import './ChatInputApprovalBand.scss';
 
 export interface ChatInputApprovalBandProps {
@@ -49,8 +50,18 @@ export interface ChatInputApprovalBandProps {
   rejectReason?: string;
   /** Clears the composer once its text has been spent as a reason. */
   onRejectReasonConsumed?: () => void;
-  onRespond: (requestId: string, reply: PermissionReplyKind, feedback?: string) => Promise<void>;
-  onRespondBatch: (requestId: string, reply: PermissionReplyKind, feedback?: string) => Promise<void>;
+  onRespond: (
+    requestId: string,
+    reply: PermissionReplyKind,
+    feedback?: string,
+    hooks?: PermissionAnswerHooks,
+  ) => Promise<void>;
+  onRespondBatch: (
+    requestId: string,
+    reply: PermissionReplyKind,
+    feedback?: string,
+    hooks?: PermissionAnswerHooks,
+  ) => Promise<void>;
 }
 
 const PERMISSION_ACTION_LABEL_KEYS: Record<string, string> = {
@@ -137,6 +148,7 @@ export const ChatInputApprovalBand: React.FC<ChatInputApprovalBandProps> = ({
   const [scope, setScope] = useState<ApprovalScope>('this');
   const [pendingAnswer, setPendingAnswer] = useState<ApprovalAnswer | null>(null);
   const [error, setError] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const responding = pendingAnswer !== null;
 
   const request = requests[0];
@@ -189,12 +201,13 @@ export const ChatInputApprovalBand: React.FC<ChatInputApprovalBandProps> = ({
     setPendingAnswer(withReason ? 'rejectWithReason' : reply);
     setError(false);
     const feedback = reply === 'reject' && withReason && reason ? reason : undefined;
+    const hooks: PermissionAnswerHooks = { onConfirming: () => setConfirming(true) };
     try {
       // 'always' is deliberately never batched: see the button's comment.
       if (effectiveScope === 'all' && reply !== 'always') {
-        await onRespondBatch(request.requestId, reply, feedback);
+        await onRespondBatch(request.requestId, reply, feedback, hooks);
       } else {
-        await onRespond(request.requestId, reply, feedback);
+        await onRespond(request.requestId, reply, feedback, hooks);
       }
       if (feedback) {
         onRejectReasonConsumed?.();
@@ -203,6 +216,7 @@ export const ChatInputApprovalBand: React.FC<ChatInputApprovalBandProps> = ({
       setError(true);
     } finally {
       setPendingAnswer(null);
+      setConfirming(false);
     }
   };
 
@@ -297,6 +311,16 @@ export const ChatInputApprovalBand: React.FC<ChatInputApprovalBandProps> = ({
             className="openbitfun-chat-input-approval__note"
           >
             <Alert tone="warning" message={risk} />
+          </div>
+        ) : null}
+        {confirming ? (
+          <div
+            data-openbitfun-component="permission-request-panel"
+            data-openbitfun-part="confirming"
+            className="openbitfun-chat-input-approval__note"
+            role="status"
+          >
+            <Alert tone="info" message={t('permission.responseConfirming')} />
           </div>
         ) : null}
         {error ? (

@@ -338,6 +338,25 @@ export function ensureActivePermissionMailbox(refresh = false): Promise<void> {
   return request;
 }
 
+/**
+ * Read the host's pending permissions after an answer whose outcome is unknown
+ * (lost reply, or the request was already settled). Returns which of the given
+ * requests are still pending; the others are marked resolved so their cards
+ * leave. A failed read throws: the caller keeps the request answerable.
+ */
+export async function confirmPermissionsStillPending(requestIds: readonly string[]): Promise<string[]> {
+  const scope = getActiveSurfaceScope();
+  const eventVersion = liveSessionInteractionStore.captureEventVersion(scope.surfaceId);
+  const pending = await agentAPI.listPendingPermissionRequests();
+  scope.assertCurrent('confirm permission answer');
+  liveSessionInteractionStore.reconcileUnversionedPermissions(scope.surfaceId, pending, eventVersion);
+  const pendingIds = new Set(pending.map(request => request.requestId));
+  for (const id of requestIds) {
+    if (!pendingIds.has(id)) liveSessionInteractionStore.markPermissionResolved(scope.surfaceId, id);
+  }
+  return requestIds.filter(id => pendingIds.has(id));
+}
+
 export function resetLiveSessionInteractionStoreForTest(): void {
   mailboxListenerDisposers.forEach(dispose => dispose());
   mailboxListenerDisposers = [];
