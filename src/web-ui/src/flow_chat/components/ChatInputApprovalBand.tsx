@@ -36,6 +36,8 @@ import type {
 import { useCopyTextAction } from '../hooks/useCopyTextAction';
 import { CopyableTextPreview } from './CopyableTextPreview';
 import type { PermissionAnswerHooks } from './modern/usePermissionRequests';
+import type { InteractionAnswerOutcome } from '../utils/interactionAnswerOutcome';
+import { notificationService } from '@/shared/notification-system';
 import './ChatInputApprovalBand.scss';
 
 export interface ChatInputApprovalBandProps {
@@ -50,18 +52,19 @@ export interface ChatInputApprovalBandProps {
   rejectReason?: string;
   /** Clears the composer once its text has been spent as a reason. */
   onRejectReasonConsumed?: () => void;
+  /** Resolves to how the answer ended; `void` is treated as accepted. */
   onRespond: (
     requestId: string,
     reply: PermissionReplyKind,
     feedback?: string,
     hooks?: PermissionAnswerHooks,
-  ) => Promise<void>;
+  ) => Promise<InteractionAnswerOutcome | void>;
   onRespondBatch: (
     requestId: string,
     reply: PermissionReplyKind,
     feedback?: string,
     hooks?: PermissionAnswerHooks,
-  ) => Promise<void>;
+  ) => Promise<InteractionAnswerOutcome | void>;
 }
 
 const PERMISSION_ACTION_LABEL_KEYS: Record<string, string> = {
@@ -204,10 +207,14 @@ export const ChatInputApprovalBand: React.FC<ChatInputApprovalBandProps> = ({
     const hooks: PermissionAnswerHooks = { onConfirming: () => setConfirming(true) };
     try {
       // 'always' is deliberately never batched: see the button's comment.
-      if (effectiveScope === 'all' && reply !== 'always') {
-        await onRespondBatch(request.requestId, reply, feedback, hooks);
-      } else {
-        await onRespond(request.requestId, reply, feedback, hooks);
+      const outcome = effectiveScope === 'all' && reply !== 'always'
+        ? await onRespondBatch(request.requestId, reply, feedback, hooks)
+        : await onRespond(request.requestId, reply, feedback, hooks);
+      if (outcome === 'already_resolved') {
+        // The host refused this answer: the request had already settled. The
+        // reason was never delivered, so it stays in the composer.
+        notificationService.info(t('permission.alreadyResolved'), { duration: 5000 });
+        return;
       }
       if (feedback) {
         onRejectReasonConsumed?.();

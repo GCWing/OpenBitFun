@@ -26,7 +26,7 @@ import { useTranslation } from 'react-i18next';
 import { i18nService } from '@/infrastructure/i18n';
 import { toolAPI } from '@/infrastructure/api/service-api/ToolAPI';
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
-import { needsInteractionAnswerReadback } from '../utils/interactionAnswerOutcome';
+import { needsInteractionAnswerReadback, settledInteractionAnswerOutcome } from '../utils/interactionAnswerOutcome';
 import {
   getActiveSurfaceScope,
   isSurfaceChangedError,
@@ -237,6 +237,8 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
           ? 'submitted'
           : 'asking';
   const [submissionFailed, setSubmissionFailed] = useState(false);
+  // The host refused the answer because the question had already settled.
+  const [alreadyResolved, setAlreadyResolved] = useState(false);
   const [confirmingSubmission, setConfirmingSubmission] = useState(false);
   const [interactionFailed, setInteractionFailed] = useState(false);
   const interactionAttempt = useRef<number | null>(null);
@@ -280,6 +282,7 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
 
   useEffect(() => {
     setSubmissionFailed(false);
+    setAlreadyResolved(false);
     setInteractionFailed(false);
   }, [draftKey]);
 
@@ -393,7 +396,7 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
   }, [draftKey]);
 
   const handleSubmit = useCallback(async () => {
-    if (!canEditAnswers || !isAllAnswered() || isSubmitting || isSubmitted
+    if (!canEditAnswers || !isAllAnswered() || isSubmitting || isSubmitted || alreadyResolved
       || submissionInFlight.current === submissionScope.current) return;
     const storedPhase = draftKey && askUserQuestionDraftStore.getState().drafts[draftKey]?.submissionPhase;
     if (storedPhase === 'submitting' || storedPhase === 'submitted') return;
@@ -454,8 +457,17 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
           activeSurfaceScope.assertCurrent('confirm submitted answers');
           const stillPending = mailbox.userQuestions.questions.some(question => question.toolId === toolId);
           if (!stillPending) {
-            log.info('Answer outcome confirmed from the interaction mailbox', { toolId, sessionId });
-            if (scope === submissionScope.current) setSubmissionPhase('submitted');
+            const outcome = settledInteractionAnswerOutcome(error);
+            log.info('Answer outcome confirmed from the interaction mailbox', { toolId, sessionId, outcome });
+            if (scope !== submissionScope.current) return;
+            if (outcome === 'unknown') {
+              // A lost reply: the answer may have been taken.
+              setSubmissionPhase('submitted');
+            } else {
+              // A refusal: the question settled without this answer.
+              setSubmissionPhase('idle');
+              setAlreadyResolved(true);
+            }
             return;
           }
         } catch (readError) {
@@ -479,6 +491,7 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
     }
   }, [
     activeSurfaceScope,
+    alreadyResolved,
     answers,
     canEditAnswers,
     canFollowUp,
@@ -604,6 +617,8 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
             : t('toolCards.askUser.submitting')
           : interactionFailed
             ? t('toolCards.askUser.interactionFailed')
+          : alreadyResolved
+            ? t('toolCards.askUser.alreadyResolved')
           : submissionFailed
             ? t('toolCards.askUser.submitFailed')
             : t('toolCards.askUser.waitingAnswer');
@@ -725,12 +740,13 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
       ref={cardRootRef}
       state={componentState}
       statusLabel={showAnswerMessage
-        || (componentState === 'asking' && !interactionFailed && !submissionFailed)
+        || (componentState === 'asking' && !interactionFailed && !submissionFailed && !alreadyResolved)
         ? undefined
         : statusText}
       submitDisabled={
         !isAllAnswered()
         || isSubmitted
+        || alreadyResolved
         || !canEditAnswers
       }
       submitLabel={showSubmit

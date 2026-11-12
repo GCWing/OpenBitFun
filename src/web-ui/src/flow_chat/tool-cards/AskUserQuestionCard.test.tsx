@@ -672,6 +672,36 @@ describe('AskUserQuestionCard', () => {
     }
   });
 
+  it('says a question that settled without this answer was already resolved', async () => {
+    vi.mocked(toolAPI.submitUserAnswers).mockRejectedValueOnce(new Error('Waiting channel not found: question-tool-1'));
+    mailboxMock.mockResolvedValueOnce({ sessionId: 'session-a', userQuestions: { revision: 2, questions: [] } });
+    act(() => {
+      root.render(
+        <AskUserQuestionCard
+          toolItem={questionTool('pending_confirmation')}
+          config={config}
+          sessionId="session-a"
+          isLastItem
+        />,
+      );
+    });
+    act(() => {
+      container.querySelector<HTMLInputElement>('input[value="PostgreSQL"]')?.click();
+    });
+    const submitButton = container.querySelector<HTMLButtonElement>(
+      '[data-openbitfun-part="submit"] button',
+    );
+    await act(async () => submitButton?.click());
+
+    expect(mailboxMock).toHaveBeenCalledWith('session-a');
+    // The refused answer is neither shown as submitted nor offered for a retry.
+    expect(container.querySelector('[data-openbitfun-part="status-label"]')?.textContent)
+      .toBe('toolCards.askUser.alreadyResolved');
+    expect(container.querySelector('[data-openbitfun-part="answer-pair"]')).toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('[data-openbitfun-part="submit"] button')?.disabled)
+      .toBe(true);
+  });
+
   it('keeps the form retryable and reports a failed response submission', async () => {
     vi.mocked(toolAPI.submitUserAnswers).mockRejectedValueOnce(new Error('peer unavailable'));
     act(() => {

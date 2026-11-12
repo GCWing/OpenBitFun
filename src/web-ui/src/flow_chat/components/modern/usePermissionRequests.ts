@@ -16,7 +16,11 @@ import {
   ensureActivePermissionMailbox,
   liveSessionInteractionStore,
 } from '../../services/liveSessionInteractionStore';
-import { needsInteractionAnswerReadback } from '../../utils/interactionAnswerOutcome';
+import {
+  needsInteractionAnswerReadback,
+  settledInteractionAnswerOutcome,
+  type InteractionAnswerOutcome,
+} from '../../utils/interactionAnswerOutcome';
 
 export interface PermissionAnswerHooks {
   /** The reply was lost or refused as settled; the host mailbox is being read. */
@@ -27,16 +31,19 @@ export interface PermissionAnswerHooks {
  * A lost reply may hide an accepted answer, and a retry of a settled request
  * can never succeed. Read the host's pending requests: an answer is complete
  * once none of its requests are pending; otherwise the original error stands.
+ * A refusal of a settled request means this answer was not delivered, which
+ * the caller must not present as submitted.
  */
 async function confirmAfterFailedAnswer(
   error: unknown,
   requestIds: readonly string[],
   hooks: PermissionAnswerHooks | undefined,
-): Promise<void> {
+): Promise<Exclude<InteractionAnswerOutcome, 'accepted'>> {
   if (!needsInteractionAnswerReadback(error)) throw error;
   hooks?.onConfirming?.();
   const stillPending = await confirmPermissionsStillPending(requestIds);
   if (stillPending.length > 0) throw error;
+  return settledInteractionAnswerOutcome(error);
 }
 
 const EMPTY_EXTERNAL_REQUESTS: PermissionRequest[] = [];
@@ -77,17 +84,17 @@ export function usePermissionRequests(sessionId?: string) {
       reply: PermissionReplyKind,
       feedback?: string,
       hooks?: PermissionAnswerHooks,
-    ) => {
+    ): Promise<InteractionAnswerOutcome> => {
       try {
         await driver.respondPermission(sessionId ?? '', requestId, reply, feedback);
       } catch (error) {
         if (!isLiveSource) throw error;
-        await confirmAfterFailedAnswer(error, [requestId], hooks);
-        return;
+        return confirmAfterFailedAnswer(error, [requestId], hooks);
       }
       if (isLiveSource) {
         liveSessionInteractionStore.markPermissionResolved(liveMailbox.surfaceId, requestId);
       }
+      return 'accepted';
     },
     [driver, sessionId, isLiveSource, liveMailbox.surfaceId],
   );
@@ -98,7 +105,7 @@ export function usePermissionRequests(sessionId?: string) {
       reply: PermissionReplyKind,
       feedback?: string,
       hooks?: PermissionAnswerHooks,
-    ) => {
+    ): Promise<InteractionAnswerOutcome> => {
       // Captured before answering: a lost reply leaves no resolved id list.
       const batchIds = new Set([requestId, ...(isLiveSource
         ? selectActivePermissionBatch(liveMailbox.requests, sessionId)?.requests
@@ -114,8 +121,7 @@ export function usePermissionRequests(sessionId?: string) {
         );
       } catch (error) {
         if (!isLiveSource) throw error;
-        await confirmAfterFailedAnswer(error, [...batchIds], hooks);
-        return;
+        return confirmAfterFailedAnswer(error, [...batchIds], hooks);
       }
       if (isLiveSource) {
         resolvedRequestIds.forEach((requestId) => {
@@ -125,6 +131,7 @@ export function usePermissionRequests(sessionId?: string) {
           );
         });
       }
+      return 'accepted';
     },
     [driver, sessionId, isLiveSource, liveMailbox.surfaceId, liveMailbox.requests],
   );

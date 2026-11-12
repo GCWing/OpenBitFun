@@ -29,3 +29,17 @@ function errorText(error: unknown, depth = 0): string {
 export function needsInteractionAnswerReadback(error: unknown): boolean {
   return isOutcomeUnknownError(error) || SETTLED_INTERACTION_PATTERN.test(errorText(error));
 }
+
+/**
+ * How a failed answer ended once the host no longer waits for it.
+ * `accepted`: the host took this answer. `unknown`: the reply was lost and the
+ * answer may have been taken. `already_resolved`: the host refused it because
+ * the interaction had already settled (answered elsewhere, cancelled, or timed
+ * out), so this answer was not delivered.
+ */
+export type InteractionAnswerOutcome = 'accepted' | 'unknown' | 'already_resolved';
+
+/** Classify a failure whose interaction the host no longer has pending. */
+export function settledInteractionAnswerOutcome(error: unknown): Exclude<InteractionAnswerOutcome, 'accepted'> {
+  return isOutcomeUnknownError(error) ? 'unknown' : 'already_resolved';
+}

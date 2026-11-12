@@ -299,11 +299,13 @@ describe('usePermissionRequests', () => {
     agentApiMock.listPendingPermissionRequests.mockResolvedValue([]);
     const onConfirming = vi.fn();
 
+    let outcome: unknown;
     await act(async () => {
-      await controller?.respond(direct.requestId, 'once', undefined, { onConfirming });
+      outcome = await controller?.respond(direct.requestId, 'once', undefined, { onConfirming });
     });
 
     expect(onConfirming).toHaveBeenCalledOnce();
+    expect(outcome).toBe('unknown');
     expect(controller?.requests).toEqual([]);
   });
 
@@ -326,9 +328,12 @@ describe('usePermissionRequests', () => {
 
     agentApiMock.respondPermission.mockRejectedValue(new Error('Pending permission request not found: second'));
     agentApiMock.listPendingPermissionRequests.mockResolvedValue([]);
+    let outcome: unknown;
     await act(async () => {
-      await controller?.respond('second', 'once');
+      outcome = await controller?.respond('second', 'once');
     });
+    // Refused as settled: this answer was not the one that resolved it.
+    expect(outcome).toBe('already_resolved');
     expect(controller?.requests).toEqual([]);
 
     // An ordinary failure is reported without a read-back.

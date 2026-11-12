@@ -49,6 +49,11 @@ vi.mock('@openbitfun/ui', async importOriginal => ({
   Tooltip: ({ children }: { children: React.ReactElement }) => <>{children}</>,
 }));
 
+const notifyInfo = vi.hoisted(() => vi.fn());
+vi.mock('@/shared/notification-system', () => ({
+  notificationService: { info: notifyInfo },
+}));
+
 vi.mock('@/shared/utils/textSelection', async importOriginal => ({
   ...await importOriginal<typeof import('@/shared/utils/textSelection')>(),
   copyTextToClipboard: vi.fn(async () => true),
@@ -296,6 +301,31 @@ describe('ChatInputApprovalBand', () => {
     await click('chat-input-approval-reject-with-reason');
     expect(onRespond).toHaveBeenLastCalledWith('request-1', 'reject', 'use rg instead', expect.any(Object));
     expect(onRejectReasonConsumed).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['accepted', 1, false],
+    ['unknown', 1, false],
+    ['already_resolved', 0, true],
+  ] as const)('consumes the rejection reason only when it may have been delivered (%s)', async (outcome, consumed, notified) => {
+    notifyInfo.mockClear();
+    const onRejectReasonConsumed = vi.fn();
+    await act(async () => {
+      root.render(
+        <ChatInputApprovalBand
+          requests={[request()]}
+          rejectReason="use rg instead"
+          onRejectReasonConsumed={onRejectReasonConsumed}
+          onRespond={vi.fn(async () => outcome)}
+          onRespondBatch={vi.fn(async () => outcome)}
+        />
+      );
+    });
+    await click('chat-input-approval-reject-with-reason');
+    expect(onRejectReasonConsumed).toHaveBeenCalledTimes(consumed);
+    expect(notifyInfo).toHaveBeenCalledTimes(notified ? 1 : 0);
+    if (notified) expect(notifyInfo).toHaveBeenCalledWith('permission.alreadyResolved', expect.anything());
+    expect(container.querySelector('[data-openbitfun-part="error"]')).toBeNull();
   });
 
   it('reports a reply that never landed and leaves the request answerable', async () => {
