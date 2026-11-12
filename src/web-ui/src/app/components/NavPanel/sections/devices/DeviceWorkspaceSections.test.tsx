@@ -51,6 +51,22 @@ describe('DeviceWorkspaceSections hand-over', () => {
   });
   afterEach(() => { act(() => root.unmount()); host.remove(); });
 
+  it('shows the weak-link state of every device section, rendered or not', () => {
+    slots.value = [
+      slot('local', true),
+      { ...slot('peer-b', false), linkState: 'reconnecting' },
+      { ...slot('peer-c', false), linkState: 'starting' },
+      slot('peer-d', false),
+    ];
+    render();
+    const badge = (surfaceId: string) => host.querySelector(`[data-device-surface="${surfaceId}"] [data-testid="nav-device-link-state"]`);
+    expect(badge('peer-b')?.getAttribute('data-link-state')).toBe('reconnecting');
+    expect(badge('peer-b')?.textContent).toBe('nav.devices.linkReconnecting');
+    expect(badge('peer-c')?.getAttribute('data-link-state')).toBe('starting');
+    expect(badge('peer-d')).toBeNull();
+    expect(badge('local')).toBeNull();
+  });
+
   it('keeps every device on its background rows until the open settles, then hands over once', () => {
     const intent = beginDeviceOpen({ surfaceId: 'peer-b', key: 'session:s', sessionId: 's' });
     slots.value = [slot('local', false), slot('peer-b', true)];

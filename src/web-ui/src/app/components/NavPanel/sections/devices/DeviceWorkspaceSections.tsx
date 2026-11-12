@@ -50,6 +50,18 @@ function useCatalogLoading(surfaceId: string, rendered: boolean): boolean {
   return useSyncExternalStore(subscribe, read, read);
 }
 
+/** The device's catalog stream hit a transient error and is retrying. */
+function useCatalogReconnecting(surfaceId: string, rendered: boolean): boolean {
+  const subscribe = useCallback((notify: () => void) => deviceWorkspaceCatalog.subscribe(changed => {
+    if (changed === surfaceId) notify();
+  }), [surfaceId]);
+  const read = useCallback(
+    () => !rendered && deviceWorkspaceCatalog.getSnapshot(surfaceId).reconnecting === true,
+    [rendered, surfaceId],
+  );
+  return useSyncExternalStore(subscribe, read, read);
+}
+
 /**
  * Hold the list's height and scroll offset while a cross-device open runs.
  * Sections hand over between catalog and live rows during a switch; without
@@ -121,7 +133,14 @@ const DeviceSection: React.FC<{
   const platform = devicePlatform(slot.os);
   const hostTag = slot.hostKind === 'cli' ? t('nav.devices.hostCli')
     : platform ? t(`nav.devices.platform.${platform}`) : null;
-  const toggleLabel = t(expanded ? 'nav.devices.collapse' : 'nav.devices.expand', { name: slot.name });
+  // Weak links of every device are visible, not only the rendered one's.
+  const catalogReconnecting = useCatalogReconnecting(slot.surfaceId, slot.rendered);
+  const linkState = slot.linkState ?? (catalogReconnecting ? 'reconnecting' : null);
+  const linkLabel = linkState === 'starting'
+    ? t('nav.devices.linkStartingLabel', { name: slot.name })
+    : linkState === 'reconnecting' ? t('nav.devices.linkReconnectingLabel', { name: slot.name }) : null;
+  const expandLabel = t(expanded ? 'nav.devices.collapse' : 'nav.devices.expand', { name: slot.name });
+  const toggleLabel = linkLabel ? `${expandLabel}. ${linkLabel}` : expandLabel;
 
   return (
     <section className={['openbitfun-nav-panel__device-section', slot.rendered && 'is-rendered', expanded && 'is-expanded'].filter(Boolean).join(' ')}
@@ -137,6 +156,12 @@ const DeviceSection: React.FC<{
           onClick={() => setExpanded(slot.surfaceId, !expanded)}>
           <OverflowText className="openbitfun-nav-panel__device-name">{slot.name}</OverflowText>
           {hostTag && <span className="openbitfun-nav-panel__device-pill" data-host-kind={slot.hostKind ?? undefined}>{hostTag}</span>}
+          {linkState && (
+            <span className="openbitfun-nav-panel__device-pill" data-link-state={linkState}
+              data-testid="nav-device-link-state" title={linkLabel ?? undefined}>
+              {t(linkState === 'starting' ? 'nav.devices.linkStarting' : 'nav.devices.linkReconnecting')}
+            </span>
+          )}
           {slot.rendered && <span className="openbitfun-nav-panel__device-current" role="img" aria-label={t('nav.devices.current')} />}
           {loading && (
             <span className="openbitfun-nav-panel__device-spinner-wrap" role={opening ? 'status' : undefined}

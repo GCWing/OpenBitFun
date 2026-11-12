@@ -83,7 +83,11 @@
       "noSessions": "No sessions yet",
       "sessionUnavailable": "This session is no longer on that device.",
       "sessionActionFailed": "Couldn't do that on the other device. Try again.",
-      "connecting": "Connecting to {{name}}…"
+      "connecting": "Connecting to {{name}}…",
+      "linkReconnecting": "Reconnecting",
+      "linkReconnectingLabel": "Reconnecting to {{name}}. Its sessions may be out of date.",
+      "linkStarting": "Starting",
+      "linkStartingLabel": "{{name}} is still starting OpenBitFun."
     },
     "aria": {
       "navControl": "Navigation controls",

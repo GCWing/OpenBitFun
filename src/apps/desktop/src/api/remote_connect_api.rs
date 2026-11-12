@@ -277,11 +277,18 @@ fn emit_device_presence(devices: &[OnlineDeviceInfo]) {
 /// are kept: a relay blip or routing restart is presence loss, and a
 /// re-attaching controller restores them from the interaction mailbox.
 async fn disconnect_route_controllers(route: RelayRoute, reason: &'static str) {
-    crate::api::peer_host_invoke::disconnect_route_controllers(route);
-    log::debug!("Peer controller delivery targets cleared: route={route:?}, reason={reason}");
+    clear_route_delivery_targets(route, reason);
     if route == RelayRoute::Official {
         emit_device_presence(&[]);
     }
+}
+
+/// Clear delivery targets without publishing an empty roster. A routing
+/// reconnect reports the new connection's presence moments later; an empty
+/// roster in between would drop and re-add every sidebar device section.
+fn clear_route_delivery_targets(route: RelayRoute, reason: &'static str) {
+    crate::api::peer_host_invoke::disconnect_route_controllers(route);
+    log::debug!("Peer controller delivery targets cleared: route={route:?}, reason={reason}");
 }
 
 /// Retire the active routing owner before touching the shared service. The
@@ -2736,7 +2743,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
     // service client. Its compare-and-clear exit path must not touch this new
     // connection's controllers or presence.
     clear_device_routing_state_on_route(route);
-    disconnect_route_controllers(route, "Device routing reconnecting").await;
+    clear_route_delivery_targets(route, "Device routing reconnecting");
 
     let (mut event_rx, auth_device_id, service_connection_id) = match service
         .start_device_connection(
@@ -2753,6 +2760,11 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
         Err(e) => {
             let msg = format!("{e}");
             clear_device_routing_state_on_route(route);
+            // The reconnect kept the previous roster; without a connection it
+            // no longer describes reachable devices.
+            if route == RelayRoute::Official {
+                emit_device_presence(&[]);
+            }
             // Token invalidation re-enters the account transition path, so the
             // current account-operation lease must be released first.
             drop(routing_lifecycle);

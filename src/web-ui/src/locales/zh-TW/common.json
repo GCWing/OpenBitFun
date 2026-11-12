@@ -83,7 +83,11 @@
       "noSessions": "尚無會話",
       "sessionUnavailable": "該裝置上已找不到這個會話。",
       "sessionActionFailed": "無法在另一台裝置上完成此操作，請重試。",
-      "connecting": "正在連線 {{name}}…"
+      "connecting": "正在連線 {{name}}…",
+      "linkReconnecting": "重新連線中",
+      "linkReconnectingLabel": "正在重新連線 {{name}}，其會話可能尚未更新。",
+      "linkStarting": "啟動中",
+      "linkStartingLabel": "{{name}} 上的 OpenBitFun 仍在啟動。"
     },
     "aria": {
       "navControl": "導航控制",
