@@ -56,6 +56,19 @@ wait from presentation wait; fixture timings are not live-device performance.
 
 ## Inactive history residency
 
+Live Turns can arrive while a persisted Session is still metadata-only. Keep
+their bodies in canonical state, but do not cache a guessed local index as a
+global history ordinal while hydration is unresolved. An explicit catalog
+identity can locate the Turn; a storage index alone is not a chronological
+ordinal, because storage slots can have gaps.
+
+The first authoritative catalog invalidates unversioned cached ranges and
+their navigation tickets, just as a later catalog revision does. Canonical
+live Turns remain intact and are seeded at their resolved positions. The
+turn rail accepts a loaded candidate only when its known Turn ID and storage
+slot agree with the catalog entry. Slots without IDs retain legacy lazy
+loading, rather than borrowing an unrelated live Turn at the same local index.
+
 Reader bookmarks retain the semantic snapshot, intent and ordinal range, never
 the Turn bodies. A mounted primary, BTW or subagent transcript holds a history
 lease. The store accounts the union of canonical and paged Turns, which can alias
