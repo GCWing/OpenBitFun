@@ -5,6 +5,8 @@ import {
   isWorkspaceIdReferencesUnsupportedError,
   RemoteSessionModelWriteUnconfirmedError,
 } from './RemoteSessionManager';
+import type { SessionSyncState } from './SessionSynchronizer';
+import type { ConnectionHealth } from './store';
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
@@ -61,4 +63,23 @@ export function describeChatError(error: unknown, t: Translate): string {
     case 'auth': return t('devices.authorizationExpired');
     default: return message || t('chat.remoteFailed');
   }
+}
+
+/**
+ * The transcript notice for the session reader, or null for none.
+ *
+ * A failed stream read is retried by the reader and sent nothing, so it is
+ * never described with send-failure copy: the notice only says the transcript
+ * is catching up. While the app banner already reports the connection as down
+ * (offline, Relay, desktop offline or unreachable) the notice would only
+ * repeat it and is hidden. An unsupported host is a separate, lasting fact.
+ */
+export function sessionStreamNotice(
+  state: SessionSyncState,
+  issue: unknown,
+  connectionHealth: ConnectionHealth,
+): 'unsupported' | 'catching-up' | null {
+  if (state === 'unsupported') return 'unsupported';
+  if (state !== 'catching-up' && issue === null) return null;
+  return connectionHealth === 'unreachable' ? null : 'catching-up';
 }

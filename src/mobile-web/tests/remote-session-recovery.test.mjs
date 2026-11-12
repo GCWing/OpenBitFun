@@ -252,7 +252,7 @@ test('a re-probe of a still-unsupported host keeps the legacy send path availabl
 
 test('chat errors are classified into translated copy; host answers keep their text', async () => {
   const { RemoteHostCommandError } = await import(relayClientModule);
-  const { describeChatError, isUnknownOutcomeFailure, isNotSubmittedFailure } = await import(await moduleUrl('../src/services/chatErrorPresentation.ts', {
+  const { describeChatError, isUnknownOutcomeFailure, isNotSubmittedFailure, sessionStreamNotice } = await import(await moduleUrl('../src/services/chatErrorPresentation.ts', {
     '../../../shared/relay-transport/RelayFailure': await moduleUrl('../../shared/relay-transport/RelayFailure.ts'),
     '../../../shared/relay-transport/HostStream': hostStream,
     './RelayHttpClient': relayClientModule,
@@ -274,6 +274,14 @@ test('chat errors are classified into translated copy; host answers keep their t
   assert.equal(isUnknownOutcomeFailure(new Error('RPC acknowledgement lost; delivery outcome is unknown')), true);
   assert.equal(isUnknownOutcomeFailure(new RemoteHostCommandError('operation has timed out')), false, 'a host answer is an outcome');
   assert.equal(isNotSubmittedFailure(new Error('RPC deadline elapsed before dispatch')), true);
+
+  // Stream reads recover on their own: never send-failure copy, never a second banner.
+  const lost = new Error('Relay connection changed; request was not submitted');
+  assert.equal(sessionStreamNotice('live', null, 'connected'), null);
+  assert.equal(sessionStreamNotice('catching-up', null, 'connected'), 'catching-up');
+  assert.equal(sessionStreamNotice('loading', lost, 'connected'), 'catching-up', 'a failed read only says it is catching up');
+  assert.equal(sessionStreamNotice('catching-up', lost, 'unreachable'), null, 'the app connection banner already explains it');
+  assert.equal(sessionStreamNotice('unsupported', null, 'unreachable'), 'unsupported');
 });
 
 test('connection state names the cause and needs two missed pings before blaming the desktop', async () => {

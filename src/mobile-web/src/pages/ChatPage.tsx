@@ -43,7 +43,7 @@ import ChatFeedback from '../components/ChatFeedback';
 import { copyToClipboard } from '../components/ChatMarkdown';
 import { ArtifactImageReader } from '../components/RemoteArtifactImage';
 import ChatTranscript from '../components/ChatTranscript';
-import { describeChatError } from '../services/chatErrorPresentation';
+import { describeChatError, sessionStreamNotice } from '../services/chatErrorPresentation';
 
 function reportRemoteSessionError(
   error: unknown,
@@ -921,8 +921,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
           setActiveTurn(resp.active_turn ?? null);
         }, 0, history => { if(isInitCurrent()){setHasMore(history.hasMore);hasMoreRef.current=history.hasMore;} }, () => { if(isInitCurrent())setMailboxInvalidation(value=>value+1); },
         // Stream failures are stated, not hidden, but they belong to the
-        // reader: the notice says the transcript is catching up and clears
-        // itself once the host has been read again.
+        // reader: the notice says the transcript is catching up (never a
+        // send failure) and clears itself once the host has been read again.
         error => {
           if (!isInitCurrent() || isRemoteControlTargetChangedError(error)) return;
           setStreamIssue(error);
@@ -1220,6 +1220,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   });
   const displayName = liveTitle || sessionName || t('chat.session');
   const isRemoteWorkspace = isRemoteSessionWorkspace(sessionAgentType, sessionContext, currentWorkspace, knownWorkspaces);
+  const streamNotice = sessionStreamNotice(streamState, streamIssue, connectionHealth);
 
   return (
     <div className={`chat-page${wideLayout ? ' chat-page--wide' : ''}`} style={{ '--chat-composer-height': `${composerHeight}px` } as React.CSSProperties}>
@@ -1236,18 +1237,14 @@ const ChatPage: React.FC<ChatPageProps> = ({
       />
 
       <PermissionMailbox key={`${sessionId}:${controlTargetEpoch}`} manager={sessionMgr} sessionId={sessionId} invalidation={mailboxInvalidation} onQuestionIds={setMailboxQuestionIds} />
-      {(streamState === 'unsupported' || streamState === 'catching-up' || streamIssue !== null) && (
+      {streamNotice && (
         <MobileBanner
           className="chat-page__stream-notice"
           data-stream-state={streamState}
           role="status"
-          tone={streamState === 'unsupported' ? 'danger' : 'warning'}
+          tone={streamNotice === 'unsupported' ? 'danger' : 'warning'}
         >
-          {streamState === 'unsupported'
-            ? t('chat.hostStreamUnsupported')
-            : streamIssue !== null
-              ? `${t('chat.catchingUp')} ${describeChatError(streamIssue, t)}`
-              : t('chat.catchingUp')}
+          {t(streamNotice === 'unsupported' ? 'chat.hostStreamUnsupported' : 'chat.catchingUp')}
         </MobileBanner>
       )}
       {/* Messages */}
