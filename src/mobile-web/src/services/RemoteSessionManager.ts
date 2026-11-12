@@ -604,6 +604,16 @@ export class RemoteSessionManager {
     return () => { stopRecovery(); stopHints(); };
   }
 
+  /** Bulk payloads (image attachments) uploading to the Relay before their RPC. */
+  get payloadUploadsInFlight(): number {
+    return (this.client as Partial<Pick<RelayHttpClient, 'payloadUploadsInFlight'>>).payloadUploadsInFlight ?? 0;
+  }
+
+  onPayloadUploadActivity(listener: () => void): () => void {
+    const client = this.client as Partial<Pick<RelayHttpClient, 'onPayloadUploadActivity'>>;
+    return client.onPayloadUploadActivity?.(listener) ?? (() => {});
+  }
+
   /** Status of the account's Relay connection; `connected` when unknown. */
   get relayStatus(): 'connecting' | 'connected' | 'disconnected' | 'closed' {
     const client = this.client as Partial<Pick<RelayHttpClient, 'relayStatus'>>;

@@ -260,6 +260,8 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: 'Opening workspace...',
     },
     chat: {
+      uploadingImages: 'Uploading images…',
+      waitingForDesktop: 'Waiting for the desktop to accept the message…',
       decisionChecking: 'Checking whether the desktop received your decision…',
       decisionUnconfirmed: 'Not confirmed: the desktop may not have received your decision. Choose again to retry.',
       answerChecking: 'Checking whether the desktop received your answer…',
@@ -656,6 +658,8 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: '正在打开工作区...',
     },
     chat: {
+      uploadingImages: '正在上传图片…',
+      waitingForDesktop: '正在等待桌面端接收消息…',
       decisionChecking: '正在确认桌面端是否已收到你的决定…',
       decisionUnconfirmed: '未确认：桌面端可能没有收到你的决定。请重新选择以重试。',
       answerChecking: '正在确认桌面端是否已收到你的回答…',
@@ -1052,6 +1056,8 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: '正在打開工作區...',
     },
     chat: {
+      uploadingImages: '正在上傳圖片…',
+      waitingForDesktop: '正在等待桌面端接收訊息…',
       decisionChecking: '正在確認桌面端是否已收到你的決定…',
       decisionUnconfirmed: '未確認：桌面端可能沒有收到你的決定。請重新選擇以重試。',
       answerChecking: '正在確認桌面端是否已收到你的回答…',

@@ -4,7 +4,7 @@ import { PermissionMailbox } from '../components/PermissionMailbox';
 import { QuestionInteractionContext } from "../components/ChatAskQuestionCard";
 import { InteractionVerifyContext, MailboxQuestionOwnerContext } from '../components/InteractionVerification';
 import { ChevronDown as LucideChevronDown } from 'lucide-react';
-import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { MobileBanner, MobileButton, MobileConfirmSheet, MobileIconButton, MobileStatus, MobileTextarea } from '@openbitfun/ui/mobile';
 import { useI18n } from '../i18n';
 import { useControlTargetEpoch } from '../hooks/useControlTargetEpoch';
@@ -172,6 +172,9 @@ const ChatPage: React.FC<ChatPageProps> = ({
   // capabilities. While they are being learned, sending waits instead of
   // guessing; a failed probe re-enables sending, which probes again first.
   const checkingHost = !sessionMgr.hostCapabilitiesKnown && sessionMgr.hostCapabilityProbing;
+  const subscribeUploads = useCallback((listener: () => void) => sessionMgr.onPayloadUploadActivity(listener), [sessionMgr]);
+  const readUploads = useCallback(() => sessionMgr.payloadUploadsInFlight, [sessionMgr]);
+  const payloadUploads = useSyncExternalStore(subscribeUploads, readUploads, readUploads);
   useEffect(() => {
     if (!sessionMgr.hostCapabilitiesKnown) void sessionMgr.probeHostCapabilities();
   }, [sessionMgr, controlTargetEpoch]);
@@ -1386,7 +1389,13 @@ const ChatPage: React.FC<ChatPageProps> = ({
         inputRef={inputRef}
         remoteUnavailable={connectionHealth === 'unreachable'}
         sendBlocked={checkingHost}
-        composerStatus={checkingHost ? t('chat.checkingHost') : null}
+        composerStatus={checkingHost
+          ? t('chat.checkingHost')
+          : isSending && imageAnalyzing
+            // Images first travel to the Relay; afterwards the desktop has to
+            // take the message. The two waits fail and recover differently.
+            ? t(payloadUploads > 0 ? 'chat.uploadingImages' : 'chat.waitingForDesktop')
+            : null}
         modelControls={(
           <>
             {modelCatalogFailed && !modelCatalog && (

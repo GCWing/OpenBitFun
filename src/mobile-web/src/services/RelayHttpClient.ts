@@ -7,6 +7,7 @@ import {
 import { AccountRealtime, type ConnectionStatus, type DeviceEventEnvelope } from '../../../shared/relay-transport/AccountRealtime';
 import { deriveDeviceMessageKey, encrypt, decrypt, fromB64 } from './E2EEncryption';
 import { normalizeRelayUrl } from './pairingLink';
+import { relayPayloadBytes, uploadRelayPayload } from './RelayPayloadUpload';
 
 export interface AccountIdentity {
   token: string;
@@ -118,6 +119,18 @@ export class RelayHttpClient {
     if (this.relayStatusValue === status) return;
     this.relayStatusValue = status;
     for (const listener of [...this.relayStatusListeners]) listener(status);
+  }
+  private payloadUploadsValue = 0;
+  private payloadUploadListeners = new Set<() => void>();
+  /** Bulk RPC payloads (image attachments) currently uploading to the Relay. */
+  get payloadUploadsInFlight(): number { return this.payloadUploadsValue; }
+  onPayloadUploadActivity(listener: () => void): () => void {
+    this.payloadUploadListeners.add(listener);
+    return () => { this.payloadUploadListeners.delete(listener); };
+  }
+  private changePayloadUploads(delta: number): void {
+    this.payloadUploadsValue = Math.max(0, this.payloadUploadsValue + delta);
+    for (const listener of [...this.payloadUploadListeners]) listener();
   }
   /** Last directory entry for a device, or null when the directory has not listed it. */
   devicePresence(deviceId: string): RelayDeviceInfo | null {
@@ -449,16 +462,41 @@ export class RelayHttpClient {
       };
       assertEncodingCurrent();
       const timeoutMs = options.timeoutMs ?? (options.retryable ? 20_000 : 130_000);
-      const data = await connection.call<{ encrypted_data: string; nonce: string; accept_encoding?: string }>(targetDeviceId,
-        { encrypted_data: encData, nonce: encNonce, accept_encoding: acceptsRelayZstd() ? relayZstd : undefined }, {
-          timeoutMs,
-          beforeSubmit: assertEncodingCurrent,
-          beforeSend: () => {
-            if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
-              throw new AccountIdentityChangedError();
-            }
-          },
-        });
+      const assertOwnerCurrent = () => {
+        if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
+          throw new AccountIdentityChangedError();
+        }
+      };
+      const envelope = { encrypted_data: encData, nonce: encNonce, accept_encoding: acceptsRelayZstd() ? relayZstd : undefined };
+      // Bulk parameters are uploaded here with a bounded retry; the RPC then
+      // carries only the reference, which a not-submitted call may reuse.
+      const bulk = relayPayloadBytes(envelope);
+      let params: unknown = envelope;
+      if (bulk) {
+        this.changePayloadUploads(1);
+        try {
+          params = await uploadRelayPayload(this.relayUrl, identity.token, bulk, {
+            assertCurrent: () => { assertOwnerCurrent(); assertEncodingCurrent(); },
+          });
+        } finally {
+          this.changePayloadUploads(-1);
+        }
+      }
+      const callOnce = () => connection.call<{ encrypted_data: string; nonce: string; accept_encoding?: string }>(targetDeviceId,
+        params, { timeoutMs, beforeSubmit: assertEncodingCurrent, beforeSend: assertOwnerCurrent });
+      let data: { encrypted_data: string; nonce: string; accept_encoding?: string };
+      try {
+        data = await callOnce();
+      } catch (error) {
+        // The uploaded payload is still on the Relay. A call that provably
+        // never left this client sends the same reference once more instead
+        // of uploading the images again.
+        if (!bulk || error instanceof AccountIdentityChangedError
+          || !(error instanceof Error && /request was not submitted/.test(error.message))
+          || /capabilities changed/.test(error.message)) throw error;
+        assertOwnerCurrent();
+        data = await callOnce();
+      }
       const decrypted = await decrypt(
         messageKey,
         data.encrypted_data,
