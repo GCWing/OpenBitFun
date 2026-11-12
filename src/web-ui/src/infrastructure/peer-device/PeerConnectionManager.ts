@@ -27,6 +27,12 @@ export const PEER_CONTROL_RPC_TIMEOUT_MS = 15_000;
 export const PEER_KEEPALIVE_INTERVAL_MS = 20_000;
 export const PEER_RECONNECT_BASE_DELAY_MS = 1_000;
 export const PEER_RECONNECT_MAX_DELAY_MS = 15_000;
+/**
+ * Background attempts to deliver a `peer_control_detach` that could not reach
+ * the host during a disconnect. Until one lands, the host keeps fanning out to
+ * this controller and keeps its pending approvals waiting for it.
+ */
+export const PEER_DETACH_MAX_RETRIES = 4;
 
 /**
  * `connecting` → first handshake. `ready` → the peer answers. `degraded` → it
@@ -299,6 +305,19 @@ interface ConnectionEntry {
 
 export type PeerReattachListener = (deviceId: string) => void;
 
+/** A disconnect whose detach did not reach the host yet. */
+interface PendingDetach {
+  deviceId: string;
+  /** Background attempts made so far. */
+  attempts: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  inFlight: Promise<void> | null;
+  /** Last reported presence of the host, or null before the first report. */
+  presenceOnline: boolean | null;
+  /** Set when a reconnect or a final outcome retires this retry. */
+  settled: boolean;
+}
+
 /** The host answered a control-plane command and refused it. */
 class PeerControlRefusalError extends Error {
   constructor(message: string) {
@@ -316,6 +335,7 @@ class PeerConnectionDisposedError extends Error {
 
 export class PeerConnectionManager {
   private readonly entries = new Map<string, ConnectionEntry>();
+  private readonly pendingDetaches = new Map<string, PendingDetach>();
   private readonly legacyHostKinds = new Map<string, PeerHostKind>();
   private readonly attaching = new Map<string, Promise<PeerConnection>>();
   private readonly listeners = new Set<PeerConnectionListener>();
@@ -361,7 +381,10 @@ export class PeerConnectionManager {
     if (inFlight) {
       return inFlight;
     }
-    const attach = this.attach(deviceId, deviceName).finally(() => {
+    // A new attachment supersedes a disconnect still being delivered; its
+    // detach must not land after the attach and drop this controller again.
+    const priorDetach = this.retirePendingDetach(deviceId);
+    const attach = this.attach(deviceId, deviceName, priorDetach).finally(() => {
       this.attaching.delete(deviceId);
     });
     this.attaching.set(deviceId, attach);
@@ -408,8 +431,9 @@ export class PeerConnectionManager {
    * The detach RPC is last. A host refusal is re-thrown because the
    * controller cannot otherwise confirm that the Host removed its delivery
    * subscription and finalized controller-scoped interactions. A transport
-   * failure is not: a host this controller cannot reach drops it through
-   * presence loss, and the user's disconnect already completed locally.
+   * failure is not: the user's disconnect already completed locally, so the
+   * detach is retried in the background (and when the host is seen online
+   * again) until it lands, the host refuses it, or the device is reconnected.
    * Host-accepted work remains Host-owned and keeps running either way.
    */
   async dispose(deviceId: string, options: PeerDisposeOptions = {}): Promise<void> {
@@ -440,15 +464,18 @@ export class PeerConnectionManager {
 
     if (options.notifyPeer !== false) {
       try {
-        await this.hostInvoke(deviceId, 'peer_control_detach', {
-          controller_device_id: await this.controllerId(),
-        });
+        await this.sendDetach(deviceId);
       } catch (error) {
         if (error instanceof PeerControlRefusalError) throw error;
-        log.warn('Peer detach could not reach the host; it drops this controller on presence loss', {
+        log.warn('Peer detach could not reach the host; retrying in the background', {
           deviceId,
           error,
         });
+        // A reconnect that started while this detach was in flight owns the
+        // link now; retrying would drop its attachment.
+        if (!this.entries.has(deviceId) && !this.attaching.has(deviceId)) {
+          this.queueDetachRetry(deviceId);
+        }
       }
     }
   }
@@ -480,9 +507,21 @@ export class PeerConnectionManager {
         void this.runHealthCheck(entry);
       }
     }
+    // A host seen online again can probably take the detach it missed now.
+    for (const pending of this.pendingDetaches.values()) {
+      const wasOnline = pending.presenceOnline;
+      pending.presenceOnline = online.has(pending.deviceId);
+      if (pending.presenceOnline && wasOnline !== true) {
+        this.runDetachRetry(pending);
+      }
+    }
   }
 
-  private async attach(deviceId: string, deviceName: string): Promise<PeerConnection> {
+  private async attach(
+    deviceId: string,
+    deviceName: string,
+    priorDetach?: Promise<void>,
+  ): Promise<PeerConnection> {
     const adapter = new PeerDeviceTransportAdapter(
       deviceId,
       (target, commandJson, timeoutMs) => this.deviceRpc(target, commandJson, timeoutMs),
@@ -535,6 +574,9 @@ export class PeerConnectionManager {
       const probe = await this.probeCapabilities(entry);
       entry.capabilities = probe.capabilities;
       entry.hostStarting = !probe.status.hostUiReady;
+      this.assertEntryActive(entry);
+      // Order the attach after a retried detach that was already on its way.
+      await priorDetach;
       this.assertEntryActive(entry);
       await this.sendAttach(deviceId);
       this.assertEntryActive(entry);
@@ -711,6 +753,98 @@ export class PeerConnectionManager {
     await this.hostInvoke(deviceId, 'peer_control_attach', {
       controller_device_id: await this.controllerId(),
     });
+  }
+
+  private async sendDetach(deviceId: string): Promise<void> {
+    await this.hostInvoke(deviceId, 'peer_control_detach', {
+      controller_device_id: await this.controllerId(),
+    });
+  }
+
+  private queueDetachRetry(deviceId: string): void {
+    this.retirePendingDetach(deviceId);
+    const pending: PendingDetach = {
+      deviceId,
+      attempts: 0,
+      timer: null,
+      inFlight: null,
+      presenceOnline: null,
+      settled: false,
+    };
+    this.pendingDetaches.set(deviceId, pending);
+    this.scheduleDetachRetry(pending);
+  }
+
+  private scheduleDetachRetry(pending: PendingDetach): void {
+    if (pending.timer !== null) clearTimeout(pending.timer);
+    const delayMs = Math.min(
+      this.reconnectBaseDelayMs * (2 ** pending.attempts),
+      this.reconnectMaxDelayMs,
+    );
+    pending.timer = setTimeout(() => {
+      pending.timer = null;
+      this.runDetachRetry(pending);
+    }, delayMs);
+  }
+
+  /** One background detach attempt; never throws and never blocks a caller. */
+  private runDetachRetry(pending: PendingDetach): void {
+    if (pending.settled || pending.inFlight) return;
+    if (pending.timer !== null) {
+      clearTimeout(pending.timer);
+      pending.timer = null;
+    }
+    pending.attempts += 1;
+    const finish = () => {
+      pending.settled = true;
+      if (this.pendingDetaches.get(pending.deviceId) === pending) {
+        this.pendingDetaches.delete(pending.deviceId);
+      }
+    };
+    pending.inFlight = this.sendDetach(pending.deviceId).then(
+      () => {
+        if (pending.settled) return;
+        log.info('Peer detach delivered after retry', {
+          deviceId: pending.deviceId,
+          attempts: pending.attempts,
+        });
+        finish();
+      },
+      (error: unknown) => {
+        if (pending.settled) return;
+        if (error instanceof PeerControlRefusalError) {
+          log.warn('Peer host refused a retried detach', { deviceId: pending.deviceId, error });
+          finish();
+        } else if (pending.attempts >= PEER_DETACH_MAX_RETRIES) {
+          log.warn('Peer detach could not reach the host; it drops this controller on presence loss', {
+            deviceId: pending.deviceId,
+            attempts: pending.attempts,
+            error,
+          });
+          finish();
+        } else {
+          this.scheduleDetachRetry(pending);
+        }
+      },
+    ).finally(() => {
+      pending.inFlight = null;
+    });
+  }
+
+  /**
+   * Stop retrying a detach for `deviceId`. Returns the attempt still in
+   * flight, if any, so a new attach can be ordered after it.
+   */
+  private retirePendingDetach(deviceId: string): Promise<void> | undefined {
+    const pending = this.pendingDetaches.get(deviceId);
+    if (!pending) return undefined;
+    this.pendingDetaches.delete(deviceId);
+    pending.settled = true;
+    if (pending.timer !== null) {
+      clearTimeout(pending.timer);
+      pending.timer = null;
+    }
+    return pending.inFlight ?? undefined;
   }
 
   private scheduleKeepalive(entry: ConnectionEntry): void {
