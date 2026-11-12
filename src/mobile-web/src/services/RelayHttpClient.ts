@@ -15,7 +15,11 @@ export interface AccountIdentity {
   userId: string;
   deviceId: string;
 }
-interface AccountIdentitySnapshot extends AccountIdentity { generation: number; }
+interface AccountIdentitySnapshot extends AccountIdentity {
+  generation: number;
+  /** Aborted when this identity is replaced or signed out; cancels its uploads. */
+  lifetime: AbortController;
+}
 export type AccountOwnerChange = {
   kind: 'initial' | 'replacement' | 'unavailable';
   epoch: number;
@@ -151,8 +155,14 @@ export class RelayHttpClient {
     const kind = this.identity ? 'replacement' : 'initial';
     this.realtime?.close();
     this.realtime = null;
+    this.identity?.lifetime.abort();
     this.identity?.masterKey.fill(0);
-    this.identity = { ...identity, masterKey: identity.masterKey.slice(), generation: ++this.identityGeneration };
+    this.identity = {
+      ...identity,
+      masterKey: identity.masterKey.slice(),
+      generation: ++this.identityGeneration,
+      lifetime: new AbortController(),
+    };
     prepareRelayEncoding();
     const realtime = new AccountRealtime({ url: this.relayUrl, token: identity.token });
     this.realtime = realtime;
@@ -185,6 +195,7 @@ export class RelayHttpClient {
     this.realtime?.close();
     this.realtime = null;
     this.setRelayStatus('closed');
+    this.identity?.lifetime.abort();
     this.identity?.masterKey.fill(0);
     this.identity = null;
     this.identityGeneration += 1;
@@ -477,6 +488,7 @@ export class RelayHttpClient {
         try {
           params = await uploadRelayPayload(this.relayUrl, identity.token, bulk, {
             assertCurrent: () => { assertOwnerCurrent(); assertEncodingCurrent(); },
+            signal: identity.lifetime.signal,
           });
         } finally {
           this.changePayloadUploads(-1);

@@ -41,6 +41,8 @@ function validateReference(value: unknown): RelayPayloadReference {
 export interface RelayPayloadUploadOptions {
   /** Throws when the owner changed; checked before every attempt. */
   assertCurrent?: () => void;
+  /** Cancels the upload, e.g. on sign-out, like the shared transport's lifetime. */
+  signal?: AbortSignal;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   attempts?: number;
@@ -50,6 +52,9 @@ export interface RelayPayloadUploadOptions {
  * Upload `body` to the Relay, retrying transport failures and transient
  * statuses a bounded number of times. Every failure states that nothing was
  * submitted, because the RPC itself has not been sent yet.
+ *
+ * A timed-out attempt is not retried: on a slow link it was still sending the
+ * whole payload, and each retry would send all of it again.
  */
 export async function uploadRelayPayload(
   relayUrl: string,
@@ -62,16 +67,23 @@ export async function uploadRelayPayload(
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleep = options.sleep ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms)));
   const attempts = options.attempts ?? RELAY_PAYLOAD_UPLOAD_ATTEMPTS;
+  const cancelled = () => {
+    // A cancelled owner explains itself; otherwise state the cancellation.
+    options.assertCurrent?.();
+    return new Error('Relay payload upload was cancelled; request was not submitted');
+  };
   let lastFailure = 'unknown';
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     options.assertCurrent?.();
+    if (options.signal?.aborted) throw cancelled();
     let retryable = true;
     try {
+      const timeout = AbortSignal.timeout(ATTEMPT_TIMEOUT_MS);
       const response = await fetchImpl(`${base}/v1/rpc/payloads`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
         body,
-        signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS),
+        signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
       });
       if (response.ok) return validateReference(await response.json());
       lastFailure = String(response.status);
@@ -79,7 +91,9 @@ export async function uploadRelayPayload(
       void response.body?.cancel();
     } catch (error) {
       if ((error as Error)?.message?.includes('request was not submitted')) throw error;
+      if (options.signal?.aborted) throw cancelled();
       lastFailure = error instanceof Error ? error.message : String(error);
+      if ((error as { name?: unknown } | null)?.name === 'TimeoutError') retryable = false;
     }
     if (!retryable || attempt === attempts) break;
     console.warn('[RelayPayload] upload attempt failed; retrying', { attempt, failure: lastFailure });

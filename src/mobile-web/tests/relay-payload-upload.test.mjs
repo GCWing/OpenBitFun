@@ -60,3 +60,47 @@ test('upload failures are bounded and state that nothing was submitted', async (
   await assert.rejects(uploadRelayPayload('https://relay.example/relay', 'token', new Uint8Array([1]),
     { fetchImpl, assertCurrent: () => { throw changed; } }), changed);
 });
+
+test('a timed-out upload is not sent again', async () => {
+  let calls = 0;
+  const fetchImpl = async () => { calls += 1; throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); };
+  await quiet(() => assert.rejects(uploadRelayPayload('https://relay.example/relay', 'token', new Uint8Array([1]),
+    { fetchImpl, sleep: async () => {} }), /request was not submitted/));
+  assert.equal(calls, 1, 'a slow link would otherwise resend the whole payload');
+});
+
+test('signing out cancels an upload in flight and between attempts', async () => {
+  const lifetime = new AbortController();
+  let calls = 0;
+  const pending = async (url, init) => {
+    calls += 1;
+    return new Promise((resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+    });
+  };
+  const upload = uploadRelayPayload('https://relay.example/relay', 'token', new Uint8Array([1]),
+    { fetchImpl: pending, sleep: async () => {}, signal: lifetime.signal });
+  await new Promise(resolve => setImmediate(resolve));
+  lifetime.abort();
+  await assert.rejects(upload, /cancelled; request was not submitted/);
+  assert.equal(calls, 1);
+
+  const signedOut = new AbortController();
+  const changed = Object.assign(new Error('Account identity changed'), { name: 'AccountIdentityChangedError' });
+  calls = 0;
+  const busy = async () => { calls += 1; return new Response('busy', { status: 503 }); };
+  await quiet(() => assert.rejects(uploadRelayPayload('https://relay.example/relay', 'token', new Uint8Array([1]), {
+    fetchImpl: busy,
+    sleep: async () => { signedOut.abort(); },
+    signal: signedOut.signal,
+    assertCurrent: () => { if (signedOut.signal.aborted) throw changed; },
+  }), changed, 'the owner explains the cancellation'));
+  assert.equal(calls, 1, 'no attempt starts after sign-out');
+});
+
+test('the account client ties uploads to the identity it signs out', async () => {
+  const client = await readFile(new URL('../src/services/RelayHttpClient.ts', import.meta.url), 'utf8');
+  assert.match(client, /signal: identity\.lifetime\.signal/);
+  const reset = client.slice(client.indexOf('resetConnectionIdentity(): void {'));
+  assert.match(reset.slice(0, reset.indexOf('\n  }\n')), /this\.identity\?\.lifetime\.abort\(\)/);
+});
