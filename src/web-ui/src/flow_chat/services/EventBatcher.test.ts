@@ -266,3 +266,23 @@ describe('EventBatcher dual latency', () => {
     logger.setLevel(previousLevel);
   });
 });
+
+describe('EventBatcher.clearSession', () => {
+  it('drops only the stopped session and still flushes the others', () => {
+    vi.useFakeTimers();
+    try {
+      const flushed: Array<{ key: string; payload: any }> = [];
+      const batcher = new EventBatcher({ onFlush: events => flushed.push(...events) });
+      batcher.add('text:stopped', { sessionId: 'stopped', text: 'stale' });
+      batcher.add('text:other', { sessionId: 'other', text: 'final words' });
+
+      batcher.clearSession('stopped');
+      expect(batcher.getBufferSize()).toBe(1);
+      batcher.flushNow();
+
+      expect(flushed.map(event => event.payload.sessionId)).toEqual(['other']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

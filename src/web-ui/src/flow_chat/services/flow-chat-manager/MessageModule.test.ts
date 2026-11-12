@@ -36,6 +36,9 @@ const mockStartDialogTurn = vi.fn();
 const mockGetConfigs = vi.fn();
 const mockDispatchSubmit = vi.fn();
 const mockDispatchAppend = vi.fn();
+const mockDispatchContinue = vi.fn();
+const mockDispatchReopenObservation = vi.fn();
+const mockDispatchFollowUpAccepted = vi.fn();
 const mockDispatchProgress = vi.fn();
 const mockDispatchRefresh = vi.fn();
 const mockBindSession = vi.fn();
@@ -52,12 +55,16 @@ const mockHostQueueSupported = vi.fn(() => false);
 const mockHostQueueSubmit = vi.fn();
 const mockHostQueueAct = vi.fn();
 const mockSubmitSteering = vi.fn();
+const mockDiscardRefusedHostSubmission = vi.fn();
 
 vi.mock('../hostDialogQueue', () => ({
   hostQueueSupported: (...args: unknown[]) => mockHostQueueSupported(...args),
   hostDialogQueue: () => ({ submit: mockHostQueueSubmit, act: mockHostQueueAct,
     refresh: vi.fn(async () => ({ queueEpoch: 'host-epoch' })) }),
   queueImageAttachments: () => [],
+  newQueueTurnId: () => 'generated-queue-turn',
+  isHostSessionNotLoadedRefusal: (error: unknown) => String(error).includes('Session is not loaded on the execution host'),
+  discardRefusedHostSubmission: (...args: unknown[]) => mockDiscardRefusedHostSubmission(...args),
 }));
 
 vi.mock('../steeringSubmission', () => ({
@@ -100,6 +107,7 @@ vi.mock('@/features/dispatch/dispatchApi', () => ({
   dispatchApi: {
     submit: (...args: unknown[]) => mockDispatchSubmit(...args),
     append: (...args: unknown[]) => mockDispatchAppend(...args),
+    continueJob: (...args: unknown[]) => mockDispatchContinue(...args),
   },
 }));
 
@@ -107,6 +115,8 @@ vi.mock('@/features/dispatch/dispatchJobStore', () => ({
   dispatchJobStore: {
     getState: () => ({
       updateProgress: (...args: unknown[]) => mockDispatchProgress(...args),
+      reopenTerminalObservation: (...args: unknown[]) => mockDispatchReopenObservation(...args),
+      markFollowUpAccepted: (...args: unknown[]) => mockDispatchFollowUpAccepted(...args),
     }),
   },
 }));
@@ -768,7 +778,7 @@ describe('MessageModule cancellation', () => {
         getState: () => ({ sessions: new Map([[session.sessionId, session]]) }),
       },
       userCancelledSessionIds: new Set<string>(),
-      eventBatcher: { getBufferSize: vi.fn(() => 0), clear: vi.fn() },
+      eventBatcher: { getBufferSize: vi.fn(() => 0), clear: vi.fn(), clearSession: vi.fn() },
       pendingTurnCompletions: new Map(),
       runtimeStatusTimers: new Map(),
       handledTerminalTurnEvents: new Set<string>(),
@@ -1243,6 +1253,25 @@ describe('MessageModule detached dispatch', () => {
     expect(mockSubmitSteering).not.toHaveBeenCalled();
   });
 
+  it('keeps a follow-up turn id across a lost response and observes the job meanwhile', async () => {
+    const { context, session } = createDispatchContext('remote');
+    session.config.dispatchJobState = 'succeeded';
+    mockDispatchContinue
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce({ accepted: true, jobId: 'job-1', sessionId: 'dispatch-session', state: 'queued' });
+
+    await expect(sendMessage(context, 'run the next check', 'dispatch-session')).rejects.toThrow('response lost');
+    // The target may have queued it: observe instead of hiding a running turn.
+    expect(mockDispatchReopenObservation).toHaveBeenCalledWith('job-1');
+    expect(session.dialogTurns).toHaveLength(0);
+
+    await expect(sendMessage(context, 'run the next check', 'dispatch-session')).resolves.toBeUndefined();
+    expect(mockDispatchContinue).toHaveBeenCalledTimes(2);
+    // Same intent, same id: the target dedupes instead of running it twice.
+    expect(mockDispatchContinue.mock.calls[1][1]).toBe(mockDispatchContinue.mock.calls[0][1]);
+    expect(mockDispatchFollowUpAccepted).toHaveBeenCalledWith('job-1', 'queued');
+  });
+
   it('reuses the append message id after an ambiguous transport failure', async () => {
     const { context, session } = createDispatchContext('remote');
     session.config.dispatchJobState = 'running';
@@ -1351,6 +1380,67 @@ describe('MessageModule immediate follow-ups', () => {
     expect(mockStartDialogTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'answer-owner', userInput: 'Question\nAnswer' }));
     expect(mockSubmitSteering).not.toHaveBeenCalled();
     expect(mockPendingEnqueue).not.toHaveBeenCalled();
+  });
+
+  it('sends directly when the host refuses to queue behind a stale turn of an unloaded session', async () => {
+    mockHostQueueSupported.mockReturnValue(true);
+    let state = 'processing';
+    const acceptRuntimeStatus = vi.fn((status: { state: string }) => { state = status.state; });
+    mockGetCurrentState.mockImplementation(() => state);
+    mockGetStateMachine.mockReturnValue({
+      getContext: () => ({ currentDialogTurnId: 'stale-turn', version: 7 }),
+      getCurrentState: () => state,
+      acceptRuntimeStatus,
+    } as any);
+    const context = { ...contextForFollowUp(), userCancelledSessionIds: new Set(['answer-owner']) };
+    mockHostQueueSubmit
+      .mockRejectedValueOnce(new Error('Session is not loaded on the execution host'))
+      .mockResolvedValueOnce({ receipt: { turnId: 'direct-turn', status: 'started' } });
+
+    await sendMessage(context, 'Continue', 'answer-owner');
+    await vi.waitFor(() => expect(mockDiscardRefusedHostSubmission).toHaveBeenCalled());
+
+    expect(acceptRuntimeStatus).toHaveBeenCalledWith(expect.objectContaining({ state: 'idle', turnId: null }));
+    expect(context.userCancelledSessionIds.has('answer-owner')).toBe(false);
+    expect(mockDiscardRefusedHostSubmission).toHaveBeenCalledWith(expect.anything(),
+      expect.objectContaining({ content: 'Continue' }), 'generated-queue-turn');
+    // The direct path loads the session on the host before submitting again.
+    expect(mockEnsureBackendSession).toHaveBeenCalled();
+    expect(mockHostQueueSubmit).toHaveBeenCalledTimes(2);
+    expect(mockPendingEnqueue).not.toHaveBeenCalled();
+  });
+
+  it('queues behind a turn that a concurrent send started after restoring the session', async () => {
+    mockHostQueueSupported.mockReturnValue(true);
+    let version = 7;
+    const acceptRuntimeStatus = vi.fn();
+    mockGetStateMachine.mockReturnValue({
+      getContext: () => ({ currentDialogTurnId: 'concurrent-turn', version }),
+      getCurrentState: () => 'processing',
+      acceptRuntimeStatus,
+    } as any);
+    mockHostQueueSubmit
+      .mockImplementationOnce(async () => {
+        version = 8;
+        throw new Error('Session is not loaded on the execution host');
+      })
+      .mockResolvedValueOnce({ receipt: { turnId: 'generated-queue-turn', status: 'queued' } });
+
+    await sendMessage(contextForFollowUp(), 'Continue', 'answer-owner');
+
+    expect(acceptRuntimeStatus).not.toHaveBeenCalled();
+    expect(mockDiscardRefusedHostSubmission).not.toHaveBeenCalled();
+    expect(mockHostQueueSubmit).toHaveBeenCalledTimes(2);
+    expect(mockHostQueueSubmit.mock.calls[1][2]).toBe('generated-queue-turn');
+    expect(mockEnsureBackendSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps an ambiguous host queue failure as the queue owner reported it', async () => {
+    mockHostQueueSupported.mockReturnValue(true);
+    mockHostQueueSubmit.mockRejectedValueOnce(new Error('Connection lost'));
+    await expect(sendMessage(contextForFollowUp(), 'Continue', 'answer-owner')).rejects.toThrow('Connection lost');
+    expect(mockDiscardRefusedHostSubmission).not.toHaveBeenCalled();
+    expect(mockHostQueueSubmit).toHaveBeenCalledTimes(1);
   });
 
   it('stops before promotion if the active surface changes during submission', async () => {

@@ -21,7 +21,7 @@ import { ACPClientAPI } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { sessionAPI } from '@/infrastructure/api/service-api/SessionAPI';
 import { worktreeAPI } from '@/infrastructure/api/service-api/WorktreeAPI';
 import { createLogger } from '@/shared/utils/logger';
-import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceScope, isLocalSurface, type SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { stateMachineManager } from '../../state-machine';
 import { SessionExecutionEvent, SessionExecutionState } from '../../state-machine/types';
 import type { FlowChatContext, SessionConfig, DialogTurn } from '../../services/flow-chat-manager/types';
@@ -80,6 +80,63 @@ async function syncCreatedSessionTitle(
     // created and the next catalog read carries the host-owned number.
     log.debug('Skipped created session title synchronization', { sessionId, error });
   }
+}
+
+/**
+ * Long enough for a genuine stop's terminal event to cross a slow relay link:
+ * the host's drain window plus several round trips.
+ */
+const STALE_STOP_REPAIR_DELAY_MS = 8000;
+
+/**
+ * A stop for a turn the host no longer runs settles nothing there: the host
+ * either acknowledges it without an event (FINISHING forever) or fails it
+ * because the session is not loaded (back to PROCESSING). Either way this
+ * window keeps a phantom running turn. On a device surface, if the stop has
+ * not settled after the host's drain window, re-read the session from the
+ * host: its record projects a turn without a live executor as settled, and a
+ * turn that really is still running stays running.
+ */
+function scheduleStaleStopRepair(
+  context: FlowChatContext,
+  scope: SurfaceScope,
+  sessionId: string,
+  turnId: string,
+): void {
+  if (isLocalSurface(scope.surfaceId)) return;
+  const stillUnsettled = () => {
+    const machine = stateMachineManager.get(sessionId);
+    const state = machine?.getCurrentState();
+    return scope.isCurrent()
+      && machine?.getContext().currentDialogTurnId === turnId
+      && (state === SessionExecutionState.PROCESSING || state === SessionExecutionState.FINISHING);
+  };
+  setTimeout(() => {
+    if (!stillUnsettled()) return;
+    log.warn('Stop did not settle; re-reading the session from its host', { sessionId, turnId });
+    void context.flowChatStore.reloadRelaySessionFromHost(sessionId).then(() => {
+      if (!scope.isCurrent()) return;
+      const latest = context.flowChatStore.getState().sessions.get(sessionId)?.dialogTurns.at(-1);
+      const state = stateMachineManager.getCurrentState(sessionId);
+      // The authoritative record settled the stopped turn; its cancellation gate
+      // has nothing left to wait for.
+      if (latest?.id === turnId && ['completed', 'cancelled', 'error'].includes(latest.status)
+        && state !== SessionExecutionState.PROCESSING && state !== SessionExecutionState.FINISHING) {
+        context.userCancelledSessionIds.delete(sessionId);
+      }
+    }).catch(error => {
+      log.warn('Failed to re-read the session after an unsettled stop', { sessionId, turnId, error });
+      // The re-read replaced the live subscription. Hand it to the regular
+      // reconnect path (backoff retry) instead of leaving the session unread.
+      // Lazy import: the refresh module reaches the driver registry.
+      if (scope.isCurrent()) {
+        void import('../../services/flow-chat-manager/PeerSessionRefreshModule')
+          .then(({ requestRuntimeProjectionRepair }) => {
+            if (scope.isCurrent()) requestRuntimeProjectionRepair(sessionId);
+          });
+      }
+    });
+  }, STALE_STOP_REPAIR_DELAY_MS);
 }
 
 export const localSessionDriver: SessionDriver = {
@@ -344,6 +401,7 @@ export const localSessionDriver: SessionDriver = {
       markCurrentTurnItemsAsCancelled(context, sessionId);
       cleanupSessionBuffers(context, sessionId);
     }
+    if (originalTurnId) scheduleStaleStopRepair(context, scope, sessionId, originalTurnId);
 
     return settledInFinishing;
   },

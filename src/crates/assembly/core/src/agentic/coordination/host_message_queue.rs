@@ -369,18 +369,34 @@ impl DialogScheduler {
         // that may not be restored on this execution host yet, e.g. right after
         // a local <-> remote workspace switch. Reads may degrade: the scheduler
         // keeps its own receipts, so report that state without failing every
-        // poll. Mutations keep failing — accepting user work against a session
-        // this runtime cannot vouch for would silently lose it.
-        let session_unloaded = self.session_manager.get_session(session).is_none();
+        // poll and without loading the session.
+        //
+        // A mutation is user intent. An idle session may have been released
+        // from memory while a remote controller still shows it, so load it
+        // back from persistence first. Only a session this runtime cannot
+        // restore is refused — accepting user work against a session it cannot
+        // vouch for would silently lose it.
         if !matches!(
             request.action,
             DialogQueueAction::List | DialogQueueAction::Get { .. }
-        ) && session_unloaded
+        ) && self.session_manager.get_session(session).is_none()
         {
-            return Err(PortError::new(
-                PortErrorKind::NotFound,
-                "Session is not loaded on the execution host",
-            ));
+            if let Err(restore_error) = self
+                .coordinator
+                .restore_unloaded_session_for_admission(session)
+                .await
+            {
+                warn!(
+                    "Host queue mutation refused: session could not be restored on the execution host: session_id={}, error={}",
+                    session, restore_error
+                );
+            }
+            if self.session_manager.get_session(session).is_none() {
+                return Err(PortError::new(
+                    PortErrorKind::NotFound,
+                    "Session is not loaded on the execution host",
+                ));
+            }
         }
         let snapshot = self.queue_snapshot(session, None);
         if !matches!(request.action, DialogQueueAction::List)

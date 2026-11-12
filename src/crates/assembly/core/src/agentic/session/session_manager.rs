@@ -1248,6 +1248,12 @@ impl SessionManager {
             .map(|binding| binding.path.clone())
     }
 
+    /// Storage binding committed by an earlier create/restore admission, kept
+    /// after the session is unloaded from memory.
+    pub(crate) fn committed_session_storage_path_for(&self, session_id: &str) -> Option<PathBuf> {
+        Self::committed_session_storage_path(&self.session_storage_path_index, session_id)
+    }
+
     /// Reuse the storage binding admitted when this session was created/restored.
     /// A workspace path is an execution projection, never a replacement for this
     /// binding. In particular, a later same-path SSH record or runtime-layout

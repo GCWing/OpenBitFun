@@ -258,6 +258,9 @@ export class RelaySessionHistory {
 
   private isCurrent(): boolean { return !this.closed && this.scope.isCurrent(); }
 
+  /** Still opening: the host has not delivered this subscription's first page. */
+  awaitingFirstPage(): boolean { return this.ready === null && !this.closed && !this.failed; }
+
   private scheduleFlush(): void {
     if (this.flushTimer !== null) return;
     this.flushTimer = setTimeout(() => this.flush(), RECORD_FLUSH_DELAY_MS);

@@ -196,6 +196,34 @@ describe('remote-driven turn on an unloaded session', () => {
   });
 });
 
+describe('turn finalization', () => {
+  beforeEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+  afterEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+
+  it('closes text and thinking items whose end chunk never arrived', () => {
+    createSessionWithTurn({
+      ...createFinishingTurn(),
+      modelRounds: [{
+        ...makeRound('round-1'),
+        isStreaming: true,
+        items: [
+          { id: 'thinking-1', type: 'thinking', content: 'Reconsider scope', isStreaming: true,
+            isCollapsed: false, status: 'streaming', timestamp: 1 } as any,
+          { id: 'text-1', type: 'text', content: 'Partial answer', isStreaming: true,
+            status: 'streaming', timestamp: 2 } as any,
+        ],
+      }],
+    });
+
+    __test_only__.finalizeTurnCompletionState(createFlowChatContext(), 'session-1', 'turn-1');
+
+    const items = FlowChatStore.getInstance().getState().sessions.get('session-1')!
+      .dialogTurns[0].modelRounds[0].items as any[];
+    expect(items[0]).toMatchObject({ isStreaming: false, isCollapsed: true, status: 'completed' });
+    expect(items[1]).toMatchObject({ isStreaming: false, status: 'completed' });
+  });
+});
+
 describe('late dialog start events', () => {
   beforeEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
   afterEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
@@ -224,6 +252,37 @@ describe('late dialog start events', () => {
       sessionId: 'session-1', turnId: 'turn-1', turnIndex: 1, userInput: 'Delayed start',
     });
     expect(stateMachineManager.get('session-1')?.getContext().currentDialogTurnId).toBe('turn-2');
+  });
+
+  it.each([SessionExecutionState.PROCESSING, SessionExecutionState.FINISHING])(
+    'adopts a newer host-admitted turn over a stale %s turn', async state => {
+      createSessionWithTurn({ ...createFinishingTurn(), status: 'processing', backendTurnIndex: 1 });
+      await stateMachineManager.transition('session-1', SessionExecutionEvent.START, {
+        taskId: 'session-1', dialogTurnId: 'turn-1',
+      });
+      if (state === SessionExecutionState.FINISHING) {
+        await stateMachineManager.transition('session-1', SessionExecutionEvent.BACKEND_STREAM_COMPLETED);
+      }
+      expect(stateMachineManager.getCurrentState('session-1')).toBe(state);
+
+      __test_only__.handleDialogTurnStarted(createFlowChatContext(), {
+        sessionId: 'session-1', turnId: 'turn-2', turnIndex: 2, userInput: 'After the stale turn',
+      });
+
+      expect(stateMachineManager.getCurrentState('session-1')).toBe(SessionExecutionState.PROCESSING);
+      expect(stateMachineManager.get('session-1')?.getContext().currentDialogTurnId).toBe('turn-2');
+    },
+  );
+
+  it('does not adopt a start without a backend index over a tracked turn', async () => {
+    createSessionWithTurn({ ...createFinishingTurn(), status: 'processing', backendTurnIndex: 1 });
+    await stateMachineManager.transition('session-1', SessionExecutionEvent.START, {
+      taskId: 'session-1', dialogTurnId: 'turn-1',
+    });
+    __test_only__.handleDialogTurnStarted(createFlowChatContext(), {
+      sessionId: 'session-1', turnId: 'turn-legacy', userInput: 'Legacy start',
+    });
+    expect(stateMachineManager.get('session-1')?.getContext().currentDialogTurnId).toBe('turn-1');
   });
 });
 

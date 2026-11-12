@@ -768,6 +768,23 @@ function belongsToSupersededAttempt(item: AnyFlowItem, superseded: Set<string>):
 }
 
 /**
+ * Whether persisted round text accounts for what a live item painted. Live
+ * delivery is best-effort under load: chunks can be lost from the middle of a
+ * stream, leaving painted text with holes that is no longer a substring of the
+ * record. Its characters still appear in the record in order, while a record
+ * missing the round's later work cannot contain text painted beyond it.
+ */
+function paintedStreamTextIsCovered(settled: string, painted: string): boolean {
+  if (settled.includes(painted)) return true;
+  if (painted.length > settled.length) return false;
+  let next = 0;
+  for (let index = 0; index < settled.length && next < painted.length; index += 1) {
+    if (settled.charCodeAt(index) === painted.charCodeAt(next)) next += 1;
+  }
+  return next === painted.length;
+}
+
+/**
  * Whether a settled persisted Turn carries everything the projection painted.
  *
  * The persisted record of a settled Turn is built by the Runtime, while the
@@ -816,7 +833,7 @@ function settledReadCoversProjectedTurn(
       }
       if (item.type === 'text' || item.type === 'thinking') {
         const painted = comparableStreamText((item as RunningStreamItem).content);
-        if (painted && !settledText[item.type].includes(painted)) {
+        if (painted && !paintedStreamTextIsCovered(settledText[item.type], painted)) {
           return false;
         }
         continue;
@@ -6583,6 +6600,7 @@ export class FlowChatStore {
     if (isUnmaterializedSessionDraft(surface.state.sessions.get(sessionId))) return;
     let history = surface.relaySessionHistory.get(sessionId);
     if (!history) {
+      this.rebaseRelaySessionReplica(sessionId);
       history = new RelaySessionHistory(sessionId,
         record => this.applyRelaySessionRecord(record),
         ready => {
@@ -6625,6 +6643,38 @@ export class FlowChatStore {
       if (surface.relaySessionHistory.get(sessionId) === history) surface.relaySessionHistory.delete(sessionId);
       throw error;
     }
+  }
+
+  /**
+   * A new subscription reads the session from the host again. When the host's
+   * previous stream expired while nothing was subscribed (switched away, slept,
+   * failed open), it rebuilds the stream and stamps the snapshot with revisions
+   * the replica already holds or exceeds, so a turn that finished meanwhile
+   * would be rejected and keep running. The new subscription's records must
+   * supersede what earlier subscriptions delivered. This is not a host resync:
+   * held content, pending turns and rendered turns all stay.
+   */
+  private rebaseRelaySessionReplica(sessionId: string): void {
+    this.activeSurface.relaySessionRecords.get(sessionId)?.rebaseRevisions();
+  }
+
+  /**
+   * Re-read the session from the host when a controller fact can no longer be
+   * trusted, e.g. a stop that the host acknowledged without settling anything.
+   * The host projects a turn without a live executor as settled, so this is
+   * the authoritative way back from a stale running state. A subscription still
+   * waiting for its first page is already reading the host and is left alone.
+   */
+  public async reloadRelaySessionFromHost(sessionId: string): Promise<void> {
+    const surface = this.activeSurface;
+    if (surface.surfaceId === 'local' || !surface.state.sessions.has(sessionId)) return;
+    const history = surface.relaySessionHistory.get(sessionId);
+    if (history?.awaitingFirstPage()) return;
+    if (history) {
+      surface.relaySessionHistory.delete(sessionId);
+      history.close();
+    }
+    await this.loadRelaySessionHistory(sessionId);
   }
 
   private refreshRelayInteractionMailbox(sessionId: string): Promise<void> {

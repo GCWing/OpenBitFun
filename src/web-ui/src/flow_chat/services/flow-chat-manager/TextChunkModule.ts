@@ -334,9 +334,8 @@ export function completeActiveTextItems(
  * Clean up session buffers.
  */
 export function cleanupSessionBuffers(context: FlowChatContext, sessionId: string): void {
-  const batcherSize = context.eventBatcher.getBufferSize();
-  if (batcherSize > 0) {
-    context.eventBatcher.clear();
+  if (context.eventBatcher.getBufferSize() > 0) {
+    context.eventBatcher.clearSession(sessionId);
   }
 
   const pendingCompletion = context.pendingTurnCompletions.get(sessionId);

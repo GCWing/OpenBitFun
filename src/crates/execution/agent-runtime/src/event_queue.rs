@@ -128,6 +128,24 @@ enum LegacyQueuePolicy {
     AuthoritativeControl,
 }
 
+/// Turn lifecycle facts a consumer cannot reconstruct from later stream data.
+/// Losing one leaves a projection running forever, or settled without the
+/// durable history fence that makes it reconcile canonical content, until a
+/// full reload. Text and tool stream data stay best-effort: a delivered
+/// lifecycle fence repairs them. Each turn emits only a handful of these, so
+/// admitting them past the data budget stays bounded.
+fn is_turn_lifecycle_fact(event: &AgenticEvent) -> bool {
+    matches!(
+        event,
+        AgenticEvent::DialogTurnStarted { .. }
+            | AgenticEvent::DialogTurnCompleted { .. }
+            | AgenticEvent::DialogTurnCancelled { .. }
+            | AgenticEvent::DialogTurnFailed { .. }
+            | AgenticEvent::SessionStateChanged { .. }
+            | AgenticEvent::SessionHistoryChanged { .. }
+    )
+}
+
 fn interrupted_control_identity(event: &AgenticEvent) -> Option<(&str, &str, u32)> {
     match event {
         AgenticEvent::DialogTurnInterrupted {
@@ -309,6 +327,14 @@ impl EventQueue {
         priority: Option<EventPriority>,
         legacy_policy: LegacyQueuePolicy,
     ) -> EventBusResult<(String, Option<LegacyDequeueAck>)> {
+        // A best-effort producer cannot know that the queue is full; never let
+        // that silently discard a lifecycle fact (see `is_turn_lifecycle_fact`).
+        let legacy_policy = match legacy_policy {
+            LegacyQueuePolicy::BestEffort if is_turn_lifecycle_fact(&event) => {
+                LegacyQueuePolicy::AuthoritativeControl
+            }
+            policy => policy,
+        };
         let priority = priority.unwrap_or_else(|| event.default_priority());
         let envelope = EventEnvelope::new(event, priority);
         let event_id = envelope.id.clone();
@@ -1038,9 +1064,13 @@ mod tests {
         for session_id in ["first", "second"] {
             queue
                 .enqueue(
-                    AgenticEvent::SessionStateChanged {
+                    AgenticEvent::TextChunk {
                         session_id: session_id.to_string(),
-                        new_state: "idle".to_string(),
+                        turn_id: "turn".to_string(),
+                        round_id: "round".to_string(),
+                        attempt_id: None,
+                        attempt_index: None,
+                        text: "data".to_string(),
                     },
                     None,
                 )
@@ -1067,6 +1097,73 @@ mod tests {
                 .session_id(),
             Some("second")
         );
+    }
+
+    #[tokio::test]
+    async fn full_queue_keeps_turn_lifecycle_facts_of_another_session() {
+        let queue = EventQueue::new(EventQueueConfig {
+            max_queue_size: 2,
+            batch_size: 16,
+        });
+        let chunk = |session_id: &str, text: &str| AgenticEvent::TextChunk {
+            session_id: session_id.to_string(),
+            turn_id: "turn".to_string(),
+            round_id: "round".to_string(),
+            attempt_id: None,
+            attempt_index: None,
+            text: text.to_string(),
+        };
+        // Another session floods the data budget.
+        for text in ["flood-1", "flood-2"] {
+            queue.enqueue(chunk("busy", text), None).await.unwrap();
+        }
+        // This session's last chunk is best-effort data and may be skipped...
+        queue.enqueue(chunk("quiet", "tail"), None).await.unwrap();
+        // ...but its settlement and history fence must reach the consumer.
+        queue
+            .enqueue(
+                AgenticEvent::DialogTurnCompleted {
+                    session_id: "quiet".to_string(),
+                    turn_id: "turn".to_string(),
+                    total_rounds: 1,
+                    total_tools: 0,
+                    duration_ms: 1,
+                    partial_recovery_reason: None,
+                    success: Some(true),
+                    finish_reason: None,
+                    has_final_response: Some(true),
+                    background_delivery: None,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        queue
+            .enqueue(
+                AgenticEvent::SessionHistoryChanged {
+                    session_id: "quiet".to_string(),
+                    settled_turn_id: Some("turn".to_string()),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        let delivered = queue.dequeue_batch(16).await;
+        let quiet: Vec<_> = delivered
+            .iter()
+            .filter(|envelope| envelope.event.session_id() == Some("quiet"))
+            .map(|envelope| &envelope.event)
+            .collect();
+        assert!(quiet
+            .iter()
+            .any(|event| matches!(event, AgenticEvent::DialogTurnCompleted { .. })));
+        assert!(quiet
+            .iter()
+            .any(|event| matches!(event, AgenticEvent::SessionHistoryChanged { .. })));
+        assert!(!quiet
+            .iter()
+            .any(|event| matches!(event, AgenticEvent::TextChunk { .. })));
     }
 
     #[tokio::test]

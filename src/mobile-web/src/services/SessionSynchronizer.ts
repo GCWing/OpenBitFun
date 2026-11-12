@@ -60,6 +60,9 @@ export class SessionSynchronizer {
   private async connect():Promise<void> {
     if(this.stopped||this.connecting||this.unsubscribe)return;
     this.connecting=true;
+    // A new subscription may land on a host stream rebuilt with lower revisions;
+    // its records must supersede what an earlier attempt delivered.
+    this.replica.rebaseRevisions();
     try {
       const unsubscribe=await this.sessionMgr.subscribeSessionStream(this.sessionId,{onEvent:event=>{
         if(this.stopped)return;
