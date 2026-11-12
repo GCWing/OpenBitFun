@@ -188,7 +188,7 @@ export function confirmUncertainDispatchSubmission(
     let unsubscribe: (() => void) | null = null;
     let graceTimer: ReturnType<typeof setTimeout> | null = null;
     const abort = () => settle('unknown', false);
-    const settle = (outcome: UncertainSubmissionOutcome, act: boolean) => {
+    function settle(outcome: UncertainSubmissionOutcome, act: boolean) {
       if (settled) return;
       settled = true;
       unsubscribe?.();
@@ -203,7 +203,7 @@ export function confirmUncertainDispatchSubmission(
         title: i18nService.t('flow-chat:session.submissionNotDeliveredTitle'),
         body: i18nService.t('flow-chat:session.dispatchNotDelivered'),
       }).finally(() => resolve(outcome));
-    };
+    }
     const check = () => {
       const outcome = classifyDispatchDelivery(job.read());
       if (outcome !== 'unknown') settle(outcome, true);

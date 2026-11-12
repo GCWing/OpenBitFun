@@ -308,12 +308,6 @@ const SLOW_READ_COMMANDS = new Set([
  */
 const RETRYABLE_READ_TRANSPORT_ERROR = /request was not submitted|RPC target unavailable|RPC deadline elapsed before dispatch|RPC acknowledgement lost|error sending request/;
 
-export function isPeerRetryableReadTransportError(error: unknown): boolean {
-  if (error instanceof PeerHostUiNotReadyError) return true;
-  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
-  return isPeerReplyLost(error) || RETRYABLE_READ_TRANSPORT_ERROR.test(message);
-}
-
 /**
  * Stable code of a read whose host did not answer within its deadline. Read
  * owners keep their previous content and offer an explicit retry;
@@ -481,6 +475,12 @@ export class PeerHostUiNotReadyError extends PeerProductCommandError {
     super(message);
     this.name = 'PeerHostUiNotReadyError';
   }
+}
+
+export function isPeerRetryableReadTransportError(error: unknown): boolean {
+  if (error instanceof PeerHostUiNotReadyError) return true;
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return isPeerReplyLost(error) || RETRYABLE_READ_TRANSPORT_ERROR.test(message);
 }
 
 function isHostUiNotReadyMessage(message: string | undefined): message is string {

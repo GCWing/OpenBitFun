@@ -39,7 +39,7 @@ import { isOutcomeUnknownError, isSessionInUseError } from '@/infrastructure/api
 import { i18nService } from '@/infrastructure/i18n';
 import { driverForSession } from '../../session-drivers/registry';
 import { assertSessionConversationCanSubmit, getSessionConversationCapability } from '../../session-drivers/conversationCapability';
-import type { SendMessageOptions, SubmissionDraft, TurnTracker } from '../../session-drivers/types';
+import type { SendMessageOptions, SessionDriver, SubmissionDraft, TurnTracker } from '../../session-drivers/types';
 import { assertSessionSubmissionAllowed } from '../../store/sessionMutationStore';
 import { hasInterruptedTurnHoldingQueue } from '../../utils/interruptedTurnRecovery';
 import { interruptedTurnRecoveryGate } from '../interruptedTurnRecoveryGate';
@@ -58,14 +58,10 @@ import { FLOWCHAT_MESSAGE_SUBMITTED_EVENT } from '../../events/flowchatNavigatio
 import { forkChatSession } from './SessionModule';
 import { viewedExternalForkTurn } from '../../utils/externalHistory';
 import {
-  confirmUncertainDispatchSubmission,
   confirmUncertainPeerSubmission,
-  DISPATCH_SUBMITTING_GRACE_MS,
   isUncertainDispatchSubmitFailure,
   type UncertainSubmission,
 } from '../uncertainSubmission';
-import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
-import { dispatchJobDeliveryStatus } from '@/features/dispatch/dispatchTransport';
 
 export { syncSessionModelSelection } from '../../utils/modelSync';
 export { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
@@ -546,7 +542,7 @@ async function sendMessageInternal(
   const surfaceIdAtSend = surfaceScopeAtSend.surfaceId;
   const draftSubmissionKey = session.draft ? surfaceScopeAtSend.key('draft-submit', sessionId) : undefined;
   let previewTurnId: string | undefined;
-  let submittingDriverId: string | undefined;
+  let submittingDriver: SessionDriver | undefined;
   if (draftSubmissionKey) {
     if (draftSubmissions.has(draftSubmissionKey)) throw new Error('Draft submission is already in progress');
     draftSubmissions.add(draftSubmissionKey);
@@ -565,7 +561,7 @@ async function sendMessageInternal(
     const currentAgentType = (agentType?.trim() || refreshedSession.mode || 'Standard').trim();
     const acpClientId = acpClientIdFromMode(currentAgentType);
     const driver = driverForSession(sessionId, refreshedSession);
-    submittingDriverId = driver.id;
+    submittingDriver = driver;
     if (
       options?.execution?.kind === 'fresh_external_subagent'
       && (acpClientId || driver.id !== 'local')
@@ -724,7 +720,7 @@ async function sendMessageInternal(
     const uncertainTurnId = turnTracker.createdLocalTurnId;
     const uncertainKind = uncertainTurnId && turnTracker.hostSubmitStarted && !turnTracker.hostAcceptedTurn
       && !options?.preserveTurnOnStartError
-      ? submittingDriverId === 'dispatch'
+      ? submittingDriver?.id === 'dispatch'
         ? isUncertainDispatchSubmitFailure(error) ? 'dispatch' : null
         : !isLocalSurface(surfaceIdAtSend) && isOutcomeUnknownError(error) ? 'peer' : null
       : null;
@@ -749,27 +745,8 @@ async function sendMessageInternal(
           userMessageMetadata: options?.userMessageMetadata,
         },
       };
-      const jobId = context.flowChatStore.getState().sessions.get(sessionId)?.config.dispatchJobId;
-      const resolution = uncertainKind === 'dispatch' && jobId
-        ? confirmUncertainDispatchSubmission(context, uncertain, {
-          // The observer reports a job the target never received as
-          // `notFound` reachability while its state stays unacknowledged.
-          read: () => (dispatchJobDeliveryStatus(jobId) === 'notDelivered' ? 'not_delivered'
-            : dispatchJobStore.getState().jobs?.[jobId]?.state
-              ?? context.flowChatStore.getState().sessions.get(sessionId)?.config.dispatchJobState),
-          subscribe: listener => {
-            const unsubscribeJobs = dispatchJobStore.subscribe(listener);
-            const unsubscribeSession = context.flowChatStore.subscribe(listener);
-            return () => { unsubscribeJobs(); unsubscribeSession(); };
-          },
-          submittingGraceMs: isOutcomeUnknownError(error) ? undefined : DISPATCH_SUBMITTING_GRACE_MS,
-          refresh: () => {
-            void import('@/features/dispatch/DispatchJobObserver')
-              .then(({ requestDispatchJobRefresh }) => requestDispatchJobRefresh(jobId))
-              .catch(refreshError => log.warn('Failed to request a dispatch job refresh', { jobId, error: refreshError }));
-          },
-        })
-        : confirmUncertainPeerSubmission(context, uncertain);
+      const resolution = submittingDriver?.confirmUncertainSubmission?.(context, uncertain, error)
+        ?? confirmUncertainPeerSubmission(context, uncertain);
       void resolution.catch(resolveError => {
         log.error('Failed to resolve a submission with an unknown outcome', { sessionId, error: resolveError });
       });

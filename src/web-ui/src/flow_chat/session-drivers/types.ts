@@ -22,6 +22,7 @@ import type { SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { LineRange } from '@/shared/editor/LineRange';
 import type { SessionUsageReport } from '@/infrastructure/api/service-api/SessionAPI';
 import type { ProjectDefaultsConfig } from '@/infrastructure/config/types';
+import type { UncertainSubmission, UncertainSubmissionOutcome } from '../services/uncertainSubmission';
 
 export type { SessionDriverId } from './resolve';
 
@@ -298,6 +299,13 @@ export interface SessionDriver {
     input: StartTurnInput,
     tracker: TurnTracker,
   ): Promise<StartTurnResult>;
+
+  /** Resolve a lost submission reply using this driver's authoritative state. */
+  confirmUncertainSubmission?(
+    context: FlowChatContext,
+    submission: UncertainSubmission,
+    error: unknown,
+  ): Promise<UncertainSubmissionOutcome> | undefined;
 
   /**
    * Manually compact the session's context. Local sessions call the runtime

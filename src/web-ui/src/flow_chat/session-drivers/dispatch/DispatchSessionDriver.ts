@@ -43,7 +43,8 @@ import { dispatchApi } from '@/features/dispatch/dispatchApi';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { forgetDispatchTranscript } from '@/features/dispatch/dispatchTranscriptCache';
 import { requestDispatchJobRefresh } from '@/features/dispatch/DispatchJobObserver';
-import { arePendingPermissionsConfirmed } from '@/features/dispatch/dispatchTransport';
+import { arePendingPermissionsConfirmed, dispatchJobDeliveryStatus } from '@/features/dispatch/dispatchTransport';
+import { isOutcomeUnknownError } from '@/infrastructure/api/errors/TauriCommandError';
 import { markOptimisticDispatchTurnMetadata } from '@/features/dispatch/optimisticDispatchTurn';
 import { openDispatchSessionFile, readDispatchSessionImage, downloadDispatchSessionFile } from '@/features/dispatch/dispatchFileNavigation';
 import { cleanupSaveState } from '../../services/flow-chat-manager/PersistenceModule';
@@ -55,6 +56,7 @@ import {
 } from '../../store/runtimeStatusStore';
 import { claimSubmissionRetry, releaseSubmissionRetry } from '../idempotency';
 import { addSubmittedDialogTurn, applyGeneratingTitlePlaceholder } from '../shared';
+import { confirmUncertainDispatchSubmission, DISPATCH_SUBMITTING_GRACE_MS } from '../../services/uncertainSubmission';
 
 const log = createLogger('DispatchSessionDriver');
 
@@ -481,6 +483,26 @@ export const dispatchSessionDriver: SessionDriver = {
   id: 'dispatch',
   navigationStatusSource: dispatchNavigationStatusSource,
   ownershipSource: dispatchOwnershipSource,
+
+  confirmUncertainSubmission(context, submission, error) {
+    const { sessionId } = submission;
+    const jobId = context.flowChatStore.getState().sessions.get(sessionId)?.config.dispatchJobId;
+    if (!jobId) return undefined;
+    return confirmUncertainDispatchSubmission(context, submission, {
+      // The observer reports a job the target never received as
+      // `notFound` reachability while its state stays unacknowledged.
+      read: () => (dispatchJobDeliveryStatus(jobId) === 'notDelivered' ? 'not_delivered'
+        : dispatchJobStore.getState().jobs?.[jobId]?.state
+          ?? context.flowChatStore.getState().sessions.get(sessionId)?.config.dispatchJobState),
+      subscribe: listener => {
+        const unsubscribeJobs = dispatchJobStore.subscribe(listener);
+        const unsubscribeSession = context.flowChatStore.subscribe(listener);
+        return () => { unsubscribeJobs(); unsubscribeSession(); };
+      },
+      submittingGraceMs: isOutcomeUnknownError(error) ? undefined : DISPATCH_SUBMITTING_GRACE_MS,
+      refresh: () => requestDispatchJobRefresh(jobId),
+    });
+  },
 
   async createSession(context: FlowChatContext, seed: SessionCreationSeed): Promise<string> {
     if (seed.config.modelPoolId) throw new Error(i18nService.t('flow-chat:modelSelector.pools.surfaceUnsupported'));

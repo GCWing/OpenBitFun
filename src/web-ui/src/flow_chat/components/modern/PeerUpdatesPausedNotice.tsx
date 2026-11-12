@@ -25,8 +25,14 @@ export const PeerUpdatesPausedNotice: React.FC<PeerUpdatesPausedNoticeProps> = (
       className="peer-updates-paused-notice"
       role="status"
       data-testid="peer-updates-paused-notice"
+      data-openbitfun-component="peer-updates-paused-notice"
+      data-openbitfun-part="root"
     >
-      <span className="peer-updates-paused-notice__text">
+      <span
+        className="peer-updates-paused-notice__text"
+        data-openbitfun-component="peer-updates-paused-notice"
+        data-openbitfun-part="text"
+      >
         {t('historyState.updatesPaused', { device })}
       </span>
       <Button
