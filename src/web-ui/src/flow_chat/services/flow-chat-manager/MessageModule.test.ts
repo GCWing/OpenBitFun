@@ -36,6 +36,9 @@ const mockStartDialogTurn = vi.fn();
 const mockGetConfigs = vi.fn();
 const mockDispatchSubmit = vi.fn();
 const mockDispatchAppend = vi.fn();
+const mockDispatchContinue = vi.fn();
+const mockDispatchReopenObservation = vi.fn();
+const mockDispatchFollowUpAccepted = vi.fn();
 const mockDispatchProgress = vi.fn();
 const mockDispatchRefresh = vi.fn();
 const mockBindSession = vi.fn();
@@ -104,6 +107,7 @@ vi.mock('@/features/dispatch/dispatchApi', () => ({
   dispatchApi: {
     submit: (...args: unknown[]) => mockDispatchSubmit(...args),
     append: (...args: unknown[]) => mockDispatchAppend(...args),
+    continueJob: (...args: unknown[]) => mockDispatchContinue(...args),
   },
 }));
 
@@ -111,6 +115,8 @@ vi.mock('@/features/dispatch/dispatchJobStore', () => ({
   dispatchJobStore: {
     getState: () => ({
       updateProgress: (...args: unknown[]) => mockDispatchProgress(...args),
+      reopenTerminalObservation: (...args: unknown[]) => mockDispatchReopenObservation(...args),
+      markFollowUpAccepted: (...args: unknown[]) => mockDispatchFollowUpAccepted(...args),
     }),
   },
 }));
@@ -1245,6 +1251,25 @@ describe('MessageModule detached dispatch', () => {
     expect(mockPendingEnqueue).not.toHaveBeenCalled();
     expect(mockDispatchSubmit).not.toHaveBeenCalled();
     expect(mockSubmitSteering).not.toHaveBeenCalled();
+  });
+
+  it('keeps a follow-up turn id across a lost response and observes the job meanwhile', async () => {
+    const { context, session } = createDispatchContext('remote');
+    session.config.dispatchJobState = 'succeeded';
+    mockDispatchContinue
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce({ accepted: true, jobId: 'job-1', sessionId: 'dispatch-session', state: 'queued' });
+
+    await expect(sendMessage(context, 'run the next check', 'dispatch-session')).rejects.toThrow('response lost');
+    // The target may have queued it: observe instead of hiding a running turn.
+    expect(mockDispatchReopenObservation).toHaveBeenCalledWith('job-1');
+    expect(session.dialogTurns).toHaveLength(0);
+
+    await expect(sendMessage(context, 'run the next check', 'dispatch-session')).resolves.toBeUndefined();
+    expect(mockDispatchContinue).toHaveBeenCalledTimes(2);
+    // Same intent, same id: the target dedupes instead of running it twice.
+    expect(mockDispatchContinue.mock.calls[1][1]).toBe(mockDispatchContinue.mock.calls[0][1]);
+    expect(mockDispatchFollowUpAccepted).toHaveBeenCalledWith('job-1', 'queued');
   });
 
   it('reuses the append message id after an ambiguous transport failure', async () => {

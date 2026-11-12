@@ -204,6 +204,12 @@ interface DispatchJobStoreState {
    * follow-up's events are never pulled.
    */
   markFollowUpAccepted: (jobId: string, state: DispatchJobState) => void;
+  /**
+   * A follow-up whose response was lost may have been queued on the target.
+   * Reopen the drain gate (keeping state, cursor and applied events) so the
+   * observer pulls its events instead of hiding a turn that may be running.
+   */
+  reopenTerminalObservation: (jobId: string) => void;
   setTransportState: (
     jobId: string,
     reachability: DispatchReachability,
@@ -550,6 +556,16 @@ export const useDispatchJobStore = create<DispatchJobStoreState>()(
                 updatedAt: Date.now(),
               },
             },
+          };
+        });
+      },
+
+      reopenTerminalObservation: (jobId) => {
+        set(current => {
+          const job = current.jobs[jobId];
+          if (!job || !job.terminalDrained) return current;
+          return {
+            jobs: { ...current.jobs, [jobId]: { ...job, terminalDrained: false, updatedAt: Date.now() } },
           };
         });
       },
