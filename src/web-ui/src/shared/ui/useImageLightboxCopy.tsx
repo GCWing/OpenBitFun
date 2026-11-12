@@ -5,7 +5,11 @@ import { useI18n } from '@/infrastructure/i18n';
 import { contextMenuController } from '@/shared/context-menu-system/core/ContextMenuController';
 import { ContextType, type CustomContext, type MenuItem } from '@/shared/context-menu-system/types';
 import { notificationService } from '@/shared/notification-system';
-import { copyImageToClipboard } from '@/shared/utils/imageClipboard';
+import {
+  canCopyImageSource,
+  copyImageToClipboard,
+  CrossOriginImageError,
+} from '@/shared/utils/imageClipboard';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('ImageLightboxCopy');
@@ -14,11 +18,14 @@ const COPIED_FEEDBACK_MS = 1500;
 /**
  * Copy-to-clipboard for an expanded image: a button in the lightbox chrome and
  * a right-click menu on the image. Both report the outcome with a toast.
+ * `canCopy` is false for images that cannot be read back (a remote image on
+ * another origin); owners hide the button and the menu stays native.
  */
 export function useImageLightboxCopy(source: string | null | undefined) {
   const { t } = useI18n('components');
   const [copied, setCopied] = useState(false);
   const resetTimerRef = useRef<number | null>(null);
+  const canCopy = canCopyImageSource(source);
 
   useEffect(() => () => {
     if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
@@ -34,12 +41,15 @@ export function useImageLightboxCopy(source: string | null | undefined) {
       notificationService.success(t('imageLightbox.copySuccess'), { duration: 2000 });
     } catch (error) {
       log.warn('Failed to copy image to clipboard', { error });
-      notificationService.error(t('imageLightbox.copyFailed'), { duration: 4000 });
+      const message = error instanceof CrossOriginImageError
+        ? t('imageLightbox.copyCrossOrigin')
+        : t('imageLightbox.copyFailed');
+      notificationService.error(message, { duration: 4000 });
     }
   }, [source, t]);
 
   const onContextMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
-    if (!source) return;
+    if (!canCopy) return;
     event.preventDefault();
     event.stopPropagation();
     event.nativeEvent.stopImmediatePropagation?.();
@@ -61,7 +71,7 @@ export function useImageLightboxCopy(source: string | null | undefined) {
       timestamp: Date.now(),
     };
     void contextMenuController.show(position, items, context);
-  }, [copy, source, t]);
+  }, [canCopy, copy, t]);
 
-  return { copied, copy, onContextMenu };
+  return { canCopy, copied, copy, onContextMenu };
 }

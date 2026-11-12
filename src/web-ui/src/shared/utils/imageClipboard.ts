@@ -13,6 +13,24 @@ import { hasNativeClipboard, writeNativeClipboardImage } from './nativeClipboard
 
 const PNG_MIME = 'image/png';
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+/**
+ * Tauri serves local files to Windows WebViews from this http(s) host and
+ * answers with the app origin in its CORS headers, so it stays copyable.
+ */
+const TAURI_ASSET_HOST = 'asset.localhost';
+
+/**
+ * Raised for a remote image on another origin. Its host decides whether the
+ * page may read the pixels back, and most hosts do not send the CORS headers
+ * that requires, so such images are not offered for copying.
+ */
+export class CrossOriginImageError extends Error {
+  constructor() {
+    super('Images served by another origin cannot be copied');
+    this.name = 'CrossOriginImageError';
+  }
+}
+
 function parseSource(source: string): URL | null {
   try {
     return new URL(source, window.location.href);
@@ -23,6 +41,19 @@ function parseSource(source: string): URL | null {
 
 function isInlineSource(url: URL): boolean {
   return url.protocol === 'data:' || url.protocol === 'blob:';
+}
+
+/** True for an http(s) image on another origin than the app (see `CrossOriginImageError`). */
+export function isCrossOriginImageSource(source: string): boolean {
+  const url = parseSource(source);
+  if (!url || (url.protocol !== 'http:' && url.protocol !== 'https:')) return false;
+  if (url.hostname === TAURI_ASSET_HOST) return false;
+  return url.origin !== window.location.origin;
+}
+
+/** Whether the copy action should be offered for `source`. */
+export function canCopyImageSource(source: string | null | undefined): source is string {
+  return typeof source === 'string' && source.length > 0 && !isCrossOriginImageSource(source);
 }
 
 async function loadImageElement(source: string): Promise<HTMLImageElement> {
@@ -91,6 +122,10 @@ async function writeWebClipboardImage(png: Promise<Blob>): Promise<void> {
 
 /** Copy the image at `source`; rejects when no clipboard path accepted it. */
 export async function copyImageToClipboard(source: string): Promise<void> {
+  if (isCrossOriginImageSource(source)) {
+    throw new CrossOriginImageError();
+  }
+
   const png = resolvePngBlob(source);
   // Keep a rejected read from surfacing as unhandled while the web write runs.
   png.catch(() => undefined);

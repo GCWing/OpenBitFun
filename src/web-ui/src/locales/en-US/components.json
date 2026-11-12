@@ -55,7 +55,8 @@
     "label": "Image preview",
     "copy": "Copy image",
     "copySuccess": "Image copied to clipboard",
-    "copyFailed": "Failed to copy image"
+    "copyFailed": "Failed to copy image",
+    "copyCrossOrigin": "Images from other websites can't be copied here"
   },
   "mermaidBlock": {
     "renderFailed": "Diagram render failed",

@@ -55,7 +55,8 @@
     "label": "图片预览",
     "copy": "复制图片",
     "copySuccess": "图片已复制到剪贴板",
-    "copyFailed": "复制图片失败"
+    "copyFailed": "复制图片失败",
+    "copyCrossOrigin": "无法在此复制来自其他网站的图片"
   },
   "mermaidBlock": {
     "renderFailed": "图表渲染失败",

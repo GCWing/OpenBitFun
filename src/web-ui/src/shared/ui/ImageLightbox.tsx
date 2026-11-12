@@ -45,11 +45,13 @@ export function ImageLightbox({ image, onClose }: {
       closeOnPointerOutside={false}
       onClick={event => { if (event.target === event.currentTarget) onClose(); }}
     >
-      <ImageLightboxCopyButton
-        className="image-lightbox-copy"
-        copied={imageCopy.copied}
-        onCopy={() => { void imageCopy.copy(); }}
-      />
+      {imageCopy.canCopy && (
+        <ImageLightboxCopyButton
+          className="image-lightbox-copy"
+          copied={imageCopy.copied}
+          onCopy={() => { void imageCopy.copy(); }}
+        />
+      )}
       <DialogClose className="image-lightbox-close" icon={<Icon name="xmark" size="lg" style={{ width: 20, height: 20 }} />} />
       <img
         src={image.source}

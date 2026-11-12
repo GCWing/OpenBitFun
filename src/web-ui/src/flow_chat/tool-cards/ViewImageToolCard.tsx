@@ -103,12 +103,12 @@ export const ViewImageToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand 
         }}
         lightboxOpen={isLightboxOpen}
         lightboxTitle={title}
-        lightboxActions={(
+        lightboxActions={lightboxCopy.canCopy ? (
           <ImageLightboxCopyButton
             copied={lightboxCopy.copied}
             onCopy={() => { void lightboxCopy.copy(); }}
           />
-        )}
+        ) : undefined}
         onLightboxImageContextMenu={lightboxCopy.onContextMenu}
         onLightboxClose={() => setIsLightboxOpen(false)}
       />

@@ -824,11 +824,13 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
               closeOnPointerOutside={false}
               onClick={event => { if (event.target === event.currentTarget) setLightboxImage(null); }}
             >
-              <ImageLightboxCopyButton
-                className="user-message-item__lightbox-copy"
-                copied={lightboxCopy.copied}
-                onCopy={() => { void lightboxCopy.copy(); }}
-              />
+              {lightboxCopy.canCopy && (
+                <ImageLightboxCopyButton
+                  className="user-message-item__lightbox-copy"
+                  copied={lightboxCopy.copied}
+                  onCopy={() => { void lightboxCopy.copy(); }}
+                />
+              )}
               <DialogClose className="user-message-item__lightbox-close" icon={<Icon name="xmark" size="md" />} />
               <img
                 src={lightboxImage}

@@ -11,7 +11,12 @@ vi.mock('./nativeClipboard', () => ({
   writeNativeClipboardImage: mocks.writeNativeClipboardImage,
 }));
 
-import { copyImageToClipboard } from './imageClipboard';
+import {
+  canCopyImageSource,
+  copyImageToClipboard,
+  CrossOriginImageError,
+  isCrossOriginImageSource,
+} from './imageClipboard';
 
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7, 7, 7]);
 const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5]);
@@ -82,6 +87,39 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(navigator, 'clipboard');
+});
+
+describe('image clipboard source policy', () => {
+  it('offers copying only for images the page can read back', () => {
+    const origin = window.location.origin;
+
+    expect(isCrossOriginImageSource('https://images.example.com/cat.png')).toBe(true);
+    expect(isCrossOriginImageSource('http://images.example.com/cat.png')).toBe(true);
+    // A shared string prefix is not the same origin (another port here).
+    expect(isCrossOriginImageSource(`${origin}1/cat.png`)).toBe(true);
+
+    expect(isCrossOriginImageSource(`${origin}/cat.png`)).toBe(false);
+    expect(isCrossOriginImageSource('/workspace/cat.png')).toBe(false);
+    expect(isCrossOriginImageSource('data:image/png;base64,AAAA')).toBe(false);
+    expect(isCrossOriginImageSource('blob:http://localhost/1234')).toBe(false);
+    expect(isCrossOriginImageSource('asset://localhost/Users/me/cat.png')).toBe(false);
+    expect(isCrossOriginImageSource('http://asset.localhost/C%3A%5Ccat.png')).toBe(false);
+
+    expect(canCopyImageSource('data:image/png;base64,AAAA')).toBe(true);
+    expect(canCopyImageSource('https://images.example.com/cat.png')).toBe(false);
+    expect(canCopyImageSource('')).toBe(false);
+    expect(canCopyImageSource(null)).toBe(false);
+    expect(canCopyImageSource(undefined)).toBe(false);
+  });
+
+  it('refuses a cross-origin image with a specific error before touching any clipboard', async () => {
+    await expect(copyImageToClipboard('https://images.example.com/cat.png'))
+      .rejects.toBeInstanceOf(CrossOriginImageError);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(FakeImage.created).toHaveLength(0);
+    expect(clipboardWrite).not.toHaveBeenCalled();
+    expect(mocks.writeNativeClipboardImage).not.toHaveBeenCalled();
+  });
 });
 
 describe('copyImageToClipboard', () => {
