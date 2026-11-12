@@ -91,7 +91,8 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
         
         case 'model-round':
           if (item.timeline?.kind === 'group-header') return <FlowGroupRenderer data={item.timeline.group!}
-            turnId={item.turnId} placement="standalone" timelineExpanded={item.timeline.expanded} />;
+            turnId={item.turnId} placement="standalone" timelineExpanded={item.timeline.expanded}
+            timelineLiveMembers={item.timeline.liveMembers} />;
           if (item.timeline?.kind === 'group-members' || item.timeline?.kind === 'content') return <TimelineContentBlock item={item} />;
           return (
             <ModelRoundItem 

@@ -248,6 +248,42 @@ describe('buildAgentCompanionActivity', () => {
     expect(activity.tasks[0].latestOutput?.endsWith('...')).toBe(false);
   });
 
+  it('cleans only a bounded tail of a long reply with the same visible result', async () => {
+    // Oracle: the whole-text cleanup the companion applied before windowing.
+    const wholeText = (markdown: string) => markdown
+      .replace(/```[\s\S]*?```/g, match => match.replace(/```[^\n]*\n?|```/g, ' '))
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+      .replace(/^\s{0,3}>\s?/gm, '')
+      .replace(/^\s*[-*+]\s+/gm, '')
+      .replace(/^\s*\d+\.\s+/gm, '')
+      .replace(/[*_~]{1,3}/g, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(-512);
+    const block = (index: number) => `## Part ${index}\n\nSome **bold** and \`code\` with a [link](https://example.com/${index}).\n\n- item _${index}_\n> quoted\n\n`;
+    const longFence = '```ts\n' + 'const value = `x` * 2; // **not bold**\n'.repeat(200) + '```\n';
+    const documents = [
+      Array.from({ length: 300 }, (_, index) => block(index)).join(''),
+      // The window starts inside a fence that opened long before it.
+      Array.from({ length: 40 }, (_, index) => block(index)).join('') + longFence + 'Closing words.',
+      Array.from({ length: 40 }, (_, index) => block(index)).join('') + '```ts\n' + 'still streaming code\n'.repeat(400),
+      // Mostly link targets: the window cleans below the visible budget.
+      Array.from({ length: 400 }, (_, index) => `[x](https://example.com/${'p'.repeat(60)}/${index}) `).join(''),
+    ];
+    await putStateMachineInStreaming();
+    for (const content of documents) {
+      flowChatStore.setState(() => ({
+        sessions: new Map([['session-1', createStreamingSessionWithText(content)]]),
+        activeSessionId: 'session-1',
+      }));
+      expect(buildAgentCompanionActivity().tasks[0].latestOutput).toBe(wholeText(content));
+    }
+  });
+
   it('keeps truncated latest output well-formed for desktop pet events', async () => {
     const content = '\uD83D\uDE00' + 'a'.repeat(511);
     flowChatStore.setState(() => ({

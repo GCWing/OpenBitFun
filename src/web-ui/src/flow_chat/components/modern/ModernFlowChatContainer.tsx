@@ -54,7 +54,7 @@ import {
   type VirtualItem,
   type VisibleTurnInfo,
 } from '../../store/modernFlowChatStore';
-import type { Session, SessionHistoryPresentation } from '../../types/flow-chat';
+import type { DialogTurn, Session, SessionHistoryPresentation } from '../../types/flow-chat';
 import type { SessionHistoryWindowDirection } from '../../store/FlowChatStore';
 import {
   FLOWCHAT_MESSAGE_SUBMITTED_EVENT,
@@ -212,6 +212,36 @@ type BackgroundCommandSummary = {
 };
 
 const LATEST_TURN_AUTO_PIN_MAX_ATTEMPTS = 8;
+const NO_VISIBLE_TURN_IDS: readonly string[] = [];
+
+/**
+ * A rail entry's capsule preview, parsed once per stored presentation.
+ * Stored presentations are immutable records, so their identity is enough.
+ */
+const turnRailPreviews = new WeakMap<object, FlowChatTurnRailItem['capsulePreview'] | null>();
+function turnRailPreviewFor(turn: DialogTurn | undefined): FlowChatTurnRailItem['capsulePreview'] {
+  const value: unknown = turn?.userMessage?.metadata?.composerPresentation;
+  if (!value || typeof value !== 'object') return undefined;
+  let preview = turnRailPreviews.get(value);
+  if (preview === undefined) {
+    preview = composerPresentationToTurnRailPreview(parseComposerPresentation(value)) ?? null;
+    turnRailPreviews.set(value, preview);
+  }
+  return preview ?? undefined;
+}
+
+/** Streaming replaces Turn objects without changing anything the rail reads. */
+function sameTurnRailSources(left: readonly DialogTurn[], right: readonly DialogTurn[]): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index], b = right[index];
+    if (a === b) continue;
+    if (a.id !== b.id
+      || a.userMessage?.content !== b.userMessage?.content
+      || a.userMessage?.metadata?.composerPresentation !== b.userMessage?.metadata?.composerPresentation) return false;
+  }
+  return true;
+}
 const HISTORY_LOADING_LAYER_STALL_WARN_MS = 800;
 const TURN_PIN_RETRY_MAX_ATTEMPTS = 120;
 const MOCK_BACKGROUND_COMMANDS_STORAGE_KEY = 'openbitfun.flowChat.mockBackgroundCommands';
@@ -1096,12 +1126,22 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const absoluteRenderedTurnSummaryById = useMemo(() => {
     return new Map(absoluteRenderedTurnSummaries.map(turn => [turn.turnId, turn]));
   }, [absoluteRenderedTurnSummaries]);
+  // Every streamed flush replaces `dialogTurns`; the rail only reads each
+  // Turn's identity and user message, so it keeps the previous array until
+  // one of those changes. Paging and rollback change ids or length.
+  const turnRailSourcesRef = useRef<readonly DialogTurn[]>([]);
+  const turnRailSources = useMemo(() => {
+    const next = activeSession?.dialogTurns ?? [];
+    if (sameTurnRailSources(turnRailSourcesRef.current, next)) return turnRailSourcesRef.current;
+    turnRailSourcesRef.current = next;
+    return next;
+  }, [activeSession?.dialogTurns]);
   const turnRailItems = useMemo<FlowChatTurnRailItem[]>(() => {
     const historyView = activeSession?.sessionId
       ? flowChatStore.getSessionHistoryViewState(activeSession.sessionId)
       : undefined;
     const loadedTurns = [
-      ...(activeSession?.dialogTurns ?? []),
+      ...turnRailSources,
       ...(historyView?.loadedRanges.flatMap(range => range.turns) ?? []),
     ];
     const dialogTurnById = new Map(loadedTurns.map(turn => [turn.id, turn]));
@@ -1112,9 +1152,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
         const loaded = {
           turnId: turn.id,
           content: turn.userMessage?.content ?? '',
-          capsulePreview: composerPresentationToTurnRailPreview(
-            parseComposerPresentation(turn.userMessage?.metadata?.composerPresentation),
-          ),
+          capsulePreview: turnRailPreviewFor(turn),
         };
         loadedByOrdinal.set(range.startOrdinal + index, loaded);
         const storageTurnIndex = turn.storageTurnIndex ?? turn.backendTurnIndex;
@@ -1128,9 +1166,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       const loaded = {
         turnId: summary.turnId,
         content: dialogTurn?.userMessage?.content ?? '',
-        capsulePreview: composerPresentationToTurnRailPreview(
-          parseComposerPresentation(dialogTurn?.userMessage?.metadata?.composerPresentation),
-        ),
+        capsulePreview: turnRailPreviewFor(dialogTurn),
       };
       loadedByOrdinal.set(Math.max(0, summary.turnIndex - 1), loaded);
       if (typeof summary.storageTurnIndex === 'number') {
@@ -1153,9 +1189,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
         ?? (catalogEntry?.turnId && catalogDialogTurn ? {
           turnId: catalogEntry.turnId,
           content: catalogDialogTurn.userMessage?.content ?? '',
-          capsulePreview: composerPresentationToTurnRailPreview(
-            parseComposerPresentation(catalogDialogTurn.userMessage?.metadata?.composerPresentation),
-          ),
+          capsulePreview: turnRailPreviewFor(catalogDialogTurn),
         } : undefined)
         ?? loadedByOrdinal.get(ordinal);
       const turnId = loaded?.turnId ?? catalogEntry?.turnId ?? null;
@@ -1184,16 +1218,14 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
         ordinal: Math.max(0, summary.turnIndex - 1),
         turnIndex: summary.turnIndex,
         content: dialogTurnById.get(summary.turnId)?.userMessage?.content ?? '',
-        capsulePreview: composerPresentationToTurnRailPreview(
-          parseComposerPresentation(dialogTurnById.get(summary.turnId)?.userMessage?.metadata?.composerPresentation),
-        ),
+        capsulePreview: turnRailPreviewFor(dialogTurnById.get(summary.turnId)),
       });
     }
 
     return items.sort((left, right) => left.turnIndex - right.turnIndex);
   }, [
     absoluteRenderedTurnSummaries,
-    activeSession?.dialogTurns,
+    turnRailSources,
     activeSession?.sessionId,
     sessionTotalTurnCount,
     turnCatalog,
@@ -1893,6 +1925,14 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     turnRailItems,
     updateViewportIntent,
   ]);
+
+  // The rail is memoized; a click reads the committed navigation instead of
+  // re-rendering the rail whenever one of its many inputs changes.
+  const navigateToTurnRef = useRef(navigateToTurn);
+  useLayoutEffect(() => { navigateToTurnRef.current = navigateToTurn; });
+  const navigateFromTurnRail = useCallback((target: FlowChatTurnRailItem) => {
+    void navigateToTurnRef.current(target);
+  }, []);
 
   const handleNavigateToFocusTurn = useCallback(async (request: FlowChatFocusItemRequest) => {
     const sessionId = activeSession?.sessionId;
@@ -2843,8 +2883,8 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
               <FlowChatTurnRail
                 turns={turnRailItems}
                 currentTurnId={effectiveVisibleTurnInfo?.turnId ?? null}
-                visibleTurnIds={effectiveVisibleTurnInfo?.visibleTurnIds ?? []}
-                onNavigate={navigateToTurn}
+                visibleTurnIds={effectiveVisibleTurnInfo?.visibleTurnIds ?? NO_VISIBLE_TURN_IDS}
+                onNavigate={navigateFromTurnRail}
               />
             ) : null}
           </HistorySessionLoadingBoundary>

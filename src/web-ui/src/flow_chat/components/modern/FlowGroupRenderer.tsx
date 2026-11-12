@@ -38,6 +38,8 @@ export interface FlowGroupRendererProps {
   expandedThinkingItemIds?: readonly string[];
   placement?: 'standalone' | 'inline';
   timelineExpanded?: boolean;
+  /** The timeline lists this running group's in-flight members below its header. */
+  timelineLiveMembers?: boolean;
 }
 
 interface FlowGroupView {
@@ -77,6 +79,7 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
   expandedThinkingItemIds,
   placement,
   timelineExpanded,
+  timelineLiveMembers,
 }) => {
   const { t, formatNumber } = useI18n('flow-chat');
   const category = getFlowGroupCategory(data);
@@ -183,6 +186,7 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
       || (item.type === 'tool' && (item as FlowToolItem).toolResult?.success === false)) ? 'immediate' : undefined,
     streaming: isGroupStreaming, itemCount: toolItemCount,
     'data-flow-group-phase': data.phase,
+    'data-flow-group-live-members': timelineLiveMembers ? 'true' : undefined,
     ...summaryPresentation, ...policy.attributes(allItems), onExpandedChange: handleExpandedChange,
     // The transcript owns scrolling; individual completions do not close or pulse the group.
     receiveFeedback: data.phase === undefined ? groupReceiveFeedback?.get(groupId) : undefined,

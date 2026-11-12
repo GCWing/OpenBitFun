@@ -182,6 +182,10 @@ export function isItemFullyAboveViewport(itemEndPx: number, scrollTopPx: number)
   return itemEndPx <= scrollTopPx;
 }
 
+export function isItemStartAboveViewport(itemStartPx: number, scrollTopPx: number): boolean {
+  return itemStartPx < scrollTopPx;
+}
+
 /** Normal-flow padding must replace the exact occupied box, including fractions. */
 function measureRowHeight(element: HTMLElement, entry?: ResizeObserverEntry): number {
   return entry?.borderBoxSize?.[0]?.blockSize ?? element.getBoundingClientRect().height;
@@ -201,6 +205,20 @@ function measureRowHeight(element: HTMLElement, entry?: ResizeObserverEntry): nu
 interface MeasuringVirtualizer {
   getMeasurements: () => ReadonlyArray<{ start: number; end: number }>;
 }
+
+/**
+ * The keyed size cache, which the published types also mark `private`.
+ *
+ * Read only to hand the measured sizes to the next mount of the same
+ * transcript; the library replaces the map on every resize, so it is read
+ * through the instance each time rather than held.
+ */
+interface SizedVirtualizer {
+  itemSizeCache: ReadonlyMap<unknown, number>;
+}
+
+/** Retained sizes beyond this are older history; estimates serve it as before. */
+const MAX_RETAINED_ITEM_SIZES = 4096;
 
 export interface UseFlowChatVirtualizerOptions<T> {
   /** Native history grows toward negative scrollTop; indexes start at its tail. */
@@ -266,6 +284,20 @@ export interface UseFlowChatVirtualizerOptions<T> {
   shiftViewport?: (byPx: number) => boolean;
   /** Stable leading row while its earlier estimated rows finish measuring. */
   getViewportAnchorKey?: () => string | null;
+  /**
+   * Sizes this transcript's rows measured in an earlier mount, by item key.
+   *
+   * Read once, on mount. They become the rows' reservations in place of
+   * estimates, so a reopened transcript lays out from heights it already
+   * measured and a row whose height has not changed costs no correction.
+   * Mounted rows are still measured and still replace them.
+   */
+  retainedItemSizes?: ReadonlyMap<string, number>;
+  /**
+   * Content width the retained sizes were measured at. At another width they
+   * still reserve space, but no longer count as measurements.
+   */
+  retainedItemWidthPx?: number;
 }
 
 export interface FlowChatVirtualizer {
@@ -331,6 +363,11 @@ export interface FlowChatVirtualizer {
    * A no-op when no aim is in flight, so it is safe on every wheel notch.
    */
   cancelAim: () => void;
+  /**
+   * The sizes worth handing to the next mount of this transcript, by key:
+   * every current item that has a measured height, the newest first.
+   */
+  snapshotItemSizes: () => Map<string, number>;
 }
 
 export interface FlowChatVisibleItemRange {
@@ -419,6 +456,8 @@ export function useFlowChatVirtualizer<T>({
   writeViewport,
   shiftViewport = () => false,
   getViewportAnchorKey,
+  retainedItemSizes,
+  retainedItemWidthPx,
 }: UseFlowChatVirtualizerOptions<T>): FlowChatVirtualizer {
   const items = useMemo(() => endOrigin ? [...sourceItems].reverse() : sourceItems, [sourceItems, endOrigin]);
   const endOriginRef = useRef(endOrigin);
@@ -551,7 +590,20 @@ export function useFlowChatVirtualizer<T>({
    * the current items through a ref instead, which is sound because a change
    * that matters — an item added or removed — moves `count` as well.
    */
-  const reservedEstimatesRef = useRef(new Map<string, number>());
+  // A retained size is a reservation that was once measured. Seeded once; a
+  // later prop change is not a remount and must not replace live reservations.
+  // Sizes measured at another content width are reservations, not measurements:
+  // their rows owe the first-measurement repair when they mount.
+  const [restoredItemKeys] = useState(() => {
+    const widthPx = estimateContext?.availableWidthPx;
+    const sameWidth = retainedItemWidthPx === undefined || widthPx === undefined
+      || Math.abs(retainedItemWidthPx - widthPx) < 0.5;
+    return new Set(sameWidth ? retainedItemSizes?.keys() ?? [] : []);
+  });
+  const [initialReservations] = useState(() => new Map(retainedItemSizes ?? []));
+  const reservedEstimatesRef = useRef(initialReservations);
+  /** Keys whose size the virtualizer has measured at least once, including retained sizes. */
+  const measuredKeysRef = useRef(new Set<string | number | bigint>(restoredItemKeys));
   const estimateSize = useCallback((index: number) => {
     const item = itemsRef.current[index];
     if (item === undefined) return 0;
@@ -605,10 +657,10 @@ export function useFlowChatVirtualizer<T>({
     // at 1540.3 -> 806.7ms. These are single-trace timings, not paint guarantees.
     // Keep an empty hydration from consuming the one-time initial offset.
     enabled: !initialTailRef.current || hasInitialItemsRef.current,
+    // Reservations rather than raw estimates: a reopened transcript seeds from
+    // the sizes it retained. Without any, a reservation is that same estimate.
     initialOffset: () => !endOrigin && initialTailRef.current
-      ? itemsRef.current.slice(0, -1).reduce((offset, item) => (
-        offset + estimateItemHeightRef.current(item, estimateContextRef.current)
-      ), 0)
+      ? itemsRef.current.slice(0, -1).reduce((offset, _item, index) => offset + estimateSize(index), 0)
       : 0,
     count: items.length,
     getScrollElement: () => scrollerRef.current,
@@ -702,6 +754,8 @@ export function useFlowChatVirtualizer<T>({
   // An instance field rather than an option, so it is assigned here — before
   // any measurement callback can reach `resizeItem`.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta) => {
+    const firstMeasurement = !measuredKeysRef.current.has(item.key);
+    measuredKeysRef.current.add(item.key);
     if (resettingMeasurementsRef.current) return false;
     pendingMeasurementRef.current = true;
     const scroller = scrollerRef.current;
@@ -726,8 +780,16 @@ export function useFlowChatVirtualizer<T>({
     // Estimated bounds are not proof that an older row is now visible. During
     // a prepend a predecessor can grow through the old viewport coordinates;
     // its identity still precedes the reading row and its whole delta is owed.
+    // A row's first measurement replaces a reservation, not content the reader
+    // saw: before this commit its space was an estimate. If it starts above the
+    // viewport, everything visible follows it and the whole delta is owed —
+    // judging it by its estimated end let a row that mounted while scrolling up
+    // push or pull the transcript by its estimate error. A measured row that
+    // resizes keeps the visible-row rule above.
     const fullyAboveViewport = anchorIndex === undefined
-      ? isItemFullyAboveViewport(item.end, beforeScrollTopPx)
+      ? firstMeasurement
+        ? isItemStartAboveViewport(item.start, beforeScrollTopPx)
+        : isItemFullyAboveViewport(item.end, beforeScrollTopPx)
       : item.index < anchorIndex;
     const applied = fullyAboveViewport ? shiftViewport(delta) : false;
     if (applied) pendingMeasurementShiftRef.current = true;
@@ -929,6 +991,9 @@ export function useFlowChatVirtualizer<T>({
     for (const key of previousKeysRef.current) if (!keys.has(key)) {
       retiredMeasurementsRef.current++;
       reservedEstimatesRef.current.delete(key);
+      measuredKeysRef.current.delete(key);
+      // A key that returns later starts from an estimate, not its retained size.
+      restoredItemKeys.delete(key);
     }
     previousKeysRef.current = keys;
     if (measuredLayoutRef.current === layoutSignature && retiredMeasurementsRef.current < 2048
@@ -966,7 +1031,7 @@ export function useFlowChatVirtualizer<T>({
     retiredMeasurementsRef.current = 0;
     pendingLayoutMeasureRef.current = false;
   }, [itemKeyRevision, layoutSignature, items, measureRenderedItems, virtualizer,
-    measurementSuspended]);
+    measurementSuspended, restoredItemKeys]);
 
   const getItemBounds = useCallback((index: number): FlowChatItemBounds | null => {
     const measurement = (virtualizer as unknown as MeasuringVirtualizer)
@@ -1038,6 +1103,22 @@ export function useFlowChatVirtualizer<T>({
     virtualizer.scrollToOffset(givenUpAtPx, { align: 'start', behavior: 'auto' });
   }, [scrollerRef, virtualizer]);
 
+  const snapshotItemSizes = useCallback(() => {
+    const measured = (virtualizer as unknown as SizedVirtualizer).itemSizeCache;
+    const reservations = reservedEstimatesRef.current;
+    const keys = itemKeysRef.current;
+    const sizes = new Map<string, number>();
+    // Chronological keys, newest first, so the bound keeps the tail a reopen
+    // lands on. A restored size that matched its row never entered the
+    // library's cache, but it is still a measurement.
+    for (let index = keys.length - 1; index >= 0 && sizes.size < MAX_RETAINED_ITEM_SIZES; index -= 1) {
+      const key = keys[endOriginRef.current ? keys.length - 1 - index : index];
+      const size = measured.get(key) ?? (restoredItemKeys.has(key) ? reservations.get(key) : undefined);
+      if (size !== undefined && Number.isFinite(size)) sizes.set(key, size);
+    }
+    return sizes;
+  }, [restoredItemKeys, virtualizer]);
+
   return {
     rows,
     paddingTopPx,
@@ -1050,5 +1131,6 @@ export function useFlowChatVirtualizer<T>({
     scrollItemIntoView,
     scrollToOffset,
     cancelAim,
+    snapshotItemSizes,
   };
 }

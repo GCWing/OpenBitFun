@@ -7,6 +7,10 @@ export interface MarkdownSection { start: number; end: number }
 // it: splitting a list, fence, table or HTML document would change its meaning.
 const SECTION_CHARS = 3000;
 const cache = new BoundedResourceCache<string, readonly MarkdownSection[]>(2 * 1024 * 1024, 64);
+// A streaming reply has a new source on every flush. Its intermediate results
+// are almost never read again, so they stay out of the settled cache instead
+// of evicting the sections every other reply needs when its session reopens.
+const streamingCache = new BoundedResourceCache<string, readonly MarkdownSection[]>(1024 * 1024, 4);
 const parser = getMarkdown('flowchat-section-boundaries', {
   enableContainers: false, enableFixIndentedCodeBlock: false,
   markdownItOptions: { typographer: false },
@@ -15,10 +19,14 @@ const parser = getMarkdown('flowchat-section-boundaries', {
 /** Block tokenization only (~linear), never inline parsing or a second renderer.
  * Actual sections still use the product's remark/rehype/sanitizer pipeline.
  * Documents with cross-block references/raw HTML stay together. */
-export function markdownSections(source: string): readonly MarkdownSection[] {
+export function markdownSections(
+  source: string,
+  options: { streaming?: boolean } = {},
+): readonly MarkdownSection[] {
   const whole = () => [{ start: 0, end: source.length }];
   if (source.length < SECTION_CHARS) return whole();
-  const cached = cache.get(source);
+  const target = options.streaming ? streamingCache : cache;
+  const cached = cache.get(source) ?? (options.streaming ? streamingCache.get(source) : undefined);
   if (cached) return cached;
   const started = isStartupRenderTraceEnabled() ? performance.now() : undefined;
   const normalized = source.replace(/\r\n?|\0/g, match => match === '\0' ? '\uFFFD' : '\n');
@@ -54,7 +62,7 @@ export function markdownSections(source: string): readonly MarkdownSection[] {
     }
     sections = boundaries.map((start, index) => ({ start, end: boundaries[index + 1] ?? source.length }));
   }
-  cache.set(source, sections, source.length * 2 + sections.length * 32);
+  target.set(source, sections, source.length * 2 + sections.length * 32);
   if (started !== undefined) startupTrace.markPhase('flowchat_markdown_sections', {
     durationMs: performance.now() - started, contentLength: source.length, sections: sections.length,
   });

@@ -99,6 +99,7 @@ import type { FlowChatViewportSnapshot } from './flowChatViewportSnapshot';
 import { getVirtualItemBookmarkKey, getVirtualItemStableKey } from './virtualItemIdentity';
 import { useConversationTimeline } from '../../timeline/useConversationTimeline';
 import { FlowChatReaderProvider } from '../../timeline/readerState';
+import { retainedTranscriptRowSizes } from '../../timeline/retainedViewMemory';
 import { findTimelineBlockIndex } from '../../timeline/document';
 import { localizeMarkdownMatch } from '../../timeline/markdownSectionSearch';
 import { useTimelineInteraction, type TimelineReaderInteraction } from '../../timeline/useTimelineInteraction';
@@ -139,12 +140,13 @@ const HISTORY_WINDOW_DIRECTIONS: readonly SessionHistoryWindowDirection[] = ['be
  * Transcripts mounted this session, counted.
  *
  * The list is keyed on the session id, so a switch is a full remount: new
- * scroller, empty measurement cache, fresh opening reveal, and a follow hook
- * that has never followed anything. Nothing in the trail said which instance a
+ * scroller, a measurement cache seeded only from retained row sizes, fresh
+ * opening reveal, and a follow hook that has never followed anything. Nothing in the trail said which instance a
  * line came from, and two of the three viewport faults measured here turned out
  * to be two instances disagreeing rather than one instance changing its mind.
  */
 let nextViewportInstanceId = 0;
+
 const IDLE_HISTORY_WINDOW_BOUNDARY_STATE: Record<
   SessionHistoryWindowDirection,
   'idle' | 'loading' | 'error'
@@ -419,6 +421,8 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   }, [activeSessionState.isProcessing]);
   const activeSessionId = activeSession?.sessionId ?? null;
   const { items: virtualItems, reader } = useConversationTimeline(sourceItems, activeSessionId ?? undefined, 'main');
+  // Read once for the virtualizer's mount; claimed and handed back below.
+  const [retainedRows] = useState(() => retainedTranscriptRowSizes.peek(reader));
   const timelineItemsRef = useRef(virtualItems);
   timelineItemsRef.current = virtualItems;
   const nextVisibleItemIndexes = useMemo(() => getNextVisibleVirtualItemIndexes(virtualItems), [virtualItems]);
@@ -600,11 +604,37 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     writeViewport: viewportOwner.write,
     shiftViewport: shiftMeasuredViewport,
     getViewportAnchorKey: () => measurementAnchorKeyRef.current(),
+    retainedItemSizes: retainedRows?.sizes,
+    retainedItemWidthPx: retainedRows?.widthPx,
   });
+  const snapshotItemSizes = virtualizer.snapshotItemSizes;
+  const measuredWidthRef = useRef(availableWidthPx);
+  measuredWidthRef.current = availableWidthPx;
+  useLayoutEffect(() => {
+    retainedTranscriptRowSizes.take(reader);
+    // Sizes only: no geometry is read, so unmount-phase DOM cannot skew them.
+    return () => retainedTranscriptRowSizes.put(reader, {
+      sizes: snapshotItemSizes(),
+      widthPx: measuredWidthRef.current > 0 ? measuredWidthRef.current : undefined,
+    });
+  }, [reader, snapshotItemSizes]);
 
-  const userMessageItems = useMemo(() => virtualItems
-    .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.type === 'user-message' || item.type === 'background-run'), [virtualItems]);
+  // Streaming replaces `virtualItems` every flush while its Turn boundaries
+  // stay the same. Keep the previous array then, so callbacks and observers
+  // derived from it are not rebuilt for each streamed chunk.
+  const userMessageItemsRef = useRef<Array<{ item: (typeof virtualItems)[number]; index: number }>>([]);
+  const userMessageItems = useMemo(() => {
+    const next = virtualItems
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => item.type === 'user-message' || item.type === 'background-run');
+    const previous = userMessageItemsRef.current;
+    if (previous.length === next.length
+      && next.every((entry, position) => entry.item === previous[position].item && entry.index === previous[position].index)) {
+      return previous;
+    }
+    userMessageItemsRef.current = next;
+    return next;
+  }, [virtualItems]);
 
   const isStreamingOutput = useMemo(() => {
     if (viewportMode === 'history-reading') return false;
@@ -1729,9 +1759,30 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     viewportOwner,
   ]);
 
+  // Streaming replaces several of these callbacks on every flush. Rebinding
+  // the observer for each one disconnected it and delivered a fresh initial
+  // observation, which re-measured every mounted row once per streamed chunk.
+  // Keep the observer for the scroller's lifetime and read committed callbacks,
+  // as the native scroll listener above does.
+  const resizeCallbacksRef = useRef({
+    resumeSuspendedViewport, scheduleFollowToLatest, scheduleViewportSnapshot,
+    scheduleVisibleTurnInfoUpdate, updateIsAtScrollStart, updateIsAtBottom, viewportAnchor,
+  });
+  useLayoutEffect(() => {
+    resizeCallbacksRef.current = {
+      resumeSuspendedViewport, scheduleFollowToLatest, scheduleViewportSnapshot,
+      scheduleVisibleTurnInfoUpdate, updateIsAtScrollStart, updateIsAtBottom, viewportAnchor,
+    };
+  });
+
   useEffect(() => {
     if (!scrollerElement) return;
+    const resumeFromFrame = () => resizeCallbacksRef.current.resumeSuspendedViewport();
     const observer = new ResizeObserver(() => {
+      const {
+        scheduleFollowToLatest, scheduleViewportSnapshot, scheduleVisibleTurnInfoUpdate,
+        updateIsAtScrollStart, updateIsAtBottom, viewportAnchor,
+      } = resizeCallbacksRef.current;
       const nextViewportBox = {
         width: scrollerElement.clientWidth,
         height: scrollerElement.clientHeight,
@@ -1760,7 +1811,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         setViewportHeightPx(nextViewportBox.height);
         setViewportWidthPx(nextViewportBox.width);
         if (viewportResumeFrameRef.current === null) {
-          viewportResumeFrameRef.current = requestAnimationFrame(resumeSuspendedViewport);
+          viewportResumeFrameRef.current = requestAnimationFrame(resumeFromFrame);
         }
         return;
       }
@@ -1813,17 +1864,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     if (content) observer.observe(content, { box: 'border-box' });
     observer.observe(scrollerElement);
     return () => observer.disconnect();
-  }, [
-    resumeSuspendedViewport,
-    scheduleFollowToLatest,
-    scheduleViewportSnapshot,
-    scheduleVisibleTurnInfoUpdate,
-    scrollerElement,
-    updateIsAtScrollStart,
-    updateIsAtBottom,
-    viewportAnchor,
-    viewportOwner,
-  ]);
+  }, [scrollerElement]);
 
   /*
    * One re-measure for a pane drag, against the width the drag ended on.
