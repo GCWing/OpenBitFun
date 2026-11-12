@@ -3,17 +3,33 @@
  *
  * The WebView clipboard API works, but a first read raises a WebView2
  * permission prompt on the app origin. Desktop builds therefore read and write
- * through the Tauri clipboard plugin, and every other surface (browser web,
- * mobile web, tests) keeps the Web API path.
+ * through the desktop host, and every other surface (browser web, mobile web,
+ * tests) keeps the Web API path.
  */
 import {
   readText as readNativeText,
-  writeImage as writeNativeImage,
   writeText as writeNativeText,
 } from '@tauri-apps/plugin-clipboard-manager';
+import type { ITransportAdapter } from '@/infrastructure/api/adapters/base';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('NativeClipboard');
+
+/** Desktop command that decodes a PNG request body onto the system clipboard. */
+export const WRITE_CLIPBOARD_IMAGE_COMMAND = 'write_clipboard_image';
+
+let controllerAdapter: Promise<ITransportAdapter> | null = null;
+
+/**
+ * This machine's own Tauri host. The clipboard belongs to the device the user
+ * is sitting at, so an image write never follows the rendered Peer device.
+ * Loaded on first use: text clipboard callers never need the transport.
+ */
+function controllerHost(): Promise<ITransportAdapter> {
+  controllerAdapter ??= import('@/infrastructure/api/adapters/tauri-adapter')
+    .then(({ TauriTransportAdapter }) => new TauriTransportAdapter());
+  return controllerAdapter;
+}
 
 /** True when a native clipboard host can serve the request. */
 export function hasNativeClipboard(): boolean {
@@ -53,28 +69,24 @@ export async function writeNativeClipboardText(text: string): Promise<boolean> {
 }
 
 /**
- * Write an RGBA bitmap through the native host; `false` means the caller has
- * no other path left to try.
+ * Write a PNG image through the native host; `false` means the caller has no
+ * other path left to try.
  *
- * The bitmap is sent inline as the plugin's raw RGBA image shape instead of an
- * `Image` resource, so it needs no image-resource permission and does not
- * depend on the plugin sharing this bundle's `@tauri-apps/api` copy.
+ * The encoded PNG travels as the raw IPC body and the host decodes it, so a
+ * large image never becomes a JSON array of RGBA pixels built on the UI thread.
  */
-export async function writeNativeClipboardImage(
-  rgba: Uint8ClampedArray | Uint8Array,
-  width: number,
-  height: number,
-): Promise<boolean> {
+export async function writeNativeClipboardImage(png: Blob): Promise<boolean> {
   if (!hasNativeClipboard()) {
     return false;
   }
 
   try {
-    const image = { rgba: Array.from(rgba), width, height };
-    await writeNativeImage(image as unknown as Parameters<typeof writeNativeImage>[0]);
+    const bytes = new Uint8Array(await png.arrayBuffer());
+    const host = await controllerHost();
+    await host.request<void>(WRITE_CLIPBOARD_IMAGE_COMMAND, bytes);
     return true;
   } catch (error) {
-    log.warn('Native clipboard image write failed', { error });
+    log.warn('Native clipboard image write failed', { error, byteLength: png.size });
     return false;
   }
 }

@@ -5,21 +5,32 @@
  * a blob URL, or an asset URL). The async Clipboard API with a PNG payload (the
  * one image type every engine accepts) is tried first because it needs no IPC;
  * desktop builds fall back to the native clipboard host when the WebView
- * refuses, for example once the click's user activation has expired.
+ * refuses, for example once the click's user activation has expired. Both
+ * paths take the same PNG, which is the source's own bytes whenever it already
+ * is one; only other formats are decoded and re-encoded through a canvas.
  */
-import { writeNativeClipboardImage, hasNativeClipboard } from './nativeClipboard';
+import { hasNativeClipboard, writeNativeClipboardImage } from './nativeClipboard';
 
-interface DecodedImage {
-  canvas: HTMLCanvasElement;
-  width: number;
-  height: number;
+const PNG_MIME = 'image/png';
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+function parseSource(source: string): URL | null {
+  try {
+    return new URL(source, window.location.href);
+  } catch {
+    return null;
+  }
+}
+
+function isInlineSource(url: URL): boolean {
+  return url.protocol === 'data:' || url.protocol === 'blob:';
 }
 
 async function loadImageElement(source: string): Promise<HTMLImageElement> {
   const image = new Image();
-  // Remote URLs must allow CORS for the canvas to stay readable; data, blob
-  // and asset URLs are same-origin for the WebView.
-  if (/^https?:/i.test(source) && !source.startsWith(window.location.origin)) {
+  // A canvas stays readable only for same-origin pixels or a CORS-approved
+  // load; the Tauri asset protocol approves the app origin.
+  const url = parseSource(source);
+  if (url && !isInlineSource(url) && url.origin !== window.location.origin) {
     image.crossOrigin = 'anonymous';
   }
   image.decoding = 'async';
@@ -28,7 +39,7 @@ async function loadImageElement(source: string): Promise<HTMLImageElement> {
   return image;
 }
 
-async function decodeImage(source: string): Promise<DecodedImage> {
+async function encodeAsPng(source: string): Promise<Blob> {
   const image = await loadImageElement(source);
   const width = image.naturalWidth;
   const height = image.naturalHeight;
@@ -43,42 +54,55 @@ async function decodeImage(source: string): Promise<DecodedImage> {
     throw new Error('Canvas 2D context is unavailable');
   }
   context.drawImage(image, 0, 0);
-  return { canvas, width, height };
-}
-
-function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('PNG encoding failed'))), 'image/png');
+    canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('PNG encoding failed'))), PNG_MIME);
   });
 }
 
-async function writeWebClipboardImage(decoded: Promise<DecodedImage>): Promise<void> {
+async function isPngBlob(blob: Blob): Promise<boolean> {
+  if (blob.size < PNG_SIGNATURE.length) return false;
+  const header = new Uint8Array(await blob.slice(0, PNG_SIGNATURE.length).arrayBuffer());
+  return PNG_SIGNATURE.every((byte, index) => header[index] === byte);
+}
+
+/**
+ * The PNG to put on the clipboard. A data or blob URL that already holds a PNG
+ * is used as is: its bytes are read without decoding a single pixel.
+ */
+async function resolvePngBlob(source: string): Promise<Blob> {
+  const url = parseSource(source);
+  if (url && isInlineSource(url)) {
+    const blob = await (await fetch(source)).blob();
+    if (await isPngBlob(blob)) {
+      return blob.type === PNG_MIME ? blob : new Blob([blob], { type: PNG_MIME });
+    }
+  }
+  return encodeAsPng(source);
+}
+
+async function writeWebClipboardImage(png: Promise<Blob>): Promise<void> {
   if (typeof ClipboardItem === 'undefined' || typeof navigator.clipboard?.write !== 'function') {
     throw new Error('Clipboard image write is not supported here');
   }
   // WebKit only honors the user gesture when the item is created right away,
   // so hand it the pending PNG instead of awaiting it first.
-  await navigator.clipboard.write([
-    new ClipboardItem({ 'image/png': decoded.then(({ canvas }) => canvasToPng(canvas)) }),
-  ]);
+  await navigator.clipboard.write([new ClipboardItem({ [PNG_MIME]: png })]);
 }
 
 /** Copy the image at `source`; rejects when no clipboard path accepted it. */
 export async function copyImageToClipboard(source: string): Promise<void> {
-  const decoded = decodeImage(source);
-  // Keep a rejected decode from surfacing as unhandled while the web write runs.
-  decoded.catch(() => undefined);
+  const png = resolvePngBlob(source);
+  // Keep a rejected read from surfacing as unhandled while the web write runs.
+  png.catch(() => undefined);
 
   try {
-    await writeWebClipboardImage(decoded);
+    await writeWebClipboardImage(png);
     return;
   } catch (webError) {
     if (!hasNativeClipboard()) throw webError;
   }
 
-  const { canvas, width, height } = await decoded;
-  const pixels = canvas.getContext('2d')?.getImageData(0, 0, width, height).data;
-  if (!pixels || !await writeNativeClipboardImage(pixels, width, height)) {
+  if (!await writeNativeClipboardImage(await png)) {
     throw new Error('No clipboard accepted the image');
   }
 }

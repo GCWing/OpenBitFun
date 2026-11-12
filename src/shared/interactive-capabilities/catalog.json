@@ -317,7 +317,8 @@
       "export_local_file_to_path",
       "load_agent_companion_pet_spritesheet",
       "paste_files",
-      "workspace_file_upload"
+      "workspace_file_upload",
+      "write_clipboard_image"
     ],
     "htmlPreview": [
       "html_preview_create",

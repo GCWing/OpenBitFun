@@ -1532,6 +1532,7 @@ pub async fn run() {
             retry_file_watch,
             get_clipboard_files,
             get_clipboard_image,
+            write_clipboard_image,
             api::browser_file_drop_api::resolve_browser_dropped_file_paths,
             api::file_drop_preview_api::set_file_drop_preview_target,
             paste_files,

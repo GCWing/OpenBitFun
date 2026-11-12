@@ -816,6 +816,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("worktree_promote",                                           Unsupported, Proxied,          CLI_NOT_IMPLEMENTED),
     op("worktree_recreate",                                          Unsupported, Proxied,          CLI_NOT_IMPLEMENTED),
     op("worktree_remove",                                            Unsupported, Proxied,          CLI_NOT_IMPLEMENTED),
+    op("write_clipboard_image",                                      LocalOnly,   ControllerLocal,  REFUSED),
     op("write_file_content",                                         Routed,      Proxied,          HANDLED),
 ];
 
