@@ -13,7 +13,9 @@ vi.mock('@/infrastructure/peer-device/deviceSurface', async importOriginal => ({
 const { readFileContent } = vi.hoisted(() => ({ readFileContent: vi.fn() }));
 vi.mock('@/infrastructure/api/service-api/WorkspaceAPI', () => ({ workspaceAPI: { readFileContent } }));
 vi.mock('@/infrastructure/i18n', () => ({
-  useI18n: () => ({ t: (_key: string, values: { message: string }) => `Load failed: ${values.message}` }),
+  useI18n: () => ({
+    t: (key: string, values?: { message: string }) => (values ? `Load failed: ${values.message}` : key),
+  }),
   i18nService: { t: (key: string) => key },
 }));
 vi.mock('@/shared/utils/logger', () => ({ createLogger: () => ({ warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() }) }));
