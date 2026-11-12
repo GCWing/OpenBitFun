@@ -132,7 +132,10 @@ epoch, viewport and session, so device sources never share an entry. A mounted
 view claims its entry and returns it on unmount; only the three most recently
 left views are held. A retained size is a reservation like any other: a
 mounted row is still measured and still replaces it, and a width or font change
-leaves it in place under the same rule as a live reservation. The snapshot
+leaves it in place under the same rule as a live reservation. It is also a
+measurement: the next resize of a retained row is judged as a resize of content
+the reader may be looking at, never as a first measurement, so a partly visible
+retained row that grows does not shift the viewport. The snapshot
 reads no geometry, so the unmount-phase DOM cannot skew it. A retained
 projection holds its rows strongly, so up to three inactive views keep their
 derived rows until they are reopened or evicted.
@@ -143,7 +146,8 @@ live reopen makes 0 corrections and 5 mounts at an unchanged 6 commits; it
 still drops 2 rows, because the
 one-time tail seed starts at the last item's start before follow takes the end.
 A row that changed while the session was hidden costs one correction.
-`VirtualMessageList.session-switch.test.tsx` and
+`VirtualMessageList.session-switch.test.tsx`,
+`useFlowChatVirtualizer.retained-sizes.test.tsx` and
 `useConversationTimeline.retention.test.tsx` cover this with supplied geometry
 on the local surface. Native switching time, paint and remote surfaces are not
 measured by them.
