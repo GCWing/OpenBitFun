@@ -173,6 +173,20 @@ describe('remote-driven turn on an unloaded session', () => {
     });
   });
 
+  it('lets the creation event correct a placeholder projected before it', () => {
+    const context = onAssistantWorkspace();
+    __test_only__.handleImageAnalysisStarted(context, {
+      sessionId: 'new-remote-session', imageCount: 1, userInput: 'Look at this',
+    } as any);
+    __test_only__.handleSessionCreated(context, {
+      sessionId: 'new-remote-session', sessionName: 'New session', agentType: 'Standard',
+      workspacePath: 'D:/repo', workspaceId: 'project-workspace',
+    });
+    expect(FlowChatStore.getInstance().getState().sessions.get('new-remote-session')).toMatchObject({
+      workspaceId: 'project-workspace', workspacePath: 'D:/repo',
+    });
+  });
+
   it('keeps the current-workspace fallback for an older host without binding facts', () => {
     __test_only__.handleDialogTurnStarted(onAssistantWorkspace(), {
       sessionId: 'legacy-session', turnId: 'turn-1', turnIndex: 0, userInput: 'Hello',

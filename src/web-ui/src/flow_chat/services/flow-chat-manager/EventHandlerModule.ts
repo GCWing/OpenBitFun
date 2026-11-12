@@ -227,6 +227,7 @@ function mergeParamsPartialEventData(
 export const __test_only__ = {
   relayRecordsBeforeEvent,
   handleSessionDeleted,
+  handleSessionCreated,
   resolveDialogTurnDisplayContent,
   mergeParamsPartialEventData,
   findSubagentParentInfoByRound,
@@ -1078,7 +1079,18 @@ function handleSessionCreated(context: FlowChatContext, event: any): void {
   const remoteConnectionId = extractEventRemoteConnectionId(event);
   const remoteSshHost = extractEventRemoteSshHost(event);
 
-  if (existing) return;
+  if (existing) {
+    // An earlier event (image analysis) may have projected this session
+    // before its creation event arrived; correct that guess, never a
+    // session this surface loaded itself.
+    if (existing.externalPlaceholder && workspaceId) {
+      store.rebindExternalPlaceholder(sessionId, {
+        workspaceId, workspacePath, projectWorkspacePath, executionTarget, remoteConnectionId, remoteSshHost,
+      });
+      adoptPersistedPlaceholderMetadata(sessionId, workspaceId);
+    }
+    return;
+  }
 
   store.addExternalSession(
     sessionId,
