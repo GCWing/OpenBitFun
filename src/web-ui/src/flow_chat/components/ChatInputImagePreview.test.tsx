@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatInputImagePreview } from './ChatInputImagePreview';
 import type { ImageContext } from '@/types/context';
 const scope = vi.hoisted(() => ({ epoch: 1 }));
-vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({ getActiveSurfaceScope: () => scope }));
+vi.mock('@/infrastructure/peer-device/deviceSurface', async importOriginal => ({
+  ...await importOriginal<typeof import('@/infrastructure/peer-device/deviceSurface')>(),
+  getActiveSurfaceScope: () => scope,
+}));
 
 const { readFileContent } = vi.hoisted(() => ({ readFileContent: vi.fn() }));
 vi.mock('@/infrastructure/api/service-api/WorkspaceAPI', () => ({ workspaceAPI: { readFileContent } }));
