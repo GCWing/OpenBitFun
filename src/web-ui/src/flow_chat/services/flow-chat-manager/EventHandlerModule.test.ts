@@ -123,6 +123,37 @@ describe('external BTW turn projection', () => {
   });
 });
 
+describe('late dialog start events', () => {
+  beforeEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+  afterEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+
+  it.each(['completed', 'cancelled', 'error'] as const)(
+    'does not restart a turn already projected as %s', status => {
+      createSessionWithTurn({ ...createFinishingTurn(), status });
+      stateMachineManager.getOrCreate('session-1');
+      __test_only__.handleDialogTurnStarted(createFlowChatContext(), {
+        sessionId: 'session-1', turnId: 'turn-1', turnIndex: 0, userInput: 'Delayed start',
+      });
+      expect(stateMachineManager.getCurrentState('session-1')).toBe(SessionExecutionState.IDLE);
+      expect(FlowChatStore.getInstance().getState().sessions.get('session-1')?.dialogTurns[0].status).toBe(status);
+    },
+  );
+
+  it('does not let an older admitted turn take ownership from the current turn', async () => {
+    createSessionWithTurn({ ...createFinishingTurn(), status: 'processing', backendTurnIndex: 1 });
+    FlowChatStore.getInstance().addDialogTurn('session-1', {
+      ...createFinishingTurn(), id: 'turn-2', status: 'processing', backendTurnIndex: 2,
+    });
+    await stateMachineManager.transition('session-1', SessionExecutionEvent.START, {
+      taskId: 'session-1', dialogTurnId: 'turn-2',
+    });
+    __test_only__.handleDialogTurnStarted(createFlowChatContext(), {
+      sessionId: 'session-1', turnId: 'turn-1', turnIndex: 1, userInput: 'Delayed start',
+    });
+    expect(stateMachineManager.get('session-1')?.getContext().currentDialogTurnId).toBe('turn-2');
+  });
+});
+
 describe('Claw bootstrap cancellation', () => {
   beforeEach(() => {
     resetFlowChatStore();

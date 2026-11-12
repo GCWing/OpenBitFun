@@ -903,6 +903,29 @@ describe('FlowChatStore session removal active selection', () => {
     sessionComposerStore.setState({ drafts: {} });
   });
 
+  it.each(['absent', 'present', 'offline'] as const)('reads back an uncertain peer deletion with host state=%s', async hostState => {
+    activateSurface('peer-deletion');
+    const session = createSession();
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: session.sessionId }));
+    sessionComposerStore.getState().setValue(session.sessionId, 'Unsent message');
+    const failure = new Error('outcome_unknown: Relay connection closed before the reply arrived');
+    apiMocks.deleteSession.mockRejectedValueOnce(failure);
+    apiMocks.loadSessionMetadata.mockReset();
+    if (hostState === 'offline') apiMocks.loadSessionMetadata.mockRejectedValueOnce(new Error('offline'));
+    else apiMocks.loadSessionMetadata.mockResolvedValueOnce(hostState === 'absent' ? null : { sessionId: session.sessionId });
+    const deletion = flowChatStore.deleteSession(session.sessionId);
+    if (hostState === 'absent') {
+      await expect(deletion).resolves.toBeUndefined();
+      expect(flowChatStore.getState().sessions.has(session.sessionId)).toBe(false);
+    } else {
+      await expect(deletion).rejects.toBe(failure);
+      expect(flowChatStore.getState().sessions.get(session.sessionId)).toBe(session);
+      expect(sessionComposerStore.getState().getDraft(session.sessionId).value).toBe('Unsent message');
+    }
+    expect(apiMocks.deleteSession).toHaveBeenCalledTimes(1);
+    expect(apiMocks.loadSessionMetadata).toHaveBeenCalledWith(session.sessionId, session.workspaceId);
+  });
+
   it('keeps a failed deletion selected with its history, state machine and draft, then permits retry', async () => {
     const session = createSession();
     flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: session.sessionId }));
@@ -6775,6 +6798,20 @@ describe('FlowChatStore historical session hydration state', () => {
       && range.endOrdinalExclusive > 3
       && range.turns.some(turn => turn.id === 'turn-23')
     )).toBe(false);
+
+    // Live output already owns this Turn, while the persisted catalog still
+    // ends at ordinal 22. Reading forwards must use that same canonical tail.
+    const newest = await flowChatStore.loadSessionTurnWindow('history-1', 23, { source: 'prefetch' });
+    expect(newest).toMatchObject({ status: 'ready', cacheHit: true, targetTurnId: 'turn-23' });
+    flowChatStore.setState(prev => {
+      const sessions = new Map(prev.sessions);
+      const current = sessions.get('history-1')!;
+      sessions.set('history-1', { ...current, dialogTurns: current.dialogTurns.filter(turn => turn.id !== 'turn-23') });
+      return { ...prev, sessions };
+    });
+    await expect(flowChatStore.loadSessionTurnWindow('history-1', 23, { source: 'prefetch' }))
+      .resolves.toMatchObject({ status: 'not-found', cacheHit: false });
+    expect(apiMocks.loadSessionTurnWindow).not.toHaveBeenCalled();
   });
 
   it('adopts an optimistic partial-tail turn in place without incrementing projected history twice', async () => {
@@ -7352,6 +7389,43 @@ describe('FlowChatStore historical session hydration state', () => {
       'catalog-v2',
     );
   });
+
+  it.each(['ready', 'stale', 'not-found'] as const)(
+    'retires old cached bodies and ignores a late %s page after a catalog refresh', async lateStatus => {
+      const catalog = createTurnCatalog(8, 'before-refresh');
+      const refreshed = createTurnCatalog(8, 'after-refresh');
+      flowChatStore.setState(() => ({
+        sessions: new Map([['history-1', createSession({
+          sessionId: 'history-1', historyState: 'ready', isPartial: true,
+          totalTurnCount: 8, turnCatalog: catalog,
+        })]]), activeSessionId: 'history-1',
+      }));
+      const ready = (revision: string, start: number, end: number) => ({
+        status: 'ready' as const, catalogRevision: revision, totalTurnCount: 8,
+        startOrdinal: start, endOrdinalExclusive: end, targetTurnId: `turn-${start}`,
+        turns: Array.from({ length: end - start }, (_, i) => createPersistedTurn(start + i)),
+      });
+      apiMocks.loadSessionTurnWindow.mockResolvedValueOnce(ready(catalog.revision, 0, 2));
+      await flowChatStore.loadSessionTurnWindow('history-1', 0, { source: 'prefetch' });
+      const oldPage = createDeferred<any>();
+      apiMocks.loadSessionTurnWindow.mockReturnValueOnce(oldPage.promise)
+        .mockResolvedValueOnce({ status: 'stale', catalog: refreshed })
+        .mockResolvedValueOnce(ready(refreshed.revision, 4, 5));
+      const oldRead = flowChatStore.loadSessionTurnWindow('history-1', 6, { source: 'prefetch' });
+      const freshRead = await flowChatStore.loadSessionTurnWindow('history-1', 4, { source: 'prefetch' });
+      expect(freshRead).toMatchObject({ status: 'ready', isCurrent: true });
+      expect(flowChatStore.reactivateSessionHistoryWindow('history-1', {
+        startOrdinal: 0, endOrdinalExclusive: 2, targetTurnId: 'turn-0', mode: 'history-window',
+      })).toBeNull();
+      oldPage.resolve(lateStatus === 'ready' ? ready(catalog.revision, 6, 7)
+        : { status: lateStatus, catalog: createTurnCatalog(8, 'late-intermediate-revision') });
+      await expect(oldRead).resolves.toMatchObject({ isCurrent: false });
+      expect(flowChatStore.getState().sessions.get('history-1')?.turnCatalog?.revision).toBe(refreshed.revision);
+      expect(flowChatStore.getSessionHistoryViewState('history-1')?.loadedRanges)
+        .toMatchObject([{ startOrdinal: 4, endOrdinalExclusive: 5 }]);
+      expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledTimes(4);
+    },
+  );
 
   it('marks an unsupported window command per host and requests full-history fallback', async () => {
     const catalog = createTurnCatalog(5);

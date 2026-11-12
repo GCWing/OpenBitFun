@@ -12,6 +12,7 @@ import {
 } from './types';
 import { getNextState, PHASE_TRANSITIONS } from './transitions';
 import { createLogger } from '@/shared/utils/logger';
+import { getActiveSurfaceScope, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
 const log = createLogger('SessionStateMachine');
 
@@ -51,6 +52,7 @@ export class SessionStateMachineImpl {
   private context: SessionStateMachineContext;
   private transitionHistory: StateTransition[] = [];
   private listeners: Set<(machine: SessionStateMachine) => void> = new Set();
+  private cancellationGeneration = 0;
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -97,6 +99,7 @@ export class SessionStateMachineImpl {
       && this.context.errorMessage === status.error
       && pendingTools.size === this.context.pendingToolConfirmations.size
       && [...pendingTools].every(id => this.context.pendingToolConfirmations.has(id))) return;
+    this.cancellationGeneration += 1;
     this.currentState = status.state;
     this.context = { ...this.context, taskId: this.sessionId,
       currentDialogTurnId: status.turnId, currentModelRoundId: status.roundId,
@@ -130,6 +133,13 @@ export class SessionStateMachineImpl {
       });
       
       return false;
+    }
+
+    if ([SessionExecutionEvent.START, SessionExecutionEvent.USER_CANCEL,
+      SessionExecutionEvent.FINISHING_SETTLED, SessionExecutionEvent.RESET,
+      SessionExecutionEvent.BACKEND_STREAM_COMPLETED, SessionExecutionEvent.ERROR_OCCURRED,
+      SessionExecutionEvent.TOOL_REJECTED].includes(event)) {
+      this.cancellationGeneration += 1;
     }
 
     const toolRelatedEvents = [
@@ -286,18 +296,27 @@ export class SessionStateMachineImpl {
     const state = this.currentState;
 
     if (event === SessionExecutionEvent.USER_CANCEL && this.context.taskId && this.context.currentDialogTurnId) {
-      const { flowChatStore } = await import('@/flow_chat/store/FlowChatStore');
+      const scope = getActiveSurfaceScope();
       const sessionId = this.context.taskId;
       const dialogTurnId = this.context.currentDialogTurnId;
-      const { acpClientIdFromAgentType } = await import('@/flow_chat/utils/acpSession');
-      const session = flowChatStore.getState().sessions.get(sessionId);
-      const acpClientId =
-        acpClientIdFromAgentType(session?.config?.agentType) ||
-        acpClientIdFromAgentType(session?.mode);
-      
+      const generation = this.cancellationGeneration;
+      const stillOwnsCancellation = () => this.cancellationGeneration === generation
+        && this.context.currentDialogTurnId === dialogTurnId
+        && this.currentState === SessionExecutionState.FINISHING;
+      let acpClientId: string | undefined;
+
       try {
+        const { flowChatStore } = await import('@/flow_chat/store/FlowChatStore');
+        const { acpClientIdFromAgentType } = await import('@/flow_chat/utils/acpSession');
+        scope.assertCurrent('resolve cancellation target');
+        const session = flowChatStore.getState().sessions.get(sessionId);
+        acpClientId = acpClientIdFromAgentType(session?.config?.agentType)
+          || acpClientIdFromAgentType(session?.mode) || undefined;
         if (acpClientId) {
           const { ACPClientAPI } = await import('@/infrastructure/api/service-api/ACPClientAPI');
+          scope.assertCurrent('cancel ACP turn');
+          if (this.context.currentDialogTurnId !== dialogTurnId
+            || this.currentState === SessionExecutionState.IDLE) return;
           await ACPClientAPI.cancelDialogTurn({
             sessionId,
             clientId: acpClientId,
@@ -311,6 +330,9 @@ export class SessionStateMachineImpl {
           const { isPeerDeviceModeActive } = await import(
             '@/infrastructure/peer-device/peerModeFlag'
           );
+          scope.assertCurrent('cancel dialog turn');
+          if (this.context.currentDialogTurnId !== dialogTurnId
+            || this.currentState === SessionExecutionState.IDLE) return;
           const goalStatus = session?.threadGoal?.status?.toLowerCase();
           const supportsRecoverableInterruption =
             session?.sessionKind === 'normal'
@@ -331,7 +353,12 @@ export class SessionStateMachineImpl {
         }
         log.debug('Backend interruption completed', { sessionId, dialogTurnId, acpClientId });
       } catch (error) {
-        log.error('Backend cancellation failed', { sessionId, dialogTurnId, acpClientId, error });
+        if (!isSurfaceChangedError(error)) {
+          log.error('Backend cancellation failed', { sessionId, dialogTurnId, acpClientId, error });
+        }
+        // A newer host fact or cancellation owns its own outcome. Never roll
+        // it back on behalf of a request that was issued for an older turn.
+        if (!stillOwnsCancellation()) return;
         await this.transition(SessionExecutionEvent.USER_CANCEL_FAILED).catch(transitionError => {
           log.error('Failed to restore processing state after cancellation failure', {
             sessionId,

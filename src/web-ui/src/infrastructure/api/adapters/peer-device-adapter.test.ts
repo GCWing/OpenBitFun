@@ -1,3 +1,4 @@
+import { isOutcomeUnknownError } from '../errors/TauriCommandError';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PEER_BROWSER_CONTROL_SETUP_TIMEOUT_MS,
@@ -1180,6 +1181,28 @@ describe('Magpie discovery capability', () => {
     expect(JSON.parse(rpc.mock.calls[0][1])).toMatchObject({ command: 'probe_magpie_gateway', args });
     adapter.setHostCapabilities({ supportsMagpieDiscoveryV1: false });
     await expect(adapter.request('probe_magpie_gateway', args)).rejects.toThrow('magpie_discovery_v1_unsupported');
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('peer mutation outcomes', () => {
+  it('marks a lost mutation reply as unknown without resubmitting it', async () => {
+    const rpc = vi.fn().mockRejectedValue(new Error('Relay connection closed before the reply arrived'));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', rpc);
+    const error = await adapter.request('delete_session', { request: { sessionId: 's' } }).catch(error => error);
+    expect(isOutcomeUnknownError(error)).toBe(true);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['unsent', null, 'Relay is disconnected; request was not submitted'],
+    ['refused', { resp: 'host_invoke_result', ok: false, error: 'session_in_use: busy' }, null],
+  ])('preserves a known %s mutation failure', async (_kind, reply, message) => {
+    const rpc = reply ? vi.fn().mockResolvedValue(JSON.stringify(reply)) : vi.fn().mockRejectedValue(new Error(message!));
+    const error = await new PeerDeviceTransportAdapter('peer-1', rpc)
+      .request('delete_session', { request: { sessionId: 's' } }).catch(error => error);
+    expect(isOutcomeUnknownError(error)).toBe(false);
     expect(rpc).toHaveBeenCalledTimes(1);
   });
 });

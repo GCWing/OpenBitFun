@@ -202,3 +202,23 @@ it('persists reordered payloads and refuses to move a queue during an active sen
   pendingQueueManager.setStatus(sessionId, second.id, 'sending');
   expect(pendingQueueManager.reorder(sessionId, first.id, second.id)).toBe(false);
 });
+
+
+it('settles a pending send on its original device after the controller switches', () => {
+  const sessionId = testSession();
+  const item = pendingQueueManager.enqueue({ sessionId, content: 'Original device' });
+  pendingQueueManager.setStatus(sessionId, item.id, 'sending');
+  activateSurface('peer-queue-other');
+  const other = pendingQueueManager.enqueue({ sessionId, content: 'Other device' });
+  const listener = vi.fn();
+  const unsubscribe = pendingQueueManager.subscribe(listener);
+  try {
+    pendingQueueManager.setStatusForSurface(LOCAL_SURFACE_ID, sessionId, item.id, 'failed');
+    expect(pendingQueueManager.list(sessionId)).toEqual([other]);
+    expect(pendingQueueManager.listForSurface(LOCAL_SURFACE_ID, sessionId)[0].status).toBe('failed');
+    expect(listener).not.toHaveBeenCalled();
+    expect(pendingQueueManager.removeForSurface(LOCAL_SURFACE_ID, sessionId, item.id)).toBe(true);
+    expect(pendingQueueManager.listForSurface(LOCAL_SURFACE_ID, sessionId)).toEqual([]);
+    expect(pendingQueueManager.list(sessionId)).toEqual([other]);
+  } finally { unsubscribe(); pendingQueueManager.clear(sessionId); }
+});

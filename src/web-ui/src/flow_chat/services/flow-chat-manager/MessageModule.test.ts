@@ -24,7 +24,7 @@ import {
   activateSurface,
 } from '@/infrastructure/peer-device/deviceSurface';
 
-import { beginRuntimeSessionAttachment } from '@/infrastructure/peer-device/runtimeSessionEventGate';
+import { beginRuntimeSessionAttachment, markRuntimeSessionProjectionStale } from '@/infrastructure/peer-device/runtimeSessionEventGate';
 
 const mockSubscribeGlobal = vi.fn();
 const mockTransition = vi.fn();
@@ -142,10 +142,13 @@ vi.mock('./SessionModule', () => ({
 vi.mock('./PendingQueueModule', () => ({
   pendingQueueManager: {
     list: (...args: unknown[]) => mockPendingList(...args),
+    subscribe: vi.fn(() => () => {}),
     enqueue: (...args: unknown[]) => mockPendingEnqueue(...args),
     enqueueForSurface: (...args: unknown[]) => mockPendingEnqueueForSurface(...args),
     setStatus: (...args: unknown[]) => mockPendingSetStatus(...args),
     remove: (...args: unknown[]) => mockPendingRemove(...args),
+    removeForSurface: (_surface: string, ...args: unknown[]) => mockPendingRemove(...args),
+    setStatusForSurface: (_surface: string, ...args: unknown[]) => mockPendingSetStatus(...args),
   },
 }));
 
@@ -248,6 +251,33 @@ describe('MessageModule session writer conflict', () => {
       .mockReturnValueOnce('notification-1')
       .mockReturnValueOnce('notification-2')
       .mockReturnValue('notification-3');
+  });
+
+  it('drains an older peer queue from canonical completion even when direct events have a gap', async () => {
+    mockEnsureBackendSession.mockResolvedValue(undefined);
+    activateSurface('peer-queue-recovery');
+    const { session, context } = conflictContext('peer-queue-recovery-session');
+    Object.assign(session, { historyState: 'ready' });
+    session.dialogTurns.push({ id: 'finished', status: 'cancelled', modelRounds: [], userMessage: { content: 'Previous' } });
+    context.userCancelledSessionIds = new Set([session.sessionId]);
+    mockPendingList.mockReturnValue([{ id: 'next', sessionId: session.sessionId, content: 'Continue', status: 'queued', retryCount: 0 }]);
+    markRuntimeSessionProjectionStale('peer-queue-recovery', session.sessionId);
+    try {
+      await drainPendingQueue(context, session.sessionId);
+      expect(mockStartDialogTurn).toHaveBeenCalledTimes(1);
+      expect(context.userCancelledSessionIds.has(session.sessionId)).toBe(false);
+    } finally { activateSurface(LOCAL_SURFACE_ID); }
+  });
+
+  it('does not start a second queued message while the head is still being submitted', async () => {
+    const { session, context } = conflictContext('queue-submitting');
+    context.userCancelledSessionIds = new Set();
+    mockPendingList.mockReturnValue([
+      { id: 'first', sessionId: session.sessionId, content: 'First', status: 'sending', retryCount: 0 },
+      { id: 'next', sessionId: session.sessionId, content: 'Next', status: 'queued', retryCount: 0 },
+    ]);
+    await drainPendingQueue(context, session.sessionId);
+    expect(mockStartDialogTurn).not.toHaveBeenCalled();
   });
 
   it.each([false, true])('preserves the plan build turn ID while busy, host queue=%s', async hostQueue => {
@@ -805,6 +835,7 @@ describe('MessageModule cancellation', () => {
     mockPendingSetStatus.mockImplementation((_session, _id, status) => { pending.status = status; });
     const context: any = {
       flowChatStore: {
+        subscribeSelector: vi.fn(),
         getSurfaceGeneration: () => 0,
         getState: () => ({ sessions: new Map([[session.sessionId, session]]) }),
         addDialogTurn: vi.fn((_sessionId: string, turn: any) => session.dialogTurns.push(turn)),
@@ -844,6 +875,25 @@ describe('MessageModule cancellation', () => {
     activateSurface('peer-other');
     await Promise.resolve();
     expect(mockStartDialogTurn).toHaveBeenCalledTimes(1);
+    activateSurface('peer-history-recovery');
+    session.dialogTurns = [];
+    session.historyState = 'failed';
+    onIdle(session.sessionId, { currentState: 'idle' });
+    await Promise.resolve();
+    expect(mockStartDialogTurn).toHaveBeenCalledTimes(1);
+    const [selectReady, onReady] = context.flowChatStore.subscribeSelector.mock.calls[0];
+    expect(selectReady(context.flowChatStore.getState())).toEqual([]);
+    session.historyState = 'ready';
+    onReady(selectReady(context.flowChatStore.getState()));
+    await vi.waitFor(() => expect(mockStartDialogTurn).toHaveBeenCalledTimes(2));
+
+    // Clearing a failed predecessor while already idle must also wake FIFO.
+    pending.status = 'queued';
+    session.dialogTurns = [];
+    const { pendingQueueManager } = await import('./PendingQueueModule');
+    const onQueueChange = vi.mocked(pendingQueueManager.subscribe).mock.calls.at(-1)![0];
+    onQueueChange(session.sessionId, []);
+    await vi.waitFor(() => expect(mockStartDialogTurn).toHaveBeenCalledTimes(3));
     activateSurface(LOCAL_SURFACE_ID);
   });
 
@@ -1574,7 +1624,7 @@ describe('MessageModule device surface switch', () => {
     expect(mockNotificationError).not.toHaveBeenCalled();
   });
 
-  it('does not re-queue when startDialogTurn was sent and the invoke then fails after a switch', async () => {
+  it('preserves an uncertain legacy submission for manual recovery after a device switch', async () => {
     const { context, switchSurface } = switchingContext('session-accepted');
     mockStartDialogTurn.mockImplementation(async () => {
       switchSurface();
@@ -1584,8 +1634,29 @@ describe('MessageModule device surface switch', () => {
     await sendMessage(context, 'already running', 'session-accepted');
 
     expect(mockStartDialogTurn).toHaveBeenCalledTimes(1);
-    expect(mockPendingEnqueueForSurface).not.toHaveBeenCalled();
+    expect(mockPendingEnqueueForSurface).toHaveBeenCalledWith('local', expect.objectContaining({
+      sessionId: 'session-accepted', content: 'already running', initialStatus: 'failed', retryCount: 1,
+      turnId: expect.any(String),
+    }));
     expect(context.flowChatStore.abandonOptimisticDialogTurn).not.toHaveBeenCalled();
+    expect(mockNotificationError).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('retains the original queue item and order after switching, submitted=%s', async submitted => {
+    const { context, switchSurface } = switchingContext('session-queue-switch', { switchAfterTransition: !submitted });
+    context.userCancelledSessionIds = new Set();
+    if (submitted) mockStartDialogTurn.mockImplementation(async () => {
+      switchSurface();
+      throw new Error('Reply lost after submission');
+    });
+    const pending = { id: 'original-item', turnId: 'original-turn', sessionId: 'session-queue-switch',
+      content: 'Keep order', status: 'queued', retryCount: 0 };
+    mockPendingList.mockReturnValue([pending]);
+    mockPendingSetStatus.mockImplementation((_session, _id, status) => { pending.status = status; });
+    await drainPendingQueue(context, pending.sessionId);
+    expect(pending.status).toBe(submitted ? 'failed' : 'queued');
+    expect(mockPendingRemove).not.toHaveBeenCalled();
+    expect(mockPendingEnqueueForSurface).not.toHaveBeenCalled();
     expect(mockNotificationError).not.toHaveBeenCalled();
   });
 

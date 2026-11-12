@@ -1042,6 +1042,15 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       }
       log.error('Peer HostInvoke transport failed', { action, error });
       this.hooks.onHostInvokeTransportFailure?.(error, { action, priority });
+      // A lost acknowledgement says nothing about whether a mutation ran.
+      // Keep the stable outcome code used by product readback flows, without
+      // making non-idempotent operations eligible for automatic replay.
+      const message = error instanceof Error ? error.message : String(error);
+      if (rpcPolicy.retryKind !== 'read'
+        && !message.includes('Relay is disconnected; request was not submitted')
+        && !message.startsWith('outcome_unknown:')) {
+        throw Object.assign(new Error(`outcome_unknown: ${message}`), { cause: error });
+      }
       throw error;
     }
   }
