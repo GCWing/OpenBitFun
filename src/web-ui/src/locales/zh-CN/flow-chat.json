@@ -671,6 +671,13 @@
     "inUseMessage": "该会话已在另一个 OpenBitFun 实例中打开。请先在那里关闭，然后重试。",
     "surfaceSwitchDroppedTitle": "消息未发送",
     "surfaceSwitchDropped": "消息尚未发出时设备已切换，且该会话的队列已满。请重新发送。",
+    "submissionConfirming": "正在与设备确认…",
+    "submissionCheckingTarget": "正在确认目标是否已收到…",
+    "submissionNotDeliveredTitle": "消息未发送",
+    "submissionNotDelivered": "设备未收到这条消息。消息已保留在队列中，重试只会发送一次。",
+    "submissionUnconfirmedTitle": "无法确认送达",
+    "submissionUnconfirmed": "OpenBitFun 无法确认设备是否已收到这条消息。消息已保留在队列中，重试不会重复执行。",
+    "dispatchNotDelivered": "目标未收到此任务。任务已保留在队列中，可以重试。",
     "retry": "重试"
   },
   "scroll": {

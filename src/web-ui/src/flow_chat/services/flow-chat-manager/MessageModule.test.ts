@@ -45,6 +45,8 @@ const mockBindSession = vi.fn();
 const mockEnsureBackendSession = vi.fn();
 const mockForkChatSession = vi.fn();
 const mockNotificationError = vi.fn();
+const mockNotificationWarning = vi.fn();
+const mockDispatchJobs = vi.hoisted(() => ({ jobs: {} as Record<string, { state: string }>, listeners: new Set<() => void>() }));
 const mockNotificationDismiss = vi.fn();
 const mockPendingList = vi.fn((): unknown[] => []);
 const mockPendingEnqueue = vi.fn();
@@ -113,7 +115,12 @@ vi.mock('@/features/dispatch/dispatchApi', () => ({
 
 vi.mock('@/features/dispatch/dispatchJobStore', () => ({
   dispatchJobStore: {
+    subscribe: (listener: () => void) => {
+      mockDispatchJobs.listeners.add(listener);
+      return () => { mockDispatchJobs.listeners.delete(listener); };
+    },
     getState: () => ({
+      jobs: mockDispatchJobs.jobs,
       updateProgress: (...args: unknown[]) => mockDispatchProgress(...args),
       reopenTerminalObservation: (...args: unknown[]) => mockDispatchReopenObservation(...args),
       markFollowUpAccepted: (...args: unknown[]) => mockDispatchFollowUpAccepted(...args),
@@ -138,6 +145,7 @@ vi.mock('@/infrastructure/config/services/ConfigManager', () => ({
 vi.mock('../../../shared/notification-system', () => ({
   notificationService: {
     error: (...args: unknown[]) => mockNotificationError(...args),
+    warning: (...args: unknown[]) => mockNotificationWarning(...args),
     dismiss: (...args: unknown[]) => mockNotificationDismiss(...args),
   },
 }));
@@ -1214,15 +1222,71 @@ describe('MessageModule detached dispatch', () => {
     expect(mockBindSession).not.toHaveBeenCalled();
   });
 
-  it('removes the optimistic message when dispatch submission fails', async () => {
+  function withStoreSubscription(context: any) {
+    context.flowChatStore.subscribe = () => () => {};
+    context.processingManager = { clearSessionStatus: vi.fn() };
+    return context;
+  }
+
+  it('retains a dispatch submission that failed before reaching the target for an explicit retry', async () => {
+    vi.useFakeTimers();
+    try {
+      mockDispatchJobs.jobs = {};
+      const { context, session } = createDispatchContext('reject-and-report');
+      withStoreSubscription(context);
+      mockDispatchSubmit.mockRejectedValueOnce(new Error('target unavailable'));
+
+      await expect(sendMessage(context, 'run remote checks', 'dispatch-session')).resolves.toBeUndefined();
+      expect(session.dialogTurns.map(turn => turn.id)).toEqual(['dispatch_pending_job-1']);
+      expect(getRuntimeStatus('dispatch-session')?.label).toBe('flow-chat:session.submissionCheckingTarget');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockDispatchRefresh).toHaveBeenCalledWith('job-1');
+
+      // Still `submitting` after the grace: nothing was sent.
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(session.dialogTurns).toEqual([]);
+      expect(mockPendingEnqueueForSurface).toHaveBeenCalledWith('local', expect.objectContaining({
+        sessionId: 'dispatch-session', turnId: 'dispatch_pending_job-1', content: 'run remote checks',
+        initialStatus: 'failed',
+      }));
+      expect(mockNotificationWarning).toHaveBeenCalledWith('flow-chat:session.dispatchNotDelivered', expect.anything());
+      expect(mockNotificationError).not.toHaveBeenCalled();
+      expect(getRuntimeStatus('dispatch-session')).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a dispatch turn with an unknown outcome until the observer proves receipt', async () => {
+    mockDispatchJobs.jobs = { 'job-1': { state: 'submission_unknown' } };
     const { context, session } = createDispatchContext('reject-and-report');
-    mockDispatchSubmit.mockRejectedValueOnce(new Error('target unavailable'));
+    withStoreSubscription(context);
+    mockDispatchSubmit.mockRejectedValueOnce(new Error('outcome_unknown: response lost'));
 
-    await expect(
-      sendMessage(context, 'run remote checks', 'dispatch-session'),
-    ).rejects.toThrow('target unavailable');
+    await sendMessage(context, 'run remote checks', 'dispatch-session');
+    expect(session.dialogTurns.map(turn => turn.id)).toEqual(['dispatch_pending_job-1']);
+    mockDispatchJobs.jobs = { 'job-1': { state: 'running' } };
+    mockDispatchJobs.listeners.forEach(listener => listener());
 
-    expect(session.dialogTurns).toEqual([]);
+    expect(session.dialogTurns.map(turn => turn.id)).toEqual(['dispatch_pending_job-1']);
+    expect(getRuntimeStatus('dispatch-session')).toBeUndefined();
+    expect(mockPendingEnqueueForSurface).not.toHaveBeenCalled();
+    expect(mockNotificationError).not.toHaveBeenCalled();
+  });
+
+  it('retains a dispatch turn the observer reports as not delivered', async () => {
+    mockDispatchJobs.jobs = { 'job-1': { state: 'submission_unknown' } };
+    const { context, session } = createDispatchContext('reject-and-report');
+    withStoreSubscription(context);
+    mockDispatchSubmit.mockRejectedValueOnce(new Error('outcome_unknown: response lost'));
+
+    await sendMessage(context, 'run remote checks', 'dispatch-session');
+    mockDispatchJobs.jobs = { 'job-1': { state: 'not_delivered' } };
+    mockDispatchJobs.listeners.forEach(listener => listener());
+    await vi.waitFor(() => expect(session.dialogTurns).toEqual([]));
+    expect(mockPendingEnqueueForSurface).toHaveBeenCalledWith('local', expect.objectContaining({
+      turnId: 'dispatch_pending_job-1', initialStatus: 'failed',
+    }));
   });
 
   it('submits with the session-scoped auto-approval setting without another confirmation', async () => {
@@ -1748,6 +1812,49 @@ describe('MessageModule device surface switch', () => {
     expect(mockPendingRemove).not.toHaveBeenCalled();
     expect(mockPendingEnqueueForSurface).not.toHaveBeenCalled();
     expect(mockNotificationError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['delivered', true],
+    ['not delivered', false],
+  ])('confirms a peer start whose reply was lost with the host (%s)', async (_label, hostHasTurn) => {
+    activateSurface('peer-a');
+    const { context, session } = switchingContext('session-lost-reply');
+    let turnId = '';
+    mockStartDialogTurn.mockImplementation(async (request: { turnId: string }) => {
+      turnId = request.turnId;
+      throw new Error('outcome_unknown: host invoke reply lost');
+    });
+    const reads: string[] = [];
+    context.flowChatStore.relayHostHasTurn = vi.fn(() => reads.length > 0 && hostHasTurn);
+    context.flowChatStore.reloadRelaySessionFromHost = vi.fn(async () => { reads.push('reload'); });
+    context.flowChatStore.loadRelaySessionHistory = vi.fn(async () => {});
+    context.flowChatStore.deleteDialogTurn = vi.fn((_id: string, id: string) => {
+      session.dialogTurns = session.dialogTurns.filter((turn: any) => turn.id !== id);
+    });
+
+    let releaseRead!: () => void;
+    context.flowChatStore.loadRelaySessionHistory = vi.fn(() => new Promise<void>(resolve => { releaseRead = resolve; }));
+    await expect(sendMessage(context, 'deploy once', 'session-lost-reply')).resolves.toBeUndefined();
+    expect(getRuntimeStatus('session-lost-reply')?.label).toBe('flow-chat:session.submissionConfirming');
+    await vi.waitFor(() => expect(releaseRead).toBeTypeOf('function'));
+    releaseRead();
+    await vi.waitFor(() => expect(getRuntimeStatus('session-lost-reply')).toBeUndefined());
+
+    expect(context.flowChatStore.reloadRelaySessionFromHost).toHaveBeenCalledWith('session-lost-reply');
+    expect(mockNotificationError).not.toHaveBeenCalled();
+    if (hostHasTurn) {
+      expect(session.dialogTurns.map((turn: any) => turn.id)).toEqual([turnId]);
+      expect(mockPendingEnqueueForSurface).not.toHaveBeenCalled();
+    } else {
+      expect(session.dialogTurns).toEqual([]);
+      // Retry reuses the Turn id, so the host deduplicates a late arrival.
+      expect(mockPendingEnqueueForSurface).toHaveBeenCalledWith('peer-a', expect.objectContaining({
+        sessionId: 'session-lost-reply', turnId, content: 'deploy once', initialStatus: 'failed',
+      }));
+      expect(mockNotificationWarning).toHaveBeenCalledWith(
+        'flow-chat:session.submissionNotDelivered', expect.anything());
+    }
   });
 
   it('still reports ordinary failures when the surface did not change', async () => {

@@ -6677,6 +6677,16 @@ export class FlowChatStore {
     await this.loadRelaySessionHistory(sessionId);
   }
 
+  /**
+   * Whether the rendered device's canonical records hold this turn. Only host
+   * records enter the replica, so an optimistic controller turn never counts.
+   */
+  public relayHostHasTurn(sessionId: string, turnId: string): boolean {
+    const surface = this.activeSurface;
+    if (surface.surfaceId === 'local') return false;
+    return surface.relaySessionRecords.get(sessionId)?.snapshot(turnId).turn != null;
+  }
+
   private refreshRelayInteractionMailbox(sessionId: string): Promise<void> {
     const surface = this.activeSurface;
     surface.relayMailboxVersions.set(sessionId, (surface.relayMailboxVersions.get(sessionId) ?? 0) + 1);

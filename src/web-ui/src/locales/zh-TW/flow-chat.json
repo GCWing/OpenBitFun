@@ -671,6 +671,13 @@
     "inUseMessage": "此會話已在另一個 OpenBitFun 執行個體中開啟。請先在該處關閉，然後重試。",
     "surfaceSwitchDroppedTitle": "訊息未送出",
     "surfaceSwitchDropped": "訊息尚未送出時裝置已切換，且該會話的佇列已滿。請重新傳送。",
+    "submissionConfirming": "正在與裝置確認…",
+    "submissionCheckingTarget": "正在確認目標是否已收到…",
+    "submissionNotDeliveredTitle": "訊息未送出",
+    "submissionNotDelivered": "裝置未收到這則訊息。訊息已保留在佇列中，重試只會送出一次。",
+    "submissionUnconfirmedTitle": "無法確認送達",
+    "submissionUnconfirmed": "OpenBitFun 無法確認裝置是否已收到這則訊息。訊息已保留在佇列中，重試不會重複執行。",
+    "dispatchNotDelivered": "目標未收到此任務。任務已保留在佇列中，可以重試。",
     "retry": "重試"
   },
   "scroll": {

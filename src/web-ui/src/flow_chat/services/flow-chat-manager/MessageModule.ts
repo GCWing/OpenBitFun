@@ -35,7 +35,7 @@ import {
   isRuntimeSessionProjectionStale,
   subscribeRuntimeSessionAttachmentFinished,
 } from '@/infrastructure/peer-device/runtimeSessionEventGate';
-import { isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandError';
+import { isOutcomeUnknownError, isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandError';
 import { i18nService } from '@/infrastructure/i18n';
 import { driverForSession } from '../../session-drivers/registry';
 import { assertSessionConversationCanSubmit, getSessionConversationCapability } from '../../session-drivers/conversationCapability';
@@ -57,6 +57,13 @@ import { finishSubmittedMessageScrollIntent, peekSubmittedMessageScrollIntent } 
 import { FLOWCHAT_MESSAGE_SUBMITTED_EVENT } from '../../events/flowchatNavigation';
 import { forkChatSession } from './SessionModule';
 import { viewedExternalForkTurn } from '../../utils/externalHistory';
+import {
+  confirmUncertainDispatchSubmission,
+  confirmUncertainPeerSubmission,
+  DISPATCH_SUBMITTING_GRACE_MS,
+  type UncertainSubmission,
+} from '../uncertainSubmission';
+import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 
 export { syncSessionModelSelection } from '../../utils/modelSync';
 export { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
@@ -537,6 +544,7 @@ async function sendMessageInternal(
   const surfaceIdAtSend = surfaceScopeAtSend.surfaceId;
   const draftSubmissionKey = session.draft ? surfaceScopeAtSend.key('draft-submit', sessionId) : undefined;
   let previewTurnId: string | undefined;
+  let submittingDriverId: string | undefined;
   if (draftSubmissionKey) {
     if (draftSubmissions.has(draftSubmissionKey)) throw new Error('Draft submission is already in progress');
     draftSubmissions.add(draftSubmissionKey);
@@ -555,6 +563,7 @@ async function sendMessageInternal(
     const currentAgentType = (agentType?.trim() || refreshedSession.mode || 'Standard').trim();
     const acpClientId = acpClientIdFromMode(currentAgentType);
     const driver = driverForSession(sessionId, refreshedSession);
+    submittingDriverId = driver.id;
     if (
       options?.execution?.kind === 'fresh_external_subagent'
       && (acpClientId || driver.id !== 'local')
@@ -706,6 +715,60 @@ async function sendMessageInternal(
       }
       if (options?.bypassPendingQueue && !turnTracker.hostAcceptedTurn) {
         throw new RetiredQueueSubmission(turnTracker.hostSubmitStarted === true);
+      }
+      return;
+    }
+
+    const uncertainTurnId = turnTracker.createdLocalTurnId;
+    const uncertainKind = uncertainTurnId && turnTracker.hostSubmitStarted && !turnTracker.hostAcceptedTurn
+      && !options?.preserveTurnOnStartError
+      ? submittingDriverId === 'dispatch' ? 'dispatch'
+        : !isLocalSurface(surfaceIdAtSend) && isOutcomeUnknownError(error) ? 'peer' : null
+      : null;
+    if (uncertainTurnId && uncertainKind) {
+      // The host may already own this Turn. Keep it, confirm with the host, and
+      // never hand the text back to the composer for a duplicating resend.
+      log.warn('Turn start outcome is unknown; confirming with the host', {
+        sessionId, turnId: uncertainTurnId, kind: uncertainKind,
+      });
+      if (previewTurnId) finishSubmittedMessagePreview(surfaceScopeAtSend, sessionId, previewTurnId);
+      const uncertain: UncertainSubmission = {
+        scope: surfaceScopeAtSend,
+        sessionId,
+        turnId: uncertainTurnId,
+        retained: {
+          content: message,
+          displayMessage,
+          agentType,
+          imageContexts: options?.imageContexts,
+          imageDisplayData: options?.imageDisplayData,
+          composerDraft: options?.pendingQueueDraft,
+          userMessageMetadata: options?.userMessageMetadata,
+        },
+      };
+      const jobId = context.flowChatStore.getState().sessions.get(sessionId)?.config.dispatchJobId;
+      const resolution = uncertainKind === 'dispatch' && jobId
+        ? confirmUncertainDispatchSubmission(context, uncertain, {
+          read: () => dispatchJobStore.getState().jobs?.[jobId]?.state
+            ?? context.flowChatStore.getState().sessions.get(sessionId)?.config.dispatchJobState,
+          subscribe: listener => {
+            const unsubscribeJobs = dispatchJobStore.subscribe(listener);
+            const unsubscribeSession = context.flowChatStore.subscribe(listener);
+            return () => { unsubscribeJobs(); unsubscribeSession(); };
+          },
+          submittingGraceMs: isOutcomeUnknownError(error) ? undefined : DISPATCH_SUBMITTING_GRACE_MS,
+          refresh: () => {
+            void import('@/features/dispatch/DispatchJobObserver')
+              .then(({ requestDispatchJobRefresh }) => requestDispatchJobRefresh(jobId))
+              .catch(refreshError => log.warn('Failed to request a dispatch job refresh', { jobId, error: refreshError }));
+          },
+        })
+        : confirmUncertainPeerSubmission(context, uncertain);
+      void resolution.catch(resolveError => {
+        log.error('Failed to resolve a submission with an unknown outcome', { sessionId, error: resolveError });
+      });
+      if (latestSendBySession.get(sendCoordinationKey) === sendAttempt) {
+        latestSendBySession.delete(sendCoordinationKey);
       }
       return;
     }
