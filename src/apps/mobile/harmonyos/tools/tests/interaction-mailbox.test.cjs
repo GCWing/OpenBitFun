@@ -15,6 +15,7 @@ const models = load('../model/InteractionMailbox');
 const { InteractionMailboxStore } = load('InteractionMailboxStore', { '../model/InteractionMailbox': models });
 const reducer = load('DurableSessionReducer');
 const { ChatSessionController } = load('ChatSessionController', {
+  './MessageQueueStore': load('MessageQueueStore', { '../model/MessageQueue': load('../model/MessageQueue') }),
   './InteractionMailboxStore': { InteractionMailboxStore }, './DurableSessionReducer': reducer,
   './SubagentStreamCoordinator': load('SubagentStreamCoordinator', { './DurableSessionReducer': reducer }),
 });
@@ -25,6 +26,7 @@ const snapshot = (requests = [request()], questions = [], sessionId = 's') => ({
 function fixture() {
   const f = { state: null, wire: snapshot(), calls: [], fail: false };
   f.client = {
+    supportsMessageQueue: () => false,
     async getModelCatalog() { return { version: 1, models: [], default_models: {} }; },
     async hostInvoke(command, args) {
       f.calls.push({ command, args });
@@ -67,6 +69,7 @@ test('tool completion cannot consume runtime approval or manufacture an active t
   assert.deepEqual(mailbox.requests.map(r => r.requestId), ['approval']);
   assert.equal(transcript.activeTurn, undefined);
   assert.deepEqual(transcript.messageSnapshot, []);
+  controller.stop();
   f.wire = snapshot([]);
   await callbacks.onEvent({ session_id: 's', event: 'session-interaction-changed', payload: {} });
   assert.deepEqual(mailbox.requests, []);

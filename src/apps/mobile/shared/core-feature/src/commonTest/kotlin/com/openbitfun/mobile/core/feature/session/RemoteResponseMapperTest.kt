@@ -5,12 +5,56 @@ import com.openbitfun.mobile.core.protocol.ChatMessageItemResponse
 import com.openbitfun.mobile.core.protocol.ChatMessageResponse
 import com.openbitfun.mobile.core.protocol.RemoteToolStatusResponse
 import com.openbitfun.mobile.core.protocol.SessionItemResponse
+import com.openbitfun.mobile.core.protocol.RelayJson
 import com.openbitfun.mobile.core.domain.ChatTimelineStore
+import com.openbitfun.mobile.core.domain.SessionListVisibility
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RemoteResponseMapperTest {
+    @Test
+    fun legacySessionPayloadRoundTripRemainsVisibleWithoutNewMetadata() {
+        val payload = """{"session_id":"legacy","name":"Existing session","workspace_path":"/repo"}"""
+        val decoded = RelayJson.decodeFromString<SessionItemResponse>(payload)
+        val encoded = RelayJson.encodeToString(decoded)
+        val roundTrip = RelayJson.decodeFromString<SessionItemResponse>(encoded)
+        assertEquals(decoded, roundTrip)
+        val fields = RelayJson.parseToJsonElement(encoded).jsonObject
+        assertFalse("parent_session_id" in fields)
+        assertFalse("relationship_kind" in fields)
+        assertFalse("workspace_id" in fields)
+
+        val session = RemoteResponseMapper.session(roundTrip)
+        assertEquals("legacy", session.id)
+        assertEquals("Existing session", session.title)
+        assertEquals("/repo", session.workspacePath)
+        assertNull(session.workspaceIdentity)
+        assertNull(session.parentSessionId)
+        assertNull(session.relationshipKind)
+        assertTrue(SessionListVisibility.isMobileVisible(session))
+    }
+
+    @Test
+    fun childSessionPayloadRoundTripPreservesRelationshipAndWorkspaceIdentity() {
+        for (kind in listOf("", ",\"relationship_kind\":\"btw\"")) {
+            val payload = """{"id":"child","workspace_path":"/repo","workspace_id":"ssh-workspace","parent_session_id":"parent"$kind}"""
+            val decoded = RelayJson.decodeFromString<SessionItemResponse>(payload)
+            val roundTrip = RelayJson.decodeFromString<SessionItemResponse>(RelayJson.encodeToString(decoded))
+            assertEquals(decoded, roundTrip)
+
+            val session = RemoteResponseMapper.session(roundTrip)
+            assertEquals("ssh-workspace", session.workspaceIdentity?.workspaceId)
+            assertEquals("parent", session.parentSessionId)
+            assertEquals(if (kind.isEmpty()) null else "btw", session.relationshipKind)
+            assertFalse(SessionListVisibility.isMobileVisible(session))
+        }
+    }
+
     @Test
     fun activeTurnCarriesPollVersionAsRenderVersion() {
         val turn = ActiveTurnSnapshotResponse(turnId = "turn-version", status = "active")

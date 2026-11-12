@@ -3,6 +3,7 @@ package com.openbitfun.mobile.core.domain
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SessionListPolicyTest {
@@ -45,6 +46,38 @@ class SessionListPolicyTest {
         assertTrue(SessionListVisibility.isChild(child))
         assertFalse(SessionListVisibility.isChild(session(id = "blank", parentSessionId = "  ")))
         assertFalse(SessionListVisibility.isMobileVisible(session(id = "acp", agentType = "acp:codex")))
+    }
+
+    @Test
+    fun legacyConstructorsKeepTopLevelSessionsAndWorkspaceOwnership() {
+        val local = RemoteWorkspaceIdentity("/repo", null, null)
+        val ssh = RemoteWorkspaceIdentity("/repo", "connection", "host", "ssh-workspace")
+        val legacy = RemoteSession("legacy", "Legacy", "code", "idle", "", "", 0, "/repo", null)
+        val scoped = RemoteSession("scoped", "Scoped", "code", "idle", "", "", 0, "/repo", null,
+            workspaceIdentity = ssh)
+
+        for (row in listOf(legacy, scoped)) {
+            assertNull(row.parentSessionId)
+            assertNull(row.relationshipKind)
+            assertTrue(SessionListVisibility.isMobileVisible(row))
+        }
+        assertNull(legacy.workspaceIdentity)
+        assertTrue(legacy.belongsTo(local, listOf(local)))
+        assertFalse(legacy.belongsTo(ssh, listOf(local, ssh)))
+        assertEquals(ssh, scoped.workspaceIdentity)
+        assertTrue(scoped.belongsTo(ssh, listOf(local, ssh)))
+        assertFalse(scoped.belongsTo(local, listOf(local, ssh)))
+    }
+
+    @Test
+    fun parentOnlyConstructorKeepsChildrenHiddenWithoutInventingARelationshipKind() {
+        val child = RemoteSession("child", "Child", "code", "idle", "", "", 0, "/repo", null,
+            workspaceIdentity = null, parentSessionId = "parent")
+
+        assertEquals("parent", child.parentSessionId)
+        assertNull(child.relationshipKind)
+        assertFalse(SessionListVisibility.isMobileVisible(child))
+        assertFalse(SessionListVisibility.isMobileVisible(child.copy(title = "Renamed")))
     }
 
     private fun session(
