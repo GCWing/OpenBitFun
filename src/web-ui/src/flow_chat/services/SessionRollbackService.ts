@@ -76,10 +76,11 @@ async function reconcileUnknownRollback(
   requireSessionMutationReconciliation(lease, 'Rollback outcome is unknown');
   let reloaded = false;
   try {
-    // A device surface renders a host replica that a history load reuses;
-    // re-read it so a rollback that did run is reflected.
+    // A device surface renders a host replica that a history load reuses, and
+    // the host stream sends no tombstones for turns a rollback removed. Resync
+    // into a fresh replica so a rollback that did run is reflected.
     if (!isLocalSurface(scope.surfaceId)) {
-      await flowChatStore.reloadRelaySessionFromHost(sessionId);
+      await flowChatStore.resyncRelaySessionFromHost(sessionId);
       scope.assertCurrent('reload session after unknown rollback');
     }
     await reloadAuthoritativeSession(sessionId, scope);

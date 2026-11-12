@@ -10,7 +10,7 @@ const agentApiMock = vi.hoisted(() => ({ rollbackSessionToTurn: vi.fn() }));
 const eventBusMock = vi.hoisted(() => ({ emit: vi.fn() }));
 const loadSessionHistory = vi.hoisted(() => vi.fn(async () => undefined));
 const retireRelaySessionTurns = vi.hoisted(() => vi.fn());
-const reloadRelaySessionFromHost = vi.hoisted(() => vi.fn(async () => undefined));
+const resyncRelaySessionFromHost = vi.hoisted(() => vi.fn(async () => undefined));
 const sessions = vi.hoisted(() => new Map<string, any>());
 const historyViews = vi.hoisted(() => new Map<string, any>());
 
@@ -22,7 +22,7 @@ vi.mock('../store/FlowChatStore', () => ({
     getSessionHistoryViewState: (sessionId: string) => historyViews.get(sessionId),
     loadSessionHistory,
     retireRelaySessionTurns,
-    reloadRelaySessionFromHost,
+    resyncRelaySessionFromHost,
   },
 }));
 
@@ -462,7 +462,7 @@ describe('SessionRollbackService', () => {
   it.each([
     ['local', LOCAL_SURFACE_ID, 0],
     ['device', 'peer-a', 1],
-  ])('reloads the authoritative session when a rollback reply is lost (%s)', async (_label, surface, relayReloads) => {
+  ])('resyncs the authoritative session when a rollback reply is lost (%s)', async (_label, surface, relayReloads) => {
     activateSurface(surface);
     agentApiMock.rollbackSessionToTurn.mockRejectedValue(new Error('outcome_unknown: reply lost'));
 
@@ -473,7 +473,7 @@ describe('SessionRollbackService', () => {
     expect(failure).toBeInstanceOf(RollbackOutcomeUnknownError);
     expect(failure.reloaded).toBe(true);
     expect(failure.message).not.toContain('outcome_unknown');
-    expect(reloadRelaySessionFromHost).toHaveBeenCalledTimes(relayReloads);
+    expect(resyncRelaySessionFromHost).toHaveBeenCalledTimes(relayReloads);
     expect(loadSessionHistory).toHaveBeenCalledTimes(1);
     // The reload reconciled the history; the session accepts new work again.
     expect(useSessionMutationStore.getState().mutations.has('session-1')).toBe(false);

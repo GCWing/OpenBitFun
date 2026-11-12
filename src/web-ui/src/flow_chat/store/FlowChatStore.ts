@@ -6639,8 +6639,11 @@ export class FlowChatStore {
     }
     try { await history.open(); }
     catch (error) {
-      if (surface === this.activeSurface) this.setSessionHistoryState(sessionId, 'failed');
-      if (surface.relaySessionHistory.get(sessionId) === history) surface.relaySessionHistory.delete(sessionId);
+      // A retired reader (closed by a re-read or resync) cannot fail its replacement.
+      if (surface.relaySessionHistory.get(sessionId) === history) {
+        surface.relaySessionHistory.delete(sessionId);
+        if (surface === this.activeSurface) this.setSessionHistoryState(sessionId, 'failed');
+      }
       throw error;
     }
   }
@@ -6674,6 +6677,27 @@ export class FlowChatStore {
       surface.relaySessionHistory.delete(sessionId);
       history.close();
     }
+    await this.loadRelaySessionHistory(sessionId);
+  }
+
+  /**
+   * Re-read the session from the host as a full resync, when the host may have
+   * removed turns without tombstones reaching this controller (a rollback whose
+   * reply was lost). The replay is reduced into a fresh replica and, at its
+   * ready, rendered turns it does not contain are pruned, exactly as after a
+   * host stream restart. Rendered turns stay until then.
+   */
+  public async resyncRelaySessionFromHost(sessionId: string): Promise<void> {
+    const surface = this.activeSurface;
+    if (surface.surfaceId === 'local' || !surface.state.sessions.has(sessionId)) return;
+    // Even a reader still awaiting its first page may have read a snapshot
+    // from before the mutation; it is replaced, not reused.
+    const history = surface.relaySessionHistory.get(sessionId);
+    if (history) {
+      surface.relaySessionHistory.delete(sessionId);
+      history.close();
+    }
+    this.beginRelaySessionResync(sessionId);
     await this.loadRelaySessionHistory(sessionId);
   }
 
