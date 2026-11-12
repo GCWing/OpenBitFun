@@ -1031,7 +1031,7 @@ export function useFlowChatVirtualizer<T>({
     retiredMeasurementsRef.current = 0;
     pendingLayoutMeasureRef.current = false;
   }, [itemKeyRevision, layoutSignature, items, measureRenderedItems, virtualizer,
-    measurementSuspended]);
+    measurementSuspended, restoredItemKeys]);
 
   const getItemBounds = useCallback((index: number): FlowChatItemBounds | null => {
     const measurement = (virtualizer as unknown as MeasuringVirtualizer)
