@@ -4,6 +4,7 @@ import type { VirtualItem, TimelineBlock } from '../types/flow-chat-projection';
 import { buildInlineToolGroupData, getProjectedModelRoundGroups, hasModelRoundLeadingControls } from '../grouping/roundGroups';
 import { getFlowGroupDisclosureChoice, isFlowGroupExpanded, type FlowGroupData } from '../grouping/types';
 import { filterFlowGroupItems, type FlowGroupStatusFilter } from '../grouping/browse';
+import { liveFlowGroupMembers } from '../grouping/lifecycle';
 import { isFlowItemVisible } from '../utils/flowItemVisibility';
 import type { FlowChatReaderState } from './readerState';
 import { getVirtualItemStableKey } from '../components/modern/virtualItemIdentity';
@@ -67,18 +68,32 @@ function capsuleExpansionIndex(options: TimelineProjectionOptions): ExpandedCaps
   return index;
 }
 
-function readerExpanded(
+/**
+ * `all` lists every member, `live` only the ones still running, `none` only
+ * the header. Automatic disclosure of a running group is `live`: a long serial
+ * run no longer spreads every finished call through the transcript. A reader's
+ * explicit choice, a held group, an expanded member capsule and a failed file
+ * revision keep the full list.
+ */
+type GroupMemberPresentation = 'none' | 'live' | 'all';
+
+function readerMemberPresentation(
   group: FlowGroupData, turnId: string, options: TimelineProjectionOptions, expandedCapsules?: ExpandedCapsuleIndex,
-): boolean {
+): GroupMemberPresentation {
   const choice = getFlowGroupDisclosureChoice(group, options.groupStates);
+  if (choice === true) return 'all';
   const permission = group.allItems.some(item => item.type === 'tool'
     && (item.status === 'pending_confirmation' || options.pendingPermissionToolCallIds?.has((item as FlowToolItem).toolCall.id)));
-  if (permission) return true;
-  if (choice !== undefined) return choice;
+  // An approval stays answerable even inside a group the reader folded.
+  if (permission) return 'live';
+  if (choice === false) return 'none';
   const expandedMembers = expandedCapsules?.get(turnId);
-  return isFlowGroupExpanded(group, options.groupStates)
-    || options.reader.isGroupHeld(group.groupId)
-    || (expandedMembers !== undefined && group.allItems.some(item => expandedMembers.has(item.id)));
+  if (options.reader.isGroupHeld(group.groupId)
+    || (expandedMembers !== undefined && group.allItems.some(item => expandedMembers.has(item.id)))) return 'all';
+  if (!isFlowGroupExpanded(group, options.groupStates)) return 'none';
+  const running = group.phase === 'collecting' || group.phase === 'settling'
+    || (group.phase === undefined && group.isGroupStreaming);
+  return running && !(group.category === 'file-edit' && group.needsAttention === true) ? 'live' : 'all';
 }
 
 type RoundItem = Extract<VirtualItem, { type: 'model-round' }>;
@@ -192,6 +207,7 @@ export class ConversationDocumentProjection {
               && previous.timeline.memberOrdinal === extra.memberOrdinal
             : previous.timeline.group === extra.group)
           && previous.timeline.expanded === extra.expanded
+          && previous.timeline.liveMembers === extra.liveMembers
           && previous.timeline.layout === layout
           && previous.timeline.markdownSection?.start === extra.markdownSection?.start
           && previous.timeline.markdownSection?.end === extra.markdownSection?.end
@@ -233,7 +249,7 @@ export class ConversationDocumentProjection {
         // Even one short section keeps its renderer and bookmark coordinate.
         const sections = text && text.isMarkdown
           && options.reader.get('navigation:whole-text', '') !== identity
-          && !parseDeepResearchContent(text.content).hasProtocol ? markdownSections(text.content) : undefined;
+          && !parseDeepResearchContent(text.content).hasProtocol ? markdownSections(text.content, { streaming: text.isStreaming }) : undefined;
         if (!sections) { add(kind, this.itemIdentity.key(run[0]), run, extra); return; }
         const displayOffsets = this.itemIdentity.sectionOffsets(text!, sections);
         sections.forEach((section, index) => add(kind, index === 0 ? this.itemIdentity.key(run[0]) : `${this.itemIdentity.key(text!)}:markdown:${displayOffsets[index]}`, index === 0 ? run : [text!], {
@@ -250,21 +266,30 @@ export class ConversationDocumentProjection {
         if (group.type === 'critical') { if (isFlowItemVisible(group.item)) critical.push(group.item); return; }
         flush();
         const data = buildInlineToolGroupData(source.data.id, group, source.isLastRound && group.isLast);
-        const expanded = readerExpanded(data, source.turnId, options, expandedCapsules);
-        add('group-header', `group:${data.groupId}`, emptyItems, { group: data, expanded });
-        if (!expanded) return;
+        const presentation = readerMemberPresentation(data, source.turnId, options, expandedCapsules);
+        const expanded = presentation === 'all';
+        const liveMembers = presentation === 'live' ? true : undefined;
+        add('group-header', `group:${data.groupId}`, emptyItems, { group: data, expanded, liveMembers });
+        if (presentation === 'none') return;
+        const all = data.allItems.filter(isFlowItemVisible);
+        // Member blocks hold only group metadata, never the full source tree.
+        const memberGroup = { ...data, rounds: [], allItems: [] };
+        const ordinals = new Map(all.filter(member => member.type === 'tool').map((member, index) => [member.id, index]));
+        if (liveMembers) {
+          const runs = conversationContentRuns(liveFlowGroupMembers(all, options.pendingPermissionToolCallIds));
+          runs.forEach((run, index) => addRun('group-members', run,
+            { group: memberGroup, expanded: true, liveMembers, first: index === 0, last: index === runs.length - 1,
+              memberOrdinal: ordinals.get(run.find(member => member.type === 'tool')?.id ?? '') }));
+          return;
+        }
         const prefix = `group:${data.groupId}:`;
         const filter = {
           query: options.reader.get(`${prefix}query`, ''),
           tool: options.reader.get(`${prefix}tool`, 'all'),
           status: options.reader.get(`${prefix}status`, 'all') as FlowGroupStatusFilter,
         };
-        const all = data.allItems.filter(isFlowItemVisible);
         const browse = filterFlowGroupItems(all, filter, options.toolLabels, options.pendingPermissionToolCallIds);
         const runs = conversationContentRuns(all.filter(item => browse.visibleIds.has(item.id)));
-        // Member blocks hold only group metadata, never the full source tree.
-        const memberGroup = { ...data, rounds: [], allItems: [] };
-        const ordinals = new Map(all.filter(member => member.type === 'tool').map((member, index) => [member.id, index]));
         runs.forEach((run, index) => addRun('group-members', run,
           { group: memberGroup, expanded, first: index === 0, last: index === runs.length - 1,
             memberOrdinal: ordinals.get(run.find(member => member.type === 'tool')?.id ?? ''),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isItemFullyAboveViewport,
+  isItemStartAboveViewport,
   virtualWindowPaddingPx,
   visibleRowRange,
   timelineOverscanRange,
@@ -25,6 +26,17 @@ describe('isItemFullyAboveViewport', () => {
 
   it('compensates only a row whose end is above the viewport', () => {
     expect(isItemFullyAboveViewport(4722, 5450)).toBe(true);
+  });
+});
+
+describe('isItemStartAboveViewport', () => {
+  it('owes a first measurement for a reservation that starts above the reader', () => {
+    expect(isItemStartAboveViewport(5300, 5450)).toBe(true);
+  });
+
+  it('leaves a reservation that starts at or below the viewport top', () => {
+    expect(isItemStartAboveViewport(5450, 5450)).toBe(false);
+    expect(isItemStartAboveViewport(5600, 5450)).toBe(false);
   });
 });
 

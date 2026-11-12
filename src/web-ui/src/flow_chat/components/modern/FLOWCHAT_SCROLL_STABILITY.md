@@ -598,7 +598,9 @@ content such as history state and `RuntimeStatusSlot`.
   invisible where the platform draws overlay scrollbars that take no layout
   width — WebKit-backed builds, where `scrollbar-gutter: stable` reserves
   nothing either. There the drag can still fight the frame loop while output
-  streams. Closing it means either a signal that does not depend on the bar
+  streams. A supplied-geometry fixture shows the same fight after the Turn has
+  settled, for as long as follow-output still holds the tail: a scroll with no
+  intent event is eased back by up to the whole step each frame. Closing it means either a signal that does not depend on the bar
   having a box, or a scrollbar of our own.
 - A collapse larger than `tailHoldMaxGapPx` still moves the viewport, by the
   excess only.

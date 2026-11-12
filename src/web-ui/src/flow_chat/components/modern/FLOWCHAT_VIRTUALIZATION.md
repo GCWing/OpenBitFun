@@ -194,6 +194,15 @@ changes. Native evidence and remaining coverage limits are in
 
 ### Mounted-row lifetime and opening readiness
 
+The list's viewport ResizeObserver lives for the scroller's lifetime and reads
+its committed callbacks through a ref. Streaming replaced several of those
+callbacks on every flush, and rebinding the observer delivered a fresh initial
+observation that re-measured every mounted row once per streamed chunk. The
+Turn-boundary list (`userMessageItems`) also keeps its previous array while its
+user-message items and indexes are unchanged. Streaming Markdown section
+boundaries use a small separate cache, so intermediate prefixes do not evict
+settled replies' sections before their session reopens.
+
 Row refs attach without a state update. Search focus and excerpt highlights
 resolve the ref in the row's layout phase, so first-mount behavior stays intact
 without rendering every newly windowed row twice. Overscan follows its pixel
@@ -419,6 +428,20 @@ not trigger this readback. All viewport writes remain with the existing owner.
 scroll-end delivery using the real virtualizer and supplied geometry; it does
 not establish browser performance.
 
+## Running tool group presentation
+
+A running group's automatic disclosure lists only its in-flight members below a
+collapsed header that keeps the group summary. A serial run therefore shows one
+call, and a parallel batch shows the calls still running. Between two serial calls
+the most recent call stays, so the group does not empty and refill for each step.
+A member awaiting approval stays visible even in a group the reader folded. The
+reader's explicit expansion, a held group, an expanded member capsule and a failed
+file revision still list every member; a settled group folds to its header as
+before. This is a timeline projection choice (`readerMemberPresentation` in
+`timeline/document.ts`, `liveFlowGroupMembers` in `grouping/lifecycle.ts`). It
+does not change group membership, lifecycle, persisted records or the embedded
+inline renderer.
+
 ## Collapsed thinking content lifetime
 
 Thinking cards mount their Markdown body only while expanded or finishing a
@@ -536,7 +559,13 @@ the items have not moved yet.
 and asks the viewport owner to apply a real measured delta only when the whole
 item precedes the viewport in its internal coordinate direction: above the
 reader for live layout, below the reader for bottom-origin history. A partly visible row is left alone because its changed content is
-inside what the reader is looking at. TanStack's adjustment is always refused:
+inside what the reader is looking at. A live row's *first* measurement is the
+exception: it replaces a reservation, not content anyone saw, so a row that
+starts above the viewport owes its whole delta even when its estimated end
+reached into it. Judging that row by its estimated end let rows that mounted
+while the reader wheeled up push or pull the visible transcript by the estimate
+error (measured in a supplied-geometry fixture: 104px, 166px and 441px single-frame
+jumps; zero with the rule). Measured rows that resize keep the visible-row rule. TanStack's adjustment is always refused:
 it applies its delta to `scrollOffset`, the library's copy refreshed only from
 scroll events. Every continuous writer here assigns `scrollTop` directly and
 the matching scroll event lands a frame later, so that base can be stale. The

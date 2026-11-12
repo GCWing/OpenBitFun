@@ -201,6 +201,71 @@ describe('settled transcript resizing (real controllers, supplied DOM geometry)'
     expect(observers.some(observer => observer.targets.has(row))).toBe(true);
   });
 
+  it.each(['local', 'peer-scroll'].flatMap(surface => [0, 250].map(delayMs => ({ surface, delayMs }))))(
+    'keeps visible rows still while wheeling into rows never measured on $surface (scroll delay=$delayMs ms)', ({ surface, delayMs }) => {
+    activateSurface(surface);
+    state.processing = true;
+    const rows = [{ type: 'user-message', turnId: 'latest', data: { id: 'user-latest', content: 'latest' } }] as VirtualItem[];
+    heights.set(getVirtualItemStableKey(rows[0]), 44);
+    for (let index = 0; index < 90; index += 1) {
+      const row = { type: 'model-round', turnId: 'latest', data: { id: `tool-${index}`, items: [], content: `tool ${index}` }, isLastRound: index === 89, isTurnComplete: true } as VirtualItem;
+      rows.push(row);
+      // Estimates miss in both directions: short tool rows and tall output.
+      heights.set(getVirtualItemStableKey(row), index % 7 === 3 ? 640.5 : index % 3 === 0 ? 34 : 96.25);
+    }
+    state.items = [...turn('older', 400), ...rows];
+    render();
+    for (let frame = 0; frame < 60; frame++) { resize(); tick(); }
+    state.processing = false;
+    render();
+    for (let frame = 0; frame < 30; frame++) { resize(); tick(); }
+    const scroller = host.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+    const visibleRows = () => new Map([...host.querySelectorAll<HTMLElement>('.virtual-item-wrapper[data-virtual-item-key]')]
+      .map(row => [row.dataset.virtualItemKey!, row.getBoundingClientRect().top - scroller.getBoundingClientRect().top] as const)
+      .filter(([, top]) => top > -400 && top < viewportHeight));
+    const unexplained: string[] = [];
+    for (const delta of [...Array(40).fill(-260), ...Array(40).fill(260)]) {
+      const before = visibleRows();
+      act(() => { scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: delta, bubbles: true })); });
+      // A busy main thread delivers the scroll after the gesture window closed.
+      now += delayMs;
+      act(() => {
+        scroller.scrollTop += delta;
+        scroller.dispatchEvent(new Event('scroll'));
+      });
+      resize(); tick();
+      for (const [key, top] of visibleRows()) {
+        const previous = before.get(key);
+        if (previous !== undefined && Math.abs(top - previous + delta) > 1) unexplained.push(`${key}:${(top - previous + delta).toFixed(1)}`);
+      }
+    }
+    expect(unexplained).toEqual([]);
+  });
+
+  it.each(['local', 'peer-stream'])('keeps one viewport observer while output streams on %s', surface => {
+    activateSurface(surface);
+    state.processing = true;
+    const [user, answer] = turn('latest', 180);
+    state.items = [user, answer];
+    render();
+    for (let frame = 0; frame < 60; frame++) { resize(); tick(); }
+    const scroller = host.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+    const viewportObservers = observers.filter(observer => observer.targets.has(scroller));
+    expect(viewportObservers.length).toBeGreaterThan(0);
+    const created = observers.length;
+    // Each flush replaces the live round and the item array; the Turn
+    // boundary (its user message) is unchanged.
+    for (let flush = 0; flush < 12; flush += 1) {
+      const streamed = { ...answer, data: { ...(answer as { data: object }).data, content: `latest ${flush}` } } as VirtualItem;
+      state.items = [user, streamed];
+      render();
+      tick();
+    }
+    // A rebound observer is a new instance and re-measures every mounted row.
+    expect(observers.filter(observer => observer.targets.has(scroller))).toEqual(viewportObservers);
+    expect(observers.length).toBe(created);
+  });
+
   it.each(['local', 'peer-resize'].flatMap(surface => [false, true].map(first => ({ surface, first }))))(
     'keeps a loaded transcript fixed on $surface, container observer first=$first', ({ surface, first }) => {
     containerFirst = first;

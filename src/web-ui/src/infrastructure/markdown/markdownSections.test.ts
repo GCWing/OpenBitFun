@@ -20,6 +20,19 @@ describe('Markdown presentation sections', () => {
     expect(clean(slices.flatMap(slice => parser.parse(slice).children))).toEqual(clean(parser.parse(source).children));
   });
 
+  it('keeps settled sections cached while a reply streams past many prefixes', () => {
+    const settled = prefix + '# Settled\n\n' + prefix;
+    const sections = markdownSections(settled);
+    let streaming = prefix;
+    for (let index = 0; index < 80; index += 1) {
+      streaming += `Streamed paragraph ${index}.\n\n`;
+      markdownSections(streaming, { streaming: true });
+    }
+    expect(markdownSections(settled)).toBe(sections);
+    // A streamed source and its settled read share the same boundaries.
+    expect(markdownSections(streaming)).toEqual(markdownSections(streaming, { streaming: true }));
+  });
+
   it.each(['\n', '\r\n', '\r'])('keeps complete semantic blocks and exact source with %j line endings', newline => {
     const document = (prefix + [
       '# Heading\n\nSetext heading\n---\n\n',

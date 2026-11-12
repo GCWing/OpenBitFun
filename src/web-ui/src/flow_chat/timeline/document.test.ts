@@ -5,6 +5,7 @@ import type { FlowItem, FlowToolItem } from '../types/flow-chat';
 import type { VirtualItem } from '../types/flow-chat-projection';
 import { estimateVirtualItemHeight } from '../components/modern/virtualItemHeightEstimators';
 import { buildInlineToolGroupData } from '../grouping/roundGroups';
+import { projectAdjacentFlowGroups } from '../grouping/groupProjection';
 import { toolCapsuleStateKey } from '../tool-cards/toolCapsuleModel';
 import { localizeMarkdownMatch } from './markdownSectionSearch';
 import { getVirtualItemBookmarkKey } from '../components/modern/virtualItemIdentity';
@@ -280,6 +281,63 @@ describe('desktop conversation document', () => {
       .toBe(first.find(item => item.timeline?.memberIds[0] === 'a'));
     expect(next.find(item => item.timeline?.memberIds[0] === 'b'))
       .not.toBe(first.find(item => item.timeline?.memberIds[0] === 'b'));
+  });
+
+  describe('running group presentation', () => {
+    // Group lifecycle comes from the same projection the transcript uses.
+    const live = (items: FlowItem[]) => projectAdjacentFlowGroups([{
+      type: 'model-round', turnId: 'turn', isLastRound: true, isTurnComplete: false,
+      data: { id: 'round', index: 0, startTime: 1, status: 'streaming', isStreaming: true, isComplete: false, items },
+    } as VirtualItem], { isTurnComplete: false })[0];
+    const shown = (rows: VirtualItem[]) => rows.filter(row => row.timeline?.kind === 'group-members')
+      .flatMap(row => row.timeline!.memberIds);
+    const header = (rows: VirtualItem[]) => rows.find(row => row.timeline?.kind === 'group-header')!.timeline!;
+
+    it('shows only the call in flight for a serial run', () => {
+      const rows = new ConversationDocumentProjection().project([live([tool('a'), tool('b'), tool('c', 'running')])], options());
+      expect(header(rows)).toMatchObject({ expanded: false, liveMembers: true });
+      expect(header(rows).group!.phase).toBe('collecting');
+      expect(shown(rows)).toEqual(['c']);
+    });
+
+    it('shows only the calls still running in a parallel batch', () => {
+      const rows = new ConversationDocumentProjection().project(
+        [live([tool('a'), tool('b', 'running'), tool('c'), tool('d', 'running')])], options());
+      expect(shown(rows)).toEqual(['b', 'd']);
+    });
+
+    it('keeps the latest call between serial steps instead of emptying the group', () => {
+      const rows = new ConversationDocumentProjection().project([live([tool('a'), tool('b')])], options());
+      expect(header(rows).liveMembers).toBe(true);
+      expect(shown(rows)).toEqual(['b']);
+    });
+
+    it('lists every member once the reader expands the running group', () => {
+      const projection = new ConversationDocumentProjection();
+      const input = live([tool('a'), tool('b'), tool('c', 'running')]);
+      const id = header(projection.project([input], options())).group!.groupId;
+      const rows = projection.project([input], { ...options(), groupStates: new Map([[id, true]]) });
+      expect(header(rows)).toMatchObject({ expanded: true });
+      expect(header(rows).liveMembers).toBeUndefined();
+      expect(shown(rows)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('keeps an approval answerable inside a folded group without the settled calls', () => {
+      const projection = new ConversationDocumentProjection();
+      const input = live([tool('a'), tool('b'), tool('c')]);
+      const id = header(projection.project([input], options())).group!.groupId;
+      const rows = projection.project([input], {
+        ...options(), groupStates: new Map([[id, false]]), pendingPermissionToolCallIds: new Set(['b']),
+      });
+      expect(shown(rows)).toEqual(['b']);
+    });
+
+    it('folds a settled group to its header', () => {
+      const rows = new ConversationDocumentProjection().project([source([tool('a'), tool('b'), tool('c')])], options());
+      expect(header(rows)).toMatchObject({ expanded: false });
+      expect(header(rows).liveMembers).toBeUndefined();
+      expect(shown(rows)).toEqual([]);
+    });
   });
 
   it('honors explicit folding without destroying child choices and always exposes permission requests', () => {

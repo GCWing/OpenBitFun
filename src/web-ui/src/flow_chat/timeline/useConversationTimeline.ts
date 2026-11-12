@@ -26,10 +26,16 @@ export function useConversationTimeline(sources: VirtualItem[], sessionId: strin
   // Every streamed flush produces a new sources array; skip texts already
   // queued or parsed instead of re-walking the whole timeline each time.
   const prewarmedTextsRef = useRef<WeakSet<object>>(new WeakSet());
+  // A projected source is reused by identity only while its members are the
+  // same objects, so a source already walked has nothing new to queue.
+  const prewarmedSourcesRef = useRef<WeakSet<object>>(new WeakSet());
   useEffect(() => {
     const seen = prewarmedTextsRef.current;
+    const seenSources = prewarmedSourcesRef.current;
     const texts = new Set<string>();
     for (const source of sources) {
+      if (seenSources.has(source)) continue;
+      seenSources.add(source);
       const members = source.type === 'explore-group' ? source.data.allItems
         : source.type === 'model-round' ? source.projectedGroups?.flatMap(group => group.type === 'critical' ? [group.item]
           : group.projection?.allItems ?? group.items) ?? source.data.items : [];

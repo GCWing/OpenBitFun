@@ -10,6 +10,8 @@ export interface TimelineBlock {
   memberIds: string[];
   group?: FlowGroupData;
   expanded?: boolean;
+  /** A running group's automatic disclosure shows only its in-flight members. */
+  liveMembers?: boolean;
   first?: boolean;
   last?: boolean;
   memberOrdinal?: number;

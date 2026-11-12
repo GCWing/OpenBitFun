@@ -182,6 +182,10 @@ export function isItemFullyAboveViewport(itemEndPx: number, scrollTopPx: number)
   return itemEndPx <= scrollTopPx;
 }
 
+export function isItemStartAboveViewport(itemStartPx: number, scrollTopPx: number): boolean {
+  return itemStartPx < scrollTopPx;
+}
+
 /** Normal-flow padding must replace the exact occupied box, including fractions. */
 function measureRowHeight(element: HTMLElement, entry?: ResizeObserverEntry): number {
   return entry?.borderBoxSize?.[0]?.blockSize ?? element.getBoundingClientRect().height;
@@ -552,6 +556,8 @@ export function useFlowChatVirtualizer<T>({
    * that matters — an item added or removed — moves `count` as well.
    */
   const reservedEstimatesRef = useRef(new Map<string, number>());
+  /** Keys whose size the virtualizer has measured at least once. */
+  const measuredKeysRef = useRef(new Set<string | number | bigint>());
   const estimateSize = useCallback((index: number) => {
     const item = itemsRef.current[index];
     if (item === undefined) return 0;
@@ -702,6 +708,8 @@ export function useFlowChatVirtualizer<T>({
   // An instance field rather than an option, so it is assigned here — before
   // any measurement callback can reach `resizeItem`.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta) => {
+    const firstMeasurement = !measuredKeysRef.current.has(item.key);
+    measuredKeysRef.current.add(item.key);
     if (resettingMeasurementsRef.current) return false;
     pendingMeasurementRef.current = true;
     const scroller = scrollerRef.current;
@@ -726,8 +734,16 @@ export function useFlowChatVirtualizer<T>({
     // Estimated bounds are not proof that an older row is now visible. During
     // a prepend a predecessor can grow through the old viewport coordinates;
     // its identity still precedes the reading row and its whole delta is owed.
+    // A row's first measurement replaces a reservation, not content the reader
+    // saw: before this commit its space was an estimate. If it starts above the
+    // viewport, everything visible follows it and the whole delta is owed —
+    // judging it by its estimated end let a row that mounted while scrolling up
+    // push or pull the transcript by its estimate error. A measured row that
+    // resizes keeps the visible-row rule above.
     const fullyAboveViewport = anchorIndex === undefined
-      ? isItemFullyAboveViewport(item.end, beforeScrollTopPx)
+      ? firstMeasurement
+        ? isItemStartAboveViewport(item.start, beforeScrollTopPx)
+        : isItemFullyAboveViewport(item.end, beforeScrollTopPx)
       : item.index < anchorIndex;
     const applied = fullyAboveViewport ? shiftViewport(delta) : false;
     if (applied) pendingMeasurementShiftRef.current = true;
@@ -929,6 +945,7 @@ export function useFlowChatVirtualizer<T>({
     for (const key of previousKeysRef.current) if (!keys.has(key)) {
       retiredMeasurementsRef.current++;
       reservedEstimatesRef.current.delete(key);
+      measuredKeysRef.current.delete(key);
     }
     previousKeysRef.current = keys;
     if (measuredLayoutRef.current === layoutSignature && retiredMeasurementsRef.current < 2048
