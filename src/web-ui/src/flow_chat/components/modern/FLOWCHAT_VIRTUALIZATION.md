@@ -135,8 +135,12 @@ mounted row is still measured and still replaces it, and a width or font change
 leaves it in place under the same rule as a live reservation. It is also a
 measurement: the next resize of a retained row is judged as a resize of content
 the reader may be looking at, never as a first measurement, so a partly visible
-retained row that grows does not shift the viewport. The snapshot
-reads no geometry, so the unmount-phase DOM cannot skew it. A retained
+retained row that grows does not shift the viewport. That holds only at the
+content width the sizes were measured at, which the snapshot records: reopened at
+another width, retained sizes still reserve space but their rows owe the
+first-measurement repair again. A retained key that leaves the projection and
+returns starts from an estimate rather than handing one back as a measurement.
+The snapshot reads no geometry, so the unmount-phase DOM cannot skew it. A retained
 projection holds its rows strongly, so up to three inactive views keep their
 derived rows until they are reopened or evicted.
 
@@ -496,6 +500,8 @@ awaiting approval stays visible even in a group the reader folded. The reader's
 explicit expansion, an expanded member capsule and a failed file revision still
 list every member; a settled group folds to its header as before.
 
+A member row holding focus, a selection or a live instance stays in a live group,
+so a settling call never takes the reader's caret or highlighted text with it.
 A hold (a revealing text member, or member rows on screen while the reader is not
 following) never widens a live group: a group that settles under a hold keeps its
 live presentation until the hold releases, and a held folded group still opens.

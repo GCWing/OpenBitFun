@@ -72,6 +72,7 @@ export function useTimelineInteraction(
       // Mere visibility does not acquire an instance lease.
       scroller.querySelectorAll<HTMLElement>('[data-flowchat-retain-instance="true"]').forEach(rowFor);
       setPinnedKeys(previous => previous.size === pinned.size && [...pinned].every(key => previous.has(key)) ? previous : pinned);
+      reader.setPinnedRows(pinned);
       const groups = new Set<string>();
       const bounds = scroller.getBoundingClientRect();
       scroller.querySelectorAll<HTMLElement>('.virtual-item-wrapper[data-timeline-kind="group-members"]').forEach(row => {
@@ -134,6 +135,7 @@ export function useTimelineInteraction(
       scroller.removeEventListener('focusout', schedule); scroller.removeEventListener('pointerup', update);
       document.removeEventListener('selectionchange', selectionChanged);
       holds.forEach(release => release());
+      reader.setPinnedRows(new Set());
     };
   }, [reader, scrollerRef, rowSelector]);
   useEffect(() => {

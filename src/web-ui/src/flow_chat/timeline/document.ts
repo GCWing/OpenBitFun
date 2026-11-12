@@ -288,7 +288,13 @@ export class ConversationDocumentProjection {
         const memberGroup = { ...data, rounds: [], allItems: [] };
         const ordinals = new Map(all.filter(member => member.type === 'tool').map((member, index) => [member.id, index]));
         if (liveMembers) {
-          const runs = conversationContentRuns(liveFlowGroupMembers(all, options.pendingPermissionToolCallIds));
+          // A member holding focus or a selection stays, so a settling call
+          // never takes the reader's caret or highlighted text with it.
+          const live = new Set(liveFlowGroupMembers(all, options.pendingPermissionToolCallIds));
+          const pinned = new Set(conversationContentRuns(all)
+            .filter(run => options.reader.isRowPinned(`${source.turnId}:${this.itemIdentity.key(run[0])}`)).flat());
+          const shown = all.filter(member => live.has(member) || pinned.has(member));
+          const runs = conversationContentRuns(shown);
           runs.forEach((run, index) => addRun('group-members', run,
             { group: memberGroup, expanded: true, liveMembers, first: index === 0, last: index === runs.length - 1,
               memberOrdinal: ordinals.get(run.find(member => member.type === 'tool')?.id ?? '') }));

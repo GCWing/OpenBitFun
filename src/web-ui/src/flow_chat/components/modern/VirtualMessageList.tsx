@@ -422,7 +422,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   const activeSessionId = activeSession?.sessionId ?? null;
   const { items: virtualItems, reader } = useConversationTimeline(sourceItems, activeSessionId ?? undefined, 'main');
   // Read once for the virtualizer's mount; claimed and handed back below.
-  const [retainedItemSizes] = useState(() => retainedTranscriptRowSizes.peek(reader));
+  const [retainedRows] = useState(() => retainedTranscriptRowSizes.peek(reader));
   const timelineItemsRef = useRef(virtualItems);
   timelineItemsRef.current = virtualItems;
   const nextVisibleItemIndexes = useMemo(() => getNextVisibleVirtualItemIndexes(virtualItems), [virtualItems]);
@@ -604,13 +604,19 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     writeViewport: viewportOwner.write,
     shiftViewport: shiftMeasuredViewport,
     getViewportAnchorKey: () => measurementAnchorKeyRef.current(),
-    retainedItemSizes,
+    retainedItemSizes: retainedRows?.sizes,
+    retainedItemWidthPx: retainedRows?.widthPx,
   });
   const snapshotItemSizes = virtualizer.snapshotItemSizes;
+  const measuredWidthRef = useRef(availableWidthPx);
+  measuredWidthRef.current = availableWidthPx;
   useLayoutEffect(() => {
     retainedTranscriptRowSizes.take(reader);
     // Sizes only: no geometry is read, so unmount-phase DOM cannot skew them.
-    return () => retainedTranscriptRowSizes.put(reader, snapshotItemSizes());
+    return () => retainedTranscriptRowSizes.put(reader, {
+      sizes: snapshotItemSizes(),
+      widthPx: measuredWidthRef.current > 0 ? measuredWidthRef.current : undefined,
+    });
   }, [reader, snapshotItemSizes]);
 
   // Streaming replaces `virtualItems` every flush while its Turn boundaries

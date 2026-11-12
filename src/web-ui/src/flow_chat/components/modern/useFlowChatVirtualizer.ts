@@ -293,6 +293,11 @@ export interface UseFlowChatVirtualizerOptions<T> {
    * Mounted rows are still measured and still replace them.
    */
   retainedItemSizes?: ReadonlyMap<string, number>;
+  /**
+   * Content width the retained sizes were measured at. At another width they
+   * still reserve space, but no longer count as measurements.
+   */
+  retainedItemWidthPx?: number;
 }
 
 export interface FlowChatVirtualizer {
@@ -452,6 +457,7 @@ export function useFlowChatVirtualizer<T>({
   shiftViewport = () => false,
   getViewportAnchorKey,
   retainedItemSizes,
+  retainedItemWidthPx,
 }: UseFlowChatVirtualizerOptions<T>): FlowChatVirtualizer {
   const items = useMemo(() => endOrigin ? [...sourceItems].reverse() : sourceItems, [sourceItems, endOrigin]);
   const endOriginRef = useRef(endOrigin);
@@ -586,7 +592,14 @@ export function useFlowChatVirtualizer<T>({
    */
   // A retained size is a reservation that was once measured. Seeded once; a
   // later prop change is not a remount and must not replace live reservations.
-  const [restoredItemKeys] = useState(() => new Set(retainedItemSizes?.keys() ?? []));
+  // Sizes measured at another content width are reservations, not measurements:
+  // their rows owe the first-measurement repair when they mount.
+  const [restoredItemKeys] = useState(() => {
+    const widthPx = estimateContext?.availableWidthPx;
+    const sameWidth = retainedItemWidthPx === undefined || widthPx === undefined
+      || Math.abs(retainedItemWidthPx - widthPx) < 0.5;
+    return new Set(sameWidth ? retainedItemSizes?.keys() ?? [] : []);
+  });
   const [initialReservations] = useState(() => new Map(retainedItemSizes ?? []));
   const reservedEstimatesRef = useRef(initialReservations);
   /** Keys whose size the virtualizer has measured at least once, including retained sizes. */
@@ -979,6 +992,8 @@ export function useFlowChatVirtualizer<T>({
       retiredMeasurementsRef.current++;
       reservedEstimatesRef.current.delete(key);
       measuredKeysRef.current.delete(key);
+      // A key that returns later starts from an estimate, not its retained size.
+      restoredItemKeys.delete(key);
     }
     previousKeysRef.current = keys;
     if (measuredLayoutRef.current === layoutSignature && retiredMeasurementsRef.current < 2048

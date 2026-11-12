@@ -40,6 +40,15 @@ export class FlowChatReaderState {
     };
   }
 
+  private pinnedRows: ReadonlySet<string> = new Set();
+  /** Rows holding focus, a selection or a live instance; a live group keeps them. */
+  isRowPinned(key: string) { return this.pinnedRows.has(key); }
+  setPinnedRows(keys: ReadonlySet<string>) {
+    if (keys.size === this.pinnedRows.size && [...keys].every(key => this.pinnedRows.has(key))) return;
+    this.pinnedRows = new Set(keys);
+    this.notifyProjection();
+  }
+
   isGroupHeld(id: string) { return Boolean(this.groupHolds.get(id)?.size); }
   holdGroup(id: string, owner: string): () => void {
     const owners = this.groupHolds.get(id) ?? new Set();

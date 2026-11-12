@@ -19,11 +19,13 @@ const ESTIMATE_PX = 100;
 
 interface Item { key: string }
 
-function Harness({ scroller, header, items, retainedItemSizes, shiftViewport, onApi }: {
+function Harness({ scroller, header, items, retainedItemSizes, retainedItemWidthPx, widthPx, shiftViewport, onApi }: {
   scroller: HTMLElement;
   header: HTMLElement;
   items: Item[];
   retainedItemSizes?: ReadonlyMap<string, number>;
+  retainedItemWidthPx?: number;
+  widthPx?: number;
   shiftViewport: (byPx: number) => boolean;
   onApi: (api: FlowChatVirtualizer) => void;
 }) {
@@ -39,6 +41,8 @@ function Harness({ scroller, header, items, retainedItemSizes, shiftViewport, on
     writeViewport: () => true,
     shiftViewport,
     retainedItemSizes,
+    retainedItemWidthPx,
+    estimateContext: widthPx === undefined ? undefined : { availableWidthPx: widthPx },
   }));
   return null;
 }
@@ -59,8 +63,10 @@ describe('useFlowChatVirtualizer retained item sizes', () => {
       scroller.appendChild(element);
     }
   }
-  const mount = (retainedItemSizes: ReadonlyMap<string, number> | undefined, shiftViewport: (byPx: number) => boolean) => act(() => root.render(
-    <Harness scroller={scroller} header={header} items={items} retainedItemSizes={retainedItemSizes}
+  const mount = (retainedItemSizes: ReadonlyMap<string, number> | undefined, shiftViewport: (byPx: number) => boolean,
+    layout: { items?: Item[]; retainedItemWidthPx?: number; widthPx?: number } = {}) => act(() => root.render(
+    <Harness scroller={scroller} header={header} items={layout.items ?? items} retainedItemSizes={retainedItemSizes}
+      retainedItemWidthPx={layout.retainedItemWidthPx} widthPx={layout.widthPx}
       shiftViewport={shiftViewport} onApi={next => { api = next; }} />,
   ));
 
@@ -104,6 +110,23 @@ describe('useFlowChatVirtualizer retained item sizes', () => {
     // The reader is looking at its grown content; the viewport stays put.
     expect(shiftViewport).not.toHaveBeenCalled();
     expect(api.getItemBounds(1)).toEqual({ startPx: 500, endPx: 800 });
+  });
+
+  it('treats sizes retained at another content width as estimates', () => {
+    const shiftViewport = vi.fn(() => true);
+    mount(new Map([['a', 300], ['b', 300], ['c', 300]]), shiftViewport, { retainedItemWidthPx: 700, widthPx: 500 });
+    renderRow(0, 500);
+    act(() => api.measureRenderedItems());
+    // Measured for the first time at this width: the reader is owed the repair.
+    expect(shiftViewport).toHaveBeenCalledWith(200);
+  });
+
+  it('does not hand back an estimate for a retained row that left and returned', () => {
+    const retained = new Map([['a', 300], ['b', 40]]);
+    mount(retained, () => true, { items: [{ key: 'a' }, { key: 'b' }] });
+    mount(retained, () => true, { items: [{ key: 'b' }] });
+    mount(retained, () => true, { items: [{ key: 'a' }, { key: 'b' }] });
+    expect([...api.snapshotItemSizes()]).toEqual([['b', 40]]);
   });
 
   it('still owes a first measurement for a row that starts above the reader', () => {

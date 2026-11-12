@@ -370,6 +370,19 @@ describe('desktop conversation document', () => {
       expect(shown(settledThought)).toEqual(['a', 't2']);
     });
 
+    it('keeps a settled call that holds focus or a selection', () => {
+      const projection = new ConversationDocumentProjection();
+      const opts = options();
+      const first = projection.project([live([tool('a'), tool('b', 'running')])], opts);
+      const row = first.find(item => item.timeline?.kind === 'group-members' && item.timeline.memberIds.includes('b'))!;
+      opts.reader.setPinnedRows(new Set([row.timeline!.key]));
+      const next = projection.project([live([tool('a'), tool('b'), tool('c', 'running')])], opts);
+      expect(shown(next)).toEqual(['b', 'c']);
+      expect(next.find(item => item.timeline?.memberIds.includes('b'))!.timeline!.key).toBe(row.timeline!.key);
+      opts.reader.setPinnedRows(new Set());
+      expect(shown(projection.project([live([tool('a'), tool('b'), tool('c', 'running')])], opts))).toEqual(['c']);
+    });
+
     it('folds a settled group to its header', () => {
       const rows = new ConversationDocumentProjection().project([source([tool('a'), tool('b'), tool('c')])], options());
       expect(header(rows)).toMatchObject({ expanded: false });

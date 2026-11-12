@@ -60,6 +60,12 @@ export const MAX_RETAINED_SESSION_VIEWS = 3;
  * to the mount. Keys come from the retained projection in
  * `useConversationTimeline`, so view-local aliases still match.
  */
-export const retainedTranscriptRowSizes = new RetainedViewMemory<FlowChatReaderState, Map<string, number>>(
+export interface RetainedTranscriptRowSizes {
+  sizes: Map<string, number>;
+  /** Content width the sizes were measured at; another width only reserves them. */
+  widthPx?: number;
+}
+
+export const retainedTranscriptRowSizes = new RetainedViewMemory<FlowChatReaderState, RetainedTranscriptRowSizes>(
   MAX_RETAINED_SESSION_VIEWS,
 );
