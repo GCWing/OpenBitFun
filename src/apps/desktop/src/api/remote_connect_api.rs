@@ -273,13 +273,12 @@ fn emit_device_presence(devices: &[OnlineDeviceInfo]) {
     emit_account_event("account://device-presence", payload);
 }
 
+/// Drop the route's controller delivery targets. Pending permission requests
+/// are kept: a relay blip or routing restart is presence loss, and a
+/// re-attaching controller restores them from the interaction mailbox.
 async fn disconnect_route_controllers(route: RelayRoute, reason: &'static str) {
-    let request_ids = crate::api::peer_host_invoke::disconnect_route_controllers(route);
-    if let Err(error) =
-        crate::api::peer_host_invoke::fail_closed_permission_requests(request_ids, reason).await
-    {
-        log::warn!("Peer permission requests were not fully cancelled: {error}");
-    }
+    crate::api::peer_host_invoke::disconnect_route_controllers(route);
+    log::debug!("Peer controller delivery targets cleared: route={route:?}, reason={reason}");
     if route == RelayRoute::Official {
         emit_device_presence(&[]);
     }

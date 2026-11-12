@@ -167,17 +167,22 @@ pub(crate) fn retain_online_controllers(route: RelayRoute, online_device_ids: &H
     retain_online_in_state(&mut state, route, online_device_ids);
 }
 
-/// Clear all attached controllers after the device-routing stream closes.
-pub(crate) fn disconnect_route_controllers(route: RelayRoute) -> Vec<String> {
-    let Ok(mut state) = peer_control_state().lock() else {
-        return Vec::new();
-    };
+fn disconnect_route_in_state(state: &mut PeerControlState, route: RelayRoute) {
     state.controllers.retain(|(owner, _)| *owner != route);
-    if state.controllers.is_empty() {
-        state.permission_request_ids.drain().collect()
-    } else {
-        Vec::new()
-    }
+}
+
+/// Clear the route's DeviceEvent delivery targets after its device-routing
+/// stream closed, reconnects or stops.
+///
+/// Losing the route is presence loss, not a controller decision: pending
+/// permission requests stay with the Runtime (still answerable on this
+/// machine) and a re-attaching controller restores them from the interaction
+/// mailbox. Only an explicit final `peer_control_detach` fails them closed.
+pub(crate) fn disconnect_route_controllers(route: RelayRoute) {
+    let Ok(mut state) = peer_control_state().lock() else {
+        return;
+    };
+    disconnect_route_in_state(&mut state, route);
 }
 
 pub fn track_permission_event(
@@ -931,6 +936,30 @@ mod tests {
         retain_online_in_state(&mut state, RelayRoute::Official, &HashSet::new());
         assert!(state.controllers.is_empty());
         assert!(state.permission_request_ids.contains("request-1"));
+    }
+
+    #[test]
+    fn route_loss_clears_delivery_targets_but_keeps_pending_permissions() {
+        let mut state = control_state(&["controller-a"], &["request-1"]);
+        state
+            .controllers
+            .insert((RelayRoute::Lan, "controller-lan".into()));
+
+        disconnect_route_in_state(&mut state, RelayRoute::Official);
+        assert_eq!(state.controllers.len(), 1);
+        disconnect_route_in_state(&mut state, RelayRoute::Lan);
+        assert!(state.controllers.is_empty());
+        assert!(state.permission_request_ids.contains("request-1"));
+
+        // A controller that re-attaches after the blip and then explicitly
+        // detaches as the last controller still fails the request closed.
+        state
+            .controllers
+            .insert((RelayRoute::Official, "controller-a".into()));
+        assert_eq!(
+            detach_from_state(&mut state, "controller-a"),
+            vec!["request-1".to_string()]
+        );
     }
 
     #[test]
