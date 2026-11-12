@@ -146,20 +146,23 @@ fn detach_from_state(state: &mut PeerControlState, device_id: &str) -> Vec<Strin
     detach_route_from_state(state, RelayRoute::Official, device_id)
 }
 
+/// An explicit detach that leaves no controller attached fails tracked
+/// requests closed, whether or not the caller was still attached: a route
+/// loss may already have removed it, and nobody would answer them otherwise.
 fn detach_route_from_state(
     state: &mut PeerControlState,
     route: RelayRoute,
     device_id: &str,
 ) -> Vec<String> {
-    let removed = state.controllers.remove(&(route, device_id.to_string()));
-    if removed && state.controllers.is_empty() {
+    state.controllers.remove(&(route, device_id.to_string()));
+    if state.controllers.is_empty() {
         return state.permission_request_ids.drain().collect();
     }
     Vec::new()
 }
 
-/// Detach one controller and return requests that must fail closed when it was
-/// the final controller.
+/// Detach one controller and return requests that must fail closed because no
+/// controller remains attached.
 pub fn detach_controller(device_id: &str) -> Vec<String> {
     detach_route_controller(RelayRoute::Official, device_id)
 }
@@ -1126,6 +1129,30 @@ mod tests {
             detach_from_state(&mut state, "controller-a"),
             vec!["request-1".to_string()]
         );
+    }
+
+    #[test]
+    fn a_detach_after_route_loss_drains_requests_without_a_reattach() {
+        let mut state = control_state(&["controller-a"], &["request-1"]);
+        disconnect_route_in_state(&mut state, RelayRoute::Official);
+        assert!(state.controllers.is_empty());
+        assert!(state.permission_request_ids.contains("request-1"));
+
+        // The user disconnects before the controller re-attached: the turn must
+        // not keep waiting for an answer nobody can give.
+        assert_eq!(
+            detach_from_state(&mut state, "controller-a"),
+            vec!["request-1".to_string()]
+        );
+        assert!(state.permission_request_ids.is_empty());
+    }
+
+    #[test]
+    fn a_detach_while_another_controller_remains_keeps_requests() {
+        let mut state = control_state(&["controller-b"], &["request-1"]);
+        // controller-a was already removed by presence loss.
+        assert!(detach_from_state(&mut state, "controller-a").is_empty());
+        assert!(state.permission_request_ids.contains("request-1"));
     }
 
     #[test]
