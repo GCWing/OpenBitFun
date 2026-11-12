@@ -18,6 +18,7 @@ const agentContract = await moduleUrl('../../shared/agent-harness/contract.gener
 const agentWire = await moduleUrl('../../shared/agent-harness/wire.ts', { './contract.generated': agentContract });
 const hostStream = await moduleUrl('../../shared/relay-transport/HostStream.ts');
 const workspaceIdentity = await moduleUrl('../src/services/workspaceIdentity.ts');
+const relayClientModule = dataModule('export class RemoteHostCommandError extends Error {}');
 const managerUrl = await moduleUrl('../src/services/RemoteSessionManager.ts', {
   '../../../shared/agent-harness/wire': agentWire,
   // Minimal idempotent queue: the transport receives the submit request.
@@ -27,7 +28,7 @@ const managerUrl = await moduleUrl('../src/services/RemoteSessionManager.ts', {
   }`),
   '../../../shared/relay-transport/HostStream': hostStream,
   './controlClientIdentity': await moduleUrl('../src/services/controlClientIdentity.ts'),
-  './RelayHttpClient': dataModule('export class RemoteHostCommandError extends Error {}'),
+  './RelayHttpClient': relayClientModule,
   './SessionSynchronizer': dataModule('export class SessionSynchronizer {}'),
   './workspaceIdentity': workspaceIdentity,
 });
@@ -224,4 +225,30 @@ test('a host learned as unsupported is asked again before the stream is refused'
   await manager.subscribeSessionStream('s1', { onEvent() {}, onError() {} });
   assert.deepEqual(calls, ['get_workspace_info']);
   assert.equal(streams, 1);
+});
+
+test('chat errors are classified into translated copy; host answers keep their text', async () => {
+  const { RemoteHostCommandError } = await import(relayClientModule);
+  const { describeChatError, isUnknownOutcomeFailure, isNotSubmittedFailure } = await import(await moduleUrl('../src/services/chatErrorPresentation.ts', {
+    '../../../shared/relay-transport/RelayFailure': await moduleUrl('../../shared/relay-transport/RelayFailure.ts'),
+    '../../../shared/relay-transport/HostStream': hostStream,
+    './RelayHttpClient': relayClientModule,
+    './RemoteSessionManager': managerUrl,
+  }));
+  const t = key => key;
+  const warn = console.warn; console.warn = () => {};
+  try {
+    assert.equal(describeChatError(new TypeError('Failed to fetch'), t), 'devices.failureNetwork');
+    assert.equal(describeChatError(new Error('Relay returned HTTP 503'), t), 'devices.failureRelayUnavailable');
+    assert.equal(describeChatError(new Error('RPC target unavailable'), t), 'chat.desktopUnavailable');
+    assert.equal(describeChatError(new Error('Relay connection changed; request was not submitted'), t), 'chat.notSubmitted');
+    assert.equal(describeChatError(new Error('Relay connection changed; delivery outcome is unknown'), t), 'chat.outcomeUnknown');
+    assert.equal(describeChatError(new Error('operation has timed out'), t), 'chat.outcomeUnknown');
+    assert.equal(describeChatError(new Error(UNSUPPORTED_HOST_MESSAGE), t), 'chat.hostStreamUnsupported');
+    assert.equal(describeChatError(new RemoteHostCommandError('Session not found'), t), 'Session not found');
+    assert.equal(describeChatError('Relay returned HTTP 502', t), 'devices.failureRelayUnavailable', 'queue view errors are strings');
+  } finally { console.warn = warn; }
+  assert.equal(isUnknownOutcomeFailure(new Error('RPC acknowledgement lost; delivery outcome is unknown')), true);
+  assert.equal(isUnknownOutcomeFailure(new RemoteHostCommandError('operation has timed out')), false, 'a host answer is an outcome');
+  assert.equal(isNotSubmittedFailure(new Error('RPC deadline elapsed before dispatch')), true);
 });

@@ -255,6 +255,10 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: 'Opening workspace...',
     },
     chat: {
+      notSubmitted: 'Not sent: the connection changed before the request left this device. Retry when connected.',
+      desktopUnavailable: 'The desktop is not connected, so nothing was sent. Retry when it is back online.',
+      outcomeUnknown: 'The desktop did not confirm in time. Check the conversation before trying again.',
+      remoteFailed: 'The desktop could not complete the request. Try again.',
       catchingUp: 'Catching up…',
       hostStreamUnsupported: 'The desktop runs an older OpenBitFun version that cannot stream this session. Update OpenBitFun on that device; this page checks again when it comes back online.',
       checkingHost: 'Checking desktop…',
@@ -636,6 +640,10 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: '正在打开工作区...',
     },
     chat: {
+      notSubmitted: '未发送：请求发出前连接已变化。连接恢复后请重试。',
+      desktopUnavailable: '桌面端未连接，未发送任何内容。设备重新上线后请重试。',
+      outcomeUnknown: '桌面端未及时确认。请先查看会话再决定是否重试。',
+      remoteFailed: '桌面端无法完成该请求，请重试。',
       catchingUp: '正在同步最新内容…',
       hostStreamUnsupported: '桌面端的 OpenBitFun 版本过旧，无法同步此会话。请在该设备上更新 OpenBitFun；设备重新上线后此页面会再次检查。',
       checkingHost: '正在检查桌面端…',
@@ -1017,6 +1025,10 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       openingWorkspace: '正在打開工作區...',
     },
     chat: {
+      notSubmitted: '未傳送：請求送出前連線已變更。連線恢復後請重試。',
+      desktopUnavailable: '桌面端未連線，未傳送任何內容。裝置重新上線後請重試。',
+      outcomeUnknown: '桌面端未及時確認。請先查看會話再決定是否重試。',
+      remoteFailed: '桌面端無法完成該請求，請重試。',
       catchingUp: '正在同步最新內容…',
       hostStreamUnsupported: '桌面端的 OpenBitFun 版本過舊，無法同步此會話。請在該裝置上更新 OpenBitFun；裝置重新上線後此頁面會再次檢查。',
       checkingHost: '正在檢查桌面端…',

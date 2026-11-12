@@ -12,7 +12,6 @@ import {
   isRemoteControlTargetChangedError,
   RemoteControlTargetChangedError,
   RemoteSessionManager,
-  RemoteSessionModelWriteUnconfirmedError,
   SessionSynchronizer,
   type SessionSyncState,
   type PollResponse,
@@ -43,17 +42,15 @@ import ChatFeedback from '../components/ChatFeedback';
 import { copyToClipboard } from '../components/ChatMarkdown';
 import { ArtifactImageReader } from '../components/RemoteArtifactImage';
 import ChatTranscript from '../components/ChatTranscript';
-import { describeRemoteError } from '../services/remoteErrorPresentation';
+import { describeChatError } from '../services/chatErrorPresentation';
 
 function reportRemoteSessionError(
   error: unknown,
   setError: (message: string) => void,
-  t?: (key: string) => string,
+  t: (key: string, params?: Record<string, string | number>) => string,
 ): void {
   if (isRemoteControlTargetChangedError(error)) return;
-  setError(error instanceof RemoteSessionModelWriteUnconfirmedError && t
-    ? t(error.messageKey)
-    : error instanceof Error ? error.message : String(error));
+  setError(describeChatError(error, t));
 }
 
 interface ChatPageProps {
@@ -91,6 +88,9 @@ const ChatPage: React.FC<ChatPageProps> = ({
   wideLayout = false,
 }) => {
   const { t } = useI18n();
+  // Long-lived subscriptions read the current language without resubscribing.
+  const translateRef = useRef(t);
+  translateRef.current = t;
   const {
     getMessages,
     setMessages,
@@ -334,10 +334,10 @@ const ChatPage: React.FC<ChatPageProps> = ({
       await sessionMgr.answerQuestion(toolId, answers);
       if (!isChatTargetCurrent(targetEpoch)) throw new RemoteControlTargetChangedError();
     } catch (err) {
-      reportRemoteSessionError(err, setError);
+      reportRemoteSessionError(err, setError, t);
       throw err;
     }
-  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionMgr, setError]);
+  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionMgr, setError, t]);
 
   const handleApproveTool = useCallback(async (toolId: string, updatedInput?: Record<string, unknown>) => {
     const targetEpoch = captureChatTargetEpoch();
@@ -366,7 +366,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const handleCancelTool = useCallback((toolId: string, reason = t('common.cancel')) => {
     if (captureChatTargetEpoch() === null) return;
     sessionMgr.cancelTool(toolId, reason).catch((error) => {
-      reportRemoteSessionError(error, setError);
+      reportRemoteSessionError(error, setError, t);
     });
   }, [captureChatTargetEpoch, sessionMgr, setError, t]);
 
@@ -419,10 +419,10 @@ const ChatPage: React.FC<ChatPageProps> = ({
         sessionId, isCurrent: () => isChatTargetCurrent(targetEpoch), onProgress,
       });
     } catch (err) {
-      if (isChatTargetCurrent(targetEpoch)) reportRemoteSessionError(err, setError);
+      if (isChatTargetCurrent(targetEpoch)) reportRemoteSessionError(err, setError, t);
       throw err;
     }
-  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionId, sessionMgr, setError]);
+  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionId, sessionMgr, setError, t]);
 
   const loadModelCatalog = useCallback(async () => {
     const targetEpoch = captureChatTargetEpoch();
@@ -574,7 +574,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       if (
         requestSeq === messagesRequestSeqRef.current
         && isChatTargetCurrent(targetEpoch)
-      ) reportRemoteSessionError(e, setError);
+      ) reportRemoteSessionError(e, setError, t);
     } finally {
       if (
         requestSeq === messagesRequestSeqRef.current
@@ -584,7 +584,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
         setIsLoadingMore(false);
       }
     }
-  }, [cacheScope, captureChatTargetEpoch, getMessages, isChatTargetCurrent, sessionId, sessionMgr, setError, setMessages]);
+  }, [cacheScope, captureChatTargetEpoch, getMessages, isChatTargetCurrent, sessionId, sessionMgr, setError, setMessages, t]);
 
   // ── Message long-press context menu ──────────────────────────────
   const clearMsgLongPressTimer = () => {
@@ -645,9 +645,9 @@ const ChatPage: React.FC<ChatPageProps> = ({
       if (!isChatTargetCurrent(targetEpoch)) return;
       streamRef.current?.nudge();
     } catch (e: any) {
-      if (isChatTargetCurrent(targetEpoch)) reportRemoteSessionError(e, setError);
+      if (isChatTargetCurrent(targetEpoch)) reportRemoteSessionError(e, setError, t);
     }
-  }, [captureChatTargetEpoch, isChatTargetCurrent, menuMessage, sessionAgentType, sessionId, sessionMgr, setError]);
+  }, [captureChatTargetEpoch, isChatTargetCurrent, menuMessage, sessionAgentType, sessionId, sessionMgr, setError, t]);
 
   const handleDeleteMessage = useCallback(async () => {
     if (!menuMessage) return;
@@ -758,7 +758,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       if (isCurrentAttempt()) {
         streamRef.current?.nudge();
       }
-      if (isCurrentAttempt()) reportRemoteSessionError(e, setError);
+      if (isCurrentAttempt()) reportRemoteSessionError(e, setError, t);
     } finally {
       if (rollbackInFlightRef.current === attempt) {
         rollbackInFlightRef.current = null;
@@ -932,7 +932,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
         streamRef.current = synchronizer;
       } catch (error) {
         if (isInitCurrent()) {
-          reportRemoteSessionError(error, setError);
+          reportRemoteSessionError(error, setError, translateRef.current);
           setTranscriptHydrating(false);
         }
       }
@@ -1238,7 +1238,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
           {streamState === 'unsupported'
             ? t('chat.hostStreamUnsupported')
             : streamIssue !== null
-              ? `${t('chat.catchingUp')} ${describeRemoteError(streamIssue, t)}`
+              ? `${t('chat.catchingUp')} ${describeChatError(streamIssue, t)}`
               : t('chat.catchingUp')}
         </MobileBanner>
       )}
