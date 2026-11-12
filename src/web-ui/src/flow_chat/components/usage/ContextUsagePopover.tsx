@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Card, Empty, Icon, IconButton, OverflowText, Tooltip, createOverlayPortal, useDismissibleLayer } from '@openbitfun/ui';
-import { ChartPie, ExternalLink, Minus } from 'lucide-react';
+import { ChartPie, ExternalLink, Minus, Shrink } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import type { UsageContextBreakdown } from '@/infrastructure/api/service-api/SessionAPI';
@@ -22,7 +22,8 @@ const isCount = (value: number | undefined): value is number => (
 
 /** Opening the overview is read-only; report and category actions are explicit. */
 export function ContextUsagePopover({
-  id, anchorRef, triggerRef, currentTokens, maxTokens, loadContext, previewSession, onClose, onViewReport,
+  id, anchorRef, triggerRef, currentTokens, maxTokens, loadContext, previewSession,
+  compactDisabled = false, onCompact, onClose, onViewReport,
 }: {
   id: string;
   anchorRef: RefObject<HTMLElement>;
@@ -31,6 +32,8 @@ export function ContextUsagePopover({
   maxTokens: number;
   loadContext?: () => Promise<UsageContextBreakdown | undefined>;
   previewSession?: { sessionId: string; workspaceId?: string };
+  compactDisabled?: boolean;
+  onCompact?: () => void;
   onClose: () => void;
   onViewReport: () => void;
 }) {
@@ -104,6 +107,13 @@ export function ContextUsagePopover({
           <span>{t('usage.context.title')}</span>
         </Tooltip>
         <div className="context-usage-popover__header-actions">
+          {onCompact && (
+            <Tooltip content={t('chatInput.compactAction')}>
+              <IconButton size="xs" icon={<Icon glyph={Shrink} size="sm" />}
+                aria-label={t('chatInput.compactAction')} onClick={onCompact}
+                disabled={compactDisabled} data-testid="context-usage-compact" />
+            </Tooltip>
+          )}
           <Tooltip content={t('usage.context.viewReport')}>
             <IconButton size="xs" icon={<Icon glyph={ChartPie} size="sm" />}
               aria-label={t('usage.context.viewReport')} onClick={onViewReport}

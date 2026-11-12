@@ -58,6 +58,8 @@ export interface ChatInputWorkspaceStripProps {
     anchorRef?: React.RefObject<HTMLElement>;
     previewSession?: { sessionId: string; workspaceId?: string };
     loadContext?: () => Promise<UsageContextBreakdown | undefined>;
+    compactDisabled?: boolean;
+    onCompact?: () => void;
     onOpen: () => void;
   };
   /** Native-tool permission mode for this session, exposed as a compact strip control. */
@@ -1157,6 +1159,11 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
             loadContext={usageReport.loadContext}
             previewSession={usageReport.previewSession}
             onClose={() => setUsagePopoverOpen(false)}
+            compactDisabled={usageReport.compactDisabled}
+            onCompact={usageReport.onCompact ? () => {
+              setUsagePopoverOpen(false);
+              usageReport.onCompact?.();
+            } : undefined}
             onViewReport={() => {
               setUsagePopoverOpen(false);
               usageReport.onOpen();
