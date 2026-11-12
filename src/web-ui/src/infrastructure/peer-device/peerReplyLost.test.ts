@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPeerHostNotResponding, isPeerReplyLost, peerReplyLostMessage } from './peerReplyLost';
+import { isPeerHostNotResponding, isPeerHostStarting, isPeerReplyLost, peerReplyLostMessage } from './peerReplyLost';
 
 describe('peerReplyLost', () => {
   it('recognises current and legacy lost-reply errors only', () => {
@@ -22,5 +22,12 @@ describe('peerReplyLost', () => {
     expect(isPeerHostNotResponding(error)).toBe(true);
     expect(peerReplyLostMessage(error, t)).toBe('common:peerHost.notResponding');
     expect(isPeerHostNotResponding(new Error('timed out'))).toBe(false);
+  });
+
+  it('localizes a host that refused because it is still starting', () => {
+    const t = (key: string) => key;
+    const error = new Error('peer_host_ui_not_ready: OpenBitFun on this device is still starting; the request was not executed');
+    expect(isPeerHostStarting(error)).toBe(true);
+    expect(peerReplyLostMessage(error, t)).toBe('common:peerHost.starting');
   });
 });

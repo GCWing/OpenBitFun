@@ -3502,9 +3502,10 @@ async fn execute_local_remote_command(
                 .map_err(|e| anyhow::anyhow!("serialize response: {e}"));
             }
             if command == "peer_mode_ping" {
-                let value = crate::api::peer_host_invoke::peer_mode_ping()
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))?;
+                let value = crate::api::peer_host_invoke::peer_mode_ping_for_caller(
+                    route,
+                    source_device_id,
+                );
                 return serde_json::to_value(RemoteResponse::HostInvokeResult {
                     ok: true,
                     value: Some(value),

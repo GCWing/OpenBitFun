@@ -2,12 +2,12 @@
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
   "catalogDigest": "778506ae9a8c979c4cea4de5c575be1bde0517def6ee5854dba203665098fa29",
-  "commandCount": 703,
+  "commandCount": 704,
   "coverage": {
-    "commandCount": 703,
+    "commandCount": 704,
     "documentedCommandCount": 638,
-    "implementationCommandCount": 65,
-    "implementationDigest": "1e1e2b424a391bd866585162da35a043dcca3d6f67e0a770a8f8c886007b677a"
+    "implementationCommandCount": 66,
+    "implementationDigest": "d123a7b8e8d86dcca498732d87daaf4d1607830c7b56b407b246652bc037e575"
   },
   "commands": [
     {
@@ -6974,6 +6974,20 @@
       "rustPath": "api::peer_host_invoke::peer_controller_set_active",
       "sourceFile": "src/apps/desktop/src/api/peer_host_invoke.rs",
       "signature": "fn peer_controller_set_active(active: bool) -> Result<(), String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
+      "id": "peer_host_bridge_ready",
+      "moduleId": "peer_host_invoke",
+      "capabilityId": "feature.remote-connect",
+      "capabilityIds": [
+        "feature.remote-connect"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::peer_host_invoke::peer_host_bridge_ready",
+      "sourceFile": "src/apps/desktop/src/api/peer_host_invoke.rs",
+      "signature": "fn peer_host_bridge_ready(request: PeerHostBridgeReadyRequest) -> Result<(), String>",
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {

@@ -1881,6 +1881,7 @@ pub async fn run() {
             api::pages_api::page_unpublish,
             api::pages_api::page_delete,
             api::peer_host_invoke::peer_host_invoke_complete,
+            api::peer_host_invoke::peer_host_bridge_ready,
             api::peer_host_invoke::peer_control_attach,
             api::peer_host_invoke::peer_control_detach,
             api::peer_host_invoke::peer_mode_ping,

@@ -508,12 +508,30 @@ FS) and must not be mixed with Peer Device Mode.
 - Desktop `PeerDeviceTransportAdapter` orders each pending dispatch burst as
   interactive, normal, then background work. It does not maintain an independent
   in-flight count limit or reserved slot. Actual admission belongs to the Relay
-  memory budget. Its read and mutation deadlines use the same 120s
-  `DEFAULT_RPC_TIMEOUT_MS` contract as `AccountRealtime`; explicit caller
-  deadlines continue to flow to the native transport and server. Retryable reads
-  retain bounded exponential-backoff recovery. Explicitly idempotent dialog
-  submissions reuse their stable session/turn identity; ordinary mutations remain
+  memory budget. Mutation deadlines use the same 120s `DEFAULT_RPC_TIMEOUT_MS`
+  contract as `AccountRealtime`; explicit caller deadlines continue to flow to
+  the native transport and server. Reads are bounded: a 25s attempt (60s for
+  scanning reads) inside a 60s overall deadline, retrying only a request that
+  was never submitted or whose reply was lost, then a typed
+  `peer_host_not_responding` error that the read owner presents with a retry.
+  Explicitly idempotent dialog submissions reuse their stable session/turn
+  identity for up to five attempts; both hosts keep the outcome for 15 minutes,
+  longer than that whole retry budget, and report the Runtime's duplicate Turn
+  id refusal for the same identity as accepted. Ordinary mutations remain
   single-shot because a missing acknowledgement is an unknown outcome.
+- A Desktop host executes product commands through its webview bridge, which
+  reports readiness with `peer_host_bridge_ready`. Until then the host refuses
+  product commands with `peer_host_ui_not_ready:` (definitely not executed) and
+  `peer_mode_ping` reports `host_ui_ready: false`; the controller shows the host
+  as starting and polls it. Older hosts omit the field and are treated as ready.
+- Hosts advertising `peer_attachment_status_v1` answer `peer_mode_ping` with
+  `caller_attached` for the calling controller (Desktop by route and source
+  device, CLI by the `controller_device_id` argument). A controller that is no
+  longer attached re-attaches and re-reads the rendered device's permission
+  mailbox instead of reporting a link that receives no events as ready.
+- Relay route loss on a host (a blip, a routing restart, a stopped route) only
+  clears controller delivery targets. Pending permission requests stay with the
+  Runtime; only an explicit final `peer_control_detach` fails them closed.
 - Mobile delegated-auth recovery retries only a Relay HTTP 401. A decrypted host
   application error mentioning an upstream 401 must not repeat a mutation.
   Captured account and target identities fence credential refresh and delivery.

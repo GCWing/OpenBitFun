@@ -19,6 +19,8 @@ export interface PeerAttachmentState {
   deviceId: string;
   deviceName: string;
   health: PeerConnectionHealth;
+  /** The host's control plane answers but its product UI is still starting. */
+  hostStarting?: boolean;
   /**
    * Host capabilities probed via `peer_mode_ping`. Null when the host has not
    * answered yet; consumers must fall back to a safe default (unsupported).

@@ -7,6 +7,7 @@ import {
   PEER_READ_REQUEST_TIMEOUT_MS,
   PEER_SLOW_READ_REQUEST_TIMEOUT_MS,
   PeerHostNotRespondingError,
+  PeerHostUiNotReadyError,
   PEER_RETRY_BASE_DELAY_MS,
   PeerDeviceTransportAdapter,
   PeerProductCommandError,
@@ -1027,6 +1028,58 @@ describe('PeerDeviceTransportAdapter queue', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('retries a read the host refused while its UI was starting', async () => {
+    vi.useFakeTimers();
+    try {
+      const onHostUiNotReady = vi.fn();
+      const deviceRpc = vi.fn()
+        .mockResolvedValueOnce(JSON.stringify({
+          resp: 'host_invoke_result',
+          ok: false,
+          error: 'peer_host_ui_not_ready: OpenBitFun on this device is still starting; the request was not executed',
+        }))
+        .mockResolvedValueOnce(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: [] }));
+      const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc, { onHostUiNotReady });
+
+      const request = adapter.request('get_opened_workspaces', { request: {} });
+      await vi.advanceTimersByTimeAsync(PEER_RETRY_BASE_DELAY_MS);
+      await expect(request).resolves.toEqual([]);
+      expect(deviceRpc).toHaveBeenCalledTimes(2);
+      expect(onHostUiNotReady).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports a mutation refused by a starting host as not executed', async () => {
+    const onHostUiNotReady = vi.fn();
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
+      resp: 'host_invoke_result',
+      ok: false,
+      error: 'peer_host_ui_not_ready: OpenBitFun on this device is still starting; the request was not executed',
+    }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc, { onHostUiNotReady });
+
+    const failure = await adapter.request('delete_session', { request: { sessionId: 's' } })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(PeerHostUiNotReadyError);
+    expect(failure).toBeInstanceOf(PeerProductCommandError);
+    expect(isOutcomeUnknownError(failure)).toBe(false);
+    expect(onHostUiNotReady).toHaveBeenCalledTimes(1);
+    expect(deviceRpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not mistake read content that mentions the refusal code for a refusal', async () => {
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
+      resp: 'host_invoke_result',
+      ok: true,
+      value: 'peer_host_ui_not_ready: text inside a file',
+    }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+    await expect(adapter.request('read_file_content', { request: { path: '/a' } }))
+      .resolves.toBe('peer_host_ui_not_ready: text inside a file');
   });
 
   it('does not retry a read failure that is neither unsent nor a lost reply', async () => {

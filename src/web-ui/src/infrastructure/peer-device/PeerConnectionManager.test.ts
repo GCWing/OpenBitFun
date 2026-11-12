@@ -430,6 +430,105 @@ describe('capabilitiesEqual', () => {
   });
 });
 
+describe('PeerConnectionManager host readiness and attachment status', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function pingRpc(ping: () => Record<string, unknown>) {
+    const commands: Array<{ command: string; args: Record<string, unknown> }> = [];
+    const deviceRpc = vi.fn(async (_target: string, commandJson: string): Promise<string> => {
+      const parsed = JSON.parse(commandJson) as { command?: string; args?: Record<string, unknown> };
+      const command = parsed.command ?? 'unknown';
+      commands.push({ command, args: parsed.args ?? {} });
+      if (command === 'peer_mode_ping') {
+        return JSON.stringify({ resp: 'host_invoke_result', ok: true, value: ping() });
+      }
+      return JSON.stringify({ resp: 'host_invoke_result', ok: true, value: null });
+    });
+    return { deviceRpc, commands };
+  }
+
+  it('reports a host whose UI is starting and clears it once the ping says ready', async () => {
+    let hostUiReady = false;
+    const rpc = pingRpc(() => ({ host_type: 'desktop', capabilities: {}, host_ui_ready: hostUiReady }));
+    const manager = createManager(rpc.deviceRpc);
+    const connection = await manager.connect('peer-1', 'Studio');
+    expect(connection.getState()).toMatchObject({ health: 'ready', hostStarting: true });
+
+    // A starting host is polled sooner than the keepalive.
+    hostUiReady = true;
+    await vi.advanceTimersByTimeAsync(RECONNECT_BASE_MS);
+    expect(connection.getState().hostStarting).toBe(false);
+  });
+
+  it('treats an older host without the readiness field as ready', async () => {
+    const rpc = pingRpc(() => ({ host_type: 'desktop', capabilities: {} }));
+    const manager = createManager(rpc.deviceRpc);
+    const connection = await manager.connect('peer-1', 'Studio');
+    expect(connection.getState().hostStarting).toBe(false);
+  });
+
+  it('re-attaches when a capable host reports this controller detached', async () => {
+    let callerAttached = true;
+    const rpc = pingRpc(() => ({
+      host_type: 'cli',
+      capabilities: { peer_attachment_status_v1: true },
+      caller_attached: callerAttached,
+    }));
+    const manager = createManager(rpc.deviceRpc);
+    const reattached = vi.fn();
+    manager.onReattached(reattached);
+    await manager.connect('peer-1', 'Studio');
+    expect(rpc.commands.find(call => call.command === 'peer_mode_ping')?.args)
+      .toEqual({ controller_device_id: 'controller-1' });
+
+    await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+    expect(rpc.commands.filter(call => call.command === 'peer_control_attach')).toHaveLength(1);
+    expect(reattached).not.toHaveBeenCalled();
+
+    callerAttached = false;
+    await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+    expect(rpc.commands.filter(call => call.command === 'peer_control_attach')).toHaveLength(2);
+    expect(reattached).toHaveBeenCalledExactlyOnceWith('peer-1');
+    expect(manager.get('peer-1')?.getState().health).toBe('ready');
+  });
+
+  it('ignores caller_attached from a host that does not advertise the capability', async () => {
+    const rpc = pingRpc(() => ({ host_type: 'cli', capabilities: {}, caller_attached: false }));
+    const manager = createManager(rpc.deviceRpc);
+    await manager.connect('peer-1', 'Studio');
+    await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+    expect(rpc.commands.filter(call => call.command === 'peer_control_attach')).toHaveLength(1);
+  });
+
+  it('marks the host starting when a product request is refused as not ready', async () => {
+    const commands: string[] = [];
+    const deviceRpc = vi.fn(async (_target: string, commandJson: string): Promise<string> => {
+      const command = (JSON.parse(commandJson) as { command?: string }).command ?? 'unknown';
+      commands.push(command);
+      if (command === 'peer_mode_ping') {
+        return JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { host_type: 'desktop', capabilities: {} } });
+      }
+      if (command === 'delete_session') {
+        return JSON.stringify({
+          resp: 'host_invoke_result',
+          ok: false,
+          error: 'peer_host_ui_not_ready: OpenBitFun on this device is still starting; the request was not executed',
+        });
+      }
+      return JSON.stringify({ resp: 'host_invoke_result', ok: true, value: null });
+    });
+    const manager = createManager(deviceRpc);
+    const connection = await manager.connect('peer-1', 'Studio');
+
+    await expect(connection.adapter.request('delete_session', { request: { sessionId: 's' } }))
+      .rejects.toMatchObject({ name: 'PeerHostUiNotReadyError' });
+    expect(connection.getState().hostStarting).toBe(true);
+    await vi.advanceTimersByTimeAsync(RECONNECT_BASE_MS);
+    expect(connection.getState().hostStarting).toBe(false);
+  });
+});
+
 describe('PeerConnectionManager disposal', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());

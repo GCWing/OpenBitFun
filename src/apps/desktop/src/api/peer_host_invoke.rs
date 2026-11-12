@@ -52,6 +52,15 @@ struct PeerControlState {
 /// permission requests projected to them.
 static PEER_CONTROL_STATE: OnceLock<Mutex<PeerControlState>> = OnceLock::new();
 
+/// True once this host's webview registered its HostInvoke bridge listener.
+/// Product commands are executed through that listener; while it is absent
+/// (startup, a reload) a bridged request could only wait for its timeout.
+static PEER_HOST_BRIDGE_READY: AtomicBool = AtomicBool::new(false);
+
+/// Stable prefix of the refusal sent while the bridge listener is not
+/// registered. The request was not executed, so a controller may retry it.
+pub(crate) const PEER_HOST_UI_NOT_READY: &str = "peer_host_ui_not_ready";
+
 /// True while this process is acting as a Peer Mode controller (Remote: B).
 /// Used to pause cloud settings pull that would rewrite local disk mid-remote.
 static PEER_CONTROLLER_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -62,6 +71,20 @@ fn pending_map() -> &'static Mutex<HashMap<String, oneshot::Sender<HostInvokeBri
 
 fn peer_control_state() -> &'static Mutex<PeerControlState> {
     PEER_CONTROL_STATE.get_or_init(|| Mutex::new(PeerControlState::default()))
+}
+
+pub(crate) fn set_peer_host_bridge_ready(ready: bool) {
+    PEER_HOST_BRIDGE_READY.store(ready, Ordering::SeqCst);
+}
+
+pub(crate) fn is_peer_host_bridge_ready() -> bool {
+    PEER_HOST_BRIDGE_READY.load(Ordering::SeqCst)
+}
+
+fn peer_host_ui_not_ready_error() -> String {
+    format!(
+        "{PEER_HOST_UI_NOT_READY}: OpenBitFun on this device is still starting; the request was not executed"
+    )
 }
 
 pub fn set_peer_controller_active(active: bool) {
@@ -285,6 +308,30 @@ pub async fn peer_host_invoke_complete(
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerHostBridgeReadyRequest {
+    pub ready: bool,
+}
+
+/// The webview reports that its HostInvoke bridge listener is (un)registered.
+#[tauri::command]
+pub async fn peer_host_bridge_ready(request: PeerHostBridgeReadyRequest) -> Result<(), String> {
+    set_peer_host_bridge_ready(request.ready);
+    log::info!(
+        "Peer host bridge readiness changed: ready={}",
+        request.ready
+    );
+    Ok(())
+}
+
+fn is_route_controller_attached(route: RelayRoute, device_id: &str) -> bool {
+    peer_control_state()
+        .lock()
+        .map(|state| state.controllers.contains(&(route, device_id.to_string())))
+        .unwrap_or(false)
+}
+
 #[tauri::command]
 pub async fn peer_control_attach(controller_device_id: String) -> Result<(), String> {
     if controller_device_id.trim().is_empty() {
@@ -302,7 +349,22 @@ pub async fn peer_control_detach(controller_device_id: String) -> Result<(), Str
 
 #[tauri::command]
 pub async fn peer_mode_ping() -> Result<Value, String> {
-    Ok(serde_json::json!({
+    Ok(peer_mode_ping_value(None))
+}
+
+/// `peer_mode_ping` answered for a controller reached over `route`.
+///
+/// Additive fields: `caller_attached` (advertised by
+/// `peer_attachment_status_v1`) tells the controller whether it is still a
+/// delivery target, so a link that lost its attachment during a relay blip
+/// re-attaches instead of reporting `ready`; `host_ui_ready` says whether
+/// product commands can run yet. Older controllers ignore both.
+pub(crate) fn peer_mode_ping_for_caller(route: RelayRoute, caller_device_id: &str) -> Value {
+    peer_mode_ping_value(Some(is_route_controller_attached(route, caller_device_id)))
+}
+
+fn peer_mode_ping_value(caller_attached: Option<bool>) -> Value {
+    let mut value = serde_json::json!({
         "ok": true,
         "peer": true,
         "device_id": current_device_id_for_peer()
@@ -324,7 +386,12 @@ pub async fn peer_mode_ping() -> Result<Value, String> {
         // Additive: lets a controller detect that this host and its own
         // generated tables were built from different registries.
         "surface_registry_digest": remote_surface_digest(),
-    }))
+        "host_ui_ready": is_peer_host_bridge_ready(),
+    });
+    if let Some(attached) = caller_attached {
+        value["caller_attached"] = Value::Bool(attached);
+    }
+    value
 }
 
 /// Mark this process as a Peer Mode controller so cloud pull does not rewrite local settings.
@@ -419,6 +486,17 @@ pub async fn dispatch(command: &str, args: Value) -> HostInvokeBridgeResult {
     use openbitfun_core_types::agent_identity_wire::{
         translate_agent_identity_command, translate_agent_identity_response, AgentIdentityDialect,
     };
+    // Fail fast instead of emitting into a webview with no bridge listener:
+    // the request would only time out, and the controller could not tell
+    // whether it ran. This refusal proves it did not.
+    if !is_peer_host_bridge_ready() {
+        return HostInvokeBridgeResult {
+            ok: false,
+            value: None,
+            error: Some(peer_host_ui_not_ready_error()),
+        };
+    }
+
     let args =
         match translate_agent_identity_command(command, args, AgentIdentityDialect::Canonical) {
             Ok(args) => args,
@@ -969,6 +1047,37 @@ mod tests {
         retain_online_in_state(&mut state, RelayRoute::Official, &HashSet::new());
         assert!(state.controllers.is_empty());
         assert!(state.permission_request_ids.contains("request-1"));
+    }
+
+    #[test]
+    fn ping_reports_bridge_readiness_and_the_callers_attachment() {
+        let route = RelayRoute::Lan;
+        let caller = "ping-attachment-caller";
+        let detached = peer_mode_ping_for_caller(route, caller);
+        assert_eq!(detached.get("caller_attached"), Some(&Value::Bool(false)));
+        assert!(detached.get("host_ui_ready").is_some_and(Value::is_boolean));
+        assert_eq!(
+            detached
+                .pointer("/capabilities/peer_attachment_status_v1")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        attach_route_controller(route, caller.to_string());
+        let attached = peer_mode_ping_for_caller(route, caller);
+        assert_eq!(attached.get("caller_attached"), Some(&Value::Bool(true)));
+        // The same device on the other route is a different attachment.
+        assert_eq!(
+            peer_mode_ping_for_caller(RelayRoute::Official, caller).get("caller_attached"),
+            Some(&Value::Bool(false))
+        );
+        detach_route_controller(route, caller);
+        assert!(peer_mode_ping_value(None).get("caller_attached").is_none());
+    }
+
+    #[test]
+    fn the_not_ready_refusal_carries_its_stable_prefix() {
+        assert!(peer_host_ui_not_ready_error().starts_with("peer_host_ui_not_ready: "));
     }
 
     #[test]

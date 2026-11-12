@@ -933,6 +933,8 @@
   },
   "peerConnection": {
     "reconnectingShort": "Reconnecting…",
+    "startingShort": "Host starting…",
+    "starting": "{{name}} is still starting OpenBitFun. Requests will work once it is ready.",
     "returnLocalShort": "Go local",
     "returningShort": "Returning…",
     "reconnecting": "Reconnecting to {{name}}. Content may be out of date."
@@ -2379,6 +2381,7 @@
   "peerHost": {
     "connectionInterrupted": "The connection to the device was interrupted. Try again.",
     "notResponding": "That device is not responding. Check that OpenBitFun is running there, then try again.",
+    "starting": "OpenBitFun on that device is still starting. Try again in a moment.",
     "unavailable": "This feature is not available on that device.",
     "updateRequired": "The OpenBitFun version on that device does not support this feature. Try updating OpenBitFun on that device.",
     "withDetail": "{{message}} ({{detail}})"

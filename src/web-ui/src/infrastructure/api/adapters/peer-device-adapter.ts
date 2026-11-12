@@ -309,6 +309,7 @@ const SLOW_READ_COMMANDS = new Set([
 const RETRYABLE_READ_TRANSPORT_ERROR = /request was not submitted|RPC target unavailable|RPC deadline elapsed before dispatch|RPC acknowledgement lost|error sending request/;
 
 export function isPeerRetryableReadTransportError(error: unknown): boolean {
+  if (error instanceof PeerHostUiNotReadyError) return true;
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   return isPeerReplyLost(error) || RETRYABLE_READ_TRANSPORT_ERROR.test(message);
 }
@@ -410,6 +411,8 @@ export interface PeerDeviceTransportHooks {
   /** Fired only for transport/RPC layer failures, not product command errors. */
   onHostInvokeTransportFailure?: (error: unknown, meta?: { action: string; priority: PeerInvokePriority }) => void;
   onHostInvokeSuccess?: () => void;
+  /** The host refused a request because its UI is still starting. */
+  onHostUiNotReady?: () => void;
   /**
    * Enables replay of stable dialog submissions only when the target host
    * advertises matching execution-side deduplication.
@@ -458,6 +461,42 @@ export class PeerProductCommandError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'PeerProductCommandError';
+  }
+}
+
+/**
+ * Stable prefix a Desktop host answers while its webview bridge is not
+ * registered yet (`PEER_HOST_UI_NOT_READY` in `peer_host_invoke.rs`).
+ */
+export const PEER_HOST_UI_NOT_READY_CODE = 'peer_host_ui_not_ready';
+
+/**
+ * The host refused the request before executing it because its UI is still
+ * starting. Definitely not executed, so it is never an unknown outcome.
+ */
+export class PeerHostUiNotReadyError extends PeerProductCommandError {
+  readonly code = PEER_HOST_UI_NOT_READY_CODE;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'PeerHostUiNotReadyError';
+  }
+}
+
+function isHostUiNotReadyMessage(message: string | undefined): message is string {
+  return typeof message === 'string' && message.startsWith(`${PEER_HOST_UI_NOT_READY_CODE}:`);
+}
+
+/** Parse only replies that can be the host's not-ready refusal. */
+function hostUiNotReadyRefusal(raw: string): PeerHostUiNotReadyError | null {
+  if (!raw.includes(PEER_HOST_UI_NOT_READY_CODE)) return null;
+  try {
+    const envelope = JSON.parse(raw) as HostInvokeResultEnvelope;
+    return envelope.resp === 'host_invoke_result' && envelope.ok === false && isHostUiNotReadyMessage(envelope.error)
+      ? new PeerHostUiNotReadyError(envelope.error)
+      : null;
+  } catch {
+    return null;
   }
 }
 
@@ -1104,6 +1143,10 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
             ? { success: true, message: 'Dialog turn already accepted' }
             : undefined) as T;
         }
+        if (!envelope.ok && isHostUiNotReadyMessage(envelope.error)) {
+          this.hooks.onHostUiNotReady?.();
+          throw new PeerHostUiNotReadyError(envelope.error);
+        }
         if (!envelope.ok) {
           // Product failure on the peer — do not count as transport loss.
           const error = new PeerProductCommandError(
@@ -1169,6 +1212,13 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
           attemptTimeoutMs,
         );
         this.assertBindingUnchanged(issuedBindingEpoch, action);
+        if (deadlineMs !== undefined) {
+          const notReady = hostUiNotReadyRefusal(result);
+          if (notReady) {
+            this.hooks.onHostUiNotReady?.();
+            throw notReady;
+          }
+        }
         return result;
       } catch (error) {
         if (isSurfaceChangedError(error)) {
@@ -1223,6 +1273,8 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       PEER_READ_RETRY_MAX_DELAY_MS,
     );
     if (elapsedMs(startedAt) + delayMs >= deadlineMs) {
+      // A host that answered "still starting" did respond: keep that state.
+      if (error instanceof PeerHostUiNotReadyError) throw error;
       throw new PeerHostNotRespondingError(action, elapsedMs(startedAt), error);
     }
     log.warn('Retrying recoverable Peer read', {

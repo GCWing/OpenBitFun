@@ -933,6 +933,8 @@
   },
   "peerConnection": {
     "reconnectingShort": "正在重连…",
+    "startingShort": "主机启动中…",
+    "starting": "「{{name}}」上的 OpenBitFun 仍在启动，就绪后即可使用。",
     "returnLocalShort": "返回本机",
     "returningShort": "正在返回…",
     "reconnecting": "正在重新连接「{{name}}」。内容可能暂未更新。"
@@ -2379,6 +2381,7 @@
   "peerHost": {
     "connectionInterrupted": "与设备的连接中断了，请重试。",
     "notResponding": "该设备没有响应。请确认该设备上的 OpenBitFun 正在运行，然后重试。",
+    "starting": "该设备上的 OpenBitFun 仍在启动，请稍后重试。",
     "unavailable": "此功能在该设备上不可用。",
     "updateRequired": "该设备上的 OpenBitFun 版本不支持此功能。请尝试在该设备上更新 OpenBitFun。",
     "withDetail": "{{message}}（{{detail}}）"

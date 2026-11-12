@@ -287,8 +287,18 @@ notification metadata.
     host deletion event or an authoritative missing metadata record. A failed
     readback or a still-present record keeps the session and unsent drafts.
     Dialog submissions reuse `(sessionId, turnId)` so an ambiguous acknowledgement
-    does not create another turn. A failed session list must leave loading state
-    and offer an explicit retry.
+    does not create another turn; a retry the host refuses as an already admitted
+    Turn id is accepted, never a definite failure. A failed session list must
+    leave loading state and offer an explicit retry.
+
+    Reads never spin through several full RPC deadlines: one 60 s budget, 25 s
+    attempts, retries only for unsent requests and lost replies, then a typed
+    `peer_host_not_responding` error. `peer_host_ui_not_ready` means the host
+    refused before executing (its UI is starting): reads retry within the
+    budget, mutations fail as not executed, and the status shows the host as
+    starting. A ping reporting `caller_attached: false` (capability
+    `peer_attachment_status_v1`) triggers a re-attach and a permission mailbox
+    re-read; a capability change of any key publishes a new snapshot.
 
 14. **History navigation uses the same canonical replica.** Latest-page loading,
     older-page prefetch and explicit full-history requests share the subscription.

@@ -97,7 +97,29 @@ pub(crate) fn attached_controllers() -> Vec<String> {
     controllers
 }
 
-pub(crate) fn peer_mode_ping_value() -> Value {
+fn is_controller_attached(device_id: &str) -> bool {
+    control_subscribers()
+        .lock()
+        .map(|registry| registry.ids.contains(device_id))
+        .unwrap_or(false)
+}
+
+/// `peer_mode_ping`, optionally answered for the controller named in its args.
+///
+/// A controller that sends its `controller_device_id` (the id it attaches
+/// with) receives the additive `caller_attached` field advertised by
+/// `peer_attachment_status_v1`, so a link this host dropped on presence loss
+/// re-attaches instead of reporting ready. Older controllers send no id.
+pub(crate) fn peer_mode_ping_for_args(args: &Value) -> Value {
+    let caller = parse_controller_device_id(args);
+    let mut value = peer_mode_ping_value();
+    if !caller.trim().is_empty() {
+        value["caller_attached"] = Value::Bool(is_controller_attached(&caller));
+    }
+    value
+}
+
+fn peer_mode_ping_value() -> Value {
     let device_id = DeviceIdentity::from_current_machine()
         .map(|d| d.device_id)
         .unwrap_or_else(|_| "unknown".to_string());
@@ -118,6 +140,8 @@ pub(crate) fn peer_mode_ping_value() -> Value {
         // Additive: lets a controller detect that this host and its own
         // generated tables were built from different registries.
         "surface_registry_digest": remote_surface_digest(),
+        // A CLI host executes product commands without a webview bridge.
+        "host_ui_ready": true,
     })
 }
 
@@ -142,8 +166,38 @@ mod tests {
 
     use super::{
         attach_controller, controller_delivery_lease, detach_controller, detach_from_registry,
-        retain_online_in_registry, ControllerRegistry,
+        peer_mode_ping_for_args, retain_online_in_registry, ControllerRegistry,
     };
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn ping_reports_whether_the_named_caller_is_attached() {
+        let caller = "ping-caller-attachment";
+        let args = json!({ "controller_device_id": caller });
+        let detached = peer_mode_ping_for_args(&args);
+        assert_eq!(detached["caller_attached"], json!(false));
+        assert_eq!(
+            detached["capabilities"]["peer_attachment_status_v1"],
+            json!(true)
+        );
+        assert_eq!(detached["host_ui_ready"], json!(true));
+
+        attach_controller(caller.to_string()).await.expect("attach");
+        assert_eq!(
+            peer_mode_ping_for_args(&args)["caller_attached"],
+            json!(true)
+        );
+        detach_controller(caller).await;
+        assert_eq!(
+            peer_mode_ping_for_args(&args)["caller_attached"],
+            json!(false)
+        );
+
+        // Older controllers send no id and get the legacy payload.
+        assert!(peer_mode_ping_for_args(&json!({}))
+            .get("caller_attached")
+            .is_none());
+    }
 
     #[test]
     fn detach_only_updates_delivery_subscribers() {

@@ -297,6 +297,7 @@
       "mark_openbitfun_control_surface_ready",
       "mark_openbitfun_control_surface_unready",
       "miniapp_shell_call",
+      "peer_host_bridge_ready",
       "peer_host_invoke_complete",
       "product_control_invoke",
       "report_miniapp_web_result",
