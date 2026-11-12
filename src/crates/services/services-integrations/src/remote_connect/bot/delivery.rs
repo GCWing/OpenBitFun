@@ -78,6 +78,11 @@ pub struct UndeliveredText {
     pub delivered_chunks: usize,
     pub remaining: Vec<String>,
     pub cause: String,
+    /// Whether a later attempt may deliver the remainder. False only when the
+    /// provider classified the failure as permanent (content rejected,
+    /// forbidden); an unclassified error such as a stale WeChat context token
+    /// can succeed with the chat's next message.
+    pub retryable: bool,
 }
 
 impl UndeliveredText {
@@ -107,6 +112,18 @@ pub fn undelivered_remainder(error: &anyhow::Error, original: &str) -> String {
         .downcast_ref::<UndeliveredText>()
         .map(UndeliveredText::remaining_text)
         .unwrap_or_else(|| original.to_string())
+}
+
+/// Whether a later attempt may deliver what `error` failed to send, so the
+/// text is worth holding for the chat's next message. Only a failure the
+/// provider classified as permanent rules that out.
+pub fn may_deliver_later(error: &anyhow::Error) -> bool {
+    if let Some(undelivered) = error.downcast_ref::<UndeliveredText>() {
+        return undelivered.retryable;
+    }
+    error
+        .downcast_ref::<SendFailure>()
+        .is_none_or(|failure| failure.retryable)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -167,6 +184,7 @@ where
                     delivered_chunks: index,
                     remaining: chunks[index..].to_vec(),
                     cause: error.to_string(),
+                    retryable: may_deliver_later(&error),
                 }));
             }
             log::warn!(
@@ -221,7 +239,26 @@ const HELD_REPLY_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// (and reachable with `/resume`), and bot persistence holds credentials and
 /// chat selection, not conversation content.
 pub struct HeldReplies<K> {
-    chats: StdMutex<HashMap<K, VecDeque<(Instant, String)>>>,
+    chats: StdMutex<HashMap<K, VecDeque<HeldReply>>>,
+}
+
+/// One reply held for a chat. It keeps the time it was first held across
+/// failed resends, so the TTL bounds how long it is retried.
+#[derive(Debug, Clone)]
+pub struct HeldReply {
+    held_at: Instant,
+    pub text: String,
+}
+
+impl HeldReply {
+    /// The part of this reply still owed after a partial resend; it ages from
+    /// the original reply.
+    pub fn with_text(&self, text: String) -> Self {
+        Self {
+            held_at: self.held_at,
+            text,
+        }
+    }
 }
 
 impl<K: Eq + Hash + Clone> Default for HeldReplies<K> {
@@ -232,6 +269,20 @@ impl<K: Eq + Hash + Clone> Default for HeldReplies<K> {
     }
 }
 
+/// Drop the oldest replies until `queue` fits its bounds. A single reply
+/// larger than the byte budget is still kept. Returns how many were dropped.
+fn enforce_held_bounds(queue: &mut VecDeque<HeldReply>) -> usize {
+    let mut dropped = 0;
+    while queue.len() > MAX_HELD_REPLIES_PER_CHAT
+        || (queue.len() > 1
+            && queue.iter().map(|reply| reply.text.len()).sum::<usize>() > MAX_HELD_BYTES_PER_CHAT)
+    {
+        queue.pop_front();
+        dropped += 1;
+    }
+    dropped
+}
+
 impl<K: Eq + Hash + Clone> HeldReplies<K> {
     /// Keep `text` for `chat`. Returns how many older replies were dropped.
     pub fn hold(&self, chat: &K, text: String) -> usize {
@@ -240,46 +291,39 @@ impl<K: Eq + Hash + Clone> HeldReplies<K> {
         }
         let mut chats = self.chats.lock().unwrap_or_else(|p| p.into_inner());
         let queue = chats.entry(chat.clone()).or_default();
-        queue.push_back((Instant::now(), text));
-        let mut dropped = 0;
-        while queue.len() > MAX_HELD_REPLIES_PER_CHAT
-            || (queue.len() > 1
-                && queue.iter().map(|(_, text)| text.len()).sum::<usize>()
-                    > MAX_HELD_BYTES_PER_CHAT)
-        {
-            queue.pop_front();
-            dropped += 1;
-        }
-        dropped
+        queue.push_back(HeldReply {
+            held_at: Instant::now(),
+            text,
+        });
+        enforce_held_bounds(queue)
     }
 
     /// Take every unexpired reply held for `chat`, oldest first.
-    pub fn take(&self, chat: &K) -> Vec<String> {
+    pub fn take(&self, chat: &K) -> Vec<HeldReply> {
         let mut chats = self.chats.lock().unwrap_or_else(|p| p.into_inner());
         chats
             .remove(chat)
             .into_iter()
             .flatten()
-            .filter(|(held_at, _)| held_at.elapsed() <= HELD_REPLY_TTL)
-            .map(|(_, text)| text)
+            .filter(|reply| reply.held_at.elapsed() <= HELD_REPLY_TTL)
             .collect()
     }
 
     /// Put replies that still could not be delivered back in front of anything
-    /// held meanwhile, preserving order.
-    pub fn restore(&self, chat: &K, texts: Vec<String>) {
-        if texts.is_empty() {
-            return;
+    /// held meanwhile, preserving order and their original hold time. Returns
+    /// how many replies the bounds dropped.
+    pub fn restore(&self, chat: &K, replies: Vec<HeldReply>) -> usize {
+        if replies.is_empty() {
+            return 0;
         }
         let mut chats = self.chats.lock().unwrap_or_else(|p| p.into_inner());
         let queue = chats.entry(chat.clone()).or_default();
-        let now = Instant::now();
-        for text in texts.into_iter().rev() {
-            queue.push_front((now, text));
+        for reply in replies.into_iter().rev() {
+            if !reply.text.trim().is_empty() {
+                queue.push_front(reply);
+            }
         }
-        while queue.len() > MAX_HELD_REPLIES_PER_CHAT {
-            queue.pop_front();
-        }
+        enforce_held_bounds(queue)
     }
 
     pub fn is_empty(&self, chat: &K) -> bool {
@@ -367,9 +411,13 @@ mod tests {
 
     #[tokio::test]
     async fn permanent_failure_and_long_retry_after_are_not_retried() {
-        for failure in [
-            SendFailure::permanent("bad request"),
-            SendFailure::from_status(429, Some(Duration::from_secs(3600)), "flood"),
+        for (failure, deliverable_later) in [
+            (SendFailure::permanent("bad request"), false),
+            (SendFailure::from_status(403, None, "forbidden"), false),
+            (
+                SendFailure::from_status(429, Some(Duration::from_secs(3600)), "flood"),
+                true,
+            ),
         ] {
             let attempts = Arc::new(Mutex::new(0));
             let error = send_chunks(vec!["x".into()], &fast_policy(), |_| {
@@ -384,11 +432,40 @@ mod tests {
             .unwrap_err();
             assert_eq!(*attempts.lock().unwrap(), 1);
             assert_eq!(undelivered_remainder(&error, "x"), "x");
+            assert_eq!(
+                error.downcast_ref::<UndeliveredText>().unwrap().retryable,
+                deliverable_later
+            );
+            assert_eq!(may_deliver_later(&error), deliverable_later);
         }
         assert_eq!(
             undelivered_remainder(&anyhow::anyhow!("plain"), "whole"),
             "whole"
         );
+    }
+
+    #[tokio::test]
+    async fn exhausted_and_unclassified_failures_may_be_delivered_later() {
+        let exhausted = send_chunks(vec!["x".into()], &fast_policy(), |_| async {
+            Err(anyhow::Error::new(SendFailure::transient("HTTP 502")))
+        })
+        .await
+        .unwrap_err();
+        // A stale WeChat context token is an unclassified error; the next
+        // inbound message brings a new token, so the reply is worth holding.
+        let unclassified = send_chunks(vec!["x".into()], &fast_policy(), |_| async {
+            Err(anyhow::anyhow!("ilink errmsg=context_token expired"))
+        })
+        .await
+        .unwrap_err();
+        for error in [exhausted, unclassified] {
+            assert!(error.downcast_ref::<UndeliveredText>().unwrap().retryable);
+            assert!(may_deliver_later(&error));
+        }
+        assert!(may_deliver_later(&anyhow::anyhow!("offline")));
+        assert!(!may_deliver_later(&anyhow::Error::new(
+            SendFailure::permanent("content rejected")
+        )));
     }
 
     #[test]
@@ -413,12 +490,44 @@ mod tests {
         }
         let taken = held.take(&chat);
         assert_eq!(taken.len(), MAX_HELD_REPLIES_PER_CHAT);
-        assert_eq!(taken[0], "reply 2");
+        assert_eq!(taken[0].text, "reply 2");
         assert!(held.is_empty(&chat));
+        held.hold(&chat, "older".into());
+        let older = held.take(&chat);
         held.hold(&chat, "newer".into());
-        held.restore(&chat, vec!["older".into()]);
-        assert_eq!(held.take(&chat), vec!["older", "newer"]);
+        assert_eq!(held.restore(&chat, older), 0);
+        let texts = |replies: Vec<HeldReply>| -> Vec<String> {
+            replies.into_iter().map(|reply| reply.text).collect()
+        };
+        assert_eq!(texts(held.take(&chat)), vec!["older", "newer"]);
         assert_eq!(held.hold(&chat, "   ".into()), 0);
         assert!(held.is_empty(&chat));
+    }
+
+    #[test]
+    fn restored_replies_keep_their_age_and_the_byte_budget() {
+        let held = HeldReplies::<String>::default();
+        let chat = "chat".to_string();
+        // A reply that failed every resend still expires with its first hold.
+        let expired = HeldReply {
+            held_at: Instant::now() - HELD_REPLY_TTL - Duration::from_secs(1),
+            text: "stale".into(),
+        };
+        held.restore(&chat, vec![expired.with_text("stale remainder".into())]);
+        assert!(held.take(&chat).is_empty());
+
+        // Restoring cannot grow a chat past its byte budget: older replies go.
+        let large = "x".repeat(MAX_HELD_BYTES_PER_CHAT / 2 + 1);
+        held.hold(&chat, large.clone());
+        let restored = held.take(&chat);
+        held.hold(&chat, "newer".into());
+        held.hold(&chat, large.clone());
+        assert_eq!(held.restore(&chat, restored), 1);
+        let kept = held.take(&chat);
+        assert_eq!(kept.len(), 2);
+        assert_eq!(kept[0].text, "newer");
+        assert!(
+            kept.iter().map(|reply| reply.text.len()).sum::<usize>() <= MAX_HELD_BYTES_PER_CHAT
+        );
     }
 }

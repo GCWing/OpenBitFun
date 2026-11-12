@@ -424,9 +424,11 @@ pub(crate) async fn retire_remote_interactions<K: Eq + Hash>(
 pub(crate) use openbitfun_services_integrations::remote_connect::bot::delivery::HeldReplies;
 
 /// Deliver a turn's final reply. The provider client already retried each
-/// part; whatever is still undelivered is held for the chat's next inbound
-/// message, and the chat is told (best effort) that the reply was not
-/// delivered and how to get it.
+/// part; whatever is still undelivered and may succeed later is held for the
+/// chat's next inbound message. The chat is told (best effort) that the reply
+/// was not delivered and how to get it. A reply the provider refused
+/// permanently (content rejected, forbidden) is not held: resending it would
+/// fail the same way on every later message.
 pub(crate) async fn deliver_final_reply<K, F, Fut>(
     held: &HeldReplies<K>,
     chat: &K,
@@ -437,55 +439,90 @@ pub(crate) async fn deliver_final_reply<K, F, Fut>(
     F: Fn(String) -> Fut,
     Fut: std::future::Future<Output = anyhow::Result<()>>,
 {
-    use openbitfun_services_integrations::remote_connect::bot::delivery::undelivered_remainder;
+    use openbitfun_services_integrations::remote_connect::bot::delivery::{
+        may_deliver_later, undelivered_remainder,
+    };
     if text.trim().is_empty() {
         return;
     }
     let Err(error) = send(text.to_string()).await else {
         return;
     };
-    log::warn!("Bot final reply was not delivered; holding it for the next message: {error}");
-    let dropped = held.hold(chat, undelivered_remainder(&error, text));
-    if dropped > 0 {
-        log::warn!("Bot held-reply backlog exceeded its bound; dropped {dropped} older reply(s)");
-    }
-    let notice = locale::strings_for(locale::current_bot_language().await).reply_undelivered;
+    let s = locale::strings_for(locale::current_bot_language().await);
+    let notice = if may_deliver_later(&error) {
+        log::warn!("Bot final reply was not delivered; holding it for the next message: {error}");
+        let dropped = held.hold(chat, undelivered_remainder(&error, text));
+        if dropped > 0 {
+            log::warn!(
+                "Bot held-reply backlog exceeded its bound; dropped {dropped} older reply(s)"
+            );
+        }
+        s.reply_undelivered
+    } else {
+        log::warn!("Bot final reply was rejected by the provider and is not held: {error}");
+        s.reply_rejected
+    };
     if let Err(error) = send(notice.to_string()).await {
         log::debug!("Bot undelivered-reply notice also failed: {error}");
     }
 }
 
 /// Resend replies held for `chat`, oldest first. A reply that still fails is
-/// kept (from its undelivered part) together with every later one.
+/// kept (from its undelivered part, with its original hold time) together
+/// with every later one. A reply the provider now refuses permanently is
+/// dropped and the chat is told once.
 pub(crate) async fn resend_held_replies<K, F, Fut>(held: &HeldReplies<K>, chat: &K, send: F)
 where
     K: Eq + Hash + Clone,
     F: Fn(String) -> Fut,
     Fut: std::future::Future<Output = anyhow::Result<()>>,
 {
-    use openbitfun_services_integrations::remote_connect::bot::delivery::undelivered_remainder;
+    use openbitfun_services_integrations::remote_connect::bot::delivery::{
+        may_deliver_later, undelivered_remainder,
+    };
     if held.is_empty(chat) {
         return;
     }
-    let header = locale::strings_for(locale::current_bot_language().await).held_reply_resent;
+    let s = locale::strings_for(locale::current_bot_language().await);
     let replies = held.take(chat);
+    let mut resent = 0usize;
+    let mut rejected = 0usize;
     for (index, reply) in replies.iter().enumerate() {
-        let message = format!("{header}\n\n{reply}");
-        if let Err(error) = send(message.clone()).await {
-            let remainder = undelivered_remainder(&error, &message);
-            let first = if remainder == message {
-                reply.clone()
-            } else {
-                remainder
-            };
-            let mut keep = vec![first];
-            keep.extend(replies[index + 1..].iter().cloned());
-            held.restore(chat, keep);
-            log::warn!("Bot held reply still could not be delivered: {error}");
-            return;
+        let message = format!("{}\n\n{}", s.held_reply_resent, reply.text);
+        let Err(error) = send(message.clone()).await else {
+            resent += 1;
+            continue;
+        };
+        if !may_deliver_later(&error) {
+            log::warn!("Bot held reply was rejected by the provider and is dropped: {error}");
+            rejected += 1;
+            continue;
+        }
+        let remainder = undelivered_remainder(&error, &message);
+        let first = if remainder == message {
+            reply.clone()
+        } else {
+            reply.with_text(remainder)
+        };
+        let mut keep = vec![first];
+        keep.extend(replies[index + 1..].iter().cloned());
+        let dropped = held.restore(chat, keep);
+        if dropped > 0 {
+            log::warn!(
+                "Bot held-reply backlog exceeded its bound; dropped {dropped} older reply(s)"
+            );
+        }
+        log::warn!("Bot held reply still could not be delivered: {error}");
+        break;
+    }
+    if resent > 0 {
+        log::info!("Bot resent {resent} held reply(s)");
+    }
+    if rejected > 0 {
+        if let Err(error) = send(s.reply_rejected.to_string()).await {
+            log::debug!("Bot rejected-reply notice also failed: {error}");
         }
     }
-    log::info!("Bot resent {} held reply(s)", replies.len());
 }
 
 #[cfg(test)]
@@ -508,6 +545,7 @@ mod delivery_tests {
                     delivered_chunks: 1,
                     remaining: vec!["part two".into()],
                     cause: "HTTP 502".into(),
+                    retryable: true,
                 }))
             } else if failing {
                 Err(anyhow::anyhow!("offline"))
@@ -533,5 +571,42 @@ mod delivery_tests {
         assert_eq!(sent.len(), 2);
         assert!(sent[1].ends_with("part two"));
         assert!(!sent[1].contains("part one"));
+    }
+
+    #[tokio::test]
+    async fn permanently_rejected_replies_are_not_held_or_retried() {
+        let s = locale::strings_for(locale::current_bot_language().await);
+        let held = HeldReplies::<String>::default();
+        let chat = "chat".to_string();
+        let sent = TestMutex::new(Vec::<String>::new());
+        let send = |text: String| {
+            let outcome = if text.contains("forbidden content") {
+                Err(anyhow::Error::new(UndeliveredText {
+                    delivered_chunks: 0,
+                    remaining: vec![text.clone()],
+                    cause: "HTTP 403".into(),
+                    retryable: false,
+                }))
+            } else {
+                sent.lock().unwrap().push(text);
+                Ok(())
+            };
+            async move { outcome }
+        };
+
+        deliver_final_reply(&held, &chat, "forbidden content", &send).await;
+        assert!(held.is_empty(&chat));
+        assert_eq!(*sent.lock().unwrap(), vec![s.reply_rejected]);
+
+        // A held reply the provider now refuses is dropped; later ones still go.
+        sent.lock().unwrap().clear();
+        held.hold(&chat, "forbidden content".into());
+        held.hold(&chat, "later answer".into());
+        resend_held_replies(&held, &chat, &send).await;
+        assert!(held.is_empty(&chat));
+        let sent = sent.lock().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert!(sent[0].ends_with("later answer"));
+        assert_eq!(sent[1], s.reply_rejected);
     }
 }
