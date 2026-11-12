@@ -74,6 +74,7 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
   let frames: Map<number, FrameRequestCallback>, frameId: number, now: number;
   let observers: Array<{ callback: ResizeObserverCallback; targets: Set<Element>; sizes: WeakMap<Element, string> }>;
   let columnWidth = 900;
+  let viewportWidth = 900;
   let viewportHeight = 600;
   let containerFirst = false;
   const heights = new Map<string, number>();
@@ -91,7 +92,7 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
   }
   function measureHeight(element: HTMLElement, measured: WeakMap<HTMLElement, number>): number {
     if (element.hasAttribute('data-flowchat-scroller')) return viewportHeight;
-    if (element.dataset.virtualItemKey) return heights.get(element.dataset.virtualItemKey) ?? 100;
+    if (element.dataset.virtualItemKey) return (heights.get(element.dataset.virtualItemKey) ?? 100) * 900 / columnWidth;
     if (element.style.height) return px(element.style.height);
     const scroller = element.closest<HTMLElement>('[data-flowchat-scroller]');
     if (scroller && reversed(scroller)) {
@@ -145,7 +146,7 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
       const measured = new WeakMap<HTMLElement, number>();
       const entries = [...observer.targets].filter(target => target.isConnected).flatMap(target => {
         const blockSize = height(target as HTMLElement, measured);
-        const inlineSize = target.classList.contains('virtual-item-wrapper') ? columnWidth : 900;
+        const inlineSize = target.classList.contains('virtual-item-wrapper') ? columnWidth : viewportWidth;
         const size = `${inlineSize}:${blockSize}`;
         if (observer.sizes.get(target) === size) return [];
         observer.sizes.set(target, size);
@@ -157,7 +158,7 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
   });
 
   beforeEach(() => {
-    activateSurface('local'); columnWidth = 900; viewportHeight = 600; containerFirst = false;
+    activateSurface('local'); columnWidth = viewportWidth = 900; viewportHeight = 600; containerFirst = false;
     state.processing = false;
     frames = new Map(); frameId = 0; now = 0; observers = []; heights.clear();
     vi.useFakeTimers();
@@ -175,8 +176,8 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
     });
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () { return Math.round(height(this)); });
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function () { return Math.round(height(this)); });
-    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(900);
-    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900);
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function () { return this.classList.contains('virtual-item-wrapper') ? columnWidth : viewportWidth; });
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function () { return this.classList.contains('virtual-item-wrapper') ? columnWidth : viewportWidth; });
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function () {
       return Math.round(this.hasAttribute('data-flowchat-scroller') ? height(this.firstElementChild as HTMLElement) : height(this));
     });
@@ -192,7 +193,8 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
       const measured = new WeakMap<HTMLElement, number>();
       const scroller = this.closest<HTMLElement>('[data-flowchat-scroller]');
       const top = this === scroller ? 0 : contentTop(this, measured) - (scroller?.scrollTop ?? 0);
-      return { x: 0, y: top, left: 0, right: 900, top, bottom: top + height(this, measured), height: height(this, measured), width: this.classList.contains('virtual-item-wrapper') ? columnWidth : 900, toJSON() {} };
+      const width = this.classList.contains('virtual-item-wrapper') ? columnWidth : viewportWidth;
+      return { x: 0, y: top, left: 0, right: width, top, bottom: top + height(this, measured), height: height(this, measured), width, toJSON() {} };
     });
     Object.assign(counters, { corrections: 0, commits: 0, mounts: 0, unmounts: 0 });
     retainedTranscriptRowSizes.clear();
@@ -264,7 +266,7 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
     expect(firstA.corrections).toBeGreaterThan(0);
     expect(reopenA.corrections).toBe(0);
     expect(reopenA.mounts).toBeLessThan(firstA.mounts);
-    expect(reopenA.commits).toBeLessThanOrEqual(firstA.commits);
+    expect(reopenA.commits).toBeLessThan(firstA.commits);
     expect(reopenA.latestBottom).toBeCloseTo(firstA.latestBottom!, 0);
   });
 
@@ -291,5 +293,22 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
     expect(reopenA.corrections).toBeLessThan(firstA.corrections);
     const row = host.querySelector<HTMLElement>(`[data-virtual-item-key="${latestKey}"]`)!;
     expect(row.getBoundingClientRect().height).toBe(heights.get(latestKey));
+  });
+
+  it.each([false, true])('replaces the retained viewport reservation after a hidden resize (live=%s)', live => {
+    state.processing = live;
+    open('a'); open('b');
+    viewportHeight = 420;
+    viewportWidth = columnWidth = 600;
+    const reopened = open('a');
+    const fresh = open('c');
+    expect(reopened.settled && fresh.settled).toBe(true);
+    expect(reopened.latestBottom).toBeCloseTo(fresh.latestBottom!, 0);
+    viewportHeight = 800;
+    viewportWidth = 1000; columnWidth = 900;
+    const grown = open('a');
+    const freshGrown = open('d');
+    expect(grown.settled && freshGrown.settled).toBe(true);
+    expect(grown.latestBottom).toBeCloseTo(freshGrown.latestBottom!, 0);
   });
 });

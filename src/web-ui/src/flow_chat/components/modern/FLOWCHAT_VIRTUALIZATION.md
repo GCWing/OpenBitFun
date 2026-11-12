@@ -144,7 +144,17 @@ The snapshot reads no geometry, so the unmount-phase DOM cannot skew it. A retai
 projection holds its rows strongly, so up to three inactive views keep their
 derived rows until they are reopened or evicted.
 
-With retention the same fixture reopens a native-history session with 0
+The row-size entry also keeps the last usable viewport width and height. On a
+warm mount these seed the virtualizer's initial rectangle and the list's local
+dimension reservations, avoiding a zero-height window and zero-width estimates
+before native observation. They carry no scroll offset or viewport ownership.
+The native resize observer remains authoritative, including when the hidden
+view's dimensions changed or the window is suspended. Only positive boxes are
+retained, using already observed state; unmount performs no geometry reads.
+The session-switch fixture compares a reopened view with a fresh view after
+both shrinking and growing the hidden viewport, in historical and live layout.
+
+With the original size-only retention the same fixture reopened a native-history session with 0
 corrections, 5 commits, 3 mounts and 0 dropped rows, at the same placement. A
 live reopen makes 0 corrections and 5 mounts at an unchanged 6 commits; it
 still drops 2 rows, because the

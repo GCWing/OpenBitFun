@@ -11,6 +11,7 @@ const evidence = process.env.OPENBITFUN_LONG_SESSION_EVIDENCE!;
 const workspace = process.env.E2E_TEST_WORKSPACE!;
 const report = JSON.parse(readFileSync(join(evidence, 'result.json'), 'utf8'));
 const protocol = report.protocol;
+const switchOnly = protocol.suite === 'streaming-switch';
 const page = new LongSessionPerformancePage();
 let model: Awaited<ReturnType<typeof createLongSessionModel>>;
 let workspaceId: string;
@@ -55,7 +56,8 @@ async function sample(state: string, scenario: string, sessionId: string, action
       if (scenario === 'first-open' || scenario === 'session-switch') assert.ok(row.after.streamingBlocks > 0, 'Live output is not rendered');
       assert.ok(row.streamBefore?.connected && !row.streamBefore.finished, 'Stream inactive before operation');
       assert.ok(row.streamAfter?.connected && !row.streamAfter.finished, 'Stream ended during operation');
-      assert.ok(Date.now() - row.streamAfter.lastEmittedAt < Math.max(5000, protocol.streamIntervalMs * 5), 'Stalled model output');
+      if (switchOnly) assert.ok(row.streamAfter.emitted > row.streamBefore.emitted, 'No output delivered during the switch');
+      if (!switchOnly) assert.ok(Date.now() - row.streamAfter.lastEmittedAt < Math.max(5000, protocol.streamIntervalMs * 5), 'Stalled model output');
       assert.deepEqual(model.errors, []);
     } else assert.equal(row.after.streamingBlocks, 0, 'Static case contains streaming output');
     row.valid = true;
@@ -72,8 +74,46 @@ async function openMeasured(state: string, scenario: string, id: string) {
   await page.prepareSession(id);
   await sample(state, scenario, id, async () => {
     await page.arm({ sessionId: id, turnId: tail(state, id), selector: page.sessionSelector(id) });
+    if (switchOnly) for (const liveId of ids('streaming')) model.release(liveId, protocol.paragraphsPerSwitch);
     await page.clickSession(id);
   });
+}
+
+async function startSwitchProfile() {
+  const port = process.env.OPENBITFUN_LONG_SESSION_CDP_PORT;
+  if (!port) return async () => {};
+  const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as Array<{ type: string; url: string; webSocketDebuggerUrl: string }>;
+  const target = targets.find(value => value.type === 'page' && value.url.includes('index.html') && !value.url.includes('openbitfunWindow='));
+  assert.ok(target, 'Main WebView CDP target missing');
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise<void>((resolve, reject) => { socket.onopen = () => resolve(); socket.onerror = reject; });
+  let next = 0;
+  const trace: unknown[] = [];
+  let traceComplete: () => void = () => {};
+  const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
+  socket.onmessage = event => {
+    const response = JSON.parse(String(event.data)), request = pending.get(response.id);
+    if (response.method === 'Tracing.dataCollected') trace.push(...response.params.value);
+    if (response.method === 'Tracing.tracingComplete') traceComplete();
+    if (!request) return;
+    pending.delete(response.id);
+    if (response.error) request.reject(new Error(JSON.stringify(response.error))); else request.resolve(response.result);
+  };
+  const call = (method: string, params?: object) => new Promise<any>((resolve, reject) => {
+    const id = ++next; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params }));
+  });
+  await call('Profiler.enable'); await call('Profiler.start');
+  await call('Tracing.start', { categories: 'devtools.timeline' + (process.env.OPENBITFUN_LONG_SESSION_SELECTOR_STATS === '1'
+    ? ',disabled-by-default-blink.debug,disabled-by-default-devtools.timeline.invalidationTracking' : ''), transferMode: 'ReportEvents' });
+  return async () => {
+    try {
+      writeFileSync(join(evidence, 'switch.cpuprofile'), JSON.stringify((await call('Profiler.stop')).profile));
+      const done = new Promise<void>(resolve => { traceComplete = resolve; });
+      await call('Tracing.end'); await done;
+      writeFileSync(join(evidence, 'switch-trace.json'), JSON.stringify({ traceEvents: trace }));
+    }
+    finally { socket.close(); }
+  };
 }
 
 async function jump(state: string, id: string, ordinal: number, turnId: string, measured = true) {
@@ -95,7 +135,7 @@ async function jump(state: string, id: string, ordinal: number, turnId: string, 
 describe('Desktop long-session performance matrix', () => {
   before(async () => {
     assert.ok(await openWorkspace(workspace, { requireWorkspaceLabel: false }), 'Isolated workspace unavailable');
-    model = await createLongSessionModel({ intervalMs: protocol.streamIntervalMs, paragraphChars: protocol.paragraphChars });
+    model = await createLongSessionModel({ intervalMs: protocol.streamIntervalMs, paragraphChars: protocol.paragraphChars, controlled: switchOnly });
     const models = await page.invoke('get_config', { path: 'ai.models' });
     await page.invoke('set_config', { path: 'ai.models', expectedModels: models, value: [{
       id: 'perf-fixture-model', name: 'Isolated long-session model', provider: 'anthropic', model_name: 'perf-fixture-model',
@@ -134,7 +174,7 @@ describe('Desktop long-session performance matrix', () => {
       await page.cancelMeasurement();
       report.modelErrors = model?.errors ?? [];
       if (report.modelErrors.length) report.failures.push(...report.modelErrors);
-      report.functionalPassed = report.failures.length === 0 && report.samples.length === 2 * (2 + protocol.repeats + 2 + protocol.repeats)
+      report.functionalPassed = report.failures.length === 0 && report.samples.length === (switchOnly ? protocol.repeats : 2 * (2 + protocol.repeats + 2 + protocol.repeats))
         && report.samples.every((row: { valid: boolean }) => row.valid);
       const budgets = report.samples.filter((row: { valid: boolean }) => row.valid).map((row: any) => ({ index: row.index,
         latencyPassed: protocol.maxLatencyMs === null || row.probe.latencyMs <= protocol.maxLatencyMs,
@@ -147,7 +187,7 @@ describe('Desktop long-session performance matrix', () => {
     } finally { await model?.close(); }
   });
 
-  for (const state of ['static', 'streaming']) {
+  for (const state of switchOnly ? ['streaming'] : ['static', 'streaming']) {
     it(`measures first entry, switching, continuous scroll and turn jumps while ${state}`, async () => {
       const sessions = ids(state);
       if (state === 'streaming') {
@@ -157,28 +197,83 @@ describe('Desktop long-session performance matrix', () => {
           await page.invoke('restore_session_with_turns', { sessionId: id, workspaceId, workspacePath: workspace });
           await page.invoke('start_dialog_turn', { sessionId: id, workspaceId, workspacePath: workspace,
             agentType: 'agentic', turnId: tail(state, id), userInput: `LONG_SESSION_STREAM:${id}` });
-          await browser.waitUntil(() => (model.snapshot(id)?.emitted ?? 0) >= 8, { timeout: 60_000, interval: 100, timeoutMsg: `Model did not start for ${id}` });
+          await browser.waitUntil(() => switchOnly ? !!model.snapshot(id)?.connected : (model.snapshot(id)?.emitted ?? 0) >= 8,
+            { timeout: 60_000, interval: 100, timeoutMsg: `Model did not start for ${id}` });
+        }
+        if (switchOnly) {
+          for (const id of sessions) model.release(id, protocol.initialParagraphs);
+          await browser.waitUntil(() => sessions.every(id => model.snapshot(id)?.emitted === protocol.initialParagraphs), { timeout: 30_000, interval: 100 });
         }
       }
-      for (const id of sessions) {
-        const alreadyAttached = await page.snapshot(id);
-        assert.equal(alreadyAttached.exists, false, `First-entry target ${id} was already attached`);
-        await openMeasured(state, 'first-open', id);
-      }
-      for (let index = 0; index < protocol.repeats; index++) await openMeasured(state, 'session-switch', sessions[index % 2]);
-      const id = sessions[(protocol.repeats - 1) % 2];
-      // Each scroll direction starts with known viewport placement; preparation is not timed.
-      await jump(state, id, state === 'static' ? protocol.turns - 1 : protocol.turns, tail(state, id), false);
-      for (const direction of [-1, 1]) {
-        await sample(state, direction < 0 ? 'continuous-scroll-up' : 'continuous-scroll-down', id, async () => {
-          await page.arm({ sessionId: id, wheelCount: protocol.scrollSteps });
-          await page.wheel(direction * protocol.wheelDelta, protocol.scrollSteps);
-        });
-      }
-      const targets = [0, Math.floor(protocol.turns * .75), Math.floor(protocol.turns * .25), protocol.turns - 1];
-      for (let index = 0; index < protocol.repeats; index++) {
-        const ordinal = targets[index % targets.length];
-        await jump(state, id, ordinal, `${id}-turn-${String(ordinal).padStart(4, '0')}`);
+      if (switchOnly) {
+        for (const id of sessions) { await page.prepareSession(id); await page.openSession(id); await page.settle(); }
+        const stopProfile = await startSwitchProfile();
+        try {
+          for (let index = 0; index < protocol.repeats; index++) {
+            const expectedBefore = protocol.initialParagraphs + index * protocol.paragraphsPerSwitch;
+            for (const id of sessions) assert.equal(model.snapshot(id)?.emitted, expectedBefore, 'Unequal switch workload');
+            await openMeasured(state, 'session-switch', sessions[index % 2]);
+            await browser.waitUntil(() => sessions.every(id => model.snapshot(id)?.emitted === expectedBefore + protocol.paragraphsPerSwitch), { timeout: 10_000, interval: 100 });
+            await browser.waitUntil(() => browser.execute((id: string, last: number) => {
+              const root = document.querySelector(`[data-testid="flowchat-container"][data-session-id="${id}"]`);
+              return !!root?.textContent?.includes(`Live ${id} paragraph ${last}:`);
+            }, sessions[index % 2], expectedBefore + protocol.paragraphsPerSwitch - 1),
+            { timeout: 10_000, interval: 100, timeoutMsg: 'Latest streamed paragraph was not rendered' });
+            await page.settle();
+            (report.streamCheckpoints ??= []).push(await browser.execute((id: string, last: number) => {
+              const root = document.querySelector(`[data-testid="flowchat-container"][data-session-id="${id}"]`);
+              const scroll = root?.querySelector<HTMLElement>('[data-flowchat-scroller]');
+              return { id, last, latestMounted: root?.textContent?.includes(`Live ${id} paragraph ${last}:`),
+                top: scroll?.scrollTop, height: scroll?.scrollHeight, viewport: scroll?.clientHeight };
+            }, sessions[index % 2], expectedBefore + protocol.paragraphsPerSwitch - 1));
+          }
+        } finally { await stopProfile(); }
+        // Functional checks are outside every timing/profile window. A warm
+        // viewport reservation must not replace the user's actual bookmark.
+        const currentId = sessions[(protocol.repeats - 1) % 2];
+        const otherId = sessions.find(id => id !== currentId)!;
+        const draft = 'Streaming switch preserves this draft';
+        await page.enterDraft(draft);
+        await page.wheel(-360, 6); await page.settle();
+        const before = await page.anchor(); assert.ok(before.key, 'Missing reading anchor');
+        await page.openSession(otherId); await page.openSession(currentId); await page.settle();
+        const restored = await page.anchor();
+        assert.equal(restored.key, before.key, 'Switch changed the reading row');
+        assert.ok(Math.abs(restored.offset - before.offset) < 8, 'Switch displaced the reading position');
+        assert.ok((await page.draftText()).includes(draft), 'Switch lost the draft');
+        const finalCount = protocol.initialParagraphs + (protocol.repeats + 1) * protocol.paragraphsPerSwitch;
+        for (const id of sessions) model.release(id, protocol.paragraphsPerSwitch);
+        await browser.waitUntil(() => sessions.every(id => model.snapshot(id)?.emitted === finalCount), { timeout: 10_000, interval: 100 });
+        await page.settle();
+        const afterOutput = await page.anchor();
+        assert.equal(afterOutput.key, restored.key, 'Streaming took over the reader');
+        assert.ok(Math.abs(afterOutput.offset - restored.offset) < 8, 'Streaming displaced the reading position');
+        await page.findFirstResult(`Live ${currentId} paragraph 0:`); await page.closeSearch();
+        assert.ok((await page.draftText()).includes(draft), 'Search lost the draft');
+        const resident = await page.snapshot(currentId);
+        assert.ok(resident.rows && resident.rows < 90, 'Transcript DOM is not bounded');
+        report.readerChecks = { before, restored, afterOutput, draftPreserved: true, searchLocated: true, mountedRows: resident.rows };
+      } else {
+        for (const id of sessions) {
+          const alreadyAttached = await page.snapshot(id);
+          assert.equal(alreadyAttached.exists, false, `First-entry target ${id} was already attached`);
+          await openMeasured(state, 'first-open', id);
+        }
+        for (let index = 0; index < protocol.repeats; index++) await openMeasured(state, 'session-switch', sessions[index % 2]);
+        const id = sessions[(protocol.repeats - 1) % 2];
+        // Each scroll direction starts with known viewport placement; preparation is not timed.
+        await jump(state, id, state === 'static' ? protocol.turns - 1 : protocol.turns, tail(state, id), false);
+        for (const direction of [-1, 1]) {
+          await sample(state, direction < 0 ? 'continuous-scroll-up' : 'continuous-scroll-down', id, async () => {
+            await page.arm({ sessionId: id, wheelCount: protocol.scrollSteps });
+            await page.wheel(direction * protocol.wheelDelta, protocol.scrollSteps);
+          });
+        }
+        const targets = [0, Math.floor(protocol.turns * .75), Math.floor(protocol.turns * .25), protocol.turns - 1];
+        for (let index = 0; index < protocol.repeats; index++) {
+          const ordinal = targets[index % targets.length];
+          await jump(state, id, ordinal, `${id}-turn-${String(ordinal).padStart(4, '0')}`);
+        }
       }
       if (state === 'streaming') {
         report.streamCompletion = [];

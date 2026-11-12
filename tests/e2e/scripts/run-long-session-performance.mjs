@@ -15,11 +15,11 @@ const exec = promisify(execFile);
 const hash = content => createHash('sha256').update(content).digest('hex');
 const options = { turns: 200, repeats: 8, scrollSteps: 120, streamIntervalMs: 90, paragraphChars: 480,
   assistantChars: 4000, toolResultChars: 6000, toolItems: 3, scenario: 'mixed-visible',
-  maxLatencyMs: null, maxP95FrameMs: null, evidence: null };
+  maxLatencyMs: null, maxP95FrameMs: null, evidence: null, suite: 'matrix' };
 const names = { '--turns': 'turns', '--repeats': 'repeats', '--scroll-steps': 'scrollSteps',
   '--stream-interval-ms': 'streamIntervalMs', '--paragraph-chars': 'paragraphChars', '--assistant-chars': 'assistantChars',
   '--tool-result-chars': 'toolResultChars', '--tool-items': 'toolItems', '--scenario': 'scenario',
-  '--max-latency-ms': 'maxLatencyMs', '--max-p95-frame-ms': 'maxP95FrameMs', '--evidence': 'evidence' };
+  '--max-latency-ms': 'maxLatencyMs', '--max-p95-frame-ms': 'maxP95FrameMs', '--evidence': 'evidence', '--suite': 'suite' };
 if (process.argv.includes('--help')) {
   console.log(`Usage: node tests/e2e/scripts/run-long-session-performance.mjs [options]
 ${Object.entries(names).map(([flag, key]) => `  ${flag} <value> (default: ${options[key] ?? 'unset'})`).join('\n')}
@@ -33,15 +33,16 @@ Evidence is never pruned. Smaller workloads are useful pilots; compare identical
 for (let index = 2; index < process.argv.length; index++) {
   const flag = process.argv[index], key = names[flag], value = process.argv[++index];
   if (!key || value === undefined) throw new Error(`Unknown option or missing value: ${flag}`);
-  options[key] = ['scenario', 'evidence'].includes(key) ? value : Number(value);
+  options[key] = ['scenario', 'evidence', 'suite'].includes(key) ? value : Number(value);
 }
 options.toolItems = resolveTemplateToolItems(options.scenario, options.toolItems, process.argv.includes('--tool-items'));
 for (const [key, value] of Object.entries(options)) {
-  if (['scenario', 'evidence'].includes(key) || value === null) continue;
+  if (['scenario', 'evidence', 'suite'].includes(key) || value === null) continue;
   const budget = key === 'maxLatencyMs' || key === 'maxP95FrameMs';
   if (!(budget ? Number.isFinite(value) : Number.isInteger(value)) || value < (key === 'toolItems' ? 0 : budget ? Number.MIN_VALUE : 1)) throw new Error(`Invalid ${key}`);
 }
 if (options.turns < 8 || options.paragraphChars < 32) throw new Error('Need at least 8 turns and 32 paragraph characters');
+if (!['matrix', 'streaming-switch'].includes(options.suite)) throw new Error('Unknown performance suite');
 const nativeProfile = process.env.OPENBITFUN_E2E_NATIVE_PROFILE || 'debug';
 if (!['debug', 'release-fast'].includes(nativeProfile)) throw new Error('Use a debug or release-fast devtools build');
 if (nativeProfile === 'release-fast' && process.platform !== 'win32') {
@@ -58,12 +59,18 @@ const report = { schemaVersion: 1, protocol: { version: 2, ...protocolOptions, f
   firstOpen: 'first UI entry; runtime and OS caches may already be warm',
   turnRailReveal: 'programmatic rail scroll outside timed window; navigation through real button' },
   nativeProfile, startedAt: new Date().toISOString(),
+  instrumented: Boolean(process.env.OPENBITFUN_LONG_SESSION_CDP_PORT),
   environment: { platform: process.platform, arch: process.arch, release: os.release(), node: process.version,
     cpuModel: os.cpus()[0]?.model, cpuCount: os.cpus().length, memoryBytes: os.totalmem() },
   coverage: { localDesktop: true, realRuntime: true, mockModel: true, actualTools: false,
     remoteWorkspace: false, remoteControl: false, peerDevice: false, detachedDispatch: false,
     compositorFps: false, osColdCache: false },
   samples: [], summary: [], failures: [], functionalPassed: false, performanceBudgetsPassed: null, passed: false };
+if (options.suite === 'streaming-switch') Object.assign(report.protocol, {
+  version: 5, states: ['streaming'], scenarios: ['session-switch'], staticBeforeStreaming: false,
+  initialParagraphs: 96, paragraphsPerSwitch: 16, controlledStreams: true,
+  postMeasurementReaderChecks: true,
+});
 if (options.scenario === MULTI_TOOL_TEMPLATE.id) report.protocol.template = MULTI_TOOL_TEMPLATE;
 const save = async (data = report) => {
   const rendered = renderReport(data);

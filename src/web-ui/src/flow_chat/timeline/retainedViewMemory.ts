@@ -64,6 +64,8 @@ export interface RetainedTranscriptRowSizes {
   sizes: Map<string, number>;
   /** Content width the sizes were measured at; another width only reserves them. */
   widthPx?: number;
+  /** Last usable viewport box; only seeds the virtual window before observation. */
+  viewportRect?: { width: number; height: number };
 }
 
 export const retainedTranscriptRowSizes = new RetainedViewMemory<FlowChatReaderState, RetainedTranscriptRowSizes>(
