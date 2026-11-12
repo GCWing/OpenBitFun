@@ -112,3 +112,55 @@ test('a tool approval with a lost reply shows a check, then re-enables only whil
   assert.equal(await page.evaluate(()=>document.querySelector('.chat-tool-approval__button--approve').disabled),false);
  }finally{await browser.close();await source.close()}
 });
+
+test('failed and unconfirmed approvals clear once the request is answered elsewhere', {timeout:40000},async()=>{
+ const source=await startSourceServer();const browser=await launchBrowser();
+ try{
+  const page=await browser.newPage();await page.goto(source.origin);
+  await page.evaluate(async()=>{
+   const R=await import('/node_modules/.vite/deps/react.js');const React=R.default??R;
+   const D=await import('/node_modules/.vite/deps/react-dom_client.js');const {createRoot}=D.default??D;
+   const {PermissionMailbox}=await import('/src/components/PermissionMailbox.tsx');
+   const state={permissions:['refused','lost'],reads:0};window.mailboxState=state;
+   const manager={invokeHost:async(command,request)=>{
+    if(command==='respond_permission'){
+     if(request.requestId==='refused')throw new Error('Relay returned HTTP 503');
+     throw new Error('Relay connection changed; delivery outcome is unknown');
+    }
+    state.reads++;
+    return {sessionId:'session',permissions:{revision:state.reads,requests:state.permissions.map(id=>({requestId:id,sessionId:'session',action:`write-${id}`,resources:['/target']}))},userQuestions:{revision:1,questions:[]}};
+   },startQuestionInteraction:async()=>{},answerQuestion:async()=>{}};
+   document.body.innerHTML='<div id="mailbox-test"></div>';
+   const root=createRoot(document.querySelector('#mailbox-test'));
+   window.renderMailbox=invalidation=>root.render(React.createElement(PermissionMailbox,{manager,sessionId:'session',invalidation}));
+   window.renderMailbox(0);
+  });
+  const clickApprove=async action=>page.evaluate(action=>{
+   const block=Array.from(document.querySelectorAll('#mailbox-test div')).find(e=>e.querySelector('p')?.textContent===action);
+   Array.from(block.querySelectorAll('button')).find(e=>e.textContent==='chat.approve').click();
+  },action);
+  // Another surface answers the request; the next invalidation re-reads the mailbox.
+  const answerElsewhere=async(id,invalidation)=>{
+   const reads=await page.evaluate(id=>{window.mailboxState.permissions=window.mailboxState.permissions.filter(item=>item!==id);return window.mailboxState.reads;},id);
+   await page.evaluate(invalidation=>window.renderMailbox(invalidation),invalidation);
+   await page.waitForFunction(reads=>window.mailboxState.reads>reads,{},reads);
+  };
+  await page.waitForFunction(()=>document.body.innerText.includes('write-refused'));
+
+  // A refused reply keeps its banner while the request is still pending.
+  await clickApprove('write-refused');
+  await page.waitForFunction(()=>document.body.innerText.includes('chat.approvalFailed'));
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.equal(await page.evaluate(()=>document.body.innerText.includes('chat.approvalFailed')),true,'a pending request keeps its failure');
+  await answerElsewhere('refused',1);
+  await page.waitForFunction(()=>!document.body.innerText.includes('write-refused'));
+  assert.equal(await page.evaluate(()=>document.body.innerText.includes('chat.approvalFailed')),false,'an answered request takes its failure with it');
+
+  // A lost reply stays unconfirmed until the request leaves the mailbox.
+  await clickApprove('write-lost');
+  await page.waitForFunction(()=>document.body.innerText.includes('chat.decisionUnconfirmed'));
+  await answerElsewhere('lost',2);
+  await page.waitForFunction(()=>!document.querySelector('#mailbox-test section'));
+  assert.equal(await page.evaluate(()=>document.querySelector('#mailbox-test').innerHTML),'','no empty approval section is left behind');
+ }finally{await browser.close();await source.close()}
+});

@@ -14,9 +14,16 @@ interface PendingQuestion {toolId:string;sessionId:string;questions:Record<strin
 interface InteractionMailbox {sessionId:string;permissions:{revision:number;requests:PermissionRequest[]};userQuestions:{revision:number;questions:PendingQuestion[]}}
 type MailboxFailure =
   | {operation:'load';message:string}
-  | {operation:'reply';message:string}
+  | {operation:'reply';requestId:string;message:string}
   /** The reply was lost and the request is still pending after a re-read. */
   | {operation:'unconfirmed';requestId:string};
+
+/** A read settles the failures it can answer: a load failure, and a reply
+ * failure whose request is no longer pending (answered here or elsewhere). */
+function settledFailure(current:MailboxFailure|null,pending:ReadonlySet<string>):MailboxFailure|null {
+  if(!current||current.operation==='load')return null;
+  return pending.has(current.requestId)?current:null;
+}
 
 /** Runtime mailbox identity is requestId. A tool call is only an optional display association.
  *
@@ -51,10 +58,12 @@ export function PermissionMailbox({manager,sessionId,invalidation,onQuestionIds}
           if(ticket!==epoch.current)break;
           latest=next;
           const owned=next.userQuestions.questions.filter(question=>question.sessionId===sessionId);
-          setRequests(next.permissions.requests.filter(request=>request.sessionId===sessionId));
+          const ownedRequests=next.permissions.requests.filter(request=>request.sessionId===sessionId);
+          const pending=new Set(ownedRequests.map(request=>request.requestId));
+          setRequests(ownedRequests);
           setQuestions(owned);
           onQuestionIdsRef.current?.(new Set(owned.map(question=>question.toolId)));
-          setFailed(current=>current?.operation==='load'?null:current);
+          setFailed(current=>settledFailure(current,pending));
         }
         return latest;
       }catch(error){
@@ -89,7 +98,7 @@ export function PermissionMailbox({manager,sessionId,invalidation,onQuestionIds}
         if(next&&!next.permissions.requests.some(request=>request.requestId===requestId)){setEditId(null);return;}
         setFailed({operation:'unconfirmed',requestId});
       }else{
-        setFailed({operation:'reply',message:error instanceof SyntaxError?'':describeChatError(error,t)});
+        setFailed({operation:'reply',requestId,message:error instanceof SyntaxError?'':describeChatError(error,t)});
         void refresh();
       }
     }
