@@ -38,6 +38,16 @@ pnpm --dir tests/e2e exec wdio run ./config/wdio.conf.ts --spec "./specs/<file>.
 
 优先运行最窄的相关 spec，必要时再扩大范围。
 
+静态/流式长会话性能矩阵的负载与指标定义见 [README.zh-CN.md](README.zh-CN.md)。
+构建桌面端和生产前端后运行 `pnpm --dir tests/e2e run test:perf:long-session`，
+隔离测试首次打开、重复切换、双向连续滚轮输入及轮次栏远距离跳转。
+指标计算和本地 SSE 模型的验证命令为
+`pnpm --dir tests/e2e run test:perf:long-session:contract`。
+`--scenario multi-tool` 为每个历史轮次生成 26 个模型回合和固定 100 次工具调用记录，
+Read、Edit、Write、ExecCommand 各 25 次；上述契约测试同时验证生成文件及旧模板兼容性。
+保留失败证据，仅比较负载与桌面构建类型相同的结果，测量时不要并行构建。
+RAF 不等于合成帧率；此测试只覆盖本地桌面，不覆盖四种远程场景。
+
 验证内置 WebDriver 的滚动、聚焦与外层布局时，先构建 Desktop 和当前前端资源，再运行：
 
 ```bash

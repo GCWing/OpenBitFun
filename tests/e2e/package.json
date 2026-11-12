@@ -33,6 +33,8 @@
     "test:l1:worktree-restart": "node ./scripts/run-worktree-restart-e2e.mjs",
     "test:l1:browser-video": "wdio run ./config/wdio.conf.ts --spec \"../specs/l1-browser-video-stream.spec.ts\"",
     "test:perf": "wdio run ./config/wdio.conf.ts --spec \"./specs/performance/startup-session-perf.spec.ts\"",
+    "test:perf:long-session": "node ./scripts/run-long-session-performance.mjs",
+    "test:perf:long-session:contract": "node --test ./scripts/long-session-performance.test.mjs",
     "fixture:long-session": "node ./scripts/generate-long-session-fixture.mjs",
     "test:smoke": "wdio run ./config/wdio.conf.ts --spec \"./specs/startup/*.spec.ts\"",
     "test:chat": "wdio run ./config/wdio.conf.ts --spec \"./specs/chat/*.spec.ts\"",
