@@ -18,6 +18,10 @@ import {
 import { dispatchApi } from './dispatchApi';
 import { dispatchJobStore, type DispatchObserverJob } from './dispatchJobStore';
 import {
+  dispatchTargetLaneKey,
+  isDispatchJobNotFoundError,
+} from './dispatchTransport';
+import {
   cancelDispatchTranscriptSaves,
   flushDispatchTranscriptSave,
   loadDispatchTranscript,
@@ -38,6 +42,14 @@ const log = createLogger('DispatchJobObserver');
 
 export const DISPATCH_JOB_POLL_INTERVAL_MS = 1800;
 export const DISPATCH_IDLE_DISCOVERY_INTERVAL_MS = 30_000;
+/**
+ * Periodic polls of a target that just failed are spaced out, doubling up to
+ * the idle discovery interval. A hung SSH status costs several 30-second round
+ * trips, so retrying it every 1.8 seconds only queues more work behind it.
+ * Explicit refreshes (an answered permission, a follow-up) bypass the delay.
+ */
+export const DISPATCH_TARGET_BACKOFF_BASE_MS = 2 * DISPATCH_JOB_POLL_INTERVAL_MS;
+export const DISPATCH_TARGET_BACKOFF_MAX_MS = DISPATCH_IDLE_DISCOVERY_INTERVAL_MS;
 const BASELINE_WORKTREE_CHECK_INTERVAL_MS = 30_000;
 const baselineWorktreeChecks = new Map<string, { path: string; checkedAt: number }>();
 
@@ -184,6 +196,28 @@ function hashText(value: string): string {
 
 function transportErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The target answered, but has no record of the job. The transport is fine,
+ * so this must not put the target's other jobs behind a backoff.
+ */
+class DispatchJobNotFoundOnTarget extends Error {
+  constructor(readonly jobId: string, message: string) {
+    super(message);
+    this.name = 'DispatchJobNotFoundOnTarget';
+  }
+}
+
+/**
+ * The status read itself failed. Only this backs a target off; an error while
+ * projecting a successful response says nothing about the transport.
+ */
+class DispatchTargetReadFailed extends Error {
+  constructor(readonly cause: unknown) {
+    super(transportErrorMessage(cause));
+    this.name = 'DispatchTargetReadFailed';
+  }
 }
 
 function isJobStillObserved(job: DispatchObserverJob): boolean {
@@ -782,12 +816,23 @@ async function refreshJobPage(
     if (!isObserverCurrent() || !isJobStillObserved(job)) {
       return 'settled';
     }
+    if (isDispatchJobNotFoundError(error)) {
+      // Distinct from `unreachable`: the target is up and answered. For a
+      // submission whose outcome was unknown this means it was never
+      // delivered, and an idempotent resubmit with the same id is safe.
+      dispatchJobStore.getState().setTransportState(
+        job.jobId,
+        'notFound',
+        transportErrorMessage(error),
+      );
+      throw new DispatchJobNotFoundOnTarget(job.jobId, transportErrorMessage(error));
+    }
     dispatchJobStore.getState().setTransportState(
       job.jobId,
       'unreachable',
       transportErrorMessage(error),
     );
-    throw error;
+    throw new DispatchTargetReadFailed(error);
   }
   // Deleting a dispatch session writes a projection tombstone while an
   // already-issued target poll may still be in flight. Never let that stale
@@ -994,50 +1039,80 @@ async function refreshJobPage(
  */
 const MAX_DRAIN_PAGES = 12;
 
+/**
+ * Returns `contacted` only when at least one status read reached the target,
+ * which is what clears a target backoff.
+ */
 async function refreshJob(
   context: FlowChatContext,
   requestedJobId: string,
   isObserverCurrent: () => boolean,
-): Promise<void> {
+): Promise<'contacted' | 'skipped'> {
   if (!isObserverCurrent()) {
-    return;
+    return 'skipped';
   }
   const job = dispatchJobStore.getState().jobs[requestedJobId];
   if (!job) {
-    return;
+    return 'skipped';
   }
   // `submitting` is a local pre-ack state. There is no durable target job to
   // query yet, and a failed submit intentionally remains retryable.
   if (job.state === 'submitting') {
-    return;
+    return 'skipped';
   }
   const projectionExisted = context.flowChatStore.getState().sessions.has(job.sessionId);
   if (!await ensureProjection(context, job)) {
-    return;
+    return 'skipped';
   }
   // Cache adoption and byte-zero fallback both reset terminalDrained. Re-read
   // after projection reconciliation so a stale pre-ensure snapshot cannot
   // suppress the status request that completes restoration.
   const reconciledJob = dispatchJobStore.getState().jobs[requestedJobId];
   if (!reconciledJob) {
-    return;
+    return 'skipped';
   }
   if (
     projectionExisted
     && isDispatchJobTerminal(reconciledJob.state)
     && reconciledJob.terminalDrained
   ) {
-    return;
+    return 'skipped';
   }
 
   for (let page = 0; page < MAX_DRAIN_PAGES; page += 1) {
     if (await refreshJobPage(context, requestedJobId, isObserverCurrent) === 'settled') {
-      return;
+      return 'contacted';
     }
   }
   log.debug('Stopped draining dispatch pages at the per-poll bound', {
     jobId: requestedJobId,
   });
+  return 'contacted';
+}
+
+interface PollBackoff {
+  failures: number;
+  retryAt: number;
+}
+
+function nextBackoff(previous: PollBackoff | undefined, now: number): PollBackoff {
+  const failures = (previous?.failures ?? 0) + 1;
+  const delay = Math.min(
+    DISPATCH_TARGET_BACKOFF_MAX_MS,
+    DISPATCH_TARGET_BACKOFF_BASE_MS * 2 ** (failures - 1),
+  );
+  return { failures, retryAt: now + delay };
+}
+
+/**
+ * Jobs waiting in one target lane. The value says whether the refresh was
+ * explicitly requested; explicit refreshes run first and ignore backoff.
+ */
+interface PollLane {
+  running: boolean;
+  /** Job whose status read is in flight; a periodic poll of it is redundant. */
+  current?: string;
+  queue: Map<string, boolean>;
 }
 
 export function installDispatchJobObserver(context: FlowChatContext): () => void {
@@ -1049,7 +1124,10 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
   }
 
   let disposed = false;
-  let inFlight = false;
+  // Single-flight reconciliation of the controller-local outbound index.
+  // Target status reads do not run under this flag: they run in per-target
+  // lanes, so one slow or offline target never holds up the others.
+  let reconciling = false;
   // A full refresh (jobId undefined) is still a request. Coalesce different
   // targeted requests into a full refresh instead of losing an approval wakeup.
   let pendingRefresh: { jobId?: string } | null = null;
@@ -1058,6 +1136,13 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
   let pollIntervalMs = 0;
   let unsubscribeJobs: (() => void) | null = null;
   let handleVisibilityChanged: (() => void) | null = null;
+  const lanes = new Map<string, PollLane>();
+  let runningLaneCount = 0;
+  const targetBackoff = new Map<string, PollBackoff>();
+  const missingJobBackoff = new Map<string, PollBackoff>();
+  // When each job's last read finished. A periodic poll right behind an
+  // explicit one (a follow-up wakes both) would only repeat the same read.
+  const lastReadAt = new Map<string, number>();
   const lease: DispatchObserverLease = {
     requestRefresh: schedule,
     dispose,
@@ -1066,31 +1151,146 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
     !disposed
     && observerGlobal.__openbitfunDispatchJobObserverLease__ === lease
   );
+  const isBusy = (): boolean => reconciling || runningLaneCount > 0;
+
+  function enqueue(job: DispatchObserverJob, explicit: boolean): void {
+    const key = dispatchTargetLaneKey(job.target);
+    let lane = lanes.get(key);
+    if (!lane) {
+      lane = { running: false, queue: new Map() };
+      lanes.set(key, lane);
+    }
+    if (explicit) {
+      // Explicit refreshes answer a user action: they run before periodic
+      // polls, in the order they were requested.
+      const rest = [...lane.queue].filter(([jobId]) => jobId !== job.jobId);
+      lane.queue = new Map([
+        ...rest.filter(([, queuedExplicit]) => queuedExplicit),
+        [job.jobId, true],
+        ...rest.filter(([, queuedExplicit]) => !queuedExplicit),
+      ]);
+    } else if (!lane.queue.has(job.jobId) && lane.current !== job.jobId) {
+      lane.queue.set(job.jobId, false);
+    }
+    if (!lane.running) {
+      void drainLane(key, lane);
+    }
+  }
+
+  async function drainLane(key: string, lane: PollLane): Promise<void> {
+    lane.running = true;
+    runningLaneCount += 1;
+    try {
+      while (lane.queue.size > 0) {
+        if (!ownsLease() || isPeerDeviceModeActive()) {
+          lane.queue.clear();
+          return;
+        }
+        const [jobId] = lane.queue.keys();
+        lane.queue.delete(jobId);
+        lane.current = jobId;
+        try {
+          if (await refreshJob(context, jobId, ownsLease) === 'contacted') {
+            targetBackoff.delete(key);
+            missingJobBackoff.delete(jobId);
+            lastReadAt.set(jobId, Date.now());
+          }
+        } catch (error) {
+          if (!ownsLease()) {
+            return;
+          }
+          lastReadAt.set(jobId, Date.now());
+          if (error instanceof DispatchJobNotFoundOnTarget) {
+            // The target answered, so its other jobs stay on schedule.
+            targetBackoff.delete(key);
+            missingJobBackoff.set(jobId, nextBackoff(missingJobBackoff.get(jobId), Date.now()));
+            log.warn('Dispatch job is not known to its target', { jobId });
+            continue;
+          }
+          if (!(error instanceof DispatchTargetReadFailed)) {
+            // The target answered; projecting its response failed locally.
+            // Retry on the normal cadence without penalizing the target.
+            targetBackoff.delete(key);
+            log.warn('Dispatch job refresh failed', { jobId, error });
+            continue;
+          }
+          targetBackoff.set(key, nextBackoff(targetBackoff.get(key), Date.now()));
+          log.warn('Dispatch target status read failed', {
+            jobId,
+            lane: key,
+            error: error.cause,
+          });
+          // The target's other periodic polls would wait on the same failed
+          // transport. Report them unreachable now and let the backoff decide
+          // when to try again; explicit requests still run.
+          const message = transportErrorMessage(error);
+          for (const [queuedJobId, explicit] of [...lane.queue]) {
+            if (explicit) continue;
+            lane.queue.delete(queuedJobId);
+            dispatchJobStore.getState().setTransportState(queuedJobId, 'unreachable', message);
+          }
+        }
+      }
+    } finally {
+      lane.running = false;
+      lane.current = undefined;
+      runningLaneCount -= 1;
+      if (lanes.get(key) === lane && lane.queue.size === 0) {
+        lanes.delete(key);
+      }
+      if (ownsLease()) {
+        updatePollingInterval();
+      }
+    }
+  }
+
+  function isBackedOff(job: DispatchObserverJob, now: number): boolean {
+    const readAt = lastReadAt.get(job.jobId);
+    if (readAt !== undefined && now - readAt < DISPATCH_JOB_POLL_INTERVAL_MS / 2) return true;
+    const target = targetBackoff.get(dispatchTargetLaneKey(job.target));
+    if (target && target.retryAt > now) return true;
+    const missing = missingJobBackoff.get(job.jobId);
+    return !!missing && missing.retryAt > now;
+  }
 
   async function run(requestedJobId?: string): Promise<void> {
-    if (!ownsLease() || isPeerDeviceModeActive() || inFlight) return;
+    if (!ownsLease() || isPeerDeviceModeActive()) return;
 
-    inFlight = true;
+    // A refresh for a known job goes straight to its target lane. It does not
+    // need the outbound index, and must not wait for another target's read.
+    if (requestedJobId) {
+      const known = dispatchJobStore.getState().jobs[requestedJobId];
+      if (known) {
+        enqueue(known, true);
+        return;
+      }
+    }
+    if (reconciling) {
+      pendingRefresh = pendingRefresh === null || pendingRefresh.jobId === requestedJobId
+        ? { jobId: requestedJobId }
+        : {};
+      return;
+    }
+
+    reconciling = true;
     try {
       const records = await dispatchApi.listJobs();
       if (!ownsLease()) {
         return;
       }
       dispatchJobStore.getState().mergeOutboundRecords(records);
+      const now = Date.now();
       const jobs = Object.values(dispatchJobStore.getState().jobs)
         .filter(job => !requestedJobId || job.jobId === requestedJobId);
       for (const job of jobs) {
         if (!ownsLease()) {
           return;
         }
-        try {
-          await refreshJob(context, job.jobId, ownsLease);
-        } catch (error) {
-          if (!ownsLease()) {
-            return;
-          }
-          log.warn('Dispatch job refresh failed', { jobId: job.jobId, error });
+        const explicit = !!requestedJobId;
+        if (!explicit && isBackedOff(job, now)) {
+          continue;
         }
+        enqueue(job, explicit);
       }
     } catch (error) {
       if (!ownsLease()) {
@@ -1112,7 +1312,7 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
       }
       log.warn('Failed to reconcile outbound dispatch jobs', { error });
     } finally {
-      inFlight = false;
+      reconciling = false;
       if (ownsLease()) {
         updatePollingInterval();
         if (pendingRefresh) schedule(pendingRefresh.jobId);
@@ -1138,18 +1338,25 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
 
   function schedule(jobId?: string): void {
     if (!ownsLease()) return;
+    // A refresh for a known job is served by its target lane right away; the
+    // outbound index is only read for discovery.
+    if (jobId && dispatchJobStore.getState().jobs[jobId]) {
+      // Deferred so a caller writing the store is never re-entered.
+      setTimeout(() => { void run(jobId); }, 0);
+      return;
+    }
     pendingRefresh = pendingRefresh === null || pendingRefresh.jobId === jobId
       ? { jobId }
       : {};
-    // Keep explicit refreshes queued across a slow read. Periodic ticks never
-    // overwrite this queue or start a second in-flight reconciliation.
-    if (inFlight) return;
+    // Keep discovery requests queued across a slow index read. Periodic ticks
+    // never start a second in-flight reconciliation.
+    if (reconciling) return;
     if (immediateTimer !== null) {
       clearTimeout(immediateTimer);
     }
     immediateTimer = setTimeout(() => {
       immediateTimer = null;
-      if (inFlight) return;
+      if (reconciling) return;
       const requestedJobId = pendingRefresh?.jobId;
       pendingRefresh = null;
       void run(requestedJobId);
@@ -1173,6 +1380,11 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
       interval = null;
     }
     pendingRefresh = null;
+    for (const lane of lanes.values()) lane.queue.clear();
+    lanes.clear();
+    targetBackoff.clear();
+    missingJobBackoff.clear();
+    lastReadAt.clear();
     unsubscribeJobs?.();
     unsubscribeJobs = null;
     if (typeof document !== 'undefined' && handleVisibilityChanged) {
@@ -1187,15 +1399,25 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
 
   updatePollingInterval();
   unsubscribeJobs = dispatchJobStore.subscribe(() => {
-    // run() updates the store repeatedly while replaying events. Re-evaluate
-    // once in finally, rather than treating its own writes as new work.
-    if (inFlight || !ownsLease()) return;
+    if (!ownsLease()) return;
+    // Polls update the store repeatedly while replaying events. Keep the
+    // cadence current (a lane can sit on a hung target for minutes), but do
+    // not treat those writes as a reason to start another poll.
+    if (isBusy()) {
+      updatePollingInterval();
+      return;
+    }
     const wasIdle = pollIntervalMs === DISPATCH_IDLE_DISCOVERY_INTERVAL_MS;
     updatePollingInterval();
     if (wasIdle && pollIntervalMs === DISPATCH_JOB_POLL_INTERVAL_MS) schedule();
   });
   handleVisibilityChanged = () => {
     if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      // Waking up often follows a sleep or network change; give every target
+      // a fresh attempt instead of honoring backoff earned on the old network.
+      targetBackoff.clear();
+      missingJobBackoff.clear();
+      lastReadAt.clear();
       schedule();
     }
   };

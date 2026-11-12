@@ -165,6 +165,13 @@ export interface DispatchTransportState {
   lastTransportError?: string;
 }
 
+/**
+ * Controller-side outcome of a stop request. `stopping` covers the window
+ * between the request and the terminal state the target reports; `unconfirmed`
+ * means every attempt failed and the target may still be running the job.
+ */
+export type DispatchCancelState = 'stopping' | 'unconfirmed';
+
 interface DispatchJobStoreState {
   jobs: Record<string, DispatchObserverJob>;
   /**
@@ -172,6 +179,16 @@ interface DispatchJobStoreState {
    * from persistence because only a current poll can establish reachability.
    */
   transportByJobId: Record<string, DispatchTransportState>;
+  /** Wall-clock time of the last successful target status read. Transient. */
+  lastReachableAtByJobId: Record<string, number>;
+  /**
+   * Permission requests this controller has answered but the target has not
+   * yet dropped from its pending list. Transient: a restart re-reads the
+   * target, which is the only authority on what is still pending.
+   */
+  answeredPermissionIdsByJobId: Record<string, string[]>;
+  /** Transient stop-request outcome; cleared once the job is terminal. */
+  cancelStateByJobId: Record<string, DispatchCancelState>;
   /** Local projection tombstones. The target job remains durable, but must not reopen in navigation. */
   dismissedJobIds: string[];
   /**
@@ -215,6 +232,9 @@ interface DispatchJobStoreState {
     reachability: DispatchReachability,
     lastTransportError?: string,
   ) => void;
+  markPermissionsAnswered: (jobId: string, requestIds: string[]) => void;
+  unmarkPermissionsAnswered: (jobId: string, requestIds: string[]) => void;
+  setCancelState: (jobId: string, cancelState: DispatchCancelState | undefined) => void;
   setBaselineWorktreeMissing: (jobId: string, missing: boolean) => void;
   resetReplay: (jobId: string) => void;
   adoptCachedReplay: (
@@ -274,11 +294,47 @@ function requestFromTarget(target: DispatchTarget): DispatchTargetRequest {
 
 const initialDismissalLedger = readDismissalLedger();
 
+function omitKeys<T>(record: Record<string, T>, keys: Iterable<string>): Record<string, T> {
+  let next: Record<string, T> | null = null;
+  for (const key of keys) {
+    if (key in record) {
+      next ??= { ...record };
+      delete next[key];
+    }
+  }
+  return next ?? record;
+}
+
+/**
+ * Keep only answered ids the target still lists as pending. Once the target
+ * drops a request, the optimistic marker has done its job.
+ */
+function pruneAnsweredPermissions(
+  answered: Record<string, string[]>,
+  jobId: string,
+  pendingPermissions: Array<Record<string, unknown>> | undefined,
+): Record<string, string[]> {
+  const current = answered[jobId];
+  if (!current?.length || !pendingPermissions) return answered;
+  const pendingIds = new Set(
+    pendingPermissions
+      .map(request => request.requestId)
+      .filter((requestId): requestId is string => typeof requestId === 'string'),
+  );
+  const kept = current.filter(requestId => pendingIds.has(requestId));
+  if (kept.length === current.length) return answered;
+  if (kept.length === 0) return omitKeys(answered, [jobId]);
+  return { ...answered, [jobId]: kept };
+}
+
 export const useDispatchJobStore = create<DispatchJobStoreState>()(
   persist(
     (set, get) => ({
       jobs: {},
       transportByJobId: {},
+      lastReachableAtByJobId: {},
+      answeredPermissionIdsByJobId: {},
+      cancelStateByJobId: {},
       dismissedJobIds: initialDismissalLedger.dismissedJobIds,
       dismissedSessionIds: initialDismissalLedger.dismissedSessionIds,
 
@@ -489,6 +545,12 @@ export const useDispatchJobStore = create<DispatchJobStoreState>()(
           return {
             jobs,
             transportByJobId,
+            lastReachableAtByJobId: omitKeys(state.lastReachableAtByJobId, prunedJobIds),
+            answeredPermissionIdsByJobId: omitKeys(
+              state.answeredPermissionIdsByJobId,
+              prunedJobIds,
+            ),
+            cancelStateByJobId: omitKeys(state.cancelStateByJobId, prunedJobIds),
             dismissedJobIds,
             dismissedSessionIds,
           };
@@ -509,6 +571,15 @@ export const useDispatchJobStore = create<DispatchJobStoreState>()(
           const nextState = nextJobState(current.state, update.state);
           const progressed = nextCursor > current.cursor || nextState !== current.state;
           return {
+            answeredPermissionIdsByJobId: pruneAnsweredPermissions(
+              state.answeredPermissionIdsByJobId,
+              jobId,
+              update.pendingPermissions,
+            ),
+            // A terminal job has nothing left to stop.
+            cancelStateByJobId: isDispatchJobTerminal(nextState)
+              ? omitKeys(state.cancelStateByJobId, [jobId])
+              : state.cancelStateByJobId,
             jobs: {
               ...state.jobs,
               [jobId]: {
@@ -543,6 +614,7 @@ export const useDispatchJobStore = create<DispatchJobStoreState>()(
           const job = current.jobs[jobId];
           if (!job) return current;
           return {
+            cancelStateByJobId: omitKeys(current.cancelStateByJobId, [jobId]),
             jobs: {
               ...current.jobs,
               [jobId]: {
@@ -575,13 +647,17 @@ export const useDispatchJobStore = create<DispatchJobStoreState>()(
           if (!state.jobs[jobId]) return state;
           const current = state.transportByJobId[jobId];
           const normalizedError = lastTransportError?.trim() || undefined;
+          const lastReachableAtByJobId = reachability === 'reachable'
+            ? { ...state.lastReachableAtByJobId, [jobId]: Date.now() }
+            : state.lastReachableAtByJobId;
           if (
             current?.reachability === reachability &&
             current.lastTransportError === normalizedError
           ) {
-            return state;
+            return reachability === 'reachable' ? { lastReachableAtByJobId } : state;
           }
           return {
+            lastReachableAtByJobId,
             transportByJobId: {
               ...state.transportByJobId,
               [jobId]: {
@@ -589,6 +665,49 @@ export const useDispatchJobStore = create<DispatchJobStoreState>()(
                 lastTransportError: normalizedError,
               },
             },
+          };
+        });
+      },
+
+      markPermissionsAnswered: (jobId, requestIds) => {
+        set(state => {
+          if (!state.jobs[jobId] || requestIds.length === 0) return state;
+          const current = state.answeredPermissionIdsByJobId[jobId] ?? [];
+          const next = Array.from(new Set([...current, ...requestIds]));
+          if (next.length === current.length) return state;
+          return {
+            answeredPermissionIdsByJobId: {
+              ...state.answeredPermissionIdsByJobId,
+              [jobId]: next,
+            },
+          };
+        });
+      },
+
+      unmarkPermissionsAnswered: (jobId, requestIds) => {
+        set(state => {
+          const current = state.answeredPermissionIdsByJobId[jobId];
+          if (!current?.length) return state;
+          const removed = new Set(requestIds);
+          const next = current.filter(requestId => !removed.has(requestId));
+          if (next.length === current.length) return state;
+          return {
+            answeredPermissionIdsByJobId: next.length === 0
+              ? omitKeys(state.answeredPermissionIdsByJobId, [jobId])
+              : { ...state.answeredPermissionIdsByJobId, [jobId]: next },
+          };
+        });
+      },
+
+      setCancelState: (jobId, cancelState) => {
+        set(state => {
+          if (state.cancelStateByJobId[jobId] === cancelState) return state;
+          if (!cancelState) {
+            return { cancelStateByJobId: omitKeys(state.cancelStateByJobId, [jobId]) };
+          }
+          if (!state.jobs[jobId]) return state;
+          return {
+            cancelStateByJobId: { ...state.cancelStateByJobId, [jobId]: cancelState },
           };
         });
       },
@@ -778,6 +897,12 @@ export const useDispatchJobStore = create<DispatchJobStoreState>()(
           return {
             jobs,
             transportByJobId,
+            lastReachableAtByJobId: omitKeys(state.lastReachableAtByJobId, dismissedJobIds),
+            answeredPermissionIdsByJobId: omitKeys(
+              state.answeredPermissionIdsByJobId,
+              dismissedJobIds,
+            ),
+            cancelStateByJobId: omitKeys(state.cancelStateByJobId, dismissedJobIds),
             dismissedJobIds: Array.from(dismissedJobIds)
               .slice(-MAX_DISMISSED_JOB_IDS),
             dismissedSessionIds: mergeDismissedIds(
@@ -818,7 +943,13 @@ export const useDispatchJobStore = create<DispatchJobStoreState>()(
           const transportByJobId = { ...state.transportByJobId };
           delete jobs[jobId];
           delete transportByJobId[jobId];
-          return { jobs, transportByJobId };
+          return {
+            jobs,
+            transportByJobId,
+            lastReachableAtByJobId: omitKeys(state.lastReachableAtByJobId, [jobId]),
+            answeredPermissionIdsByJobId: omitKeys(state.answeredPermissionIdsByJobId, [jobId]),
+            cancelStateByJobId: omitKeys(state.cancelStateByJobId, [jobId]),
+          };
         });
       },
 
@@ -827,6 +958,9 @@ export const useDispatchJobStore = create<DispatchJobStoreState>()(
         set({
           jobs: {},
           transportByJobId: {},
+          lastReachableAtByJobId: {},
+          answeredPermissionIdsByJobId: {},
+          cancelStateByJobId: {},
           dismissedJobIds: [],
           dismissedSessionIds: [],
         });
@@ -868,6 +1002,9 @@ export const useDispatchJobStore = create<DispatchJobStoreState>()(
           ...persisted,
           jobs,
           transportByJobId: {},
+          lastReachableAtByJobId: {},
+          answeredPermissionIdsByJobId: {},
+          cancelStateByJobId: {},
           dismissedJobIds,
           dismissedSessionIds,
         };
