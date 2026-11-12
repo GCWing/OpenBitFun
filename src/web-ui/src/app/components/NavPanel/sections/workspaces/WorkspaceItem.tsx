@@ -295,10 +295,9 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
       return null;
     }
 
-    const status = remoteConnStatus ?? 'unknown';
-    const statusLabel = t(`nav.workspaces.remote.status.${status}`, {
-      defaultValue: t('nav.workspaces.remote.status.unknown'),
-    });
+    // No status yet means the first check for this connection is still running.
+    const status = remoteConnStatus ?? 'connecting';
+    const statusLabel = t(`nav.workspaces.remote.status.${status}`);
     const badge = remoteBadge ?? remoteWorkspaceBadge(workspace);
     const connectionLabel = badge?.connection ?? '';
     const hostLabel = badge?.host || connectionLabel;
@@ -307,8 +306,6 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
       status,
       statusLabel,
       badgeLabel: badge?.label ?? connectionLabel,
-      /** A green dot already reads as "fine"; spell out only the states that need attention. */
-      showStatusText: status !== 'connected',
       tooltip: t('nav.workspaces.remote.tooltip', {
         connection: connectionLabel,
         host: hostLabel,
@@ -1356,14 +1353,10 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                       className={`openbitfun-nav-panel__workspace-item-status-dot is-${remoteMeta.status}`}
                       aria-hidden="true"
                     />
+                    {/* Same shape in every state: the dot and tint carry the status, the tooltip spells it out. */}
                     <span className="openbitfun-nav-panel__workspace-item-remote-host">
                       {remoteMeta.badgeLabel}
                     </span>
-                    {remoteMeta.showStatusText ? (
-                      <span className="openbitfun-nav-panel__workspace-item-remote-status">
-                        {remoteMeta.statusLabel}
-                      </span>
-                    ) : null}
                   </span>
                 </Tooltip>
               )}

@@ -678,8 +678,7 @@
           "connected": "Connected",
           "connecting": "Connecting",
           "disconnected": "Disconnected",
-          "error": "Connection error",
-          "unknown": "Status unknown"
+          "error": "Connection error"
         }
       },
       "actions": {

@@ -16,9 +16,11 @@ import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFla
 import {
   getActiveSurfaceScope,
   isSurfaceChangedError,
+  onSurfaceActivated,
   runInSurfaceScope,
   type SurfaceScope,
 } from '@/infrastructure/peer-device/deviceSurface';
+import { classifyPeerHostRefusal } from '@/infrastructure/peer-device/peerHostRefusal';
 import { useI18n } from '@/infrastructure/i18n';
 import { confirmWarning } from '@/infrastructure/confirm-dialog';
 import {
@@ -326,6 +328,40 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     }
 
     setWorkspaceStatuses(prev => ({ ...prev, [connId]: st }));
+  }, []);
+
+  /**
+   * Peer Device Mode: the peer owns every SSH transport, so ask it instead of
+   * leaving its remote workspaces without a status. A host that does not report
+   * SSH transport state (a CLI peer) still owns the workspace it opened, so it
+   * keeps the mirrored `connected` state; only an unreachable peer is an error.
+   */
+  const peerStatusProbesRef = useRef(new Map<string, number>());
+  const reconcilePeerRemoteStatuses = useCallback((force: boolean) => {
+    if (!mountedRef.current || !isPeerDeviceModeActive()) return;
+    const scope = getActiveSurfaceScope();
+    const probes = peerStatusProbesRef.current;
+    for (const workspace of workspaceManager.getState().openedWorkspaces.values()) {
+      const connId = workspace.workspaceKind === WorkspaceKind.Remote ? workspace.connectionId?.trim() : '';
+      if (!connId || probes.get(connId) === scope.epoch) continue;
+      if (!force && workspaceStatusesRef.current[connId]) continue;
+      probes.set(connId, scope.epoch);
+      void runInSurfaceScope(scope, 'probe peer SSH status', () => sshApi.isConnected(connId))
+        .then(
+          (connected): ConnectionStatus => (connected ? 'connected' : 'disconnected'),
+          (error): ConnectionStatus | null => {
+            if (isSurfaceChangedError(error)) return null;
+            if (classifyPeerHostRefusal(error)) return 'connected';
+            log.warn('Failed to read peer SSH connection status', { connectionId: connId, error });
+            return 'error';
+          },
+        )
+        .then(status => {
+          if (probes.get(connId) === scope.epoch) probes.delete(connId);
+          if (!status || !mountedRef.current || !scope.isCurrent() || !isPeerDeviceModeActive()) return;
+          setWorkspaceStatuses(prev => (prev[connId] === status ? prev : { ...prev, [connId]: status }));
+        });
+    }
   }, []);
 
   const reportRemoteWorkspaceReconnectFailure = useCallback((workspace: RemoteWorkspace) => {
@@ -969,6 +1005,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
         }
         workspaceStatusTimeouts.current.clear();
         log.info('Paused SSH heartbeat while peer device mode is active');
+        reconcilePeerRemoteStatuses(true);
       } else if (detail?.active === false) {
         if (showFileBrowserRef.current && connectionIdRef.current && isConnectedRef.current
           && usedConnectionIds().has(connectionIdRef.current)) {
@@ -979,13 +1016,26 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     };
     window.addEventListener('peer-mode:changed', onPeerModeChanged);
     return () => window.removeEventListener('peer-mode:changed', onPeerModeChanged);
-  }, [stopHeartbeat, usedConnectionIds]);
+  }, [reconcilePeerRemoteStatuses, stopHeartbeat, usedConnectionIds]);
+
+  // Statuses are keyed by connection ID, which another device may reuse: a
+  // newly rendered peer surface reads every one of its connections again.
+  useEffect(() => onSurfaceActivated(() => reconcilePeerRemoteStatuses(true)), [reconcilePeerRemoteStatuses]);
 
   useEffect(() => {
     return workspaceManager.addEventListener(event => {
       if (event.type === 'workspace:closed' || event.type === 'workspace:removed') {
         restoredScope(getActiveSurfaceScope()).bindings.delete(event.workspaceId);
         pruneHeartbeats();
+        return;
+      }
+      if (isPeerDeviceModeActive()) {
+        // Peer Device Mode: the peer owns the SSH connection lifecycle. Never
+        // run the controller-side reconnect/timeout removal path — those
+        // invokes route to the peer and would delete the peer's workspace.
+        // A hydrated list may arrive without per-workspace events, so every
+        // change reads the status of any connection that has none yet.
+        reconcilePeerRemoteStatuses(false);
         return;
       }
       const workspace =
@@ -999,23 +1049,13 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       if (!connId) {
         return;
       }
-      if (isPeerDeviceModeActive()) {
-        // Peer Device Mode: the peer owns the SSH connection lifecycle. Mirror
-        // its opened remote workspaces as connected and never run the
-        // controller-side reconnect/timeout removal path — those invokes route
-        // to the peer and would delete the peer's workspace.
-        if (workspaceStatusesRef.current[connId] !== 'connected') {
-          setWorkspaceStatus(connId, 'connected');
-        }
-        return;
-      }
       if (!workspaceStatusesRef.current[connId]) {
         setWorkspaceStatus(connId, 'connecting');
       }
       const metadataOnly = event.type === 'workspace:updated' || event.type === 'workspace:primary-assistant-changed';
       void checkRemoteWorkspaceRef.current(!metadataOnly);
     });
-  }, [pruneHeartbeats, restoredScope, setWorkspaceStatus]);
+  }, [pruneHeartbeats, reconcilePeerRemoteStatuses, restoredScope, setWorkspaceStatus]);
 
   const connect = useCallback(async (
     _connId: string,

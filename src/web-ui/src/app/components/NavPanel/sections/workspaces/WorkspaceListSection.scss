@@ -445,18 +445,6 @@
     text-overflow: ellipsis;
   }
 
-  &__workspace-item-remote-status {
-    flex-shrink: 0;
-    white-space: nowrap;
-    opacity: 0.85;
-
-    &::before {
-      content: '·';
-      margin-right: 4px;
-      opacity: 0.6;
-    }
-  }
-
   &__workspace-item:not(.is-active) &__workspace-item-remote {
     opacity: 0.8;
   }
@@ -475,10 +463,6 @@
     &.is-error,
     &.is-disconnected {
       background: var(--openbitfun-color-status-danger-emphasis);
-    }
-
-    &.is-unknown {
-      background: var(--openbitfun-color-content-muted);
     }
 
     &.is-connecting {
