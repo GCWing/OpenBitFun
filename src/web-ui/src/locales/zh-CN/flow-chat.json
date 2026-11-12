@@ -936,6 +936,19 @@
       "modelSyncStarted": "正在把本机的模型配置复制到远程设备…",
       "modelSyncSucceeded": "模型配置已复制，远程设备可以运行所选模型。",
       "modelSyncFailed": "无法把模型配置复制到远程设备。",
+      "transport": {
+        "unreachable": "目标不可达，正在重新连接",
+        "unreachableSince": "目标不可达，正在重新连接（上次更新：{{time}}）",
+        "notDelivered": "未送达目标",
+        "notDeliveredHint": "目标上没有此任务的记录，可以安全地重新发送。",
+        "missingOnTarget": "目标上找不到此任务",
+        "stopping": "正在停止…",
+        "stopUnconfirmed": "停止未确认",
+        "stopUnconfirmedHint": "目标未确认停止请求，任务可能仍在运行。",
+        "retryStop": "重试停止",
+        "awaitingConfirmation": "等待目标确认的审批（{{count}}）",
+        "answerSent": "回复已发送，等待目标确认"
+      },
       "errors": {
         "attachmentUnavailable": "这张图片无法发送到远程设备。请重新添加后再试。",
         "deviceAttachmentTooLarge": "通过账号设备发送的图片总大小不能超过 192 KB。请压缩图片，或改用 SSH 目标。",
@@ -947,7 +960,9 @@
         "compactWhileRunning": "请等待当前远程任务完成后再压缩上下文。",
         "compactRejected": "目标设备未能开始压缩，请稍后重试。",
         "sessionNotReady": "远程任务仍在准备中，请稍后再发送。",
-        "submissionUnconfirmed": "暂时无法确认目标是否已接收任务。请稍后检查任务状态。"
+        "submissionUnconfirmed": "暂时无法确认目标是否已接收任务。请稍后检查任务状态。",
+        "permissionNotConfirmed": "目标尚未确认此请求。请等待目标重新连接后再回复。",
+        "stopUnconfirmed": "目标未确认停止请求，任务可能仍在运行。"
       }
     },
     "harness": {

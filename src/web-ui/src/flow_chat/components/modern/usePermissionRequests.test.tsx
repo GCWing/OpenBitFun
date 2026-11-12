@@ -320,6 +320,8 @@ describe('usePermissionRequests', () => {
       createdAt: 1,
       updatedAt: 1,
     });
+    // Prompts are actionable only after a status read confirms them.
+    dispatchJobStore.getState().setTransportState('job-1', 'reachable');
     await renderHarness(root, 'session-1', (next) => {
       controller = next;
     }, 'job-1');

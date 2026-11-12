@@ -936,6 +936,19 @@
       "modelSyncStarted": "Copying this device’s model configuration to the remote device…",
       "modelSyncSucceeded": "Model configuration copied; the remote device can run the selected model.",
       "modelSyncFailed": "Could not copy the model configuration to the remote device.",
+      "transport": {
+        "unreachable": "Target unreachable — reconnecting",
+        "unreachableSince": "Target unreachable — reconnecting (last update {{time}})",
+        "notDelivered": "Not delivered to the target",
+        "notDeliveredHint": "The target has no record of this task. Sending it again is safe.",
+        "missingOnTarget": "Task not found on the target",
+        "stopping": "Stopping…",
+        "stopUnconfirmed": "Stop not confirmed",
+        "stopUnconfirmedHint": "The target did not confirm the stop request. The task may still be running.",
+        "retryStop": "Retry stop",
+        "awaitingConfirmation": "Approvals waiting for the target to confirm ({{count}})",
+        "answerSent": "Answer sent — waiting for the target"
+      },
       "errors": {
         "attachmentUnavailable": "This image cannot be sent to the remote device. Add it again and retry.",
         "deviceAttachmentTooLarge": "Images sent to an account device can total at most 192 KB. Compress them or use an SSH target.",
@@ -947,7 +960,9 @@
         "compactWhileRunning": "Wait for the current remote task to finish before compacting the context.",
         "compactRejected": "The target could not start compaction. Try again shortly.",
         "sessionNotReady": "The remote task is still being prepared. Try sending again shortly.",
-        "submissionUnconfirmed": "OpenBitFun cannot yet confirm whether the target received this task. Check the task status shortly."
+        "submissionUnconfirmed": "OpenBitFun cannot yet confirm whether the target received this task. Check the task status shortly.",
+        "permissionNotConfirmed": "The target has not confirmed this request yet. Wait until it reconnects, then answer.",
+        "stopUnconfirmed": "The target did not confirm the stop request. The task may still be running."
       }
     },
     "harness": {

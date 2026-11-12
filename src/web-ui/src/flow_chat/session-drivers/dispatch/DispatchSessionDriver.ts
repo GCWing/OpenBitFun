@@ -43,6 +43,7 @@ import { dispatchApi } from '@/features/dispatch/dispatchApi';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { forgetDispatchTranscript } from '@/features/dispatch/dispatchTranscriptCache';
 import { requestDispatchJobRefresh } from '@/features/dispatch/DispatchJobObserver';
+import { arePendingPermissionsConfirmed } from '@/features/dispatch/dispatchTransport';
 import { markOptimisticDispatchTurnMetadata } from '@/features/dispatch/optimisticDispatchTurn';
 import { openDispatchSessionFile, readDispatchSessionImage, downloadDispatchSessionFile } from '@/features/dispatch/dispatchFileNavigation';
 import { cleanupSaveState } from '../../services/flow-chat-manager/PersistenceModule';
@@ -62,6 +63,12 @@ const APPEND_RETRY_SCOPE = 'dispatch-append';
 const CONTINUE_RETRY_SCOPE = 'dispatch-continue';
 const COMPACT_RETRY_SCOPE = 'dispatch-compact';
 const EMPTY_PENDING_PERMISSIONS: ReadonlyArray<Record<string, unknown>> = [];
+/**
+ * Stop requests are idempotent on the target (a durable cancel marker), so a
+ * transport failure is retried a few times before the outcome is reported as
+ * unconfirmed. Exported for tests.
+ */
+export const DISPATCH_CANCEL_RETRY_DELAYS_MS: readonly number[] = [1_000, 3_000];
 
 /**
  * The durable job observed by a projection session. The bound config id wins;
@@ -85,9 +92,153 @@ const dispatchNavigationStatusSource: SessionDriverNavigationStatusSource = {
     const reachability = jobId
       ? dispatchJobStore.getState().transportByJobId[jobId]?.reachability
       : undefined;
-    return reachability ? { reachability } : {};
+    if (!reachability) return {};
+    // Navigation only distinguishes observable from not observable. A job the
+    // target does not know cannot be observed either; the chat explains which.
+    return { reachability: reachability === 'notFound' ? 'unreachable' : reachability };
   },
 };
+
+interface PermissionSnapshotCache {
+  pending: ReadonlyArray<Record<string, unknown>> | undefined;
+  answered: readonly string[] | undefined;
+  confirmed: boolean;
+  value: ReadonlyArray<Record<string, unknown>>;
+}
+
+const permissionSnapshotCache = new Map<string, PermissionSnapshotCache>();
+
+/**
+ * The actionable prompts of a job: only those a successful status read has
+ * confirmed, minus the ones this controller already answered. Prompts restored
+ * from disk or kept while the target is unreachable are not offered, so a reply
+ * cannot go to a request the target may have resolved or expired.
+ *
+ * The result is cached per session so `useSyncExternalStore` sees a stable
+ * reference while nothing relevant changed.
+ */
+export function actionableDispatchPermissions(
+  sessionId: string,
+): ReadonlyArray<Record<string, unknown>> {
+  const jobId = jobIdForSession(sessionId);
+  if (!jobId) {
+    return EMPTY_PENDING_PERMISSIONS;
+  }
+  const state = dispatchJobStore.getState();
+  const pending = state.jobs[jobId]?.pendingPermissions;
+  const answered = state.answeredPermissionIdsByJobId[jobId];
+  const confirmed = arePendingPermissionsConfirmed(jobId);
+  const cached = permissionSnapshotCache.get(sessionId);
+  if (
+    cached
+    && cached.pending === pending
+    && cached.answered === answered
+    && cached.confirmed === confirmed
+  ) {
+    return cached.value;
+  }
+  let value: ReadonlyArray<Record<string, unknown>> = EMPTY_PENDING_PERMISSIONS;
+  if (confirmed && pending?.length) {
+    const answeredIds = new Set(answered ?? []);
+    const unanswered = answeredIds.size === 0
+      ? pending
+      : pending.filter(request => (
+        typeof request.requestId !== 'string' || !answeredIds.has(request.requestId)
+      ));
+    value = unanswered.length > 0 ? unanswered : EMPTY_PENDING_PERMISSIONS;
+  }
+  if (permissionSnapshotCache.size > 256) {
+    permissionSnapshotCache.clear();
+  }
+  permissionSnapshotCache.set(sessionId, { pending, answered, confirmed, value });
+  return value;
+}
+
+/**
+ * Answer prompts optimistically: they leave the actionable list at once and
+ * come back only if the answer could not be delivered.
+ */
+async function answerDispatchPermissions(
+  jobId: string,
+  requestIds: string[],
+  reply: PermissionReplyKind,
+  feedback?: string,
+): Promise<void> {
+  if (!arePendingPermissionsConfirmed(jobId)) {
+    throw new Error(
+      i18nService.t('flow-chat:chatInput.dispatch.errors.permissionNotConfirmed'),
+    );
+  }
+  const store = dispatchJobStore.getState();
+  store.markPermissionsAnswered(jobId, requestIds);
+  const delivered: string[] = [];
+  try {
+    for (const requestId of requestIds) {
+      await dispatchApi.answerPermission(jobId, requestId, reply, feedback);
+      delivered.push(requestId);
+    }
+  } catch (error) {
+    dispatchJobStore.getState().unmarkPermissionsAnswered(
+      jobId,
+      requestIds.filter(requestId => !delivered.includes(requestId)),
+    );
+    requestDispatchJobRefresh(jobId);
+    throw error;
+  }
+  requestDispatchJobRefresh(jobId);
+}
+
+function cancelRetryDelay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Ask the target to stop a job, retrying transport failures. The outcome is
+ * recorded in the observer store so the chat can show `stopping` until the
+ * target reports a terminal state, or `unconfirmed` when no attempt landed.
+ */
+export async function cancelDispatchJob(jobId: string): Promise<boolean> {
+  const store = dispatchJobStore.getState();
+  if (isDispatchJobTerminal(store.jobs[jobId]?.state)) {
+    store.setCancelState(jobId, undefined);
+    return false;
+  }
+  store.setCancelState(jobId, 'stopping');
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= DISPATCH_CANCEL_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (attempt > 0) {
+      await cancelRetryDelay(DISPATCH_CANCEL_RETRY_DELAYS_MS[attempt - 1]);
+      if (isDispatchJobTerminal(dispatchJobStore.getState().jobs[jobId]?.state)) {
+        dispatchJobStore.getState().setCancelState(jobId, undefined);
+        return false;
+      }
+    }
+    try {
+      const response = await dispatchApi.cancel(jobId);
+      // `cancelled: false` on a live job means the target recorded the request
+      // and the worker stops itself; the observer clears `stopping` once the
+      // target reports a terminal state.
+      requestDispatchJobRefresh(jobId);
+      return response.cancelled;
+    } catch (error) {
+      lastError = error;
+      log.warn('Dispatch stop request failed', {
+        jobId,
+        attempt: attempt + 1,
+        error,
+      });
+    }
+  }
+  dispatchJobStore.getState().setCancelState(jobId, 'unconfirmed');
+  requestDispatchJobRefresh(jobId);
+  log.warn('Dispatch stop request was not confirmed by the target', {
+    jobId,
+    error: lastError,
+  });
+  throw new Error(
+    i18nService.t('flow-chat:chatInput.dispatch.errors.stopUnconfirmed'),
+  );
+}
 
 const dispatchOwnershipSource: SessionDriverOwnershipSource = {
   subscribe: listener => dispatchJobStore.subscribe(listener),
@@ -504,12 +655,11 @@ export const dispatchSessionDriver: SessionDriver = {
     if (!jobId) {
       return false;
     }
-    const response = await dispatchApi.cancel(jobId);
-    if (response.cancelled) {
+    const cancelled = await cancelDispatchJob(jobId);
+    if (cancelled) {
       context.userCancelledSessionIds.add(sessionId);
-      requestDispatchJobRefresh(jobId);
     }
-    return response.cancelled;
+    return cancelled;
   },
 
   async compactSession(context: FlowChatContext, sessionId: string, turnId?: string): Promise<CompactSessionResult> {
@@ -595,14 +745,7 @@ export const dispatchSessionDriver: SessionDriver = {
   permissionRequestSource(sessionId: string) {
     return {
       subscribe: (listener: () => void) => dispatchJobStore.subscribe(listener),
-      getSnapshot: () => {
-        const jobId = jobIdForSession(sessionId);
-        if (!jobId) {
-          return EMPTY_PENDING_PERMISSIONS;
-        }
-        return dispatchJobStore.getState().jobs[jobId]?.pendingPermissions
-          ?? EMPTY_PENDING_PERMISSIONS;
-      },
+      getSnapshot: () => actionableDispatchPermissions(sessionId),
     };
   },
 
@@ -618,8 +761,7 @@ export const dispatchSessionDriver: SessionDriver = {
         i18nService.t('flow-chat:chatInput.dispatch.errors.sessionUnavailable'),
       );
     }
-    await dispatchApi.answerPermission(jobId, requestId, reply, feedback);
-    requestDispatchJobRefresh(jobId);
+    await answerDispatchPermissions(jobId, [requestId], reply, feedback);
   },
 
   async respondPermissionBatch(
@@ -634,19 +776,10 @@ export const dispatchSessionDriver: SessionDriver = {
         i18nService.t('flow-chat:chatInput.dispatch.errors.sessionUnavailable'),
       );
     }
-    const pending = (dispatchJobStore.getState().jobs[jobId]?.pendingPermissions
-      ?? []) as unknown as PermissionRequest[];
+    const pending = actionableDispatchPermissions(sessionId) as unknown as PermissionRequest[];
     const batch = selectActivePermissionBatch(pending, sessionId);
     const requestIds = batch?.requests.map(request => request.requestId) ?? [requestId];
-    for (const pendingRequestId of requestIds) {
-      await dispatchApi.answerPermission(
-        jobId,
-        pendingRequestId,
-        reply,
-        feedback,
-      );
-    }
-    requestDispatchJobRefresh(jobId);
+    await answerDispatchPermissions(jobId, requestIds, reply, feedback);
     // The observer store refreshes from the target; there is no local
     // subscription state to reconcile.
     return [];

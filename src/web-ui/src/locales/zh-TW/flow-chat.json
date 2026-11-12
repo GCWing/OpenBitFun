@@ -936,6 +936,19 @@
       "modelSyncStarted": "正在將本機的模型設定複製到遠端裝置…",
       "modelSyncSucceeded": "模型設定已複製，遠端裝置可以執行所選模型。",
       "modelSyncFailed": "無法將模型設定複製到遠端裝置。",
+      "transport": {
+        "unreachable": "目標無法連線，正在重新連線",
+        "unreachableSince": "目標無法連線，正在重新連線（上次更新：{{time}}）",
+        "notDelivered": "未送達目標",
+        "notDeliveredHint": "目標上沒有此任務的紀錄，可以安全地重新傳送。",
+        "missingOnTarget": "目標上找不到此任務",
+        "stopping": "正在停止…",
+        "stopUnconfirmed": "停止未確認",
+        "stopUnconfirmedHint": "目標未確認停止請求，任務可能仍在執行。",
+        "retryStop": "重試停止",
+        "awaitingConfirmation": "等待目標確認的審批（{{count}}）",
+        "answerSent": "回覆已傳送，等待目標確認"
+      },
       "errors": {
         "attachmentUnavailable": "這張圖片無法傳送到遠端裝置。請重新加入後再試。",
         "deviceAttachmentTooLarge": "透過帳號裝置傳送的圖片總大小不能超過 192 KB。請壓縮圖片，或改用 SSH 目標。",
@@ -947,7 +960,9 @@
         "compactWhileRunning": "請等待目前遠端任務完成後再壓縮上下文。",
         "compactRejected": "目標裝置未能開始壓縮，請稍後重試。",
         "sessionNotReady": "遠端任務仍在準備中，請稍後再傳送。",
-        "submissionUnconfirmed": "暫時無法確認目標是否已收到任務。請稍後檢查任務狀態。"
+        "submissionUnconfirmed": "暫時無法確認目標是否已收到任務。請稍後檢查任務狀態。",
+        "permissionNotConfirmed": "目標尚未確認此請求。請等待目標重新連線後再回覆。",
+        "stopUnconfirmed": "目標未確認停止請求，任務可能仍在執行。"
       }
     },
     "harness": {

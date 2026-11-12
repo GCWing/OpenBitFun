@@ -42,6 +42,10 @@ export function deriveSessionNavStatus({
   session, machine, permissions = [], reachability, activity, unavailable,
 }: SessionNavStatusInput): SessionNavStatus {
   if (!session) return status('idle');
+  // An unreachable target cannot receive an answer, and its last known
+  // prompts may already be resolved there. Rank this above approval so the
+  // row never invites a reply that cannot be delivered.
+  if (reachability === 'unreachable') return status('syncing');
   const latestTurn = lastUserDialogTurn(session);
   const trackedId = machine?.context.currentDialogTurnId;
   const turn = trackedId && latestTurn?.id !== trackedId
@@ -118,7 +122,7 @@ export function deriveSessionNavStatus({
       session.needsUserAttention === 'tool_confirm' ? 1 : 0);
   }
 
-  if (reachability === 'unreachable' || dispatchState === 'submission_unknown') return status('syncing');
+  if (dispatchState === 'submission_unknown') return status('syncing');
   if (dispatchState === 'submitting' || dispatchState === 'queued') return status('queued');
   if (executing || dispatchState === 'running') return status('running');
   if (isTurnAwaitingRecovery(latestTurn)) return status('paused');
