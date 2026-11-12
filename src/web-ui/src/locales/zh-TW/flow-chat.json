@@ -633,7 +633,8 @@
     "menu": {
       "switchPet": "切換寵物",
       "closePet": "關閉寵物",
-      "closeBubble": "關閉該氣泡"
+      "closeBubble": "關閉該氣泡",
+      "markAllRead": "全部標示為已讀"
     },
     "composer": {
       "openTitle": "傳送訊息到該工作階段",

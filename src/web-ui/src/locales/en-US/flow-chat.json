@@ -633,7 +633,8 @@
     "menu": {
       "switchPet": "Switch pet",
       "closePet": "Close pet",
-      "closeBubble": "Close this bubble"
+      "closeBubble": "Close this bubble",
+      "markAllRead": "Mark all as read"
     },
     "composer": {
       "openTitle": "Send a message to this session",

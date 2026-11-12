@@ -3,17 +3,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   readText: vi.fn(),
+  writeImage: vi.fn(),
   writeText: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
   readText: mocks.readText,
+  writeImage: mocks.writeImage,
   writeText: mocks.writeText,
 }));
 
 import {
   hasNativeClipboard,
   readNativeClipboardText,
+  writeNativeClipboardImage,
   writeNativeClipboardText,
 } from './nativeClipboard';
 
@@ -28,6 +31,7 @@ function clearTauriHost(): void {
 beforeEach(() => {
   mocks.readText.mockReset();
   mocks.writeText.mockReset();
+  mocks.writeImage.mockReset();
   clearTauriHost();
 });
 
@@ -62,5 +66,18 @@ describe('native clipboard bridge', () => {
 
     await expect(readNativeClipboardText()).resolves.toBeNull();
     await expect(writeNativeClipboardText('text')).resolves.toBe(false);
+  });
+
+  it('writes images as an inline RGBA bitmap on the desktop host', async () => {
+    await expect(writeNativeClipboardImage(new Uint8Array([1, 2, 3, 4]), 1, 1)).resolves.toBe(false);
+    expect(mocks.writeImage).not.toHaveBeenCalled();
+
+    markTauriHost();
+    mocks.writeImage.mockResolvedValue(undefined);
+    await expect(writeNativeClipboardImage(new Uint8ClampedArray([1, 2, 3, 4]), 1, 1)).resolves.toBe(true);
+    expect(mocks.writeImage).toHaveBeenCalledWith({ rgba: [1, 2, 3, 4], width: 1, height: 1 });
+
+    mocks.writeImage.mockRejectedValue(new Error('clipboard unavailable'));
+    await expect(writeNativeClipboardImage(new Uint8Array([1, 2, 3, 4]), 1, 1)).resolves.toBe(false);
   });
 });

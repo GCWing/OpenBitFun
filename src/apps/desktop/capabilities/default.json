@@ -89,6 +89,7 @@
     "fs:scope-app-recursive",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-write-image",
     {
       "identifier": "fs:allow-home-read-recursive",
       "allow": [

@@ -52,7 +52,10 @@
     "copyFilePath": "複製檔案路徑"
   },
   "imageLightbox": {
-    "label": "圖片預覽"
+    "label": "圖片預覽",
+    "copy": "複製圖片",
+    "copySuccess": "圖片已複製到剪貼簿",
+    "copyFailed": "複製圖片失敗"
   },
   "mermaidBlock": {
     "renderFailed": "圖表渲染失敗",

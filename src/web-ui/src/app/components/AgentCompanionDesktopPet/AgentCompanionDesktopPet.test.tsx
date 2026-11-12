@@ -108,6 +108,7 @@ beforeAll(async () => {
               switchPet: 'Switch pet',
               closePet: 'Close pet',
               closeBubble: 'Close this bubble',
+              markAllRead: 'Mark all as read',
             },
             composer: {
               openTitle: 'Send a message to this session',
@@ -683,6 +684,35 @@ describe('AgentCompanionDesktopPet', () => {
       type: 'dismiss-task',
       sessionId: 'session-1',
     });
+  });
+
+  it('marks every finished bubble read from the bubble menu', () => {
+    pushActivity({
+      mood: 'working',
+      tasks: [
+        task({ sessionId: 'done-1', state: 'completed', labelKey: 'agentCompanion.activity.completed', defaultLabel: 'Completed' }),
+        task({ sessionId: 'done-2', state: 'error', labelKey: 'agentCompanion.activity.completed', defaultLabel: 'Completed' }),
+        task({ sessionId: 'running-1', title: 'Still running' }),
+      ],
+      sequence: 1,
+      emittedAt: 1,
+    });
+    expect(document.querySelectorAll('.openbitfun-agent-companion-window__bubble')).toHaveLength(3);
+
+    dispatch(query('.openbitfun-agent-companion-window__bubble-shell')!, 'contextmenu');
+    const markAllRead = [...document.querySelectorAll<HTMLButtonElement>('[data-openbitfun-menu-item]')]
+      .find(item => item.textContent === 'Mark all as read');
+    expect(markAllRead).toBeDefined();
+
+    act(() => {
+      markAllRead!.click();
+    });
+
+    // Finished bubbles are unread notices and go; the running task stays.
+    const remaining = document.querySelectorAll('.openbitfun-agent-companion-window__bubble');
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].classList.contains('openbitfun-agent-companion-window__bubble--running')).toBe(true);
+    expect(emitMock).toHaveBeenCalledWith(PET_COMMAND_EVENT, { type: 'mark-all-read' });
   });
 
   it('keeps a silenced running bubble hidden but restores it once the task needs attention', () => {

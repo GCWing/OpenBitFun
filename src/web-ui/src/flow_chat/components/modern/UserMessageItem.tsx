@@ -6,6 +6,8 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo, useId } from 'react';
 import { withConversationExcerptFallback } from '@/shared/utils/conversationExcerpt';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
+import { ImageLightboxCopyButton } from '@/shared/ui/ImageLightboxCopy';
+import { useImageLightboxCopy } from '@/shared/ui/useImageLightboxCopy';
 import { CircleAlert, RotateCcw, Loader2 } from 'lucide-react';
 import type { DialogTurn, FlowUserSteeringItem } from '../../types/flow-chat';
 import type { ImageContext } from '@/shared/types/context';
@@ -139,6 +141,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
     const [expanded, setExpanded] = useState(false);
     const [hasOverflow, setHasOverflow] = useState(false);
     const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+    const lightboxCopy = useImageLightboxCopy(lightboxImage);
     const [actionMenuOpen, setActionMenuOpen] = useState(false);
     const actionMenuAnchorRef = useRef<HTMLButtonElement>(null);
     const actionMenuId = useId();
@@ -821,8 +824,18 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
               closeOnPointerOutside={false}
               onClick={event => { if (event.target === event.currentTarget) setLightboxImage(null); }}
             >
+              <ImageLightboxCopyButton
+                className="user-message-item__lightbox-copy"
+                copied={lightboxCopy.copied}
+                onCopy={() => { void lightboxCopy.copy(); }}
+              />
               <DialogClose className="user-message-item__lightbox-close" icon={<Icon name="xmark" size="md" />} />
-              <img src={lightboxImage} alt="Preview" onClick={(e) => e.stopPropagation()} />
+              <img
+                src={lightboxImage}
+                alt="Preview"
+                onClick={(e) => e.stopPropagation()}
+                onContextMenu={lightboxCopy.onContextMenu}
+              />
             </Dialog>
           )}
           {openLargePasteText !== null && (

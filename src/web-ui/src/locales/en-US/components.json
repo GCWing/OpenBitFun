@@ -52,7 +52,10 @@
     "copyFilePath": "Copy file path"
   },
   "imageLightbox": {
-    "label": "Image preview"
+    "label": "Image preview",
+    "copy": "Copy image",
+    "copySuccess": "Image copied to clipboard",
+    "copyFailed": "Failed to copy image"
   },
   "mermaidBlock": {
     "renderFailed": "Diagram render failed",

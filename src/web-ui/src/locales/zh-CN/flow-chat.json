@@ -633,7 +633,8 @@
     "menu": {
       "switchPet": "切换宠物",
       "closePet": "关闭宠物",
-      "closeBubble": "关闭该气泡"
+      "closeBubble": "关闭该气泡",
+      "markAllRead": "全部标为已读"
     },
     "composer": {
       "openTitle": "发送消息到该会话",

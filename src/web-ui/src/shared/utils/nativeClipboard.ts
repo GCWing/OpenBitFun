@@ -6,7 +6,11 @@
  * through the Tauri clipboard plugin, and every other surface (browser web,
  * mobile web, tests) keeps the Web API path.
  */
-import { readText as readNativeText, writeText as writeNativeText } from '@tauri-apps/plugin-clipboard-manager';
+import {
+  readText as readNativeText,
+  writeImage as writeNativeImage,
+  writeText as writeNativeText,
+} from '@tauri-apps/plugin-clipboard-manager';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('NativeClipboard');
@@ -44,6 +48,33 @@ export async function writeNativeClipboardText(text: string): Promise<boolean> {
     return true;
   } catch (error) {
     log.warn('Native clipboard write failed', { error });
+    return false;
+  }
+}
+
+/**
+ * Write an RGBA bitmap through the native host; `false` means the caller has
+ * no other path left to try.
+ *
+ * The bitmap is sent inline as the plugin's raw RGBA image shape instead of an
+ * `Image` resource, so it needs no image-resource permission and does not
+ * depend on the plugin sharing this bundle's `@tauri-apps/api` copy.
+ */
+export async function writeNativeClipboardImage(
+  rgba: Uint8ClampedArray | Uint8Array,
+  width: number,
+  height: number,
+): Promise<boolean> {
+  if (!hasNativeClipboard()) {
+    return false;
+  }
+
+  try {
+    const image = { rgba: Array.from(rgba), width, height };
+    await writeNativeImage(image as unknown as Parameters<typeof writeNativeImage>[0]);
+    return true;
+  } catch (error) {
+    log.warn('Native clipboard image write failed', { error });
     return false;
   }
 }

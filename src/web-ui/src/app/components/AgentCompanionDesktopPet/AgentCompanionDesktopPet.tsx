@@ -779,6 +779,24 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       });
   }, [sendPetCommand]);
 
+  /** Bubble menu: acknowledge every finished bubble at once, like the sidebar. */
+  const markAllBubblesRead = useCallback(() => {
+    setOverlay(null);
+    setDismissedBubbles(previous => {
+      const next = { ...previous };
+      for (const task of tasks) {
+        if (isAcknowledgeableTaskState(task.state)) {
+          next[task.sessionId] = bubbleDismissBucket(task.state);
+        }
+      }
+      return next;
+    });
+    void sendPetCommand({ type: 'mark-all-read' })
+      .catch(error => {
+        log.warn('Failed to mark all Agent companion tasks read', error);
+      });
+  }, [sendPetCommand, tasks]);
+
   const openBubbleComposer = useCallback((sessionId: string) => {
     setComposerValue('');
     setIsSendingComposer(false);
@@ -1052,11 +1070,18 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       { key: 'close-pet', label: t('agentCompanion.menu.closePet'), onClick: closeDesktopPet },
     ]
     : overlay?.kind === 'bubble-menu' && overlayTask
-      ? [{
-        key: 'close-bubble',
-        label: t('agentCompanion.menu.closeBubble'),
-        onClick: () => closeBubble(overlayTask),
-      }]
+      ? [
+        {
+          key: 'close-bubble',
+          label: t('agentCompanion.menu.closeBubble'),
+          onClick: () => closeBubble(overlayTask),
+        },
+        {
+          key: 'mark-all-read',
+          label: t('agentCompanion.menu.markAllRead'),
+          onClick: markAllBubblesRead,
+        },
+      ]
       : [];
 
   return (
@@ -1075,7 +1100,8 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       {menuItems.length > 0 && (
         <Menu
           ref={menuRef}
-          className="openbitfun-agent-companion-window__overlay openbitfun-agent-companion-window__overlay--anchored"
+          className="openbitfun-agent-companion-window__overlay openbitfun-agent-companion-window__overlay--anchored openbitfun-agent-companion-window__context-menu"
+          inlineSize="content"
           style={{
             right: `${menuPosition?.right ?? MENU_EDGE_MARGIN}px`,
             bottom: `${menuPosition?.bottom ?? MENU_EDGE_MARGIN}px`,

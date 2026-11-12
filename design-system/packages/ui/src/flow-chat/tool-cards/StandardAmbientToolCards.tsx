@@ -276,10 +276,13 @@ export interface ViewImageToolCardProps extends AmbientCardProps {
   errorText?: ReactNode;
   height?: number;
   imageFailed?: boolean;
+  /** Extra header controls shown beside the lightbox close button. */
+  lightboxActions?: ReactNode;
   lightboxOpen?: boolean;
   lightboxTitle?: ReactNode;
   onImageError?: () => void;
   onLightboxClose?: () => void;
+  onLightboxImageContextMenu?: (event: ReactMouseEvent<HTMLImageElement>) => void;
   onOpenPreview?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   previewLabel: string;
   source?: string;
@@ -294,10 +297,12 @@ export function ViewImageToolCard({
   height,
   imageFailed = false,
   isExpanded = false,
+  lightboxActions,
   lightboxOpen = false,
   lightboxTitle,
   onImageError,
   onLightboxClose,
+  onLightboxImageContextMenu,
   onOpenPreview,
   onToggle,
   previewLabel,
@@ -361,11 +366,12 @@ export function ViewImageToolCard({
           <DialogHeading>
             <DialogTitle>{lightboxTitle ?? alt}</DialogTitle>
           </DialogHeading>
+          {lightboxActions}
           <DialogClose />
         </DialogHeader>
         <DialogBody>
           <div className={styles.lightbox} data-openbitfun-part="lightbox">
-            <img alt={alt} src={source ?? ""} />
+            <img alt={alt} onContextMenu={onLightboxImageContextMenu} src={source ?? ""} />
           </div>
         </DialogBody>
       </Dialog>
