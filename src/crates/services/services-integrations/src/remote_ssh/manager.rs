@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::Once;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -666,6 +666,90 @@ struct ActiveConnection {
     /// Allows `is_connected` and SFTP/exec entry points to detect a dead session
     /// without waiting for the next failed I/O.
     alive: Arc<AtomicBool>,
+    /// When the SSH transport last answered a request. The `alive` flag only
+    /// flips once russh notices the disconnect, which after a sleep or network
+    /// change can take minutes of keepalive timeouts; `is_connected` uses this
+    /// to decide when a cheap active probe is due instead.
+    liveness: Arc<ConnectionLiveness>,
+}
+
+/// Re-probe the SSH transport when it has not been confirmed for this long.
+/// Shorter than the 30-second UI heartbeat, so every heartbeat is an active
+/// check rather than a read of a flag that may be minutes stale.
+const LIVENESS_PROBE_AFTER_MS: u64 = 20_000;
+/// A probe is one channel open and close. A server that cannot confirm a
+/// channel in this window is not usable by any interactive feature either.
+const LIVENESS_PROBE_TIMEOUT: Duration = if cfg!(test) {
+    Duration::from_millis(500)
+} else {
+    Duration::from_secs(5)
+};
+
+fn wall_clock_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Confirmation state for one connection's SSH transport.
+///
+/// Wall-clock time on purpose: the monotonic clock on macOS does not advance
+/// while the machine sleeps, and the gap across a sleep is exactly what must
+/// force a fresh probe.
+struct ConnectionLiveness {
+    confirmed_at_ms: AtomicU64,
+    /// Set after an operation timed out on this connection.
+    suspect: AtomicBool,
+    /// Concurrent `is_connected` callers share one probe.
+    probe_lock: tokio::sync::Mutex<()>,
+}
+
+impl ConnectionLiveness {
+    fn confirmed_now() -> Self {
+        Self {
+            confirmed_at_ms: AtomicU64::new(wall_clock_ms()),
+            suspect: AtomicBool::new(false),
+            probe_lock: tokio::sync::Mutex::new(()),
+        }
+    }
+
+    fn confirm(&self, now_ms: u64) {
+        self.confirmed_at_ms.store(now_ms, Ordering::SeqCst);
+        self.suspect.store(false, Ordering::SeqCst);
+    }
+
+    fn mark_suspect(&self) {
+        self.suspect.store(true, Ordering::SeqCst);
+    }
+
+    fn probe_due(&self, now_ms: u64) -> bool {
+        let confirmed = self.confirmed_at_ms.load(Ordering::SeqCst);
+        self.suspect.load(Ordering::SeqCst)
+            // A clock moved backwards cannot vouch for the last confirmation.
+            || now_ms < confirmed
+            || now_ms - confirmed >= LIVENESS_PROBE_AFTER_MS
+    }
+}
+
+/// Outcome of one active transport probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransportProbe {
+    /// The server answered (a refused channel still proves the link works).
+    Answered,
+    /// The transport is closed, or the server did not answer in time.
+    Unresponsive,
+}
+
+fn classify_probe_result<T>(
+    result: Result<Result<T, russh::Error>, tokio::time::error::Elapsed>,
+) -> TransportProbe {
+    match result {
+        Ok(Ok(_)) => TransportProbe::Answered,
+        // MaxSessions and similar refusals are answers from a live server.
+        Ok(Err(russh::Error::ChannelOpenFailure(_))) => TransportProbe::Answered,
+        Ok(Err(_)) | Err(_) => TransportProbe::Unresponsive,
+    }
 }
 
 struct SftpCache {
@@ -3249,6 +3333,7 @@ impl SSHConnectionManager {
                     server_key: None,
                     proxy_child: established.proxy_child,
                     alive: established.alive,
+                    liveness: Arc::new(ConnectionLiveness::confirmed_now()),
                 },
             )
         };
@@ -4655,25 +4740,39 @@ impl SSHConnectionManager {
     /// server (or network) tore down is considered NOT connected even though
     /// the entry has not yet been pruned, so the UI cannot mistakenly believe
     /// the session is healthy.
+    ///
+    /// For an SSH transport whose last confirmation is older than
+    /// `LIVENESS_PROBE_AFTER_MS` (or after an operation timed out), this runs
+    /// one channel open/close bounded by `LIVENESS_PROBE_TIMEOUT`; a silent
+    /// transport is then reported, and marked, disconnected.
     pub async fn is_connected(&self, connection_id: &str) -> bool {
-        let (alive, config) = {
+        let (alive_flag, config, handle, liveness) = {
             let guard = self.connections.read().await;
             let Some(connection) = guard.get(connection_id) else {
                 return false;
             };
             (
-                connection.alive.load(Ordering::SeqCst),
+                connection.alive.clone(),
                 connection.effective_config.clone(),
+                connection.handle.clone(),
+                connection.liveness.clone(),
             )
         };
-        if !alive {
+        if !alive_flag.load(Ordering::SeqCst) {
             return false;
         }
         if let Some(wsl) = &config.wsl {
             return super::wsl::is_running(wsl).await;
         }
         if !config.uses_local_docker() {
-            return true;
+            // After a sleep or a network change the flag can stay set for
+            // minutes. When the last confirmation is stale, ask the server.
+            return match handle {
+                Some(handle) => {
+                    Self::confirm_transport(connection_id, &handle, &liveness, &alive_flag).await
+                }
+                None => true,
+            };
         }
         let Some(container) = config.container.as_ref() else {
             return false;
@@ -4689,6 +4788,60 @@ impl SSHConnectionManager {
             Ok(Ok(output)) if output.status.success()
                 && String::from_utf8_lossy(&output.stdout).trim() == "true"
         )
+    }
+
+    /// Run a cheap active probe (one channel open and close) when the
+    /// transport's last confirmation is stale or an operation timed out. An
+    /// unresponsive transport is marked dead so the next operation reconnects
+    /// instead of waiting on it.
+    async fn confirm_transport(
+        connection_id: &str,
+        handle: &Handle<SSHHandler>,
+        liveness: &ConnectionLiveness,
+        alive: &AtomicBool,
+    ) -> bool {
+        if !liveness.probe_due(wall_clock_ms()) {
+            return true;
+        }
+        let _probe = liveness.probe_lock.lock().await;
+        if !alive.load(Ordering::SeqCst) {
+            return false;
+        }
+        // Another caller may have finished a probe while this one waited.
+        if !liveness.probe_due(wall_clock_ms()) {
+            return true;
+        }
+        let result =
+            tokio::time::timeout(LIVENESS_PROBE_TIMEOUT, handle.channel_open_session()).await;
+        let outcome = match result {
+            Ok(Ok(channel)) => {
+                let _ = channel.close().await;
+                TransportProbe::Answered
+            }
+            other => classify_probe_result(other),
+        };
+        match outcome {
+            TransportProbe::Answered => {
+                liveness.confirm(wall_clock_ms());
+                true
+            }
+            TransportProbe::Unresponsive => {
+                log::warn!(
+                    "SSH transport did not answer a liveness probe; marking it disconnected: connection_id={}",
+                    connection_id
+                );
+                alive.store(false, Ordering::SeqCst);
+                false
+            }
+        }
+    }
+
+    /// Record that an operation on this connection timed out, so the next
+    /// `is_connected` call probes the transport instead of trusting the flag.
+    async fn mark_connection_suspect(&self, connection_id: &str) {
+        if let Some(connection) = self.connections.read().await.get(connection_id) {
+            connection.liveness.mark_suspect();
+        }
     }
 
     async fn load_connection_config_from_saved(
@@ -4915,6 +5068,7 @@ impl SSHConnectionManager {
                 conn.config = config;
                 conn.effective_config = established.effective_config;
                 conn.alive = established.alive;
+                conn.liveness = Arc::new(ConnectionLiveness::confirmed_now());
                 conn.proxy_child = established.proxy_child;
                 if let Some(si) = server_info.as_ref() {
                     conn.server_info = Some(si.clone());
@@ -4936,6 +5090,7 @@ impl SSHConnectionManager {
                         server_key: None,
                         proxy_child: established.proxy_child,
                         alive: established.alive,
+                        liveness: Arc::new(ConnectionLiveness::confirmed_now()),
                     },
                 );
                 match replaced {
@@ -5020,14 +5175,20 @@ impl SSHConnectionManager {
         options: SSHCommandOptions,
     ) -> anyhow::Result<SSHCommandResult> {
         let manager = self.clone();
-        let connection_id = connection_id.to_string();
+        let owned_connection_id = connection_id.to_string();
         let command = command.to_string();
-        supervise_ssh_command(options, move |options| async move {
+        let result = supervise_ssh_command(options, move |options| async move {
             manager
-                .execute_workspace_command_owned(&connection_id, &command, options)
+                .execute_workspace_command_owned(&owned_connection_id, &command, options)
                 .await
         })
-        .await
+        .await;
+        if result.as_ref().is_ok_and(|result| result.timed_out) {
+            // A timeout may be a slow command or a dead link; let the next
+            // liveness check find out which.
+            self.mark_connection_suspect(connection_id).await;
+        }
+        result
     }
 
     async fn execute_workspace_command_owned(
@@ -7579,6 +7740,99 @@ mod tests {
         finish_unpublished_fixture(first).await;
     }
 
+    #[test]
+    fn liveness_probe_is_due_when_stale_suspect_or_clock_moved_back() {
+        let liveness = ConnectionLiveness::confirmed_now();
+        let confirmed = 1_000_000;
+        liveness.confirm(confirmed);
+        assert!(!liveness.probe_due(confirmed + LIVENESS_PROBE_AFTER_MS - 1));
+        assert!(liveness.probe_due(confirmed + LIVENESS_PROBE_AFTER_MS));
+        // A sleep shows up as a wall-clock jump of minutes or hours.
+        assert!(liveness.probe_due(confirmed + 6 * 60 * 60 * 1000));
+        assert!(liveness.probe_due(confirmed - 1));
+        liveness.mark_suspect();
+        assert!(liveness.probe_due(confirmed + 1));
+        liveness.confirm(confirmed + 2);
+        assert!(!liveness.probe_due(confirmed + 3));
+    }
+
+    #[tokio::test]
+    async fn liveness_probe_treats_refusals_as_answers_and_silence_as_dead() {
+        assert_eq!(
+            classify_probe_result::<()>(Ok(Err(russh::Error::ChannelOpenFailure(
+                russh::ChannelOpenFailure::AdministrativelyProhibited,
+            )))),
+            TransportProbe::Answered
+        );
+        assert_eq!(
+            classify_probe_result::<()>(Ok(Err(russh::Error::Disconnect))),
+            TransportProbe::Unresponsive
+        );
+        let elapsed = tokio::time::timeout(Duration::ZERO, std::future::pending::<()>())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            classify_probe_result::<()>(Err(elapsed)),
+            TransportProbe::Unresponsive
+        );
+    }
+
+    async fn age_liveness(manager: &SSHConnectionManager, id: &str) {
+        let guard = manager.connections.read().await;
+        let liveness = &guard.get(id).unwrap().liveness;
+        liveness.confirm(wall_clock_ms() - LIVENESS_PROBE_AFTER_MS - 1);
+    }
+
+    #[tokio::test]
+    async fn is_connected_actively_confirms_a_stale_transport() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SSHConnectionManager::new(temp.path().into());
+        let fixture = unpublished_session_fixture(&manager, None).await;
+        let id = fixture.config.id.clone();
+        assert!(
+            manager
+                .connect_with_timeout(fixture.config.clone(), 2)
+                .await
+                .unwrap()
+                .success
+        );
+        age_liveness(&manager, &id).await;
+        assert!(manager.is_connected(&id).await);
+        {
+            let guard = manager.connections.read().await;
+            assert!(!guard.get(&id).unwrap().liveness.probe_due(wall_clock_ms()));
+        }
+        manager.disconnect(&id).await.unwrap();
+        finish_unpublished_fixture(fixture).await;
+    }
+
+    #[tokio::test]
+    async fn is_connected_reports_a_silent_transport_as_disconnected() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SSHConnectionManager::new(temp.path().into());
+        // The publication metadata exec is the first channel; the liveness
+        // probe is the second and never gets an answer, like a link after sleep.
+        let fixture = unpublished_session_fixture(&manager, Some(2)).await;
+        let id = fixture.config.id.clone();
+        assert!(
+            manager
+                .connect_with_timeout(fixture.config.clone(), 2)
+                .await
+                .unwrap()
+                .success
+        );
+        // A fresh confirmation is trusted without another round trip.
+        assert!(manager.is_connected(&id).await);
+        manager.mark_connection_suspect(&id).await;
+        let started = std::time::Instant::now();
+        assert!(!manager.is_connected(&id).await);
+        assert!(started.elapsed() < LIVENESS_PROBE_TIMEOUT * 4);
+        // The flag stays down, so the next operation reconnects.
+        assert!(!manager.is_connected(&id).await);
+        manager.disconnect(&id).await.unwrap();
+        finish_unpublished_fixture(fixture).await;
+    }
+
     #[tokio::test]
     async fn workspace_unpublished_guard_is_disarmed_after_publication() {
         let temp = tempfile::tempdir().unwrap();
@@ -8015,6 +8269,7 @@ mod tests {
                     server_key: None,
                     proxy_child: None,
                     alive: Arc::new(AtomicBool::new(true)),
+                    liveness: Arc::new(ConnectionLiveness::confirmed_now()),
                 },
             );
             tokio::spawn(async move {
@@ -8266,6 +8521,7 @@ mod tests {
                 server_key: None,
                 proxy_child: None,
                 alive: Arc::new(AtomicBool::new(true)),
+                liveness: Arc::new(ConnectionLiveness::confirmed_now()),
             },
         );
         let file_service = crate::remote_ssh::RemoteFileService::new(Arc::new(
@@ -8819,6 +9075,7 @@ mod tests {
                 server_key: None,
                 proxy_child: None,
                 alive: alive.clone(),
+                liveness: Arc::new(ConnectionLiveness::confirmed_now()),
             },
         );
 

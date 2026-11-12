@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -7,6 +8,7 @@ vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({
 }));
 
 import { sshApi } from './sshApi';
+import { SSH_OPERATION_TIMEOUT_EVENT } from './sshOperationEvents';
 
 describe('sshApi request deadlines', () => {
   beforeEach(() => {
@@ -52,6 +54,25 @@ describe('sshApi request deadlines', () => {
       expect.objectContaining({ transferId: expect.any(String) }),
       undefined,
     );
+  });
+
+  it('announces a timed-out connection operation so the link is re-verified', async () => {
+    const seen: string[] = [];
+    const listener = (event: Event) => {
+      seen.push((event as CustomEvent<{ connectionId: string }>).detail.connectionId);
+    };
+    window.addEventListener(SSH_OPERATION_TIMEOUT_EVENT, listener);
+    try {
+      invoke.mockRejectedValueOnce(new Error('Request timeout'));
+      await expect(sshApi.readDir('connection-1', '/remote')).rejects.toThrow('Request timeout');
+      invoke.mockRejectedValueOnce(new Error('permission denied'));
+      await expect(sshApi.readFile('connection-2', '/remote/a.txt')).rejects.toThrow('permission denied');
+      invoke.mockRejectedValueOnce('Command timed out');
+      await expect(sshApi.execute('connection-3', 'true')).rejects.toBe('Command timed out');
+    } finally {
+      window.removeEventListener(SSH_OPERATION_TIMEOUT_EVENT, listener);
+    }
+    expect(seen).toEqual(['connection-1', 'connection-3']);
   });
 
   it('does not start a transfer stopped before the backend registration', async () => {

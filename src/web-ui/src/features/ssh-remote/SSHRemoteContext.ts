@@ -12,6 +12,12 @@ export interface SSHContextValue {
   remoteWorkspace: RemoteWorkspace | null;
   connectionError: string | null;
   workspaceStatuses: Record<string, ConnectionStatus>;
+  /**
+   * Connections whose link is being re-verified (after a wake, a network
+   * change or an operation timeout). A status surface should show
+   * "Reconnecting" instead of a connected state while an id is listed.
+   */
+  verifyingConnectionIds?: Record<string, true>;
   showConnectionDialog: boolean;
   showFileBrowser: boolean;
   error: string | null;

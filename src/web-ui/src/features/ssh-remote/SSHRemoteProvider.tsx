@@ -8,6 +8,7 @@ import { workspaceManager } from '@/infrastructure/services/business/workspaceMa
 import { WorkspaceKind } from '@/shared/types/global-state';
 import type { SSHConnectionConfig, RemoteWorkspace } from './types';
 import { sshApi } from './sshApi';
+import { SSH_OPERATION_TIMEOUT_EVENT, type SshOperationTimeoutDetail } from './sshOperationEvents';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { ACPClientAPI, ACP_REQUIREMENTS_INVALIDATED_EVENT } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { normalizeRemoteWorkspacePath } from '@/shared/utils/pathUtils';
@@ -149,6 +150,17 @@ interface SSHRemoteProviderProps {
   children: React.ReactNode;
 }
 
+/** Background liveness check cadence for each connection in use. */
+const SSH_HEARTBEAT_INTERVAL_MS = 30_000;
+/** Visibility, network and timeout events can arrive in bursts. */
+const SSH_WAKE_CHECK_MIN_GAP_MS = 2_000;
+
+interface SshHeartbeat {
+  timer: number;
+  epoch: number;
+  check: (trigger: 'interval' | 'wake') => Promise<void>;
+}
+
 export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }) => {
   const { t } = useI18n('common');
   // Restore callbacks feed the startup check effect; a language change must
@@ -169,7 +181,10 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
   const [remoteFileBrowserInitialPath, setRemoteFileBrowserInitialPath] = useState('/tmp');
   // Per-workspace connection statuses (keyed by connectionId)
   const [workspaceStatuses, setWorkspaceStatuses] = useState<Record<string, ConnectionStatus>>({});
-  const heartbeats = useRef(new Map<string, { timer: number; epoch: number }>());
+  const heartbeats = useRef(new Map<string, SshHeartbeat>());
+  // Connections whose link is being re-verified after a wake, a network change
+  // or an operation timeout. A green status is not trustworthy meanwhile.
+  const [verifyingConnectionIds, setVerifyingConnectionIds] = useState<Record<string, true>>({});
   const connectionIdRef = useRef(connectionId);
   const connectionSurfaceIdRef = useRef(getActiveSurfaceScope().surfaceId);
   const isConnectedRef = useRef(isConnected);
@@ -642,6 +657,17 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     void checkRemoteWorkspaceRef.current();
   }, [restoredScope, setWorkspaceStatus, stopHeartbeat]);
 
+  const setVerifying = useCallback((connId: string, verifying: boolean) => {
+    if (!mountedRef.current) return;
+    setVerifyingConnectionIds(prev => {
+      if (verifying === Boolean(prev[connId])) return prev;
+      const next = { ...prev };
+      if (verifying) next[connId] = true;
+      else delete next[connId];
+      return next;
+    });
+  }, []);
+
   const startHeartbeat = useCallback((connId: string) => {
     if (!mountedRef.current || isPeerDeviceModeActive()) return;
     const scope = getActiveSurfaceScope();
@@ -649,28 +675,65 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     stopHeartbeat(connId);
 
     let checking = false;
-    const heartbeat = { timer: 0, epoch: scope.epoch };
-    heartbeat.timer = window.setInterval(async () => {
+    let lastCheckAt = 0;
+    const heartbeat: SshHeartbeat = { timer: 0, epoch: scope.epoch, check: async () => {} };
+    // The host answers with an active transport probe when its last
+    // confirmation is stale, so this is the place to catch a link that died
+    // while the machine slept or changed networks.
+    heartbeat.check = async (trigger) => {
       if (heartbeats.current.get(connId) !== heartbeat) return;
       if (!scope.isCurrent() || isPeerDeviceModeActive()) {
         stopHeartbeat(connId);
         return;
       }
       if (checking) return;
+      if (trigger === 'wake' && Date.now() - lastCheckAt < SSH_WAKE_CHECK_MIN_GAP_MS) return;
       checking = true;
+      if (trigger === 'wake') setVerifying(connId, true);
       try {
         const connected = await sshApi.isConnected(connId);
+        lastCheckAt = Date.now();
         if (!scope.isCurrent() || heartbeats.current.get(connId) !== heartbeat) return;
         if (!connected) handleConnectionLost(connId);
       } catch {
         // A transient invoke error is retried at the next heartbeat.
       } finally {
         checking = false;
+        setVerifying(connId, false);
       }
-    }, 30000);
+    };
+    heartbeat.timer = window.setInterval(() => {
+      void heartbeat.check('interval');
+    }, SSH_HEARTBEAT_INTERVAL_MS);
     heartbeats.current.set(connId, heartbeat);
-  }, [handleConnectionLost, stopHeartbeat]);
+  }, [handleConnectionLost, setVerifying, stopHeartbeat]);
   startHeartbeatRef.current = startHeartbeat;
+
+  // Re-verify right away when the window comes back, the network returns, or
+  // an operation timed out, instead of showing a stale green status until the
+  // next heartbeat.
+  useEffect(() => {
+    const verifyAll = () => {
+      if (isPeerDeviceModeActive()) return;
+      for (const heartbeat of heartbeats.current.values()) void heartbeat.check('wake');
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') verifyAll();
+    };
+    const onOperationTimeout = (event: Event) => {
+      if (isPeerDeviceModeActive()) return;
+      const connId = (event as CustomEvent<SshOperationTimeoutDetail>).detail?.connectionId?.trim();
+      if (connId) void heartbeats.current.get(connId)?.check('wake');
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('online', verifyAll);
+    window.addEventListener(SSH_OPERATION_TIMEOUT_EVENT, onOperationTimeout);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('online', verifyAll);
+      window.removeEventListener(SSH_OPERATION_TIMEOUT_EVENT, onOperationTimeout);
+    };
+  }, []);
 
   const checkRemoteWorkspace = useCallback(async (activate = true) => {
     if (!mountedRef.current) return;
@@ -1311,6 +1374,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     remoteWorkspace,
     connectionError,
     workspaceStatuses,
+    verifyingConnectionIds,
     showConnectionDialog,
     showFileBrowser,
     error,
