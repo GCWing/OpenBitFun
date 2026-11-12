@@ -296,6 +296,12 @@
       "reopen": "重新開啟評論",
       "remove": "刪除註解",
       "recompiled": "PDF 已重新編譯，註解按頁保留；儲存前請核對位置。",
+      "encrypted": "此 PDF 已加密。註解會儲存在註解檔中，但無法產生含註解的 PDF 副本。",
+      "exportUnavailable": "無法為此 PDF 產生含註解的副本。註解仍會儲存在註解檔中。",
+      "conflict": "註解檔已在工作區主機上被修改。請選擇要保留的註解。",
+      "keepMine": "以我的註解覆寫",
+      "reloadFile": "載入檔案中的註解",
+      "confirmLayout": "已核對位置",
       "hints": {
         "highlight": "在 PDF 中選取文字即可加入醒目提示。",
         "note": "點擊 PDF 中的位置即可新增筆記。",

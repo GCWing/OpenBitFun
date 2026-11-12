@@ -296,6 +296,12 @@
       "reopen": "Reopen thread",
       "remove": "Delete annotation",
       "recompiled": "The PDF was recompiled. Annotations are retained by page; check their positions before saving.",
+      "encrypted": "This PDF is encrypted. Notes are saved in the review file, but an annotated PDF copy can't be created.",
+      "exportUnavailable": "This PDF can't be prepared for an annotated copy. Notes are still saved in the review file.",
+      "conflict": "The review file changed on the workspace host. Choose which notes to keep.",
+      "keepMine": "Replace with my notes",
+      "reloadFile": "Load the file's notes",
+      "confirmLayout": "Positions checked",
       "hints": {
         "highlight": "Select text in the PDF to highlight it.",
         "note": "Click a position on the PDF to add a note.",
