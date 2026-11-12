@@ -17,6 +17,7 @@
  */
 
 import { createLogger } from '@/shared/utils/logger';
+import { isOutcomeUnknownError, isTauriCommandError } from '@/infrastructure/api/errors/TauriCommandError';
 import type { SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { i18nService } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system';
@@ -127,6 +128,18 @@ export async function confirmUncertainPeerSubmission(
       body: i18nService.t('flow-chat:session.submissionUnconfirmed'),
     });
   return outcome;
+}
+
+/**
+ * A dispatch submit failure that may have happened after the request left:
+ * a lost reply, or a transport failure on the way to the target. A refusal
+ * before sending (validation, preflight) keeps its own error and the draft.
+ */
+export function isUncertainDispatchSubmitFailure(error: unknown): boolean {
+  if (isOutcomeUnknownError(error)) return true;
+  if (isTauriCommandError(error) && error.isNetworkError()) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /timed? ?out|network|connection|disconnected|transport|broken pipe|channel closed|reset by peer/i.test(message);
 }
 
 /** Dispatch job states that prove the target received the job. */

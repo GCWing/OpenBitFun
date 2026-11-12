@@ -1228,13 +1228,24 @@ describe('MessageModule detached dispatch', () => {
     return context;
   }
 
+  it('removes the optimistic message when dispatch submission is refused before sending', async () => {
+    const { context, session } = createDispatchContext('reject-and-report');
+    mockDispatchSubmit.mockRejectedValueOnce(new Error('target unavailable'));
+
+    await expect(
+      sendMessage(context, 'run remote checks', 'dispatch-session'),
+    ).rejects.toThrow('target unavailable');
+
+    expect(session.dialogTurns).toEqual([]);
+  });
+
   it('retains a dispatch submission that failed before reaching the target for an explicit retry', async () => {
     vi.useFakeTimers();
     try {
       mockDispatchJobs.jobs = {};
       const { context, session } = createDispatchContext('reject-and-report');
       withStoreSubscription(context);
-      mockDispatchSubmit.mockRejectedValueOnce(new Error('target unavailable'));
+      mockDispatchSubmit.mockRejectedValueOnce(new Error('SSH connection reset by peer'));
 
       await expect(sendMessage(context, 'run remote checks', 'dispatch-session')).resolves.toBeUndefined();
       expect(session.dialogTurns.map(turn => turn.id)).toEqual(['dispatch_pending_job-1']);

@@ -61,6 +61,7 @@ import {
   confirmUncertainDispatchSubmission,
   confirmUncertainPeerSubmission,
   DISPATCH_SUBMITTING_GRACE_MS,
+  isUncertainDispatchSubmitFailure,
   type UncertainSubmission,
 } from '../uncertainSubmission';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
@@ -722,7 +723,8 @@ async function sendMessageInternal(
     const uncertainTurnId = turnTracker.createdLocalTurnId;
     const uncertainKind = uncertainTurnId && turnTracker.hostSubmitStarted && !turnTracker.hostAcceptedTurn
       && !options?.preserveTurnOnStartError
-      ? submittingDriverId === 'dispatch' ? 'dispatch'
+      ? submittingDriverId === 'dispatch'
+        ? isUncertainDispatchSubmitFailure(error) ? 'dispatch' : null
         : !isLocalSurface(surfaceIdAtSend) && isOutcomeUnknownError(error) ? 'peer' : null
       : null;
     if (uncertainTurnId && uncertainKind) {
