@@ -4,6 +4,7 @@ import { ITransportAdapter, type TransportRequestTiming } from './base';
 import { TauriTransportAdapter } from './tauri-adapter';
 import { getDeviceOpenIntent, useDeviceOpenIntent } from '@/infrastructure/peer-device/deviceOpenIntent';
 import { classifyPeerHostRefusal } from '@/infrastructure/peer-device/peerHostRefusal';
+import { isPeerReplyLost } from '@/infrastructure/peer-device/peerReplyLost';
 import {
   SurfaceChangedError,
   getActiveSurfaceScope,
@@ -274,12 +275,60 @@ export function peerInvokePriorityFor(command: string): PeerInvokePriority {
   return 'normal';
 }
 
-/** The shared account transport owns admission and acknowledged RPC deadlines. */
-export const PEER_READ_REQUEST_TIMEOUT_MS = DEFAULT_RPC_TIMEOUT_MS;
+/**
+ * A read attempt that has not answered in this long is not waiting on a slow
+ * Relay hop: the host is busy or gone. Reads are bounded so a session list or
+ * settings page reports a retryable "host not responding" within about a
+ * minute instead of spinning through several full RPC deadlines.
+ */
+export const PEER_READ_REQUEST_TIMEOUT_MS = 25_000;
+/** Reads that scan host data (search, statistics, trees) may use the whole budget. */
+export const PEER_SLOW_READ_REQUEST_TIMEOUT_MS = 60_000;
+/** Overall deadline of one read, retries included. */
+export const PEER_READ_DEADLINE_MS = 60_000;
+/** Reads back off at most this long between attempts inside their deadline. */
+export const PEER_READ_RETRY_MAX_DELAY_MS = 4_000;
+/** The shared account transport owns admission and acknowledged mutation deadlines. */
 export const PEER_MUTATION_REQUEST_TIMEOUT_MS = DEFAULT_RPC_TIMEOUT_MS;
-export const PEER_READ_MAX_RETRIES = 4;
 export const PEER_IDEMPOTENT_MUTATION_MAX_RETRIES = 4;
 export const PEER_RETRY_BASE_DELAY_MS = 500;
+
+const SLOW_READ_COMMANDS = new Set([
+  'search_session_content',
+  'get_token_usage_statistics',
+  'get_file_tree',
+  'load_session_trajectory',
+]);
+
+/**
+ * Transport failures that prove a read never reached the host, or lost only
+ * its reply. Repeating a read is safe for both; anything else (a delivered
+ * request that timed out, an authorization or build mismatch) is not improved
+ * by asking again within the same minute.
+ */
+const RETRYABLE_READ_TRANSPORT_ERROR = /request was not submitted|RPC target unavailable|RPC deadline elapsed before dispatch|RPC acknowledgement lost|error sending request/;
+
+export function isPeerRetryableReadTransportError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return isPeerReplyLost(error) || RETRYABLE_READ_TRANSPORT_ERROR.test(message);
+}
+
+/**
+ * Stable code of a read whose host did not answer within its deadline. Read
+ * owners keep their previous content and offer an explicit retry;
+ * `peerReplyLostMessage` localizes it.
+ */
+export const PEER_HOST_NOT_RESPONDING_CODE = 'peer_host_not_responding';
+
+export class PeerHostNotRespondingError extends Error {
+  readonly code = PEER_HOST_NOT_RESPONDING_CODE;
+
+  constructor(action: string, elapsed: number, cause?: unknown) {
+    super(`${PEER_HOST_NOT_RESPONDING_CODE}: Peer host did not answer '${action}' within ${Math.round(elapsed)}ms`);
+    this.name = 'PeerHostNotRespondingError';
+    if (cause !== undefined) Object.assign(this, { cause });
+  }
+}
 
 /** Attempts sent for one logical request, including the first. */
 interface PeerRpcAttempts {
@@ -301,12 +350,20 @@ interface PeerRpcPolicy {
   timeoutMs: number;
   maxRetries: number;
   retryKind: 'read' | 'idempotent-mutation' | 'none';
+  /** Reads only: overall deadline across attempts. */
+  deadlineMs?: number;
 }
 
 const READ_RPC_POLICY: PeerRpcPolicy = {
   timeoutMs: PEER_READ_REQUEST_TIMEOUT_MS,
-  maxRetries: PEER_READ_MAX_RETRIES,
+  maxRetries: Number.POSITIVE_INFINITY,
   retryKind: 'read',
+  deadlineMs: PEER_READ_DEADLINE_MS,
+};
+
+const SLOW_READ_RPC_POLICY: PeerRpcPolicy = {
+  ...READ_RPC_POLICY,
+  timeoutMs: PEER_SLOW_READ_REQUEST_TIMEOUT_MS,
 };
 
 const MUTATION_RPC_POLICY: PeerRpcPolicy = {
@@ -1006,7 +1063,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     const rpcPolicy = BROWSER_CONTROL_SETUP_COMMANDS.has(action)
       ? BROWSER_CONTROL_SETUP_RPC_POLICY
       : isPeerRetryableReadCommand(action)
-        ? READ_RPC_POLICY
+        ? (SLOW_READ_COMMANDS.has(action) ? SLOW_READ_RPC_POLICY : READ_RPC_POLICY)
         : this.hooks.supportsIdempotentDialogSubmit === true &&
             isPeerRetryableIdempotentMutation(action, params)
           ? IDEMPOTENT_MUTATION_RPC_POLICY
@@ -1097,14 +1154,19 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     issuedBindingEpoch: number,
     attempts: PeerRpcAttempts = { count: 0 },
   ): Promise<string> {
+    const startedAt = nowMs();
+    const deadlineMs = policy.retryKind === 'read' ? policy.deadlineMs : undefined;
     for (let attempt = 0; ; attempt += 1) {
       this.assertBindingUnchanged(issuedBindingEpoch, action);
       attempts.count = attempt + 1;
+      const attemptTimeoutMs = deadlineMs === undefined
+        ? policy.timeoutMs
+        : Math.max(1, Math.min(policy.timeoutMs, deadlineMs - elapsedMs(startedAt)));
       try {
         const result = await this.withTimeout(
-          this.deviceRpc(this.targetDeviceId, commandJson, policy.timeoutMs),
+          this.deviceRpc(this.targetDeviceId, commandJson, attemptTimeoutMs),
           action,
-          policy.timeoutMs,
+          attemptTimeoutMs,
         );
         this.assertBindingUnchanged(issuedBindingEpoch, action);
         return result;
@@ -1115,6 +1177,11 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
         // A retired binding is cancellation, not a weak relay. In particular,
         // do not keep replaying a read after another device is rendered.
         this.assertBindingUnchanged(issuedBindingEpoch, action);
+        if (deadlineMs !== undefined) {
+          await this.backOffRead(action, error, attempt, startedAt, deadlineMs);
+          this.assertBindingUnchanged(issuedBindingEpoch, action);
+          continue;
+        }
         if (attempt >= policy.maxRetries) {
           throw error;
         }
@@ -1131,6 +1198,40 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
         this.assertBindingUnchanged(issuedBindingEpoch, action);
       }
     }
+  }
+
+  /**
+   * Reads: a delivered request that timed out means the host is not
+   * answering, so it fails at once as `peer_host_not_responding`. Only an
+   * unsent request or a lost reply is retried, and never past the deadline.
+   */
+  private async backOffRead(
+    action: string,
+    error: unknown,
+    attempt: number,
+    startedAt: number,
+    deadlineMs: number,
+  ): Promise<void> {
+    if (error instanceof PeerRpcTimeoutError) {
+      throw new PeerHostNotRespondingError(action, elapsedMs(startedAt), error);
+    }
+    if (!isPeerRetryableReadTransportError(error)) {
+      throw error;
+    }
+    const delayMs = Math.min(
+      PEER_RETRY_BASE_DELAY_MS * (2 ** attempt),
+      PEER_READ_RETRY_MAX_DELAY_MS,
+    );
+    if (elapsedMs(startedAt) + delayMs >= deadlineMs) {
+      throw new PeerHostNotRespondingError(action, elapsedMs(startedAt), error);
+    }
+    log.warn('Retrying recoverable Peer read', {
+      action,
+      attempt: attempt + 1,
+      delayMs,
+      error,
+    });
+    await new Promise(resolve => setTimeout(resolve, delayMs));
   }
 
   private async withTimeout<T>(

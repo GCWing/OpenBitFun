@@ -2378,6 +2378,7 @@
   },
   "peerHost": {
     "connectionInterrupted": "与设备的连接中断了，请重试。",
+    "notResponding": "该设备没有响应。请确认该设备上的 OpenBitFun 正在运行，然后重试。",
     "unavailable": "此功能在该设备上不可用。",
     "updateRequired": "该设备上的 OpenBitFun 版本不支持此功能。请尝试在该设备上更新 OpenBitFun。",
     "withDetail": "{{message}}（{{detail}}）"

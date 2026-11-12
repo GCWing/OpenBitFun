@@ -2378,6 +2378,7 @@
   },
   "peerHost": {
     "connectionInterrupted": "The connection to the device was interrupted. Try again.",
+    "notResponding": "That device is not responding. Check that OpenBitFun is running there, then try again.",
     "unavailable": "This feature is not available on that device.",
     "updateRequired": "The OpenBitFun version on that device does not support this feature. Try updating OpenBitFun on that device.",
     "withDetail": "{{message}} ({{detail}})"

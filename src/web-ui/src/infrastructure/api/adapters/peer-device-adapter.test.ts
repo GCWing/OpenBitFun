@@ -3,8 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PEER_BROWSER_CONTROL_SETUP_TIMEOUT_MS,
   PEER_MUTATION_REQUEST_TIMEOUT_MS,
-  PEER_READ_MAX_RETRIES,
+  PEER_READ_DEADLINE_MS,
   PEER_READ_REQUEST_TIMEOUT_MS,
+  PEER_SLOW_READ_REQUEST_TIMEOUT_MS,
+  PeerHostNotRespondingError,
   PEER_RETRY_BASE_DELAY_MS,
   PeerDeviceTransportAdapter,
   PeerProductCommandError,
@@ -560,8 +562,8 @@ describe('PeerDeviceTransportAdapter queue', () => {
     vi.useFakeTimers();
     try {
       const deviceRpc = vi.fn()
-        .mockRejectedValueOnce(new Error('relay unavailable'))
-        .mockRejectedValueOnce(new Error('gateway timeout'))
+        .mockRejectedValueOnce(new Error('Relay is disconnected; request was not submitted'))
+        .mockRejectedValueOnce(new Error('Relay connection closed before the reply arrived; delivery outcome is unknown'))
         .mockResolvedValueOnce(JSON.stringify({
           resp: 'host_invoke_result',
           ok: true,
@@ -972,7 +974,7 @@ describe('PeerDeviceTransportAdapter queue', () => {
     expect(deviceRpc).toHaveBeenCalledTimes(1);
   });
 
-  it('bounds a hung read and rejects after its retry budget', async () => {
+  it('reports a hung read as a host that is not responding after one bounded attempt', async () => {
     vi.useFakeTimers();
     try {
       const deviceRpc = vi.fn(
@@ -985,19 +987,55 @@ describe('PeerDeviceTransportAdapter queue', () => {
       const request = adapter.request('list_persisted_sessions_page', {
         request: { workspacePath: '/repo' },
       });
-      const rejection = expect(request).rejects.toThrow(
-        "Peer request 'list_persisted_sessions_page' timed out",
-      );
+      const rejection = expect(request).rejects.toBeInstanceOf(PeerHostNotRespondingError);
 
-      await vi.advanceTimersByTimeAsync(
-        (PEER_READ_REQUEST_TIMEOUT_MS * (PEER_READ_MAX_RETRIES + 1))
-          + (PEER_RETRY_BASE_DELAY_MS * ((2 ** PEER_READ_MAX_RETRIES) - 1)),
-      );
+      await vi.advanceTimersByTimeAsync(PEER_READ_REQUEST_TIMEOUT_MS);
       await rejection;
-      expect(deviceRpc).toHaveBeenCalledTimes(PEER_READ_MAX_RETRIES + 1);
+      await expect(request).rejects.toThrow(/^peer_host_not_responding:/);
+      expect(deviceRpc).toHaveBeenCalledTimes(1);
+      expect(deviceRpc).toHaveBeenCalledWith('peer-1', expect.any(String), PEER_READ_REQUEST_TIMEOUT_MS);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('gives scanning reads the whole read deadline in one attempt', async () => {
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
+      resp: 'host_invoke_result', ok: true, value: [],
+    }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+    await adapter.request('search_session_content', { request: { query: 'x' } });
+    expect(deviceRpc).toHaveBeenCalledWith('peer-1', expect.any(String), PEER_SLOW_READ_REQUEST_TIMEOUT_MS);
+  });
+
+  it('stops retrying an unsent read at the overall deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const deviceRpc = vi.fn().mockRejectedValue(
+        new Error('Relay is disconnected; request was not submitted'),
+      );
+      const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+
+      const request = adapter.request('get_opened_workspaces', { request: {} });
+      const rejection = expect(request).rejects.toBeInstanceOf(PeerHostNotRespondingError);
+      await vi.advanceTimersByTimeAsync(PEER_READ_DEADLINE_MS);
+      await rejection;
+      const calls = deviceRpc.mock.calls.length;
+      expect(calls).toBeGreaterThan(3);
+      await vi.advanceTimersByTimeAsync(PEER_READ_DEADLINE_MS);
+      expect(deviceRpc).toHaveBeenCalledTimes(calls);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not retry a read failure that is neither unsent nor a lost reply', async () => {
+    const deviceRpc = vi.fn().mockRejectedValue(new Error('RPC forbidden'));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+
+    await expect(adapter.request('get_opened_workspaces', { request: {} }))
+      .rejects.toThrow('RPC forbidden');
+    expect(deviceRpc).toHaveBeenCalledTimes(1);
   });
 });
 

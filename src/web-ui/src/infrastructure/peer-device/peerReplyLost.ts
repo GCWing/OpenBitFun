@@ -9,14 +9,31 @@
 // second pattern is the socket library's text from builds before it existed.
 const REPLY_LOST = /Relay connection closed before the reply arrived|failed to receive ack|Relay is disconnected/;
 
+/**
+ * `PEER_HOST_NOT_RESPONDING_CODE` in the peer transport adapter: a read whose
+ * host did not answer within its bounded deadline.
+ */
+const HOST_NOT_RESPONDING = /^peer_host_not_responding:/;
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+}
+
 export function isPeerReplyLost(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
-  return REPLY_LOST.test(message);
+  return REPLY_LOST.test(messageOf(error));
+}
+
+export function isPeerHostNotResponding(error: unknown): boolean {
+  return HOST_NOT_RESPONDING.test(messageOf(error));
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-/** Localized copy for a lost reply, or `null` when `error` is something else. */
+/**
+ * Localized copy for a lost reply or an unresponsive host, or `null` when
+ * `error` is something else. Both are retryable by the user.
+ */
 export function peerReplyLostMessage(error: unknown, t: Translate): string | null {
+  if (isPeerHostNotResponding(error)) return t('common:peerHost.notResponding');
   return isPeerReplyLost(error) ? t('common:peerHost.connectionInterrupted') : null;
 }
