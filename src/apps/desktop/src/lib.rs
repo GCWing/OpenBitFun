@@ -819,6 +819,14 @@ pub async fn run() {
         .manage(startup_trace.clone())
         .on_page_load(|webview, payload| {
             let label = webview.label();
+            // A reload discards the page's HostInvoke bridge listener without
+            // running its cleanup; until the new page registers again, Peer
+            // requests must be refused as not executed instead of timing out.
+            if label == "main"
+                && matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
+            {
+                api::peer_host_invoke::set_peer_host_bridge_ready(false);
+            }
             if label.starts_with("embedded-browser-view-")
                 || label.starts_with("embedded-browser-panel-view-")
             {
