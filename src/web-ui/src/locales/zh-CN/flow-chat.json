@@ -201,6 +201,7 @@
     "newerHistoryNotReady": "后续记录读取失败；当前内容仍可查看。",
     "remoteSessionMissing": "在后端找不到该会话数据。若刚重新连接过 SSH 远程工作区，请关闭并重新打开该远程项目，或新建会话后再试。",
     "synchronize": "重新同步记录",
+    "updatesPaused": "正在重新连接 {{device}}，更新已暂停。",
     "retry": "重试"
   },
   "usage": {

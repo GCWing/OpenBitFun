@@ -201,6 +201,7 @@
     "newerHistoryNotReady": "Later records could not be read. The current content is still available.",
     "remoteSessionMissing": "The backend session data was not found. If you just reconnected an SSH remote workspace, close and reopen the remote project, or create a new session and try again.",
     "synchronize": "Resync records",
+    "updatesPaused": "Reconnecting to {{device}}. Updates are paused.",
     "retry": "Retry"
   },
   "usage": {
