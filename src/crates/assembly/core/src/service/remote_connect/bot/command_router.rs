@@ -3756,6 +3756,7 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
     let mut tick = tokio::time::interval(LOCAL_TURN_TICK);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_settle_probe = std::time::Instant::now();
+    let mut unavailable_probes = 0u32;
     let failed = |shown: &std::collections::HashMap<String, std::time::Instant>, error: &str| {
         let msg = format!("{}{}", s.error_prefix, error);
         ForwardedTurnResult {
@@ -3818,10 +3819,25 @@ pub(crate) async fn execute_forwarded_turn_with_submission(
                         }
                         None if last_settle_probe.elapsed() >= LOCAL_SETTLE_PROBE => {
                             last_settle_probe = std::time::Instant::now();
-                            match read_local_turn(&dispatcher, &forward.session_id, &target_turn_id)
-                                .await
-                                .filter(|turn| turn.terminal())
-                            {
+                            let probe =
+                                probe_local_turn(&dispatcher, &forward.session_id, &target_turn_id)
+                                    .await;
+                            // A session deleted or moved off this host never
+                            // settles its turn here. Without a wall-clock cap the
+                            // watcher must end on that fact instead of probing
+                            // forever; two reads rule out a transient failure.
+                            unavailable_probes = match probe {
+                                LocalTurnProbe::SessionUnavailable => unavailable_probes + 1,
+                                _ => 0,
+                            };
+                            if unavailable_probes >= 2 {
+                                warn!(
+                                    "Bot turn watcher ended: session is no longer available on this host: session_id={}, turn_id={}",
+                                    forward.session_id, target_turn_id
+                                );
+                                return cancelled(&shown);
+                            }
+                            match probe.observed().filter(|turn| turn.terminal()) {
                                 Some(turn) if matches!(turn.status.as_str(), "failed" | "error") => {
                                     return failed(&shown, &turn.error.unwrap_or_default())
                                 }
@@ -3994,6 +4010,38 @@ async fn read_local_turn(
     session_id: &str,
     turn_id: &str,
 ) -> Option<openbitfun_services_integrations::remote_connect::bot::remote_turn::ObservedTurn> {
+    probe_local_turn(dispatcher, session_id, turn_id)
+        .await
+        .observed()
+}
+
+/// What a read of a local turn established.
+enum LocalTurnProbe {
+    /// The host could not serve the session at all (deleted, or its storage
+    /// is no longer available here).
+    SessionUnavailable,
+    /// The session answered but does not show this turn yet.
+    NotObserved,
+    Observed(openbitfun_services_integrations::remote_connect::bot::remote_turn::ObservedTurn),
+}
+
+impl LocalTurnProbe {
+    fn observed(
+        self,
+    ) -> Option<openbitfun_services_integrations::remote_connect::bot::remote_turn::ObservedTurn>
+    {
+        match self {
+            Self::Observed(turn) => Some(turn),
+            _ => None,
+        }
+    }
+}
+
+async fn probe_local_turn(
+    dispatcher: &crate::service::remote_connect::remote_server::RemoteExecutionDispatcher,
+    session_id: &str,
+    turn_id: &str,
+) -> LocalTurnProbe {
     let poll_host =
         crate::service_agent_runtime::CoreServiceAgentRuntime::remote_poll_host(dispatcher);
     let poll = openbitfun_services_integrations::remote_connect::handle_remote_poll_command(
@@ -4006,11 +4054,20 @@ async fn read_local_turn(
         },
     )
     .await;
-    serde_json::to_value(poll).ok().and_then(|poll| {
-        openbitfun_services_integrations::remote_connect::bot::remote_turn::observe_turn(
-            &poll, turn_id,
-        )
-    })
+    if matches!(
+        poll,
+        openbitfun_services_integrations::remote_connect::RemoteResponse::Error { .. }
+    ) {
+        return LocalTurnProbe::SessionUnavailable;
+    }
+    serde_json::to_value(poll)
+        .ok()
+        .and_then(|poll| {
+            openbitfun_services_integrations::remote_connect::bot::remote_turn::observe_turn(
+                &poll, turn_id,
+            )
+        })
+        .map_or(LocalTurnProbe::NotObserved, LocalTurnProbe::Observed)
 }
 
 /// The chat prompt for a tool that blocks its turn on the user, shared by
