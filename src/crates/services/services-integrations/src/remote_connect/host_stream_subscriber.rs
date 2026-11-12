@@ -437,6 +437,18 @@ impl Reader {
             if page.epoch != self.epoch {
                 return Ok(false);
             }
+            // Hosts that predate the eviction fence return the surviving suffix
+            // after evicting records past the cursor. Treat that as a restart
+            // rather than silently skipping the evicted records.
+            if page.truncated && page.oldest_seq > self.cursor.saturating_add(1) {
+                log::warn!(
+                    "Host stream evicted records past the reader cursor: session_id={} cursor={} oldest_seq={}",
+                    self.session_id,
+                    self.cursor,
+                    page.oldest_seq
+                );
+                return Ok(false);
+            }
             self.emit_page(&page, false)?;
             if let Some(last) = page.events.last() {
                 self.cursor = self.cursor.max(last.seq);
@@ -929,6 +941,23 @@ mod tests {
     }
     fn item(id: &str) -> serde_json::Value {
         serde_json::json!({"sessionId":"s","id":format!("item/{id}"),"turn":{"turnId":"one","sessionId":"s","status":"completed"},"round":{"id":"r","turnId":"one"},"item":{"type":"text","data":{"id":id}}})
+    }
+
+    #[tokio::test]
+    async fn legacy_host_eviction_past_the_cursor_is_a_resync_not_a_silent_skip() {
+        let mut evicted = history_page(40, vec![item("late")], false);
+        evicted.truncated = true;
+        evicted.oldest_seq = 40;
+        let mut contiguous = history_page(11, vec![item("next")], false);
+        contiguous.truncated = true;
+        contiguous.oldest_seq = 11;
+        let (mut reader, _, events) = scripted_reader(vec![evicted, contiguous]);
+        reader.epoch = 1;
+        reader.cursor = 10;
+        assert!(!reader.catch_up().await.unwrap());
+        assert!(events.lock().unwrap().is_empty(), "no partial suffix");
+        assert!(reader.catch_up().await.unwrap());
+        assert_eq!(events.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]

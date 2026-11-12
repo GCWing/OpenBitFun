@@ -155,6 +155,9 @@ struct StreamLog {
     record_index: BTreeMap<String, RecordIndexEntry>,
     bytes: usize,
     truncated: bool,
+    /// Highest live sequence dropped by the memory budget. A forward reader
+    /// whose cursor is below it missed records and must resynchronize.
+    evicted_through: u64,
     subscribers: HashMap<String, HashMap<Option<String>, Instant>>,
     last_activity: Instant,
     turn_snapshots: HashMap<String, TurnSnapshot>,
@@ -198,6 +201,7 @@ impl StreamLog {
             record_index: BTreeMap::new(),
             bytes: 0,
             truncated: false,
+            evicted_through: 0,
             subscribers: HashMap::new(),
             last_activity: Instant::now(),
             turn_snapshots: HashMap::new(),
@@ -276,6 +280,7 @@ impl StreamLog {
                     self.history.as_mut().unwrap().newer_evicted = true;
                 } else {
                     self.truncated = true;
+                    self.evicted_through = self.evicted_through.max(seq);
                 }
             }
         }
@@ -287,6 +292,26 @@ impl StreamLog {
 
     fn oldest(&self) -> u64 {
         self.events.keys().next().copied().unwrap_or(self.next_seq)
+    }
+
+    /// A forward read resumes after `after`. When the memory budget already
+    /// evicted live events past that cursor, returning the remaining suffix
+    /// would silently skip them. Like a slow backward reader crossing evicted
+    /// history, the stream takes a fresh epoch so the reader announces a gap and
+    /// reloads its latest page. A reader already on another epoch resyncs anyway.
+    fn fence_skipped_forward_read(&mut self, request: &StreamReadRequest) -> bool {
+        let Some(after) = request.after else {
+            return false;
+        };
+        if after >= self.evicted_through || request.epoch.is_some_and(|e| e != self.epoch) {
+            return false;
+        }
+        let previous = self.epoch;
+        self.epoch = fresh_epoch();
+        if self.epoch == previous {
+            self.epoch = (previous + 1) & JS_MAX_SAFE_INTEGER;
+        }
+        true
     }
 
     /// Measure a history page ending just before `before`. `limit` is a budget:
@@ -806,6 +831,20 @@ impl HostStreamHub {
         log.last_activity = Instant::now();
         if request.subscribe {
             log.subscribe(source_device_id, request.subscription_id.as_deref())?;
+        }
+        if log.fence_skipped_forward_read(request) {
+            log::warn!(
+                "Fenced host stream reader behind evicted records: stream_id={} after={} oldest_seq={}",
+                request.stream_id,
+                request.after.unwrap_or_default(),
+                log.oldest()
+            );
+            let page = log.read(&request.stream_id, request);
+            // Other readers learn the new epoch from the next hint.
+            state.dirty.insert(request.stream_id.clone());
+            drop(state);
+            self.wake.notify_one();
+            return page;
         }
         log.read(&request.stream_id, request)
     }
@@ -1724,6 +1763,65 @@ mod tests {
             !hub.is_active("other"),
             "synchronizing an unread session must not retain it"
         );
+    }
+
+    #[tokio::test]
+    async fn forward_reader_behind_evicted_records_is_fenced_with_a_new_epoch() {
+        let hub = HostStreamHub::start(Arc::new(Recorder(Default::default())));
+        hub.activate("s");
+        let slow = hub.read("d", &request("s")).unwrap();
+        let big = "y".repeat(4 * 1024 * 1024);
+        for index in 0..12 {
+            hub.append("s".into(), "session-record".into(), serde_json::json!({"sessionId":"s","id":format!("item/{index}"),"item":{"data":big}}))
+                .await
+                .unwrap();
+        }
+        let current = hub.read("d", &request("s")).unwrap();
+        assert!(current.truncated && current.oldest_seq > slow.cursor + 1);
+        assert_eq!(current.epoch, slow.epoch, "eviction alone keeps the epoch");
+        // A reader already past the evicted range keeps reading normally.
+        let caught_up = hub
+            .read(
+                "d",
+                &StreamReadRequest {
+                    after: Some(current.cursor),
+                    epoch: Some(current.epoch),
+                    ..request("s")
+                },
+            )
+            .unwrap();
+        assert_eq!(caught_up.epoch, current.epoch);
+        // The slow reader would skip evicted records: fence it instead.
+        let fenced = hub
+            .read(
+                "d",
+                &StreamReadRequest {
+                    after: Some(slow.cursor),
+                    epoch: Some(slow.epoch),
+                    ..request("s")
+                },
+            )
+            .unwrap();
+        assert_ne!(fenced.epoch, slow.epoch);
+        assert!(hub.needs_full_synchronization(&StreamReadRequest {
+            after: Some(slow.cursor),
+            epoch: Some(slow.epoch),
+            ..request("s")
+        }));
+        // Its latest-page resync adopts the new epoch and is not fenced again.
+        let resync = hub.read("d", &request("s")).unwrap();
+        let next = hub
+            .read(
+                "d",
+                &StreamReadRequest {
+                    after: Some(resync.cursor),
+                    epoch: Some(resync.epoch),
+                    ..request("s")
+                },
+            )
+            .unwrap();
+        assert_eq!(next.epoch, resync.epoch);
+        assert_eq!(resync.epoch, fenced.epoch);
     }
 
     #[tokio::test]
