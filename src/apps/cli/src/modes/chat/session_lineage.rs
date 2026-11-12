@@ -1239,7 +1239,6 @@ mod session_lineage_tests {
                 user_input: "continue".to_string(),
                 original_user_input: None,
                 user_message_metadata: None,
-                session_binding: None,
             },
         );
         assert_eq!(
@@ -1291,7 +1290,6 @@ mod session_lineage_tests {
                 user_input: "continue".to_string(),
                 original_user_input: None,
                 user_message_metadata: None,
-                session_binding: None,
             },
             AgenticEvent::TextChunk {
                 session_id: "first".to_string(),
@@ -1527,7 +1525,6 @@ mod session_lineage_tests {
                 user_input: "question".to_string(),
                 original_user_input: None,
                 user_message_metadata: None,
-                session_binding: None,
             },
             false,
         );

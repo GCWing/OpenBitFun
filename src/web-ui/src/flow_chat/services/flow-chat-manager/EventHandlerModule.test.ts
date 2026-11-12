@@ -123,38 +123,6 @@ describe('external BTW turn projection', () => {
   });
 });
 
-describe('remote-driven turn on an unloaded session', () => {
-  beforeEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
-  afterEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
-
-  const onAssistantWorkspace = (): FlowChatContext => ({
-    ...createFlowChatContext(),
-    currentWorkspaceId: 'assistant-workspace',
-    currentWorkspacePath: 'C:/Users/u/.openbitfun/personal_assistant/workspace',
-  });
-
-  it('attributes the placeholder to the owning workspace the host reports', () => {
-    __test_only__.handleDialogTurnStarted(onAssistantWorkspace(), {
-      sessionId: 'persisted-session', turnId: 'harmony-turn-1', turnIndex: 20, userInput: 'Continue',
-      workspacePath: 'D:/repo', projectWorkspacePath: 'D:/repo', workspaceId: 'project-workspace',
-    });
-    const session = FlowChatStore.getInstance().getState().sessions.get('persisted-session');
-    expect(session?.workspaceId).toBe('project-workspace');
-    expect(session?.workspacePath).toBe('D:/repo');
-    expect(session?.config.workspaceId).toBe('project-workspace');
-    expect(session?.projectWorkspacePath).toBe('D:/repo');
-    expect(session?.config.projectWorkspacePath).toBe('D:/repo');
-  });
-
-  it('keeps the current-workspace fallback for an older host without binding facts', () => {
-    __test_only__.handleDialogTurnStarted(onAssistantWorkspace(), {
-      sessionId: 'legacy-session', turnId: 'turn-1', turnIndex: 0, userInput: 'Hello',
-    });
-    const session = FlowChatStore.getInstance().getState().sessions.get('legacy-session');
-    expect(session?.workspaceId).toBe('assistant-workspace');
-  });
-});
-
 describe('turn finalization', () => {
   beforeEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
   afterEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });

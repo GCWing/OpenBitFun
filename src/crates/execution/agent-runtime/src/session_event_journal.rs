@@ -736,7 +736,6 @@ mod tests {
             user_input: "prompt".to_string(),
             original_user_input: None,
             user_message_metadata: None,
-            session_binding: None,
         }
     }
 

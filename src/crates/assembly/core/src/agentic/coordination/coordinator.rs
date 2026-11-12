@@ -4689,7 +4689,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 user_input: prompt.clone(),
                 original_user_input: (display_input != prompt).then_some(display_input),
                 user_message_metadata: Some(user_message_metadata.clone()),
-                session_binding: self.session_manager.session_workspace_binding(&session_id),
             })
             .await;
             self.emit_event(AgenticEvent::ModelRoundStarted {
@@ -6214,7 +6213,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             user_input: MANUAL_COMPACTION_COMMAND.to_string(),
             original_user_input: None,
             user_message_metadata: user_message_metadata.clone(),
-            session_binding: self.session_manager.session_workspace_binding(&session_id),
         })
         .await;
 
@@ -7471,7 +7469,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 None
             },
             user_message_metadata: user_message_metadata.clone(),
-            session_binding: self.session_manager.session_workspace_binding(&session_id),
         })
         .await;
 
@@ -11228,7 +11225,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 user_input: user_input_text.clone(),
                 original_user_input: None,
                 user_message_metadata: None,
-                session_binding: self.session_manager.session_workspace_binding(&session_id),
             })
             .await;
         }
@@ -15988,9 +15984,6 @@ impl openbitfun_runtime_ports::AgentUserShellCommandPort for ConversationCoordin
             user_input: format!("!{}", request.command),
             original_user_input: None,
             user_message_metadata: None,
-            session_binding: self
-                .session_manager
-                .session_workspace_binding(&request.session_id),
         };
 
         let session_manager = Arc::clone(&self.session_manager);
@@ -21798,22 +21791,10 @@ pub(crate) mod tests {
             .expect("load turns");
         let turn = turns.last().expect("shell turn");
         let events = coordinator.event_queue.dequeue_batch(100).await;
-        let started_binding = events.iter().find_map(|envelope| match &envelope.event {
-            AgenticEvent::DialogTurnStarted {
-                turn_id,
-                session_binding,
-                ..
-            } if turn_id == "turn-shell" => Some(session_binding.clone()),
-            _ => None,
-        });
-        // A surface that has not loaded the session attributes the Turn to
-        // its owning workspace from this binding, not to its current one.
-        assert_eq!(
-            started_binding
-                .expect("turn started event")
-                .and_then(|binding| binding.workspace_path),
-            session.config.workspace_path
-        );
+        assert!(events.iter().any(|envelope| matches!(
+            &envelope.event,
+            AgenticEvent::DialogTurnStarted { turn_id, .. } if turn_id == "turn-shell"
+        )));
         assert!(!events.iter().any(|envelope| matches!(
             &envelope.event,
             AgenticEvent::DialogTurnFailed { turn_id, .. } if turn_id == "turn-shell"
