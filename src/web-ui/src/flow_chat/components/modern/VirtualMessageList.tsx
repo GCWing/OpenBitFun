@@ -99,6 +99,7 @@ import type { FlowChatViewportSnapshot } from './flowChatViewportSnapshot';
 import { getVirtualItemBookmarkKey, getVirtualItemStableKey } from './virtualItemIdentity';
 import { useConversationTimeline } from '../../timeline/useConversationTimeline';
 import { FlowChatReaderProvider } from '../../timeline/readerState';
+import { retainedTranscriptRowSizes } from '../../timeline/retainedViewMemory';
 import { findTimelineBlockIndex } from '../../timeline/document';
 import { localizeMarkdownMatch } from '../../timeline/markdownSectionSearch';
 import { useTimelineInteraction, type TimelineReaderInteraction } from '../../timeline/useTimelineInteraction';
@@ -139,12 +140,13 @@ const HISTORY_WINDOW_DIRECTIONS: readonly SessionHistoryWindowDirection[] = ['be
  * Transcripts mounted this session, counted.
  *
  * The list is keyed on the session id, so a switch is a full remount: new
- * scroller, empty measurement cache, fresh opening reveal, and a follow hook
- * that has never followed anything. Nothing in the trail said which instance a
+ * scroller, a measurement cache seeded only from retained row sizes, fresh
+ * opening reveal, and a follow hook that has never followed anything. Nothing in the trail said which instance a
  * line came from, and two of the three viewport faults measured here turned out
  * to be two instances disagreeing rather than one instance changing its mind.
  */
 let nextViewportInstanceId = 0;
+
 const IDLE_HISTORY_WINDOW_BOUNDARY_STATE: Record<
   SessionHistoryWindowDirection,
   'idle' | 'loading' | 'error'
@@ -419,6 +421,8 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   }, [activeSessionState.isProcessing]);
   const activeSessionId = activeSession?.sessionId ?? null;
   const { items: virtualItems, reader } = useConversationTimeline(sourceItems, activeSessionId ?? undefined, 'main');
+  // Read once for the virtualizer's mount; claimed and handed back below.
+  const [retainedItemSizes] = useState(() => retainedTranscriptRowSizes.peek(reader));
   const timelineItemsRef = useRef(virtualItems);
   timelineItemsRef.current = virtualItems;
   const nextVisibleItemIndexes = useMemo(() => getNextVisibleVirtualItemIndexes(virtualItems), [virtualItems]);
@@ -600,7 +604,14 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     writeViewport: viewportOwner.write,
     shiftViewport: shiftMeasuredViewport,
     getViewportAnchorKey: () => measurementAnchorKeyRef.current(),
+    retainedItemSizes,
   });
+  const snapshotItemSizes = virtualizer.snapshotItemSizes;
+  useLayoutEffect(() => {
+    retainedTranscriptRowSizes.take(reader);
+    // Sizes only: no geometry is read, so unmount-phase DOM cannot skew them.
+    return () => retainedTranscriptRowSizes.put(reader, snapshotItemSizes());
+  }, [reader, snapshotItemSizes]);
 
   // Streaming replaces `virtualItems` every flush while its Turn boundaries
   // stay the same. Keep the previous array then, so callbacks and observers

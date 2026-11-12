@@ -205,6 +205,7 @@ vi.mock('./useFlowChatVirtualizer', async () => {
         scrollItemIntoView: mocks.scrollItemIntoView,
         scrollToOffset: mocks.scrollToOffset,
         cancelAim: mocks.cancelAim,
+        snapshotItemSizes: () => new Map(),
       };
     },
   };

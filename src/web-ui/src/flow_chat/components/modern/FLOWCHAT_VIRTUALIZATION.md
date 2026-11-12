@@ -103,6 +103,61 @@ summaries. Catalog corrections, partial-tail offsets, provisional usage reports
 and explicit history-window offsets keep their existing precedence. No Session,
 Turn body, viewport position or editor state is retained by this cache.
 
+### Session switch retention
+
+`VirtualMessageList` keys its session subtree by session id, so a switch
+remounts the virtualizer, its key cache, every row and the timeline projection.
+Before retention, reopening a session cost exactly what its first open did: rows
+reserved estimates again, the opening reveal corrected each mounted row, and
+rows selected from those estimates mounted only to be dropped. In the
+supplied-geometry fixture (24 Turns, real heights far from estimates) a
+native-history open spent 7 size corrections, 6 commits, 7 row mounts and 3
+dropped rows; a live open 6 / 6 / 6 / 2.
+
+The remount itself stays. Follow, anchor, opening reveal and viewport
+ownership start fresh on every mount, and scroll restoration still comes only
+from the saved viewport snapshot. What survives is derived and rebuildable:
+
+- `retainedTimelineProjections` (`useConversationTimeline.ts`) keeps the
+  `ConversationDocumentProjection`, so a reopened view resumes its rows and its
+  view-local key aliases instead of rebuilding them.
+- `retainedTranscriptRowSizes` (`timeline/retainedViewMemory.ts`) keeps the
+  measured row sizes by stable item key, newest first and at most 4096 per
+  view. `useFlowChatVirtualizer` seeds them as the rows' reservations on mount
+  (`retainedItemSizes`) and hands them back through `snapshotItemSizes()`. The
+  live tail seed sums reservations, so it also starts from retained sizes.
+
+Both are keyed by the view's reader store, which is already scoped by surface
+epoch, viewport and session, so device sources never share an entry. A mounted
+view claims its entry and returns it on unmount; only the three most recently
+left views are held. A retained size is a reservation like any other: a
+mounted row is still measured and still replaces it, and a width or font change
+leaves it in place under the same rule as a live reservation. It is also a
+measurement: the next resize of a retained row is judged as a resize of content
+the reader may be looking at, never as a first measurement, so a partly visible
+retained row that grows does not shift the viewport. The snapshot
+reads no geometry, so the unmount-phase DOM cannot skew it. A retained
+projection holds its rows strongly, so up to three inactive views keep their
+derived rows until they are reopened or evicted.
+
+With retention the same fixture reopens a native-history session with 0
+corrections, 5 commits, 3 mounts and 0 dropped rows, at the same placement. A
+live reopen makes 0 corrections and 5 mounts at an unchanged 6 commits; it
+still drops 2 rows, because the
+one-time tail seed starts at the last item's start before follow takes the end.
+A row that changed while the session was hidden costs one correction.
+`VirtualMessageList.session-switch.test.tsx`,
+`useFlowChatVirtualizer.retained-sizes.test.tsx` and
+`useConversationTimeline.retention.test.tsx` cover this with supplied geometry
+on the local surface. Native switching time, paint and remote surfaces are not
+measured by them.
+
+The Turn rail no longer rebuilds per flush. `ModernFlowChatContainer` keeps the
+previous `dialogTurns` input while every Turn's id, user-message content and
+composer presentation are unchanged, parses capsule previews once per stored
+presentation object, and passes `FlowChatTurnRail` (now `React.memo`) a stable
+navigation callback and empty visible-Turn list.
+
 ### Settled record identity
 
 Live text/thinking items can have client-generated IDs, while the host's settled

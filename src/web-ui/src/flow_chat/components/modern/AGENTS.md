@@ -196,6 +196,10 @@ before reporting a defect as new.
 - Opening readiness follows the viewport's settled layout signal. The user
   bubble may legitimately be virtualized away at a long reply's end; do not
   reintroduce user-message polling or a fixed opening delay.
+- A session switch remounts the transcript. Only derived, rebuildable state
+  survives it — the timeline projection and measured row sizes by stable item
+  key, in `timeline/retainedViewMemory.ts`, bounded to the three most recently
+  left views. Follow, anchor, opening and viewport ownership stay per mount.
 - Viewport snapshot callbacks stay current through a ref. Capture synchronously
   only on actual session unmount, not in effect cleanup on every history-window
   change: mutation-phase geometry can see half-replaced virtual padding.
