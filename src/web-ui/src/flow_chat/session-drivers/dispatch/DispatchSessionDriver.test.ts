@@ -171,6 +171,22 @@ describe('DispatchSessionDriver', () => {
       expect(dispatchJobStore.getState().cancelStateByJobId['job-1']).toBe('stopping');
     });
 
+    it('stops retrying when a follow-up was accepted during the retry delay', async () => {
+      vi.useFakeTimers();
+      registerJob([]);
+      // The first attempt landed on the target, but its reply was lost.
+      mocks.cancel.mockRejectedValueOnce(new Error('dispatch cancel timed out'));
+
+      const result = cancelDispatchJob('job-1');
+      dispatchJobStore.getState().updateProgress('job-1', { state: 'cancelled' });
+      dispatchJobStore.getState().markFollowUpAccepted('job-1', 'queued');
+      await vi.advanceTimersByTimeAsync(DISPATCH_CANCEL_RETRY_DELAYS_MS[0]);
+
+      await expect(result).resolves.toBe(false);
+      // The user's new turn is not cancelled by a stale retry.
+      expect(mocks.cancel).toHaveBeenCalledTimes(1);
+    });
+
     it('does not retry once the job is already terminal', async () => {
       registerJob([]);
       dispatchJobStore.getState().updateProgress('job-1', { state: 'succeeded' });

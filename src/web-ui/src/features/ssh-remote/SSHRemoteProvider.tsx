@@ -153,6 +153,8 @@ interface SSHRemoteProviderProps {
 /** Background liveness check cadence for each connection in use. */
 const SSH_HEARTBEAT_INTERVAL_MS = 30_000;
 /** Visibility, network and timeout events can arrive in bursts. */
+/** Show a wake re-verification only once it outlasts a normal round trip. */
+const SSH_VERIFYING_DISPLAY_DELAY_MS = 500;
 const SSH_WAKE_CHECK_MIN_GAP_MS = 2_000;
 
 interface SshHeartbeat {
@@ -689,7 +691,12 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       if (checking) return;
       if (trigger === 'wake' && Date.now() - lastCheckAt < SSH_WAKE_CHECK_MIN_GAP_MS) return;
       checking = true;
-      if (trigger === 'wake') setVerifying(connId, true);
+      // A healthy link answers within a frame or two; only a check that is
+      // still pending shows "connecting", so restoring the window does not
+      // flash every remote row.
+      const verifyingTimer = trigger === 'wake'
+        ? window.setTimeout(() => setVerifying(connId, true), SSH_VERIFYING_DISPLAY_DELAY_MS)
+        : undefined;
       try {
         const connected = await sshApi.isConnected(connId);
         lastCheckAt = Date.now();
@@ -699,6 +706,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
         // A transient invoke error is retried at the next heartbeat.
       } finally {
         checking = false;
+        if (verifyingTimer !== undefined) window.clearTimeout(verifyingTimer);
         setVerifying(connId, false);
       }
     };

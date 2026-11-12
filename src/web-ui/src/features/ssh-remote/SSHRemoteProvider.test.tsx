@@ -649,6 +649,9 @@ describe('SSHRemoteProvider workspace connection state', () => {
       await Promise.resolve();
     });
     expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-1');
+    // A healthy link answers before the row would flash "connecting".
+    expect(latestContext!.verifyingConnectionIds).toEqual({});
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
     expect(latestContext!.verifyingConnectionIds).toEqual({ 'conn-1': true });
 
     const historyBeforeAnswer = statusHistory.length;

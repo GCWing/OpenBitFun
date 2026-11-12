@@ -684,6 +684,14 @@ const LIVENESS_PROBE_TIMEOUT: Duration = if cfg!(test) {
 } else {
     Duration::from_secs(5)
 };
+/// Second, patient probe after a timeout. Long enough for a channel request
+/// queued behind a full window of transfer data on a slow link; a half-open
+/// link is still declared dead within about 25 seconds instead of minutes.
+const LIVENESS_PROBE_RETRY_TIMEOUT: Duration = if cfg!(test) {
+    Duration::from_millis(500)
+} else {
+    Duration::from_secs(20)
+};
 
 fn wall_clock_ms() -> u64 {
     std::time::SystemTime::now()
@@ -737,8 +745,10 @@ impl ConnectionLiveness {
 enum TransportProbe {
     /// The server answered (a refused channel still proves the link works).
     Answered,
-    /// The transport is closed, or the server did not answer in time.
+    /// The transport is closed or failed.
     Unresponsive,
+    /// No answer within the probe window: dead, or only busy.
+    TimedOut,
 }
 
 fn classify_probe_result<T>(
@@ -748,7 +758,8 @@ fn classify_probe_result<T>(
         Ok(Ok(_)) => TransportProbe::Answered,
         // MaxSessions and similar refusals are answers from a live server.
         Ok(Err(russh::Error::ChannelOpenFailure(_))) => TransportProbe::Answered,
-        Ok(Err(_)) | Err(_) => TransportProbe::Unresponsive,
+        Ok(Err(_)) => TransportProbe::Unresponsive,
+        Err(_) => TransportProbe::TimedOut,
     }
 }
 
@@ -4811,21 +4822,21 @@ impl SSHConnectionManager {
         if !liveness.probe_due(wall_clock_ms()) {
             return true;
         }
-        let result =
-            tokio::time::timeout(LIVENESS_PROBE_TIMEOUT, handle.channel_open_session()).await;
-        let outcome = match result {
-            Ok(Ok(channel)) => {
-                let _ = channel.close().await;
-                TransportProbe::Answered
-            }
-            other => classify_probe_result(other),
-        };
+        let mut outcome = Self::probe_transport_once(handle, LIVENESS_PROBE_TIMEOUT).await;
+        if outcome == TransportProbe::TimedOut {
+            // A busy link (a large transfer or a chatty terminal on a slow
+            // network) queues the channel request behind a window of data.
+            // Give it one patient retry before tearing down a session that is
+            // only slow; a half-open link stays silent and fails this too.
+            liveness.mark_suspect();
+            outcome = Self::probe_transport_once(handle, LIVENESS_PROBE_RETRY_TIMEOUT).await;
+        }
         match outcome {
             TransportProbe::Answered => {
                 liveness.confirm(wall_clock_ms());
                 true
             }
-            TransportProbe::Unresponsive => {
+            TransportProbe::Unresponsive | TransportProbe::TimedOut => {
                 log::warn!(
                     "SSH transport did not answer a liveness probe; marking it disconnected: connection_id={}",
                     connection_id
@@ -4833,6 +4844,19 @@ impl SSHConnectionManager {
                 alive.store(false, Ordering::SeqCst);
                 false
             }
+        }
+    }
+
+    async fn probe_transport_once(
+        handle: &Handle<SSHHandler>,
+        timeout: Duration,
+    ) -> TransportProbe {
+        match tokio::time::timeout(timeout, handle.channel_open_session()).await {
+            Ok(Ok(channel)) => {
+                let _ = channel.close().await;
+                TransportProbe::Answered
+            }
+            other => classify_probe_result(other),
         }
     }
 
@@ -7757,7 +7781,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn liveness_probe_treats_refusals_as_answers_and_silence_as_dead() {
+    async fn liveness_probe_separates_refusals_failures_and_silence() {
         assert_eq!(
             classify_probe_result::<()>(Ok(Err(russh::Error::ChannelOpenFailure(
                 russh::ChannelOpenFailure::AdministrativelyProhibited,
@@ -7771,9 +7795,10 @@ mod tests {
         let elapsed = tokio::time::timeout(Duration::ZERO, std::future::pending::<()>())
             .await
             .unwrap_err();
+        // Silence is not yet proof of death: a busy link gets a patient retry.
         assert_eq!(
             classify_probe_result::<()>(Err(elapsed)),
-            TransportProbe::Unresponsive
+            TransportProbe::TimedOut
         );
     }
 

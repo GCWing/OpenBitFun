@@ -194,6 +194,12 @@ function cancelRetryDelay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function isClientDeadlineError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return code === 'REQUEST_TIMEOUT' || message === 'Request timeout';
+}
+
 /**
  * Ask the target to stop a job, retrying transport failures. The outcome is
  * recorded in the observer store so the chat can show `stopping` until the
@@ -212,6 +218,11 @@ export async function cancelDispatchJob(jobId: string): Promise<boolean> {
       await cancelRetryDelay(DISPATCH_CANCEL_RETRY_DELAYS_MS[attempt - 1]);
       if (isDispatchJobTerminal(dispatchJobStore.getState().jobs[jobId]?.state)) {
         dispatchJobStore.getState().setCancelState(jobId, undefined);
+        return false;
+      }
+      // A follow-up accepted meanwhile (an earlier attempt landed after all)
+      // clears `stopping`; retrying would cancel the user's new turn.
+      if (dispatchJobStore.getState().cancelStateByJobId?.[jobId] !== 'stopping') {
         return false;
       }
     }
@@ -499,7 +510,10 @@ export const dispatchSessionDriver: SessionDriver = {
         const unsubscribeSession = context.flowChatStore.subscribe(listener);
         return () => { unsubscribeJobs(); unsubscribeSession(); };
       },
-      submittingGraceMs: isOutcomeUnknownError(error) ? undefined : DISPATCH_SUBMITTING_GRACE_MS,
+      // A client deadline says nothing about the target; only a failure that
+      // provably happened before sending may settle by grace.
+      submittingGraceMs: isOutcomeUnknownError(error) || isClientDeadlineError(error)
+        ? undefined : DISPATCH_SUBMITTING_GRACE_MS,
       refresh: () => requestDispatchJobRefresh(jobId),
     });
   },

@@ -1227,6 +1227,12 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
           for (const [queuedJobId, explicit] of [...lane.queue]) {
             if (explicit) continue;
             lane.queue.delete(queuedJobId);
+            // Only jobs this observer would read again can later be marked
+            // reachable. A settled, drained job or a local pre-ack submit
+            // would otherwise keep an "Unreachable" badge for the whole run.
+            const queuedJob = dispatchJobStore.getState().jobs[queuedJobId];
+            if (!queuedJob || queuedJob.state === 'submitting'
+              || (isDispatchJobTerminal(queuedJob.state) && queuedJob.terminalDrained)) continue;
             dispatchJobStore.getState().setTransportState(queuedJobId, 'unreachable', message);
           }
         }

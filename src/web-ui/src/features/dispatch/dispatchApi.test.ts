@@ -46,7 +46,7 @@ describe('dispatchApi', () => {
         model: 'target-model',
         reasoningPreset: 'high',
       }),
-    });
+    }, { timeout: 0 });
   });
 
   it('carries Auto when continuing a job to clear the target override', async () => {

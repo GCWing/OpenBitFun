@@ -109,9 +109,12 @@ export const dispatchApi = {
     sourceWorkspaceId?: string;
     attachments?: DispatchInlineAttachment[];
   }): Promise<DispatchSubmitResponse> {
+    // Provisioning the target (worktree, object transfer) can outlast a client
+    // deadline while it is still running; the backend bounds each network
+    // step itself. A client timeout would only misreport a live submit.
     return api.invoke<DispatchSubmitResponse>('dispatch_submit', {
       request,
-    });
+    }, { timeout: 0 });
   },
 
   /**
