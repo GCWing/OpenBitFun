@@ -69,3 +69,34 @@ test('foreground retry recovers a failed initial stream grant without replaying 
   const sub=subscribeHostCatalog(source,async()=>{},()=>{errors++;});await tick();assert.equal(errors,1);
   await sub.refresh();await tick();assert.equal(grants,2);sub.close();assert.equal(closed,1);
 });
+
+test('a failed subscribe is retried with backoff and the error clears once connected', async()=>{
+  let grants=0, healthy=0; const errors=[]; let callbacks;
+  const source={async subscribeSessionStream(id,next){grants++;callbacks=next;if(grants===1)throw Error('offline');return {close(){},wake(){},async loadOlder(){}};}};
+  const sub=subscribeHostCatalog(source,async()=>{},error=>errors.push(error),()=>{healthy++;});
+  await tick(); assert.equal(errors.length,1); assert.equal(grants,1);
+  await new Promise(resolve=>setTimeout(resolve,1100));
+  assert.equal(grants,2,'retried on its own without a foreground refresh');
+  callbacks.onCaughtUp(); assert.equal(healthy,1,'the caller clears the error it showed');
+  sub.close();
+});
+
+test('relay reconnects and host-online changes retry at once and replace a stalled reader', async()=>{
+  let grants=0, reads=0; const handles=[]; let recover; const callbacks=[];
+  const source={
+    onRecoverySignal(listener){recover=listener;return ()=>{recover=null;};},
+    async subscribeSessionStream(id,next){grants++;callbacks.push(next);if(grants===1)throw Error('offline');
+      const handle={closed:false,close(){handle.closed=true;},wake(){},async loadOlder(){}};handles.push(handle);return handle;},
+  };
+  const sub=subscribeHostCatalog(source,async()=>{reads++;},()=>{});
+  await tick(); assert.equal(grants,1);
+  recover(); await tick(); assert.equal(grants,2,'no backoff wait after a recovery signal');
+  callbacks[1].onCaughtUp(); await tick(); assert.equal(reads,1);
+  recover(); await tick(); assert.equal(grants,2,'a healthy reader is left alone');
+  callbacks[1].onError(Error('Relay connection changed'));
+  recover(); await tick();
+  assert.equal(handles[0].closed,true,'the stalled reader is replaced');
+  assert.equal(grants,3);
+  callbacks[2].onCaughtUp(); await tick(); assert.equal(reads,2,'the list is read again after recovery');
+  sub.close(); assert.equal(recover,null);
+});
