@@ -20,7 +20,7 @@ use openbitfun_product_domains::remote_surface::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Notify};
 
 use super::remote_connect_api::{account_app_handle, current_device_id_for_peer, RelayRoute};
 
@@ -57,6 +57,17 @@ static PEER_CONTROL_STATE: OnceLock<Mutex<PeerControlState>> = OnceLock::new();
 /// (startup, a reload) a bridged request could only wait for its timeout.
 static PEER_HOST_BRIDGE_READY: AtomicBool = AtomicBool::new(false);
 
+/// Wakes requests waiting for the bridge listener to register.
+static PEER_HOST_BRIDGE_READY_CHANGED: Notify = Notify::const_new();
+
+/// How long a product request waits for the bridge before it is refused.
+///
+/// Older controllers treat `peer_host_ui_not_ready` as a final error, so a
+/// request that arrives while this host is starting or reloading its webview
+/// waits for the bridge first. Newer controllers retry the refusal, so this
+/// only shortens their wait.
+const PEER_HOST_BRIDGE_READY_WAIT: Duration = Duration::from_secs(10);
+
 /// Stable prefix of the refusal sent while the bridge listener is not
 /// registered. The request was not executed, so a controller may retry it.
 pub(crate) const PEER_HOST_UI_NOT_READY: &str = "peer_host_ui_not_ready";
@@ -75,10 +86,31 @@ fn peer_control_state() -> &'static Mutex<PeerControlState> {
 
 pub(crate) fn set_peer_host_bridge_ready(ready: bool) {
     PEER_HOST_BRIDGE_READY.store(ready, Ordering::SeqCst);
+    if ready {
+        PEER_HOST_BRIDGE_READY_CHANGED.notify_waiters();
+    }
 }
 
 pub(crate) fn is_peer_host_bridge_ready() -> bool {
     PEER_HOST_BRIDGE_READY.load(Ordering::SeqCst)
+}
+
+/// Wait up to `timeout` for the bridge listener; returns whether it is ready.
+async fn wait_for_peer_host_bridge_ready(timeout: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        // Register before checking, so a readiness change between the check
+        // and the wait still wakes this request.
+        let changed = PEER_HOST_BRIDGE_READY_CHANGED.notified();
+        tokio::pin!(changed);
+        changed.as_mut().enable();
+        if is_peer_host_bridge_ready() {
+            return true;
+        }
+        if tokio::time::timeout_at(deadline, changed).await.is_err() {
+            return is_peer_host_bridge_ready();
+        }
+    }
 }
 
 fn peer_host_ui_not_ready_error() -> String {
@@ -491,8 +523,9 @@ pub async fn dispatch(command: &str, args: Value) -> HostInvokeBridgeResult {
     };
     // Fail fast instead of emitting into a webview with no bridge listener:
     // the request would only time out, and the controller could not tell
-    // whether it ran. This refusal proves it did not.
-    if !is_peer_host_bridge_ready() {
+    // whether it ran. This refusal proves it did not. A starting or reloading
+    // webview usually registers within a few seconds, so wait for it first.
+    if !wait_for_peer_host_bridge_ready(PEER_HOST_BRIDGE_READY_WAIT).await {
         return HostInvokeBridgeResult {
             ok: false,
             value: None,
@@ -1081,6 +1114,23 @@ mod tests {
     #[test]
     fn the_not_ready_refusal_carries_its_stable_prefix() {
         assert!(peer_host_ui_not_ready_error().starts_with("peer_host_ui_not_ready: "));
+    }
+
+    /// The only test that changes the process-wide readiness flag.
+    #[tokio::test(start_paused = true)]
+    async fn a_request_waits_for_the_starting_bridge_before_it_is_refused() {
+        set_peer_host_bridge_ready(false);
+        let waiter = tokio::spawn(wait_for_peer_host_bridge_ready(PEER_HOST_BRIDGE_READY_WAIT));
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        set_peer_host_bridge_ready(true);
+        assert!(waiter.await.expect("waiter"), "ready bridge ends the wait");
+        assert!(wait_for_peer_host_bridge_ready(Duration::ZERO).await);
+
+        // A bridge that never registers is refused once the wait elapses.
+        set_peer_host_bridge_ready(false);
+        let started = tokio::time::Instant::now();
+        assert!(!wait_for_peer_host_bridge_ready(PEER_HOST_BRIDGE_READY_WAIT).await);
+        assert!(started.elapsed() >= PEER_HOST_BRIDGE_READY_WAIT);
     }
 
     #[test]
