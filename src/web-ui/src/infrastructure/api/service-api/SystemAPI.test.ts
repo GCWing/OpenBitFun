@@ -149,7 +149,7 @@ describe('SystemAPI', () => {
     await systemAPI.installPendingUpdate('2.0.0');
     expect(invokeMock).toHaveBeenCalledWith('install_pending_update', {
       request: { version: '2.0.0' },
-    }, { timeout: 120000, retries: 0 });
+    }, { timeout: 300000, retries: 0 });
   });
 
   it('sends the requested app-wide state', async () => {

@@ -238,7 +238,7 @@ pub(super) async fn ranked_updater(
             app.updater_builder()
         }
     };
-    crate::api::update_api::with_update_exit_cleanup(builder, app)
+    crate::api::update_api::configure_updater(builder)
         .build()
         .map_err(|error| error.to_string())
 }

@@ -1,14 +1,26 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
+test('desktop updates use the official registry crate without a source patch', () => {
+  const manifest = readFileSync(new URL('../Cargo.toml', import.meta.url), 'utf8');
+  const patches = manifest.split('[patch.crates-io]')[1].split(/^\[/m)[0];
+  assert.doesNotMatch(patches, /^tauri-plugin-updater\s*=/m);
+  assert.equal(existsSync(new URL('../third_party/tauri-plugin-updater', import.meta.url)), false);
+  const lock = readFileSync(new URL('../Cargo.lock', import.meta.url), 'utf8');
+  const updater = lock.match(/\[\[package\]\]\r?\nname = "tauri-plugin-updater"[\s\S]*?(?=\[\[package\]\]|$)/)?.[0];
+  assert.ok(updater);
+  assert.match(updater, /source = "registry\+https:\/\/github.com\/rust-lang\/crates.io-index"/);
+  assert.match(updater, /checksum = "[0-9a-f]{64}"/);
+});
+
 test('native Windows supervisor records startup failure before authorizing application exit', { skip: process.platform !== 'win32' }, t => {
   const temp = mkdtempSync(join(tmpdir(), "openbitfun-update-'测试-"));
   t.after(() => rmSync(temp, { recursive: true, force: true }));
-  const source = readFileSync(new URL('../third_party/tauri-plugin-updater/src/updater.rs', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../src/apps/desktop/src/update_maintenance/windows.rs', import.meta.url), 'utf8');
   const template = source.match(/r#"(\$ErrorActionPreference='Stop'[\s\S]*?)"#,/)?.[1];
   assert.ok(template, 'use the production supervisor source');
   const quote = value => `'${value.replaceAll("'", "''")}'`;

@@ -48,6 +48,7 @@ pub mod runtime;
 pub mod sleep_prevention;
 pub mod startup_trace;
 pub mod tray;
+mod update_maintenance;
 mod webview_recovery;
 mod window_material;
 mod window_state_support;

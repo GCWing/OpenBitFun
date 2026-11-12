@@ -5,14 +5,14 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{io::Write, path::Path, sync::OnceLock};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_updater::{Update, UpdaterBuilder, UpdaterExt};
+use tauri_plugin_updater::UpdaterBuilder;
 
 const PROGRESS_EVENT: &str = "openbitfun-update-progress";
 const RECORD_NAME: &str = "pending.json";
 const RECEIPT_NAME: &str = "install-result.json";
 
 // Serialize downloads and installs at the host, including calls from multiple windows.
-static UPDATE: OnceLock<tokio::sync::Mutex<Option<Update>>> = OnceLock::new();
+static UPDATE: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static CANCEL_DOWNLOAD: OnceLock<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
     OnceLock::new();
 
@@ -228,8 +228,8 @@ fn verify_package(bytes: &[u8], record: &PendingUpdateRecord, pubkey: &str) -> R
             "Pending update signature verification failed: package checksum mismatch".into(),
         );
     }
-    // Update::install does not verify bytes. Re-verify persisted bytes against
-    // the bundled trust root, never a public key supplied by the cache record.
+    // The official downloader verified the original transfer. Re-verify cached
+    // bytes against the bundled trust root before handing them to our adapter.
     let decode = |value: &str| -> Result<String, String> {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(value.trim())
@@ -245,53 +245,17 @@ fn verify_package(bytes: &[u8], record: &PendingUpdateRecord, pubkey: &str) -> R
         .map_err(|e| format!("Update signature verification failed: {e}"))
 }
 
-pub(super) fn with_update_exit_cleanup(builder: UpdaterBuilder, app: &AppHandle) -> UpdaterBuilder {
-    #[cfg(windows)]
-    let builder = if std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(Path::to_path_buf))
-        .is_some_and(|directory| windows_machine_install(&directory))
-    {
-        builder.installer_arg("/ALLUSERS")
-    } else {
-        builder
-    };
-    #[cfg(windows)]
-    let builder = match (
-        std::env::var_os("LOCALAPPDATA"),
-        std::env::var_os("PROGRAMDATA"),
-    ) {
-        (Some(user), Some(machine)) => {
-            let namespace = openbitfun_services_core::product_identity::data_namespace();
-            builder.maintenance_result_roots(
-                std::path::PathBuf::from(user)
-                    .join(namespace)
-                    .join("maintenance/results"),
-                std::path::PathBuf::from(machine)
-                    .join(namespace)
-                    .join("maintenance/results"),
-            )
-        }
-        _ => builder,
-    };
-    let builder = match cache_dir(app) {
-        Ok(dir) => builder.installation_receipt(dir.join(RECEIPT_NAME)),
-        Err(_) => builder,
-    };
-    let app = app.clone();
-    builder.on_before_exit(move || {
-        // The updater calls this on Windows immediately before launching the
-        // installer. Install commands run on a blocking thread so async cleanup
-        // can finish without blocking a Tokio worker or the UI thread.
-        crate::save_main_window_state(&app, "install_update");
-        tauri::async_runtime::block_on(crate::perform_process_exit_cleanup());
-        crate::crash_diagnostics::mark_clean_shutdown("install_update");
-        app.cleanup_before_exit();
+pub(super) fn configure_updater(builder: UpdaterBuilder) -> UpdaterBuilder {
+    // Public official-plugin API: bound stalls without a total download deadline.
+    builder.configure_client(|client| {
+        client
+            .connect_timeout(std::time::Duration::from_secs(20))
+            .read_timeout(std::time::Duration::from_secs(60))
     })
 }
 
 #[cfg(any(windows, test))]
-fn windows_machine_install(directory: &Path) -> bool {
+pub(crate) fn windows_machine_install(directory: &Path) -> bool {
     let read = |path: &Path| {
         std::fs::read(path)
             .ok()
@@ -329,7 +293,7 @@ pub async fn download_update(
     app: AppHandle,
     request: DownloadUpdateRequest,
 ) -> Result<PendingUpdateResponse, String> {
-    let mut state = UPDATE
+    let _operation = UPDATE
         .get_or_init(Default::default)
         .try_lock()
         .map_err(|_| "An update operation is already in progress".to_string())?;
@@ -381,7 +345,6 @@ pub async fn download_update(
     tokio::task::spawn_blocking(move || save_package(&dir, &record, &bytes))
         .await
         .map_err(|e| e.to_string())??;
-    *state = Some(update);
     Ok(response)
 }
 
@@ -390,11 +353,12 @@ pub async fn install_pending_update(
     app: AppHandle,
     request: InstallPendingUpdateRequest,
 ) -> Result<(), String> {
-    let mut state = UPDATE
+    let _operation = UPDATE
         .get_or_init(Default::default)
         .try_lock()
         .map_err(|_| "An update operation is already in progress".to_string())?;
     let dir = cache_dir(&app)?;
+    let receipt = dir.join(RECEIPT_NAME);
     let current = app.package_info().version.clone();
     let pubkey = app
         .config()
@@ -420,27 +384,29 @@ pub async fn install_pending_update(
     .await
     .map_err(|e| e.to_string())??;
 
-    if state.as_ref().is_none_or(|u| u.version != record.version) {
-        // Tauri 2.10 cannot deserialize an Update. After an application restart,
-        // obtain its platform installer context through the configured endpoint.
-        // No package is downloaded; the user's already verified version stays pinned.
-        let updater = with_update_exit_cleanup(app.updater_builder(), &app)
-            .timeout(std::time::Duration::from_secs(20))
-            .version_comparator(|_, _| true)
-            .build()
-            .map_err(|e| e.to_string())?;
-        let mut update = updater.check().await
-            .map_err(|e| format!("Cannot restore update installer metadata; connect to the update server and retry: {e}"))?
-            .ok_or_else(|| "Update installer metadata is unavailable; retry later".to_string())?;
-        update.version = record.version.clone();
-        update.signature = record.signature.clone();
-        *state = Some(update);
+    let maintenance_app = app.clone();
+    tokio::task::spawn_blocking(move || {
+        crate::update_maintenance::install(
+            &maintenance_app,
+            &bytes,
+            &record.version,
+            record.package_kind.as_deref().unwrap_or("unbundled"),
+            &receipt,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    #[cfg(windows)]
+    {
+        // A ready supervisor now owns the handoff. It waits for this process,
+        // retains post-exit errors and restarts with the original user's token.
+        crate::save_main_window_state(&app, "install_update");
+        crate::perform_process_exit_cleanup().await;
+        crate::crash_diagnostics::mark_clean_shutdown("install_update");
+        app.cleanup_before_exit();
+        std::process::exit(0);
     }
-    let update = state.as_ref().expect("update context initialized").clone();
-    tokio::task::spawn_blocking(move || update.install(bytes).map_err(|e| e.to_string()))
-        .await
-        .map_err(|e| e.to_string())??;
-    // Windows exits inside install(); macOS and Linux return after replacement.
+    #[cfg(not(windows))]
     super::system_api::restart_app(app, Default::default()).await
 }
 

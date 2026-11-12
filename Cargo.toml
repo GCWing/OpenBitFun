@@ -60,7 +60,6 @@ exclude = [
     "OpenBitFun-Installer/src-tauri",
     "third_party/eioc",
     "third_party/tao",
-    "third_party/tauri-plugin-updater",
     "third_party/wry",
 ]
 
@@ -315,8 +314,6 @@ shellexpand = "3"
 rustls = { version = "0.23", default-features = false }
 
 [patch.crates-io]
-# Preserve update failures and restore application bundles on replacement errors.
-tauri-plugin-updater = { path = "third_party/tauri-plugin-updater" }
 # Keep Socket.IO on the product-owned ring provider; see the patch note.
 eioc = { path = "third_party/eioc" }
 # Restore macOS traffic-light geometry after the queued native style reset.
