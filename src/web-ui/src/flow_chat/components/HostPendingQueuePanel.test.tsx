@@ -272,3 +272,52 @@ it('lets keyboard users read a truncated preview without starting an edit', asyn
     vi.useRealTimers();
   }
 });
+
+it('translates queue failures, labels not-sent records, and retires a stale failure after a newer snapshot', async () => {
+  const records = new Map<string, QueueOutboxRecord>();
+  let revision = 0;
+  let failCancel = true;
+  const snapshot = (): QueueSnapshot => ({ sessionId: 'session', queueEpoch: 'epoch', revision,
+    activeTurnId: 'running', items: [queueItem('a', 'queued', 'queued text')], capacity: 20, used: 1, receipt: null });
+  const queue = new HostDialogQueue('scope', 'session', async request => {
+    if (request.action === 'cancel' && failCancel) throw new Error('too_late: the message already started');
+    return snapshot();
+  }, {
+    list: async () => [...records.values()],
+    put: async record => { records.set(record.key, record); },
+    remove: async key => { records.delete(key); },
+  });
+  const unsent: QueueOutboxRecord = { key: 'unsent', scope: 'scope', notSubmitted: true,
+    request: { sessionId: 'session', queueEpoch: 'epoch', action: 'submit',
+      message: { turnId: 'unsent-turn', content: 'never arrived', agentType: 'Standard', attachments: [], metadata: {} } } };
+  records.set(unsent.key, unsent);
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<HostPendingQueuePanel queue={queue} onRestore={() => true} />));
+    await act(async () => { await queue.refresh(); });
+    expect(container.textContent).toContain('hostQueue.notSent');
+    expect(container.textContent).not.toContain('hostQueue.unknown');
+
+    // A host refusal is shown as translated copy, never its raw code.
+    await act(async () => { await queue.act(snapshot().items[0], 'cancel').catch(() => undefined); });
+    let alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('hostQueue.errors.tooLate');
+    expect(alert?.textContent).not.toContain('too_late:');
+    failCancel = false;
+    await act(async () => { await queue.refresh(); });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+
+    // A panel failure keeps its own copy until a newer snapshot arrives.
+    await selectQueueMenuAction(container, 'edit');
+    alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('hostQueue.noDraft');
+    revision = 1;
+    await act(async () => { await queue.refresh(); });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});

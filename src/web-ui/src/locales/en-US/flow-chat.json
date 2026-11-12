@@ -3969,6 +3969,16 @@
     "cancel": "Remove from queue",
     "refresh": "Refresh",
     "unknown": "Delivery is unconfirmed. Check before sending again.",
+    "notSent": "Not sent. The device did not receive this message.",
+    "errors": {
+      "ownerRestarted": "The device restarted its queue. Check this message before sending it again.",
+      "tooLate": "This message already started, so it can no longer be changed.",
+      "conflict": "This change conflicts with an earlier request. Refresh the queue and try again.",
+      "full": "The device's message queue is full. Wait for a message to finish, then try again.",
+      "blocked": "The queue is waiting for an interrupted turn to be recovered.",
+      "refreshFirst": "Refresh the queue before changing it.",
+      "generic": "The queue could not be updated. Refresh and try again."
+    },
     "retry": "Retry",
     "checkRetry": "Check / retry",
     "copyDraft": "Copy draft to composer",
