@@ -24,6 +24,13 @@ export function mountRollbackFixture(text: string) {
     controlTargetEpoch: 0,
     onControlTargetChange: () => () => {},
     supportsHostCapability: (name: string) => name === 'session_rollback_v1',
+    hostCapabilitiesKnown: true,
+    hostCapabilityProbing: false,
+    hostCapabilityRevision: 0,
+    onHostCapabilitiesChange: () => () => {},
+    probeHostCapabilities: async () => true,
+    payloadUploadsInFlight: 0,
+    onPayloadUploadActivity: () => () => {},
     getModelCatalog: async () => ({ version: 1, models: [], default_models: {} }),
     invokeHost: async (command: string) => {
       if (command !== 'get_session_interaction_mailbox') throw new Error(`Unexpected command: ${command}`);
