@@ -1,5 +1,5 @@
 import { InvalidationSync } from '../../../shared/relay-transport/InvalidationSync';
-import { HOST_CATALOG_ID, type HostStreamOptions, type SessionStreamHandle } from '../../../shared/relay-transport/HostStream';
+import { HOST_CATALOG_ID, UNSUPPORTED_HOST_MESSAGE, type HostStreamOptions, type SessionStreamHandle } from '../../../shared/relay-transport/HostStream';
 
 export interface HostCatalogSource {
   subscribeSessionStream(
@@ -13,10 +13,14 @@ export interface HostCatalogSource {
 const RETRY_INITIAL_MS = 1000;
 const RETRY_MAX_MS = 30000;
 
+const isUnsupportedHost = (error: unknown) => error instanceof Error && error.message === UNSUPPORTED_HOST_MESSAGE;
+
 /** One observer per selected runtime; revisions are invalidations, not clocks.
  *
  * A failed subscribe is retried with backoff, and at once on a recovery
  * signal; a reader whose reads keep failing is replaced on the same signals.
+ * A host that does not serve streams is asked again only on recovery signals:
+ * a timer cannot update it, and each attempt re-probes its capabilities.
  * `onHealthy` reports every completed catch-up so callers can clear the error
  * they showed for this subscription. */
 export function subscribeHostCatalog(
@@ -69,7 +73,7 @@ export function subscribeHostCatalog(
       else stream = value;
     }).catch((error) => {
       fail(error);
-      scheduleRetry();
+      if (!isUnsupportedHost(error)) scheduleRetry();
     }).finally(() => { connecting = false; });
   };
   const recover = () => {

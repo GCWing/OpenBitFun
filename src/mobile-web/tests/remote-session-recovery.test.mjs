@@ -222,9 +222,32 @@ test('a host learned as unsupported is asked again before the stream is refused'
   });
   client.subscribeHostStream = async () => { streams += 1; return { close() {}, wake() {}, async loadOlder() {} }; };
   const manager = new RemoteSessionManager(client, []);
+  const knownWhileAsking = [];
+  manager.onHostCapabilitiesChange(() => knownWhileAsking.push(manager.hostCapabilitiesKnown));
   await manager.subscribeSessionStream('s1', { onEvent() {}, onError() {} });
   assert.deepEqual(calls, ['get_workspace_info']);
   assert.equal(streams, 1);
+  assert.ok(knownWhileAsking.length > 0);
+  assert.ok(knownWhileAsking.every(Boolean), 'a stream re-probe never puts the composer back into "checking"');
+});
+
+test('a re-probe of a still-unsupported host keeps the legacy send path available', async () => {
+  const calls = [];
+  let answerProbe;
+  const client = fakeClient(async (device, cmd) => {
+    calls.push(cmd.cmd);
+    if (cmd.cmd === 'get_workspace_info') return new Promise(resolve => { answerProbe = resolve; });
+    return { resp: 'message_sent', turn_id: 'legacy-turn' };
+  });
+  client.subscribeHostStream = async () => { throw new Error('a legacy host has no streams'); };
+  const manager = new RemoteSessionManager(client, []);
+  const subscribed = manager.subscribeSessionStream('s1', { onEvent() {}, onError() {} });
+  while (!answerProbe) await tick();
+  assert.equal(manager.hostCapabilitiesKnown, true, 'Send is not blocked while the stream check runs');
+  assert.equal(await manager.sendMessage('session', 'hello', 'Standard'), 'legacy-turn');
+  answerProbe({ resp: 'workspace_info', has_workspace: false });
+  await assert.rejects(subscribed, error => error.message === UNSUPPORTED_HOST_MESSAGE);
+  assert.deepEqual(calls, ['get_workspace_info', 'send_message']);
 });
 
 test('chat errors are classified into translated copy; host answers keep their text', async () => {

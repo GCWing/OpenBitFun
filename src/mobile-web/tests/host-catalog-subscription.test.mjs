@@ -11,10 +11,10 @@ const load = (file, dependencies = {}) => {
   return exported;
 };
 const { InvalidationSync } = load('../../shared/relay-transport/InvalidationSync.ts');
-const { HOST_CATALOG_ID } = load('../../shared/relay-transport/HostStream.ts');
+const { HOST_CATALOG_ID, UNSUPPORTED_HOST_MESSAGE } = load('../../shared/relay-transport/HostStream.ts');
 const { subscribeHostCatalog } = load('../src/services/HostCatalogSubscription.ts', {
   '../../../shared/relay-transport/InvalidationSync': { InvalidationSync },
-  '../../../shared/relay-transport/HostStream': { HOST_CATALOG_ID },
+  '../../../shared/relay-transport/HostStream': { HOST_CATALOG_ID, UNSUPPORTED_HOST_MESSAGE },
 });
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function fixture(read) {
@@ -99,4 +99,22 @@ test('relay reconnects and host-online changes retry at once and replace a stall
   assert.equal(grants,3);
   callbacks[2].onCaughtUp(); await tick(); assert.equal(reads,2,'the list is read again after recovery');
   sub.close(); assert.equal(recover,null);
+});
+
+test('an unsupported host is asked again on recovery signals, never on a timer', async()=>{
+  let grants=0, recover; const errors=[];
+  const source={
+    onRecoverySignal(listener){recover=listener;return ()=>{recover=null;};},
+    async subscribeSessionStream(){grants++;if(grants<=2)throw Error(UNSUPPORTED_HOST_MESSAGE);return {close(){},wake(){},async loadOlder(){}};},
+  };
+  const sub=subscribeHostCatalog(source,async()=>{},error=>errors.push(error));
+  await tick(); assert.equal(grants,1); assert.equal(errors.length,1);
+  await new Promise(resolve=>setTimeout(resolve,1100));
+  assert.equal(grants,1,'no timer retry re-probes an unsupported host');
+  assert.equal(errors.length,1,'the banner is not set again on its own');
+  recover(); await tick(); assert.equal(grants,2,'a recovery signal still asks again');
+  await new Promise(resolve=>setTimeout(resolve,1100));
+  assert.equal(grants,2);
+  recover(); await tick(); assert.equal(grants,3,'an updated host is picked up on the next signal');
+  sub.close();
 });

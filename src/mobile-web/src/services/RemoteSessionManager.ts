@@ -502,10 +502,15 @@ export class RemoteSessionManager {
    * Learn the target's capabilities before the first ID-bearing command. The
    * host advertises them on `get_workspace_info`; hosts that predate the
    * capability list answer without one, which records an empty set.
+   * `revalidate` asks a host whose set is already known again; the known set
+   * keeps choosing paths until the answer replaces it.
    */
-  private async ensureHostCapabilitiesKnown(target: ControlTargetSnapshot): Promise<void> {
+  private async ensureHostCapabilitiesKnown(
+    target: ControlTargetSnapshot,
+    options: { revalidate?: boolean } = {},
+  ): Promise<void> {
     this.ensureControlTargetCurrent(target);
-    if (this.hostCapabilitiesKnown) return;
+    if (this.hostCapabilitiesKnown && !options.revalidate) return;
     // A probe belongs to one control target; a switched target probes again
     // instead of waiting on the previous target's answer.
     let probe = this.hostCapabilityProbe;
@@ -841,8 +846,9 @@ export class RemoteSessionManager {
     if (!this.supportsHostStreams() && learnedEarlier) {
       // "Unsupported" may describe a host that has since been updated. Ask
       // again before repeating it; callers retry only on recovery signals.
-      this.forgetHostCapabilities();
-      await this.ensureHostCapabilitiesKnown(target);
+      // The known set stays in force while asking, so the send path (and the
+      // composer) does not wait on a check that only concerns streams.
+      await this.ensureHostCapabilitiesKnown(target, { revalidate: true });
       this.ensureControlTargetCurrent(target);
     }
     if (!this.supportsHostStreams()) throw new Error(UNSUPPORTED_HOST_MESSAGE);
