@@ -4321,9 +4321,11 @@ async fn execute_remote_forward(
                     .await;
                 }
             }
+            // Ending the watch also retires the prompts it presented: the menu
+            // TTL keeps host interactions, so nothing else would clear them.
             Ok(reply) => {
                 return ForwardedTurnResult {
-                    completed_remote_tools: Vec::new(),
+                    completed_remote_tools: interactions.tool_ids(),
                     display_text: format!(
                         "{}{}",
                         s.error_prefix,
@@ -4339,7 +4341,7 @@ async fn execute_remote_forward(
                     || error.contains("HTTP 403")
                 {
                     return ForwardedTurnResult {
-                        completed_remote_tools: Vec::new(),
+                        completed_remote_tools: interactions.tool_ids(),
                         display_text: format!("{}{error}", s.error_prefix),
                         full_text: String::new(),
                     };
@@ -6158,6 +6160,71 @@ mod remote_device_flow_tests {
             }
             other => panic!("Unexpected command: {other}"),
         }
+    }
+
+    #[tokio::test]
+    async fn refused_remote_poll_retires_the_prompts_the_watch_presented() {
+        let polls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = polls.clone();
+        let (url, key, _) = spawn_device_fixture(Arc::new(move |command, _| {
+            match command["cmd"].as_str().unwrap() {
+                "send_message" => serde_json::json!({"resp":"message_sent",
+                    "session_id":"session-a","turn_id":"turn-a"}),
+                "poll_session" => {
+                    if counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                        serde_json::json!({"resp":"session_poll","version":1,
+                            "active_turn":{"turn_id":"turn-a","status":"active","text":"",
+                                "tools":[{"id":"approval-a","name":"Bash",
+                                    "status":"pending_confirmation","input_preview":"rm build"}]}})
+                    } else {
+                        // The device no longer serves the session.
+                        serde_json::json!({"resp":"error","message":"Session not found"})
+                    }
+                }
+                other => panic!("Unexpected command: {other}"),
+            }
+        }))
+        .await;
+        let mut state = remote_state(url, key, BotDisplayMode::Assistant);
+        state.current_session_id = Some("session-a".into());
+        let forward = handle_chat(&mut state, "render", vec![], strings_for(BotLanguage::EnUS))
+            .await
+            .forward_to_session
+            .unwrap();
+        let target = forward.remote_target.clone();
+        let chat = Arc::new(Mutex::new(state));
+        let presented_to = chat.clone();
+        let handler: BotInteractionHandler = Arc::new(move |request| {
+            apply_interactive_request(&mut presented_to.lock().unwrap(), &request);
+            Box::pin(async {})
+        });
+        let fence = super::super::BotRuntimeFence::standalone();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            execute_forwarded_turn(
+                forward,
+                Some(handler),
+                None,
+                false,
+                &fence,
+                fence.identity_epoch(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert!(result.display_text.contains("Session not found"));
+        assert_eq!(result.completed_remote_tools, vec!["approval-a"]);
+        let mut state = chat.lock().unwrap();
+        assert!(state.pending_action.is_some());
+        assert!(retire_completed_remote_tools(
+            &mut state,
+            target.as_ref(),
+            &result.completed_remote_tools
+        )
+        .is_none());
+        // The dead prompt no longer captures the chat's next message.
+        assert!(state.pending_action.is_none());
     }
 
     #[tokio::test]
