@@ -243,6 +243,8 @@ export interface UseFlowChatVirtualizerOptions<T> {
   pinnedKeys?: ReadonlySet<string>;
   /** Reader ownership survives measurement readbacks that end core isScrolling. */
   isReaderScrolling?: () => boolean;
+  /** A prepared instant navigation selects its first window before placement. */
+  pendingNavigationKey?: string;
   items: readonly T[];
   scrollerRef: RefObject<HTMLElement | null>;
   /**
@@ -462,6 +464,7 @@ export function useFlowChatVirtualizer<T>({
   footerRef,
   pinnedKeys,
   isReaderScrolling,
+  pendingNavigationKey,
   scrollerRef,
   headerRef,
   getItemKey,
@@ -594,16 +597,26 @@ export function useFlowChatVirtualizer<T>({
   measurementSuspendedRef.current = measurementSuspended;
 
   const [contentStartPx, setContentStartPx] = useState(0);
-  useEffect(() => {
+  const originInsetObserverRef = useRef<{ element: HTMLElement; observer: ResizeObserver } | null>(null);
+  useLayoutEffect(() => {
     const originInset = endOrigin ? footerRef?.current : headerRef.current;
-    if (!originInset) return;
+    const previous = originInsetObserverRef.current;
+    if (previous?.element === originInset || (!previous && !originInset)) return;
+    previous?.observer.disconnect();
+    originInsetObserverRef.current = null;
+    if (!originInset) { setContentStartPx(0); return; }
     const observer = new ResizeObserver(() => {
+      if (originInsetObserverRef.current?.element !== originInset || !originInset.isConnected) return;
       setContentStartPx(originInset.offsetHeight);
     });
+    originInsetObserverRef.current = { element: originInset, observer };
     observer.observe(originInset, { box: 'border-box' });
     setContentStartPx(originInset.offsetHeight);
-    return () => observer.disconnect();
-  }, [endOrigin, footerRef, headerRef]);
+  });
+  useLayoutEffect(() => () => {
+    originInsetObserverRef.current?.observer.disconnect();
+    originInsetObserverRef.current = null;
+  }, []);
 
   /*
    * Stable across renders on purpose. The virtualizer keys its measurement pass
@@ -757,6 +770,23 @@ export function useFlowChatVirtualizer<T>({
         const index = keyIndexes.get(key);
         return index === undefined ? [] : [index];
       });
+      const pendingIndex = pendingNavigationKey === undefined ? undefined : keyIndexes.get(pendingNavigationKey);
+      if (pendingIndex !== undefined && !isReaderScrolling?.() && !isViewportSuspendedRef.current()) {
+        // The new projection may put the old offset in an unrelated Turn.
+        // Mount the requested header and its readable content in this commit;
+        // the existing navigation effect still owns the actual placement.
+        const measurements = (virtualizer as unknown as MeasuringVirtualizer).getMeasurements();
+        const heightAt = (index: number) => Math.max(1, measurements[index]
+          ? measurements[index].end - measurements[index].start : estimateSize(index));
+        let first = pendingIndex, last = pendingIndex, covered = heightAt(pendingIndex);
+        while (covered < viewport && (endOrigin ? first > 0 : last < range.count - 1)) {
+          covered += heightAt(endOrigin ? --first : ++last);
+        }
+        const indexes = new Set(timelineOverscanRange(first, last, range.count, viewport, heightAt));
+        for (const index of pins) indexes.add(index);
+        overscanWindowRef.current = null;
+        return [...indexes].sort((a, b) => a - b);
+      }
       if ((isReaderScrolling?.() ?? virtualizer.isScrolling) && aimStartedAtMsRef.current === null
         && !retainedIndexes?.length && previous && previous.viewport === viewport
         && pins.length === previous.pins.length && pins.every((key, index) => key === previous.pins[index])

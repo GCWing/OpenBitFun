@@ -582,11 +582,16 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       .map(([groupId, expanded]) => `${groupId}:${expanded ? 1 : 0}`)
       .join(','),
   ].join('|'), [availableWidthPx, activeSession?.isHistorical, exploreGroupStates]);
+  const preparedTurn = preparedTurnNavigationRef.current;
+  const preparedTarget = preparedTurn && preparedTurn.behavior !== 'smooth'
+    ? virtualItems.find(item => item.turnId === preparedTurn.turnId
+      && (item.type === 'user-message' || item.type === 'background-run')) : undefined;
   const virtualizer = useFlowChatVirtualizer({
     endOrigin,
     footerRef: footerElementRef,
     pinnedKeys,
     isReaderScrolling: () => viewportOwner.currentOwner() === 'user-gesture',
+    pendingNavigationKey: preparedTarget ? getVirtualItemStableKey(preparedTarget) : undefined,
     items: virtualItems,
     startAtTailOnMount: presentationMode !== 'history-window' && !shouldRestoreInitialSnapshot,
     reconcileOpeningMeasurement: () => reconcileOpeningMeasurementRef.current(),
@@ -2098,7 +2103,13 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     const prepared = preparedTurnNavigationRef.current;
     if (!prepared) return;
     const status = navigateToTurnWithStatus(prepared.turnId, { behavior: prepared.behavior });
-    if (status === 'settled') preparedTurnNavigationRef.current = null;
+    if (status === 'settled') {
+      preparedTurnNavigationRef.current = null;
+      const scroller = scrollerElementRef.current;
+      if (prepared.behavior !== 'smooth' && scroller && !isViewportSuspendedRef.current) {
+        virtualizer.syncViewportOffset(readFlowChatScrollTop(scroller));
+      }
+    }
   }, [navigateToTurnWithStatus, virtualItems]);
 
   /**

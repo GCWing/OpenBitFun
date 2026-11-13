@@ -16,13 +16,16 @@ let shiftEnabled = false;
 const unobserve = vi.fn();
 const rowObservers: Array<{ callback: ResizeObserverCallback; elements: Set<Element> }> = [];
 
-function KeyedHarness({ items, endOrigin, pinnedKeys, isReaderScrolling }: {
+function KeyedHarness({ items, endOrigin, pinnedKeys, isReaderScrolling, pendingNavigationKey, onWindow, footer }: {
   items: string[]; endOrigin: boolean; pinnedKeys?: ReadonlySet<string>; isReaderScrolling?: () => boolean;
+  pendingNavigationKey?: string; onWindow?: (indexes: number[]) => void;
+  footer?: { id: string; height: number };
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLDivElement | null>(null);
   const api = useFlowChatVirtualizer({
-    items, scrollerRef, headerRef, endOrigin, pinnedKeys, isReaderScrolling,
+    items, scrollerRef, headerRef, footerRef, endOrigin, pinnedKeys, isReaderScrolling, pendingNavigationKey,
     isViewportSuspended: () => viewportSuspended,
     getItemKey: item => item,
     estimateItemHeightPx: () => 80,
@@ -30,10 +33,15 @@ function KeyedHarness({ items, endOrigin, pinnedKeys, isReaderScrolling }: {
     writeViewport: () => true,
   });
   latestApi = api;
+  useLayoutEffect(() => { onWindow?.(api.rows.map(row => row.index)); });
   return <div ref={scrollerRef} data-scroller>
     <div ref={headerRef} />
     {api.rows.map(row => <div key={row.key} data-row-key={row.key}
       data-virtual-index={row.index} ref={api.measureRowElement} />)}
+    {footer && <div key={footer.id} data-footer={footer.id} ref={element => {
+      footerRef.current = element;
+      if (element) Object.defineProperty(element, 'offsetHeight', { configurable: true, value: footer.height });
+    }} />}
   </div>;
 }
 function Harness({ count, tail }: { count: number; tail: boolean }) {
@@ -211,6 +219,59 @@ describe('initial virtual window with the real virtualizer', () => {
     reading = false;
     act(() => { scroller.scrollTop += 80; latestApi.syncViewportOffset(scroller.scrollTop); });
     expect(latestApi.rows.map(row => row.key)).not.toEqual(keys);
+  });
+
+  it.each([false, true])('mounts the prepared target in the first new projection commit (bottom origin=%s)', endOrigin => {
+    const oldItems = Array.from({ length: 100 }, (_, index) => `old-${index}`);
+    act(() => root.render(<KeyedHarness items={oldItems} endOrigin={endOrigin} />));
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => { scroller.scrollTop = endOrigin ? -4000 : 4000; scroller.dispatchEvent(new Event('scroll')); });
+    const items = Array.from({ length: 200 }, (_, index) => `target-${index}`);
+    const commits: number[][] = [];
+    act(() => root.render(<KeyedHarness items={items} endOrigin={endOrigin}
+      pendingNavigationKey="target-40" pinnedKeys={new Set(['target-199'])}
+      onWindow={indexes => commits.push(indexes)} />));
+    expect(commits.length).toBeGreaterThan(0);
+    expect(commits[0]).toContain(40);
+    expect(commits[0]).toContain(199);
+    expect(commits[0].filter(index => index !== 199).every(index => index < 100)).toBe(true);
+  });
+
+  it('keeps the reader window when their gesture outranks a prepared target', () => {
+    const items = Array.from({ length: 200 }, (_, index) => `key-${index}`);
+    act(() => root.render(<KeyedHarness items={items} endOrigin={false} isReaderScrolling={() => true} />));
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => { scroller.scrollTop = 4000; scroller.dispatchEvent(new Event('scroll')); });
+    const keys = latestApi.rows.map(row => row.key);
+    act(() => root.render(<KeyedHarness items={items} endOrigin={false}
+      isReaderScrolling={() => true} pendingNavigationKey="key-10" />));
+    expect(latestApi.rows.map(row => row.key)).toEqual(keys);
+  });
+
+  it('observes a replaced history footer and ignores deliveries from its retired node', () => {
+    const items = Array.from({ length: 100 }, (_, index) => `key-${index}`);
+    const renderFooter = (id: string, height: number) => act(() => root.render(
+      <KeyedHarness items={items} endOrigin footer={{ id, height }} />,
+    ));
+    renderFooter('first', 122);
+    const oldFooter = host.querySelector('[data-footer="first"]')!;
+    const oldObserver = rowObservers.find(entry => entry.elements.has(oldFooter))!;
+    expect(oldObserver).toBeDefined();
+    expect(latestApi.getItemBounds(0)!.startPx).toBeCloseTo(0, 4);
+    renderFooter('second', 200);
+    const footer = host.querySelector('[data-footer="second"]')!;
+    const observer = rowObservers.find(entry => entry.elements.has(footer))!;
+    expect(observer).toBeDefined();
+    expect(oldObserver.elements.size).toBe(0);
+    expect(latestApi.getItemBounds(0)!.startPx).toBeCloseTo(0, 4);
+    const observers = rowObservers.length;
+    renderFooter('second', 200); renderFooter('second', 200);
+    expect(rowObservers.length).toBe(observers);
+    act(() => oldObserver.callback([{ target: oldFooter }] as ResizeObserverEntry[], {} as ResizeObserver));
+    expect(latestApi.getItemBounds(0)!.startPx).toBeCloseTo(0, 4);
+    renderFooter('second', 224);
+    act(() => observer.callback([{ target: footer }] as ResizeObserverEntry[], {} as ResizeObserver));
+    expect(latestApi.getItemBounds(0)!.startPx).toBeCloseTo(0, 4);
   });
 
   it.each([

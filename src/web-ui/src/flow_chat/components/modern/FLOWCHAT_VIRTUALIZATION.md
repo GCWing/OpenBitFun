@@ -80,6 +80,37 @@ assert zero scroll writes as well as node and screen-position continuity.
 These supplied-geometry tests do not establish native paint or live remote
 behavior.
 
+## Prepared Turn navigation
+
+The origin inset observes the actual current header/footer element, not only its
+ref object. A history range can replace the tail Turn and its footer without
+changing that ref. Rebind only when the node changes, disconnect the retired
+observer and ignore its queued deliveries. Publish the new inset in the layout
+phase; otherwise the physical footer can occupy space while the virtual
+`scrollMargin` remains zero, leaving a navigated user message above the viewport.
+Repeated streaming renders keep the same observer for an unchanged node.
+
+An instant Turn navigation can load a new history projection while the scroller
+still has its previous offset. Selecting the first new window from that offset
+mounts unrelated rows, then discards them when the navigation effect places the
+requested Turn. `VirtualMessageList` supplies the prepared user-message or
+background-run key so the adapter can select that header and a viewport of its
+content in the first commit. The adapter handles both internal index directions,
+uses current virtual measurements, and preserves interaction pins.
+
+This is window selection, not a viewport write. The existing registered navigation
+still owns placement, top gap, blank-space clamping and re-aiming. Publish its
+actual offset readback before releasing the prepared target, so a delayed native
+scroll event cannot select the old window again. Smooth navigation, suspended
+viewports and reader gestures retain their existing selection path. Missing keys
+do not manufacture targets. History request spans, complete-Turn publication and
+stored coordinates are unchanged.
+
+The initial-window fixture verifies first-commit target residency in both origins,
+interaction pins and reader priority; disabling the prepared-window branch makes
+both direction cases fail. Native streaming-jump measurements separately cover
+actual rail clicks, target-message landings and stability after continued output.
+
 ## Projection cache lifetime
 
 Warm session projections are keyed weakly by the canonical `dialogTurns` array,

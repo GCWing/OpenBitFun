@@ -8,11 +8,12 @@ export interface LongSessionProbe {
   visibilityChanged: boolean; focusChanged: boolean; timedOut: boolean;
   longTasksSupported: boolean; longTasks: Array<{ startTime: number; durationMs: number }>;
   targetTurnId?: string;
+  milestones?: { targetDomMs?: number; targetVisibleMs?: number; viewportReadyMs?: number };
   rowChurn?: { added: Record<string, number>; removed: Record<string, number> };
   rowBatches?: Array<{ time: number; added: number; removed: number }>;
   scrollPositions?: Array<{ time: number; top: number }>;
 }
-interface ProbeOptions { sessionId: string; turnId?: string; selector?: string; wheelCount?: number; collectRows?: boolean; }
+interface ProbeOptions { sessionId: string; turnId?: string; selector?: string; wheelCount?: number; collectRows?: boolean; collectMilestones?: boolean; }
 type ProbeHost = Window & { __longSessionProbe?: {
   result: Partial<LongSessionProbe>; done: boolean; dispose: () => void;
 } };
@@ -142,6 +143,13 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
               const rect = row.getBoundingClientRect();
               return rect.bottom > box.top && rect.top < box.bottom && (row.textContent?.trim().length ?? 0) > 0;
             });
+            if (options.collectMilestones) {
+              const elapsed = performance.now() - result.actionAt;
+              const milestones = result.milestones ??= {};
+              if (rows.length) milestones.targetDomMs ??= elapsed;
+              if (visibleText) milestones.targetVisibleMs ??= elapsed;
+              if (placed && !loading && visibleText) milestones.viewportReadyMs ??= elapsed;
+            }
             usable = !!placed && !loading && box.height > 0 && visibleText;
           }
           if (usable) result.readyAt ??= performance.now();
@@ -187,6 +195,18 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
   }
 
   async clickSession(id: string) { await $(this.sessionSelector(id)).click(); }
+
+  async turnLanding(sessionId: string, turnId: string) {
+    return browser.execute((sessionId: string, turnId: string) => {
+      const root = document.querySelector(`[data-testid="flowchat-container"][data-session-id="${sessionId}"]`);
+      const scroller = root?.querySelector<HTMLElement>('[data-flowchat-scroller]');
+      const header = scroller?.querySelector<HTMLElement>(`.user-message-item[data-turn-id="${turnId}"]`);
+      if (!scroller || !header) return null;
+      const viewport = scroller.getBoundingClientRect(), rect = header.getBoundingClientRect();
+      return { topPx: rect.top - viewport.top, bottomPx: rect.bottom - viewport.top,
+        visible: rect.bottom > viewport.top && rect.top < viewport.bottom };
+    }, sessionId, turnId);
+  }
 
   async prepareSession(id: string) {
     for (let attempt = 0; attempt < 8; attempt++) {
