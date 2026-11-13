@@ -601,20 +601,27 @@ export function useFlowChatVirtualizer<T>({
 
   const [contentStartPx, setContentStartPx] = useState(0);
   const originInsetObserverRef = useRef<{ element: HTMLElement; observer: ResizeObserver } | null>(null);
+  // Initial binding and delayed observer deliveries publish through the same
+  // ownership check, so a retired node cannot replace the current inset.
+  const publishOriginInset = useCallback((element: HTMLElement | null) => {
+    if (element) {
+      if (originInsetObserverRef.current?.element !== element || !element.isConnected) return;
+      setContentStartPx(element.offsetHeight);
+    } else if (originInsetObserverRef.current === null) {
+      setContentStartPx(0);
+    }
+  }, []);
   useLayoutEffect(() => {
     const originInset = endOrigin ? footerRef?.current : headerRef.current;
     const previous = originInsetObserverRef.current;
     if (previous?.element === originInset || (!previous && !originInset)) return;
     previous?.observer.disconnect();
     originInsetObserverRef.current = null;
-    if (!originInset) { setContentStartPx(0); return; }
-    const observer = new ResizeObserver(() => {
-      if (originInsetObserverRef.current?.element !== originInset || !originInset.isConnected) return;
-      setContentStartPx(originInset.offsetHeight);
-    });
+    if (!originInset) { publishOriginInset(null); return; }
+    const observer = new ResizeObserver(() => publishOriginInset(originInset));
     originInsetObserverRef.current = { element: originInset, observer };
     observer.observe(originInset, { box: 'border-box' });
-    setContentStartPx(originInset.offsetHeight);
+    publishOriginInset(originInset);
   });
   useLayoutEffect(() => () => {
     originInsetObserverRef.current?.observer.disconnect();

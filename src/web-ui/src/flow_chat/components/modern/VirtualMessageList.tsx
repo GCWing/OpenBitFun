@@ -672,7 +672,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, SessionListP
     retainedViewportRect: initialViewportRect,
     speculativeOverscanItems: endOrigin && !shouldRestoreInitialSnapshot ? speculativeOverscanItems : 8,
   });
-  const snapshotItemSizes = virtualizer.snapshotItemSizes;
+  const { snapshotItemSizes, syncViewportOffset } = virtualizer;
   const measuredWidthRef = useRef(availableWidthPx);
   measuredWidthRef.current = availableWidthPx;
   const retainedViewportRectRef = useRef(initialViewportRect);
@@ -2169,10 +2169,10 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, SessionListP
       preparedTurnNavigationRef.current = null;
       const scroller = scrollerElementRef.current;
       if (prepared.behavior !== 'smooth' && scroller && !isViewportSuspendedRef.current) {
-        virtualizer.syncViewportOffset(readFlowChatScrollTop(scroller));
+        syncViewportOffset(readFlowChatScrollTop(scroller));
       }
     }
-  }, [navigateToTurnWithStatus, virtualItems]);
+  }, [navigateToTurnWithStatus, syncViewportOffset, virtualItems]);
 
   /**
    * Land on a Turn by its position in the transcript on screen.
