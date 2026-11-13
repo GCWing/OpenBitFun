@@ -16,16 +16,17 @@ let shiftEnabled = false;
 const unobserve = vi.fn();
 const rowObservers: Array<{ callback: ResizeObserverCallback; elements: Set<Element> }> = [];
 
-function KeyedHarness({ items, endOrigin, pinnedKeys, isReaderScrolling, pendingNavigationKey, onWindow, footer }: {
+function KeyedHarness({ items, endOrigin, pinnedKeys, isReaderScrolling, pendingNavigationKey, speculativeOverscanItems, onWindow, footer }: {
   items: string[]; endOrigin: boolean; pinnedKeys?: ReadonlySet<string>; isReaderScrolling?: () => boolean;
   pendingNavigationKey?: string; onWindow?: (indexes: number[]) => void;
+  speculativeOverscanItems?: number;
   footer?: { id: string; height: number };
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement | null>(null);
   const api = useFlowChatVirtualizer({
-    items, scrollerRef, headerRef, footerRef, endOrigin, pinnedKeys, isReaderScrolling, pendingNavigationKey,
+    items, scrollerRef, headerRef, footerRef, endOrigin, pinnedKeys, isReaderScrolling, pendingNavigationKey, speculativeOverscanItems,
     isViewportSuspended: () => viewportSuspended,
     getItemKey: item => item,
     estimateItemHeightPx: () => 80,
@@ -143,6 +144,31 @@ describe('initial virtual window with the real virtualizer', () => {
     vi.useRealTimers();
   });
   const render = (count: number, tail: boolean) => act(() => root.render(<Harness count={count} tail={tail} />));
+
+  it.each([false, true])('expands opening margins without replacing visible rows or pins (endOrigin=%s)', endOrigin => {
+    const items = Array.from({ length: 200 }, (_, index) => `key-${index}`);
+    const pinnedKeys = new Set([endOrigin ? 'key-0' : 'key-199']);
+    act(() => root.render(<KeyedHarness items={items} endOrigin={endOrigin} pinnedKeys={pinnedKeys} speculativeOverscanItems={2} />));
+    const openingRows = [...host.querySelectorAll<HTMLElement>('[data-row-key]')];
+    const keys = latestApi.rows.map(row => row.key);
+    expect(keys).toContain([...pinnedKeys][0]);
+    expect(keys).toContain(endOrigin ? 'key-199' : 'key-0');
+    act(() => root.render(<KeyedHarness items={items} endOrigin={endOrigin} pinnedKeys={pinnedKeys} speculativeOverscanItems={8} />));
+    expect(latestApi.rows.length).toBeGreaterThan(openingRows.length);
+    for (const row of openingRows) expect(host.querySelector(`[data-row-key="${row.dataset.rowKey}"]`)).toBe(row);
+  });
+
+  it.each([false, true])('gives reader gestures the ordinary margin before idle preparation (endOrigin=%s)', endOrigin => {
+    const items = Array.from({ length: 200 }, (_, index) => `key-${index}`);
+    act(() => root.render(<KeyedHarness items={items} endOrigin={endOrigin} speculativeOverscanItems={2} />));
+    const preparing = latestApi.rows.length;
+    act(() => root.render(<KeyedHarness items={items} endOrigin={endOrigin} speculativeOverscanItems={2}
+      isReaderScrolling={() => true} />));
+    expect(latestApi.rows.length).toBeGreaterThan(preparing);
+    const reading = latestApi.rows.map(row => row.key);
+    act(() => root.render(<KeyedHarness items={items} endOrigin={endOrigin} speculativeOverscanItems={8} />));
+    expect(latestApi.rows.map(row => row.key)).toEqual(reading);
+  });
 
   it('reuses a covered reading window and immediately covers a distant wheel step', () => {
     render(200, false);

@@ -581,6 +581,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const trajectoryRef = useRef<TrajectoryExplorerRef>(null);
   const openTrajectory = useCallback(() => setTrajectoryOpen(true), []);
   const virtualListRef = useRef<VirtualMessageListRef>(null);
+  const paneViewportRect = useRef<{ width: number; height: number }>();
   const chatScopeRef = useRef<HTMLDivElement>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const sessionViewportStateRef = useRef<Map<string, SessionViewportState>>(new Map());
@@ -2888,6 +2889,8 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
               <>
                 <VirtualMessageList
                   ref={virtualListRef}
+                  viewportRectRef={paneViewportRect}
+                  contentPresented={isHistoryContentPresented}
                   items={virtualItems}
                   latestTurnId={latestTurnId}
                   isViewportActive={isViewportActive}

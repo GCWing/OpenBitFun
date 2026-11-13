@@ -14,11 +14,13 @@ const protocol = report.protocol;
 const switchOnly = protocol.suite === 'streaming-switch';
 const scrollOnly = protocol.suite === 'streaming-scroll';
 const jumpOnly = protocol.suite === 'streaming-jump';
-const controlled = switchOnly || scrollOnly || jumpOnly;
+const openOnly = protocol.suite === 'first-open';
+const controlled = switchOnly || scrollOnly || jumpOnly || openOnly;
 const page = new LongSessionPerformancePage();
 let model: Awaited<ReturnType<typeof createLongSessionModel>>;
 let workspaceId: string;
-const ids = (state: string) => [`perf-${state === 'static' ? 'static' : 'live'}-000`, `perf-${state === 'static' ? 'static' : 'live'}-001`];
+const ids = (state: string) => Array.from({ length: openOnly ? protocol.sessionsPerState : 2 }, (_, index) =>
+  `perf-${state === 'static' ? 'static' : 'live'}-${String(index).padStart(3, '0')}`);
 const tail = (state: string, id: string) => state === 'static' ? `${id}-turn-${String(protocol.turns - 1).padStart(4, '0')}` : `${id}-live-turn`;
 const save = () => {
   report.summary = summarize(report.samples);
@@ -38,6 +40,13 @@ async function sample(state: string, scenario: string, sessionId: string, action
     row.before = await page.snapshot(sessionId);
     await action();
     const probe = row.probe = await page.collect();
+    if (probe.postReady) {
+      row.postReadyFrames = frameMetrics(probe.times, probe.endAt, probe.postReady.endAt!);
+      if (state === 'static') {
+        assert.equal(probe.postReady.missingAnchorFrames, 0, 'Opening preparation removed the reading anchor');
+        assert.ok(probe.postReady.maxAnchorDriftPx <= 2, 'Opening preparation displaced visible content');
+      }
+    }
     row.frames = frameMetrics(probe.times, probe.actionAt, probe.endAt);
     row.after = await page.snapshot(sessionId);
     row.streamAfter = state === 'streaming' ? model.snapshot(sessionId) : null;
@@ -76,8 +85,10 @@ async function sample(state: string, scenario: string, sessionId: string, action
 async function openMeasured(state: string, scenario: string, id: string) {
   await page.prepareSession(id);
   await sample(state, scenario, id, async () => {
-    await page.arm({ sessionId: id, turnId: tail(state, id), selector: page.sessionSelector(id) });
+    await page.arm({ sessionId: id, turnId: tail(state, id), selector: page.sessionSelector(id), collectMilestones: openOnly,
+      postReadyMs: openOnly ? protocol.postReadyObservationMs : undefined, checkAnchor: openOnly && state === 'static' });
     if (switchOnly) for (const liveId of ids('streaming')) model.release(liveId, protocol.paragraphsPerSwitch);
+    if (openOnly && state === 'streaming') model.release(id, protocol.paragraphsPerOpen);
     await page.clickSession(id);
   });
 }
@@ -85,7 +96,7 @@ async function openMeasured(state: string, scenario: string, id: string) {
 async function startSwitchProfile() {
   const port = process.env.OPENBITFUN_LONG_SESSION_CDP_PORT;
   if (!port) return async () => {};
-  const profileName = scrollOnly ? `scroll-${report.samples.length}` : jumpOnly ? `jump-${report.samples.length}` : 'switch';
+  const profileName = openOnly ? `open-${report.samples.length}` : scrollOnly ? `scroll-${report.samples.length}` : jumpOnly ? `jump-${report.samples.length}` : 'switch';
   const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as Array<{ type: string; url: string; webSocketDebuggerUrl: string }>;
   const target = targets.find(value => value.type === 'page' && value.url.includes('index.html') && !value.url.includes('openbitfunWindow='));
   assert.ok(target, 'Main WebView CDP target missing');
@@ -179,7 +190,7 @@ describe('Desktop long-session performance matrix', () => {
       await page.cancelMeasurement();
       report.modelErrors = model?.errors ?? [];
       if (report.modelErrors.length) report.failures.push(...report.modelErrors);
-      report.contentReadyChecksPassed = report.failures.length === 0 && report.samples.length === (scrollOnly ? 2 * protocol.scrollAreas.length * protocol.repeats : switchOnly || jumpOnly ? protocol.repeats : 2 * (2 + protocol.repeats + 2 + protocol.repeats))
+      report.contentReadyChecksPassed = report.failures.length === 0 && report.samples.length === (openOnly ? 2 * protocol.sessionsPerState : scrollOnly ? 2 * protocol.scrollAreas.length * protocol.repeats : switchOnly || jumpOnly ? protocol.repeats : 2 * (2 + protocol.repeats + 2 + protocol.repeats))
         && report.samples.every((row: { valid: boolean }) => row.valid);
       report.functionalPassed = report.contentReadyChecksPassed && (!jumpOnly || report.jumpLandingChecksPassed === true);
       const budgets = report.samples.filter((row: { valid: boolean }) => row.valid).map((row: any) => ({ index: row.index,
@@ -193,7 +204,7 @@ describe('Desktop long-session performance matrix', () => {
     } finally { await model?.close(); }
   });
 
-  for (const state of controlled ? ['streaming'] : ['static', 'streaming']) {
+  for (const state of controlled && !openOnly ? ['streaming'] : ['static', 'streaming']) {
     it(`measures first entry, switching, continuous scroll and turn jumps while ${state}`, async () => {
       const sessions = scrollOnly || jumpOnly ? ids(state).slice(0, 1) : ids(state);
       if (state === 'streaming') {
@@ -211,7 +222,24 @@ describe('Desktop long-session performance matrix', () => {
           await browser.waitUntil(() => sessions.every(id => model.snapshot(id)?.emitted === protocol.initialParagraphs), { timeout: 30_000, interval: 100 });
         }
       }
-      if (jumpOnly) {
+      if (openOnly) {
+        for (const id of sessions) {
+          await page.openSession('perf-parking-000'); await page.settle();
+          assert.equal((await page.snapshot(id)).exists, false, `First-entry target ${id} was already attached`);
+          const stopProfile = await startSwitchProfile();
+          try { await openMeasured(state, 'first-open', id); } finally { await stopProfile(); }
+          if (state === 'streaming') await browser.waitUntil(() => model.snapshot(id)?.emitted === protocol.initialParagraphs + protocol.paragraphsPerOpen,
+            { timeout: 10_000, interval: 100 });
+          // Observe normal follow after the entire batch reaches the frontend;
+          // do not click jump-to-latest to repair a failed opening placement.
+          if (state === 'streaming') await page.waitForLiveParagraph(id, protocol.initialParagraphs + protocol.paragraphsPerOpen - 1);
+          await page.settle();
+          const settled = await page.snapshot(id);
+          assert.ok(settled.visibleTurns.includes(tail(state, id)), 'Initial tail left the viewport');
+          assert.ok(settled.rows > 0 && settled.rows < 90, 'Initial transcript DOM is not bounded');
+          Object.assign(report.samples.at(-1), { settled }); save();
+        }
+      } else if (jumpOnly) {
         const id = sessions[0];
         await page.prepareSession(id); await page.openSession(id);
         await page.returnToLatest(id, protocol.initialParagraphs - 1);

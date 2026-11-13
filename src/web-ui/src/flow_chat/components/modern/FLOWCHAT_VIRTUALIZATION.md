@@ -80,6 +80,31 @@ assert zero scroll writes as well as node and screen-position continuity.
 These supplied-geometry tests do not establish native paint or live remote
 behavior.
 
+## First-entry viewport reservations
+
+The hosting chat pane retains only its last usable viewport rectangle across a
+cold session's temporary loading surface. A new list uses that rectangle to seed
+its initial size and virtual window; same-session measured rows remain separately
+owned by the existing three-view memory. Another pane owns another rectangle.
+Native dimension observation, width reflow, suspension and the opening settlement
+gate still replace stale estimates before presentation. No follow, scroll offset,
+anchor, navigation or session content crosses sessions through this reservation.
+
+For a native-history tail open without a reader bookmark, speculative overscan
+starts at two leaves per edge while all estimated visible rows and interaction
+pins remain resident. After the loading boundary publishes content and the
+two-paint handoff, each idle frame may add one leaf up to the ordinary eight.
+Insufficient idle budget defers preparation; hidden/inactive/resizing views cancel
+it. Live output and restored reader positions keep the ordinary margins. A gesture
+or navigation aim immediately takes the ordinary window, invalidating a smaller
+preparation cache rather than waiting for idle work.
+
+Opening readiness and history reads are unchanged; only offscreen preparation
+runs later. The first-open benchmark therefore also observes the following two
+seconds, including long tasks and the static reading anchor, separately from the
+original readiness timing. A faster first frame alone cannot establish success if
+preparation introduces later stalls or displaces visible content.
+
 ## Prepared Turn navigation
 
 The origin inset observes the actual current header/footer element, not only its
