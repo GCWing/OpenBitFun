@@ -131,7 +131,7 @@ impl ShellDetector {
             {
                 ShellType::PowerShellCore => Self::probe_powershell_version(&candidate.path)
                     .map(|version| cache::CandidateProbeOutcome::Available(Some(version)))
-                    .unwrap_or(cache::CandidateProbeOutcome::Unavailable),
+                    .unwrap_or(cache::CandidateProbeOutcome::AvailableWithProbeFailure),
                 ShellType::Bash
                 | ShellType::Zsh
                 | ShellType::Fish
