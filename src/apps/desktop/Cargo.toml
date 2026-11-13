@@ -85,7 +85,7 @@ tower-http = { workspace = true, features = ["fs"] }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
 minisign-verify = { workspace = true }
-screenshots = { workspace = true }
+xcap = { workspace = true }
 # Controller-local drag thumbnails decode these formats; other files use UI icons.
 image = { workspace = true, features = ["bmp", "gif", "jpeg", "png", "webp"] }
 resvg = { workspace = true }

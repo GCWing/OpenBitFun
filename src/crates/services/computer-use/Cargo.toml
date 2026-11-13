@@ -88,7 +88,7 @@ windows-core = { workspace = true }
 
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
-screenshots = { workspace = true }
+xcap = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 enigo = { workspace = true, features = ["x11rb"] }

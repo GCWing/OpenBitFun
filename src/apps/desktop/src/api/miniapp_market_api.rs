@@ -503,12 +503,53 @@ pub async fn miniapp_market_capture_window(
     tokio::task::spawn_blocking(move || -> Result<(), String> {
         let center_x = position.x.saturating_add((size.width / 2) as i32);
         let center_y = position.y.saturating_add((size.height / 2) as i32);
-        let screen = screenshots::Screen::from_point(center_x, center_y)
+        let monitor = xcap::Monitor::from_point(center_x, center_y)
             .map_err(|error| format!("Could not access the current display: {error}"))?;
-        let relative_x = position.x.saturating_sub(screen.display_info.x);
-        let relative_y = position.y.saturating_sub(screen.display_info.y);
-        let captured = screen
-            .capture_area(relative_x, relative_y, size.width, size.height)
+        let monitor_x = monitor.x().map_err(|error| error.to_string())?;
+        let monitor_y = monitor.y().map_err(|error| error.to_string())?;
+        let monitor_width = monitor.width().map_err(|error| error.to_string())?;
+        let monitor_height = monitor.height().map_err(|error| error.to_string())?;
+        #[cfg(target_os = "windows")]
+        let (monitor_width, monitor_height) = {
+            let scale_factor = monitor
+                .scale_factor()
+                .map_err(|error| error.to_string())?;
+            (
+                (monitor_width as f32 / scale_factor) as u32,
+                (monitor_height as f32 / scale_factor) as u32,
+            )
+        };
+        let relative_x = i64::from(position.x) - i64::from(monitor_x);
+        let relative_y = i64::from(position.y) - i64::from(monitor_y);
+        let region_x = relative_x.clamp(0, i64::from(monitor_width));
+        let region_y = relative_y.clamp(0, i64::from(monitor_height));
+        let region_right = (region_x + i64::from(size.width)).min(i64::from(monitor_width));
+        let region_bottom = (region_y + i64::from(size.height)).min(i64::from(monitor_height));
+        if region_right <= region_x || region_bottom <= region_y {
+            return Err("The OpenBitFun window does not intersect the selected display.".into());
+        }
+        #[cfg(target_os = "windows")]
+        let (capture_x, capture_y, capture_width, capture_height) = {
+            let scale_factor = monitor
+                .scale_factor()
+                .map_err(|error| error.to_string())?;
+            let scale = |value: i64| ((value as f32) * scale_factor) as u32;
+            (
+                scale(region_x),
+                scale(region_y),
+                scale(region_right - region_x),
+                scale(region_bottom - region_y),
+            )
+        };
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        let (capture_x, capture_y, capture_width, capture_height) = (
+            region_x as u32,
+            region_y as u32,
+            (region_right - region_x) as u32,
+            (region_bottom - region_y) as u32,
+        );
+        let captured = monitor
+            .capture_region(capture_x, capture_y, capture_width, capture_height)
             .map_err(|error| {
                 format!(
                     "Window capture failed. On macOS, grant OpenBitFun Screen Recording permission: {error}"

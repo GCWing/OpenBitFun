@@ -1,7 +1,71 @@
 //! Display geometry only. Linux uses X11 protocol IO without a mandatory Xlib
 //! dependency; Wayland coordinates remain owned by the consented portal stream.
 #[cfg(not(target_os = "linux"))]
-pub(super) use screenshots::{display_info::DisplayInfo, Screen};
+mod native {
+    use xcap::Monitor;
+
+    #[derive(Clone, Debug)]
+    pub(in crate::computer_use) struct DisplayInfo {
+        pub(in crate::computer_use) id: u32,
+        pub(in crate::computer_use) x: i32,
+        pub(in crate::computer_use) y: i32,
+        pub(in crate::computer_use) width: u32,
+        pub(in crate::computer_use) height: u32,
+        pub(in crate::computer_use) scale_factor: f32,
+        pub(in crate::computer_use) is_primary: bool,
+    }
+
+    pub(in crate::computer_use) struct Screen {
+        pub(in crate::computer_use) display_info: DisplayInfo,
+    }
+
+    impl Screen {
+        pub(in crate::computer_use) fn all() -> Result<Vec<Self>, String> {
+            Monitor::all()
+                .map_err(|error| error.to_string())?
+                .iter()
+                .map(Self::from_monitor)
+                .collect()
+        }
+
+        pub(in crate::computer_use) fn from_point(x: i32, y: i32) -> Result<Self, String> {
+            let monitor = Monitor::from_point(x, y).map_err(|error| error.to_string())?;
+            Self::from_monitor(&monitor)
+        }
+
+        fn from_monitor(monitor: &Monitor) -> Result<Self, String> {
+            let scale_factor = monitor.scale_factor().map_err(|error| error.to_string())?;
+            let width = monitor.width().map_err(|error| error.to_string())?;
+            let height = monitor.height().map_err(|error| error.to_string())?;
+            #[cfg(target_os = "windows")]
+            let (width, height) = (
+                (width as f32 / scale_factor) as u32,
+                (height as f32 / scale_factor) as u32,
+            );
+
+            Ok(Self {
+                display_info: DisplayInfo {
+                    id: monitor.id().map_err(|error| error.to_string())?,
+                    x: monitor.x().map_err(|error| error.to_string())?,
+                    y: monitor.y().map_err(|error| error.to_string())?,
+                    width,
+                    height,
+                    scale_factor,
+                    is_primary: monitor.is_primary().map_err(|error| error.to_string())?,
+                },
+            })
+        }
+    }
+
+    impl DisplayInfo {
+        pub(in crate::computer_use) fn from_point(x: i32, y: i32) -> Result<Self, String> {
+            Screen::from_point(x, y).map(|screen| screen.display_info)
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(in crate::computer_use) use native::{DisplayInfo, Screen};
 
 #[cfg(target_os = "linux")]
 pub(super) use linux::{DisplayInfo, Screen};

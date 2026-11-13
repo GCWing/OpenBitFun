@@ -238,7 +238,8 @@ tauri-build = { version = "2.6", features = [] }
 keepawake = "0.6.0"
 
 # Desktop support
-screenshots = "0.8"
+# 0.9.9+ raises ashpd/bitflags beyond the version pinned for macOS Tauri.
+xcap = "=0.9.8"
 enigo = { version = "0.2", default-features = false }
 resvg = { version = "0.47", default-features = false }
 atspi = "0.29"
