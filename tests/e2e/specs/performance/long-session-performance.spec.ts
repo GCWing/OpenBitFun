@@ -13,7 +13,8 @@ const report = JSON.parse(readFileSync(join(evidence, 'result.json'), 'utf8'));
 const protocol = report.protocol;
 const switchOnly = protocol.suite === 'streaming-switch';
 const scrollOnly = protocol.suite === 'streaming-scroll';
-const controlled = switchOnly || scrollOnly;
+const jumpOnly = protocol.suite === 'streaming-jump';
+const controlled = switchOnly || scrollOnly || jumpOnly;
 const page = new LongSessionPerformancePage();
 let model: Awaited<ReturnType<typeof createLongSessionModel>>;
 let workspaceId: string;
@@ -84,7 +85,7 @@ async function openMeasured(state: string, scenario: string, id: string) {
 async function startSwitchProfile() {
   const port = process.env.OPENBITFUN_LONG_SESSION_CDP_PORT;
   if (!port) return async () => {};
-  const profileName = scrollOnly ? `scroll-${report.samples.length}` : 'switch';
+  const profileName = scrollOnly ? `scroll-${report.samples.length}` : jumpOnly ? `jump-${report.samples.length}` : 'switch';
   const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as Array<{ type: string; url: string; webSocketDebuggerUrl: string }>;
   const target = targets.find(value => value.type === 'page' && value.url.includes('index.html') && !value.url.includes('openbitfunWindow='));
   assert.ok(target, 'Main WebView CDP target missing');
@@ -178,8 +179,9 @@ describe('Desktop long-session performance matrix', () => {
       await page.cancelMeasurement();
       report.modelErrors = model?.errors ?? [];
       if (report.modelErrors.length) report.failures.push(...report.modelErrors);
-      report.functionalPassed = report.failures.length === 0 && report.samples.length === (scrollOnly ? 2 * protocol.scrollAreas.length * protocol.repeats : switchOnly ? protocol.repeats : 2 * (2 + protocol.repeats + 2 + protocol.repeats))
+      report.contentReadyChecksPassed = report.failures.length === 0 && report.samples.length === (scrollOnly ? 2 * protocol.scrollAreas.length * protocol.repeats : switchOnly || jumpOnly ? protocol.repeats : 2 * (2 + protocol.repeats + 2 + protocol.repeats))
         && report.samples.every((row: { valid: boolean }) => row.valid);
+      report.functionalPassed = report.contentReadyChecksPassed && (!jumpOnly || report.jumpLandingChecksPassed === true);
       const budgets = report.samples.filter((row: { valid: boolean }) => row.valid).map((row: any) => ({ index: row.index,
         latencyPassed: protocol.maxLatencyMs === null || row.probe.latencyMs <= protocol.maxLatencyMs,
         framesPassed: protocol.maxP95FrameMs === null || row.frames.p95Ms <= protocol.maxP95FrameMs }));
@@ -193,7 +195,7 @@ describe('Desktop long-session performance matrix', () => {
 
   for (const state of controlled ? ['streaming'] : ['static', 'streaming']) {
     it(`measures first entry, switching, continuous scroll and turn jumps while ${state}`, async () => {
-      const sessions = scrollOnly ? ids(state).slice(0, 1) : ids(state);
+      const sessions = scrollOnly || jumpOnly ? ids(state).slice(0, 1) : ids(state);
       if (state === 'streaming') {
         await page.openSession('perf-parking-000');
         for (const id of sessions) {
@@ -209,7 +211,49 @@ describe('Desktop long-session performance matrix', () => {
           await browser.waitUntil(() => sessions.every(id => model.snapshot(id)?.emitted === protocol.initialParagraphs), { timeout: 30_000, interval: 100 });
         }
       }
-      if (scrollOnly) {
+      if (jumpOnly) {
+        const id = sessions[0];
+        await page.prepareSession(id); await page.openSession(id);
+        await page.returnToLatest(id, protocol.initialParagraphs - 1);
+        const visited = new Set([protocol.turns]);
+        for (let index = 0; index < protocol.repeats; index++) {
+          const ordinal = protocol.jumpOrdinals[index % protocol.jumpOrdinals.length];
+          const turnId = ordinal === protocol.turns ? tail(state, id) : `${id}-turn-${String(ordinal).padStart(4, '0')}`;
+          const expectedBefore = protocol.initialParagraphs + index * protocol.paragraphsPerJump;
+          assert.equal(model.snapshot(id)?.emitted, expectedBefore, 'Unequal jump workload');
+          const selector = await page.revealTurn(ordinal);
+          const boundTurnId = await $(selector).getAttribute('data-turn-id');
+          assert.ok(boundTurnId === null || boundTurnId === turnId, 'Wrong turn rail binding');
+          await page.settle();
+          const stopProfile = await startSwitchProfile();
+          try {
+            await sample(state, 'turn-jump', id, async () => {
+              await page.arm({ sessionId: id, turnId, selector, collectMilestones: true,
+                collectRows: process.env.OPENBITFUN_LONG_SESSION_ROW_DIAGNOSTIC === '1' });
+              if (process.env.OPENBITFUN_LONG_SESSION_ROW_DIAGNOSTIC === '1') report.instrumented = true;
+              model.release(id, protocol.paragraphsPerJump);
+              await page.clickTurn(selector);
+            });
+          } finally { await stopProfile(); }
+          Object.assign(report.samples.at(-1), { targetOrdinal: ordinal, firstVisit: !visited.has(ordinal),
+            targetKind: ordinal === protocol.turns ? 'live' : 'history', railBoundTurnId: boundTurnId });
+          visited.add(ordinal);
+          const landing = await page.turnLanding(id, turnId);
+          await browser.waitUntil(() => model.snapshot(id)?.emitted === expectedBefore + protocol.paragraphsPerJump,
+            { timeout: 10_000, interval: 100 });
+          await page.settle();
+          const stable = await page.snapshot(id);
+          const settledLanding = await page.turnLanding(id, turnId);
+          assert.ok(stable.visibleTurns.includes(turnId), 'Target left the viewport after more output');
+          assert.ok(stable.rows && stable.rows < 90, 'Jump mounted unbounded rows');
+          const landingStable = !!landing?.visible && !!settledLanding?.visible
+            && Math.abs(settledLanding.topPx - landing.topPx) < 8;
+          Object.assign(report.samples.at(-1), { landing, settledLanding, landingStable });
+          (report.jumpCheckpoints ??= []).push({ ordinal, turnId, landing, settledLanding, landingStable, stable });
+          report.jumpLandingChecksPassed = report.jumpCheckpoints.every((value: any) => value.landingStable);
+          save();
+        }
+      } else if (scrollOnly) {
         const id = sessions[0];
         await page.prepareSession(id); await page.openSession(id);
         await page.returnToLatest(id, protocol.initialParagraphs - 1);

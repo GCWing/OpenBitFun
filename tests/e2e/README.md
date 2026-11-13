@@ -96,6 +96,29 @@ The scrolling suite saves a CPU profile and trace for each phase (`scroll-N.*`).
 `OPENBITFUN_LONG_SESSION_ROW_DIAGNOSTIC=1` additionally records scalar row
 mount/removal counts and per-frame scroll positions, and marks the run instrumented.
 
+For controlled Turn navigation during output, use
+`--suite streaming-jump --scenario multi-tool --turns 200 --repeats 20`.
+One real runtime stream receives 96 initial paragraphs at 2 ms intervals outside
+measurement. Each real rail click releases another 16 paragraphs at the configured
+stream interval (90 ms by default). Targets cycle through ordinal 0, 75%, 25%,
+the last historical Turn and the live Turn. Each phase starts with the same output
+count across builds and waits for its batch outside timing. It checks the actual
+user-message landing and its stability after the additional output settles.
+`firstVisit` identifies a target not visited yet; the live Turn is already
+visited during setup. It does not prove a cold disk or history-cache miss.
+First/already-visited targets should be reported separately.
+The normal readiness definition is unchanged; optional milestones additionally
+record first target DOM, first visible target and first ready viewport observations.
+That definition requires visible target-Turn content, not its user-message header.
+`jumpLandingChecksPassed` separately records header visibility and position
+stability after continued output; report it alongside latency when comparing
+older builds, and require it for accepting an optimized build.
+Protocol v3 includes this landing check in overall functional acceptance;
+`contentReadyChecksPassed` retains the original content-readiness result so an
+older build's positioning failure remains explicit beside its timing samples.
+CDP diagnostics save `jump-N.cpuprofile` and `jump-N-trace.json`; row diagnostics
+also apply to this suite. Instrumented runs are separate from performance acceptance.
+
 Every historical turn in all four long sessions then has **26 model rounds**:
 25 rounds containing a 320-character Markdown explanation followed by Read,
 Edit, Write and ExecCommand, and one final Markdown summary controlled by

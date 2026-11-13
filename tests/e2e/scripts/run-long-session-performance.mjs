@@ -42,7 +42,7 @@ for (const [key, value] of Object.entries(options)) {
   if (!(budget ? Number.isFinite(value) : Number.isInteger(value)) || value < (key === 'toolItems' ? 0 : budget ? Number.MIN_VALUE : 1)) throw new Error(`Invalid ${key}`);
 }
 if (options.turns < 8 || options.paragraphChars < 32) throw new Error('Need at least 8 turns and 32 paragraph characters');
-if (!['matrix', 'streaming-switch', 'streaming-scroll'].includes(options.suite)) throw new Error('Unknown performance suite');
+if (!['matrix', 'streaming-switch', 'streaming-scroll', 'streaming-jump'].includes(options.suite)) throw new Error('Unknown performance suite');
 if (!['all', 'live', 'history'].includes(options.scrollArea)) throw new Error('Unknown scroll area');
 const nativeProfile = process.env.OPENBITFUN_E2E_NATIVE_PROFILE || 'debug';
 if (!['debug', 'release-fast'].includes(nativeProfile)) throw new Error('Use a debug or release-fast devtools build');
@@ -78,6 +78,14 @@ if (options.suite === 'streaming-scroll') Object.assign(report.protocol, {
   initialParagraphs: 512, seedIntervalMs: 2, paragraphsPerScroll: 192, controlledStreams: true,
   scrollAreas: options.scrollArea === 'all' ? ['live', 'history'] : [options.scrollArea],
   postMeasurementReaderChecks: true,
+});
+if (options.suite === 'streaming-jump') Object.assign(report.protocol, {
+  version: 3, states: ['streaming'], scenarios: ['turn-jump'], staticBeforeStreaming: false,
+  initialParagraphs: 96, seedIntervalMs: 2, paragraphsPerJump: 16, controlledStreams: true,
+  jumpOrdinals: [0, Math.floor(options.turns * .75), Math.floor(options.turns * .25), options.turns - 1, options.turns],
+  postMeasurementReaderChecks: true,
+  readiness: 'visible requested-turn content; user-message landing is recorded separately',
+  landingValidation: 'user-message visible at readiness and stable after continued output',
 });
 if (options.scenario === MULTI_TOOL_TEMPLATE.id) report.protocol.template = MULTI_TOOL_TEMPLATE;
 const save = async (data = report) => {
