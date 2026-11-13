@@ -1,0 +1,32 @@
+[package]
+name = "screenshots"
+version = "0.8.10"
+edition = "2021"
+description = "Move to [XCap](https://crates.io/crates/xcap)"
+license = "Apache-2.0"
+documentation = "https://docs.rs/screenshots"
+homepage = "https://github.com/nashaofu/screenshots-rs"
+repository = "https://github.com/nashaofu/screenshots-rs.git"
+keywords = ["screenshots", "screenshot", "screen", "capture"]
+
+[dependencies]
+anyhow = "1.0"
+display-info = "0.4"
+image = "0.24"
+percent-encoding = "2.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.22"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+fxhash = "0.2"
+widestring = "1.0"
+windows = { version = "0.51", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+] }
+
+[target.'cfg(target_os="linux")'.dependencies]
+dbus = { version = "0.9", features = ["vendored"] }
+libwayshot = "0.2"
+xcb = "1.2"

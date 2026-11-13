@@ -5051,6 +5051,44 @@ test('vendored Engine.IO remains in resolved feature audits without becoming a p
     'a product workspace member cannot bypass ownership checks through a vendor path');
 });
 
+test('vendored screenshots keeps its reviewed external identity and image profile', () => {
+  const owner = packageAt('owner', 'src/apps/example/Cargo.toml');
+  const vendor = {
+    ...packageAt('screenshots', 'third_party/screenshots/Cargo.toml', [{
+      name: 'image',
+      rename: null,
+      kind: null,
+      optional: false,
+      target: null,
+      features: [],
+      uses_default_features: true,
+    }]),
+    version: '0.8.10',
+  };
+  const graph = collectCargoMetadataGraph({
+    root: TEST_ROOT,
+    manifestPaths: [join(TEST_ROOT, 'Cargo.toml')],
+    loadMetadata: () => ({
+      packages: [owner, vendor],
+      workspace_members: [owner.id],
+      resolve: { nodes: [{ id: vendor.id, features: ['default'], deps: [] }] },
+    }),
+  });
+
+  assert.deepEqual(graph.packages.map(pkg => pkg.name), ['owner']);
+  assert.ok(graph.resolvedPackageFeatures.some(record => record.name === 'screenshots'));
+  assert.deepEqual(findThirdPartyCapabilityFeatureViolations([vendor]), []);
+  assert.ok(collectCargoMetadataGraph({
+    root: TEST_ROOT,
+    manifestPaths: [join(TEST_ROOT, 'Cargo.toml')],
+    loadMetadata: () => ({
+      packages: [owner, vendor],
+      workspace_members: [owner.id, vendor.id],
+      resolve: { nodes: [] },
+    }),
+  }).packages.some(pkg => pkg.name === 'screenshots'));
+});
+
 test('vendored Tao is external only at its reviewed version and stays in feature audits', () => {
   const owner = packageAt('owner', 'src/apps/example/Cargo.toml');
   const vendor = { ...packageAt('tao', 'third_party/tao/Cargo.toml'), version: '0.36.0' };

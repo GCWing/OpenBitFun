@@ -7,6 +7,8 @@
 !third_party/eioc/Cargo.toml
 !third_party/eioc/src/
 !third_party/eioc/src/**
+!third_party/screenshots/
+!third_party/screenshots/**
 !third_party/tao/
 !third_party/tao/**
 !third_party/wry/
