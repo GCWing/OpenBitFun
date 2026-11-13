@@ -7,16 +7,7 @@ use super::{ShellDetector, VERSION_PROBE_TIMEOUT_MS};
 
 impl ShellDetector {
     pub(super) fn probe_powershell_version(path: &Path) -> Option<String> {
-        Self::run_version_probe(
-            path,
-            &[
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "$PSVersionTable.PSVersion.ToString()",
-            ],
-        )
+        Self::run_version_probe(path, &["-Version"])
     }
 
     pub(super) fn probe_shell_version(path: &Path) -> Option<String> {
