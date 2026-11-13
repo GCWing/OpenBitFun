@@ -245,6 +245,10 @@ export class I18nService {
   private localeChangeSeq: number = 0;
   private readonly dateFormatterCache = new BoundedFormatterCache<Intl.DateTimeFormat>();
   private readonly numberFormatterCache = new BoundedFormatterCache<Intl.NumberFormat>();
+  // Resolving the zone materializes the formatter's whole option bag, and every
+  // `useI18n()` consumer asks for it on every render. The answer only changes with
+  // the locale, so keep the string instead of rebuilding the bag per render.
+  private resolvedTimeZoneCache: { locale: LocaleId; value: string } | null = null;
 
   constructor() {
     this.i18nInstance = i18next.createInstance();
@@ -610,7 +614,15 @@ export class I18nService {
   }
 
   getResolvedTimeZone(): string {
-    return this.createDateTimeFormatter().resolvedOptions().timeZone || 'UTC';
+    const locale = this.currentLocaleId;
+    const cached = this.resolvedTimeZoneCache;
+    if (cached && cached.locale === locale) {
+      return cached.value;
+    }
+
+    const value = this.createDateTimeFormatter().resolvedOptions().timeZone || 'UTC';
+    this.resolvedTimeZoneCache = { locale, value };
+    return value;
   }
 
    
@@ -635,6 +647,7 @@ export class I18nService {
   private clearFormatterCaches(): void {
     this.dateFormatterCache.clear();
     this.numberFormatterCache.clear();
+    this.resolvedTimeZoneCache = null;
   }
 
    
