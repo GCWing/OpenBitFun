@@ -11,6 +11,15 @@ vi.mock('@/infrastructure/api/service-api/SessionAPI', () => ({ sessionAPI: apiM
 const params = { sessionId: 'preview-session', reportSessionId: 'preview-session', workspaceId: 'workspace-1', title: 'System prompt.md', category: 'systemPrompt' as const, emptyContent: 'No content in the latest request.' };
 const response = () => ({ sessionId: params.sessionId, systemPromptPreview: { content: '# System\n\nExact prompt.\n', cachedAt: 123 } });
 const tabs = () => useAgentCanvasStore.getState().primaryGroup.tabs;
+const PARENT_SESSION_ID = 'ultimate-parent';
+const SWARM_CHILD_ID = 'swarm-worker-child';
+
+/** A reusable swarm child owns the composer while its parent's canvas is live. */
+const swarmChildSession = {
+  sessionId: SWARM_CHILD_ID, workspaceId: params.workspaceId, sessionKind: 'subagent',
+  parentSessionId: PARENT_SESSION_ID, continuationPolicy: 'reusable',
+} as unknown as Session;
+const swarmChildParams = { ...params, sessionId: SWARM_CHILD_ID, reportSessionId: SWARM_CHILD_ID };
 
 describe('system prompt preview tabs', () => {
   beforeEach(() => {
@@ -18,9 +27,50 @@ describe('system prompt preview tabs', () => {
     useAgentCanvasStore.getState().closeAllTabs();
     forgetAgentCanvasSession(params.sessionId);
     forgetAgentCanvasSession('another-session');
+    forgetAgentCanvasSession(PARENT_SESSION_ID);
+    forgetAgentCanvasSession(SWARM_CHILD_ID);
     switchAgentCanvasScope(params.sessionId);
     flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: params.sessionId }));
     apiMocks.getSessionUsageReport.mockReset().mockResolvedValue(response());
+  });
+
+  it('opens a swarm child preview in the parent canvas that presents the child', async () => {
+    // The composer can target a reusable subagent child while the parent scene
+    // keeps its canvas live; the preview must join that canvas, not a child
+    // scope that never becomes live.
+    flowChatStore.setState(state => ({ ...state, sessions: new Map([[SWARM_CHILD_ID, swarmChildSession]]) }));
+    switchAgentCanvasScope(PARENT_SESSION_ID);
+    apiMocks.getSessionUsageReport.mockResolvedValue({ ...response(), sessionId: SWARM_CHILD_ID });
+
+    await expect(openSessionContextPreview(swarmChildParams)).resolves.toBe('opened');
+    expect(tabs()).toHaveLength(1);
+    expect(tabs()[0].content).toMatchObject({
+      type: 'markdown-editor', metadata: { sessionId: SWARM_CHILD_ID },
+    });
+    // The reveal condition keys off the same scope the tab was committed to.
+    expect(useAgentCanvasStore.getState().scopeKey).toBe(PARENT_SESSION_ID);
+  });
+
+  it('retains a swarm child preview with the child while its parent is not on screen', async () => {
+    flowChatStore.setState(state => ({ ...state, sessions: new Map([[SWARM_CHILD_ID, swarmChildSession]]) }));
+    switchAgentCanvasScope('another-session');
+    apiMocks.getSessionUsageReport.mockResolvedValue({ ...response(), sessionId: SWARM_CHILD_ID });
+
+    await expect(openSessionContextPreview(swarmChildParams)).resolves.toBe('opened');
+    // Nothing was revealed on an unrelated canvas; the child keeps its own copy.
+    expect(tabs()).toHaveLength(0);
+    switchAgentCanvasScope(SWARM_CHILD_ID);
+    expect(tabs()).toHaveLength(1);
+  });
+
+  it('keeps a swarm child preview in its own canvas when that canvas is live', async () => {
+    flowChatStore.setState(state => ({ ...state, sessions: new Map([[SWARM_CHILD_ID, swarmChildSession]]) }));
+    switchAgentCanvasScope(SWARM_CHILD_ID);
+    apiMocks.getSessionUsageReport.mockResolvedValue({ ...response(), sessionId: SWARM_CHILD_ID });
+
+    await expect(openSessionContextPreview(swarmChildParams)).resolves.toBe('opened');
+    expect(tabs()).toHaveLength(1);
+    expect(useAgentCanvasStore.getState().scopeKey).toBe(SWARM_CHILD_ID);
   });
 
   it.each(['local', 'peer-host', 'ssh-workspace'])('opens an immutable Markdown editor from the %s host response', async surface => {

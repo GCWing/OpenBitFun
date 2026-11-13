@@ -1,8 +1,9 @@
 import { sessionAPI, type UsageContextCategory } from '@/infrastructure/api/service-api/SessionAPI';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
-import { openAgentCanvasTabForSession, useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores/canvasStore';
+import { openAgentCanvasTabForSession, presentedAgentCanvasScopeKey, useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores/canvasStore';
 import { flowChatStore } from '../store/FlowChatStore';
 import { resolveSessionDriverId } from '../session-drivers/resolve';
+import { resolveSessionRelationship } from '../utils/sessionMetadata';
 import { classifyPeerHostRefusal } from '@/infrastructure/peer-device/peerHostRefusal';
 
 const PREVIEW_FILE_NAMES: Record<UsageContextCategory, string> = {
@@ -52,7 +53,9 @@ export async function openSessionContextPreview(params: {
     ? snapshot.content : legacy?.content?.trim() ? legacy.content : undefined;
   if (content === undefined) return 'unavailable';
 
-  openAgentCanvasTabForSession(params.sessionId, {
+  const canvasScopeId = presentedAgentCanvasScopeKey(
+    params.sessionId, resolveSessionRelationship(session).parentSessionId);
+  openAgentCanvasTabForSession(canvasScopeId, {
     type: params.category === 'toolDefinitions' ? 'tool-definitions' : 'markdown-editor',
     title: params.title,
     data: params.category === 'toolDefinitions' ? { content, readOnly: true }
@@ -66,7 +69,7 @@ export async function openSessionContextPreview(params: {
       resourceScope: { surfaceId: surface.surfaceId, workspaceId },
     },
   });
-  if (useAgentCanvasStore.getState().scopeKey === params.sessionId && typeof window !== 'undefined') {
+  if (useAgentCanvasStore.getState().scopeKey === canvasScopeId && typeof window !== 'undefined') {
     window.dispatchEvent(new window.CustomEvent('expand-right-panel'));
   }
   return 'opened';

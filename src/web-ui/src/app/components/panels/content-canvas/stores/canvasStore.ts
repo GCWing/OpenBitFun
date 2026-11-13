@@ -1255,6 +1255,23 @@ export function openAgentCanvasTabForSession(sessionId: string, content: PanelCo
   if (target !== useAgentCanvasStore) rememberAgentSnapshot(key, extractAgentPersistableState(target.getState()));
 }
 
+/**
+ * Live canvas scope that presents a session's content.
+ *
+ * Retained output belongs to the session that produced it, but a child
+ * conversation (btw, subagent, review) is presented inside its parent's canvas.
+ * Interactive content requested while that child owns the composer has to join
+ * the canvas on screen, otherwise it is stored under a scope that never becomes
+ * live and the request looks ignored.
+ */
+export function presentedAgentCanvasScopeKey(sessionId: string, parentSessionId?: string): string {
+  const live = useAgentCanvasStore.getState().scopeKey;
+  const own = normalizeAgentScopeKey(sessionId);
+  if (live === own) return own;
+  const parent = parentSessionId ? normalizeAgentScopeKey(parentSessionId) : undefined;
+  return parent && parent !== own && live === parent ? parent : own;
+}
+
 /** Update retained output without reopening a closed tab or changing the selected tab. */
 export function updateAgentCanvasTabsForSession(
   sessionId: string,
