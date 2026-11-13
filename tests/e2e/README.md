@@ -75,11 +75,26 @@ matching protocols/native binaries in independent processes without concurrent b
 After measurement, the suite checks reading-position restoration, draft retention,
 reader takeover while more output arrives, search navigation and bounded row DOM.
 
+For controlled scrolling during live output, use
+`--suite streaming-scroll --scenario multi-tool --repeats 2`. One real runtime
+stream receives 512 initial paragraphs at 2 ms intervals outside measurement.
+Each phase releases another 192 paragraphs at `--stream-interval-ms` (90 ms by
+default) while delivering 120 real wheel steps. Both directions cover the live
+text and the tool-heavy history immediately before the live turn; `--scroll-area
+live|history` selects one area. Preparation, waiting for the complete batch and
+returning to its final paragraph occur outside timing. Each measured phase must
+receive fresh output, remain streaming and deliver every wheel event. Reader
+position is checked again after the batch settles. Compare identical protocol
+versions and workload options; this suite is separate from the full matrix.
+
 Optional Windows WebView2 diagnostics: set `OPENBITFUN_LONG_SESSION_CDP_PORT` to a
 free debugging port to save `switch.cpuprofile` and `switch-trace.json` for this
 suite. `OPENBITFUN_LONG_SESSION_SELECTOR_STATS=1` adds expensive CSS selector and
 invalidation tracking. Such reports are marked instrumented; use separate runs
 with these variables unset for performance acceptance. RAF is not compositor FPS.
+The scrolling suite saves a CPU profile and trace for each phase (`scroll-N.*`).
+`OPENBITFUN_LONG_SESSION_ROW_DIAGNOSTIC=1` additionally records scalar row
+mount/removal counts and per-frame scroll positions, and marks the run instrumented.
 
 Every historical turn in all four long sessions then has **26 model rounds**:
 25 rounds containing a 320-character Markdown explanation followed by Read,

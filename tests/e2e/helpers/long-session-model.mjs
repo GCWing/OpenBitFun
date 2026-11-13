@@ -39,15 +39,15 @@ export async function createLongSessionModel({ intervalMs = 90, paragraphChars =
     return state ? Object.fromEntries(['emitted', 'bytes', 'blockedWrites', 'connected', 'finished', 'startedAt', 'lastEmittedAt'].map(key => [key, state[key]])) : null;
   };
   return { url: `http://127.0.0.1:${server.address().port}`, errors, snapshot,
-    release(marker, count) {
+    release(marker, count, cadenceMs = intervalMs) {
       const state = streams.get(marker);
-      if (!controlled || !state?.connected || state.finished || state.remaining > 0 || !Number.isInteger(count) || count < 1) throw new Error('Invalid controlled stream release');
+      if (!controlled || !state?.connected || state.finished || state.remaining > 0 || !Number.isInteger(count) || count < 1 || !Number.isInteger(cadenceMs) || cadenceMs < 1) throw new Error('Invalid controlled stream release');
       state.remaining = count;
       state.timer = setInterval(() => {
         const before = state.emitted; state.emit();
         state.remaining -= state.emitted - before;
         if (!state.remaining) clearInterval(state.timer);
-      }, intervalMs);
+      }, cadenceMs);
     },
     finish(marker) {
       const state = streams.get(marker);

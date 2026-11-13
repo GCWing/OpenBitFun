@@ -16,11 +16,13 @@ let shiftEnabled = false;
 const unobserve = vi.fn();
 const rowObservers: Array<{ callback: ResizeObserverCallback; elements: Set<Element> }> = [];
 
-function KeyedHarness({ items, endOrigin }: { items: string[]; endOrigin: boolean }) {
+function KeyedHarness({ items, endOrigin, pinnedKeys, isReaderScrolling }: {
+  items: string[]; endOrigin: boolean; pinnedKeys?: ReadonlySet<string>; isReaderScrolling?: () => boolean;
+}) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const api = useFlowChatVirtualizer({
-    items, scrollerRef, headerRef, endOrigin,
+    items, scrollerRef, headerRef, endOrigin, pinnedKeys, isReaderScrolling,
     isViewportSuspended: () => viewportSuspended,
     getItemKey: item => item,
     estimateItemHeightPx: () => 80,
@@ -133,6 +135,83 @@ describe('initial virtual window with the real virtualizer', () => {
     vi.useRealTimers();
   });
   const render = (count: number, tail: boolean) => act(() => root.render(<Harness count={count} tail={tail} />));
+
+  it('reuses a covered reading window and immediately covers a distant wheel step', () => {
+    render(200, false);
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => {
+      scroller.scrollTop = 4000;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    const rows = [...host.querySelectorAll('[data-virtual-index]')];
+    const commits = windows.length;
+    act(() => {
+      scroller.scrollTop += 80;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    expect(windows.length).toBe(commits);
+    expect([...host.querySelectorAll('[data-virtual-index]')]).toEqual(rows);
+    act(() => {
+      scroller.scrollTop = 11000;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    expect(windows.length).toBeGreaterThan(commits);
+    const range = latestApi.getVisibleItemRange()!;
+    for (let index = range.startIndex; index <= range.endIndex; index++) {
+      expect(host.querySelector(`[data-virtual-index="${index}"]`)).not.toBeNull();
+    }
+  });
+
+  it('reuses bottom-origin history windows with the latest row pinned', () => {
+    const items = Array.from({ length: 200 }, (_, index) => `key-${index}`);
+    act(() => root.render(<KeyedHarness items={items} endOrigin pinnedKeys={new Set(['key-199'])} />));
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => { scroller.scrollTop = -4000; scroller.dispatchEvent(new Event('scroll')); });
+    const committed = latestApi;
+    act(() => { scroller.scrollTop -= 80; scroller.dispatchEvent(new Event('scroll')); });
+    expect(latestApi).toBe(committed);
+    expect(latestApi.rows.some(row => row.key === 'key-199')).toBe(true);
+  });
+
+  it('updates a pinned row address even when the visible window keeps its keys', () => {
+    const items = Array.from({ length: 200 }, (_, index) => `key-${index}`);
+    const pinnedKeys = new Set(['key-199']);
+    act(() => root.render(<KeyedHarness items={items} endOrigin={false} pinnedKeys={pinnedKeys} />));
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => { scroller.scrollTop = 4000; scroller.dispatchEvent(new Event('scroll')); });
+    const reordered = [...items];
+    [reordered[198], reordered[199]] = [reordered[199], reordered[198]];
+    act(() => root.render(<KeyedHarness items={reordered} endOrigin={false} pinnedKeys={pinnedKeys} />));
+    expect(latestApi.rows.find(row => row.key === 'key-199')?.index).toBe(198);
+    expect(latestApi.rows.some(row => row.key === 'key-198')).toBe(false);
+  });
+
+  it('releases a retained window so an inserted visible row is mounted', () => {
+    const items = Array.from({ length: 200 }, (_, index) => `key-${index}`);
+    act(() => root.render(<KeyedHarness items={items} endOrigin={false} />));
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => { scroller.scrollTop = 4000; scroller.dispatchEvent(new Event('scroll')); });
+    const visible = latestApi.getVisibleItemRange()!;
+    const inserted = [...items];
+    inserted.splice(visible.startIndex + 1, 0, 'inserted-visible');
+    act(() => root.render(<KeyedHarness items={inserted} endOrigin={false} />));
+    expect(host.querySelector('[data-row-key="inserted-visible"]')).not.toBeNull();
+  });
+
+  it('keeps reader-owned overscan across a non-scrolling measurement readback', () => {
+    const items = Array.from({ length: 200 }, (_, index) => `key-${index}`);
+    let reading = true;
+    act(() => root.render(<KeyedHarness items={items} endOrigin={false} isReaderScrolling={() => reading} />));
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => { scroller.scrollTop = 4000; scroller.dispatchEvent(new Event('scroll')); });
+    const keys = latestApi.rows.map(row => row.key);
+    // The real adapter publishes compensated offsets with isScrolling=false.
+    act(() => { scroller.scrollTop += 80; latestApi.syncViewportOffset(scroller.scrollTop); });
+    expect(latestApi.rows.map(row => row.key)).toEqual(keys);
+    reading = false;
+    act(() => { scroller.scrollTop += 80; latestApi.syncViewportOffset(scroller.scrollTop); });
+    expect(latestApi.rows.map(row => row.key)).not.toEqual(keys);
+  });
 
   it.each([
     [false, false], [false, true], [true, false],

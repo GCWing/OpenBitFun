@@ -8,14 +8,33 @@ export interface LongSessionProbe {
   visibilityChanged: boolean; focusChanged: boolean; timedOut: boolean;
   longTasksSupported: boolean; longTasks: Array<{ startTime: number; durationMs: number }>;
   targetTurnId?: string;
+  rowChurn?: { added: Record<string, number>; removed: Record<string, number> };
+  rowBatches?: Array<{ time: number; added: number; removed: number }>;
+  scrollPositions?: Array<{ time: number; top: number }>;
 }
-interface ProbeOptions { sessionId: string; turnId?: string; selector?: string; wheelCount?: number; }
+interface ProbeOptions { sessionId: string; turnId?: string; selector?: string; wheelCount?: number; collectRows?: boolean; }
 type ProbeHost = Window & { __longSessionProbe?: {
   result: Partial<LongSessionProbe>; done: boolean; dispose: () => void;
 } };
 
 /** Measures the production transcript; no Vite imports or product store mutations. */
 export class LongSessionPerformancePage extends FlowChatScrollPage {
+  async returnToLatest(sessionId: string, paragraph: number) {
+    const selector = '[data-openbitfun-product-component="scroll-to-latest-bar"][data-openbitfun-product-part="root"][data-visible="true"]';
+    if (await $(selector).isExisting()) await $(selector).click();
+    await browser.waitUntil(() => browser.execute((id: string, paragraph: number) => {
+      const root = document.querySelector(`[data-testid="flowchat-container"][data-session-id="${id}"]`);
+      const scroll = root?.querySelector<HTMLElement>('[data-flowchat-scroller]');
+      if (!scroll) return false;
+      const viewport = scroll.getBoundingClientRect();
+      return [...scroll.querySelectorAll<HTMLElement>('.virtual-item-wrapper')].some(row => {
+        const rect = row.getBoundingClientRect();
+        return rect.bottom > viewport.top && rect.top < viewport.bottom && row.textContent?.includes(`paragraph ${paragraph}:`);
+      });
+    }, sessionId, paragraph), { timeout: 15_000, interval: 100, timeoutMsg: 'Latest streamed paragraph is not visible' });
+    await this.settle();
+  }
+
   async focusMainWindow() {
     await browser.execute(async () => {
       const host = window as unknown as { __TAURI_INTERNALS__: { invoke: (name: string, args: unknown) => Promise<unknown> } };
@@ -50,6 +69,26 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
       const taskObserver = result.longTasksSupported ? new PerformanceObserver(list => recordTasks(list.getEntries())) : undefined;
       taskObserver?.observe({ type: 'longtask' });
       const scroller = () => document.querySelector<HTMLElement>(`[data-testid="flowchat-container"][data-session-id="${options.sessionId}"] [data-flowchat-scroller]`);
+      let rowObserver: MutationObserver | undefined;
+      if (options.collectRows) {
+        result.rowChurn = { added: {}, removed: {} }; result.rowBatches = []; result.scrollPositions = [];
+        rowObserver = new MutationObserver(records => {
+          if (result.actionAt === undefined) return;
+          const batch = { time: performance.now(), added: 0, removed: 0 };
+          for (const record of records) for (const [kind, nodes] of [['added', record.addedNodes], ['removed', record.removedNodes]] as const) {
+            for (const node of nodes) {
+              if (!(node instanceof Element)) continue;
+              const rows = [...(node.matches('.virtual-item-wrapper') ? [node] : []), ...node.querySelectorAll('.virtual-item-wrapper')];
+              for (const row of rows) {
+                const key = row.getAttribute('data-virtual-item-key');
+                if (key) { result.rowChurn![kind][key] = (result.rowChurn![kind][key] ?? 0) + 1; batch[kind]++; }
+              }
+            }
+          }
+          if (batch.added || batch.removed) result.rowBatches!.push(batch);
+        });
+        const root = scroller(); if (root) rowObserver.observe(root, { subtree: true, childList: true });
+      }
       result.beforeTop = scroller()?.scrollTop ?? 0;
       let frame = 0, afterReady = 0, cleaned = false;
       const changed = () => { result.visibilityChanged ||= document.visibilityState !== result.visibility; result.focusChanged ||= document.hasFocus() !== result.focus; };
@@ -69,6 +108,7 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
         if (cleaned) return; cleaned = true;
         cancelAnimationFrame(frame); clearTimeout(timeout);
         if (taskObserver) { recordTasks(taskObserver.takeRecords()); taskObserver.disconnect(); }
+        rowObserver?.disconnect();
         events.forEach(name => document.removeEventListener(name, input, true));
         document.removeEventListener('visibilitychange', changed);
         window.removeEventListener('focus', changed); window.removeEventListener('blur', changed);
@@ -87,7 +127,9 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
           const scroll = scroller();
           let usable = false;
           if (options.wheelCount) {
-            if (scroll && Math.abs(scroll.scrollTop - result.beforeTop!) > 1) result.firstMovementAt ??= performance.now();
+            const top = scroll?.scrollTop;
+            if (top !== undefined) result.scrollPositions?.push({ time, top });
+            if (top !== undefined && Math.abs(top - result.beforeTop!) > 1) result.firstMovementAt ??= performance.now();
             usable = result.wheelTimes!.length >= options.wheelCount && result.firstMovementAt !== undefined;
           } else if (scroll) {
             const root = scroll.closest('[data-testid="flowchat-container"]')!;
@@ -132,6 +174,7 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
       const scroll = root?.querySelector<HTMLElement>('[data-flowchat-scroller]');
       return { sessionId: id, exists: !!root, scrollTop: scroll?.scrollTop, scrollHeight: scroll?.scrollHeight,
         clientHeight: scroll?.clientHeight, rows: root?.querySelectorAll('.virtual-item-wrapper').length,
+        clientWidth: scroll?.clientWidth, domNodes: root?.querySelectorAll('*').length, documentNodes: document.querySelectorAll('*').length,
         streamingBlocks: root?.querySelectorAll('[data-streaming="true"]').length,
         textChars: root?.textContent?.length ?? 0, visibility: document.visibilityState, focus: document.hasFocus(),
         visibleTurns: [...(scroll?.querySelectorAll<HTMLElement>('.virtual-item-wrapper[data-turn-id]') ?? [])].flatMap(row => {
