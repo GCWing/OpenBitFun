@@ -110,7 +110,7 @@ function coveredTimelineRange(previous: readonly number[] | null, start: number,
 
 /** A nearby pixel window, bounded in leaves so dense groups mount incrementally. */
 export function timelineOverscanRange(start: number, end: number, count: number, viewportPx: number,
-  heightAt: (index: number) => number): number[] {
+  heightAt: (index: number) => number, maxSpeculativeItems = 8): number[] {
   let first = start, last = end;
   const budget = Math.max(200, viewportPx * 0.6);
   let above = 0, below = 0;
@@ -119,8 +119,8 @@ export function timelineOverscanRange(start: number, end: number, count: number,
   // Native 1,800px wheel steps otherwise mount ~40 shell/edit rows at once,
   // producing consecutive 50–80ms frames. Eight speculative leaves per edge
   // bound that work while the entire measured visible range remains resident.
-  while (first > 0 && start - first < 8 && above < budget) above += Math.max(1, heightAt(--first));
-  while (last < count - 1 && last - end < 8 && below < budget) below += Math.max(1, heightAt(++last));
+  while (first > 0 && start - first < maxSpeculativeItems && above < budget) above += Math.max(1, heightAt(--first));
+  while (last < count - 1 && last - end < maxSpeculativeItems && below < budget) below += Math.max(1, heightAt(++last));
   return Array.from({ length: Math.max(0, last - first + 1) }, (_, index) => first + index);
 }
 
@@ -245,6 +245,8 @@ export interface UseFlowChatVirtualizerOptions<T> {
   isReaderScrolling?: () => boolean;
   /** A prepared instant navigation selects its first window before placement. */
   pendingNavigationKey?: string;
+  /** Low-priority tail preparation may grow the speculative margin gradually. */
+  speculativeOverscanItems?: number;
   items: readonly T[];
   scrollerRef: RefObject<HTMLElement | null>;
   /**
@@ -465,6 +467,7 @@ export function useFlowChatVirtualizer<T>({
   pinnedKeys,
   isReaderScrolling,
   pendingNavigationKey,
+  speculativeOverscanItems = 8,
   scrollerRef,
   headerRef,
   getItemKey,
@@ -673,7 +676,7 @@ export function useFlowChatVirtualizer<T>({
   const previousWindow = committedWindowRef.current;
   const overscanWindowRef = useRef<{
     indexes: number[]; result: number[]; pins: number[];
-    firstKey: string; lastKey: string; viewport: number;
+    firstKey: string; lastKey: string; viewport: number; speculativeItems: number;
   } | null>(null);
   const insertedBeforeWindow = previousWindow.some(row => (keyIndexes.get(row.key) ?? -1) > row.index);
   // Insertion before the internal window changes its address. Keep painted
@@ -765,6 +768,8 @@ export function useFlowChatVirtualizer<T>({
     rangeExtractor: range => {
       const viewport = scrollerRef.current?.clientHeight ?? 0;
       const previous = overscanWindowRef.current;
+      const speculativeItems = (isReaderScrolling?.() ?? virtualizer.isScrolling) || aimStartedAtMsRef.current !== null
+        ? 8 : speculativeOverscanItems;
       // keyIndexes, overscan and pins all use the adapter's internal index space.
       const pins = [...(pinnedKeys ?? [])].flatMap(key => {
         const index = keyIndexes.get(key);
@@ -788,7 +793,7 @@ export function useFlowChatVirtualizer<T>({
         return [...indexes].sort((a, b) => a - b);
       }
       if ((isReaderScrolling?.() ?? virtualizer.isScrolling) && aimStartedAtMsRef.current === null
-        && !retainedIndexes?.length && previous && previous.viewport === viewport
+        && !retainedIndexes?.length && previous && previous.viewport === viewport && previous.speculativeItems === speculativeItems
         && pins.length === previous.pins.length && pins.every((key, index) => key === previous.pins[index])
         && coveredTimelineRange(previous.indexes, range.startIndex, range.endIndex, range.count)
         && previous.firstKey === String(resolveItemKey(previous.indexes[0]))
@@ -796,14 +801,15 @@ export function useFlowChatVirtualizer<T>({
         return previous.result;
       }
       const window = retainedIndexes?.length ? retainedIndexes
-        : timelineOverscanRange(range.startIndex, range.endIndex, range.count, viewport, estimateSize);
+        : timelineOverscanRange(range.startIndex, range.endIndex, range.count, viewport, estimateSize,
+          speculativeItems);
       const indexes = new Set(window);
       for (const index of pins) indexes.add(index);
       const result = [...indexes].sort((a, b) => a - b);
       // Structural retention may omit newly inserted indexes for one commit;
       // it is not a reusable covered window after that transaction ends.
       overscanWindowRef.current = !retainedIndexes?.length && window.length ? { indexes: window, result, pins, firstKey: String(resolveItemKey(window[0])),
-        lastKey: String(resolveItemKey(window[window.length - 1])), viewport } : null;
+        lastKey: String(resolveItemKey(window[window.length - 1])), viewport, speculativeItems } : null;
       return result;
     },
     scrollMargin: contentStartPx,

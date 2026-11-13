@@ -75,6 +75,24 @@ matching protocols/native binaries in independent processes without concurrent b
 After measurement, the suite checks reading-position restoration, draft retention,
 reader takeover while more output arrives, search navigation and bounded row DOM.
 
+For isolated static and streaming first entries, use
+`--suite first-open --scenario multi-tool --turns 200 --repeats 4`.
+This creates four unique sessions per state plus parking; each target enters the UI
+exactly once. Static targets retain the normal cold frontend history-read path.
+Streaming targets are restored and started in the runtime without attaching their
+transcripts, then receive 96 seed paragraphs at 2 ms intervals. Each measured real
+sidebar click releases 16 more paragraphs at the configured stream interval.
+Readiness is unchanged: requested-Turn content in the settled, uncovered viewport,
+followed by two RAF opportunities. Optional milestone times describe row attachment
+and geometry, not proof of painted pixels. Protocol v2 continues the same RAF/task
+observer for two seconds after readiness, reporting that window separately and
+requiring the static reading anchor to remain within 2 px without disappearing.
+This detects work deferred beyond initial presentation. Outside timing, the suite waits for the
+last paragraph through normal follow (without clicking jump-to-latest), checks a
+bounded transcript, and verifies persisted completion. Compare independent old/new
+processes with the same protocol; neither first UI entry nor this suite establishes
+cold OS caches or application startup performance.
+
 For controlled scrolling during live output, use
 `--suite streaming-scroll --scenario multi-tool --repeats 2`. One real runtime
 stream receives 512 initial paragraphs at 2 ms intervals outside measurement.

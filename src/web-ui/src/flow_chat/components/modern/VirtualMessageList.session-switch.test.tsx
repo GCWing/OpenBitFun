@@ -11,7 +11,7 @@ import type { Session } from '../../types/flow-chat';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({ items: [] as VirtualItem[], session: null as Session | null, processing: false }));
-const counters = vi.hoisted(() => ({ corrections: 0, commits: 0, mounts: 0, unmounts: 0 }));
+const counters = vi.hoisted(() => ({ corrections: 0, commits: 0, firstCommitRows: 0, mounts: 0, unmounts: 0 }));
 vi.mock('../../store/modernFlowChatStore', () => {
   const store = Object.assign((select: (state: unknown) => unknown) => select({ visibleTurnInfo: null }),
     { getState: () => ({ setVisibleTurnInfo() {} }) });
@@ -129,9 +129,15 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
     heights.set(getVirtualItemStableKey(items[1]), answerHeight);
     return items;
   }
+  let paneGeometry: React.MutableRefObject<{ width: number; height: number } | undefined> | undefined;
+  let contentPresented = true, viewportActive = true;
   const render = (contentWidth = 900) => act(() => root.render(
-    <React.Profiler id="flowchat" onRender={() => { counters.commits += 1; }}>
-      <VirtualMessageList latestTurnId={`${state.session?.sessionId}-latest`} contentWidth={contentWidth} />
+    <React.Profiler id="flowchat" onRender={() => {
+      counters.commits += 1;
+      if (counters.commits === 1) counters.firstCommitRows = host.querySelectorAll('[data-virtual-item-key]').length;
+    }}>
+      <VirtualMessageList latestTurnId={`${state.session?.sessionId}-latest`} contentWidth={contentWidth}
+        viewportRectRef={paneGeometry} contentPresented={contentPresented} isViewportActive={viewportActive} />
     </React.Profiler>,
   ));
   const tick = () => {
@@ -158,6 +164,8 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
   });
 
   beforeEach(() => {
+    paneGeometry = undefined;
+    contentPresented = viewportActive = true;
     activateSurface('local'); columnWidth = viewportWidth = 900; viewportHeight = 600; containerFirst = false;
     state.processing = false;
     frames = new Map(); frameId = 0; now = 0; observers = []; heights.clear();
@@ -196,7 +204,7 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
       const width = this.classList.contains('virtual-item-wrapper') ? columnWidth : viewportWidth;
       return { x: 0, y: top, left: 0, right: width, top, bottom: top + height(this, measured), height: height(this, measured), width, toJSON() {} };
     });
-    Object.assign(counters, { corrections: 0, commits: 0, mounts: 0, unmounts: 0 });
+    Object.assign(counters, { corrections: 0, commits: 0, firstCommitRows: 0, mounts: 0, unmounts: 0 });
     retainedTranscriptRowSizes.clear();
     sessions = undefined!;
     host = document.createElement('div'); document.body.append(host); root = createRoot(host);
@@ -242,6 +250,9 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
     const firstB = open('b');
     const reopenA = open('a');
     const reopenB = open('b');
+    // A new session can already reserve the pane's observed box, while only a
+    // reopened session owns measured row sizes.
+    expect(firstB.commits).toBeLessThan(firstA.commits);
     for (const [first, reopen] of [[firstA, reopenA], [firstB, reopenB]]) {
       expect(first.settled && reopen.settled).toBe(true);
       expect(first.corrections).toBeGreaterThan(0);
@@ -251,7 +262,7 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
       expect(reopen.churn).toBe(0);
       expect(first.churn).toBeGreaterThan(0);
       expect(reopen.mounts).toBeLessThan(first.mounts);
-      expect(reopen.commits).toBeLessThan(first.commits);
+      expect(reopen.commits).toBeLessThanOrEqual(first.commits);
       // The same placement the first open settled on.
       expect(reopen.latestBottom).toBeCloseTo(first.latestBottom!, 0);
     }
@@ -270,13 +281,67 @@ describe('switching between long sessions (real controllers, supplied DOM geomet
     expect(reopenA.latestBottom).toBeCloseTo(firstA.latestBottom!, 0);
   });
 
+  it.each([false, true])('reserves the pane through a loading gap without sharing row sizes (live=%s)', live => {
+    state.processing = live;
+    paneGeometry = { current: undefined };
+    const first = open('a');
+    expect(paneGeometry.current).toEqual({ width: 900, height: 600 });
+    act(() => root.render(null));
+    const next = open('b');
+    expect(next.settled).toBe(true);
+    expect(next.corrections).toBeGreaterThan(0);
+    expect(first.firstCommitRows).toBe(0);
+    expect(next.firstCommitRows).toBeGreaterThan(0);
+    expect(next.latestBottom).toBeCloseTo(first.latestBottom!, 0);
+
+    // Another pane has its own geometry owner, even in the same document.
+    const firstPane = paneGeometry;
+    act(() => root.render(null));
+    paneGeometry = { current: undefined };
+    viewportHeight = 420; viewportWidth = columnWidth = 600;
+    expect(open('c').settled).toBe(true);
+    expect(paneGeometry.current).toEqual({ width: 600, height: 420 });
+    expect(firstPane.current).toEqual({ width: 900, height: 600 });
+  });
+
+  it('prepares one history margin leaf per idle frame only after visible presentation', () => {
+    const idle = new Map<number, IdleRequestCallback>();
+    let id = 0;
+    vi.stubGlobal('requestIdleCallback', (callback: IdleRequestCallback) => { idle.set(++id, callback); return id; });
+    vi.stubGlobal('cancelIdleCallback', (key: number) => idle.delete(key));
+    contentPresented = false;
+    const opened = open('a');
+    expect(opened.settled).toBe(true);
+    expect(idle.size).toBe(0);
+    const rows = () => host.querySelectorAll('[data-virtual-item-key]').length;
+    const before = rows();
+    contentPresented = true; render(); tick(); tick();
+    expect(idle.size).toBe(1);
+    const deliver = (remaining: number) => act(() => {
+      const [key, callback] = idle.entries().next().value!;
+      idle.delete(key); callback({ didTimeout: false, timeRemaining: () => remaining });
+    });
+    deliver(0);
+    expect(rows()).toBe(before);
+    tick(); deliver(20);
+    expect(rows()).toBeGreaterThanOrEqual(before);
+    expect(rows()).toBeLessThanOrEqual(before + 1);
+    const latest = host.querySelector<HTMLElement>('[data-virtual-item-key="model-round:a-latest:answer-a-latest"]')!;
+    expect(latest.getBoundingClientRect().bottom).toBeCloseTo(opened.latestBottom!, 0);
+    tick(); expect(idle.size).toBe(1);
+    viewportActive = false; render();
+    expect(idle.size).toBe(0);
+  });
+
   it('keeps only the most recently left sessions', () => {
     const firstA = open('a');
     for (const id of ['b', 'c', 'd', 'e'] as const) open(id);
     // a was left four sessions ago and has been evicted; d is still retained.
     expect(retainedTranscriptRowSizes.size).toBe(3);
     const evictedA = open('a');
-    expect(evictedA.corrections).toBe(firstA.corrections);
+    expect(evictedA.corrections).toBeGreaterThan(0);
+    expect(evictedA.corrections).toBeLessThanOrEqual(firstA.corrections);
+    expect(evictedA.latestBottom).toBeCloseTo(firstA.latestBottom!, 0);
     const retainedD = open('d');
     expect(retainedD.corrections).toBe(0);
   });

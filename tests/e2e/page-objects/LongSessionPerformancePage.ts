@@ -11,9 +11,12 @@ export interface LongSessionProbe {
   milestones?: { targetDomMs?: number; targetVisibleMs?: number; viewportReadyMs?: number };
   rowChurn?: { added: Record<string, number>; removed: Record<string, number> };
   rowBatches?: Array<{ time: number; added: number; removed: number }>;
+  postReady?: { endAt?: number; maxAnchorDriftPx: number; missingAnchorFrames: number;
+    longTasks: Array<{ startTime: number; durationMs: number }> };
   scrollPositions?: Array<{ time: number; top: number }>;
 }
-interface ProbeOptions { sessionId: string; turnId?: string; selector?: string; wheelCount?: number; collectRows?: boolean; collectMilestones?: boolean; }
+interface ProbeOptions { sessionId: string; turnId?: string; selector?: string; wheelCount?: number; collectRows?: boolean; collectMilestones?: boolean;
+  postReadyMs?: number; checkAnchor?: boolean; }
 type ProbeHost = Window & { __longSessionProbe?: {
   result: Partial<LongSessionProbe>; done: boolean; dispose: () => void;
 } };
@@ -23,6 +26,10 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
   async returnToLatest(sessionId: string, paragraph: number) {
     const selector = '[data-openbitfun-product-component="scroll-to-latest-bar"][data-openbitfun-product-part="root"][data-visible="true"]';
     if (await $(selector).isExisting()) await $(selector).click();
+    await this.waitForLiveParagraph(sessionId, paragraph);
+  }
+
+  async waitForLiveParagraph(sessionId: string, paragraph: number) {
     await browser.waitUntil(() => browser.execute((id: string, paragraph: number) => {
       const root = document.querySelector(`[data-testid="flowchat-container"][data-session-id="${id}"]`);
       const scroll = root?.querySelector<HTMLElement>('[data-flowchat-scroller]');
@@ -64,7 +71,8 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
         longTasksSupported: typeof PerformanceObserver !== 'undefined' && PerformanceObserver.supportedEntryTypes.includes('longtask'), longTasks: [] };
       const recordTasks = (entries: PerformanceEntry[]) => {
         for (const entry of entries) if (result.actionAt !== undefined && entry.startTime + entry.duration >= result.actionAt) {
-          result.longTasks!.push({ startTime: entry.startTime, durationMs: entry.duration });
+          const tasks = result.endAt !== undefined && entry.startTime >= result.endAt ? result.postReady?.longTasks : result.longTasks;
+          tasks?.push({ startTime: entry.startTime, durationMs: entry.duration });
         }
       };
       const taskObserver = result.longTasksSupported ? new PerformanceObserver(list => recordTasks(list.getEntries())) : undefined;
@@ -92,6 +100,7 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
       }
       result.beforeTop = scroller()?.scrollTop ?? 0;
       let frame = 0, afterReady = 0, cleaned = false;
+      let anchor: { key: string; offset: number } | undefined;
       const changed = () => { result.visibilityChanged ||= document.visibilityState !== result.visibility; result.focusChanged ||= document.hasFocus() !== result.focus; };
       const input = (event: Event) => {
         if (!(event.target instanceof Element)) return;
@@ -116,7 +125,7 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
       } };
       host.__longSessionProbe = state;
       const complete = (timedOut: boolean) => {
-        result.endAt = performance.now(); result.afterTop = scroller()?.scrollTop ?? 0; result.timedOut = timedOut;
+        result.endAt ??= performance.now(); result.afterTop ??= scroller()?.scrollTop ?? 0; result.timedOut = timedOut;
         result.latencyMs = result.actionAt === undefined ? null : options.wheelCount
           ? result.firstMovementAt === undefined ? null : result.firstMovementAt - result.actionAt
           : result.readyAt === undefined ? null : result.endAt - result.actionAt;
@@ -124,6 +133,19 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
       };
       const tick = (time: number) => {
         result.times!.push(time);
+        if (result.postReady) {
+          const scroll = scroller();
+          if (anchor && scroll) {
+            const row = [...scroll.querySelectorAll<HTMLElement>('.virtual-item-wrapper')].find(row => row.dataset.virtualItemKey === anchor!.key);
+            if (!row) result.postReady.missingAnchorFrames++;
+            else result.postReady.maxAnchorDriftPx = Math.max(result.postReady.maxAnchorDriftPx,
+              Math.abs(row.getBoundingClientRect().top - scroll.getBoundingClientRect().top - anchor.offset));
+          }
+          if (performance.now() - result.endAt! >= options.postReadyMs!) {
+            result.postReady.endAt = performance.now(); complete(false); return;
+          }
+          frame = requestAnimationFrame(tick); return;
+        }
         if (result.actionAt !== undefined) {
           const scroll = scroller();
           let usable = false;
@@ -154,7 +176,18 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
           }
           if (usable) result.readyAt ??= performance.now();
           else { delete result.readyAt; afterReady = 0; }
-          if (result.readyAt !== undefined && ++afterReady >= 3) { complete(false); return; }
+          if (result.readyAt !== undefined && ++afterReady >= 3) {
+            if (!options.postReadyMs) { complete(false); return; }
+            result.endAt = performance.now(); result.afterTop = scroller()?.scrollTop ?? 0;
+            result.postReady = { maxAnchorDriftPx: 0, missingAnchorFrames: 0, longTasks: [] };
+            const scroll = scroller();
+            if (options.checkAnchor && scroll) {
+              const top = scroll.getBoundingClientRect().top;
+              const row = [...scroll.querySelectorAll<HTMLElement>('.virtual-item-wrapper')].find(row => row.getBoundingClientRect().bottom > top);
+              if (row?.dataset.virtualItemKey) anchor = { key: row.dataset.virtualItemKey, offset: row.getBoundingClientRect().top - top };
+              else result.postReady.missingAnchorFrames++;
+            }
+          }
         }
         frame = requestAnimationFrame(tick);
       };

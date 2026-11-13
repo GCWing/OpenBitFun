@@ -42,7 +42,7 @@ for (const [key, value] of Object.entries(options)) {
   if (!(budget ? Number.isFinite(value) : Number.isInteger(value)) || value < (key === 'toolItems' ? 0 : budget ? Number.MIN_VALUE : 1)) throw new Error(`Invalid ${key}`);
 }
 if (options.turns < 8 || options.paragraphChars < 32) throw new Error('Need at least 8 turns and 32 paragraph characters');
-if (!['matrix', 'streaming-switch', 'streaming-scroll', 'streaming-jump'].includes(options.suite)) throw new Error('Unknown performance suite');
+if (!['matrix', 'first-open', 'streaming-switch', 'streaming-scroll', 'streaming-jump'].includes(options.suite)) throw new Error('Unknown performance suite');
 if (!['all', 'live', 'history'].includes(options.scrollArea)) throw new Error('Unknown scroll area');
 const nativeProfile = process.env.OPENBITFUN_E2E_NATIVE_PROFILE || 'debug';
 if (!['debug', 'release-fast'].includes(nativeProfile)) throw new Error('Use a debug or release-fast devtools build');
@@ -67,6 +67,11 @@ const report = { schemaVersion: 1, protocol: { version: 2, ...protocolOptions, f
     remoteWorkspace: false, remoteControl: false, peerDevice: false, detachedDispatch: false,
     compositorFps: false, osColdCache: false },
   samples: [], summary: [], failures: [], functionalPassed: false, performanceBudgetsPassed: null, passed: false };
+if (options.suite === 'first-open') Object.assign(report.protocol, {
+  version: 2, scenarios: ['first-open'], initialParagraphs: 96, seedIntervalMs: 2, postReadyObservationMs: 2000,
+  paragraphsPerOpen: 16, controlledStreams: true, sessionsPerState: options.repeats,
+  firstOpen: 'first UI entry per unique session; streaming runtime restored before timing; OS caches uncontrolled',
+});
 if (options.suite === 'streaming-switch') Object.assign(report.protocol, {
   version: 5, states: ['streaming'], scenarios: ['session-switch'], staticBeforeStreaming: false,
   initialParagraphs: 96, paragraphsPerSwitch: 16, controlledStreams: true,
@@ -120,8 +125,10 @@ try {
   report.sourceDirty = Boolean((await exec('git', ['status', '--porcelain'], { cwd: repo, windowsHide: true })).stdout.trim());
   const fixtures = [];
   for (const prefix of ['perf-static', 'perf-live', 'perf-parking']) {
-    const count = prefix === 'perf-parking' ? 1 : 2, turns = count === 1 ? 1 : options.turns;
-    const parking = count === 1 && options.scenario === MULTI_TOOL_TEMPLATE.id;
+    const isParking = prefix === 'perf-parking';
+    const count = isParking ? 1 : options.suite === 'first-open' ? options.repeats : 2;
+    const turns = isParking ? 1 : options.turns;
+    const parking = isParking && options.scenario === MULTI_TOOL_TEMPLATE.id;
     const result = await exec(process.execPath, [path.join(repo, 'tests/e2e/scripts/generate-long-session-fixture.mjs'),
       '--workspace', workspace, '--openbitfun-home', home, '--openbitfun-user-root', user,
       '--session-prefix', prefix, '--session-count', String(count), '--long-turns', String(turns), '--short-turns', String(turns),
