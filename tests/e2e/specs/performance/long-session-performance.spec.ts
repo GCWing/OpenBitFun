@@ -12,6 +12,8 @@ const workspace = process.env.E2E_TEST_WORKSPACE!;
 const report = JSON.parse(readFileSync(join(evidence, 'result.json'), 'utf8'));
 const protocol = report.protocol;
 const switchOnly = protocol.suite === 'streaming-switch';
+const scrollOnly = protocol.suite === 'streaming-scroll';
+const controlled = switchOnly || scrollOnly;
 const page = new LongSessionPerformancePage();
 let model: Awaited<ReturnType<typeof createLongSessionModel>>;
 let workspaceId: string;
@@ -56,8 +58,8 @@ async function sample(state: string, scenario: string, sessionId: string, action
       if (scenario === 'first-open' || scenario === 'session-switch') assert.ok(row.after.streamingBlocks > 0, 'Live output is not rendered');
       assert.ok(row.streamBefore?.connected && !row.streamBefore.finished, 'Stream inactive before operation');
       assert.ok(row.streamAfter?.connected && !row.streamAfter.finished, 'Stream ended during operation');
-      if (switchOnly) assert.ok(row.streamAfter.emitted > row.streamBefore.emitted, 'No output delivered during the switch');
-      if (!switchOnly) assert.ok(Date.now() - row.streamAfter.lastEmittedAt < Math.max(5000, protocol.streamIntervalMs * 5), 'Stalled model output');
+      if (controlled) assert.ok(row.streamAfter.emitted > row.streamBefore.emitted, 'No output delivered during the operation');
+      if (!switchOnly) assert.ok(Date.now() - row.streamAfter.lastEmittedAt < (scrollOnly ? 500 : Math.max(5000, protocol.streamIntervalMs * 5)), 'Stalled model output');
       assert.deepEqual(model.errors, []);
     } else assert.equal(row.after.streamingBlocks, 0, 'Static case contains streaming output');
     row.valid = true;
@@ -82,6 +84,7 @@ async function openMeasured(state: string, scenario: string, id: string) {
 async function startSwitchProfile() {
   const port = process.env.OPENBITFUN_LONG_SESSION_CDP_PORT;
   if (!port) return async () => {};
+  const profileName = scrollOnly ? `scroll-${report.samples.length}` : 'switch';
   const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as Array<{ type: string; url: string; webSocketDebuggerUrl: string }>;
   const target = targets.find(value => value.type === 'page' && value.url.includes('index.html') && !value.url.includes('openbitfunWindow='));
   assert.ok(target, 'Main WebView CDP target missing');
@@ -104,13 +107,14 @@ async function startSwitchProfile() {
   });
   await call('Profiler.enable'); await call('Profiler.start');
   await call('Tracing.start', { categories: 'devtools.timeline' + (process.env.OPENBITFUN_LONG_SESSION_SELECTOR_STATS === '1'
-    ? ',disabled-by-default-blink.debug,disabled-by-default-devtools.timeline.invalidationTracking' : ''), transferMode: 'ReportEvents' });
+    ? ',disabled-by-default-blink.debug,disabled-by-default-devtools.timeline.invalidationTracking'
+    : process.env.OPENBITFUN_LONG_SESSION_INVALIDATIONS === '1' ? ',disabled-by-default-devtools.timeline.invalidationTracking' : ''), transferMode: 'ReportEvents' });
   return async () => {
     try {
-      writeFileSync(join(evidence, 'switch.cpuprofile'), JSON.stringify((await call('Profiler.stop')).profile));
+      writeFileSync(join(evidence, `${profileName}.cpuprofile`), JSON.stringify((await call('Profiler.stop')).profile));
       const done = new Promise<void>(resolve => { traceComplete = resolve; });
       await call('Tracing.end'); await done;
-      writeFileSync(join(evidence, 'switch-trace.json'), JSON.stringify({ traceEvents: trace }));
+      writeFileSync(join(evidence, `${profileName}-trace.json`), JSON.stringify({ traceEvents: trace }));
     }
     finally { socket.close(); }
   };
@@ -135,7 +139,7 @@ async function jump(state: string, id: string, ordinal: number, turnId: string, 
 describe('Desktop long-session performance matrix', () => {
   before(async () => {
     assert.ok(await openWorkspace(workspace, { requireWorkspaceLabel: false }), 'Isolated workspace unavailable');
-    model = await createLongSessionModel({ intervalMs: protocol.streamIntervalMs, paragraphChars: protocol.paragraphChars, controlled: switchOnly });
+    model = await createLongSessionModel({ intervalMs: protocol.streamIntervalMs, paragraphChars: protocol.paragraphChars, controlled });
     const models = await page.invoke('get_config', { path: 'ai.models' });
     await page.invoke('set_config', { path: 'ai.models', expectedModels: models, value: [{
       id: 'perf-fixture-model', name: 'Isolated long-session model', provider: 'anthropic', model_name: 'perf-fixture-model',
@@ -174,7 +178,7 @@ describe('Desktop long-session performance matrix', () => {
       await page.cancelMeasurement();
       report.modelErrors = model?.errors ?? [];
       if (report.modelErrors.length) report.failures.push(...report.modelErrors);
-      report.functionalPassed = report.failures.length === 0 && report.samples.length === (switchOnly ? protocol.repeats : 2 * (2 + protocol.repeats + 2 + protocol.repeats))
+      report.functionalPassed = report.failures.length === 0 && report.samples.length === (scrollOnly ? 2 * protocol.scrollAreas.length * protocol.repeats : switchOnly ? protocol.repeats : 2 * (2 + protocol.repeats + 2 + protocol.repeats))
         && report.samples.every((row: { valid: boolean }) => row.valid);
       const budgets = report.samples.filter((row: { valid: boolean }) => row.valid).map((row: any) => ({ index: row.index,
         latencyPassed: protocol.maxLatencyMs === null || row.probe.latencyMs <= protocol.maxLatencyMs,
@@ -187,9 +191,9 @@ describe('Desktop long-session performance matrix', () => {
     } finally { await model?.close(); }
   });
 
-  for (const state of switchOnly ? ['streaming'] : ['static', 'streaming']) {
+  for (const state of controlled ? ['streaming'] : ['static', 'streaming']) {
     it(`measures first entry, switching, continuous scroll and turn jumps while ${state}`, async () => {
-      const sessions = ids(state);
+      const sessions = scrollOnly ? ids(state).slice(0, 1) : ids(state);
       if (state === 'streaming') {
         await page.openSession('perf-parking-000');
         for (const id of sessions) {
@@ -197,15 +201,46 @@ describe('Desktop long-session performance matrix', () => {
           await page.invoke('restore_session_with_turns', { sessionId: id, workspaceId, workspacePath: workspace });
           await page.invoke('start_dialog_turn', { sessionId: id, workspaceId, workspacePath: workspace,
             agentType: 'agentic', turnId: tail(state, id), userInput: `LONG_SESSION_STREAM:${id}` });
-          await browser.waitUntil(() => switchOnly ? !!model.snapshot(id)?.connected : (model.snapshot(id)?.emitted ?? 0) >= 8,
+          await browser.waitUntil(() => controlled ? !!model.snapshot(id)?.connected : (model.snapshot(id)?.emitted ?? 0) >= 8,
             { timeout: 60_000, interval: 100, timeoutMsg: `Model did not start for ${id}` });
         }
-        if (switchOnly) {
-          for (const id of sessions) model.release(id, protocol.initialParagraphs);
+        if (controlled) {
+          for (const id of sessions) model.release(id, protocol.initialParagraphs, protocol.seedIntervalMs);
           await browser.waitUntil(() => sessions.every(id => model.snapshot(id)?.emitted === protocol.initialParagraphs), { timeout: 30_000, interval: 100 });
         }
       }
-      if (switchOnly) {
+      if (scrollOnly) {
+        const id = sessions[0];
+        await page.prepareSession(id); await page.openSession(id);
+        await page.returnToLatest(id, protocol.initialParagraphs - 1);
+        for (let cycle = 0; cycle < protocol.repeats; cycle++) for (const area of protocol.scrollAreas) for (const direction of [-1, 1]) {
+          const expectedBefore = protocol.initialParagraphs + report.samples.length * protocol.paragraphsPerScroll;
+          assert.equal(model.snapshot(id)?.emitted, expectedBefore, 'Unequal scroll workload');
+          await page.returnToLatest(id, expectedBefore - 1);
+          if (area === 'history') await jump(state, id, protocol.turns, tail(state, id), false);
+          // Preparation uses real wheel input, outside the measured window.
+          if (direction > 0) await page.wheel(-240, protocol.scrollSteps);
+          await page.settle();
+          const stopProfile = await startSwitchProfile();
+          try {
+            await sample(state, `continuous-scroll-${area}-${direction < 0 ? 'up' : 'down'}`, id, async () => {
+              await page.arm({ sessionId: id, wheelCount: protocol.scrollSteps, collectRows: process.env.OPENBITFUN_LONG_SESSION_ROW_DIAGNOSTIC === '1' });
+              if (process.env.OPENBITFUN_LONG_SESSION_ROW_DIAGNOSTIC === '1') report.instrumented = true;
+              model.release(id, protocol.paragraphsPerScroll);
+              await page.wheel(direction * protocol.wheelDelta, protocol.scrollSteps);
+            });
+          } finally { await stopProfile(); }
+          await browser.waitUntil(() => model.snapshot(id)?.emitted === expectedBefore + protocol.paragraphsPerScroll,
+            { timeout: 30_000, interval: 100 });
+          const reading = await page.anchor(); await page.settle();
+          const still = await page.anchor();
+          assert.equal(still.key, reading.key, 'Output changed the reading row after scroll');
+          assert.ok(Math.abs(still.offset - reading.offset) < 8, 'Reading position drifted after scroll');
+          await page.returnToLatest(id, expectedBefore + protocol.paragraphsPerScroll - 1);
+          (report.scrollCheckpoints ??= []).push({ area, direction, reading, still, latest: await page.snapshot(id) });
+          save();
+        }
+      } else if (switchOnly) {
         for (const id of sessions) { await page.prepareSession(id); await page.openSession(id); await page.settle(); }
         const stopProfile = await startSwitchProfile();
         try {

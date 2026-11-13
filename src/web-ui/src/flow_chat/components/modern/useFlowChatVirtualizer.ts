@@ -36,6 +36,7 @@ function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLEle
   const commits = useRef(0);
   const requested = useRef(false);
   const pending = useRef(false);
+  const rendered = useRef<{ indexes: readonly number[]; width: number; height: number } | null>(null);
   // Descendant layout effects can publish measurements before our own layout
   // effect runs. A request from the previous render cannot cover those writes.
   requested.current = false;
@@ -70,6 +71,9 @@ function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLEle
       // Reconcile against the updated cache before asking React to select a
       // window. Deferring this callback would replay stale scroll ownership.
       options.onChange?.(virtualizer, sync);
+      if (sync && virtualizer.getVirtualIndexes() === rendered.current?.indexes
+        && virtualizer.scrollRect?.width === rendered.current.width
+        && virtualizer.scrollRect?.height === rendered.current.height) return;
       requestRender(sync);
     },
   });
@@ -87,9 +91,21 @@ function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLEle
     };
   }, [instance]);
   useLayoutEffect(() => {
+    rendered.current = { indexes: instance.getVirtualIndexes(), width: instance.scrollRect?.width ?? 0,
+      height: instance.scrollRect?.height ?? 0 };
     instance._willUpdate();
   });
   return instance;
+}
+
+/** Reuse covered rows until the reader approaches an edge of their window. */
+function coveredTimelineRange(previous: readonly number[] | null, start: number, end: number, count: number): boolean {
+  if (!previous?.length) return false;
+  const first = previous[0], last = previous[previous.length - 1];
+  return first <= start && last >= end && last < count
+    && (first === 0 || start - first >= 2)
+    && (last === count - 1 || last - end >= 2)
+    && start - first <= 16 && last - end <= 16;
 }
 
 /** A nearby pixel window, bounded in leaves so dense groups mount incrementally. */
@@ -225,6 +241,8 @@ export interface UseFlowChatVirtualizerOptions<T> {
   endOrigin?: boolean;
   footerRef?: RefObject<HTMLElement | null>;
   pinnedKeys?: ReadonlySet<string>;
+  /** Reader ownership survives measurement readbacks that end core isScrolling. */
+  isReaderScrolling?: () => boolean;
   items: readonly T[];
   scrollerRef: RefObject<HTMLElement | null>;
   /**
@@ -443,6 +461,7 @@ export function useFlowChatVirtualizer<T>({
   endOrigin = false,
   footerRef,
   pinnedKeys,
+  isReaderScrolling,
   scrollerRef,
   headerRef,
   getItemKey,
@@ -639,6 +658,10 @@ export function useFlowChatVirtualizer<T>({
   const [, finishWindowCommit] = useReducer((revision: number) => revision + 1, 0);
   const committedWindowRef = useRef<Array<{ key: string; index: number }>>([]);
   const previousWindow = committedWindowRef.current;
+  const overscanWindowRef = useRef<{
+    indexes: number[]; result: number[]; pins: number[];
+    firstKey: string; lastKey: string; viewport: number;
+  } | null>(null);
   const insertedBeforeWindow = previousWindow.some(row => (keyIndexes.get(row.key) ?? -1) > row.index);
   // Insertion before the internal window changes its address. Keep painted
   // keys until the owning reading/layout transaction publishes the new offset.
@@ -727,14 +750,31 @@ export function useFlowChatVirtualizer<T>({
     indexAttribute: 'data-flowchat-measure-index',
     overscan: 0,
     rangeExtractor: range => {
-      const indexes = new Set(retainedIndexes?.length ? retainedIndexes
-        : timelineOverscanRange(range.startIndex, range.endIndex, range.count,
-          scrollerRef.current?.clientHeight ?? 0, estimateSize));
-      if (pinnedKeys?.size) for (const key of pinnedKeys) {
+      const viewport = scrollerRef.current?.clientHeight ?? 0;
+      const previous = overscanWindowRef.current;
+      // keyIndexes, overscan and pins all use the adapter's internal index space.
+      const pins = [...(pinnedKeys ?? [])].flatMap(key => {
         const index = keyIndexes.get(key);
-        if (index !== undefined) indexes.add(index);
+        return index === undefined ? [] : [index];
+      });
+      if ((isReaderScrolling?.() ?? virtualizer.isScrolling) && aimStartedAtMsRef.current === null
+        && !retainedIndexes?.length && previous && previous.viewport === viewport
+        && pins.length === previous.pins.length && pins.every((key, index) => key === previous.pins[index])
+        && coveredTimelineRange(previous.indexes, range.startIndex, range.endIndex, range.count)
+        && previous.firstKey === String(resolveItemKey(previous.indexes[0]))
+        && previous.lastKey === String(resolveItemKey(previous.indexes[previous.indexes.length - 1]))) {
+        return previous.result;
       }
-      return [...indexes].sort((a, b) => a - b);
+      const window = retainedIndexes?.length ? retainedIndexes
+        : timelineOverscanRange(range.startIndex, range.endIndex, range.count, viewport, estimateSize);
+      const indexes = new Set(window);
+      for (const index of pins) indexes.add(index);
+      const result = [...indexes].sort((a, b) => a - b);
+      // Structural retention may omit newly inserted indexes for one commit;
+      // it is not a reusable covered window after that transaction ends.
+      overscanWindowRef.current = !retainedIndexes?.length && window.length ? { indexes: window, result, pins, firstKey: String(resolveItemKey(window[0])),
+        lastKey: String(resolveItemKey(window[window.length - 1])), viewport } : null;
+      return result;
     },
     scrollMargin: contentStartPx,
     scrollPaddingStart: endOrigin ? 0 : scrollPaddingStartPx,

@@ -44,6 +44,23 @@ shift the historical tail. Only a measured newer row wholly below a reader can
 shift their chosen position; that uses the viewport register and publishes its
 actual readback before another window is selected.
 
+During registered reader gestures, a covered overscan window is reused until its visible range comes
+within two leaves of an unbounded edge. Fresh windows keep the existing pixel
+budget and eight speculative leaves per edge; a reused window retains at most
+sixteen leaves outside either visible edge. This avoids repeatedly mounting and
+synchronously measuring a few replacement rows for every small wheel movement.
+Large steps still select and measure their visible rows immediately. Active
+programmatic aims and opening use fresh windows. Reader ownership, rather than
+the core's transient `isScrolling` flag, survives compensated offset readbacks.
+Changes to boundary keys, viewport height
+or pinned internal indexes invalidate reuse; pins remain outside the ordinary
+overscan budget. A structural transaction's retained rows cannot seed reuse:
+they may intentionally omit inserted indexes for one commit. Top- and
+bottom-origin layouts use the same internal indexes.
+The core adapter skips synchronous scroll notifications to React only when the
+rendered index array and observed viewport dimensions are unchanged. Measurement
+notifications still render, and offset reconciliation always runs first.
+
 History rows stay in normal chronological DOM flow inside the bottom-origin
 extent. No CSS transform reverses text or selection. The scroller's native
 layout holds visible tail content while earlier rows arrive or reflow, before

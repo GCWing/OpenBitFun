@@ -50,10 +50,22 @@ Read 包含 POSIX 文件路径与源码结果，Edit 包含修改前后源码，
 持续增长的完整矩阵；每次切换都检查输出增加，最后检查两条流完成并落盘。
 计时结束后还检查阅读位置恢复、草稿保留、新输出不抢占阅读位置、搜索定位和有界 DOM。
 
+专项对比流式中连续滚动时，使用
+`--suite streaming-scroll --scenario multi-tool --repeats 2`。一个真实运行时流在
+计时外先以 2 ms 间隔接收 512 段文本；每个滚动阶段再按 `--stream-interval-ms`
+（默认 90 ms）发送 192 段，同时送入 120 次真实滚轮事件。分别覆盖流式文本区、
+流式轮次之前的工具密集历史区，两个区域均双向滚动；`--scroll-area live|history`
+可选择单一区域。准备、等待本批完成和返回最后一段都在计时外。每阶段校验新输出、
+持续流式状态和全部滚轮事件；本批稳定后再检查阅读位置。只比较协议版本和负载参数
+一致的结果，此协议独立于完整矩阵。
+
 Windows WebView2 可选诊断：`OPENBITFUN_LONG_SESSION_CDP_PORT` 指定空闲调试端口，
 专项测试保存 `switch.cpuprofile` 和 `switch-trace.json`。
 `OPENBITFUN_LONG_SESSION_SELECTOR_STATS=1` 额外记录开销很大的 CSS 选择器和失效追踪。
 此类报告标记为 instrumented，正式性能比较必须在清除这些变量后的独立进程中运行。
+滚动专项为每个阶段分别保存 `scroll-N.cpuprofile` 和 `scroll-N-trace.json`。
+`OPENBITFUN_LONG_SESSION_ROW_DIAGNOSTIC=1` 可附加记录标量行挂载/移除计数、每帧
+滚动位置，也会将报告标记为 instrumented。
 
 控制台打印独立证据目录，包含可直接打开的 `report.html`、`summary.csv`、完整
 `result.json`、原始 RAF 时间戳、失败截图、日志、输入数据和前端/桌面程序/测试代码

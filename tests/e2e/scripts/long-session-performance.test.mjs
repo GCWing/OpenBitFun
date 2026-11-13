@@ -84,7 +84,8 @@ test('controlled SSE delivers equal finite batches without ending either runtime
     const bodies = responses.map(response => response.text());
     for (const id of ['a', 'b']) {
       assert.equal(fixture.snapshot(id).emitted, 0);
-      fixture.release(id, 3);
+      assert.throws(() => fixture.release(id, 3, 0), /Invalid controlled/);
+      fixture.release(id, 3, 2);
       assert.throws(() => fixture.release(id, 1), /Invalid controlled/);
     }
     await until(() => ['a', 'b'].every(id => fixture.snapshot(id).emitted === 3));

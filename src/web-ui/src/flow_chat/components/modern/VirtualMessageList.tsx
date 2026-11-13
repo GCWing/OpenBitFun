@@ -586,6 +586,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     endOrigin,
     footerRef: footerElementRef,
     pinnedKeys,
+    isReaderScrolling: () => viewportOwner.currentOwner() === 'user-gesture',
     items: virtualItems,
     startAtTailOnMount: presentationMode !== 'history-window' && !shouldRestoreInitialSnapshot,
     reconcileOpeningMeasurement: () => reconcileOpeningMeasurementRef.current(),
