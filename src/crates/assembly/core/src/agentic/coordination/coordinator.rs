@@ -12075,6 +12075,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .replace_context_messages(&child_session.session_id, snapshot.messages)
             .await;
 
+        // A user-configured side-question model applies to the child session the
+        // host creates. An explicit `initial_model_*` request overrides it, and
+        // `Inherit` keeps the parent session model that was copied above.
+        if let Some(target) = Self::configured_btw_model_target().await? {
+            self.ensure_session_runtime_ownership(child_session_id, None)?;
+            child_session = self
+                .session_manager
+                .update_session_model_target_with_reasoning(child_session_id, &target, None)
+                .await?;
+        }
+
         Ok(child_session)
     }
 
@@ -12401,6 +12412,22 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         config_service
             .get_config(Some("ai.agent_model_selections"))
             .await
+    }
+
+    /// Model a `/btw` side question uses when the caller sends no explicit choice.
+    ///
+    /// `None` means "inherit the parent session model", which keeps the historic
+    /// behavior for `ai.agent_model_selections.btw = inherit` and for every
+    /// configuration written before that setting existed.
+    async fn configured_btw_model_target() -> OpenBitFunResult<Option<ModelSelection>> {
+        let defaults = Self::agent_model_defaults().await?;
+        match &defaults.btw {
+            AgentModelSelection::Inherit => Ok(None),
+            configured => {
+                let target = resolve_subagent_model_target(None, configured, None)?;
+                Self::normalize_model_target(target).await.map(Some)
+            }
+        }
     }
 
     fn parent_model_selection(
@@ -17365,6 +17392,39 @@ pub(crate) mod tests {
         snapshot_normal_session_model(&mut config, &defaults).unwrap();
 
         assert_eq!(config.model_id.as_deref(), Some("configured-default"));
+    }
+
+    #[tokio::test]
+    async fn btw_side_questions_follow_the_configured_side_question_model() {
+        let inherited = TEST_AGENT_MODEL_DEFAULTS
+            .scope(
+                AgentModelSelections::default(),
+                ConversationCoordinator::configured_btw_model_target(),
+            )
+            .await
+            .expect("defaulting btw model target");
+        assert!(
+            inherited.is_none(),
+            "an unset side-question model must inherit the parent session model"
+        );
+
+        let mut configured = AgentModelSelections::default();
+        configured.btw = openbitfun_config_contracts::model_pool::AgentModelSelection::Model {
+            model_ref: "fast".into(),
+        };
+        let target = TEST_AGENT_MODEL_DEFAULTS
+            .scope(
+                configured,
+                ConversationCoordinator::configured_btw_model_target(),
+            )
+            .await
+            .expect("resolving the configured btw model target");
+        assert_eq!(
+            target,
+            Some(openbitfun_core_types::model_pool::ModelSelection::Model {
+                model_ref: "fast".into()
+            })
+        );
     }
 
     #[test]

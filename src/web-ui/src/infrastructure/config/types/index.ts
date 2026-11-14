@@ -475,6 +475,8 @@ export interface AgentModelSelections {
     builtin: Record<string, AgentModelTargetSelection>;
     fork: AgentModelTargetSelection;
   };
+  /** Model for `/btw` side questions. Missing (older records) means `inherit`. */
+  btw: AgentModelTargetSelection;
 }
 
 export interface AgentModelDefaultsConfig {

@@ -1,5 +1,7 @@
 import { agentAPI, btwAPI } from '@/infrastructure/api';
 import type { BtwInitialModelTarget } from '@/infrastructure/api/service-api/BtwAPI';
+import type { AgentModelTargetSelection } from '@/infrastructure/config/types';
+import { readBtwModelSelection } from '@/infrastructure/config/services/modelSelections';
 import { i18nService } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system';
 import { flowChatStore } from '../store/FlowChatStore';
@@ -237,6 +239,8 @@ export function createBtwSessionPlaceholder(params: {
   workspacePath?: string;
   childSessionName: string;
   parentDialogTurnId?: string;
+  /** Configured side-question model. `inherit` (or absent) mirrors the parent. */
+  defaultModelSelection?: AgentModelTargetSelection;
 }): { childSessionId: string; parentDialogTurnId?: string; parentTurnIndex?: number } {
   const parentSession = requireSession(params.parentSessionId);
   const workspaceId = requireSessionWorkspaceId(parentSession);
@@ -284,15 +288,25 @@ export function createBtwSessionPlaceholder(params: {
     parentSessionId: params.parentSessionId,
     sessionKind: 'btw',
   });
-  if (parentSession.config.modelName) {
-    flowChatStore.updateSessionModelName(childSessionId, parentSession.config.modelName);
-  }
-  flowChatStore.updateSessionReasoningPreset(childSessionId, parentSession.config.reasoningPreset);
-  if (parentSession.config.modelPoolId) {
-    // Mirror inherited intent for the selector, but let the host snapshot its
-    // current binding at first submission. This is not an explicit pool change.
-    flowChatStore.updateSessionModelPool(childSessionId, parentSession.config.modelPoolId,
-      parentSession.config.modelPoolBinding);
+  const configuredModel = params.defaultModelSelection;
+  if (configuredModel?.kind === 'pool') {
+    // The configured pool is a host-side default, so the host binds a member at
+    // the first submission and this mirror is not an explicit pool change.
+    flowChatStore.updateSessionModelPool(childSessionId, configuredModel.pool_id, undefined);
+  } else if (configuredModel?.kind === 'model') {
+    flowChatStore.updateSessionModelName(childSessionId, configuredModel.model_ref);
+    flowChatStore.updateSessionReasoningPreset(childSessionId, undefined);
+  } else {
+    if (parentSession.config.modelName) {
+      flowChatStore.updateSessionModelName(childSessionId, parentSession.config.modelName);
+    }
+    flowChatStore.updateSessionReasoningPreset(childSessionId, parentSession.config.reasoningPreset);
+    if (parentSession.config.modelPoolId) {
+      // Mirror inherited intent for the selector, but let the host snapshot its
+      // current binding at first submission. This is not an explicit pool change.
+      flowChatStore.updateSessionModelPool(childSessionId, parentSession.config.modelPoolId,
+        parentSession.config.modelPoolBinding);
+    }
   }
 
   return { childSessionId, parentDialogTurnId, parentTurnIndex };
@@ -380,10 +394,12 @@ export async function startBtwThread(params: {
 
   await flowChatManager.ensureBackendSession(params.parentSessionId);
   const childSessionName = buildChildSessionName(question);
+  const defaultModelSelection = await readBtwModelSelection();
   const { childSessionId, parentDialogTurnId, parentTurnIndex } = createBtwSessionPlaceholder({
     parentSessionId: params.parentSessionId,
     workspacePath: params.workspacePath,
     childSessionName,
+    defaultModelSelection,
   });
 
   try {

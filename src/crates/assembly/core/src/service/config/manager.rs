@@ -2007,6 +2007,9 @@ fn validate_agent_model_selections(
     if previous.is_none_or(|old| old.subagents.fork != selections.subagents.fork) {
         validate(&selections.subagents.fork)?;
     }
+    if previous.is_none_or(|old| old.btw != selections.btw) {
+        validate(&selections.btw)?;
+    }
     for (id, value) in &selections.subagents.builtin {
         if previous.is_none_or(|old| old.subagents.builtin.get(id) != Some(value)) {
             validate(value)?;

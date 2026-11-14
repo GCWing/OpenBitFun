@@ -1,6 +1,6 @@
 import { filterSelectableTextChatModels } from '@/infrastructure/config/services/modelCategory';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
-import { modelSelectionsConfigPath, effectiveModelSelections, readModelSelections } from '@/infrastructure/config/services/modelSelections';
+import { modelSelectionsConfigPath, effectiveModelSelections, readModelSelections, rememberBtwModelSelection } from '@/infrastructure/config/services/modelSelections';
 import { readableModelPools, supportsModelPools, type ModelPoolDefinition, type ModelPoolDocument } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 import ReviewCapacitySection from '@/app/scenes/settings/pages/ai/ReviewCapacitySection';
@@ -77,6 +77,7 @@ const ExecutionSettingsPage: React.FC = () => {
   }
   const hasSeededPageData = seed.loaded && Boolean(seededSelections);
   const [subagentDefaultModel, setSubagentDefaultModel] = useState<AgentModelTargetSelection>(() => seededSelections?.subagents.default ?? { kind: 'inherit' });
+  const [btwModel, setBtwModel] = useState<AgentModelTargetSelection>(() => seededSelections?.btw ?? { kind: 'inherit' });
   const [modelPools, setModelPools] = useState<ModelPoolDefinition[]>(() => {
     const document = seed.get<ModelPoolDocument | null>('ai.model_pools', null);
     return document ? readableModelPools(document) : [];
@@ -191,6 +192,11 @@ const ExecutionSettingsPage: React.FC = () => {
 
   const subagentModelValue = JSON.stringify(subagentDefaultModel);
 
+  const btwModelValue = JSON.stringify(btwModel);
+
+  // A peer device with the legacy defaults document cannot store this setting.
+  const canConfigureBtwModel = modelSelectionsConfigPath() === 'ai.agent_model_selections';
+
   const subagentModelOptions: ComboboxOption[] = [
     { value: JSON.stringify({ kind: 'inherit' }), label: tTools('config.subagentModelInherit') },
     { value: JSON.stringify({ kind: 'model', model_ref: 'fast' }), label: tModels('sessionTitle.model.fast') },
@@ -216,6 +222,28 @@ const ExecutionSettingsPage: React.FC = () => {
     } catch (error) {
       if (!scope.isCurrent()) return;
       log.error('Failed to save default subagent model', error);
+      notificationService.error(
+        `${tTools('messages.saveFailed')}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      if (scope.isCurrent()) setToolExecConfigLoading(false);
+    }
+  };
+
+  const handleBtwModelChange = async (value: string | number) => {
+    const scope = getActiveSurfaceScope();
+    const selection = JSON.parse(String(value)) as AgentModelTargetSelection;
+    const previous = btwModel;
+    setBtwModel(selection);
+    setToolExecConfigLoading(true);
+    try {
+      await rememberBtwModelSelection(selection);
+      if (!scope.isCurrent()) return;
+      notificationService.success(tTools('messages.saveSuccess'), { duration: 2000 });
+    } catch (error) {
+      if (!scope.isCurrent()) return;
+      setBtwModel(previous);
+      log.error('Failed to save side question model', error);
       notificationService.error(
         `${tTools('messages.saveFailed')}: ${error instanceof Error ? error.message : String(error)}`
       );
@@ -332,6 +360,7 @@ const ExecutionSettingsPage: React.FC = () => {
         supportsModelPools() ? configManager.getOptionalConfig<ModelPoolDocument>('ai.model_pools') : Promise.resolve(undefined),
       ]);
       setSubagentDefaultModel(loadedSubagentDefaultModel.subagents.default);
+      setBtwModel(loadedSubagentDefaultModel.btw);
       setModelPools(poolDocument ? readableModelPools(poolDocument) : []);
       setConfiguredModels(loadedModels ?? []);
       setEnableDeferredToolLoading(deferredToolLoadingEnabled ?? true);
@@ -569,6 +598,29 @@ const ExecutionSettingsPage: React.FC = () => {
               </div>
             </ConfigPageRow>
           </ConfigPageSection>
+
+          {canConfigureBtwModel && (
+            <ConfigPageSection
+              title={tTools('section.sideQuestions.title')}
+              description={tTools('section.sideQuestions.description')}
+            >
+              <ConfigPageRow
+                label={tTools('config.btwModel')}
+                description={tTools('config.btwModelDesc')}
+                align="center"
+              >
+                <div className="openbitfun-runtime-settings__row-control" data-openbitfun-component="runtime-settings" data-openbitfun-part="control">
+                  <Combobox
+                    value={btwModelValue}
+                    options={subagentModelOptions}
+                    size="sm"
+                    disabled={toolExecConfigLoading}
+                    onValueChange={(value) => void handleBtwModelChange(value)}
+                  />
+                </div>
+              </ConfigPageRow>
+            </ConfigPageSection>
+          )}
 
           <ToolJsonRepairSection />
           <GenUILibrarySection />

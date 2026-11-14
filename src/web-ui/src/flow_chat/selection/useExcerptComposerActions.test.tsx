@@ -15,11 +15,15 @@ const mocks = vi.hoisted(() => ({
   sessions: new Map<string, unknown>(),
   setTarget: vi.fn(), focus: vi.fn(), openPane: vi.fn(), expand: vi.fn(), create: vi.fn(),
   queue: vi.fn<() => QueuedMessage[]>(() => []),
+  readBtwModelSelection: vi.fn(async () => ({ kind: 'inherit' as const })),
 }));
 vi.mock('../store/FlowChatStore', () => ({ flowChatStore: {
   getState: () => ({ sessions: mocks.sessions, activeSessionId: 'main' }),
 } }));
 vi.mock('../services/BtwThreadService', () => ({ createBtwSessionPlaceholder: mocks.create }));
+vi.mock('@/infrastructure/config/services/modelSelections', () => ({
+  readBtwModelSelection: mocks.readBtwModelSelection,
+}));
 vi.mock('../services/flow-chat-manager/PendingQueueModule', () => ({ pendingQueueManager: { listForSurface: mocks.queue } }));
 vi.mock('../services/btwSessionPane', () => ({ openBtwSessionInAuxPane: mocks.openPane }));
 vi.mock('../services/sessionActivation', () => ({ openMainSession: vi.fn() }));
@@ -100,7 +104,7 @@ describe('scoped excerpt composer routing', () => {
     expect(sessionComposerStore.getState().getDraft('main').contexts).toEqual([{ ...excerpt, annotationNumber: 4 }]);
   });
 
-  it('creates a new ordinary side draft instead of using review or already submitted sessions', () => {
+  it('creates a new ordinary side draft instead of using review or already submitted sessions', async () => {
     mocks.sessions.set('draft', { sessionId: 'draft', parentSessionId: 'main', sessionKind: 'review', dialogTurns: [] });
     mocks.sessions.set('sent', { sessionId: 'sent', parentSessionId: 'main', sessionKind: 'btw', btwOrigin: { requestId: 'sent-1' }, dialogTurns: [] });
     mocks.create.mockImplementationOnce(() => {
@@ -109,8 +113,23 @@ describe('scoped excerpt composer routing', () => {
     });
     act(() => root.render(<Probe />));
     act(() => requestExcerptAction(excerpt, 'main', 'ask'));
-    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ parentSessionId: 'main', parentDialogTurnId: 'turn-2' }));
+    // The draft placeholder waits for the configured side-question model.
+    await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ parentSessionId: 'main', parentDialogTurnId: 'turn-2' })));
     expect(sessionComposerStore.getState().getDraft('new-side').contexts).toEqual([{ ...excerpt, annotationNumber: 1 }]);
+  });
+
+  it('passes the configured side question model into a new excerpt side draft', async () => {
+    mocks.sessions.set('draft', { sessionId: 'draft', parentSessionId: 'main', sessionKind: 'review', dialogTurns: [] });
+    mocks.readBtwModelSelection.mockResolvedValueOnce({ kind: 'model', model_ref: 'fast' });
+    mocks.create.mockImplementationOnce(() => {
+      mocks.sessions.set('new-side', { sessionId: 'new-side', parentSessionId: 'main', sessionKind: 'btw', config: {}, dialogTurns: [] });
+      return { childSessionId: 'new-side' };
+    });
+    act(() => root.render(<Probe />));
+    act(() => requestExcerptAction(excerpt, 'main', 'ask'));
+    await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      defaultModelSelection: { kind: 'model', model_ref: 'fast' },
+    })));
   });
 
   it('ignores inactive composers and events from another session or an earlier surface activation', () => {
