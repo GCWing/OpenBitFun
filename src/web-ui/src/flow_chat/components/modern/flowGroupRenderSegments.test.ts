@@ -31,3 +31,24 @@ it('reuses closed segment object references when appending new items', () => {
   expect(secondPass[1]).toBe(firstPass[1]);
   expect(secondPass.length).toBe(3);
 });
+
+it.each(['append', 'replace'] as const)('preserves the previous tail snapshot on %s', update => {
+  const initial = Array.from({ length: 17 }, (_, index) => read(index));
+  const before = buildFlowGroupRenderSegments(initial);
+  const tail = before[1];
+  const originalMembers = tail.items;
+  const originalHeight = tail.estimatedHeightPx;
+  const updated = update === 'append'
+    ? [...initial, read(17)]
+    : [...initial.slice(0, -1), { ...initial[16], status: 'running' as const }];
+  const after = buildFlowGroupRenderSegments(updated, before);
+
+  expect(after[0]).toBe(before[0]);
+  expect(after[1]).not.toBe(tail);
+  expect(after[1].key).toBe(tail.key);
+  expect(after[1].items).toEqual(updated.slice(16));
+  expect(after[1].estimatedHeightPx).toBe(buildFlowGroupRenderSegments(updated)[1].estimatedHeightPx);
+  expect(tail.items).toBe(originalMembers);
+  expect(tail.items).toEqual(initial.slice(16));
+  expect(tail.estimatedHeightPx).toBe(originalHeight);
+});

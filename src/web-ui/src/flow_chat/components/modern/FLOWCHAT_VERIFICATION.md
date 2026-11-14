@@ -16,6 +16,7 @@ each missing what the other had.
 
 | Test | Contract it holds |
 |---|---|
+| `flowGroupRenderSegments.test.ts`, `flowGroupRenderSegments.concurrent.test.tsx`, `FlowGroupLifecycle.test.tsx` | unchanged segment reuse, immutable tail snapshots on append/replacement, retained callbacks during suspended renders, and collection lifecycle; local DOM fixtures, not live remote evidence |
 | `../../store/FlowChatStore.test.ts`, `ModernFlowChatContainer.history-restore.test.tsx` | live arrival before hydration never caches a guessed global ordinal; first catalog adoption drops unversioned ranges while retaining canonical live bodies; catalog IDs and sparse legacy storage slots keep the first history Turn reachable on local/simulated Peer surfaces, including legacy `backendTurnIndex` payloads; not live remote evidence |
 | `flowChatTurnSummaries.test.ts`, `../../utils/flowChatTurnIdentity.test.ts`, `../../utils/flowChatTurnOrdinal.test.ts` | stable summary identity across streamed body updates; append/rollback, catalog and storage-index corrections, partial-tail offsets, catalog-only/empty history windows, provisional usage reports and legacy identity compatibility; batched catalog lookup without per-Turn rescans |
 | `../../timeline/useTimelineInteraction.test.tsx` | selection/focus retention and cleanup; mutation/resize bursts coalesce before dimension reads, inactive viewports keep leases without measurement and refresh on reveal, while explicit active selection/focus changes retain immediately; supplied DOM geometry, not native performance evidence |
