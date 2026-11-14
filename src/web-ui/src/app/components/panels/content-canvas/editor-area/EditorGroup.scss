@@ -40,6 +40,12 @@
     position: absolute;
     inset: 0;
 
+    // Keep Monaco's observed box stable while the cached editor is inactive.
+    &--inactive-editor {
+      visibility: hidden;
+      opacity: 0;
+    }
+
     // FlexiblePanel overrides
     .openbitfun-flexible-panel {
       flex: 1;

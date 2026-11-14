@@ -288,33 +288,43 @@ export const EditorGroup: React.FC<EditorGroupProps> = ({
         <div data-openbitfun-component="canvas-editor-group" data-openbitfun-part="content" className="canvas-editor-group__content">
           {/* Render cached tabs (active shown, others hidden) for instant switching */}
           {tabsToRender.length > 0 ? (
-            tabsToRender.map((tab) => (
-              <div
-                key={tab.id}
-                ref={effectiveActiveTabId === tab.id ? activeTabContentRef : undefined}
-                data-openbitfun-component="canvas-editor-group"
-                data-openbitfun-part="tabContent"
-                className="canvas-editor-group__tab-content"
-                style={{ display: effectiveActiveTabId === tab.id ? 'flex' : 'none' }}
-              >
-                <CanvasContentView
-                  documentId={canvasTabDocumentId(tab)}
-                  content={tab.content as any}
-                  isActive={isSceneActive && effectiveActiveTabId === tab.id}
-                  onContentChange={effectiveActiveTabId === tab.id ? handleContentChange : undefined}
-                  onDirtyStateChange={effectiveActiveTabId === tab.id ? handleDirtyStateChange : undefined}
-                  onFileMissingFromDiskChange={
-                    onTabFileDeletedFromDiskChange
-                      ? (missing) => onTabFileDeletedFromDiskChange(tab.id, missing)
-                      : undefined
-                  }
-                  onInteraction={onInteraction}
-                  workspacePath={workspacePath}
-                  terminalResizeSuspended={terminalResizeSuspended}
-                  resizeSuspended={resizeSuspended}
-                />
-              </div>
-            ))
+            tabsToRender.map((tab) => {
+              const isSelected = effectiveActiveTabId === tab.id;
+              const keepHiddenLayout = !isSelected && (
+                tab.content.type === 'code-editor' || tab.content.type === 'diff-code-editor'
+              );
+              return (
+                <div
+                  key={tab.id}
+                  ref={isSelected ? activeTabContentRef : undefined}
+                  data-openbitfun-component="canvas-editor-group"
+                  data-openbitfun-part="tabContent"
+                  className={keepHiddenLayout
+                    ? 'canvas-editor-group__tab-content canvas-editor-group__tab-content--inactive-editor'
+                    : 'canvas-editor-group__tab-content'}
+                  style={!isSelected && !keepHiddenLayout ? { display: 'none' } : undefined}
+                  aria-hidden={keepHiddenLayout || undefined}
+                  {...(keepHiddenLayout ? { inert: '' } : {})}
+                >
+                  <CanvasContentView
+                    documentId={canvasTabDocumentId(tab)}
+                    content={tab.content as any}
+                    isActive={isSceneActive && isSelected}
+                    onContentChange={isSelected ? handleContentChange : undefined}
+                    onDirtyStateChange={isSelected ? handleDirtyStateChange : undefined}
+                    onFileMissingFromDiskChange={
+                      onTabFileDeletedFromDiskChange
+                        ? (missing) => onTabFileDeletedFromDiskChange(tab.id, missing)
+                        : undefined
+                    }
+                    onInteraction={onInteraction}
+                    workspacePath={workspacePath}
+                    terminalResizeSuspended={terminalResizeSuspended}
+                    resizeSuspended={resizeSuspended}
+                  />
+                </div>
+              );
+            })
           ) : visibleTabs.length === 0 ? (
             <div data-openbitfun-component="canvas-editor-group" data-openbitfun-part="empty" className="canvas-editor-group__empty">
               <div data-openbitfun-component="canvas-editor-group" data-openbitfun-part="emptyContent" className="canvas-editor-group__empty-content">
