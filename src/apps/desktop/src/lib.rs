@@ -27,6 +27,7 @@ pub mod computer_use;
 pub mod crash_diagnostics;
 pub mod desktop_cards;
 mod embedded_relay_host;
+mod frontend_asset_cache;
 pub mod frontend_workbench;
 pub mod logging;
 pub mod macos_menubar;
