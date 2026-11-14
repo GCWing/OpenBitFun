@@ -453,7 +453,7 @@ test('beta Desktop artifacts compile and bundle only beta updater endpoints', ()
     const config = JSON.parse(readFileSync(generated, 'utf8'));
     assert.equal(
       config.plugins.updater.endpoints[0],
-      'https://github.com/GCWing/OpenBitFun/releases/download/channel-v1-beta/latest-v1.json',
+      'https://github.com/openBitFun/OpenBitFun/releases/download/channel-v1-beta/latest-v1.json',
     );
     assert.equal(
       config.plugins.updater.endpoints[1],

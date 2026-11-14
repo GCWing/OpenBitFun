@@ -134,7 +134,7 @@ ARG OPENBITFUN_APT_MIRROR=mirrors.aliyun.com
 
 LABEL org.opencontainers.image.title="OpenBitFun Relay Server" \
       org.opencontainers.image.description="Self-hosted relay server for OpenBitFun" \
-      org.opencontainers.image.source="https://github.com/GCWing/OpenBitFun" \
+      org.opencontainers.image.source="https://github.com/openBitFun/OpenBitFun" \
       org.opencontainers.image.revision="${RELAY_GIT_COMMIT}" \
       org.opencontainers.image.licenses="MIT"
 

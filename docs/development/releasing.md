@@ -22,6 +22,35 @@ its tag automatically. Release creation and editing use GitHub CLI without
 `--target`: sending `target_commitish` for workflow-changing commits can require
 `workflows:write`, even for an existing tag. Asset upload precedes publication.
 
+## Release infrastructure after the repository transfer
+
+The official repository is `openBitFun/OpenBitFun` (GitHub repository ID
+`1147866277`). Official Actions use the repository ID for release-only settings
+such as the protected `main` history check and download mirror webhook. New
+official Relay images go to `ghcr.io/openbitfun/openbitfun-relay-server`.
+
+Set the organization package to public and give `openBitFun/OpenBitFun` write
+access under the package's **Manage Actions access** settings. If a first push
+creates the package as private, change its visibility and rerun the failed image
+job. The image job checks anonymous access before the Desktop Release can
+publish. Keep the public `gcwing/openbitfun-relay-server` package and its existing
+digests available for older releases.
+
+Deploy the updated mirror script from the official checkout before the first
+release in the organization namespace. The mirror accepts signed descriptors
+from either official namespace and copies their bytes and signatures unchanged.
+Finalizing trusted Actions artifacts from before the transfer can also reuse
+their original signed descriptor and the Windows updater format built by the
+original source. The standalone Relay deploy script tries the
+organization package first and can retry the same tag or digest in the old
+namespace. For a default `latest` request it resolves the current GitHub release
+tag before retrying the old namespace.
+
+For the optional Homebrew notification from `CLI Package`, set
+`HOMEBREW_TAP_REPOSITORY` to the tap's `owner/repository` and configure
+`HOMEBREW_TAP_DISPATCH_TOKEN`. Existing token-only configurations still target
+`GCWing/homebrew-tap`.
+
 ## Recovering one macOS package
 
 For an existing immutable tag, dispatch `Desktop Package` from the current
@@ -191,7 +220,7 @@ The selected ref must resolve to a commit in the protected `main` history. The
 workflow pins that SHA before dispatching platform jobs and rejects an existing
 release tag if it points somewhere else. Configure the signing secrets and the
 public beta approval policy so untrusted pull-request code cannot access them.
-This protected-history requirement applies to the canonical `GCWing/OpenBitFun`
+This protected-history requirement applies to the canonical `openBitFun/OpenBitFun`
 repository; forks may run packaging from their own test branches. A fork beta
 uses that fork's `channel-v1-beta` release as both updater origins, so it cannot
 silently consume or mutate the canonical beta channel.

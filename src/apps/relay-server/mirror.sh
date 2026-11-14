@@ -299,8 +299,8 @@ openbitfun_mirror_resolve_mode() {
 }
 
 openbitfun_mirror_export_urls() {
-  local git_upstream="${OPENBITFUN_REPO_GIT_URL:-https://github.com/GCWing/OpenBitFun.git}"
-  local tarball_upstream="${OPENBITFUN_REPO_TARBALL_URL:-https://github.com/GCWing/OpenBitFun/archive/refs/heads/main.tar.gz}"
+  local git_upstream="${OPENBITFUN_REPO_GIT_URL:-https://github.com/openBitFun/OpenBitFun.git}"
+  local tarball_upstream="${OPENBITFUN_REPO_TARBALL_URL:-https://github.com/openBitFun/OpenBitFun/archive/refs/heads/main.tar.gz}"
   local proxy="${OPENBITFUN_GITHUB_PROXY:-https://ghfast.top/}"
   local docker_get_upstream="${OPENBITFUN_DOCKER_INSTALL_URL:-https://get.docker.com}"
 

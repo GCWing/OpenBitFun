@@ -203,6 +203,6 @@ test('Desktop, CLI and SSH dispatch consume only the versioned stable feeds', ()
     assert.doesNotMatch(source, /https:[^"\s]+\/latest\.json/);
   }
   const cli = readFileSync(new URL('../src/apps/cli/src/self_update.rs', import.meta.url), 'utf8');
-  assert.ok(cli.includes('https://github.com/GCWing/OpenBitFun/releases/latest/download/linux-binaries-v1.json'));
+  assert.ok(cli.includes(new URL('linux-binaries-v1.json', stable.primaryUpdaterEndpoint).href));
   assert.ok(cli.includes('https://openbitfun.com/release/linux-binaries-v1.json'));
 });

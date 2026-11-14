@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,53 @@ import test from 'node:test';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+
+test('Relay deploy falls back to the same old image tag or digest and honors explicit overrides', {
+  skip: process.platform === 'win32',
+}, () => {
+  const official = 'ghcr.io/openbitfun/openbitfun-relay-server';
+  const legacy = 'ghcr.io/gcwing/openbitfun-relay-server';
+  const override = 'ghcr.io/custom/openbitfun-relay-server';
+  const digest = `sha256:${'a'.repeat(64)}`;
+  for (const { tag, pin = '', image = '', available, pulls, resolves = false } of [
+    { tag: 'latest', available: `${official}:latest`, pulls: [`${official}:latest`] },
+    { tag: 'latest', available: `${legacy}:v1.0.10`, pulls: [`${official}:latest`, `${legacy}:v1.0.10`], resolves: true },
+    { tag: 'v1.0.9', available: `${legacy}:v1.0.9`, pulls: [`${official}:v1.0.9`, `${legacy}:v1.0.9`] },
+    { tag: 'latest', pin: digest, available: `${legacy}@${digest}`, pulls: [`${official}@${digest}`, `${legacy}@${digest}`] },
+    { tag: 'v1.0.9', image: override, available: '', pulls: [`${override}:v1.0.9`] },
+    { tag: 'latest', available: '', pulls: [`${official}:latest`, `${legacy}:v1.0.10`], resolves: true },
+  ]) {
+    const result = spawnSync('bash', ['-c', `
+      set -euo pipefail
+      source src/apps/relay-server/release-download.sh
+      openbitfun_relay_native_platform() { echo linux/amd64; }
+      curl() {
+        echo 'resolve latest' >&2
+        case "\${!#}" in
+          https://github.com/openBitFun/OpenBitFun/releases/latest)
+            printf 'https://github.com/openBitFun/OpenBitFun/releases/tag/v1.0.10' ;;
+          *) return 1 ;;
+        esac
+      }
+      openbitfun_image_docker_with_timeout() {
+        printf 'pull %s\n' "\${!#}" >&2
+        [[ "\${!#}" == "$AVAILABLE_IMAGE" ]]
+      }
+      openbitfun_image_docker() { echo amd64; }
+      openbitfun_run_relay_image() { printf '%s %s\n' "$OPENBITFUN_RELAY_IMAGE" "$1"; }
+      openbitfun_try_release_deploy
+    `], {
+      cwd: repoRoot, encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, AVAILABLE_IMAGE: available, OPENBITFUN_RELAY_IMAGE: image,
+        OPENBITFUN_RELAY_IMAGE_TAG: tag, OPENBITFUN_RELAY_IMAGE_DIGEST: pin,
+        OPENBITFUN_REQUIRE_IMAGE_DIGEST: '', OPENBITFUN_GITHUB_RELEASE_BASE: '', OPENBITFUN_MIRROR_REQUESTED_MODE: 'global' },
+    });
+    assert.equal(result.status, available ? 0 : 1, result.stderr);
+    assert.deepEqual(result.stderr.split('\n').filter((line) => line.startsWith('pull ')), pulls.map((ref) => `pull ${ref}`));
+    assert.equal(result.stderr.includes('resolve latest'), resolves);
+    if (available) assert.equal(result.stdout.trim(), `${available.split(/[:@]/)[0]} ${available}`);
+  }
+});
 
 test('relay archive contains the runtime and admin binaries plus static assets', () => {
   const packageScript = read('scripts/relay/package-unix.sh');
@@ -67,7 +115,7 @@ test('formal and nightly releases publish signed anonymous multi-platform Relay 
     assert.match(workflow, /platforms:\s*linux\/amd64,linux\/arm64/);
     assert.match(
       workflow,
-      /ghcr\.io\/(?:gcwing|\$\{GITHUB_REPOSITORY_OWNER,,\})\/openbitfun-relay-server/i,
+      /ghcr\.io\/\$\{GITHUB_REPOSITORY_OWNER,,\}\/openbitfun-relay-server/,
     );
     assert.match(workflow, /relay-image\.json/);
     assert.match(workflow, /scripts\/sign-release-assets\.sh relay-image\.json/);
@@ -83,7 +131,7 @@ test('formal and nightly releases publish signed anonymous multi-platform Relay 
   assert.match(smoke, /docker image rm "\$IMAGE_REF"/);
   assert.match(smoke, /docker logs --tail/);
 
-  assert.match(dockerfile, /org\.opencontainers\.image\.source="https:\/\/github\.com\/GCWing\/OpenBitFun"/);
+  assert.match(dockerfile, /org\.opencontainers\.image\.source="https:\/\/github\.com\/openBitFun\/OpenBitFun"/);
   assert.match(dockerfile, /TARGETARCH/);
   assert.match(dockerfile, /openbitfun-relay-server/);
   assert.match(dockerfile, /relay-admin/);
