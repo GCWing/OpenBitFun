@@ -29,8 +29,8 @@ ARG VERSION
 ARG REVISION
 LABEL org.opencontainers.image.title="OpenBitFun Relay Server" \
       org.opencontainers.image.description="Self-hosted relay server for OpenBitFun" \
-      org.opencontainers.image.source="https://github.com/GCWing/OpenBitFun" \
-      org.opencontainers.image.url="https://github.com/GCWing/OpenBitFun" \
+      org.opencontainers.image.source="https://github.com/openBitFun/OpenBitFun" \
+      org.opencontainers.image.url="https://github.com/openBitFun/OpenBitFun" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.licenses="MIT"

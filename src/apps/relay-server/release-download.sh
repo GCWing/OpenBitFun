@@ -12,7 +12,7 @@
 # path is intentionally gone.
 #
 # Configuration:
-#   OPENBITFUN_RELAY_IMAGE          canonical image repository
+#   OPENBITFUN_RELAY_IMAGE          explicit image repository override
 #   OPENBITFUN_RELAY_IMAGE_DIGEST   sha256:<64 lowercase hex> (required by Desktop)
 #   OPENBITFUN_RELAY_IMAGE_TAG      manual-script fallback tag (default release tag)
 #   OPENBITFUN_IMAGE_PULL_TIMEOUT   per-route pull timeout in seconds (default 900)
@@ -22,12 +22,15 @@
 #   RELAY_PORT                  published/container port (default 9700)
 #   RELAY_HOST_BIND_IP          host bind address (default 0.0.0.0)
 
-OPENBITFUN_RELAY_IMAGE="${OPENBITFUN_RELAY_IMAGE:-ghcr.io/gcwing/openbitfun-relay-server}"
+OPENBITFUN_DEFAULT_RELAY_IMAGE="ghcr.io/openbitfun/openbitfun-relay-server"
+OPENBITFUN_LEGACY_RELAY_IMAGE="ghcr.io/gcwing/openbitfun-relay-server"
+OPENBITFUN_RELAY_IMAGE_OVERRIDE="${OPENBITFUN_RELAY_IMAGE:-}"
+OPENBITFUN_RELAY_IMAGE="${OPENBITFUN_RELAY_IMAGE_OVERRIDE:-$OPENBITFUN_DEFAULT_RELAY_IMAGE}"
 OPENBITFUN_RELAY_IMAGE_TAG="${OPENBITFUN_RELAY_IMAGE_TAG:-${OPENBITFUN_RELEASE_TAG:-latest}}"
 OPENBITFUN_IMAGE_PULL_TIMEOUT="${OPENBITFUN_IMAGE_PULL_TIMEOUT:-900}"
 OPENBITFUN_GITHUB_PROBE_WINDOW="${OPENBITFUN_GITHUB_PROBE_WINDOW:-10}"
 OPENBITFUN_GITHUB_HEALTHY_BPS="${OPENBITFUN_GITHUB_HEALTHY_BPS:-524288}"
-OPENBITFUN_GITHUB_RELEASE_BASE="${OPENBITFUN_GITHUB_RELEASE_BASE:-https://github.com/GCWing/OpenBitFun/releases}"
+OPENBITFUN_GITHUB_RELEASE_BASE="${OPENBITFUN_GITHUB_RELEASE_BASE:-https://github.com/openBitFun/OpenBitFun/releases}"
 
 # The embedded Desktop helpers call Docker through openbitfun_docker; the manual
 # script exposes docker_cmd. Keep this file independent of either caller.
@@ -92,6 +95,23 @@ openbitfun_relay_image_ref() {
   fi
 }
 
+# Legacy `latest` stops advancing after the transfer. Resolve GitHub's current
+# release tag before trying the old registry so an outage cannot install an
+# older build. Explicit tag and digest requests already identify the image.
+openbitfun_legacy_relay_tag() {
+  if [ "$OPENBITFUN_RELAY_IMAGE_TAG" != latest ] || [ -n "${OPENBITFUN_RELAY_IMAGE_DIGEST:-}" ]; then
+    printf '%s\n' "$OPENBITFUN_RELAY_IMAGE_TAG"
+    return
+  fi
+
+  local release_url tag
+  release_url="$(curl -fsSLI --max-time 15 -o /dev/null -w '%{url_effective}' \
+    "${OPENBITFUN_GITHUB_RELEASE_BASE}/latest")" || return 1
+  tag="${release_url##*/releases/tag/}"
+  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta)?$ ]] || return 1
+  printf '%s\n' "$tag"
+}
+
 openbitfun_relay_archive_target() {
   case "$1" in
     linux/amd64) echo x86_64-unknown-linux-gnu ;;
@@ -149,14 +169,14 @@ openbitfun_probe_github_throughput() {
 # remain authoritative. The digest is identical across routes, so transport
 # selection never changes the image Desktop authenticated.
 openbitfun_pull_relay_image() {
-  local platform="$1" routes route_name repository image_ref selected=""
+  local platform="$1" repository="$2" route image_ref selected=""
+  local routes=()
   local requested_mode github_speed mirror_first=0
   local pull_timeout="${OPENBITFUN_IMAGE_PULL_TIMEOUT:-900}"
   case "$pull_timeout" in
     '' | *[!0-9]*) pull_timeout=900 ;;
   esac
 
-  routes="$(mktemp)"
   requested_mode="${OPENBITFUN_MIRROR_REQUESTED_MODE:-${OPENBITFUN_MIRROR_MODE:-auto}}"
   case "$OPENBITFUN_GITHUB_HEALTHY_BPS" in
     '' | *[!0-9]*) OPENBITFUN_GITHUB_HEALTHY_BPS=524288 ;;
@@ -173,30 +193,22 @@ openbitfun_pull_relay_image() {
   esac
 
   if [ "$requested_mode" = global ]; then
-    printf '%s\t%s\n' "official GHCR" "$OPENBITFUN_RELAY_IMAGE" >"$routes"
+    routes=("$repository")
   elif [ "$mirror_first" = "1" ]; then
-    printf '%s\t%s\n' \
-      "NJU GHCR accelerator" "ghcr.nju.edu.cn/${OPENBITFUN_RELAY_IMAGE#ghcr.io/}" \
-      "DaoCloud GHCR accelerator" "m.daocloud.io/${OPENBITFUN_RELAY_IMAGE}" \
-      "official GHCR fallback" "$OPENBITFUN_RELAY_IMAGE" >"$routes"
+    routes=("ghcr.nju.edu.cn/${repository#ghcr.io/}" "m.daocloud.io/${repository}" "$repository")
   else
-    printf '%s\t%s\n' \
-      "official GHCR" "$OPENBITFUN_RELAY_IMAGE" \
-      "NJU GHCR accelerator fallback" "ghcr.nju.edu.cn/${OPENBITFUN_RELAY_IMAGE#ghcr.io/}" \
-      "DaoCloud GHCR accelerator fallback" "m.daocloud.io/${OPENBITFUN_RELAY_IMAGE}" >"$routes"
+    routes=("$repository" "ghcr.nju.edu.cn/${repository#ghcr.io/}" "m.daocloud.io/${repository}")
   fi
 
-  while IFS=$'\t' read -r route_name repository; do
-    [ -n "$repository" ] || continue
-    image_ref="$(openbitfun_relay_image_ref "$repository")"
-    echo ">>> Pulling Relay image via ${route_name}: ${image_ref}" >&2
+  for route in "${routes[@]}"; do
+    image_ref="$(openbitfun_relay_image_ref "$route")"
+    echo ">>> Pulling Relay image: ${image_ref}" >&2
     if openbitfun_image_docker_with_timeout "$pull_timeout" pull --platform "$platform" "$image_ref" >&2; then
       selected="$image_ref"
       break
     fi
-    echo ">>> ${route_name} failed or timed out; trying the next route." >&2
-  done <"$routes"
-  rm -f "$routes"
+    echo ">>> ${route} failed or timed out." >&2
+  done
 
   if [ -z "$selected" ]; then
     echo ">>> ERROR: Relay image pull failed on every ${OPENBITFUN_MIRROR_MODE:-global} route." >&2
@@ -301,7 +313,7 @@ openbitfun_run_relay_image() {
 }
 
 openbitfun_try_release_deploy() {
-  local platform image_ref
+  local platform image_ref legacy_tag
   platform="$(openbitfun_relay_native_platform)" || {
     echo ">>> ERROR: no published Relay image for architecture $(uname -m)." >&2
     return 1
@@ -320,6 +332,19 @@ openbitfun_try_release_deploy() {
   # Ignore a user-level foreign-platform default. Relay one-click deployment is
   # deliberately native on its two supported server architectures.
   export DOCKER_DEFAULT_PLATFORM="$platform"
-  image_ref="$(openbitfun_pull_relay_image "$platform")" || return 1
+  if ! image_ref="$(openbitfun_pull_relay_image "$platform" "$OPENBITFUN_RELAY_IMAGE")"; then
+    [ -z "$OPENBITFUN_RELAY_IMAGE_OVERRIDE" ] || return 1
+    legacy_tag="$(openbitfun_legacy_relay_tag)" || {
+      echo ">>> ERROR: cannot resolve the current release tag for the legacy Relay registry." >&2
+      return 1
+    }
+    echo ">>> Retrying the same Relay release in the legacy registry." >&2
+    image_ref="$(OPENBITFUN_RELAY_IMAGE_TAG="$legacy_tag" \
+      openbitfun_pull_relay_image "$platform" "$OPENBITFUN_LEGACY_RELAY_IMAGE")" || return 1
+    # The deployment labels should identify the namespace that supplied the bytes.
+    OPENBITFUN_RELAY_IMAGE="$OPENBITFUN_LEGACY_RELAY_IMAGE" \
+      openbitfun_run_relay_image "$image_ref" "$platform"
+    return
+  fi
   openbitfun_run_relay_image "$image_ref" "$platform"
 }

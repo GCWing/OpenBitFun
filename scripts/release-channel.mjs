@@ -1,19 +1,19 @@
 const CHANNELS = {
   stable: {
     primaryUpdaterEndpoint:
-      'https://github.com/GCWing/OpenBitFun/releases/latest/download/latest-v1.json',
+      'https://github.com/openBitFun/OpenBitFun/releases/latest/download/latest-v1.json',
     fallbackUpdaterEndpoint: 'https://openbitfun.com/release/latest-v1.json',
     githubChannelTag: null,
   },
   beta: {
     primaryUpdaterEndpoint:
-      'https://github.com/GCWing/OpenBitFun/releases/download/channel-v1-beta/latest-v1.json',
+      'https://github.com/openBitFun/OpenBitFun/releases/download/channel-v1-beta/latest-v1.json',
     fallbackUpdaterEndpoint: 'https://openbitfun.com/release/beta/latest-v1.json',
     githubChannelTag: 'channel-v1-beta',
   },
   nightly: {
     primaryUpdaterEndpoint:
-      'https://github.com/GCWing/OpenBitFun/releases/download/nightly/latest-v1.json',
+      'https://github.com/openBitFun/OpenBitFun/releases/download/nightly/latest-v1.json',
     fallbackUpdaterEndpoint: 'https://openbitfun.com/release/nightly/latest-v1.json',
     githubChannelTag: 'nightly',
   },

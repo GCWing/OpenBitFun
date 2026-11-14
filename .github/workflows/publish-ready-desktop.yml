@@ -105,10 +105,14 @@ jobs:
           test "${#packages[@]}" -eq 6
           bash scripts/sign-release-assets.sh "${packages[@]}"
           node scripts/write-minisign-public-key.mjs --out release-assets/minisign.pub
-          node scripts/collect-tauri-updater-assets.mjs --assets-dir release-assets \
-            --version "$RELEASE_VERSION" --out-dir release-updater-assets \
-            --windows-installer-dir release-manual-assets \
-            --required-platforms windows-x86_64,linux-x86_64,linux-aarch64,linux-x86_64-deb,linux-aarch64-deb,linux-x86_64-rpm,linux-aarch64-rpm
+          args=(--assets-dir release-assets --version "$RELEASE_VERSION" --out-dir release-updater-assets
+            --required-platforms windows-x86_64,linux-x86_64,linux-aarch64,linux-x86_64-deb,linux-aarch64-deb,linux-x86_64-rpm,linux-aarch64-rpm)
+          if git grep -q OPENBITFUN_MAINTENANCE_V1 "$RELEASE_TAG" -- OpenBitFun-Installer/src-tauri/src/installer/commands.rs; then
+            args+=(--windows-installer-dir release-manual-assets)
+          elif [[ $? != 1 ]]; then
+            exit 1
+          fi
+          node scripts/collect-tauri-updater-assets.mjs "${args[@]}"
           node scripts/generate-linux-binaries-manifest.mjs --assets-dir linux-release-assets \
             --version "$RELEASE_VERSION" --tag "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --out linux-release-assets/linux-binaries-v1.json
