@@ -220,6 +220,40 @@ describe('incremental projection cache contracts', () => {
     expect(projectSession(peer)).toBe(peerItems);
   });
 
+  it('reuses the same snapshot across BTW remounts and rebuilds after history is trimmed', () => {
+    const completed = makeSession().dialogTurns[0];
+    const session = processingSession([makeRound()]);
+    const streaming = { ...session.dialogTurns[0], id: 'streaming' };
+    session.dialogTurns = [completed, streaming];
+
+    const mountProjector = () => createSessionVirtualItemProjector({ reuseSnapshotsAcrossMounts: true });
+    const before = mountProjector()(session);
+    const reopened = mountProjector();
+    expect(reopened({ ...session, title: 'Renamed while hidden' })).toBe(before);
+
+    const trimmed = { ...session, dialogTurns: [streaming], isPartial: true, totalTurnCount: 2 };
+    const after = reopened(trimmed);
+    expect(after).not.toBe(before);
+    expect(after.every(item => item.turnId === streaming.id)).toBe(true);
+    expect(after[0]).toMatchObject({ absoluteTurnIndex: 2 });
+    expect(mountProjector()(trimmed)).toBe(after);
+
+    const expanded = mountProjector()({ ...trimmed, totalTurnCount: 3 });
+    expect(expanded[0]).toMatchObject({ absoluteTurnIndex: 3 });
+  });
+
+  it('does not reuse another surface snapshot with an equal session id', () => {
+    const local = makeSession();
+    const peer = makeSession();
+    peer.dialogTurns[0].userMessage.content = 'Peer prompt';
+    const mountProjector = () => createSessionVirtualItemProjector({ reuseSnapshotsAcrossMounts: true });
+    const localItems = mountProjector()(local);
+    const peerItems = mountProjector()(peer);
+    expect(peerItems[0]).toMatchObject({ data: { content: 'Peer prompt' } });
+    expect(mountProjector()(local)).toBe(localItems);
+    expect(mountProjector()(peer)).toBe(peerItems);
+  });
+
   it('invalidates cached warm sessions when the presentation store is cleared', () => {
     const session = makeSession();
     const store = createModernFlowChatStore(session);
