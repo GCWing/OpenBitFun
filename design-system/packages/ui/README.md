@@ -590,7 +590,7 @@ backing or fading parent cannot prevent it from sampling the content behind it.
 ### Capsule actions
 
 Wrap a pill-shaped `Button`, inline `Input`, or tag label in `Capsule`, matching
-its `size` to the child. Pass one `IconButton` (optionally inside `Tooltip`) to
+its `size` to the child. Pass an `IconButton` or an array of keyed `IconButton`s (optionally inside `Tooltip`) to
 `action`. The slot selects circular glass presentation and compact geometry;
 the consumer keeps the action's accessible label, tone, disabled/loading state,
 and callbacks. The action is a sibling of the primary control, never a nested
@@ -609,13 +609,14 @@ available. Its right inset equals the top and bottom clearance at every density.
 The default `actionPlacement="overlay"` floats over the intact label: do not clip,
 mask, hide, resize, or add action padding to its text when revealing the icon.
 Use `actionPlacement="reserved"` with a `Button` child for short selectable labels.
-The Button always reserves trailing padding for the action inside its pill surface,
-keeping the gaps between capsules compact. Its content is centered at rest, then
+The Button always reserves trailing padding for one action inside its pill surface,
+keeping the gaps between capsules compact. Additional actions overlay the content
+without adding padding. Its content is centered at rest, then
 shifts toward the leading edge as the icon fades in on pointer hover. Only the
 content transform and icon opacity change: hovering a row-end capsule cannot
 change its width or trigger wrapping. Keyboard focus reveals the action and moves
-the content immediately; touch keeps the action visible and the content clear of
-it. Reduced motion disables both transitions. Capsules without an action do not
+the content immediately; touch keeps the actions visible.
+Reduced motion disables both transitions. Capsules without an action do not
 reserve empty space.
 Normal constrained-width `OverflowText` behavior remains available.
 `TabGroupItem.endAction` uses a reserved slot as described above; removable

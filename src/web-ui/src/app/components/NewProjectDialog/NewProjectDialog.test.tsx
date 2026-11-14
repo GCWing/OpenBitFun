@@ -7,6 +7,7 @@ import { activateSurface, resetDeviceSurfaceForTest, surfaceIdForDevice } from '
 import { AssistantProjectFolderError, ProjectDirectoryUnavailableError } from '@/app/utils/projectDraft';
 import { globalAPI, type WorkspaceInfo } from '@/infrastructure/api/service-api/GlobalAPI';
 import type { WorkspaceSourceOption } from '@/features/ssh-remote/useWorkspaceSourceOptions';
+import { sshApi } from '@/features/ssh-remote/sshApi';
 import { PeerDeviceContext, type PeerDeviceContextValue } from '@/infrastructure/peer-device/peerDeviceContextState';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -15,10 +16,10 @@ vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', async importOrigina
   remoteConnectAPI: { getDeviceInfo: async () => ({ device_id: 'local', device_name: 'Workstation', device_os: 'macOS' }) },
 }));
 const wslSupport = vi.hoisted(() => ({ supported: true }));
-vi.mock('@/features/ssh-remote/sshApi', () => ({ sshApi: { listWslDistributions: async () => ({ supported: wslSupport.supported, distributions: [] }) } }));
-const { pickDirectory, sourceOptions, optionsBySource } = vi.hoisted(() => ({ pickDirectory: vi.fn(), sourceOptions: [] as WorkspaceSourceOption[], optionsBySource: {} as Record<string, WorkspaceSourceOption[]> }));
+vi.mock('@/features/ssh-remote/sshApi', () => ({ sshApi: { deleteConnection: vi.fn(), listWslDistributions: async () => ({ supported: wslSupport.supported, distributions: [] }) } }));
+const { pickDirectory, sourceOptions, optionsBySource, refreshOptions } = vi.hoisted(() => ({ pickDirectory: vi.fn(), sourceOptions: [] as WorkspaceSourceOption[], optionsBySource: {} as Record<string, WorkspaceSourceOption[]>, refreshOptions: vi.fn() }));
 vi.mock('@/features/ssh-remote/useWorkspaceSourceOptions', () => ({
-  useWorkspaceSourceOptions: (source: string) => ({ options: optionsBySource[source] || [], loading: false, error: '', refresh: vi.fn() }),
+  useWorkspaceSourceOptions: (source: string) => ({ options: optionsBySource[source] || [], loading: false, error: '', refresh: () => refreshOptions(source) }),
   workspacePresetHost: (preset?: { kind: string; connection?: unknown }) => preset?.kind === 'saved' ? preset.connection : undefined,
 }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string, options?: { name?: string }) =>
@@ -61,11 +62,12 @@ describe('NewProjectDialog composition', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.spyOn(globalAPI, 'getRecentWorkspaces').mockResolvedValue([]);
+    vi.spyOn(globalAPI, 'removeRecentWorkspace').mockResolvedValue(undefined);
     wslSupport.supported = true;
     sourceOptions.length = 0;
     for (const key of Object.keys(optionsBySource)) delete optionsBySource[key];
     for (const source of ['ssh', 'wsl', 'localDocker', 'remoteDocker']) {
-      optionsBySource[source] = [{ id: `fixture-${source}`, label: source, preset: { kind: 'saved', connection: {
+      optionsBySource[source] = [{ id: `fixture-${source}`, savedConnectionId: `fixture-${source}`, label: source, preset: { kind: 'saved', connection: {
         id: `fixture-${source}`, name: source, host: 'host.test', port: 22, username: 'dev', authType: { type: 'PrivateKey', keyPath: '/keys/dev' },
       } } }];
     }
@@ -219,10 +221,55 @@ describe('NewProjectDialog composition', () => {
     const pick = vi.fn();
     await render({ onPickRemoteFolder: pick, onSelectRemoteHost: selectHost });
     selectSource('ssh', false);
+    expect(document.querySelector('button[aria-label="actions.delete · Build host"]')).toBeNull();
     await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="actions.edit · Build host"]')!.click());
     expect(selectHost).toHaveBeenCalledWith('ssh', { ...option.preset, edit: true });
     expect(document.querySelector('[data-workspace-choice="host"] button[aria-pressed]')?.getAttribute('aria-pressed')).toBe('false');
     expect(pick).not.toHaveBeenCalled();
+  });
+
+  it('deletes a selected saved host without connecting and clears its project selection', async () => {
+    let finish!: () => void;
+    vi.mocked(sshApi.deleteConnection).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const selectHost = vi.fn();
+    await render({ onPickRemoteFolder: vi.fn(), onSelectRemoteHost: selectHost });
+    selectSource('ssh');
+    enterName('Remote project');
+    expect(button('newProject.create').disabled).toBe(false);
+    const remove = document.querySelector<HTMLButtonElement>('button[aria-label="actions.delete · ssh"]')!;
+    expect(remove.closest('button')?.parentElement?.closest('button')).toBeNull();
+    await act(async () => remove.click());
+    expect(sshApi.deleteConnection).toHaveBeenCalledExactlyOnceWith('fixture-ssh');
+    expect(remove.disabled).toBe(true);
+    expect(selectHost).not.toHaveBeenCalled();
+    expect(refreshOptions).not.toHaveBeenCalled();
+    await act(async () => finish());
+    expect(refreshOptions).toHaveBeenCalledWith('ssh');
+    expect(document.querySelector('[data-workspace-choice="fixture-ssh"] button[aria-pressed]')?.getAttribute('aria-pressed')).toBe('false');
+    expect(button('newProject.create').disabled).toBe(true);
+  });
+
+  it('retains the saved host and its selection when deletion fails', async () => {
+    vi.mocked(sshApi.deleteConnection).mockRejectedValue(new Error('Host offline'));
+    await render({ onPickRemoteFolder: vi.fn(), onSelectRemoteHost: vi.fn() });
+    selectSource('ssh');
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="actions.delete · ssh"]')!.click());
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('Host offline');
+    expect(document.querySelector('[data-workspace-choice="fixture-ssh"] button[aria-pressed]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(refreshOptions).not.toHaveBeenCalled();
+  });
+
+  it('ignores a completed deletion after switching device surfaces', async () => {
+    let finish!: () => void;
+    vi.mocked(sshApi.deleteConnection).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    await render({ onPickRemoteFolder: vi.fn(), onSelectRemoteHost: vi.fn() });
+    selectSource('ssh');
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="actions.delete · ssh"]')!.click());
+    act(() => activateSurface(surfaceIdForDevice('peer')));
+    await act(async () => finish());
+    expect(refreshOptions).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(sshApi.deleteConnection).toHaveBeenCalledTimes(1);
   });
 
   const recentWorkspace = (id: string, extra: Partial<WorkspaceInfo> = {}): WorkspaceInfo => ({
@@ -258,6 +305,46 @@ describe('NewProjectDialog composition', () => {
     activateSurface(surfaceIdForDevice('peer'));
     await act(async () => resolve([recentWorkspace('controller-private')]));
     expect(document.querySelector('[data-workspace-choice="controller-private"]')).toBeNull();
+  });
+
+  it('removes a recent workspace without selecting its folder or creating a project', async () => {
+    vi.mocked(globalAPI.getRecentWorkspaces).mockResolvedValue([recentWorkspace('one'), recentWorkspace('two')]);
+    let finish!: () => void;
+    vi.mocked(globalAPI.removeRecentWorkspace).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    await render({ onPickRemoteFolder: vi.fn() });
+    const remove = document.querySelector<HTMLButtonElement>('button[aria-label="actions.delete · one"]')!;
+    await act(async () => remove.click());
+    expect(globalAPI.removeRecentWorkspace).toHaveBeenCalledExactlyOnceWith('one');
+    expect(remove.disabled).toBe(true);
+    expect(document.querySelector('[data-workspace-choice="one"]')).not.toBeNull();
+    await act(async () => finish());
+    expect(document.querySelector('[data-workspace-choice="one"]')).toBeNull();
+    expect(document.querySelector('[data-workspace-choice="two"]')).not.toBeNull();
+    expect(document.querySelectorAll('.new-project-dialog__folder li')).toHaveLength(0);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(pickDirectory).not.toHaveBeenCalled();
+  });
+
+  it('retains a recent workspace and reports a failed removal', async () => {
+    vi.mocked(globalAPI.getRecentWorkspaces).mockResolvedValue([recentWorkspace('one')]);
+    vi.mocked(globalAPI.removeRecentWorkspace).mockRejectedValue(new Error('Host offline'));
+    await render({ onPickRemoteFolder: vi.fn() });
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="actions.delete · one"]')!.click());
+    expect(document.querySelector('[data-workspace-choice="one"]')).not.toBeNull();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('Host offline');
+  });
+
+  it('ignores a recent workspace removal response after switching devices', async () => {
+    vi.mocked(globalAPI.getRecentWorkspaces).mockResolvedValue([recentWorkspace('one')]);
+    let finish!: () => void;
+    vi.mocked(globalAPI.removeRecentWorkspace).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    await render({ onPickRemoteFolder: vi.fn() });
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="actions.delete · one"]')!.click());
+    act(() => activateSurface(surfaceIdForDevice('peer')));
+    await act(async () => finish());
+    expect(globalAPI.removeRecentWorkspace).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[data-workspace-choice="one"]')).not.toBeNull();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
   });
 
   it('does not repeat the device name below the current-computer header', async () => {

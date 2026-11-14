@@ -235,6 +235,11 @@
     min-width: 0;
   }
 
+  &__actions > &__delete-action {
+    flex: 0 0 auto;
+    margin-inline-end: auto;
+  }
+
   &__spinner {
     animation: ssh-connection-spin 1s linear infinite;
     margin-right: 6px;

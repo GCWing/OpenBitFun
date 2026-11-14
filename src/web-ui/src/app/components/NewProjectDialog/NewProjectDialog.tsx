@@ -11,6 +11,7 @@ import { globalAPI, type WorkspaceInfo } from '@/infrastructure/api/service-api/
 import type { WorkspaceConnectionTarget } from '@/features/ssh-remote/types';
 import { WorkspaceSourceSelector } from '@/features/ssh-remote/WorkspaceSourceSelector';
 import { WorkspaceChoiceCapsules } from '@/features/ssh-remote/WorkspaceChoiceCapsules';
+import { sshApi } from '@/features/ssh-remote/sshApi';
 import { useWorkspaceSourceOptions, workspacePresetHost, type WorkspaceConnectionPreset, type WorkspaceSourceOption } from '@/features/ssh-remote/useWorkspaceSourceOptions';
 import { workspaceSourceCoordinates, type WorkspaceSource } from '@/features/ssh-remote/workspaceSource';
 import { AssistantProjectFolderError, DEFAULT_PROJECT_SUBDIRECTORY, ProjectDirectoryUnavailableError, projectFolderKey, projectFolderName, type ProjectDraft, type ProjectFolder } from '@/app/utils/projectDraft';
@@ -343,6 +344,43 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
     } finally { setIsSelecting(false); }
   };
 
+  const handleDeleteHost = async (option: WorkspaceSourceOption) => {
+    if (busy || hasFolders || !option.savedConnectionId) return;
+    const scope = formSurface.current;
+    setIsSelecting(true);
+    setError('');
+    try {
+      scope.assertCurrent('delete project host');
+      await sshApi.deleteConnection(option.savedConnectionId);
+      scope.assertCurrent('accept deleted project host');
+      if (selectedHostOption === option.id) {
+        setSelectedHostOption(undefined);
+        setSelectedOption(undefined);
+        setConnectedRemote(undefined);
+      }
+      hostOptions.refresh();
+    } catch (cause) {
+      log.error('Failed to delete project host', cause);
+      if (scope.isCurrent()) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally { setIsSelecting(false); }
+  };
+
+  const handleRemoveRecentWorkspace = async (workspaceId: string) => {
+    if (busy || hasFolders) return;
+    const scope = formSurface.current;
+    setIsSelecting(true);
+    setRecentError('');
+    try {
+      scope.assertCurrent('remove recent project workspace');
+      await globalAPI.removeRecentWorkspace(workspaceId);
+      scope.assertCurrent('accept removed recent project workspace');
+      setRecentWorkspaces(workspaces => workspaces.filter(workspace => workspace.id !== workspaceId));
+    } catch (cause) {
+      log.error('Failed to remove recent project workspace', cause);
+      if (scope.isCurrent()) setRecentError(cause instanceof Error ? cause.message : String(cause));
+    } finally { setIsSelecting(false); }
+  };
+
   const optionActions = (options: typeof sourceOptions, target: WorkspaceConnectionTarget) => <>
       {onSelectRemoteHost && <Tooltip content={t('ssh.remote.newConnection')}><IconButton variant="quiet" size="xs" disabled={busy || hasFolders || (target === 'remoteDocker' && !selectedHost)}
         icon={<Icon name="plus" size="xs" />} aria-label={t('ssh.remote.newConnection')}
@@ -359,7 +397,9 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
         const option = options.options.find(item => item.id === id);
         if (option) void handleEditSource(option, target);
       } : undefined}
-      choices={options.options} disabled={busy || hasFolders} onValueChange={value => {
+      choices={options.options.map(option => ({ ...option,
+        onDelete: target === 'ssh' && option.savedConnectionId ? () => void handleDeleteHost(option) : undefined,
+      }))} disabled={busy || hasFolders} onValueChange={value => {
         onChange(value);
         if (value !== connectedRemote?.connectionId) setConnectedRemote(undefined);
       }} />}
@@ -486,7 +526,9 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
                       setSelectedHostOption(value); setSelectedOption(undefined);
                     }) : source === 'host' ? <>
                       {recentWorkspaces.length > 0 && <WorkspaceChoiceCapsules label={t('workspaceSource.availableOptions')}
-                        choices={recentWorkspaces.map(workspace => ({ id: workspace.id, label: workspace.name || projectFolderName(workspace.rootPath), description: workspace.rootPath }))}
+                        choices={recentWorkspaces.map(workspace => ({ id: workspace.id, label: workspace.name || projectFolderName(workspace.rootPath), description: workspace.rootPath,
+                          onDelete: () => void handleRemoveRecentWorkspace(workspace.id),
+                        }))}
                         value={recentWorkspaces.find(workspace => folders.some(folder => projectFolderKey(folder) === projectFolderKey({ path: workspace.rootPath })))?.id}
                         disabled={busy || hasFolders} onValueChange={id => {
                           if (busy || hasFolders) return;

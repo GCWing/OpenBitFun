@@ -1,4 +1,4 @@
-import { forwardRef, type HTMLAttributes, type ReactNode } from "react";
+import { Children, forwardRef, type HTMLAttributes, type ReactNode } from "react";
 import { classNames } from "../../internal/classNames";
 import { FloatingAction } from "../../internal/FloatingAction";
 import actionStyles from "../../internal/FloatingAction.module.css";
@@ -9,9 +9,9 @@ export interface CapsuleProps extends HTMLAttributes<HTMLSpanElement> {
   layout?: "inline" | "split";
   /** Fit both split controls and the capsule to their content, or use equal halves. */
   splitSizing?: "equal" | "content";
-  /** One IconButton (optionally wrapped in Tooltip), rendered beside the content. */
+  /** An IconButton or array of IconButtons (optionally wrapped in Tooltip). */
   action?: ReactNode;
-  /** Reserve a fixed action slot inside a Button child's trailing padding. */
+  /** Reserve one fixed action slot; additional actions overlay the content. */
   actionPlacement?: "overlay" | "reserved";
   /** Match the size of the child Button, Input, or label surface. */
   size?: "xs" | "sm" | "md" | "lg";
@@ -28,12 +28,13 @@ export const Capsule = forwardRef<HTMLSpanElement, CapsuleProps>(function Capsul
   splitSizing = "equal",
   ...props
 }, ref) {
+  const actionCount = Children.toArray(action).length;
   return (
     <span {...props} className={classNames(actionStyles.host, styles.root, className)}
       data-openbitfun-component="capsule" data-layout={layout} data-size={size} data-split-sizing={layout === "split" ? splitSizing : undefined}
-      data-action-placement={action != null ? actionPlacement : undefined} data-overflow-trigger ref={ref}>
+      data-action-placement={actionCount > 0 ? actionPlacement : undefined} data-overflow-trigger ref={ref}>
       {children}
-      {action != null && <FloatingAction data-openbitfun-part="action"
+      {actionCount > 0 && <FloatingAction data-openbitfun-part="action" group={actionCount > 1}
         className={actionPlacement === "reserved" ? styles.reservedAction : undefined}>{action}</FloatingAction>}
     </span>
   );

@@ -21,6 +21,8 @@ export interface WorkspaceSourceOption {
   label: string;
   description?: string;
   preset: WorkspaceConnectionPreset;
+  /** Persisted profile that can be removed; absent for config/discovered/derived entries. */
+  savedConnectionId?: string;
 }
 
 const sshConfigEndpoint = (entry: SSHConfigEntry): SshEndpoint => ({
@@ -82,10 +84,15 @@ export function useWorkspaceSourceOptions(source: WorkspaceSource, enabled: bool
       if (cancelled || !scope.isCurrent()) return;
       const connections = saved.status === 'fulfilled' ? saved.value.filter(connection => sameWorkspaceSource(savedConnectionTarget(connection), source)
         && (source !== 'remoteDocker' || (host && connection.host === host.host && connection.port === host.port && connection.username === host.username))) : [];
+      const configHosts = source === 'ssh' && detected.status === 'fulfilled' ? detected.value as SSHConfigEntry[] : [];
       const result: WorkspaceSourceOption[] = connections.map(connection => ({
         id: connection.id, label: connection.name,
         description: connection.wsl?.distribution || connection.container?.name || `${connection.username}@${connection.host}:${connection.port}`,
         preset: { kind: 'saved', connection },
+        savedConnectionId: configHosts.some(entry => {
+          const endpoint = sshConfigEndpoint(entry);
+          return connection.host === endpoint.host && connection.port === endpoint.port && connection.username === endpoint.username;
+        }) ? undefined : connection.id,
       }));
       if (source === 'ssh' && saved.status === 'fulfilled') {
         for (const connection of saved.value) {
