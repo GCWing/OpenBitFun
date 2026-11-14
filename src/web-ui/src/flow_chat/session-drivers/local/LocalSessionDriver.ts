@@ -2,7 +2,7 @@ import { readModelSelections } from '@/infrastructure/config/services/modelSelec
 import { readProjectDefaults } from '@/infrastructure/config/services/ProjectDefaultsService';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { supportsModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
-import { acpClientIdFromAgentType } from '../../utils/acpSession';
+import { acpClientIdFromAgentType, isAcpFlowSession } from '../../utils/acpSession';
 import { hostQueueSupported, hostDialogQueue, queueImageAttachments } from '../../services/hostDialogQueue';
 import { promoteAcceptedHostMessage } from '../../services/hostQueueSubmission';
 import { requireSessionOwningWorkspaceId, sessionOwningWorkspaceId } from '../../utils/sessionOrdering';
@@ -320,7 +320,27 @@ export const localSessionDriver: SessionDriver = {
     }
 
     if (session.draft?.phase !== 'editing') {
-      await sessionAPI.archiveSession(sessionId, requireSessionOwningWorkspaceId(session));
+      const workspaceId = requireSessionOwningWorkspaceId(session);
+      try {
+        await sessionAPI.archiveSession(sessionId, workspaceId);
+      } catch (error) {
+        scope.assertCurrent('verify failed session archive');
+        // A failed ACP startup may have removed its provisional host record
+        // after a catalog read projected it. Only discard an untouched empty
+        // projection after the same host confirms the record is absent.
+        if (!isAcpFlowSession(session) || session.historyState !== 'metadata-only'
+          || session.persistedTurnCount !== 0 || session.dialogTurns.length !== 0
+          || removal.removedSessionIds.length !== 1) throw error;
+        let metadata;
+        try {
+          metadata = await sessionAPI.loadSessionMetadata(sessionId, workspaceId);
+        } catch {
+          scope.assertCurrent('verify failed session archive');
+          throw error;
+        }
+        scope.assertCurrent('verify failed session archive');
+        if (metadata !== null || context.flowChatStore.getState().sessions.get(sessionId) !== session) throw error;
+      }
       scope.assertCurrent('complete session archive');
     }
 

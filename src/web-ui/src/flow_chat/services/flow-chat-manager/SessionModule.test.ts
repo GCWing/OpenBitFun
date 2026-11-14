@@ -1695,6 +1695,59 @@ describe('SessionModule historical session coordination', () => {
     expect(flowChatStore.getState().sessions.has(target)).toBe(false);
   });
 
+  it.each(['local', 'peer-archive'])('removes an empty stale ACP catalog entry after the %s host confirms it is absent', async surface => {
+    activateSurface(surface);
+    const session = createSession({ config: { agentType: 'acp:qoder' }, mode: 'acp:qoder', persistedTurnCount: 0 });
+    const { context, flowChatStore } = createContext(session, { activeSessionId: session.sessionId });
+    sessionApiMocks.archiveSession.mockRejectedValueOnce(new Error('Session metadata not found'));
+    sessionApiMocks.loadSessionMetadata.mockResolvedValueOnce(null);
+    await archiveChatSession(context, session.sessionId);
+    expect(sessionApiMocks.loadSessionMetadata).toHaveBeenCalledWith(session.sessionId, 'workspace-1');
+    expect(flowChatStore.getState().sessions.has(session.sessionId)).toBe(false);
+  });
+
+  it.each(['exists', 'offline', 'has-turns', 'unknown-count'])('retains an ACP session when the missing-record check is unsafe: %s', async scenario => {
+    const session = createSession({
+      config: { agentType: 'acp:qoder' }, mode: 'acp:qoder',
+      persistedTurnCount: scenario === 'unknown-count' ? undefined : scenario === 'has-turns' ? 1 : 0,
+    });
+    const { context, flowChatStore } = createContext(session);
+    sessionApiMocks.archiveSession.mockRejectedValueOnce(new Error('archive failed'));
+    if (scenario === 'exists') sessionApiMocks.loadSessionMetadata.mockResolvedValueOnce({ sessionId: session.sessionId });
+    if (scenario === 'offline') sessionApiMocks.loadSessionMetadata.mockRejectedValueOnce(new Error('Host offline'));
+    await expect(archiveChatSession(context, session.sessionId)).rejects.toThrow('archive failed');
+    expect(flowChatStore.getState().sessions.get(session.sessionId)).toBe(session);
+  });
+
+  it('retains an ACP session updated while the missing-record check is pending', async () => {
+    const session = createSession({ config: { agentType: 'acp:qoder' }, mode: 'acp:qoder', persistedTurnCount: 0 });
+    const { context, flowChatStore } = createContext(session);
+    const pending = createDeferred<null>();
+    sessionApiMocks.archiveSession.mockRejectedValueOnce(new Error('archive failed'));
+    sessionApiMocks.loadSessionMetadata.mockReturnValueOnce(pending.promise);
+    const archive = archiveChatSession(context, session.sessionId);
+    await vi.waitFor(() => expect(sessionApiMocks.loadSessionMetadata).toHaveBeenCalled());
+    const updated = { ...session, title: 'Updated' };
+    flowChatStore.setState((state: any) => ({ ...state, sessions: new Map(state.sessions).set(session.sessionId, updated) }));
+    pending.resolve(null);
+    await expect(archive).rejects.toThrow('archive failed');
+    expect(flowChatStore.getState().sessions.get(session.sessionId)).toBe(updated);
+  });
+
+  it('does not remove an ACP projection when the surface changes during the missing-record check', async () => {
+    const session = createSession({ config: { agentType: 'acp:qoder' }, mode: 'acp:qoder', persistedTurnCount: 0 });
+    const { context, flowChatStore } = createContext(session);
+    const pending = createDeferred<null>();
+    sessionApiMocks.archiveSession.mockRejectedValueOnce(new Error('archive failed'));
+    sessionApiMocks.loadSessionMetadata.mockReturnValueOnce(pending.promise);
+    const archive = archiveChatSession(context, session.sessionId);
+    await vi.waitFor(() => expect(sessionApiMocks.loadSessionMetadata).toHaveBeenCalled());
+    activateSurface('peer-other');
+    pending.resolve(null);
+    await expect(archive).rejects.toMatchObject({ isSurfaceChangedError: true });
+    expect(flowChatStore.removeSession).not.toHaveBeenCalled();
+  });
+
   it('retains the session and its runtime state when archive fails', async () => {
     const session = createSession();
     const { context, flowChatStore, processingManager } = createContext(session, { activeSessionId: session.sessionId });
