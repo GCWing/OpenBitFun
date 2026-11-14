@@ -18,7 +18,6 @@ import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPos
 import { activateMainSession } from '../../services/sessionActivation';
 import { useFlowChatSessions } from './useFlowChatSessions';
 import { resolveSessionTitle } from '../../utils/sessionTitle';
-import { SessionTitleNumber } from '../SessionTitleNumber';
 import './SessionMenu.scss';
 
 interface SessionMenuProps {
@@ -28,7 +27,7 @@ interface SessionMenuProps {
 
 export const SessionMenu: React.FC<SessionMenuProps> = ({ onOpenChange }) => {
   const { t } = useTranslation('flow-chat');
-  const { activeSessionId, sessions, titleNumbers } = useFlowChatSessions();
+  const { activeSessionId, sessions } = useFlowChatSessions();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -165,7 +164,6 @@ export const SessionMenu: React.FC<SessionMenuProps> = ({ onOpenChange }) => {
             aria-label={t('session.switchSession')}
           >
             {sessions.map((session) => {
-              const titleNumber = titleNumbers?.get(session.sessionId);
               return (
                 <MenuItem
                   key={session.sessionId}
@@ -186,7 +184,6 @@ export const SessionMenu: React.FC<SessionMenuProps> = ({ onOpenChange }) => {
                   // edge instead of holding a trailing column. The metadata prop renders it
                   // in ActionItem's dedicated trailing slot (flex: 0 0 auto, nowrap), so the
                   // menu reserves and aligns that space without pushing the label.
-                  metadata={titleNumber ? <SessionTitleNumber number={titleNumber} /> : undefined}
                   onMouseDown={(e) => switchSession(e, session.sessionId)}
                 >
                   <OverflowText>{resolveSessionTitle(session, t)}</OverflowText>

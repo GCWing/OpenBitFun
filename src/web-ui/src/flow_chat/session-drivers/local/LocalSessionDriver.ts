@@ -58,26 +58,15 @@ import { inheritReviewPermissionMode } from '../../services/inheritReviewPermiss
 const log = createLogger('LocalSessionDriver');
 
 async function syncCreatedSessionTitle(
-  context: FlowChatContext,
   sessionId: string,
   descriptor: SessionCreationSeed['titleDescriptor'],
   workspaceId: string,
   surfaceScope: SessionCreationSeed['surfaceScope'],
 ): Promise<void> {
   try {
-    const title = await initializeSessionTitleMetadata(sessionId, descriptor, workspaceId, surfaceScope);
-    if (title.workspaceSessionNumber === undefined) return;
-    context.flowChatStore.setState(state => {
-      const current = state.sessions.get(sessionId);
-      // A title generated or edited meanwhile owns the display; keep it.
-      if (!current || current.titleSource !== 'i18n') return state;
-      return { ...state, sessions: new Map(state.sessions).set(sessionId, {
-        ...current, workspaceSessionNumber: title.workspaceSessionNumber,
-      }) };
-    });
+    await initializeSessionTitleMetadata(sessionId, descriptor, workspaceId, surfaceScope);
   } catch (error) {
-    // A surface change abandons this projection; the session itself was
-    // created and the next catalog read carries the host-owned number.
+    // A surface change only abandons title synchronization. The host session exists.
     log.debug('Skipped created session title synchronization', { sessionId, error });
   }
 }
@@ -260,11 +249,8 @@ export const localSessionDriver: SessionDriver = {
       executionTarget: response.executionTarget,
     };
 
-    // The session exists on the host already; its default title renders from
-    // the descriptor at once. Synchronize the host-owned title identity and
-    // workspace session number off the creation critical path (three metadata
-    // round trips, each a relay round trip in Peer Device Mode), the same way
-    // a materialized draft does.
+    // Render the default title immediately and persist its descriptor off the
+    // creation critical path, including when metadata is reached via a relay.
     context.flowChatStore.createSession(
       response.sessionId,
       resolvedConfig,
@@ -278,7 +264,7 @@ export const localSessionDriver: SessionDriver = {
       titleDescriptor,
     );
     void syncCreatedSessionTitle(
-      context, response.sessionId, titleDescriptor,
+      response.sessionId, titleDescriptor,
       requireSessionOwningWorkspaceId({ config: resolvedConfig }), surfaceScope,
     );
 

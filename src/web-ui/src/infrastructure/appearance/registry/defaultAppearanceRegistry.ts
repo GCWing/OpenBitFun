@@ -240,7 +240,6 @@ import { chatEmptyStateAppearanceDescriptor } from '@/flow_chat/components/ChatE
 import { copyOutputButtonAppearanceDescriptor } from '@/flow_chat/components/CopyOutputButton.appearance';
 import { copyableTextPreviewAppearanceDescriptor } from '@/flow_chat/components/CopyableTextPreview.appearance';
 import { currentSessionTitleAppearanceDescriptor } from '@/flow_chat/components/CurrentSessionTitle.appearance';
-import { sessionTitleNumberAppearanceDescriptor } from '@/flow_chat/components/SessionTitleNumber.appearance';
 import { coworkExampleCardsAppearanceDescriptor } from '@/flow_chat/components/CoworkExampleCards.appearance';
 import { imageAnalysisCardAppearanceDescriptor } from '@/flow_chat/components/ImageAnalysisCard.appearance';
 import { scrollToBottomButtonAppearanceDescriptor } from '@/flow_chat/components/ScrollToBottomButton.appearance';
@@ -495,7 +494,6 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(copyOutputButtonAppearanceDescriptor)
     .registerComponent(copyableTextPreviewAppearanceDescriptor)
     .registerComponent(currentSessionTitleAppearanceDescriptor)
-    .registerComponent(sessionTitleNumberAppearanceDescriptor)
     .registerComponent(coworkExampleCardsAppearanceDescriptor)
     .registerComponent(imageAnalysisCardAppearanceDescriptor)
     .registerComponent(scrollToBottomButtonAppearanceDescriptor)

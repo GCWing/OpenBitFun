@@ -55,8 +55,6 @@ import { stateMachineManager } from '@/flow_chat/state-machine';
 import { sessionNavStatusService } from '@/flow_chat/services/sessionNavStatusService';
 import { i18nService } from '@/infrastructure/i18n';
 import { isDefaultSessionTitle, resolveSessionTitle } from '@/flow_chat/utils/sessionTitle';
-import { useSessionTitleNumbers } from '@/flow_chat/hooks/useSessionTitleNumbers';
-import { SessionTitleNumber } from '@/flow_chat/components/SessionTitleNumber';
 import { getChildSessionBadge } from './sessionRowBadges';
 import { useSessionComposerStore } from '@/flow_chat/store/sessionComposerStore';
 import { getActiveSurfaceId, getActiveSurfaceScope, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
@@ -1110,7 +1108,6 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   }, [closeSessionMenu, t, workspaceId]);
 
   const resolveSessionTitle = getTitle;
-  const titleNumbers = useSessionTitleNumbers(flowChatState.sessions);
 
   const handleMenuOpen = useCallback(
     (e: React.MouseEvent, sessionId: string) => {
@@ -1413,8 +1410,6 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                 ? relationship.kind
                 : null;
           const sessionTitle = resolveSessionTitle(session);
-          const titleNumber = titleNumbers.get(session.sessionId);
-          const displayTitle = titleNumber ? `${sessionTitle} ${titleNumber}` : sessionTitle;
           const isDefaultTitle = isDefaultSessionTitle(session);
           const sessionWorkspaceScope = workspaceScopes?.find(scope => sessionBelongsToWorkspaceNavRow(session, scope.workspaceId));
           const backgroundSubagentActivity = !isChildSession
@@ -1493,7 +1488,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
             isDispatched;
           const tooltipContent = showRichTooltip ? (
             <div className="openbitfun-nav-panel__inline-item-tooltip">
-              <div className="openbitfun-nav-panel__inline-item-tooltip-title">{displayTitle}</div>
+              <div className="openbitfun-nav-panel__inline-item-tooltip-title">{sessionTitle}</div>
               {isDefaultTitle ? (
                 <DefaultSessionTitlePreview sessionId={session.sessionId} createdAt={session.createdAt} />
               ) : null}
@@ -1584,7 +1579,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                 openMenuSessionId === session.sessionId && 'menuOpen',
               ].filter(Boolean).join(' ') || undefined}
               data-testid="nav-session-item"
-              aria-label={displayTitle}
+              aria-label={sessionTitle}
               data-session-id={session.sessionId}
               data-session-kind={relationship.kind}
               data-session-level={String(level)}
@@ -1646,7 +1641,6 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                       <span className="openbitfun-nav-panel__inline-item-primary">
                         <span className="openbitfun-nav-panel__inline-item-title">
                           <OverflowText behavior="marquee" title="" className="openbitfun-nav-panel__inline-item-label">{sessionTitle}</OverflowText>
-                          <SessionTitleNumber number={titleNumber} />
                           {isArchived && (
                             <StatusPill className="openbitfun-nav-panel__inline-item-archived-badge" tone="neutral" data-testid="nav-session-archived-badge">
                               {t('nav.sessions.archivedBadge')}
