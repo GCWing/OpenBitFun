@@ -175,8 +175,26 @@ async fn static_cache_headers(
 ) -> axum::response::Response {
     let path = request.uri().path().to_string();
     let mut response = next.run(request).await;
+    // Only successful build outputs have content-addressed URLs. Caching an
+    // unversioned file or a missing chunk for a year survives mobile upgrades.
+    let immutable = (response.status().is_success()
+        || response.status() == axum::http::StatusCode::NOT_MODIFIED)
+        && !path.ends_with(".html")
+        && !response
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("text/html"))
+        && crate::frontend_asset_cache::is_content_hashed_bundle_asset(std::path::Path::new(
+            path.trim_start_matches('/'),
+        ));
     let headers = response.headers_mut();
-    if path == "/" || path.ends_with(".html") {
+    if immutable {
+        headers.insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+    } else {
         headers.insert(
             axum::http::header::CACHE_CONTROL,
             axum::http::HeaderValue::from_static("no-cache, no-store, must-revalidate"),
@@ -184,11 +202,6 @@ async fn static_cache_headers(
         headers.insert(
             axum::http::header::PRAGMA,
             axum::http::HeaderValue::from_static("no-cache"),
-        );
-    } else if path.starts_with("/assets/") {
-        headers.insert(
-            axum::http::header::CACHE_CONTROL,
-            axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
         );
     }
     response
@@ -316,6 +329,13 @@ mod tests {
             .expect("test index should be written");
         std::fs::write(static_dir.join("assets").join("app.js"), "test asset")
             .expect("test asset should be written");
+        std::fs::write(static_dir.join("assets/app-12345678.js"), "hashed asset")
+            .expect("hashed asset should be written");
+        std::fs::write(
+            static_dir.join("assets/page-12345678.html"),
+            "editable page",
+        )
+        .expect("HTML asset should be written");
 
         let host = DesktopEmbeddedRelayHost::default();
         let port = start_on_free_port(&host, Some(static_dir.to_string_lossy().into_owned())).await;
@@ -351,8 +371,67 @@ mod tests {
                 .headers()
                 .get(CACHE_CONTROL)
                 .and_then(|v| v.to_str().ok()),
-            Some("public, max-age=31536000, immutable")
+            Some("no-cache, no-store, must-revalidate")
         );
+
+        for (path, status, cache_control) in [
+            (
+                "/assets/app-12345678.js",
+                reqwest::StatusCode::OK,
+                "public, max-age=31536000, immutable",
+            ),
+            (
+                "/assets/page-12345678.html",
+                reqwest::StatusCode::OK,
+                "no-cache, no-store, must-revalidate",
+            ),
+            (
+                "/assets/missing-12345678.js",
+                reqwest::StatusCode::NOT_FOUND,
+                "no-cache, no-store, must-revalidate",
+            ),
+        ] {
+            let response = client
+                .get(format!("http://127.0.0.1:{port}{path}"))
+                .send()
+                .await
+                .expect("static request");
+            assert_eq!(response.status(), status, "{path}");
+            assert_eq!(response.headers()[CACHE_CONTROL], cache_control, "{path}");
+        }
+        let hashed = client
+            .get(format!("http://127.0.0.1:{port}/assets/app-12345678.js"))
+            .send()
+            .await
+            .expect("hashed asset request");
+        let revalidated = client
+            .get(format!("http://127.0.0.1:{port}/assets/app-12345678.js"))
+            .header(
+                reqwest::header::IF_MODIFIED_SINCE,
+                hashed.headers()[reqwest::header::LAST_MODIFIED].clone(),
+            )
+            .send()
+            .await
+            .expect("hashed asset revalidation");
+        assert_eq!(revalidated.status(), reqwest::StatusCode::NOT_MODIFIED);
+        assert_eq!(
+            revalidated.headers()[CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+        drop(hashed);
+        drop(revalidated);
+        std::fs::write(static_dir.join("assets/app.js"), "upgraded asset")
+            .expect("unversioned asset should be replaced");
+        let upgraded = client
+            .get(format!("http://127.0.0.1:{port}/assets/app.js"))
+            .send()
+            .await
+            .expect("upgraded asset request");
+        assert_eq!(
+            upgraded.headers()[CACHE_CONTROL],
+            "no-cache, no-store, must-revalidate"
+        );
+        assert_eq!(upgraded.text().await.unwrap(), "upgraded asset");
 
         drop(index);
         drop(asset);

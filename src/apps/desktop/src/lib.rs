@@ -27,6 +27,7 @@ pub mod computer_use;
 pub mod crash_diagnostics;
 pub mod desktop_cards;
 mod embedded_relay_host;
+mod frontend_asset_cache;
 pub mod frontend_workbench;
 pub mod logging;
 pub mod macos_menubar;
@@ -758,9 +759,18 @@ pub async fn run() {
 
     let mut builder = tauri::Builder::default();
     let frontend_protocol_manager = Arc::clone(&frontend_workbench);
-    builder = builder.register_uri_scheme_protocol(
+    // The synchronous registration runs the handler inline on the WebView
+    // callback (the main thread on macOS and Windows). Every lazy chunk read,
+    // path canonicalization and revision lookup would then stall the UI, so the
+    // asset is resolved on the blocking pool and answered asynchronously.
+    builder = builder.register_asynchronous_uri_scheme_protocol(
         frontend_workbench::FRONTEND_PROTOCOL_SCHEME,
-        move |_context, request| frontend_protocol_manager.protocol_response(request),
+        move |_context, request, responder| {
+            let manager = Arc::clone(&frontend_protocol_manager);
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(manager.protocol_response(request));
+            });
+        },
     );
 
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]

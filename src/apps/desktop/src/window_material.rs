@@ -8,7 +8,18 @@ const fn windows_native_sidebar_material_available(build: u32) -> bool {
     build >= WINDOWS_SYSTEM_BACKDROP_MIN_BUILD
 }
 
+/// `OPENBITFUN_NATIVE_WINDOW_MATERIAL=0` selects the opaque window path on macOS
+/// and Windows, for comparing WebView compositing cost without native material.
+const NATIVE_WINDOW_MATERIAL_ENV: &str = "OPENBITFUN_NATIVE_WINDOW_MATERIAL";
+
+fn native_window_material_allowed_by(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_none_or(|value| value != "0")
+}
+
 pub(crate) fn native_sidebar_material_available() -> bool {
+    if !native_window_material_allowed_by(std::env::var_os(NATIVE_WINDOW_MATERIAL_ENV).as_deref()) {
+        return false;
+    }
     #[cfg(target_os = "windows")]
     {
         // RtlGetVersion is independent of application compatibility manifests.
@@ -92,10 +103,24 @@ mod tests {
         assert!(!windows_native_sidebar_material_available(0));
     }
 
+    #[test]
+    fn native_window_material_env_only_opts_out_with_zero() {
+        use std::ffi::OsStr;
+        assert!(native_window_material_allowed_by(None));
+        assert!(native_window_material_allowed_by(Some(OsStr::new("1"))));
+        assert!(native_window_material_allowed_by(Some(OsStr::new(""))));
+        assert!(!native_window_material_allowed_by(Some(OsStr::new("0"))));
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
-    fn macos_keeps_native_sidebar_material() {
-        assert!(native_sidebar_material_available());
+    fn macos_keeps_native_sidebar_material_unless_disabled() {
+        assert_eq!(
+            native_sidebar_material_available(),
+            native_window_material_allowed_by(
+                std::env::var_os(NATIVE_WINDOW_MATERIAL_ENV).as_deref()
+            )
+        );
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
