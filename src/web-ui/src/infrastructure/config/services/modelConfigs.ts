@@ -80,28 +80,32 @@ export function removeProviderModelConfigs<T extends ProviderConfigLike>(
   return { remaining, removed };
 }
 
-/**
- * Group models by provider instance in one pass, preserving first-seen order.
- * Shared by the settings page projection and the CRUD benchmark so both use the
- * same grouping semantics.
- */
-export function groupModelConfigsByProvider<T extends ProviderConfigLike, G>(
+export interface ProviderModelGroup<T extends ProviderConfigLike> {
+  key: string;
+  providerName: string;
+  providerId?: string;
+  models: T[];
+}
+
+/** Group models in first-seen order, resolving display metadata once per instance. */
+export function groupModelConfigsByProvider<T extends ProviderConfigLike>(
   configs: readonly T[],
-  createGroup: (config: T, groupKey: string, providerName: string, providerId: string | undefined) => G,
-  appendModel: (group: G, config: T) => void,
-): Map<string, G> {
-  const grouped = new Map<string, G>();
+): Map<string, ProviderModelGroup<T>> {
+  const grouped = new Map<string, ProviderModelGroup<T>>();
   for (let index = 0; index < configs.length; index += 1) {
     const config = configs[index];
     const groupKey = getProviderGroupKey(config);
     const existing = grouped.get(groupKey);
     if (existing) {
-      appendModel(existing, config);
+      existing.models.push(config);
       continue;
     }
-    const newGroup = createGroup(config, groupKey, getProviderDisplayName(config), getProviderTemplateId(config));
-    appendModel(newGroup, config);
-    grouped.set(groupKey, newGroup);
+    grouped.set(groupKey, {
+      key: groupKey,
+      providerName: getProviderDisplayName(config),
+      providerId: getProviderTemplateId(config),
+      models: [config],
+    });
   }
   return grouped;
 }

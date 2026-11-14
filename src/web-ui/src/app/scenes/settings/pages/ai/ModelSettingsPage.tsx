@@ -96,6 +96,7 @@ import {
   groupModelConfigsByProvider,
   PROVIDER_INSTANCE_METADATA_KEY,
   removeProviderModelConfigs,
+  type ProviderModelGroup,
 } from '@/infrastructure/config/services/modelConfigs';
 import { normalizeProviderBaseUrl } from '@/infrastructure/config/services/providerCatalog';
 import {
@@ -198,12 +199,7 @@ interface SelectedModelDraft {
   };
 }
 
-interface ProviderGroup {
-  key: string;
-  providerName: string;
-  providerId?: string;
-  models: AIModelConfigType[];
-}
+type ProviderGroup = ProviderModelGroup<AIModelConfigType>;
 
 interface SubscriptionLoginPanelState {
   provider: SubscriptionProvider;
@@ -2648,18 +2644,7 @@ const ModelSettingsPage: React.FC = () => {
     && editingModalHasUnsavedChanges;
 
   const providerGroups = useMemo<ProviderGroup[]>(() => {
-    const grouped = groupModelConfigsByProvider<AIModelConfigType, ProviderGroup>(
-      aiModels,
-      (_model, groupKey, providerName, providerId) => ({
-        key: groupKey,
-        providerName,
-        providerId,
-        models: [],
-      }),
-      (group, model) => {
-        group.models.push(model);
-      },
-    );
+    const grouped = groupModelConfigsByProvider(aiModels);
 
     return Array.from(grouped.values()).sort((a, b) => {
       const indexA = a.providerId ? providerOrder.indexOf(a.providerId) : -1;
