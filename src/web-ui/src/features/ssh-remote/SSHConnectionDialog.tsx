@@ -1570,6 +1570,11 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
           data-openbitfun-component="ssh-remote"
           data-openbitfun-part="connectionActions"
         >
+            {editOnly && editingProfile && <IconButton variant="quiet" size="sm" icon={<Icon name="delete" size="sm" />}
+              className="ssh-connection-dialog__delete-action"
+              aria-label={t('actions.delete')} disabled={sourceBusy} onClick={async event => {
+                if (await handleDeleteConnection(event, editingProfile.id)) onClose();
+              }} />}
             {showNewConnection && <Button
               variant="outline"
               size="sm"
@@ -1587,10 +1592,6 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
             >
               {t(fixedSource && !editOnly ? 'workspaceSource.backToProject' : 'actions.cancel')}
             </Button>
-            {editOnly && editingProfile && <IconButton variant="quiet" size="sm" icon={<Icon name="delete" size="sm" />}
-              aria-label={t('actions.delete')} disabled={sourceBusy} onClick={async event => {
-                if (await handleDeleteConnection(event, editingProfile.id)) onClose();
-              }} />}
             {editOnly && <Button variant="primary" size="sm" onClick={() => void handleSave()} loading={isConnecting}
               disabled={sourceBusy}>{t('actions.save')}</Button>}
             {!showNewConnection && <Button variant="primary" size="sm" disabled={sourceBusy || !selectedConnection}

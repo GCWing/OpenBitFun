@@ -8,9 +8,10 @@ export interface WorkspaceChoice {
   label: string;
   description?: string;
   action?: ReactNode;
+  onDelete?: () => void;
 }
 
-/** Keeps connection selection and editing in separate hit areas. */
+/** Keeps connection selection, editing and deletion in separate hit areas. */
 export function WorkspaceChoiceCapsules({ choices, value, disabled, label, onValueChange, onEdit }: {
   choices: readonly WorkspaceChoice[];
   value?: string;
@@ -23,9 +24,12 @@ export function WorkspaceChoiceCapsules({ choices, value, disabled, label, onVal
   return <div className="workspace-choice-capsules" role="group" aria-label={label}
     data-openbitfun-component="ssh-remote" data-openbitfun-part="sourceOptions">
     {choices.map(choice => <Capsule size="xs" actionPlacement="reserved" key={choice.id} data-workspace-choice={choice.id}
-      action={onEdit ? <Tooltip content={t('actions.edit')}><IconButton size="xs" shape="circle" variant="quiet"
+      action={onEdit || choice.onDelete ? [onEdit && <Tooltip key="edit" content={t('actions.edit')}><IconButton size="xs" shape="circle" variant="quiet"
         disabled={disabled} icon={<Icon name="edit" size="xs" />} aria-label={`${t('actions.edit')} · ${choice.label}`}
-        onClick={() => onEdit(choice.id)} /></Tooltip> : choice.action}>
+        onClick={() => onEdit(choice.id)} /></Tooltip>, choice.onDelete && <Tooltip key="delete" content={t('actions.delete')}>
+          <IconButton size="xs" shape="circle" variant="quiet" disabled={disabled}
+            icon={<Icon name="delete" size="xs" />} aria-label={`${t('actions.delete')} · ${choice.label}`}
+            onClick={choice.onDelete} /></Tooltip>] : choice.action}>
       <Button variant={choice.id === value ? 'fill' : 'outline'} size="xs" className="workspace-choice-capsules__button"
         leadingIcon={choice.id === value ? <Icon name="check-line" size="xs" tone="success" /> : undefined}
         aria-pressed={choice.id === value} disabled={disabled} title={choice.description}

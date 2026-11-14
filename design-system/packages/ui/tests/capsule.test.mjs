@@ -37,6 +37,19 @@ test("capsules without actions preserve ordinary content and do not add a focus 
   assert.doesNotMatch(markup, /tabindex|role=|data-openbitfun-part="action"|data-action-placement/);
 });
 
+test("reserved capsules group multiple independent actions in a single reserved slot", () => {
+  const markup = renderToStaticMarkup(h(Capsule, {
+    size: "xs", actionPlacement: "reserved",
+    action: [h(Tooltip, { key: "edit", content: "Edit host" }, action({ "aria-label": "Edit host" })),
+      false, action({ key: "delete", "aria-label": "Delete host" })],
+  }, h(Button, { size: "xs" }, "Build host")));
+  assert.match(markup, /data-action-placement="reserved"/);
+  assert.match(markup, /data-floating-action-group="true"/);
+  assert.equal((markup.match(/<button\b/g) ?? []).length, 3);
+  assert.match(markup, /aria-label="Edit host"/);
+  assert.match(markup, /aria-label="Delete host"/);
+});
+
 test("split capsules align filled edges with equal or compact content-sized widths", async () => {
   const markup = renderToStaticMarkup(h(Capsule, { layout: "split", splitSizing: "content", size: "sm", role: "group", "aria-label": "Provider" },
     h(Select, { size: "sm", variant: "pill", width: "content", "aria-label": "Region", options: [{ value: "international", label: "International" }] }),

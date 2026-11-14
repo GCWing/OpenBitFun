@@ -77,6 +77,7 @@ it('projects a host from a legacy container-only profile without overwriting the
   await render('ssh');
   expect(result.options).toHaveLength(1);
   const host = result.options[0].preset;
+  expect(result.options[0].savedConnectionId).toBeUndefined();
   expect(host).toMatchObject({ kind: 'saved', credentialConnectionId: 'legacy-container', connection: { host: 'old.test', port: 2222, container: undefined } });
   if (host.kind !== 'saved') throw new Error('Expected a host projection');
   expect(host.connection.id).not.toBe(legacy.id);
@@ -132,6 +133,24 @@ it('resolves ~/.ssh/config ids against saved profiles so another port is never o
   const preset = result.options.find(option => option.id === 'ssh-config:cluster-main')?.preset;
   expect(preset).toMatchObject({ kind: 'sshConfig', connectionId: 'ssh-root@cluster#22' });
   expect(workspacePresetHost(preset)?.id).toBe('ssh-root@cluster#22');
+});
+
+it('allows removal only for saved hosts outside SSH Config, including distinct ports', async () => {
+  const profile = { host: 'cluster', port: 22, username: 'root', authType: { type: 'Agent' } };
+  api.listSavedConnections.mockResolvedValue([
+    { ...profile, id: 'config-copy', name: 'Config copy' },
+    { ...profile, id: 'manual', name: 'Other port', port: 2201 },
+  ]);
+  api.listSSHConfigHosts.mockResolvedValue([
+    { host: 'cluster-main', hostname: 'cluster', user: 'root' },
+    { host: 'another', hostname: 'another.test', user: 'root' },
+  ]);
+  await render('ssh');
+  expect(result.options.map(({ id, savedConnectionId }) => ({ id, savedConnectionId }))).toEqual([
+    { id: 'config-copy', savedConnectionId: undefined },
+    { id: 'manual', savedConnectionId: 'manual' },
+    { id: 'ssh-config:another', savedConnectionId: undefined },
+  ]);
 });
 
 it('routes ~/.ssh/config entries to the dialog when saved profiles cannot be listed', async () => {
