@@ -427,6 +427,12 @@ establish visual fidelity):
 pnpm --dir src/web-ui run test:run src/infrastructure/update src/infrastructure/api/service-api/SystemAPI.test.ts src/shared/notification-system/components/NotificationContainer.test.tsx
 ```
 
+For Markdown section boundaries, streaming prefix reuse, and cache isolation, run
+`pnpm --dir src/web-ui run test:run src/infrastructure/markdown/markdownSections.test.ts src/infrastructure/markdown/markdownSections.streaming.test.ts`.
+These local parser fixtures compare streamed and cold boundaries and measure the
+actual parser input size. They do not establish native frame latency or live
+remote behavior.
+
 For Markdown parse prewarming or dependency resolution, run
 `pnpm --dir src/web-ui run test:run src/infrastructure/markdown/markdownParse.worker.test.ts src/infrastructure/markdown/markdownParseCache.test.ts`.
 This builds the real Worker entry with the product aliases, checks parsing without
