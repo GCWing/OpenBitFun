@@ -91,6 +91,104 @@ describe('modelConfigs', () => {
     });
   });
 
+  it('groups interleaved models by instance while preserving first-seen order and model references', async () => {
+    const { groupModelConfigsByProvider } = await import('./modelConfigs');
+    const model = (id: string, instance: string) => Object.freeze({
+      id,
+      name: `My gateway - ${id}`,
+      model_name: id,
+      base_url: 'https://api.openai.com/v1',
+      metadata: Object.freeze({ provider_instance_id: instance }),
+    });
+    const configs = Object.freeze([
+      model('first', 'provider-b'),
+      model('second', 'provider-a'),
+      model('third', 'provider-b'),
+    ]);
+    const groups = groupModelConfigsByProvider(configs);
+
+    expect([...groups.keys()]).toEqual(['provider-b', 'provider-a']);
+    expect(groups.get('provider-b')).toEqual({
+      key: 'provider-b',
+      providerName: 'My gateway',
+      providerId: 'openai',
+      models: [configs[0], configs[2]],
+    });
+    expect(groups.get('provider-a')?.models).toEqual([configs[1]]);
+    expect(groups.get('provider-b')?.models[0]).toBe(configs[0]);
+    expect(groups.get('provider-b')?.models[1]).toBe(configs[2]);
+  });
+
+  it('keeps legacy models and unsaved drafts visible without provider instance metadata', async () => {
+    const { groupModelConfigsByProvider } = await import('./modelConfigs');
+    const configs = [
+      { id: 'legacy-a', name: 'Gateway', model_name: 'model', metadata: null },
+      { id: 'legacy-b', name: 'Gateway', model_name: 'model', metadata: { provider_instance_id: ' ' } },
+      { name: 'Draft', model_name: 'new-model' },
+    ];
+    const groups = groupModelConfigsByProvider(configs);
+
+    expect([...groups.keys()]).toEqual(['legacy-a', 'legacy-b', 'Draft:new-model']);
+    expect([...groups.values()].map(group => group.models)).toEqual(configs.map(config => [config]));
+    expect(groupModelConfigsByProvider([]).size).toBe(0);
+  });
+
+  it('uses the first model for inferred metadata without reading later models display fields', async () => {
+    const { groupModelConfigsByProvider } = await import('./modelConfigs');
+    const readName = vi.fn(() => 'Different name');
+    const readUrl = vi.fn(() => 'https://api.openai.com/v1');
+    const first = {
+      id: 'first',
+      base_url: 'https://open.bigmodel.cn/api/paas/v4',
+      metadata: { provider_instance_id: 'provider' },
+    };
+    const second = {
+      id: 'second',
+      get name() { return readName(); },
+      get base_url() { return readUrl(); },
+      metadata: { provider_instance_id: 'provider' },
+    };
+
+    expect(groupModelConfigsByProvider([first, second]).get('provider')).toEqual({
+      key: 'provider',
+      providerName: 'settings/models:providers.zhipu.name',
+      providerId: 'zhipu',
+      models: [first, second],
+    });
+    expect(readName).not.toHaveBeenCalled();
+    expect(readUrl).not.toHaveBeenCalled();
+  });
+
+  it('recomputes group metadata from the current snapshot without mutating earlier groups', async () => {
+    const { groupModelConfigsByProvider } = await import('./modelConfigs');
+    const first = { id: 'first', name: 'Old', metadata: { provider_instance_id: 'provider' } };
+    const previous = groupModelConfigsByProvider([first]);
+    const updated = { ...first, name: 'Renamed' };
+    const next = groupModelConfigsByProvider([updated, { ...updated, id: 'second' }]);
+
+    expect(previous.get('provider')?.providerName).toBe('Old');
+    expect(previous.get('provider')?.models).toEqual([first]);
+    expect(next.get('provider')?.providerName).toBe('Renamed');
+    expect(next.get('provider')?.models).toHaveLength(2);
+    expect(next.get('provider')?.models[0]).toBe(updated);
+  });
+
+  it('preserves partition order and legacy records when removing a provider', async () => {
+    const { removeProviderModelConfigs } = await import('./modelConfigs');
+    const configs = Object.freeze([
+      { id: 'a', metadata: { provider_instance_id: 'provider' } },
+      { id: 'legacy' },
+      { id: 'b', metadata: { provider_instance_id: 'provider' } },
+      { id: 'other', metadata: { provider_instance_id: 'other-provider' } },
+    ]);
+
+    expect(removeProviderModelConfigs(configs, 'provider')).toEqual({
+      remaining: [configs[1], configs[3]], removed: [configs[0], configs[2]],
+    });
+    expect(removeProviderModelConfigs(configs, 'missing')).toEqual({ remaining: configs, removed: [] });
+    expect(removeProviderModelConfigs([], 'provider')).toEqual({ remaining: [], removed: [] });
+  });
+
   it('loads ai.models only when the model manager is actually used', async () => {
     configManagerMock.getConfig.mockResolvedValueOnce([
       {

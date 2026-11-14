@@ -72,6 +72,15 @@ pnpm --dir src/web-ui run test:run src/infrastructure/config/components/modelEdi
 These checks cover draft isolation and source contracts, not rendered visuals
 or remote runtime behavior.
 
+For provider grouping, legacy model identity, and provider deletion partitions:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/config/services/modelConfigs.test.ts src/app/scenes/settings/pages/ai/ModelSettingsPage.presentation.test.ts
+```
+
+These fixtures cover pure configuration projection and source contracts, not
+rendered interaction latency or live remote behavior.
+
 For image-service credential reuse, subscription routing, and legacy drafts:
 
 ```bash
