@@ -78,3 +78,7 @@
   justify-content: center;
   gap: var(--openbitfun-space-2);
 }
+
+.openbitfun-aux-pane__reopen {
+  max-inline-size: min(100%, 42ch);
+}

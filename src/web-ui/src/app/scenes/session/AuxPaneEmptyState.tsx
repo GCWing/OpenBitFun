@@ -42,7 +42,7 @@ export function AuxPaneEmptyState({ workspacePath, sessionId }: { workspacePath?
       actions={<div className="openbitfun-aux-pane__empty-actions">
         <Button size="sm" variant="outline" disabled={!canOpen} onClick={browseFiles}>{t('canvas.empty.browseFiles')}</Button>
         <Button size="sm" variant="outline" disabled={!canOpen} onClick={createTerminal}>{t('canvas.empty.newTerminal')}</Button>
-        {canReopen && <Button size="sm" variant="outline" onClick={() => {
+        {canReopen && <Button className="openbitfun-aux-pane__reopen" size="sm" variant="outline" onClick={() => {
           if (!scope.isCurrent()) return;
           reopenClosedTab();
           expandSessionAuxPane();
