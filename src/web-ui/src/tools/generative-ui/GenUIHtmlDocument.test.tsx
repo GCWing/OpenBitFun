@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { GENUI_HTML_RUNTIME, inspectGenUIHtmlSource, sanitizeGenUIHtmlSource } from './GenUIHtmlDocument';
+import { GENUI_HTML_RUNTIME, inspectGenUIHtmlSource, sanitizeGenUIHtmlSource } from './genUIHtmlSource';
 import { genUICatalog } from './genUIContract';
 
 describe('GenUI HTML documents', () => {

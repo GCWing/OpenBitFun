@@ -2,7 +2,8 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
-import { getVisibleCodeLineCount, readLineHeight, WindowedCodeContent } from './WindowedCodeContent';
+import { WindowedCodeContent } from './WindowedCodeContent';
+import { getVisibleCodeLineCount, readLineHeight } from './codeLineMetrics';
 
 const highlights = vi.hoisted(() => ({ ready: false }));
 vi.mock('../timeline/highlightResources', () => ({ useHighlightedLines: (content: string) => content.split('\n').map(line =>

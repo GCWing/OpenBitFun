@@ -32,7 +32,7 @@ import { HtmlView } from './openui/html-view';
 import { Box, Card, Col, Divider, Form, Grid, Row, Spacer } from './openui/layout';
 import { MapMarker, MapView } from './openui/map/map';
 import { Icon, Image, SearchImage } from './openui/media';
-import { svgComponents } from './openui/svg';
+import { svgComponents } from './openui/svgComponents';
 import { Table } from './openui/table';
 import { Badge, Caption, Label, Link, List, ListItem, Markdown, Text, Title } from './openui/text';
 

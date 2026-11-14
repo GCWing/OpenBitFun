@@ -1,14 +1,7 @@
-import React, { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { EditorGroupId } from './types';
 import { CanvasStoreModeContext } from './stores';
-
-type ToolbarEntry = { owner: symbol; content: React.ReactNode };
-type ToolbarRegistry = Partial<Record<EditorGroupId, ToolbarEntry>>;
-const RegistrationContext = createContext<{
-  register: (id: EditorGroupId, owner: symbol, content: React.ReactNode) => void;
-  remove: (id: EditorGroupId, owner: symbol) => void;
-} | null>(null);
-const ContentContext = createContext<ToolbarRegistry>({});
+import { RegistrationContext, ContentContext, type ToolbarRegistry } from './canvasToolbarContext';
 
 /** A host chooses toolbar placement; canvas groups continue to own tab behavior. */
 export function CanvasToolbarProvider({ children }: { children: React.ReactNode }) {
@@ -29,11 +22,6 @@ export function CanvasToolbarProvider({ children }: { children: React.ReactNode 
   return <RegistrationContext.Provider value={registration}>
     <ContentContext.Provider value={entries}>{children}</ContentContext.Provider>
   </RegistrationContext.Provider>;
-}
-
-export function useExternalCanvasToolbar(enabled: boolean) {
-  const registration = useContext(RegistrationContext);
-  return enabled && registration !== null;
 }
 
 export function CanvasToolbarContribution({ groupId, children }: {

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { canReadSavedOpenCodeQuota } from './OpenCodeModelQuota';
+import { canReadSavedOpenCodeQuota } from './openCodeQuotaEligibility';
 import type { AIModelConfig } from '@/infrastructure/config/types';
 
 it('queries only the saved connection and keeps draft credentials away from the billing API', () => {

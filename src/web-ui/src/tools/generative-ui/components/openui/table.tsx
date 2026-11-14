@@ -3,7 +3,7 @@
 import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod/v4";
 import { i18nService } from "@/infrastructure/i18n";
-import { inline } from "./markdown";
+import { inline } from './inlineMarkdown';
 import { cx } from "./style";
 
 const NUMERIC = /^[-+−]?[$€£¥₹]?\s?\d[\d,]*(\.\d+)?\s?(%|[kKmMbB]|bn)?$/;

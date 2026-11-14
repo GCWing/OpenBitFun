@@ -2,7 +2,8 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { FlowChatReaderProvider, FlowChatReaderState } from '../../timeline/readerState';
+import { FlowChatReaderState } from '../../timeline/readerState';
+import { FlowChatReaderProvider } from '../../timeline/FlowChatReaderProvider';
 import { TurnFooter } from './TurnFooter';
 import { useTurnFooterInteraction } from './useTurnFooterInteraction';
 

@@ -98,7 +98,7 @@ import { resolveVisibleFlowChatTurnIds } from './flowChatVisibleTurns';
 import type { FlowChatViewportSnapshot } from './flowChatViewportSnapshot';
 import { getVirtualItemBookmarkKey, getVirtualItemStableKey } from './virtualItemIdentity';
 import { useConversationTimeline } from '../../timeline/useConversationTimeline';
-import { FlowChatReaderProvider } from '../../timeline/readerState';
+import { FlowChatReaderProvider } from '../../timeline/FlowChatReaderProvider';
 import { retainedTranscriptRowSizes } from '../../timeline/retainedViewMemory';
 import { findTimelineBlockIndex } from '../../timeline/document';
 import { localizeMarkdownMatch } from '../../timeline/markdownSectionSearch';

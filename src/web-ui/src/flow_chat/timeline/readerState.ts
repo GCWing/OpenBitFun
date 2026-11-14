@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { ReaderContext, ItemContext } from './readerContexts';
+import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from 'react';
 
 type ReaderValue = boolean | number | string;
 type Listener = () => void;
@@ -124,15 +125,7 @@ export function getFlowChatReaderState(scope: string): FlowChatReaderState {
   return store;
 }
 
-const ReaderContext = createContext<FlowChatReaderState | null>(null);
 export const useFlowChatReaderStore = () => useContext(ReaderContext);
-const ItemContext = createContext('');
-export function FlowChatReaderProvider({ store, children }: { store: FlowChatReaderState; children: ReactNode }) {
-  return <ReaderContext.Provider value={store}>{children}</ReaderContext.Provider>;
-}
-export function FlowChatCardReaderProvider({ itemKey, children }: { itemKey: string; children: ReactNode }) {
-  return <ItemContext.Provider value={itemKey}>{children}</ItemContext.Provider>;
-}
 
 /** Reader choices survive viewport recycling; execution/completion never resets them. */
 export function useFlowChatReaderValue<T extends ReaderValue>(key: string, initial: T): [T, Dispatch<SetStateAction<T>>] {

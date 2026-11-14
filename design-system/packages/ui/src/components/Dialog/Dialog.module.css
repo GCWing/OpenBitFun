@@ -74,7 +74,7 @@
     font-family: var(--openbitfun-type-heading-section-font-family);
     font-size: var(--openbitfun-type-heading-section-font-size);
     font-weight: var(--openbitfun-type-heading-section-font-weight);
-    line-height: var(--openbitfun-line-height-snug);
+    line-height: var(--openbitfun-type-modifier-leading-snug-line-height);
     letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
     white-space: normal;
     overflow-wrap: anywhere;

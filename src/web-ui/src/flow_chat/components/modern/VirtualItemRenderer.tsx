@@ -16,7 +16,7 @@ import { TurnFailureNoticeItem } from './TurnFailureNoticeItem';
 import './VirtualItemRenderer.scss';
 import { getVirtualItemBookmarkKey, getVirtualItemStableKey } from './virtualItemIdentity';
 import { useFlowChatSearchPresentation } from './useFlowChatSearchPresentation';
-import { useConversationExcerptMarkers } from '../../selection/ConversationExcerptMarkers';
+import { useConversationExcerptMarkers } from '../../selection/useConversationExcerptMarkers';
 import { getKnownVirtualItemHeightPx } from './virtualItemHeightEstimators';
 import { Icon } from '@openbitfun/ui';
 import { TimelineContentBlock } from '../../timeline/TimelineContentBlock';

@@ -1,4 +1,4 @@
-import type { GenUIHtmlFrameReport } from './GenUIHtmlDocument';
+import type { GenUIHtmlFrameReport } from './genUIHtmlSource';
 
 /** Geometry checks require a live browser layout engine. Zero geometry is
  * unsupported evidence, never a pass (including jsdom). */

@@ -44,7 +44,8 @@ import { getChildSessionBadge } from '../sessions/sessionRowBadges';
 import { resolveSessionRelationship } from '@/flow_chat/utils/sessionMetadata';
 import { sessionBelongsToWorkspaceNavRow } from '@/flow_chat/utils/sessionOrdering';
 import type { SidebarDeviceSlot } from './useSidebarDevices';
-import { CatalogSessionMenu, catalogSessionActionKey, runCatalogSessionAction } from './CatalogSessionMenu';
+import { CatalogSessionMenu } from './CatalogSessionMenu';
+import { catalogSessionActionKey, runCatalogSessionAction } from './catalogSessionActions';
 
 export interface BackgroundActions {
   pendingKey: string | null;

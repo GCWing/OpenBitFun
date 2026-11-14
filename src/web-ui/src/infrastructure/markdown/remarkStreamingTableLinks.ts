@@ -1,7 +1,7 @@
 import type { Nodes, Parent, Root, TableCell } from 'mdast';
 import { parseEntities } from 'parse-entities';
 
-const ESCAPE = /[!-/:-@\[-`{-~]/;
+const ESCAPE = /[!-/:-@[-`{-~]/;
 const OPAQUE = new Set(['inlineCode', 'inlineMath', 'html', 'link', 'linkReference', 'image', 'imageReference']);
 
 /** Decode a sliced text node without interpreting escaped ampersands as entities. */
