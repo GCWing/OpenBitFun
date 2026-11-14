@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import {
@@ -102,6 +102,32 @@ describe('session terminal directory', () => {
     } finally {
       await act(async () => root.unmount());
       container.remove();
+    }
+  });
+
+  it('keeps the cwd subscription across renders of the same workspace', () => {
+    const subscribe = vi.spyOn(flowChatStore, 'subscribeSelector');
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    const Probe = ({ workspaceId }: { workspaceId: string }) => useSessionTerminalDirectory(workspaceId) ?? null;
+    const render = (workspaceId: string) => act(() => root.render(createElement(Probe, { workspaceId })));
+    try {
+      act(() => publish(worktreeSession()));
+      render(PROJECT.id);
+      expect(container.textContent).toBe(WORKTREE.rootPath);
+      render(PROJECT.id);
+      expect(subscribe).toHaveBeenCalledTimes(1);
+
+      const otherWorkspaceId = 'other-ws';
+      render(otherWorkspaceId);
+      expect(subscribe).toHaveBeenCalledTimes(2);
+      expect(container.textContent).toBe('');
+      act(() => publish({ ...worktreeSession(), projectWorkspaceId: otherWorkspaceId }));
+      expect(container.textContent).toBe(WORKTREE.rootPath);
+      expect(subscribe).toHaveBeenCalledTimes(2);
+    } finally {
+      act(() => root.unmount());
+      subscribe.mockRestore();
     }
   });
 });

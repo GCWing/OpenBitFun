@@ -5,6 +5,8 @@ import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatu
 import type { ToolCardProps } from '../types/flow-chat';
 import { ViewImageToolCard as ViewImageToolCardView } from '@openbitfun/ui/flow-chat';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
+import { ImageLightboxCopyButton } from '@/shared/ui/ImageLightboxCopy';
+import { useImageLightboxCopy } from '@/shared/ui/useImageLightboxCopy';
 
 const SUPPORTED_IMAGE_MIME_TYPES = new Set([
   'image/png',
@@ -56,6 +58,7 @@ export const ViewImageToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand 
   const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
+  const lightboxCopy = useImageLightboxCopy(source);
   const toolId = toolItem.id ?? toolItem.toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -100,6 +103,13 @@ export const ViewImageToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand 
         }}
         lightboxOpen={isLightboxOpen}
         lightboxTitle={title}
+        lightboxActions={lightboxCopy.canCopy ? (
+          <ImageLightboxCopyButton
+            copied={lightboxCopy.copied}
+            onCopy={() => { void lightboxCopy.copy(); }}
+          />
+        ) : undefined}
+        onLightboxImageContextMenu={lightboxCopy.onContextMenu}
         onLightboxClose={() => setIsLightboxOpen(false)}
       />
     </div>

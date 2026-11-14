@@ -479,6 +479,12 @@ fn post_directed(pid: i32, event: &CGEvent, authenticated: bool) -> OpenBitFunRe
         event.post_to_pid(pid);
     }
     super::macos_capture::note_input(pid);
+    if matches!(
+        event.get_type(),
+        CGEventType::LeftMouseDown | CGEventType::RightMouseDown | CGEventType::OtherMouseDown
+    ) {
+        super::macos_input_focus::forget_web_text_focus();
+    }
     match event.get_type() {
         CGEventType::KeyDown | CGEventType::KeyUp | CGEventType::FlagsChanged => {
             record_keyboard_input(&mut held, owner, event, authenticated);
@@ -1026,6 +1032,9 @@ pub(super) fn bg_key_chord(pid: i32, modifiers: &[BgModifier], key: u16) -> Open
         "bg_key_chord.enter pid={} keycode={} modifiers={:?}",
         pid, key, modifiers
     );
+    if !super::macos_input_focus::chord_keeps_text_focus(modifiers, key) {
+        super::macos_input_focus::forget_web_text_focus();
+    }
     for event in key_chord_events(modifiers, key, "key_chord")? {
         post_keyboard(pid, &event)?;
     }
@@ -1267,6 +1276,7 @@ pub(super) fn bg_key_chord_no_auth(
         "bg_key_chord_no_auth.enter pid={} keycode={} modifiers={:?}",
         pid, key, modifiers
     );
+    super::macos_input_focus::forget_web_text_focus();
     for event in key_chord_events(modifiers, key, "key_chord_no_auth")? {
         post_keyboard_no_auth(pid, &event)?;
     }

@@ -640,7 +640,7 @@ test('runtime-ports async dependencies stay behind their exact port owners', () 
   );
   assert.deepEqual(
     ownersByDependency.get('tokio-util'),
-    new Set(['workspace-ports']),
+    new Set(['permission', 'ts', 'workspace-ports']),
   );
   assert.deepEqual(
     ownersByDependency.get('tokio'),
@@ -815,7 +815,7 @@ const RUNTIME_PORT_FEATURE_PROFILES = {
   'agent-api': ['dep:openbitfun-core-types'],
   'git-port': [],
   'hook-function-runtime': [],
-  permission: ['dep:openbitfun-product-domains'],
+  permission: ['dep:openbitfun-product-domains', 'dep:tokio-util'],
   'plugin-runtime': [],
   'product-search': ['dep:openbitfun-product-domains'],
   'ptc-runtime': [],
@@ -827,6 +827,7 @@ const RUNTIME_PORT_FEATURE_PROFILES = {
   'tool-runtime-handles': ['workspace-ports', 'terminal-port', 'remote-exec-port'],
   ts: [
     'dep:ts-rs',
+    'dep:tokio-util',
     'agent-api',
     'permission',
     'openbitfun-core-types/ts',
@@ -1914,6 +1915,7 @@ const CLI_REVIEWED_CORE_FEATURES = [
   'workspace-icons',
   'tools-pages',
   ...ACP_REVIEWED_CORE_FEATURES,
+  'decision-model-credentials',
   'product-search',
   'remote-connect',
   'file-watch',
@@ -3222,7 +3224,7 @@ test('Reqwest consumers inherit the workspace version without duplicating featur
     rule.reason.includes('Reqwest consumers must inherit the workspace-owned compatible version')
   );
 
-  assert.equal(rules.length, 7);
+  assert.equal(rules.length, 6);
   for (const rule of rules) {
     const pattern = rule.patterns[0].regex;
     assert.match('reqwest = { workspace = true, features = ["rustls-no-provider"] }', pattern);
@@ -5047,6 +5049,44 @@ test('vendored Engine.IO remains in resolved feature audits without becoming a p
   assert.ok(graph.resolvedPackageFeatures.some(record => record.name === 'eioc'));
   assert.ok(collect([owner.id, vendor.id]).packages.some(pkg => pkg.name === 'eioc'),
     'a product workspace member cannot bypass ownership checks through a vendor path');
+});
+
+test('vendored screenshots keeps its reviewed external identity and image profile', () => {
+  const owner = packageAt('owner', 'src/apps/example/Cargo.toml');
+  const vendor = {
+    ...packageAt('screenshots', 'third_party/screenshots/Cargo.toml', [{
+      name: 'image',
+      rename: null,
+      kind: null,
+      optional: false,
+      target: null,
+      features: [],
+      uses_default_features: true,
+    }]),
+    version: '0.8.10',
+  };
+  const graph = collectCargoMetadataGraph({
+    root: TEST_ROOT,
+    manifestPaths: [join(TEST_ROOT, 'Cargo.toml')],
+    loadMetadata: () => ({
+      packages: [owner, vendor],
+      workspace_members: [owner.id],
+      resolve: { nodes: [{ id: vendor.id, features: ['default'], deps: [] }] },
+    }),
+  });
+
+  assert.deepEqual(graph.packages.map(pkg => pkg.name), ['owner']);
+  assert.ok(graph.resolvedPackageFeatures.some(record => record.name === 'screenshots'));
+  assert.deepEqual(findThirdPartyCapabilityFeatureViolations([vendor]), []);
+  assert.ok(collectCargoMetadataGraph({
+    root: TEST_ROOT,
+    manifestPaths: [join(TEST_ROOT, 'Cargo.toml')],
+    loadMetadata: () => ({
+      packages: [owner, vendor],
+      workspace_members: [owner.id, vendor.id],
+      resolve: { nodes: [] },
+    }),
+  }).packages.some(pkg => pkg.name === 'screenshots'));
 });
 
 test('vendored Tao is external only at its reviewed version and stays in feature audits', () => {

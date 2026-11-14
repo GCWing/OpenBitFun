@@ -52,7 +52,6 @@ export const toolPresentationRegistry = {
   FrontendWorkbench: { owner: 'standard', component: 'FrontendWorkbenchToolCard' },
   FinalizeMiniApp: { owner: 'standard', component: 'MiniAppFinalizeToolCard' },
   PublishMiniApp: { owner: 'standard', component: 'MarketplacePublishToolCard' },
-  PublishAppearance: { owner: 'standard', component: 'MarketplacePublishToolCard' },
   Playbook: { owner: 'standard', component: 'PlaybookToolCard' },
   DesktopCard: { owner: 'standard', component: 'DesktopCardToolCard' },
   LaunchReviewAgent: { owner: 'product', component: 'AgentControlToolCard' },

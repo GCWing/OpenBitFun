@@ -907,3 +907,12 @@
   .chat-tool-card__spinner,
   .chat-task-card__step-spinner { animation: none; }
 }
+
+// Lost-reply check and its result under a question card.
+.chat-ask-card__outcome {
+  margin: 0;
+  padding: 0 12px 8px;
+  font-size: var(--openbitfun-type-body-xs-font-size);
+  color: var(--openbitfun-color-content-secondary);
+}
+.chat-ask-card__outcome--error { color: var(--openbitfun-color-status-danger-content); }

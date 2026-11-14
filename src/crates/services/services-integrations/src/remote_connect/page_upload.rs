@@ -337,6 +337,9 @@ async fn finish_page_publication(
 }
 
 /// Join account relay base URL with a page path into an absolute URL.
+///
+/// The endpoint may announce its service version as `?v=`; that parameter is
+/// dropped before joining so the path is never appended to a query string.
 pub fn join_relay_url(relay_url: &str, path: &str) -> String {
     let path = path.trim();
     if path.is_empty() {
@@ -345,7 +348,7 @@ pub fn join_relay_url(relay_url: &str, path: &str) -> String {
     if path.starts_with("http://") || path.starts_with("https://") {
         return path.to_string();
     }
-    let base = relay_url.trim().trim_end_matches('/');
+    let base = openbitfun_product_domains::account::relay_endpoint_base(relay_url);
     if base.is_empty() {
         return path.to_string();
     }

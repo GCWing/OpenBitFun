@@ -1,6 +1,8 @@
 //! Observation lifecycle shared by AX, UIA and AT-SPI providers.
 use super::*;
 
+const UNPAINTED_WINDOW_NOTE: &str = "[note] WINDOW_NOT_REPAINTED: The window image is identical to the previous observation although the accessibility tree changed. The application may not have repainted this window, which is common for covered Chromium and Electron windows, or the change may not be visible. Use the tree for the current state; the image does not show whether the input took effect.\n";
+
 impl NativeComputerUseHost {
     pub(crate) async fn get_app_state_inner(
         &self,
@@ -28,6 +30,21 @@ impl NativeComputerUseHost {
                 .record_application(pid)
                 .map_err(OpenBitFunError::tool)?,
         );
+        if let Some(shot) = snapshot.screenshot.as_ref() {
+            let pixels = {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                shot.bytes.hash(&mut hasher);
+                hasher.finish()
+            };
+            if state
+                .observations
+                .record_frame(pid, pixels, &snapshot.digest)
+            {
+                // First, because long trees are clipped at the end for the model.
+                snapshot.tree_text.insert_str(0, UNPAINTED_WINDOW_NOTE);
+            }
+        }
         // Native node indices were rebuilt, including same-content observations.
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         {

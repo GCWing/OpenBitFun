@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { nextStorageTurnIndex } from './flowChatTurnIdentity';
+import { createTurnOrdinalResolver, nextStorageTurnIndex } from './flowChatTurnIdentity';
 import type { DialogTurn } from '../types/flow-chat';
 
 const SESSION_ID = 'acp_dsh_session';
@@ -81,5 +81,24 @@ describe('nextStorageTurnIndex', () => {
         totalTurnCount: 3,
       })),
     ).toBeUndefined();
+  });
+});
+
+describe('batched Turn ordinal lookup', () => {
+  it('resolves catalog-backed legacy Turns without rescanning entries for each lookup', () => {
+    let entryReads = 0;
+    const entries = new Proxy(Array.from({ length: 100 }, (_, ordinal) => ({
+      turnId: `turn-${ordinal}`, ordinal, storageTurnIndex: ordinal * 3,
+    })), { get(target, key, receiver) {
+      if (typeof key === 'string' && /^\d+$/.test(key)) entryReads++;
+      return Reflect.get(target, key, receiver);
+    } });
+    const resolver = createTurnOrdinalResolver(session({
+      dialogTurns: entries.map(e => turn(e.turnId)),
+      turnCatalog: { sessionId: SESSION_ID, totalTurnCount: 100, entries },
+    }));
+    const readsAfterIndexing = entryReads;
+    expect(Array.from({ length: 100 }, (_, i) => resolver(i))).toEqual(Array.from({ length: 100 }, (_, i) => i));
+    expect(entryReads).toBe(readsAfterIndexing);
   });
 });

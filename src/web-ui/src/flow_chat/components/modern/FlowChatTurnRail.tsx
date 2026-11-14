@@ -34,12 +34,16 @@ interface FlowChatTurnRailViewportMetrics {
   clientHeight: number;
 }
 
-export const FlowChatTurnRail: React.FC<FlowChatTurnRailProps> = ({
+/**
+ * Memoized: its parent re-renders on every streamed flush, while the rail's
+ * inputs change only with Turn identity, the visible Turn, or navigation.
+ */
+export const FlowChatTurnRail = React.memo(function FlowChatTurnRail({
   turns,
   currentTurnId,
   visibleTurnIds,
   onNavigate,
-}) => {
+}: FlowChatTurnRailProps) {
   const { t } = useTranslation('flow-chat');
   const railRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -361,6 +365,6 @@ export const FlowChatTurnRail: React.FC<FlowChatTurnRailProps> = ({
       </div>
     </nav>
   );
-};
+});
 
 FlowChatTurnRail.displayName = 'FlowChatTurnRail';

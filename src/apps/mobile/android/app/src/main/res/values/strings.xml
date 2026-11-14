@@ -512,4 +512,6 @@
     <string name="queue_more">Message actions</string>
     <string name="queue_remove">Remove from queue</string>
     <string name="queue_unsupported">Update the execution host to reorder messages.</string>
+    <string name="chat_voice_input_unavailable">Voice input is unavailable on this device. You can continue by typing.</string>
+    <string name="chat_photo_picker_unavailable">The photo picker is unavailable. Try again or choose a different photo app.</string>
 </resources>

@@ -58,6 +58,43 @@
     }
   }
 
+  &__transport {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+    margin-inline-start: var(--openbitfun-space-1);
+  }
+
+  &__transport-status {
+    min-width: 0;
+    max-width: 260px;
+    overflow: hidden;
+    font-size: var(--openbitfun-type-flow-micro-font-size);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__transport-action {
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--openbitfun-color-accent-default);
+    font: inherit;
+    font-size: var(--openbitfun-type-flow-micro-font-size);
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--openbitfun-color-accent-default);
+      outline-offset: 1px;
+    }
+  }
+
   &__menu {
     @include overlay-layout.anchored-picker-inline-size;
 

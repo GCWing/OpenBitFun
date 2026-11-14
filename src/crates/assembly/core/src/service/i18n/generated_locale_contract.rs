@@ -104,6 +104,11 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::ZhCN,
+        key: "agents.PaperWriting",
+        value: "论文写作",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhCN,
         key: "agents.Standard",
         value: "标准",
     },
@@ -314,6 +319,11 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::ZhTW,
+        key: "agents.PaperWriting",
+        value: "論文寫作",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhTW,
         key: "agents.Standard",
         value: "標準",
     },
@@ -521,6 +531,11 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
         locale: LocaleId::EnUS,
         key: "agents.Minimal",
         value: "Minimal",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::EnUS,
+        key: "agents.PaperWriting",
+        value: "Paper Writing",
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::EnUS,

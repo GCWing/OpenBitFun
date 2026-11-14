@@ -16,6 +16,10 @@ import { createLogger } from '@/shared/utils/logger';
 import { isRemoteTraceContext, startupTrace } from '@/shared/utils/startupTrace';
 import { elapsedMs, nowMs } from '@/shared/utils/timing';
 import { i18nService } from '@/infrastructure/i18n';
+import {
+  isSessionWorkspaceBindingMismatch,
+  sessionMutationFailureMessage,
+} from '../../utils/sessionMutationFailure';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import {
   getActiveSurfaceScope,
@@ -803,8 +807,8 @@ export async function deleteChatSession(
   } catch (error) {
     if (isSurfaceChangedError(error)) throw error;
     log.error('Failed to delete chat session', { sessionId, error });
-    notificationService.error('Failed to delete session', {
-      duration: 3000
+    notificationService.error(sessionMutationFailureMessage('delete', error), {
+      duration: isSessionWorkspaceBindingMismatch(error) ? 8000 : 3000
     });
     throw error;
   }
@@ -842,8 +846,8 @@ export async function archiveChatSession(
   } catch (error) {
     if (isSurfaceChangedError(error)) throw error;
     log.error('Failed to archive chat session', { sessionId, error });
-    notificationService.error('Failed to archive session', {
-      duration: 3000
+    notificationService.error(sessionMutationFailureMessage('archive', error), {
+      duration: isSessionWorkspaceBindingMismatch(error) ? 8000 : 3000
     });
     throw error;
   }

@@ -10,7 +10,7 @@ use openbitfun_core::service::remote_connect::remote_server::RemoteResponse;
 
 use super::commands;
 use super::control::{
-    attach_controller, detach_controller, parse_controller_device_id, peer_mode_ping_value,
+    attach_controller, detach_controller, parse_controller_device_id, peer_mode_ping_for_args,
 };
 use super::state::peer_host_state;
 use openbitfun_product_domains::remote_surface::{
@@ -123,7 +123,7 @@ async fn handle_control_plane(command: &str, args: Value) -> HostInvokeBridgeRes
             detach_controller(&controller_id).await;
             HostInvokeBridgeResult::ok_value(json!({ "detached": true }))
         }
-        "peer_mode_ping" => HostInvokeBridgeResult::ok_value(peer_mode_ping_value()),
+        "peer_mode_ping" => HostInvokeBridgeResult::ok_value(peer_mode_ping_for_args(&args)),
         other => HostInvokeBridgeResult::err(format!(
             "command '{other}' is registered as peer host control plane but this CLI build has no handler for it"
         )),

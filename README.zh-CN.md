@@ -1,4 +1,4 @@
-**中文** · [English](README.md)
+**中文** · [English](README.md) · [日本語](README.ja.md)
 
 <div align="center">
 
@@ -19,6 +19,14 @@ OpenBitFun 是一个高度可定制的开源 Agent 工作台，让任务按你�
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://openbitfun.com/zh/download)
 
 [![Trendshift](https://trendshift.io/api/badge/repositories/44672)](https://trendshift.io/repositories/44672)
+
+## 加入社区群
+
+使用微信扫描下方二维码，添加好友后申请加入 OpenBitFun 社区群。
+
+<a href="./png/openbitfun-community-wechat.png">
+  <img src="./png/openbitfun-community-wechat.png" alt="OpenBitFun 社区微信二维码" width="147" />
+</a>
 
 </div>
 
@@ -88,7 +96,7 @@ OpenBitFun 是一个高度可定制的开源 Agent 工作台，让任务按你�
 
 - **定制专属 Agent。** 围绕漫剧创作、视觉设计、代码评审等领域，选择模型、设定角色，组合需要的工具与工作方法。
 - **接入工具与流程。** 通过 MCP 连接专业工具，把常用工作方法保存为 Skills，用 Hooks 扩展任务执行流程。
-- **改变界面与源码。** 安装[皮肤](https://market.openbitfun.com/skin/)调整外观，也可以修改 UI、工具与 Runtime 源码，构建自己的 OpenBitFun。
+- **改变界面与源码。** 选择内置主题调整外观，也可以修改 UI、工具与 Runtime 源码，构建自己的 OpenBitFun。
 
 **你可以直接让 OpenBitFun 的 Code Agent 修改和扩展 OpenBitFun 本身。**
 
@@ -147,12 +155,6 @@ pnpm run desktop:dev
 </details>
 
 核心代码采用 [MIT License](./LICENSE)，第三方依赖与资源遵循各自的许可证。感谢所有开源作者与贡献者。漏洞报告方式见[安全策略](./SECURITY_CN.md)。
-
-## 加入社区群
-
-使用微信扫描下方二维码，添加好友后申请加入 OpenBitFun 社区群。
-
-<img src="./png/openbitfun-community-wechat.png" alt="OpenBitFun 社区微信二维码" width="360" />
 
 ## Star 历史
 

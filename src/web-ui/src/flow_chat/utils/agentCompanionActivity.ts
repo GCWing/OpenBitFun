@@ -119,6 +119,33 @@ function truncateLatestOutput(text: string): string {
   return toWellFormedText(wellFormedText.slice(-LATEST_OUTPUT_MAX_CHARS));
 }
 
+// Plain-text cleanup only shortens text, and the companion shows at most
+// LATEST_OUTPUT_MAX_CHARS of it. Clean a bounded tail instead of the whole
+// reply: this runs on every store notify for each running session.
+const LATEST_OUTPUT_SOURCE_WINDOW_CHARS = LATEST_OUTPUT_MAX_CHARS * 8;
+
+function sourceTail(source: string): string {
+  if (source.length <= LATEST_OUTPUT_SOURCE_WINDOW_CHARS) return source;
+  let start = source.length - LATEST_OUTPUT_SOURCE_WINDOW_CHARS;
+  // Start on a line so line-anchored Markdown rules see the same lines.
+  const lineStart = source.indexOf('\n', start);
+  if (lineStart !== -1 && lineStart < source.length - 1) start = lineStart + 1;
+  // Keep an open fence open so fenced text is not read as inline Markdown.
+  let fences = 0;
+  for (let index = source.indexOf('```'); index !== -1 && index < start; index = source.indexOf('```', index + 3)) {
+    fences += 1;
+  }
+  return `${fences % 2 === 1 ? '```\n' : ''}${source.slice(start)}`;
+}
+
+function plainTextTail(source: string, convert: (text: string) => string): string {
+  const tail = sourceTail(source);
+  const text = convert(tail);
+  // A window that cleaned down below the visible budget (a long link or image
+  // run, for example) falls back to the exact whole-text result.
+  return tail === source || text.length >= LATEST_OUTPUT_MAX_CHARS ? text : convert(source);
+}
+
 function latestAssistantSnippet(turn: DialogTurn | undefined): string | undefined {
   if (!turn) {
     return undefined;
@@ -129,11 +156,11 @@ function latestAssistantSnippet(turn: DialogTurn | undefined): string | undefine
     for (let itemIndex = round.items.length - 1; itemIndex >= 0; itemIndex -= 1) {
       const item = round.items[itemIndex];
       const plainText = item.type === 'thinking'
-        ? markdownToPlainText((item as FlowThinkingItem).content)
+        ? plainTextTail((item as FlowThinkingItem).content, markdownToPlainText)
         : item.type === 'text'
           ? (item as FlowTextItem).isMarkdown === false
-            ? (item as FlowTextItem).content.replace(/\s+/g, ' ').trim()
-            : markdownToPlainText((item as FlowTextItem).content)
+            ? plainTextTail((item as FlowTextItem).content, text => text.replace(/\s+/g, ' ').trim())
+            : plainTextTail((item as FlowTextItem).content, markdownToPlainText)
           : '';
       if (plainText) {
         return truncateLatestOutput(plainText);

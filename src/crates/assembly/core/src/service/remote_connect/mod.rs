@@ -302,6 +302,9 @@ impl RemoteConnectService {
 
     /// Resolve the endpoint and start the local host only for LAN. Every
     /// endpoint subsequently uses account login and the same device transport.
+    ///
+    /// Preparing the endpoint this service already serves changes nothing, so
+    /// asking for its invitation again never drops a connection.
     pub async fn prepare_relay(&self, method: &ConnectionMethod) -> Result<String> {
         let _lifecycle = self.relay_lifecycle.lock().await;
         if self.active_method.read().await.as_ref() == Some(method) {
@@ -317,6 +320,18 @@ impl RemoteConnectService {
             ConnectionMethod::OpenBitFunServer => self.config.openbitfun_server_url.clone(),
             _ => anyhow::bail!("connection method does not use a relay"),
         };
+        // A restored sign-in connects device routing before any invitation is
+        // asked for, so no method is active yet. The official endpoint needs
+        // no local host: when routing already serves it, it is adopted as it
+        // is instead of being torn down and connected again.
+        if matches!(method, ConnectionMethod::OpenBitFunServer)
+            && self.active_method.read().await.is_none()
+            && self.device_routing_serves(&url).await
+        {
+            *self.prepared_relay_url.write().await = Some(url.clone());
+            *self.active_method.write().await = Some(method.clone());
+            return Ok(url);
+        }
         self.stop_relay_inner().await;
         if matches!(method, ConnectionMethod::Lan { .. }) {
             if let Err(error) = self
@@ -361,12 +376,24 @@ impl RemoteConnectService {
             .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("No authenticated relay connection"))?;
-        if self.prepared_relay_url.read().await.as_deref() != Some(relay_url.as_str())
-            || self.active_method.read().await.as_ref() != Some(&method)
-        {
+        // A restored device connection uses the endpoint base, while the
+        // prepared endpoint also announces `?v=`; only the base identifies it.
+        let prepared_relay_url = self
+            .prepared_relay_url
+            .read()
+            .await
+            .clone()
+            .filter(|prepared| {
+                openbitfun_product_domains::account::relay_endpoint_base(prepared)
+                    == openbitfun_product_domains::account::relay_endpoint_base(&relay_url)
+            });
+        let Some(prepared_relay_url) = prepared_relay_url else {
+            anyhow::bail!("Relay endpoint changed; start the connection again");
+        };
+        if self.active_method.read().await.as_ref() != Some(&method) {
             anyhow::bail!("Relay endpoint changed; start the connection again");
         }
-        let qr_url = QrGenerator::build_device_url(&relay_url, &device_id)?;
+        let qr_url = QrGenerator::build_device_url(&prepared_relay_url, &device_id)?;
         Ok(ConnectionResult {
             method,
             qr_data: Some(QrGenerator::generate_png_base64_from_url(&qr_url)?),
@@ -940,6 +967,49 @@ impl RemoteConnectService {
         self.active_method.read().await.clone()
     }
 
+    /// The method this service is serving, when [`requested`] asks for the
+    /// endpoint it already serves. A caller that gets one asks for the
+    /// invitation with it ([`Self::start`]) instead of preparing the endpoint
+    /// again, which would restart a local relay and drop its devices.
+    ///
+    /// A LAN relay is one endpoint per interface it advertises. A request that
+    /// names no interface is served by whichever one is running; a request
+    /// that names one is served only when that is the interface in use, also
+    /// when it was chosen automatically at start. A request for a different
+    /// interface gets `None`.
+    pub async fn serving_method(&self, requested: &ConnectionMethod) -> Option<ConnectionMethod> {
+        let active = self.active_method.read().await.clone()?;
+        if active == *requested {
+            return Some(active);
+        }
+        let (ConnectionMethod::Lan { .. }, ConnectionMethod::Lan { ip: requested_ip }) =
+            (&active, requested)
+        else {
+            return None;
+        };
+        let Some(requested_ip) = requested_ip else {
+            return Some(active);
+        };
+        let advertised = self.prepared_relay_url.read().await.clone()?;
+        let named = lan::build_lan_relay_url_with_ip(self.config.lan_port, requested_ip).ok()?;
+        (advertised == named).then_some(active)
+    }
+
+    /// Whether authenticated device routing is up on the endpoint of [`url`].
+    async fn device_routing_serves(&self, url: &str) -> bool {
+        if self.authenticated_device_id.read().await.is_none() {
+            return false;
+        }
+        self.device_relay_url
+            .read()
+            .await
+            .as_deref()
+            .is_some_and(|connected| {
+                openbitfun_product_domains::account::relay_endpoint_base(connected)
+                    == openbitfun_product_domains::account::relay_endpoint_base(url)
+            })
+    }
+
     /// Check whether a specific bot type is currently running.
     pub async fn is_bot_running(&self, bot_type: &str) -> bool {
         match bot_type {
@@ -1291,22 +1361,31 @@ pub async fn handle_host_stream_command(
                     crate::service_agent_runtime::CoreServiceAgentRuntime::load_relay_history_batch(&request.stream_id, before)
                 }).await;
                 return Some(match page {
-                    Ok(page) => RemoteResponse::StreamPage { page },
+                    Ok(page) => RemoteResponse::StreamPage {
+                        page,
+                        subscription_id: request.subscription_id.clone(),
+                    },
                     Err(error) => RemoteResponse::Error {
                         message: error.to_string(),
                     },
                 });
             }
             Some(match hub.read(source_device_id, request) {
-                Ok(page) => RemoteResponse::StreamPage { page },
+                Ok(page) => RemoteResponse::StreamPage {
+                    page,
+                    subscription_id: request.subscription_id.clone(),
+                },
                 Err(error) => RemoteResponse::Error {
                     message: error.to_string(),
                 },
             })
         }
-        RemoteCommand::UnsubscribeStream { stream_id } => {
+        RemoteCommand::UnsubscribeStream {
+            stream_id,
+            subscription_id,
+        } => {
             if let Some(hub) = hub {
-                hub.unsubscribe(source_device_id, stream_id);
+                hub.unsubscribe_scoped(source_device_id, stream_id, subscription_id.as_deref());
             }
             Some(RemoteResponse::StreamUnsubscribed {
                 stream_id: stream_id.clone(),

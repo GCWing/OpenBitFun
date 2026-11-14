@@ -177,6 +177,11 @@ pub struct BotChatState {
     pub pending_invalid_count: u8,
     #[serde(skip, default)]
     pub last_menu_commands: Vec<String>,
+    /// The current host interaction prompt could not be delivered; the next
+    /// re-presentation of the same interaction sends it again instead of only
+    /// refreshing its TTL.
+    #[serde(skip, default)]
+    pub pending_presentation_failed: bool,
     /// Relay base URL the bot should hit for multi-device control. Set by the
     /// desktop when the bot is paired so the bot can reach the same relay.
     #[serde(skip, default)]
@@ -245,6 +250,7 @@ impl BotChatState {
             pending_expires_at: 0,
             pending_invalid_count: 0,
             last_menu_commands: Vec::new(),
+            pending_presentation_failed: false,
             relay_url: None,
             delegated_account: None,
             active_remote_device: None,
@@ -287,6 +293,7 @@ impl BotChatState {
         self.pending_interactions.clear();
         self.pending_expires_at = 0;
         self.pending_invalid_count = 0;
+        self.pending_presentation_failed = false;
     }
 
     pub fn pending_expired(&self) -> bool {
@@ -409,7 +416,11 @@ pub enum PendingAction {
         has_more: bool,
     },
     SelectModel {
+        /// `(model selection, display label)` in menu order: the `primary`
+        /// alias first, then `fast` when configured, then concrete models.
         options: Vec<(String, String)>,
+        /// The session's selection when the menu opened, for re-rendering.
+        current_model_id: Option<String>,
     },
     AskUserQuestion {
         tool_id: String,

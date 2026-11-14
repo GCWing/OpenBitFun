@@ -718,6 +718,9 @@ impl NativeComputerUseHost {
     }
 
     pub(super) async fn mouse_click_impl(&self, button: &str) -> OpenBitFunResult<()> {
+        // A global press can move focus away from a field clicked earlier.
+        #[cfg(target_os = "macos")]
+        crate::computer_use::macos_input_focus::forget_web_text_focus();
         debug!("computer_use: mouse_click button={}", button);
         ComputerUseHost::computer_use_guard_click_allowed(self)?;
         self.mouse_click_at_current_pointer(button).await
@@ -732,6 +735,9 @@ impl NativeComputerUseHost {
     }
 
     pub(super) async fn mouse_down_impl(&self, button: &str) -> OpenBitFunResult<()> {
+        // A global press can move focus away from a field clicked earlier.
+        #[cfg(target_os = "macos")]
+        crate::computer_use::macos_input_focus::forget_web_text_focus();
         #[cfg(target_os = "linux")]
         if let Some(session) =
             crate::computer_use::linux_control::session().map_err(OpenBitFunError::tool)?

@@ -595,6 +595,7 @@ impl Fixture {
                 server_key: None,
                 proxy_child: None,
                 alive: Arc::new(AtomicBool::new(true)),
+                liveness: Arc::new(ConnectionLiveness::confirmed_now()),
             },
         );
         Self {

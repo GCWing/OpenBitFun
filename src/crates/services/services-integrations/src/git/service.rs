@@ -2,7 +2,7 @@ use super::*;
 /**
  * Git service implementation
  */
-use git2::{BranchType, Commit, ErrorCode, Repository};
+use git2::{BranchType, Commit, ErrorCode, Repository, StatusOptions};
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
@@ -285,6 +285,26 @@ impl GitService {
         })
         .await
         .map_err(|e| GitError::CommandFailed(format!("spawn_blocking join: {e}")))?
+    }
+
+    /// Counts changed tracked entries across the index and working tree in one scan.
+    pub async fn get_tracked_change_count<P: AsRef<Path>>(
+        path: P,
+    ) -> Result<Option<usize>, GitError> {
+        let path = path.as_ref().to_path_buf();
+        task::spawn_blocking(move || {
+            let repo = match open_repository(&path) {
+                Ok(repo) if !repo.is_bare() => repo,
+                Ok(_) | Err(GitError::RepositoryNotFound(_)) => return Ok(None),
+                Err(error) => return Err(error),
+            };
+            let mut options = StatusOptions::new();
+            options.include_untracked(false).renames_head_to_index(true);
+            let statuses = repo.statuses(Some(&mut options))?;
+            Ok(Some(statuses.len()))
+        })
+        .await
+        .map_err(|error| GitError::CommandFailed(format!("spawn_blocking join: {error}")))?
     }
 
     /// Gets repository status.

@@ -26,6 +26,8 @@ const CodeEditor = lazyWithRecovery(() =>
   }))
 );
 
+const LatexEditor = lazyWithRecovery(() => import('@/tools/editor/components/LatexEditor'));
+
 const MarkdownEditor = lazyWithRecovery(() =>
   import('@/tools/editor/components/MarkdownEditor').then(module => ({
     default: module.default,
@@ -39,7 +41,7 @@ const ImageViewer = lazyWithRecovery(() =>
 );
 
 const PdfViewer = lazyWithRecovery(() =>
-  import('@/tools/editor/components/PdfViewer').then(module => ({
+  import('@/tools/editor/pdf-review/PdfReviewEditor').then(module => ({
     default: module.default,
   }))
 );
@@ -415,6 +417,7 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
                 isActiveTab={isActive}
                 filePath={pdfViewerData.filePath || ''}
                 fileName={content.title}
+                onDirtyStateChange={onDirtyStateChange}
                 className="openbitfun-flexible-panel__pdf-viewer"
               />
             )}
@@ -459,8 +462,11 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
         const fileName = editorData.fileName || content.title;
         const editorLanguage = editorData.language;
         const editorWorkspacePath = editorData.workspacePath || workspacePath;
+        const Editor = documentSession && /\.tex$/i.test(filePath) &&
+          !editorData.readOnly && typeof editorData.initialContent !== 'string' ? LatexEditor : CodeEditor;
         return renderLazyEditor(
-          <CodeEditor
+          <Editor
+            key={Editor === LatexEditor ? filePath : undefined}
             filePath={filePath}
             workspacePath={editorWorkspacePath}
             fileName={fileName}

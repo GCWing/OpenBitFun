@@ -35,6 +35,44 @@ pub(super) fn merge_dynamic_mode_tools(
 }
 
 impl AgentRegistry {
+    /// Lightweight counts use the same management policy as the detail query.
+    /// Profiles shared by several harness modes are resolved only once.
+    pub async fn mode_manageable_subagent_counts(
+        &self,
+        modes: &[AgentInfo],
+        workspace_id: Option<&str>,
+        external_sources_supported: bool,
+    ) -> std::collections::HashMap<String, usize> {
+        let mut counts = std::collections::HashMap::new();
+        for mode in modes {
+            let profile = mode.config_profile_id.as_deref().unwrap_or(&mode.id);
+            if counts.contains_key(profile) {
+                continue;
+            }
+            let agents = self
+                .get_subagents_for_query(&SubagentQueryContext {
+                    parent_agent_type: Some(&mode.id),
+                    workspace_id: if external_sources_supported {
+                        workspace_id
+                    } else {
+                        None
+                    },
+                    list_scope: SubagentListScope::RegistryManagement,
+                    include_disabled: true,
+                    external_sources_supported,
+                })
+                .await;
+            counts.insert(
+                profile.to_owned(),
+                agents
+                    .iter()
+                    .filter(|agent| agent.effective_enabled)
+                    .count(),
+            );
+        }
+        counts
+    }
+
     /// Recursive delegation is an explicit tool capability. It only takes
     /// effect inside Swarm; ordinary child sessions remain non-recursive.
     pub(crate) async fn can_delegate_in_swarm(

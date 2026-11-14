@@ -281,3 +281,26 @@ describe('reviewed Skill import wire compatibility', () => {
     expect((await new ConfigAPI().getSkillScanReport()).importOperationsVersion).toBe(3);
   });
 });
+
+
+describe('versioned Agent skill summaries', () => {
+  beforeEach(() => { invokeMock.mockReset(); });
+  it('uses one read for a supported batch projection and deduplicates mode ids', async () => {
+    invokeMock.mockResolvedValue({ skills: [], diagnostics: [], skillCountsVersion: 1, enabledSkillCounts: { Cowork: 3, review: 0 } });
+    await expect(new ConfigAPI().getModeSkillCounts(['Cowork', 'review', 'Cowork'])).resolves.toEqual({ Cowork: 3, review: 0 });
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock.mock.calls[0][1]).toMatchObject({ modeId: 'Cowork', includeDiagnostics: true, summaryModeIds: ['Cowork', 'review'] });
+  });
+  it.each([false, true])('keeps old host payloads working (diagnostics: %s)', async diagnostics => {
+    const skills = [{ effectiveEnabled: true }, { effectiveEnabled: false }];
+    invokeMock.mockResolvedValueOnce(diagnostics ? { skills, diagnostics: [] } : skills).mockResolvedValueOnce([]);
+    await expect(new ConfigAPI().getModeSkillCounts(['Cowork', 'review'])).resolves.toEqual({ Cowork: 1, review: 0 });
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    expect(invokeMock.mock.calls[1][1]).toMatchObject({ modeId: 'review' });
+  });
+  it('reports incomplete summaries instead of pretending their counts are zero', async () => {
+    invokeMock.mockResolvedValue({ skills: [], diagnostics: [], skillCountsVersion: 1, enabledSkillCounts: { Cowork: 2 } });
+    await expect(new ConfigAPI().getModeSkillCounts(['Cowork', 'review'])).rejects.toThrow('Invalid Agent skill count summary');
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+});

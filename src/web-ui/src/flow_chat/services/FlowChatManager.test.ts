@@ -227,13 +227,13 @@ describe('FlowChatManager initialization', () => {
     );
   });
 
-  it('creates an ACP session with the shared default title and its host-owned number', async () => {
+  it('creates an ACP session with the shared default title', async () => {
     storeMocks.store = { registerPersistUnreadCompletionCallback: vi.fn(), createSession: vi.fn() };
     storeMocks.createAcpSession.mockImplementation(async ({ sessionName }) => ({
       sessionId: 'acp-created', sessionName, agentType: 'acp:test-client',
     }));
     storeMocks.loadSessionMetadata.mockResolvedValue({
-      sessionId: 'acp-created', customMetadata: { workspaceSessionNumber: 6 },
+      sessionId: 'acp-created', customMetadata: {},
     });
     storeMocks.saveSessionMetadata.mockResolvedValue(undefined);
     const manager = FlowChatManager.getInstance();
@@ -250,7 +250,7 @@ describe('FlowChatManager initialization', () => {
         'acp-created',
         expect.objectContaining({ agentType: 'acp:test-client', workspaceId: 'workspace-1', workspacePath: '/repo' }),
         undefined, name, 128128, 'acp:test-client', '/repo', undefined, undefined,
-        expect.objectContaining({ source: 'i18n', text: name, key: 'flow-chat:session.new', workspaceSessionNumber: 6 }),
+        expect.objectContaining({ source: 'i18n', text: name, key: 'flow-chat:session.new' }),
       );
     } finally {
       manager.destroy();

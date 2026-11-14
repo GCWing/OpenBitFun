@@ -31,6 +31,7 @@ try {
   } else {
     await run(binary, []);
     await run(binary, ['--minimized']);
+    await run(binary, ['--resize-error']);
   }
 } finally {
   await rm(directory, { recursive: true, force: true });

@@ -273,16 +273,22 @@ fn emit_device_presence(devices: &[OnlineDeviceInfo]) {
     emit_account_event("account://device-presence", payload);
 }
 
+/// Drop the route's controller delivery targets. Pending permission requests
+/// are kept: a relay blip or routing restart is presence loss, and a
+/// re-attaching controller restores them from the interaction mailbox.
 async fn disconnect_route_controllers(route: RelayRoute, reason: &'static str) {
-    let request_ids = crate::api::peer_host_invoke::disconnect_route_controllers(route);
-    if let Err(error) =
-        crate::api::peer_host_invoke::fail_closed_permission_requests(request_ids, reason).await
-    {
-        log::warn!("Peer permission requests were not fully cancelled: {error}");
-    }
+    clear_route_delivery_targets(route, reason);
     if route == RelayRoute::Official {
         emit_device_presence(&[]);
     }
+}
+
+/// Clear delivery targets without publishing an empty roster. A routing
+/// reconnect reports the new connection's presence moments later; an empty
+/// roster in between would drop and re-add every sidebar device section.
+fn clear_route_delivery_targets(route: RelayRoute, reason: &'static str) {
+    crate::api::peer_host_invoke::disconnect_route_controllers(route);
+    log::debug!("Peer controller delivery targets cleared: route={route:?}, reason={reason}");
 }
 
 /// Retire the active routing owner before touching the shared service. The
@@ -2076,6 +2082,46 @@ fn parse_connection_method(
     }
 }
 
+/// Whether the official route already serves the signed-in account on the
+/// endpoint of [`prepared_relay_url`]: its device routing is owned by the
+/// current account generation and token and its transport is up (connected,
+/// or reconnecting by itself).
+///
+/// Showing the invitation of such a route needs no sign-in and no connection.
+/// Presence is deliberately not consulted: it arrives after the connection
+/// and is empty while the transport reconnects, and neither is a reason to
+/// replace a route that controllers may be attached to.
+async fn official_route_is_serving(prepared_relay_url: &str) -> bool {
+    let generation = account_context_generation();
+    let Ok((session, relay_url)) = read_account_context_for_generation(generation).await else {
+        return false;
+    };
+    if relay_requires_account_login(Some(&relay_url), prepared_relay_url) {
+        return false;
+    }
+    let Some(owner) = device_routing_owner_for_account(generation, &session.token) else {
+        return false;
+    };
+    if !device_routing_owner_is_current(&owner).await {
+        return false;
+    }
+    match get_service_holder().read().await.as_ref() {
+        Some(service) => service.is_device_connected().await,
+        None => false,
+    }
+}
+
+/// Start a connection method and return its invitation.
+///
+/// For a Relay route that is already connected this only returns the
+/// invitation again: the route is not signed in again, not reconnected and
+/// not restarted, its routing owner and attached controllers stay as they
+/// are, and a failure to build the invitation leaves it running. The dialog
+/// relies on that and calls this whenever it needs the link.
+///
+/// A LAN route is one endpoint per interface. It is reused when the request
+/// names no interface or the one it uses (also when that one was chosen
+/// automatically at start); a request for another interface restarts it there.
 #[tauri::command]
 pub async fn remote_connect_start(
     request: StartRemoteConnectRequest,
@@ -2119,9 +2165,19 @@ pub async fn remote_connect_start(
             .await
             .map_err(|e| e.to_string())?
     };
+    if official_route_is_serving(&relay_url).await {
+        // Already connected: hand out the invitation and touch nothing else.
+        let holder = get_service_holder().read().await;
+        return holder
+            .as_ref()
+            .ok_or("service not initialized")?
+            .start(method)
+            .await
+            .map_err(|e| format!("start remote connect: {e}"));
+    }
     let result = async {
         let current_url = read_account_context().await.ok().map(|(_, url)| url);
-        if current_url.as_deref() != Some(relay_url.as_str()) {
+        if relay_requires_account_login(current_url.as_deref(), &relay_url) {
             login_account_on_relay(relay_url).await?;
         }
         account_connect_devices().await?;
@@ -2381,6 +2437,18 @@ async fn persist_account_session(device_id: Option<&str>) -> Result<(), String> 
 #[tauri::command]
 pub async fn account_login(_request: AccountAuthRequest) -> Result<AccountLoginResult, String> {
     login_account_on_relay(openbitfun_product_domains::account::DEFAULT_RELAY_URL.to_string()).await
+}
+
+/// Whether showing an invitation must sign in again on `target`.
+///
+/// A restored session keeps the endpoint base while the prepared official
+/// endpoint also announces `?v=`. The version is not part of the endpoint
+/// identity, and an unneeded login rotates the token and drops device routing.
+fn relay_requires_account_login(current: Option<&str>, target: &str) -> bool {
+    current.map(openbitfun_product_domains::account::relay_endpoint_base)
+        != Some(openbitfun_product_domains::account::relay_endpoint_base(
+            target,
+        ))
 }
 
 async fn login_account_on_relay(relay_url: String) -> Result<AccountLoginResult, String> {
@@ -2675,7 +2743,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
     // service client. Its compare-and-clear exit path must not touch this new
     // connection's controllers or presence.
     clear_device_routing_state_on_route(route);
-    disconnect_route_controllers(route, "Device routing reconnecting").await;
+    clear_route_delivery_targets(route, "Device routing reconnecting");
 
     let (mut event_rx, auth_device_id, service_connection_id) = match service
         .start_device_connection(
@@ -2692,6 +2760,11 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
         Err(e) => {
             let msg = format!("{e}");
             clear_device_routing_state_on_route(route);
+            // The reconnect kept the previous roster; without a connection it
+            // no longer describes reachable devices.
+            if route == RelayRoute::Official {
+                emit_device_presence(&[]);
+            }
             // Token invalidation re-enters the account transition path, so the
             // current account-operation lease must be released first.
             drop(routing_lifecycle);
@@ -3441,9 +3514,10 @@ async fn execute_local_remote_command(
                 .map_err(|e| anyhow::anyhow!("serialize response: {e}"));
             }
             if command == "peer_mode_ping" {
-                let value = crate::api::peer_host_invoke::peer_mode_ping()
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))?;
+                let value = crate::api::peer_host_invoke::peer_mode_ping_for_caller(
+                    route,
+                    source_device_id,
+                );
                 return serde_json::to_value(RemoteResponse::HostInvokeResult {
                     ok: true,
                     value: Some(value),
@@ -3935,6 +4009,11 @@ pub async fn account_load_older_session(request: UnsubscribeSessionRequest) -> R
 pub async fn account_subscribe_session(request: SubscribeSessionRequest) -> Result<String, String> {
     let generation = account_context_generation();
     let (session, relay) = read_account_context_for_generation(generation).await?;
+    // Events can arrive before this command returns. Give every attempt an
+    // identity so a late error/page from a retired reader cannot poison its successor.
+    let id = uuid::Uuid::new_v4().to_string();
+    let event_subscription_id = id.clone();
+    let error_subscription_id = id.clone();
     let source = request.target_device_id.clone();
     let error_source = source.clone();
     let error_session_id = request.session_id.clone();
@@ -3948,21 +4027,23 @@ pub async fn account_subscribe_session(request: SubscribeSessionRequest) -> Resu
                 if !account_context_is_current(generation) {
                     anyhow::bail!("account subscription retired");
                 }
-                emit_account_event(&event.event, tag_peer_event_source(event.payload, &source));
+                let mut payload = tag_peer_event_source(event.payload, &source);
+                payload["subscriptionId"] = event_subscription_id.clone().into();
+                emit_account_event(&event.event, payload);
                 Ok(())
             }),
             Arc::new(move |error| {
                 if account_context_is_current(generation) {
                     emit_account_event(
                         "account://session-sync-error",
-                        serde_json::json!({"message":error,"sessionId":error_session_id,"targetDeviceId":error_source}),
+                        serde_json::json!({"message":error,"sessionId":error_session_id,"targetDeviceId":error_source,
+                            "subscriptionId":error_subscription_id,"retrying":true}),
                     );
                 }
             }),
         )
         .await
         .map_err(|e| e.to_string())?;
-    let id = uuid::Uuid::new_v4().to_string();
     let mut subscriptions = SESSION_SUBSCRIPTIONS
         .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
         .lock()
@@ -3983,4 +4064,40 @@ pub async fn account_unsubscribe_session(request: UnsubscribeSessionRequest) -> 
             .remove(&request.subscription_id);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod relay_account_login_tests {
+    use super::relay_requires_account_login;
+
+    #[test]
+    fn version_parameter_does_not_change_the_endpoint_identity() {
+        let official = "https://remote.openbitfun.com/relay?v=1.0.9";
+        for current in [
+            "https://remote.openbitfun.com/relay",
+            "https://remote.openbitfun.com/relay/",
+            "https://remote.openbitfun.com/relay?v=1.0.8",
+            official,
+        ] {
+            assert!(
+                !relay_requires_account_login(Some(current), official),
+                "{current}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_or_different_endpoint_requires_login() {
+        let official = "https://remote.openbitfun.com/relay?v=1.0.9";
+        assert!(relay_requires_account_login(None, official));
+        // The legacy alias migrates to the current endpoint through one login.
+        assert!(relay_requires_account_login(
+            Some("https://remote.openbitfun.com/v/1.0.2"),
+            official
+        ));
+        assert!(relay_requires_account_login(
+            Some("http://192.168.1.2:9700"),
+            official
+        ));
+    }
 }

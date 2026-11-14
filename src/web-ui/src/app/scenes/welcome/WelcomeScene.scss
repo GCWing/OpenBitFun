@@ -11,7 +11,6 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  container-type: inline-size;
   background: var(--openbitfun-color-surface-scene);
 
   &__content {
@@ -133,32 +132,35 @@
   50% { opacity: 0; }
 }
 
-@container (max-width: 560px) {
-  .welcome-scene {
-    &__content {
+// Width tiers come from `data-density` (set by WelcomeScene from a
+// ResizeObserver), not container queries; see the component for why.
+.welcome-scene {
+  &[data-density='compact'],
+  &[data-density='tiny'] {
+    .welcome-scene__content {
       padding-inline: var(--openbitfun-space-4);
     }
+  }
 
-    &__brand,
-    &__tagline {
+  &[data-density='compact'] {
+    .welcome-scene__brand,
+    .welcome-scene__tagline {
       font-size: var(--openbitfun-type-heading-display-font-size);
     }
 
-    &__logo {
+    .welcome-scene__logo {
       width: 48px;
       height: 48px;
     }
   }
-}
 
-@container (max-width: 400px) {
-  .welcome-scene {
-    &__brand,
-    &__tagline {
+  &[data-density='tiny'] {
+    .welcome-scene__brand,
+    .welcome-scene__tagline {
       font-size: var(--openbitfun-type-flow-title-font-size);
     }
 
-    &__logo {
+    .welcome-scene__logo {
       width: 36px;
       height: 36px;
     }

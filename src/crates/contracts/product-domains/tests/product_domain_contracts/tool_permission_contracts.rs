@@ -1,9 +1,10 @@
 use openbitfun_product_domains::tool_permissions::{
     merge_permission_rule_layers, resolve_child_permission_policy, resolve_permission_policy,
-    wildcard_matches, ChildPermissionPolicyLayers, PermissionConstraintLayer,
-    PermissionDelegationContext, PermissionEffect, PermissionEvaluator, PermissionPolicyConfig,
-    PermissionPolicyLayers, PermissionPolicyPreset, PermissionReply, PermissionReplySource,
-    PermissionRequest, PermissionRequestEvent, PermissionRequestSource,
+    wildcard_matches, ChildPermissionPolicyLayers, PermissionApprovalModelKind,
+    PermissionApprovalOnAsk, PermissionApprovalOnError, PermissionApprovalStrategy,
+    PermissionConstraintLayer, PermissionDelegationContext, PermissionEffect, PermissionEvaluator,
+    PermissionPolicyConfig, PermissionPolicyLayers, PermissionPolicyPreset, PermissionReply,
+    PermissionReplySource, PermissionRequest, PermissionRequestEvent, PermissionRequestSource,
     PermissionRequestSourceKind, PermissionResourceCaseSensitivity, PermissionRule,
     PermissionRuntimeCeiling, ResolvedPermissionPolicy, ToolPermissionConfig,
 };
@@ -949,4 +950,87 @@ fn stored_permission_preferences_survive_default_change() {
         PermissionMode::from_config(&missing),
         PermissionMode::FullAccess
     );
+}
+
+#[test]
+fn approval_configuration_is_additive_and_validates_model_bindings() {
+    let legacy: ToolPermissionConfig = serde_json::from_value(json!({
+        "policy": {"preset": "ask", "rules": []},
+        "interaction": {"auto_approve_ask": false}
+    }))
+    .unwrap();
+    assert_eq!(
+        legacy.approval.strategy,
+        PermissionApprovalStrategy::Interactive
+    );
+    assert_eq!(
+        legacy.approval.model_kind,
+        PermissionApprovalModelKind::Chat
+    );
+    assert_eq!(legacy.approval.chat_model_id, "fast");
+    assert_eq!(legacy.approval.timeout_ms, 30_000);
+
+    // Legacy auto-approval settings resolve to model approval at runtime.
+    let legacy_auto: ToolPermissionConfig = serde_json::from_value(json!({
+        "policy": {"preset": "ask", "rules": []},
+        "interaction": {"auto_approve_ask": true}
+    }))
+    .unwrap();
+    assert_eq!(legacy_auto.approval.chat_model_id, "fast");
+    let mut model_approval = legacy_auto.approval.clone();
+    model_approval.strategy = PermissionApprovalStrategy::Model;
+    assert!(model_approval.validate().is_ok());
+
+    let configured: ToolPermissionConfig = serde_json::from_value(json!({
+        "policy": {"preset": "ask", "rules": []},
+        "interaction": {"auto_approve_ask": false},
+        "approval": {
+            "strategy": "model",
+            "model_kind": "chat",
+            "chat_model_id": "approval-model",
+            "timeout_ms": 12000,
+            "on_ask": "user",
+            "on_error": "reject"
+        }
+    }))
+    .unwrap();
+    assert_eq!(
+        configured.approval.strategy,
+        PermissionApprovalStrategy::Model
+    );
+    assert_eq!(
+        configured.approval.model_kind,
+        PermissionApprovalModelKind::Chat
+    );
+    assert_eq!(configured.approval.on_ask, PermissionApprovalOnAsk::User);
+    assert_eq!(
+        configured.approval.on_error,
+        PermissionApprovalOnError::Reject
+    );
+    assert!(configured.approval.validate().is_ok());
+    let serialized_approval = serde_json::to_value(&configured.approval).unwrap();
+    assert_eq!(serialized_approval["model_kind"], "chat");
+    assert_eq!(serialized_approval["chat_model_id"], "approval-model");
+    assert!(serialized_approval.get("model").is_none());
+    assert!(serialized_approval.get("headless_fallback").is_none());
+    let mut invalid = configured.approval.clone();
+    invalid.chat_model_id.clear();
+    assert!(invalid.validate().is_err());
+
+    let decision_model_without_chat_model_id =
+        serde_json::from_value::<ToolPermissionConfig>(json!({
+            "approval": {
+                "strategy": "model",
+                "model_kind": "decision",
+                "chat_model_id": "",
+                "timeout_ms": 30000,
+                "on_ask": "user",
+                "on_error": "ask"
+            }
+        }))
+        .unwrap();
+    assert!(decision_model_without_chat_model_id
+        .approval
+        .validate()
+        .is_ok());
 }

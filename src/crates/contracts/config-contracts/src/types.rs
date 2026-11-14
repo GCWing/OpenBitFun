@@ -99,6 +99,33 @@ pub struct GlobalConfig {
     pub last_modified: chrono::DateTime<chrono::Utc>,
 }
 
+fn default_decision_model_endpoint() -> String {
+    "https://api.typesafe.ai/v1/systemone".to_string()
+}
+
+fn default_decision_model_name() -> String {
+    "jev-latest".to_string()
+}
+
+/// Connection settings for decision models shared by product features.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DecisionModelConfig {
+    #[serde(default = "default_decision_model_endpoint")]
+    pub endpoint: String,
+    #[serde(default = "default_decision_model_name")]
+    pub model_name: String,
+}
+
+impl Default for DecisionModelConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: default_decision_model_endpoint(),
+            model_name: default_decision_model_name(),
+        }
+    }
+}
+
 impl GlobalConfig {
     pub fn has_configured_plugins(&self) -> bool {
         self.plugin
@@ -744,7 +771,7 @@ pub struct NotificationConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppearanceConfig {
-    /// Selected appearance package ID or `system`.
+    /// Selected appearance/theme ID or `system`.
     pub selection: String,
 }
 
@@ -1253,6 +1280,10 @@ impl Default for ModelRoutingConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AIConfig {
+    /// Shared decision-model connection settings. Secrets are stored in the
+    /// device credential vault and are intentionally kept out of this config.
+    #[serde(default)]
+    pub decision_model: DecisionModelConfig,
     /// All configured models.
     pub models: Vec<AIModelConfig>,
 
@@ -1848,15 +1879,18 @@ pub const DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS: u32 = 128_128;
 pub const MIN_MODEL_CONTEXT_WINDOW_TOKENS: u32 = 32_000;
 pub const MAX_CONFIGURED_OUTPUT_TOKENS_RATIO_PERCENT: u32 = 40;
 const AUTOMATIC_MAX_OUTPUT_TOKEN_TIERS: [u32; 5] = [8_000, 16_000, 24_000, 32_000, 64_000];
+const MAX_OUTPUT_64K_MIN_CONTEXT_WINDOW: u32 = 400_000;
 
 /// Chooses the largest supported output tier that does not exceed one quarter
-/// of the model context window.
+/// of the model context window. The 64k tier requires a context window of at
+/// least 400k.
 pub fn automatic_max_output_tokens(context_window: u32) -> u32 {
     let quarter_context = context_window / 4;
     AUTOMATIC_MAX_OUTPUT_TOKEN_TIERS
         .iter()
         .rev()
         .copied()
+        .filter(|tier| *tier != 64_000 || context_window >= MAX_OUTPUT_64K_MIN_CONTEXT_WINDOW)
         .find(|tier| *tier <= quarter_context)
         .unwrap_or(quarter_context)
 }
@@ -2313,6 +2347,7 @@ impl Default for WorkspaceConfig {
 impl Default for AIConfig {
     fn default() -> Self {
         Self {
+            decision_model: DecisionModelConfig::default(),
             model_pools: crate::model_pool::ModelPoolDocument::default(),
             models: vec![],
             tool_presentation_mode: ToolPresentationMode::default(),
@@ -2521,6 +2556,26 @@ impl AIModelConfig {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn decision_model_name_defaults_under_ai_configuration() {
+        let config: super::AIConfig = serde_json::from_value(serde_json::json!({
+            "decision_model": { "endpoint": "https://example.test/v1" }
+        }))
+        .unwrap();
+
+        assert_eq!(config.decision_model.model_name, "jev-latest");
+        assert_eq!(config.decision_model.endpoint, "https://example.test/v1");
+
+        let config: super::AIConfig = serde_json::from_value(serde_json::json!({
+            "decision_model": {
+                "endpoint": "https://example.test/v1",
+                "model_name": "custom-decision-model"
+            }
+        }))
+        .unwrap();
+        assert_eq!(config.decision_model.model_name, "custom-decision-model");
+    }
+
     #[test]
     fn generative_ui_library_legacy_and_future_roundtrip() {
         let legacy: super::AIConfig = serde_json::from_value(serde_json::json!({})).unwrap();

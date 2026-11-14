@@ -755,6 +755,7 @@ pub async fn get_mode_skill_configs(
     include_diagnostics: Option<bool>,
     workspace_id: Option<String>,
     workspace_path: Option<String>,
+    summary_mode_ids: Option<Vec<String>>,
 ) -> Result<Value, String> {
     let workspace =
         resolve_skill_workspace(workspace_id.as_deref(), workspace_path.as_deref()).await?;
@@ -762,6 +763,71 @@ pub async fn get_mode_skill_configs(
 
     if force_refresh.unwrap_or(false) {
         registry.refresh().await;
+    }
+
+    // Additive projection on the existing diagnostics response. Older hosts
+    // ignore the optional argument; controllers check skillCountsVersion before
+    // using the summary and retain the single-mode compatibility path.
+    if let Some(mut mode_ids) = summary_mode_ids.filter(|_| include_diagnostics == Some(true)) {
+        if !mode_ids.contains(&mode_id) {
+            mode_ids.push(mode_id.clone());
+        }
+        let mut reports = if let Some((remote_root, entry)) =
+            resolve_remote_workspace(workspace.as_ref()).await?
+        {
+            await_remote_skill_discovery(
+                async {
+                    let remote_fs = state
+                        .get_remote_file_service_async()
+                        .await
+                        .map_err(|error| format!("Remote file service not available: {error}"))?;
+                    let fs = RemoteWorkspaceFs::new(entry, remote_fs);
+                    Ok(registry
+                        .get_mode_skill_scan_reports_for_remote_workspace(
+                            &fs,
+                            &remote_root,
+                            &mode_ids,
+                        )
+                        .await)
+                },
+                REMOTE_SKILL_DISCOVERY_TIMEOUT,
+            )
+            .await?
+        } else {
+            registry
+                .get_mode_skill_scan_reports_for_workspace(
+                    workspace.as_ref().map(SkillPolicyWorkspace::from_record),
+                    &mode_ids,
+                )
+                .await
+        };
+        let counts: HashMap<String, usize> = reports
+            .iter()
+            .map(|(id, report)| {
+                (
+                    id.clone(),
+                    report
+                        .skills
+                        .iter()
+                        .filter(|skill| skill.effective_enabled)
+                        .count(),
+                )
+            })
+            .collect();
+        let report = reports
+            .remove(&mode_id)
+            .expect("The anchor mode is included in the summary");
+        let mut response =
+            serialize_skill_scan_response(report, true).map_err(|error| error.to_string())?;
+        let object = response
+            .as_object_mut()
+            .expect("Diagnostics responses are objects");
+        object.insert("skillCountsVersion".into(), Value::from(1));
+        object.insert(
+            "enabledSkillCounts".into(),
+            serde_json::to_value(counts).map_err(|error| error.to_string())?,
+        );
+        return Ok(response);
     }
 
     let mode_skill_infos = get_mode_skill_scan_report_for_workspace_input(

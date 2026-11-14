@@ -52,6 +52,7 @@ function repositoryPath(root, path) {
 // Resolved feature checks still include them and their full dependency closure.
 const VENDORED_EXTERNAL_PACKAGES = new Map([
   ['third_party/eioc/Cargo.toml', { name: 'eioc', version: '0.5.0' }],
+  ['third_party/screenshots/Cargo.toml', { name: 'screenshots', version: '0.8.10' }],
   ['third_party/tao/Cargo.toml', { name: 'tao', version: '0.36.0' }],
   ['third_party/wry/Cargo.toml', { name: 'wry', version: '0.56.0' }],
 ]);
@@ -356,11 +357,6 @@ const REQWEST_PACKAGE_PROFILES = new Map([
     dependencyFeatures: ['json', 'rustls-no-provider'],
     optional: false,
   }],
-  ['openbitfun-skin-market-service', {
-    dependencyFeatures: ['http2', 'json', 'rustls-no-provider'],
-    optional: false,
-    tlsProviderDependency: 'openbitfun-services-core',
-  }],
 ]);
 
 function findReqwestPackageProfileViolations(pkg, profile) {
@@ -531,8 +527,6 @@ const THIRD_PARTY_CAPABILITY_PROFILES = new Map([
       ['openbitfun-relay-server', dependencyProfile([])],
       ['openbitfun-relay-service', dependencyProfile(['json', 'ws'])],
       ['openbitfun-server', dependencyProfile(['json', 'ws'])],
-      ['openbitfun-skin-market-server', dependencyProfile(['json'])],
-      ['openbitfun-skin-market-service', dependencyProfile(['json'])],
       ['openbitfun-webdriver', dependencyProfile(['json'])],
     ]),
   }],
@@ -587,13 +581,13 @@ const THIRD_PARTY_CAPABILITY_PROFILES = new Map([
           ['remote-connect', ['bmp', 'gif', 'jpeg', 'png', 'webp']],
         ]),
       })],
-      ['openbitfun-skin-market-service', dependencyProfile(['gif', 'jpeg', 'png', 'webp'], {
-        useDefaultFeatures: false,
-      })],
       // The embedded bridge captures PNG and encodes JPEG previews itself.
       ['openbitfun-webdriver', dependencyProfile(['jpeg', 'png'], {
         useDefaultFeatures: false,
       })],
+      // Preserve screenshots 0.8.10's upstream image defaults as a vendored
+      // external crate; its 0.24 image dependency is separately version-gated.
+      ['screenshots', dependencyProfile([])],
     ]),
   }],
   ['tokio-tungstenite', {
@@ -626,7 +620,6 @@ const THIRD_PARTY_CAPABILITY_PROFILES = new Map([
       ['openbitfun-relay-server', dependencyProfile(['fs'])],
       ['openbitfun-relay-service', dependencyProfile(['cors'])],
       ['openbitfun-server', dependencyProfile(['cors'])],
-      ['openbitfun-skin-market-service', dependencyProfile(['fs'])],
     ]),
   }],
 ]);
@@ -1467,6 +1460,7 @@ export function findProductEntrypointCoreFeatureViolations(
       'workspace-icons',
       'tools-pages',
       ...coreCompatibilityReviewedFeatures,
+      'decision-model-credentials',
       'product-search',
       'remote-connect',
       // The CLI Peer Host answers `start_file_watch` / `stop_file_watch` for an
@@ -1540,6 +1534,7 @@ export function findProductEntrypointCoreFeatureViolations(
       'workspace-icons',
       'tools-pages',
       ...acpActiveCoreFeatures,
+      'decision-model-credentials',
       'i18n-runtime',
       'plugin-runtime',
       'product-search',

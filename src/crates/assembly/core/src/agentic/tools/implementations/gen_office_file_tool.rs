@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use openbitfun_office_documents::{
     collect_image_sources, guide, operation_recovery_hint, operation_schema, settings_schema,
     validate_font_input, validate_operation_headers, Detail, ImageSources, OfficeDocument,
-    OfficeError, OfficeFormat, OpenOptions, ReadRequest,
+    OfficeError, OfficeErrorKind, OfficeFormat, OpenOptions, ReadRequest,
 };
 use serde_json::{json, Value};
 
@@ -181,7 +181,17 @@ impl GenOfficeFileTool {
                 "{error}. Nothing was written: the entire batch was rolled back (operation numbers are 0-based). {} Correct the input before retrying; use a smaller batch if indexes are uncertain.",
                 operation_recovery_hint(op)
             ),
-            None => format!("{error}. The file was not changed. Use action=guide for the format's contract."),
+            None => match error.kind {
+                // The file has no GenOfficeFile source model, so no GenOfficeFile
+                // action can open it; pointing at guide or retrying cannot help.
+                OfficeErrorKind::NotGenerated => format!(
+                    "{error}. The file was not changed. Do not retry GenOfficeFile on this file (discard_external_changes does not apply): use the Read tool to read or analyze it, and only use action=create with a new path if the user wants a new Office file."
+                ),
+                OfficeErrorKind::ExternallyModified => {
+                    format!("{error}. The file was not changed.")
+                }
+                _ => format!("{error}. The file was not changed. Use action=guide for the format's contract."),
+            },
         }
     }
 
@@ -292,6 +302,8 @@ impl GenOfficeFileTool {
     fn description_text() -> String {
         r#"Create and incrementally edit Word (.docx), Excel (.xlsx), and PowerPoint (.pptx) files directly, without scripts or an installed Office application. The extension selects the format.
 
+Scope: use this tool only when the user wants an Office file produced or changed. It is not a document reader: read and edit open only files this tool generated earlier, because they carry its embedded editable model. To read, summarize, or analyze any other Office file (user attachments, uploads, files from Office or other programs), use the Read tool, which extracts all of these formats; do not call GenOfficeFile first to check.
+
 Workflow: call guide once for the format, create a first batch, then edit in small sections/slides/row chunks. Send text as ordinary Unicode strings; the tool writes UTF-8 XML. Do not manually re-encode, HTML-escape, or replace non-Latin characters.
 
 Fonts: omit font choices unless the user or template requires a particular family; a request for a professional appearance alone does not require custom fonts. Names must match the intended viewer, not the generation host's OS. Fonts are neither embedded nor verified. DOCX/PPTX separate global Latin/East Asian defaults; local font overrides all scripts; use local latin_font/east_asia_font/complex_script_font for one script. XLSX uses style.font_name. Read the guide for inheritance and resetting overrides. lang is a language hint, not encoding or a font repair.
@@ -300,7 +312,7 @@ Actions:
 - guide: pass format (docx | xlsx | pptx) for fields, defaults and examples.
 - create: absolute file_path, optional settings and operations. Existing files require explicit overwrite:true.
 - edit: file_path and non-empty operations. For content corrections, replace/update in place; do not insert/delete/move just to replace content.
-- read: file_path, offset/limit, detail:"full" for exact content and current indexes. XLSX accepts sheet and range (A1:D20); use next_offset to continue.
+- read: only for a file this tool generated, to verify output or get current indexes before edit. file_path, offset/limit, detail:"full" for exact content and current indexes. XLSX accepts sheet and range (A1:D20); use next_offset to continue.
 
 Each operation is {op, ...fields}. Operations run in array order against the result of earlier operations. Block/slide/element indexes are 0-based and shift after insert/delete; move `to` is the position after removing the source. A failed batch writes nothing. Use the error's field/index guidance, read the target if uncertain, and send corrected input; do not repeat an unchanged failed call or replay a successful batch.
 
@@ -311,7 +323,7 @@ Common edits:
 
 Completion for ALL formats: finish edits, inspect warnings, then read back changed content and references. This is structural verification, not visual rendering; PPTX layout warnings are estimates. External rendering is optional, not a generation dependency. Do not automatically probe/install/repair LibreOffice/soffice or other Office packages, or build a substitute renderer. When visual inspection is required, use a known available viewer on the file-owning machine; otherwise deliver and state the unverified scope. Never infer compatibility with one viewer from another. Choose fonts for the target environment; DOCX/PPTX language can be overridden with lang.
 
-Images accept absolute workspace paths or data URLs (PNG/JPEG/GIF/BMP); download web images first. Reuse embedded asset names from read. Only files created by this tool are editable. External modifications are preserved by refusing edits; discard_external_changes:true explicitly rebuilds from the last embedded model and drops those modifications."#
+Images accept absolute workspace paths or data URLs (PNG/JPEG/GIF/BMP); download web images first. Reuse embedded asset names from read. Only files created by this tool can be read or edited here. External modifications are preserved by refusing edits; discard_external_changes:true explicitly rebuilds from the last embedded model and drops those modifications."#
             .to_string()
     }
 }
@@ -327,7 +339,7 @@ impl Tool for GenOfficeFileTool {
     }
 
     fn short_description(&self) -> String {
-        "Create and incrementally edit Word, Excel, and PowerPoint files.".to_string()
+        "Create and incrementally edit Word, Excel, and PowerPoint files; use Read to read existing documents.".to_string()
     }
 
     fn input_schema(&self) -> Value {
@@ -337,7 +349,7 @@ impl Tool for GenOfficeFileTool {
                 "action": {
                     "type": "string",
                     "enum": ["create", "edit", "read", "guide"],
-                    "description": "create a new file, edit a generated file, read its structure page by page, or get the field reference for a format."
+                    "description": "create a new file, edit a file this tool generated, read the structure of a file this tool generated, or get the field reference for a format. Never use read for user-provided or other existing Office files; use the Read tool for those."
                 },
                 "file_path": {
                     "type": "string",
@@ -687,7 +699,7 @@ impl Tool for GenOfficeFileTool {
 
 #[cfg(test)]
 mod tests {
-    use super::GenOfficeFileTool;
+    use super::{GenOfficeFileTool, OfficeError, OfficeErrorKind};
     use crate::agentic::tools::framework::{Tool, ToolResult, ToolUseContext};
     use crate::agentic::tools::ToolRuntimeRestrictions;
     use crate::agentic::WorkspaceBinding;
@@ -916,6 +928,41 @@ mod tests {
         for case in cases {
             assert!(GenOfficeFileTool::check_input(&case).is_err(), "{case}");
         }
+    }
+
+    #[tokio::test]
+    async fn contract_routes_reading_existing_office_files_to_read_tool() {
+        let tool = GenOfficeFileTool::new();
+        let description = tool.description().await.unwrap();
+        assert!(description.contains("It is not a document reader"));
+        assert!(description.contains("use the Read tool"));
+        assert!(tool.short_description().contains("use Read"));
+        let action = &tool.input_schema()["properties"]["action"]["description"];
+        assert!(action.as_str().unwrap().contains("use the Read tool"));
+
+        // A file without the embedded source (an attachment, an Office-saved
+        // file) must steer to Read and away from retries or the guide.
+        let not_generated = GenOfficeFileTool::office_error_message(OfficeError::new(
+            OfficeErrorKind::NotGenerated,
+            "this file was not created by GenOfficeFile",
+        ));
+        assert!(
+            not_generated.contains("use the Read tool"),
+            "{not_generated}"
+        );
+        assert!(not_generated.contains("Do not retry"), "{not_generated}");
+        assert!(!not_generated.contains("action=guide"), "{not_generated}");
+
+        let modified = GenOfficeFileTool::office_error_message(OfficeError::new(
+            OfficeErrorKind::ExternallyModified,
+            "changed by another program",
+        ));
+        assert!(!modified.contains("action=guide"), "{modified}");
+        let corrupt = GenOfficeFileTool::office_error_message(OfficeError::new(
+            OfficeErrorKind::CorruptPackage,
+            "bad zip",
+        ));
+        assert!(corrupt.contains("action=guide"), "{corrupt}");
     }
 
     #[test]

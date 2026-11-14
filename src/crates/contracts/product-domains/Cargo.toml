@@ -54,13 +54,12 @@ ts-rs = { workspace = true, optional = true }
 
 [features]
 default = []
-appearance-market = ["hex", "sha2"]
 plugin-source = ["hex", "sha2"]
 miniapp = ["dirs", "hex", "sha2", "which"]
 function-agents = ["log"]
 external-sources = ["hex", "hmac", "sha2", "url"]
 legacy-migration = []
-product-full = ["appearance-market", "plugin-source", "miniapp", "function-agents", "external-sources", "legacy-migration"]
+product-full = ["plugin-source", "miniapp", "function-agents", "external-sources", "legacy-migration"]
 # Derive `ts_rs::TS` on the wire types (permissions, etc.) for downstream
 # TypeScript binding export. Orthogonal to the product feature groups; does not
 # pull any optional integration dependency.

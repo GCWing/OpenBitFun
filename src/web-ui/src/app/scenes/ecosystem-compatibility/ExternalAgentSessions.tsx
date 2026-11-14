@@ -86,7 +86,8 @@ export default function ExternalAgentSessions({ ecosystemId = 'codex', onBusyCha
 
   return (
     <div className="ecosystem-compatibility__unified-stack">
-    <section className="ecosystem-compatibility__section" aria-labelledby={labelId}>
+    <section className="ecosystem-compatibility__section" data-openbitfun-reading-surface="before" aria-labelledby={labelId}
+      data-openbitfun-product-component="config-page" data-openbitfun-product-part="sectionBody" data-openbitfun-paint-layer="before">
       <div className="ecosystem-compatibility__section-heading">
       <label className="ecosystem-compatibility__discovery-switch">
         <span id={labelId}>{t('sessions.autoDiscovery.label', { name: sourceName })}</span>

@@ -2650,23 +2650,30 @@ TARGET="$HOME/.local/bin/openbitfun"
 # publish step is one atomic rename.
 STAGE="$HOME/.local/bin/{hidden_data_directory}-dispatch-stage-$$"
 NEW="$STAGE/openbitfun"
-BACKUP="$D/previous-openbitfun.$$"
+BACKUP="$STAGE/previous-openbitfun"
 HAD_TARGET=0
 TARGET_INSTALLED=0
 COMMITTED=0
+RECOVERY_FAILED=0
+PID_LOCK=0
 rollback_install() {{
-  if [ "$TARGET_INSTALLED" = "1" ]; then rm -f "$TARGET"; fi
+  if [ "$TARGET_INSTALLED" = "1" ]; then rm -f "$TARGET" || RECOVERY_FAILED=1; fi
   if [ "$HAD_TARGET" = "1" ] && [ -f "$BACKUP" ]; then
     mv -f "$BACKUP" "$TARGET" \
-      || echo "ERROR: could not restore previous openbitfun" >&2
+      || RECOVERY_FAILED=1
   fi
 }}
 finish() {{
   code=$?
   trap - EXIT HUP INT TERM
+  set +e
   if [ "$code" -ne 0 ] && [ "$COMMITTED" != "1" ]; then rollback_install; fi
-  rm -rf "$STAGE"
-  if [ "$COMMITTED" = "1" ]; then rm -f "$BACKUP"; fi
+  if [ "$RECOVERY_FAILED" = "0" ]; then
+    rm -rf "$STAGE"
+  else
+    echo "ERROR: CLI recovery failed; backups retained at $STAGE" >&2
+  fi
+  if [ "$PID_LOCK" = "1" ]; then rm -f "$HOME/.local/bin/.openbitfun-cli-install.lock"; fi
   rm -rf "$TMP"
   printf '%s\n' "$code" >"$EXITF"
   marker_token="$(sed -n '2p' "$PIDF" 2>/dev/null | tr -d '[:space:]')"
@@ -2678,6 +2685,15 @@ trap 'exit 130' HUP INT TERM
 rm -f "$EXITF"
 mkdir -p "$TMP" "$STAGE" "$HOME/.local/bin" "{product_home}"
 chmod 700 "{product_home}" "$STAGE"
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$HOME/.local/bin/.openbitfun-cli-install.lock"
+  flock -n 9 || {{ echo 'ERROR: another CLI installation or update is running' >&2; exit 1; }}
+elif command -v shlock >/dev/null 2>&1; then
+  shlock -p "$$" -f "$HOME/.local/bin/.openbitfun-cli-install.lock" || {{ echo 'ERROR: another CLI installation is running' >&2; exit 1; }}
+  PID_LOCK=1
+else
+  echo 'ERROR: CLI installation requires flock or shlock' >&2; exit 1
+fi
 "#,
         dir = shell_quote_posix(dir),
         version = shell_quote_posix(expected_version),
@@ -3766,10 +3782,11 @@ mod tests {
             .expect("run installed binary");
         assert!(run.status.success(), "openbitfun must run after install");
         assert!(String::from_utf8_lossy(&run.stdout).contains("openbitfun 1.2.3"));
-        let installed_entries: Vec<_> = std::fs::read_dir(home.join(".local/bin"))
+        let mut installed_entries: Vec<_> = std::fs::read_dir(home.join(".local/bin"))
             .expect("read bin dir")
             .map(|entry| entry.expect("read installed entry").file_name())
             .collect();
+        installed_entries.retain(|name| name != ".openbitfun-cli-install.lock");
         assert_eq!(
             installed_entries,
             vec![std::ffi::OsString::from("openbitfun")],

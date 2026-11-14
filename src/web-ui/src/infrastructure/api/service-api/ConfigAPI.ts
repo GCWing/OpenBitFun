@@ -46,6 +46,7 @@ export interface GetModeSkillConfigsParams {
   modeId: string;
   forceRefresh?: boolean;
   workspaceId?: string;
+  summaryModeIds?: string[];
 }
 
 export interface SetGlobalSkillDisabledParams {
@@ -89,6 +90,10 @@ export interface DeleteSkillParams {
 
 export interface WebSearchCredentialStatus {
   provider: string;
+  configured: boolean;
+}
+
+export interface DecisionModelCredentialStatus {
   configured: boolean;
 }
 
@@ -229,6 +234,32 @@ export class ConfigAPI {
       });
     } catch (error) {
       throw createTauriCommandError('clear_web_search_credential', error, { provider });
+    }
+  }
+
+  async getDecisionModelCredentialStatus(): Promise<DecisionModelCredentialStatus> {
+    try {
+      return await api.invoke('get_decision_model_credential_status', { request: {} });
+    } catch (error) {
+      throw createTauriCommandError('get_decision_model_credential_status', error);
+    }
+  }
+
+  async saveDecisionModelCredential(secret: string): Promise<DecisionModelCredentialStatus> {
+    try {
+      return await api.invoke('save_decision_model_credential', { request: { secret } });
+    } catch (error) {
+      throw createTauriCommandError('save_decision_model_credential', error, {
+        secret: secret ? '[redacted]' : '',
+      });
+    }
+  }
+
+  async clearDecisionModelCredential(): Promise<DecisionModelCredentialStatus> {
+    try {
+      return await api.invoke('clear_decision_model_credential', { request: {} });
+    } catch (error) {
+      throw createTauriCommandError('clear_decision_model_credential', error);
     }
   }
 
@@ -433,16 +464,39 @@ export class ConfigAPI {
     }
   }
 
-  async getModeSkillScanReport({ modeId, forceRefresh, workspaceId }: GetModeSkillConfigsParams): Promise<SkillScanReport<ModeSkillInfo>> {
+  async getModeSkillScanReport({ modeId, forceRefresh, workspaceId, summaryModeIds }: GetModeSkillConfigsParams): Promise<SkillScanReport<ModeSkillInfo>> {
     try {
       const response = await invokePrepared<ModeSkillInfo[] | Omit<SkillScanReport<ModeSkillInfo>, 'diagnosticsAvailable'>>(
-        'get_mode_skill_configs', async () => (await workspaceScopedRequest({ modeId, forceRefresh, workspaceId, includeDiagnostics: true })),
+        'get_mode_skill_configs', async () => (await workspaceScopedRequest({ modeId, forceRefresh, workspaceId, includeDiagnostics: true, ...(summaryModeIds ? { summaryModeIds } : {}) })),
         { timeout: SKILL_CONFIG_REQUEST_TIMEOUT_MS },
       );
       return normalizeSkillScanReport(response);
     } catch (error) {
       throw createTauriCommandError('get_mode_skill_configs', error, { modeId, forceRefresh, workspaceId });
     }
+  }
+
+  async getModeSkillCounts(modeIds: string[], workspaceId?: string): Promise<Record<string, number>> {
+    const scope = getActiveSurfaceScope();
+    const ids = [...new Set(modeIds)];
+    if (ids.length === 0) return {};
+    const report = await this.getModeSkillScanReport({ modeId: ids[0], summaryModeIds: ids, workspaceId });
+    scope.assertCurrent('Agent skill summaries');
+    if (report.skillCountsVersion === 1) {
+      const counts = report.enabledSkillCounts;
+      if (!counts || ids.some(id => !Number.isSafeInteger(counts[id]) || counts[id] < 0)) {
+        throw new Error('Invalid Agent skill count summary');
+      }
+      return counts;
+    }
+    // Legacy hosts still return the anchor mode's normal report. Its data is
+    // usable, and the remaining reads keep cross-version behavior intact.
+    const entries = await Promise.all(ids.map(async (id, index) => {
+      const skills = index === 0 ? report.skills : await this.getModeSkillConfigs({ modeId: id, workspaceId });
+      return [id, skills.filter(skill => skill.effectiveEnabled).length] as const;
+    }));
+    scope.assertCurrent('Agent skill summaries');
+    return Object.fromEntries(entries);
   }
 
   async getGlobalSkillSettings(workspaceId?: string): Promise<GlobalSkillSettings> {

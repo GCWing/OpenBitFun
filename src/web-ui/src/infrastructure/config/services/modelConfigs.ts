@@ -69,24 +69,60 @@ export function removeProviderModelConfigs<T extends ProviderConfigLike>(
 ): { remaining: T[]; removed: T[] } {
   const remaining: T[] = [];
   const removed: T[] = [];
-  configs.forEach((config) => {
+  for (let index = 0; index < configs.length; index += 1) {
+    const config = configs[index];
     if (getProviderGroupKey(config) === providerGroupKey) {
       removed.push(config);
     } else {
       remaining.push(config);
     }
-  });
+  }
   return { remaining, removed };
 }
 
+export interface ProviderModelGroup<T extends ProviderConfigLike> {
+  key: string;
+  providerName: string;
+  providerId?: string;
+  models: T[];
+}
+
+/** Group models in first-seen order, resolving display metadata once per instance. */
+export function groupModelConfigsByProvider<T extends ProviderConfigLike>(
+  configs: readonly T[],
+): Map<string, ProviderModelGroup<T>> {
+  const grouped = new Map<string, ProviderModelGroup<T>>();
+  for (let index = 0; index < configs.length; index += 1) {
+    const config = configs[index];
+    const groupKey = getProviderGroupKey(config);
+    const existing = grouped.get(groupKey);
+    if (existing) {
+      existing.models.push(config);
+      continue;
+    }
+    grouped.set(groupKey, {
+      key: groupKey,
+      providerName: getProviderDisplayName(config),
+      providerId: getProviderTemplateId(config),
+      models: [config],
+    });
+  }
+  return grouped;
+}
+
 function inferProviderTemplate(config: ProviderConfigLike): ProviderTemplate | undefined {
+  if (config.metadata?.model_source === 'magpie') return BUILTIN_PROVIDER_TEMPLATES.magpie;
   const matchedCatalogItem = matchProviderCatalogItemByBaseUrl(config.base_url);
+  // A loopback address alone cannot identify Magpie. Keep the earlier named
+  // preset readable; new connections carry explicit source metadata.
+  if (matchedCatalogItem?.id === 'magpie' && !/^Magpie(?:$| - |\/)/.test(config.name ?? '')) return undefined;
   // Safe module-level forward reference: PROVIDER_TEMPLATES is initialized before this runs.
   // eslint-disable-next-line @typescript-eslint/no-use-before-define
   return matchedCatalogItem ? PROVIDER_TEMPLATES[matchedCatalogItem.id] : undefined;
 }
 
 export function getProviderTemplateId(config: ProviderConfigLike): string | undefined {
+  if (config.metadata?.model_source === 'magpie') return 'magpie';
   return inferProviderTemplate(config)?.id;
 }
 

@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { localSessionDriver } from './LocalSessionDriver';
 import type { DialogTurn } from '../../types/flow-chat';
-import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { LOCAL_SURFACE_ID, activateSurface, getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { syncSessionModelSelection } from '../../utils/modelSync';
 import { consumeSubmittedMessageArrival } from '../../services/submittedMessagePresentation';
 
@@ -53,11 +53,14 @@ vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
   },
 }));
 
+const machineMocks = vi.hoisted(() => ({ state: 'idle', turnId: undefined as string | undefined }));
 vi.mock('../../state-machine', () => ({
   stateMachineManager: {
     transition: mockTransition,
-    getCurrentState: () => 'idle',
-    get: () => undefined,
+    getCurrentState: () => machineMocks.state,
+    get: () => (machineMocks.turnId
+      ? { getContext: () => ({ currentDialogTurnId: machineMocks.turnId }), getCurrentState: () => machineMocks.state }
+      : undefined),
   },
 }));
 
@@ -146,25 +149,21 @@ describe('localSessionDriver conversation creation', () => {
 
   it('opens an assistant session before its title metadata is synchronized', async () => {
     const { initializeSessionTitleMetadata } = await import('../../services/sessionTitleMetadata');
-    let finishTitle!: (descriptor: unknown) => void;
+    let finishTitle!: (descriptor: Awaited<ReturnType<typeof initializeSessionTitleMetadata>>) => void;
     vi.mocked(initializeSessionTitleMetadata).mockImplementationOnce(() => new Promise(resolve => {
-      finishTitle = resolve as (descriptor: unknown) => void;
+      finishTitle = resolve;
     }));
     const descriptor = { text: 'New chat', source: 'i18n' as const, key: 'flow-chat:session.new' };
-    let state = { sessions: new Map<string, any>() };
-    const createSession = vi.fn((id: string) => {
-      state = { sessions: new Map(state.sessions).set(id, { sessionId: id, titleSource: 'i18n' }) };
-    });
-    const setState = vi.fn((update: (current: typeof state) => typeof state) => { state = update(state); });
+    const createSession = vi.fn();
     await expect(localSessionDriver.createSession(
-      { flowChatStore: { createSession, setState } } as any,
+      { flowChatStore: { createSession } } as any,
       { ...seed('Claw'), titleDescriptor: descriptor },
     )).resolves.toBe('host-session');
     expect(createSession).toHaveBeenCalledTimes(1);
     expect(createSession.mock.calls[0].at(-1)).toBe(descriptor);
 
-    finishTitle({ ...descriptor, workspaceSessionNumber: 3 });
-    await vi.waitFor(() => expect(state.sessions.get('host-session')?.workspaceSessionNumber).toBe(3));
+    expect(initializeSessionTitleMetadata).toHaveBeenCalledWith('host-session', descriptor, 'project', expect.anything());
+    finishTitle(descriptor);
   });
 
   it('preserves an explicit single-model choice even when a default pool exists', async () => {
@@ -474,5 +473,67 @@ describe('worktree follow-up submissions', () => {
     expect(tracker.hostAcceptedTurn).toBe(true);
     expect(session.workspacePath).toBe('/worktrees/task');
     expect(session.dialogTurns[0].id).toBe('turn-1');
+  });
+});
+
+describe('stop of a turn the host no longer runs', () => {
+  const sessionId = 'peer-stale-session';
+  function stopContext(onReload: () => void) {
+    const turns = [{ id: 'stale-turn', status: 'processing' }];
+    return {
+      turns,
+      context: {
+        userCancelledSessionIds: new Set<string>(),
+        flowChatStore: {
+          getState: () => ({ sessions: new Map([[sessionId, { sessionId, dialogTurns: turns }]]) }),
+          reloadRelaySessionFromHost: vi.fn(async () => onReload()),
+        },
+      } as any,
+    };
+  }
+  beforeEach(() => {
+    vi.useFakeTimers();
+    machineMocks.state = 'processing';
+    machineMocks.turnId = 'stale-turn';
+    // The host fails the stop (session not loaded) and the machine rolls back.
+    mockTransition.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    activateSurface(LOCAL_SURFACE_ID);
+    machineMocks.state = 'idle';
+    machineMocks.turnId = undefined;
+  });
+
+  it('re-reads the session from its host on a device surface and clears the stop gate', async () => {
+    activateSurface('peer-device');
+    const { context, turns } = stopContext(() => {
+      turns[0].status = 'completed';
+      machineMocks.state = 'idle';
+    });
+    await localSessionDriver.cancel(context, sessionId);
+    await vi.advanceTimersByTimeAsync(7000);
+    expect(context.flowChatStore.reloadRelaySessionFromHost).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(context.flowChatStore.reloadRelaySessionFromHost).toHaveBeenCalledExactlyOnceWith(sessionId);
+    expect(context.userCancelledSessionIds.has(sessionId)).toBe(false);
+  });
+
+  it('leaves a stop that settled in time and local sessions alone', async () => {
+    activateSurface('peer-device');
+    const settled = stopContext(() => undefined);
+    await localSessionDriver.cancel(settled.context, sessionId);
+    machineMocks.state = 'idle';
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(settled.context.flowChatStore.reloadRelaySessionFromHost).not.toHaveBeenCalled();
+
+    activateSurface(LOCAL_SURFACE_ID);
+    machineMocks.state = 'processing';
+    const local = stopContext(() => undefined);
+    await localSessionDriver.cancel(local.context, sessionId);
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(local.context.flowChatStore.reloadRelaySessionFromHost).not.toHaveBeenCalled();
   });
 });

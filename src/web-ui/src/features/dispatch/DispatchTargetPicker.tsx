@@ -16,6 +16,8 @@ import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/Ap
 import { useI18n } from '@/infrastructure/i18n';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
 import { DispatchInstallDialog } from './DispatchInstallDialog';
+import { DispatchTransportStatus } from './DispatchTransportStatus';
+import { useActiveDispatchJobId } from './useDispatchTransportStatus';
 import type {
   DispatchSelection,
   DispatchTarget,
@@ -39,6 +41,11 @@ interface DispatchTargetPickerProps {
   };
   onSelectLocal?: () => void;
   onSelectTarget: (selection: DispatchSelection) => void;
+  /**
+   * Job observed by the session this picker belongs to. When omitted, the
+   * active chat session's job is used if it runs on `target`.
+   */
+  jobId?: string;
 }
 
 const RemoteConnectDialog = lazyWithRecovery(
@@ -54,8 +61,11 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
   localWorktreeControl,
   onSelectLocal,
   onSelectTarget,
+  jobId,
 }) => {
   useDeviceDirectory();
+  const activeJobId = useActiveDispatchJobId(target);
+  const transportJobId = target.kind === 'local' ? undefined : jobId ?? activeJobId;
   const { t } = useI18n('flow-chat');
   const { t: tCommon } = useI18n('common');
   const rootRef = useRef<HTMLDivElement>(null);
@@ -362,6 +372,7 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
             <span><OverflowText>{displayLabel}</OverflowText></span>
           </button>
         </Tooltip>
+        <DispatchTransportStatus jobId={transportJobId} />
         {menu && createOverlayPortal(menu, getAppearanceOverlayHost())}
       </div>
 

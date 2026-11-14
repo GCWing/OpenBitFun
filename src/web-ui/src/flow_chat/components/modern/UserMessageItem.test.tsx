@@ -150,6 +150,7 @@ const flowChatStoreMock = vi.hoisted(() => ({
     activeSessionId: null,
   })),
   loadSessionHistory: vi.fn(async () => undefined),
+  subscribeSelector: vi.fn(() => () => {}),
 }));
 
 vi.mock('../../store/FlowChatStore', () => ({

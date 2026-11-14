@@ -29,7 +29,7 @@ class FakeHost {
         let events; let hasMore;
         if (request.after !== undefined) { const rest = this.events.filter(e => e.seq > request.after); events = rest.slice(0, limit); hasMore = rest.length > limit; }
         else { const before = request.before ?? Number.MAX_SAFE_INTEGER; const rest = this.events.filter(e => e.seq < before); events = rest.slice(-limit); hasMore = rest.length > limit; }
-        return { stream_id: request.stream_id, epoch: this.epoch, events, has_more: hasMore, cursor: this.cursor, oldest_seq: this.events[0]?.seq ?? this.cursor + 1, truncated: false };
+        return { subscription_id: request.subscription_id, stream_id: request.stream_id, epoch: this.epoch, events, has_more: hasMore, cursor: this.cursor, oldest_seq: this.events[0]?.seq ?? this.cursor + 1, truncated: false };
       },
       unsubscribeStream: async id => { this.unsubscribed.push(id); },
     };
@@ -304,4 +304,50 @@ test('streamed user turns project attachment pixels for transcript and draft res
     modelRounds: [],
   });
   assert.equal(withoutImages.images, undefined);
+});
+
+
+test('captures the final hint delivered while the opening page is in flight', async () => {
+  const sig = signals(); const seen = []; const host = new FakeHost([{ id: 'turn/initial' }]);
+  const transport = host.transport(); const read = transport.readStream;
+  transport.readStream = async request => {
+    const page = await read(request);
+    if (request.after === undefined && request.before === undefined) {
+      host.append({ id: 'turn/completed' });
+      sig.hint({ sourceDeviceId: 'desktop', stream_id: 's1', epoch: host.epoch, cursor: host.cursor });
+    }
+    return page;
+  };
+  const stream = await openHostStream({ transport, signals: sig, target: 'desktop', streamId: 's1', visibility: null,
+    onEvent: event => seen.push(event.payload.id), onError: error => { throw error; } });
+  try { await settle(); assert.deepEqual(seen, ['turn/initial', 'turn/completed']); }
+  finally { stream.close(); }
+});
+
+test('does not publish an in-flight old page after closing its reader', async () => {
+  let release; const gate = new Promise(resolve => { release = resolve; });
+  const host = new FakeHost([{ id: 'turn/initial' }]); const f = await open(host, { forwardGate: gate });
+  host.append({ id: 'turn/late' });
+  f.sig.hint({ sourceDeviceId: 'desktop', stream_id: 's1', epoch: host.epoch, cursor: host.cursor });
+  await tick(); f.stream.close(); release(); await settle();
+  assert.deepEqual(f.seen.map(event => event.payload.id), ['turn/initial']);
+});
+
+
+test('scoped cleanup targets its own lease and legacy hosts are left to lease expiry', async () => {
+  for (const supportsScoped of [true, false]) {
+    const host = new FakeHost([{ id: 'turn/initial' }]); const calls = [];
+    const transport = host.transport(); const read = transport.readStream;
+    transport.readStream = async request => {
+      const page = await read(request);
+      if (!supportsScoped) delete page.subscription_id;
+      return page;
+    };
+    transport.unsubscribeStream = async (id, subscriptionId) => { calls.push({ id, subscriptionId }); };
+    const one = await openHostStream({ transport, signals: signals(), target: 'desktop', streamId: 's1', visibility: null, onEvent() {}, onError() {} });
+    const two = await openHostStream({ transport, signals: signals(), target: 'desktop', streamId: 's1', visibility: null, onEvent() {}, onError() {} });
+    const ids = host.reads.map(request => request.subscription_id);
+    assert.notEqual(ids[0], ids[1]); one.close(); two.close(); await settle();
+    assert.deepEqual(calls, supportsScoped ? ids.map(subscriptionId => ({ id: 's1', subscriptionId })) : []);
+  }
 });

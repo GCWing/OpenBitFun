@@ -35,6 +35,9 @@ import type {
 } from '@/infrastructure/api/service-api/AgentAPI';
 import { useCopyTextAction } from '../hooks/useCopyTextAction';
 import { CopyableTextPreview } from './CopyableTextPreview';
+import type { PermissionAnswerHooks } from './modern/usePermissionRequests';
+import type { InteractionAnswerOutcome } from '../utils/interactionAnswerOutcome';
+import { notificationService } from '@/shared/notification-system';
 import './ChatInputApprovalBand.scss';
 
 export interface ChatInputApprovalBandProps {
@@ -49,8 +52,19 @@ export interface ChatInputApprovalBandProps {
   rejectReason?: string;
   /** Clears the composer once its text has been spent as a reason. */
   onRejectReasonConsumed?: () => void;
-  onRespond: (requestId: string, reply: PermissionReplyKind, feedback?: string) => Promise<void>;
-  onRespondBatch: (requestId: string, reply: PermissionReplyKind, feedback?: string) => Promise<void>;
+  /** Resolves to how the answer ended; `void` is treated as accepted. */
+  onRespond: (
+    requestId: string,
+    reply: PermissionReplyKind,
+    feedback?: string,
+    hooks?: PermissionAnswerHooks,
+  ) => Promise<InteractionAnswerOutcome | void>;
+  onRespondBatch: (
+    requestId: string,
+    reply: PermissionReplyKind,
+    feedback?: string,
+    hooks?: PermissionAnswerHooks,
+  ) => Promise<InteractionAnswerOutcome | void>;
 }
 
 const PERMISSION_ACTION_LABEL_KEYS: Record<string, string> = {
@@ -137,6 +151,7 @@ export const ChatInputApprovalBand: React.FC<ChatInputApprovalBandProps> = ({
   const [scope, setScope] = useState<ApprovalScope>('this');
   const [pendingAnswer, setPendingAnswer] = useState<ApprovalAnswer | null>(null);
   const [error, setError] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const responding = pendingAnswer !== null;
 
   const request = requests[0];
@@ -189,12 +204,17 @@ export const ChatInputApprovalBand: React.FC<ChatInputApprovalBandProps> = ({
     setPendingAnswer(withReason ? 'rejectWithReason' : reply);
     setError(false);
     const feedback = reply === 'reject' && withReason && reason ? reason : undefined;
+    const hooks: PermissionAnswerHooks = { onConfirming: () => setConfirming(true) };
     try {
       // 'always' is deliberately never batched: see the button's comment.
-      if (effectiveScope === 'all' && reply !== 'always') {
-        await onRespondBatch(request.requestId, reply, feedback);
-      } else {
-        await onRespond(request.requestId, reply, feedback);
+      const outcome = effectiveScope === 'all' && reply !== 'always'
+        ? await onRespondBatch(request.requestId, reply, feedback, hooks)
+        : await onRespond(request.requestId, reply, feedback, hooks);
+      if (outcome === 'already_resolved') {
+        // The host refused this answer: the request had already settled. The
+        // reason was never delivered, so it stays in the composer.
+        notificationService.info(t('permission.alreadyResolved'), { duration: 5000 });
+        return;
       }
       if (feedback) {
         onRejectReasonConsumed?.();
@@ -203,6 +223,7 @@ export const ChatInputApprovalBand: React.FC<ChatInputApprovalBandProps> = ({
       setError(true);
     } finally {
       setPendingAnswer(null);
+      setConfirming(false);
     }
   };
 
@@ -297,6 +318,16 @@ export const ChatInputApprovalBand: React.FC<ChatInputApprovalBandProps> = ({
             className="openbitfun-chat-input-approval__note"
           >
             <Alert tone="warning" message={risk} />
+          </div>
+        ) : null}
+        {confirming ? (
+          <div
+            data-openbitfun-component="permission-request-panel"
+            data-openbitfun-part="confirming"
+            className="openbitfun-chat-input-approval__note"
+            role="status"
+          >
+            <Alert tone="info" message={t('permission.responseConfirming')} />
           </div>
         ) : null}
         {error ? (

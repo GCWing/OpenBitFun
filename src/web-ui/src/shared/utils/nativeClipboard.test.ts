@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   readText: vi.fn(),
   writeText: vi.fn(),
+  constructAdapter: vi.fn(),
+  request: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
@@ -11,9 +13,20 @@ vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
   writeText: mocks.writeText,
 }));
 
+vi.mock('@/infrastructure/api/adapters/tauri-adapter', () => ({
+  TauriTransportAdapter: class {
+    constructor() {
+      mocks.constructAdapter();
+    }
+    request = mocks.request;
+  },
+}));
+
 import {
   hasNativeClipboard,
   readNativeClipboardText,
+  WRITE_CLIPBOARD_IMAGE_COMMAND,
+  writeNativeClipboardImage,
   writeNativeClipboardText,
 } from './nativeClipboard';
 
@@ -28,6 +41,7 @@ function clearTauriHost(): void {
 beforeEach(() => {
   mocks.readText.mockReset();
   mocks.writeText.mockReset();
+  mocks.request.mockReset();
   clearTauriHost();
 });
 
@@ -62,5 +76,29 @@ describe('native clipboard bridge', () => {
 
     await expect(readNativeClipboardText()).resolves.toBeNull();
     await expect(writeNativeClipboardText('text')).resolves.toBe(false);
+  });
+
+  it('sends image writes to the local desktop host as raw PNG bytes', async () => {
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    const png = new Blob([pngBytes], { type: 'image/png' });
+
+    await expect(writeNativeClipboardImage(png)).resolves.toBe(false);
+    expect(mocks.request).not.toHaveBeenCalled();
+
+    markTauriHost();
+    mocks.request.mockResolvedValue(undefined);
+    await expect(writeNativeClipboardImage(png)).resolves.toBe(true);
+
+    // The controller's own Tauri host, never the rendered Peer device.
+    expect(mocks.constructAdapter).toHaveBeenCalledTimes(1);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    const [command, body] = mocks.request.mock.calls[0];
+    expect(command).toBe(WRITE_CLIPBOARD_IMAGE_COMMAND);
+    // A typed array is the raw IPC body; an object or number array would be JSON.
+    expect(body).toBeInstanceOf(Uint8Array);
+    expect(Array.from(body as Uint8Array)).toEqual(Array.from(pngBytes));
+
+    mocks.request.mockRejectedValue(new Error('clipboard unavailable'));
+    await expect(writeNativeClipboardImage(png)).resolves.toBe(false);
   });
 });

@@ -4,8 +4,58 @@ import type { FlowGroupData, ModelRoundItemGroup } from './types';
 import { getFlowGroupCategory, getFlowGroupStateIds } from './types';
 import { canContinueFlowGroup, flowGroupPolicies, hasPendingFlowGroupClassification, joinedFlowGroupCategory } from './policies';
 import { flowGroupLifecycle } from './lifecycle';
-import { buildInlineFlowGroupData, getModelRoundFlowGroups, getProjectedModelRoundGroups,
+import { getCachedInlineFlowGroupData, getModelRoundFlowGroups, getProjectedModelRoundGroups,
   flowGroupCompanionStart, hasModelRoundLeadingControls, isFlowGroupCompanion, isModelRoundGroupingDisabled, projectedFlowGroup } from './roundGroups';
+
+export function canStartFreshFlowGroupRunAt(
+  prevItem: VirtualItem | undefined,
+  currItem: VirtualItem,
+): boolean {
+  if (currItem.type !== 'model-round') {
+    return currItem.type !== 'explore-group';
+  }
+  const disabled = isModelRoundGroupingDisabled(currItem.data);
+  if (disabled || hasModelRoundLeadingControls(currItem.data)) return true;
+  const currGroups = getProjectedModelRoundGroups(currItem, true);
+  let firstCurrIndex = 0;
+  while (firstCurrIndex < currGroups.length) {
+    const g = currGroups[firstCurrIndex];
+    if (g.type === 'critical' && isFlowGroupCompanion(g.item)) {
+      firstCurrIndex += 1;
+      continue;
+    }
+    break;
+  }
+  if (firstCurrIndex >= currGroups.length) return false;
+  const firstCurr = currGroups[firstCurrIndex];
+  if (firstCurr.type === 'critical') {
+    return !hasPendingFlowGroupClassification(firstCurr.item);
+  }
+
+  // Current round starts with a collectible group (`firstCurr`).
+  // Check if `prevItem` ended with an open group of a DIFFERENT category or a hard boundary.
+  if (!prevItem || prevItem.type !== 'model-round') return false;
+  if (isModelRoundGroupingDisabled(prevItem.data)) return true;
+  const prevGroups = getProjectedModelRoundGroups(prevItem, true);
+  // If prevGroups has any trailing companion items after its last non-companion,
+  // those companions could be absorbed into `currItem` if we don't include `prevItem`.
+  const lastPrev = prevGroups[prevGroups.length - 1];
+  if (!lastPrev) return false;
+  if (lastPrev.type === 'critical') {
+    if (isFlowGroupCompanion(lastPrev.item) || hasPendingFlowGroupClassification(lastPrev.item)) {
+      return false;
+    }
+    return true;
+  }
+  // `lastPrev` is a collectible group at the very end of `prevItem` (no trailing prose/thinking).
+  // If `firstCurr` has any leading companions, `collect` would behave differently if `continuing` were true vs false,
+  // so only cut when `firstCurrIndex === 0` AND the two group categories cannot continue together.
+  if (firstCurrIndex > 0) return false;
+  return (
+    joinedFlowGroupCategory(lastPrev.type, firstCurr.type) === undefined ||
+    !canContinueFlowGroup(firstCurr.type, lastPrev.items, firstCurr.items)
+  );
+}
 
 /** Count only until the policy minimum; the shared threshold helper copies the item list. */
 function reachesFlowGroupThreshold(category: ReturnType<typeof getFlowGroupCategory>, items: readonly FlowItem[]): boolean {
@@ -34,9 +84,22 @@ function sourceGroupIds(group: FlowGroupData): readonly string[] {
   return [...ids];
 }
 
+const mergedFlowGroupRunCache = new WeakMap<FlowGroupData, {
+  parts: readonly FlowGroupData[];
+  merged: FlowGroupData;
+}>();
+
 /** Finalize once per run instead of repeatedly copying and recounting its growing prefix. */
 function mergeFlowGroupRun(parts: readonly FlowGroupData[]): FlowGroupData {
   const first = parts[0];
+  const cached = mergedFlowGroupRunCache.get(first);
+  if (
+    cached &&
+    cached.parts.length === parts.length &&
+    cached.parts.every((part, idx) => part === parts[idx])
+  ) {
+    return cached.merged;
+  }
   const last = parts[parts.length - 1];
   const mergedIds = new Set<string>();
   const rounds: ModelRound[] = [];
@@ -57,7 +120,7 @@ function mergeFlowGroupRun(parts: readonly FlowGroupData[]): FlowGroupData {
     for (const item of part.allItems) allItems.push(item);
     if (part.isGroupStreaming) isGroupStreaming = true;
   }
-  return flowGroupPolicies[category ?? getFlowGroupCategory(first)].create({
+  const merged = flowGroupPolicies[category ?? getFlowGroupCategory(first)].create({
     ...first,
     sourceGroupIds: [...mergedIds],
     rounds,
@@ -66,6 +129,8 @@ function mergeFlowGroupRun(parts: readonly FlowGroupData[]): FlowGroupData {
     isLastGroupInTurn: last.isLastGroupInTurn,
     wasCutByCritical: last.wasCutByCritical,
   });
+  mergedFlowGroupRunCache.set(first, { parts: [...parts], merged });
+  return merged;
 }
 
 /**
@@ -180,11 +245,14 @@ export function projectAdjacentFlowGroups(items: readonly VirtualItem[], options
         else boundary();
         return;
       }
-      let data = buildInlineFlowGroupData(item.data.id, group, item.isLastRound && groupIndex === groups.length - 1);
       // Read saved disclosure choices from the previous whole-round projection.
-      if (group.type === 'explore' && firstExploreIndex === groupIndex) {
-        data = { ...data, sourceGroupIds: [...new Set([...getFlowGroupStateIds(data), item.data.id])] };
-      }
+      const includeRoundIdAlias = group.type === 'explore' && firstExploreIndex === groupIndex;
+      const data = getCachedInlineFlowGroupData(
+        item.data,
+        group,
+        item.isLastRound && groupIndex === groups.length - 1,
+        includeRoundIdAlias,
+      );
       collect(data, next => {
         renderedGroups[groupIndex] = projectedFlowGroup(getFlowGroupCategory(next), next.allItems, group.isLast, next);
         changed = true;

@@ -234,6 +234,48 @@ src-tauri/target/release-fast/openbitfun-installer.exe
 
 ## Customization guide
 
+### Installation, updates and recovery
+
+The default is a current-user installation. Select “Install for all users” for
+a new machine-wide installation; Windows then asks for administrator approval.
+An existing installation keeps its directory and scope. Updates to protected
+directories request elevation automatically. Canceling authorization leaves the
+existing application in place. Model and theme preferences remain with the
+original user, including when a different administrator approves maintenance.
+
+Installations record their managed files in `.openbitfun-installed.json`.
+Updates and uninstallations preserve other files and user data. A running or
+locked file produces an error and restores earlier changes. Close OpenBitFun
+before retrying. Known downgrades are refused using stored and executable version
+information; reinstalling the same version is allowed.
+
+If maintenance is interrupted, rerun the installer against the same directory.
+Its `.openbitfun-maintenance` journal restores incomplete changes before a new
+operation. An unreadable journal or failed recovery is retained with an error;
+keep that directory for repair. A cleanup warning means installation completed,
+but maintenance files remain. Retry maintenance before deleting recovery data.
+
+Windows in-app updates use the same signed standalone installer. The application
+exits after the maintenance worker is ready. Installation failures after exit
+are reported by a native dialog and retained for the next application launch.
+The restarted application runs under the original user's account.
+
+Uninstall can be entered through Windows Settings, the registered uninstall
+command, or `uninstall.exe` in the installation directory. `--quiet` selects
+non-interactive removal. Uninstall progress reflects native operations and the
+window remains open on failure. User configuration, sessions and workspaces are
+preserved. Maintenance runs without WebView2 when invoked in native mode;
+the interactive installer offers the signed Microsoft WebView2 bootstrap when
+the runtime is absent.
+
+Quiet maintenance returns exit code `0` on success, `1` on failure, and `2` when
+removal committed but backup cleanup remains. Windows can rename an executing
+uninstaller but cannot delete its image until it exits. For exit `2`, run the
+downloaded installer from outside the installation directory with
+`--uninstall "C:\path\to\OpenBitFun" --quiet` to finish cleanup. Do not delete an
+uncommitted recovery journal manually. Interactive uninstall also has a native
+fallback when WebView2 is absent and does not require downloading a runtime.
+
 ### Changing the UI Theme
 
 Shared light/dark values come from `@openbitfun/theme-openbitfun`. Installer-only named presets live in

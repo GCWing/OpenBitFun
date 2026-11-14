@@ -582,7 +582,7 @@
 .chat-model-selector__empty, .chat-reasoning-options > p { padding: 12px; }
 .chat-reasoning-options { border-top: 1px solid var(--openbitfun-color-border-subtle); }
 
-// Conversation composer layout and skin. Shared geometry belongs to MobileComposer.
+// Conversation composer layout and visual styling. Shared geometry belongs to MobileComposer.
 .chat-page__composer {
   padding: 5px;
   border-color: var(--openbitfun-color-border-subtle);
@@ -679,4 +679,13 @@
 // Keep the action row and collapsed pill on the same inset in both modes.
 .chat-page__composer [data-openbitfun-part='toolbar'] {
   min-block-size: 44px;
+}
+
+// One-line wait or progress state of the composer (host check, image upload,
+// waiting for the desktop). Text only: the state is also announced.
+.chat-page__composer-status {
+  margin: 0;
+  text-align: center;
+  font-size: var(--openbitfun-type-body-xs-font-size);
+  color: var(--openbitfun-color-content-muted);
 }

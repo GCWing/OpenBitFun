@@ -176,7 +176,7 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
   return (
     <>
       {showingMiniAppDetail && miniAppDetail && (
-        <React.Suspense fallback={<div className="personal-overview__placeholder" role="status"><Spinner size="md" /></div>}>
+        <React.Suspense fallback={<div className="personal-overview__placeholder" data-openbitfun-reading-surface="self" role="status"><Spinner size="md" /></div>}>
           <MiniAppGalleryScene key={`${surfaceEpoch}:${miniAppDetail.app.id}`} initialDetailApp={miniAppDetail.app}
             detailBackLabel={t('miniApps.backToOverview')} onDetailBack={() => { setMiniAppDetail(null); refresh(); }} />
         </React.Suspense>
@@ -204,7 +204,7 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
             </header>
 
             <section aria-label={t('metrics.title')}>
-              <dl className="personal-overview__metrics" aria-busy={usage.status === 'loading'} data-openbitfun-scene="personal-overview" data-openbitfun-part="metrics">
+              <dl className="personal-overview__metrics" data-openbitfun-reading-surface="self" aria-busy={usage.status === 'loading'} data-openbitfun-scene="personal-overview" data-openbitfun-part="metrics">
                 {metrics.map(metric => (
                   <div className="personal-overview__metric" key={metric.label} title={metric.hint}>
                     <dt className="personal-overview__metric-label">{metric.label}</dt>
@@ -213,7 +213,7 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
                 ))}
               </dl>
               {(usage.status === 'failed' || usage.status === 'unsupported') && (
-                <div className="personal-overview__message" role="status">
+                <div className="personal-overview__message" data-openbitfun-reading-surface="before" role="status">
                   <span>{t(usage.status === 'unsupported' ? 'usage.unsupported' : 'usage.failed')}</span>
                   <Button variant="secondary" size="sm" onClick={refresh}>{t('retry')}</Button>
                 </div>
@@ -240,7 +240,7 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
                 ))}
               </OverviewSplitCard>
               {agents.status !== 'ready' && (
-                <div className="personal-overview__message" role="status">
+                <div className="personal-overview__message" data-openbitfun-reading-surface="before" role="status">
                   <span>{t(agents.status === 'loading' ? 'agents.loading' : 'agents.failed')}</span>
                   {agents.status !== 'loading' && <Button variant="secondary" size="sm" onClick={refresh}>{t('retry')}</Button>}
                 </div>
@@ -275,7 +275,7 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
                   />
                   <OverviewSplitCardSection title={t('miniApps.installed')}>
                     {miniApps.status === 'ready' ? miniAppItems.length > 0 ? (
-                      <OverviewMiniAppLogos apps={miniAppItems} onDetails={openMiniAppDetails}
+                      <OverviewMiniAppLogos apps={miniAppItems} isActive={isActive} onDetails={openMiniAppDetails}
                         onLaunch={appId => useSceneStore.getState().openScene(`miniapp:${appId}`)}
                         onViewAll={() => useSceneStore.getState().openScene('miniapps')} />
                     ) : <p className="personal-overview__catalog-empty">{t('miniApps.empty')}</p> : (
@@ -340,11 +340,11 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
                 <h2 id="overview-activity-title" className="personal-overview__section-title">{t('activity.title')}</h2>
               </div>
               {usage.status === 'loading' ? (
-                <div className="personal-overview__placeholder" role="status"><Spinner size="md" /><span>{t('usage.loading')}</span></div>
+                <div className="personal-overview__placeholder" data-openbitfun-reading-surface="self" role="status"><Spinner size="md" /><span>{t('usage.loading')}</span></div>
               ) : usage.status !== 'ready' ? (
-                <div className="personal-overview__placeholder"><p>{t(usage.status === 'unsupported' ? 'usage.unsupported' : 'usage.failed')}</p></div>
+                <div className="personal-overview__placeholder" data-openbitfun-reading-surface="self"><p>{t(usage.status === 'unsupported' ? 'usage.unsupported' : 'usage.failed')}</p></div>
               ) : (
-                <div className="personal-overview__heatmap">
+                <div className="personal-overview__heatmap" data-openbitfun-reading-surface="before">
                   <UsageActivityGrid points={usage.data.stats.trend} timeZone={resolvedTimeZone} now={usage.data.now} />
                 </div>
               )}

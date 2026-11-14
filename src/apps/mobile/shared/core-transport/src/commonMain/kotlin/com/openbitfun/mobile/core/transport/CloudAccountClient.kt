@@ -6,6 +6,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.onCompletion
@@ -54,7 +56,40 @@ import kotlin.uuid.Uuid
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.time.TimeSource
 
-public const val DEFAULT_CLOUD_RELAY_URL: String = "https://remote.openbitfun.com/v/1.0.2"
+/** Hosted Relay service version announced by the official endpoint. */
+public const val RELAY_SERVICE_VERSION: String = "1.0.10"
+
+/**
+ * Identity of the official Relay: no version query, no fragment, no trailing
+ * slash.
+ *
+ * Every API and socket path is joined onto this, and a stored token or master
+ * key is compared against it. The version parameter belongs to
+ * [OFFICIAL_CLOUD_RELAY_URL] only, so it can never reach a path.
+ */
+public const val DEFAULT_CLOUD_RELAY_URL: String = "https://remote.openbitfun.com/relay"
+
+/**
+ * The same deployment as a user sees and shares it: the service version travels
+ * as a GET parameter instead of a path segment, so a release no longer needs a
+ * proxy location of its own.
+ */
+public const val OFFICIAL_CLOUD_RELAY_URL: String = "$DEFAULT_CLOUD_RELAY_URL?v=$RELAY_SERVICE_VERSION"
+
+/**
+ * Paths served by the same deployed Relay and the same account database.
+ *
+ * `?v=` replaced the path segment as the client-facing version, but `/v/1.0.2`
+ * stays live for builds that predate the change: a token, master key, or device
+ * registration obtained through either path is interchangeable, because both
+ * reach one process and one database. Any other `/v/<version>` path is a
+ * different deployment.
+ */
+private val LIVE_RELAY_ENDPOINT_PATHS: Set<String> = setOf("/relay", "/v/1.0.2")
+
+/** The only query parameter a Relay endpoint may carry, and its value shape. */
+private const val RELAY_VERSION_PARAMETER = "v"
+private val RELAY_VERSION_VALUE = Regex("[A-Za-z0-9.]{1,32}")
 
 /** A relayed stream page slower than this is worth a breadcrumb; faster ones are not. */
 internal const val SLOW_STREAM_PAGE_MS: Long = 300L
@@ -162,6 +197,7 @@ public data class CloudAccountDevice public constructor(
      * treated as "unknown but usable", never as incompatible.
      */
     public val compatible: Boolean? = null,
+    public val deviceAlias: String? = null,
 ) {
     /** The single gate every control entry point reuses; see [compatible]. */
     public val controllable: Boolean get() = compatible != false
@@ -298,6 +334,7 @@ public class CloudAccountClient internal constructor(
                 device.lastSeenAt,
                 device.deviceKind,
                 device.compatible,
+                device.deviceAlias,
             )
         }
 
@@ -306,12 +343,15 @@ public class CloudAccountClient internal constructor(
      * encrypted device RPC. The relay forwards ciphertext only, and nothing is
      * written on this device: the transcript lives exactly as long as the flow.
      */
+    @OptIn(ExperimentalUuidApi::class)
     public suspend fun subscribeSession(
         relayUrl: String, session: CloudAccountSession, targetDeviceId: String, sessionId: String,
         onError: (Throwable) -> Unit, onCaughtUp: () -> Unit,
-    ): kotlinx.coroutines.flow.Flow<JsonObject> {
+    ): kotlinx.coroutines.flow.Flow<JsonObject> = flow {
         val socket = connection(relayUrl, session.token)
         val target = targetDeviceId.trim()
+        val subscriptionId = Uuid.random().toString()
+        var scopedSubscription = false
         val historyKey = target + ":" + sessionId
         val historyRequests = Channel<CompletableDeferred<Unit>>(Channel.RENDEZVOUS)
         historyReaders[historyKey] = historyRequests
@@ -321,8 +361,9 @@ public class CloudAccountClient internal constructor(
                 check(realtime.value?.socket === socket) { "Account changed" }
                 val startedAt = TimeSource.Monotonic.markNow()
                 val page = deviceRpc(relayUrl, session, target,
-                    RemoteCommand(cmd = "read_stream", streamId = sessionId, after = after, before = before, epoch = epoch, subscribe = true),
+                    RemoteCommand(cmd = "read_stream", streamId = sessionId, after = after, before = before, epoch = epoch, subscribe = true, subscriptionId = subscriptionId),
                     StreamPageWire.serializer(), RELAY_DEFAULT_TIMEOUT_MS)
+                scopedSubscription = page.subscriptionId == subscriptionId
                 val elapsedMs = startedAt.elapsedNow().inWholeMilliseconds
                 // The opening page (`after == null`) is the one the user waits for,
                 // and a slow page is worth naming wherever it happens; a page per
@@ -333,8 +374,8 @@ public class CloudAccountClient internal constructor(
                 return page
             }
             override suspend fun unsubscribe() {
-                if (realtime.value?.socket !== socket) return
-                deviceRpc(relayUrl, session, target, RemoteCommand(cmd = "unsubscribe_stream", streamId = sessionId),
+                if (realtime.value?.socket !== socket || !scopedSubscription) return
+                deviceRpc(relayUrl, session, target, RemoteCommand(cmd = "unsubscribe_stream", streamId = sessionId, subscriptionId = subscriptionId),
                     CommandStatusResponse.serializer(), RELAY_DEFAULT_TIMEOUT_MS)
             }
         }
@@ -344,7 +385,7 @@ public class CloudAccountClient internal constructor(
         // the gap between the two counts is what the receiving device spends.
         val openedAt = TimeSource.Monotonic.markNow()
         var recordsSeen = 0
-        return hostStream(sessionId, target, hints, merge(socket.connections.drop(1), foregroundResumes), reads,
+        emitAll(hostStream(sessionId, target, hints, merge(socket.connections.drop(1), foregroundResumes), reads,
             olderRequests = historyRequests, onError = { error ->
                 log.warn("host stream read failed stream=${sessionId.take(24)} type=${error::class.simpleName} failure=${(error as? CloudAccountException)?.failure} message=${error.message}")
                 onError(error)
@@ -355,7 +396,7 @@ public class CloudAccountClient internal constructor(
                 log.info("host stream ended stream=${sessionId.take(24)} events=$recordsSeen cause=${cause?.let { it::class.simpleName } ?: "none"}")
                 if (historyReaders[historyKey] === historyRequests) historyReaders.remove(historyKey)
                 historyRequests.close()
-            }
+            })
     }
 
     /**
@@ -660,6 +701,7 @@ private data class AccountDeviceWire(
     @SerialName("last_seen_at") val lastSeenAt: Long? = null,
     @SerialName("device_kind") val deviceKind: String? = null,
     val compatible: Boolean? = null,
+    @SerialName("device_alias") val deviceAlias: String? = null,
 )
 
 private fun decode(value: String): ByteArray = try {
@@ -695,6 +737,41 @@ private fun statusFailure(status: Int): CloudAccountException = when (status) {
     429 -> CloudAccountException(CloudAccountFailure.RATE_LIMITED, status)
     in 500..599 -> CloudAccountException(CloudAccountFailure.RELAY_UNAVAILABLE, status)
     else -> CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE, status)
+}
+
+/** The server an endpoint names, and the path it names on that server. */
+private class RelayEndpointIdentity(val origin: String, val path: String)
+
+/**
+ * Whether two Relay URLs resolve to the same deployed Relay.
+ *
+ * This is the comparison behind reusing a stored token or master key: both live
+ * aliases of one host count as one deployment, so a build that moves from
+ * `/v/1.0.2` to `/relay?v=` keeps its credential, while any other versioned
+ * path is a different or retired deployment. Exactly one `v=<version>`
+ * parameter is allowed and it is never part of the identity; a fragment makes
+ * the value not an endpoint at all.
+ */
+public fun sameRelayDeployment(left: String?, right: String?): Boolean {
+    val a = relayEndpointIdentity(left) ?: return false
+    val b = relayEndpointIdentity(right) ?: return false
+    if (a.origin != b.origin) return false
+    return a.path == b.path || (a.path in LIVE_RELAY_ENDPOINT_PATHS && b.path in LIVE_RELAY_ENDPOINT_PATHS)
+}
+
+private fun relayEndpointIdentity(value: String?): RelayEndpointIdentity? {
+    val text = value?.trim().orEmpty()
+    if (text.isEmpty()) return null
+    val url = runCatching { io.ktor.http.Url(text) }.getOrNull() ?: return null
+    if (url.protocol.name !in setOf("http", "https") || url.user != null || url.password != null ||
+        url.fragment.isNotEmpty()) return null
+    if (url.parameters.names().isNotEmpty()) {
+        val versions = url.parameters.getAll(RELAY_VERSION_PARAMETER).orEmpty()
+        if (url.parameters.names() != setOf(RELAY_VERSION_PARAMETER) || versions.size != 1 ||
+            !RELAY_VERSION_VALUE.matches(versions.single())) return null
+    }
+    val port = url.port.takeIf { it != url.protocol.defaultPort }?.let { ":$it" }.orEmpty()
+    return RelayEndpointIdentity(url.protocol.name + "://" + url.host.lowercase() + port, url.encodedPath.trimEnd('/'))
 }
 
 private fun encodePathSegment(value: String): String = value.encodeToByteArray().joinToString("") { byte ->

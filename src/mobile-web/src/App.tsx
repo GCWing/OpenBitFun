@@ -51,7 +51,7 @@ function getNavClass(
 
 const AppContent: React.FC = () => {
   useMobileViewport();
-  const { t } = useI18n();
+  const { t, formatRelativeTime } = useI18n();
   const [page, setPage] = useState<Page>('pairing');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeSessionName, setActiveSessionName] = useState<string>('Session');
@@ -61,6 +61,7 @@ const AppContent: React.FC = () => {
   const [compactSidebarOpen, setCompactSidebarOpen] = useState(false);
   const isWideLayout = useWideLayout();
   const connectionHealth = useMobileStore((state) => state.connectionHealth);
+  const connectionIssue = useMobileStore((state) => state.connectionIssue);
   const clientRef = useRef<RelayHttpClient | null>(null);
   const accountOwnerUnlistenRef = useRef<(() => void) | null>(null);
   const sessionMgrRef = useRef<RemoteSessionManager | null>(null);
@@ -551,17 +552,34 @@ const AppContent: React.FC = () => {
     );
   };
 
+  const desktopName = controlTarget?.deviceName || t('sessions.desktopFallbackName');
+  const connectionIssueText = (() => {
+    switch (connectionIssue?.kind) {
+      case 'offline': return t('sessions.browserOffline');
+      case 'relay': return t('sessions.relayReconnecting');
+      case 'host-offline': return connectionIssue.lastSeenAt
+        ? t('sessions.hostOfflineLastSeen', { name: desktopName, time: formatRelativeTime(connectionIssue.lastSeenAt * 1000) })
+        : t('sessions.hostOffline', { name: desktopName });
+      default: return t('sessions.reconnecting');
+    }
+  })();
+
   return (
     <div className="mobile-app" data-layout={isWideLayout ? 'wide' : 'compact'}>
       {accountError && <MobileBanner tone="danger">{accountError}</MobileBanner>}
       {connectionHealth === 'unreachable' && page !== 'pairing' && (
         <MobileBanner
-          action={<MobileButton appearance="plain" onClick={handleDisconnect} size="sm">{t('sessions.repair')}</MobileButton>}
+          // Pairing again only helps when the desktop is listed online but
+          // does not answer; a network, Relay or offline desktop recovers on its own.
+          action={(connectionIssue?.kind ?? 'unreachable') === 'unreachable'
+            ? <MobileButton appearance="plain" onClick={handleDisconnect} size="sm">{t('sessions.repair')}</MobileButton>
+            : undefined}
           className="mobile-reconnect-banner"
-          tone="danger"
+          data-connection-issue={connectionIssue?.kind ?? 'unreachable'}
+          tone={connectionIssue?.kind === 'host-offline' || connectionIssue?.kind === 'offline' ? 'warning' : 'danger'}
         >
-          <span className="mobile-reconnect-spinner" />
-          <span>{t('sessions.reconnecting')}</span>
+          {connectionIssue?.kind !== 'host-offline' && connectionIssue?.kind !== 'offline' && <span className="mobile-reconnect-spinner" />}
+          <span>{connectionIssueText}</span>
         </MobileBanner>
       )}
       {page === 'pairing' && <PairingPage onPaired={handlePaired} />}

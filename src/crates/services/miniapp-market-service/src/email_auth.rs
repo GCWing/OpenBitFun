@@ -482,6 +482,7 @@ impl AuthService {
 mod tests {
     use super::*;
     use crate::{auth::DesktopAuthPollRequest, config::MarketConfig, db::Database};
+    use std::collections::HashSet;
     async fn setup() -> (tempfile::TempDir, AuthService) {
         let dir = tempfile::tempdir().unwrap();
         let config = MarketConfig {
@@ -497,6 +498,7 @@ mod tests {
             github_client_secret: Some("secret".into()),
             session_secret: "test-only-session-secret-at-least-24".into(),
             admin_github_ids: [42, 0].into_iter().collect(),
+            admin_emails: HashSet::new(),
             public_browse: true,
             web_submissions_enabled: false,
         };
@@ -611,7 +613,7 @@ mod tests {
     async fn wrong_codes_exhaust_budget_and_cannot_cross_flows() {
         let (_dir, service) = setup().await;
         let a = service.start_web_login("/miniapp/").await.unwrap();
-        let b = service.start_web_login("/skin/").await.unwrap();
+        let b = service.start_web_login("/miniapp/second").await.unwrap();
         let (id, code) = code(&service, &a, "alice@example.com").await;
         assert!(service
             .verify_email_code(verify(&b, &id, &code))
@@ -767,7 +769,7 @@ mod tests {
     async fn new_flows_and_concurrent_sends_cannot_reset_address_quota() {
         let (_dir, service) = setup().await;
         let a = service.start_web_login("/miniapp/").await.unwrap();
-        let b = service.start_web_login("/skin/").await.unwrap();
+        let b = service.start_web_login("/miniapp/second").await.unwrap();
         let c = service.start_web_login("/miniapp/").await.unwrap();
         let send = |ticket: &str| EmailSendRequest {
             ticket: ticket.into(),
@@ -817,7 +819,7 @@ mod tests {
     async fn email_send_quota_reopens_one_slot_when_oldest_send_expires() {
         let (_dir, service) = setup().await;
         let a = service.start_web_login("/miniapp/").await.unwrap();
-        let b = service.start_web_login("/skin/").await.unwrap();
+        let b = service.start_web_login("/miniapp/second").await.unwrap();
         let (oldest, _) = code(&service, &a, "alice@example.com").await;
         code(&service, &b, "ALICE@example.com").await;
         sqlx::query("UPDATE email_challenges SET created_at = created_at - 61 WHERE id = ?")
@@ -897,7 +899,7 @@ mod tests {
             Database::open(&dir.path().join("db")).await.unwrap(),
         )
         .unwrap();
-        let b = reopened.start_web_login("/skin/").await.unwrap();
+        let b = reopened.start_web_login("/miniapp/second").await.unwrap();
         self::code(&reopened, &b, "ALICE@example.com").await;
         assert_eq!(
             reopened
@@ -1000,7 +1002,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-        let ticket = auth.start_web_login("/skin/submissions").await.unwrap();
+        let ticket = auth.start_web_login("/miniapp/submissions").await.unwrap();
         let (id, code) = code(&auth, &ticket, "alice@example.com").await;
         let completed = auth
             .verify_email_code(verify(&ticket, &id, &code))
@@ -1018,16 +1020,15 @@ mod tests {
             .await
             .unwrap();
         assert!(response.status().is_redirection());
-        assert_eq!(response.headers()[header::LOCATION], "/skin/submissions");
+        assert_eq!(response.headers()[header::LOCATION], "/miniapp/submissions");
         let cookies: Vec<_> = response
             .headers()
             .get_all(header::SET_COOKIE)
             .iter()
             .map(|v| v.to_str().unwrap())
             .collect();
-        assert_eq!(cookies.len(), 4);
+        assert_eq!(cookies.len(), 2);
         assert!(cookies.iter().all(|v| !v.contains("Domain=")));
-        assert!(cookies.iter().any(|v| v.contains("Path=/skin")));
         assert!(cookies.iter().any(|v| v.contains("Path=/miniapp")));
         let cookie_header = cookies
             .iter()

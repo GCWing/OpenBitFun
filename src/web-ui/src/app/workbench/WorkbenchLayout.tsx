@@ -151,7 +151,7 @@ export default function WorkbenchLayout({ workspacePath, navigationResizing = fa
           aria-label={t('canvas.contentPane')} data-shortcut-scope="canvas"
           onPointerDownCapture={() => useSceneStore.getState().focusPane(canvasPane)}
           onFocusCapture={() => useSceneStore.getState().focusPane(canvasPane)}>
-          {/* Keep the skin address while the canvas moves between stable surface slots. */}
+          {/* Keep the appearance address while the canvas moves between stable surface slots. */}
           <div className="openbitfun-workbench-layout__auxiliary" data-openbitfun-scene="session" data-openbitfun-part="auxiliary">
             <AuxPane workspacePath={workspacePath} externalToolbar isSceneActive={canvasVisible}
               terminalResizeSuspended={resizeState.measurementSuspended}

@@ -403,16 +403,11 @@
           },
           "appearance": {
             "title": "Appearance & language",
-            "summary": "Switch themes and languages, tune typography, and install or import appearance packs.",
+            "summary": "Switch built-in themes and languages, and tune typography.",
             "items": {
               "built-in-appearance": "Choose system, light, dark, monochrome, Midnight, China, Cyber, Slate, Tokyo Night, and other built-in appearances",
               "language": "Switch among Simplified Chinese, Traditional Chinese, English, and other supported UI languages",
-              "ui-font-size": "Adjust the global UI font size, including custom pixel values",
-              "local-packages": "Import, preview, apply, export, and delete local appearance packages",
-              "appearance-market": "Browse, search, filter, install, and update appearances from the Skin market",
-              "agent-market-submit": "Let an agent submit a local Appearance package for Skin-market review when explicitly requested",
-              "market-submissions": "Review and withdraw your appearance-market submissions",
-              "market-review": "When authorized, inspect and approve or reject appearance submissions"
+              "ui-font-size": "Adjust the global UI font size, including custom pixel values"
             }
           },
           "pet": {
@@ -535,7 +530,7 @@
             "title": "Execution & permissions",
             "summary": "Manage agent tool permissions, presentation mode, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
             "items": {
-              "permission-mode": "Choose Ask, Auto-approve, or Full Access permission mode and acknowledge high-risk warnings",
+              "permission-mode": "Choose Ask, Automatic approval, or Full Access permission mode and acknowledge high-risk warnings",
               "permission-selector": "Choose whether the permission-mode selector appears below the chat composer",
               "global-project-rules": "Create, reorder, and save global or project-level Allow, Ask, and Deny rules",
               "remembered-grants": "Review, revoke, or clear remembered project permission grants and audit records",

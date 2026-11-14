@@ -1,11 +1,23 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { CloudAccountCrypto } from '../../../main/ets/services/CloudAccountCrypto';
+import openbitfunCrypto from 'libopenbitfun_crypto.so';
+import { Encoding } from '../../../main/ets/services/Encoding';
+
+// The account password login that wrapped this binding is retired, so the load
+// goes straight to the native Argon2id work the library still ships.
+const LOAD_MEMORY_KIB: number = 16 * 1024;
+const LOAD_PASSES: number = 2;
+const LOAD_LANES: number = 1;
+
+function nativeArgon2id(input: Uint8Array, salt: Uint8Array): Promise<Uint8Array> {
+  return openbitfunCrypto.argon2idRaw(input, salt, LOAD_MEMORY_KIB, LOAD_PASSES, LOAD_LANES);
+}
 
 export default function nativeCryptoLoadTest() {
   describe('NativeCryptoLoad', () => {
     it('keeps the ArkTS event loop responsive during concurrent Argon2id work', 0, async () => {
       const salt = new Uint8Array([0x42, 0x69, 0x74, 0x46, 0x75, 0x6e, 0x2d, 0x31,
         0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39]);
+      const input = Encoding.utf8ToBytes('openbitfun-device-load');
       let heartbeatTicks = 0;
       const heartbeatId = setInterval(() => {
         heartbeatTicks += 1;
@@ -13,9 +25,9 @@ export default function nativeCryptoLoadTest() {
       const startedAt = Date.now();
 
       const results = await Promise.all([
-        CloudAccountCrypto.derivePasswordHash('openbitfun-device-load', salt, { m: 16 * 1024, t: 2, p: 1 }),
-        CloudAccountCrypto.derivePasswordHash('openbitfun-device-load', salt, { m: 16 * 1024, t: 2, p: 1 }),
-        CloudAccountCrypto.derivePasswordHash('openbitfun-device-load', salt, { m: 16 * 1024, t: 2, p: 1 })
+        nativeArgon2id(input, salt),
+        nativeArgon2id(input, salt),
+        nativeArgon2id(input, salt)
       ]);
       clearInterval(heartbeatId);
 

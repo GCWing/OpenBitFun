@@ -8,7 +8,6 @@ packages:
   - "src/web-ui"
   - "src/mobile-web"
   - "src/miniapp-market-web"
-  - "src/skin-market-web"
   - "OpenBitFun-Installer"
   - "website"
   - "tests/e2e"

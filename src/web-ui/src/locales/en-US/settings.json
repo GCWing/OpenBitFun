@@ -18,7 +18,7 @@
       },
       "appearance": {
         "label": "Appearance",
-        "description": "Customize themes, appearance packages, and fonts"
+        "description": "Customize themes and fonts"
       },
       "pet": {
         "label": "Pet & assistant",

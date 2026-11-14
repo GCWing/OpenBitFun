@@ -4256,6 +4256,20 @@ pub async fn get_available_modes(
         )
         .await;
 
+    let counts = if request.include_subagent_counts == Some(true) {
+        Some(
+            state
+                .agent_registry
+                .mode_manageable_subagent_counts(
+                    &mode_infos,
+                    workspace.as_ref().map(|record| record.id.as_str()),
+                    external_sources_supported,
+                )
+                .await,
+        )
+    } else {
+        None
+    };
     let dtos: Vec<ModeInfoDTO> = mode_infos
         .into_iter()
         .map(|info| {
@@ -4264,6 +4278,10 @@ pub async fn get_available_modes(
                 .clone()
                 .unwrap_or_else(|| info.id.clone());
             ModeInfoDTO {
+                manageable_subagent_count: counts
+                    .as_ref()
+                    .and_then(|counts| counts.get(&config_profile_id))
+                    .copied(),
                 id: info.id,
                 name: info.name,
                 description: info.description,
@@ -4288,6 +4306,7 @@ pub async fn get_available_modes(
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetAvailableModesRequest {
+    pub include_subagent_counts: Option<bool>,
     pub workspace_id: Option<String>,
     pub workspace_path: Option<String>,
     pub remote_connection_id: Option<String>,
@@ -4316,6 +4335,8 @@ pub async fn get_default_review_team_definition() -> Result<ReviewTeamDefinition
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModeInfoDTO {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manageable_subagent_count: Option<usize>,
     pub id: String,
     pub name: String,
     pub description: String,
@@ -4425,6 +4446,19 @@ mod tests {
     use openbitfun_events::AgenticEvent;
     use openbitfun_product_domains::tool_permissions::{PermissionEffect, PermissionRule};
     use serde_json::json;
+
+    #[test]
+    fn legacy_mode_catalog_requests_do_not_require_summary_fields() {
+        let old: GetAvailableModesRequest =
+            serde_json::from_value(json!({"workspaceId":"workspace-1"})).unwrap();
+        assert_eq!(old.include_subagent_counts, None);
+        assert_eq!(old.workspace_id.as_deref(), Some("workspace-1"));
+        let new: GetAvailableModesRequest = serde_json::from_value(
+            json!({"workspaceId":"workspace-1","includeSubagentCounts":true}),
+        )
+        .unwrap();
+        assert_eq!(new.include_subagent_counts, Some(true));
+    }
 
     #[tokio::test]
     async fn mode_catalog_uses_record_kind_even_when_local_and_remote_paths_are_identical() {

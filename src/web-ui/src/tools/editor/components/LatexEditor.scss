@@ -1,0 +1,40 @@
+.latex-editor {
+  display: flex;
+  flex-direction: column;
+  width: 100%; height: 100%; min-width: 0; min-height: 0;
+  overflow: hidden;
+  background: var(--openbitfun-color-surface-canvas);
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+
+  &__header, &__toolbar, &__source-bar, &__preview-bar { display: flex; align-items: center; gap: var(--openbitfun-space-2); flex-shrink: 0; border-bottom: 1px solid var(--openbitfun-color-border-subtle); padding: var(--openbitfun-space-2) var(--openbitfun-space-3); }
+  &__header { justify-content: space-between; }
+  &__file, &__preview-bar > span { display: flex; align-items: center; gap: var(--openbitfun-space-2); }
+  &__view-controls { display: flex; gap: var(--openbitfun-space-1); }
+  &__toolbar { flex-wrap: wrap; }
+  &__engine { width: 118px; }
+  &__insert { width: 115px; }
+  &__auto { display: inline-flex; align-items: center; gap: var(--openbitfun-space-2); white-space: nowrap; }
+  &__separator { height: 18px; border-inline-start: 1px solid var(--openbitfun-color-border-subtle); margin-inline: var(--openbitfun-space-1); }
+  &__body, &__split { flex: 1; min-height: 0; min-width: 0; }
+  &__body[hidden] { display: none; }
+  &__split { height: 100%; }
+  &__source, &__preview { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
+  &__preview-bar { justify-content: space-between; }
+  &__source-bar > [data-openbitfun-component='input'] { flex: 1; min-width: 0; }
+  &__source-body { display: flex; flex: 1; min-height: 0; min-width: 0; }
+  &__code, &__pdf { flex: 1; min-height: 0; min-width: 0; }
+  &__outline { flex: 0 0 170px; overflow: auto; min-width: 0; padding: var(--openbitfun-space-2) 0; border-inline-end: 1px solid var(--openbitfun-color-border-subtle); }
+  &__outline button { display: block; width: 100%; padding: var(--openbitfun-space-2); border: 0; text-align: start; color: var(--openbitfun-color-content-secondary); background: none; cursor: pointer; font: inherit; overflow-wrap: anywhere; }
+  &__outline button:hover { background: var(--openbitfun-color-surface-subtle); color: var(--openbitfun-color-content-primary); }
+  &__outline p { padding: var(--openbitfun-space-2); color: var(--openbitfun-color-content-muted); }
+  &__empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: var(--openbitfun-space-3); padding: var(--openbitfun-space-6); color: var(--openbitfun-color-content-secondary); text-align: center; }
+  &__empty p { max-width: 420px; }
+  &__stale { padding: var(--openbitfun-space-2) var(--openbitfun-space-3); color: var(--openbitfun-color-content-secondary); background: var(--openbitfun-color-surface-subtle); }
+  &__diagnostics { flex: 0 1 200px; min-height: 80px; overflow: auto; border-top: 1px solid var(--openbitfun-color-border-subtle); padding: var(--openbitfun-space-2) var(--openbitfun-space-3); background: var(--openbitfun-color-surface-subtle); }
+  &__diagnostics header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--openbitfun-space-2); }
+  &__log-line { display: block; border: 0; padding: 0; white-space: pre-wrap; overflow-wrap: anywhere; text-align: start; color: var(--openbitfun-color-content-secondary); background: none; font-family: var(--openbitfun-type-code-sm-font-family); font-size: var(--openbitfun-type-code-sm-font-size); line-height: var(--openbitfun-type-code-sm-line-height); }
+  button.latex-editor__log-line { color: var(--openbitfun-color-accent-default); cursor: pointer; }
+}

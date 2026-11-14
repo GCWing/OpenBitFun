@@ -2,8 +2,106 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Versioned hosted Relay deployment for the GitHub account/device-key protocol.
-pub const DEFAULT_RELAY_URL: &str = "https://remote.openbitfun.com/v/1.0.2";
+/// Hosted Relay service version announced by the official endpoint.
+///
+/// This is the *service* release the client targets, not the product build
+/// version. Keep it in sync with `relay-service/Cargo.toml`.
+pub const RELAY_SERVICE_VERSION: &str = "1.0.10";
+
+/// Endpoint paths served by the same deployed Relay and the same account
+/// database. `?v=` replaced the path segment as the client-facing version, but
+/// `/v/1.0.2` must keep working for builds that predate the change: a token,
+/// master key, or device registration from either path is interchangeable
+/// because both reach one process and one SQLite file.
+pub const LIVE_RELAY_ENDPOINT_PATHS: &[&str] = &["/relay", "/v/1.0.2"];
+
+/// Hosted Relay deployment for the GitHub account/device-key protocol.
+///
+/// The version travels as a GET parameter so a release no longer needs a new
+/// proxy location, while `remote.openbitfun.com` keeps one root page. Callers
+/// must join API paths onto [`relay_endpoint_base`], never onto this string.
+pub const DEFAULT_RELAY_URL: &str = "https://remote.openbitfun.com/relay?v=1.0.10";
+
+/// Strip the version query and any fragment so the endpoint can be joined with
+/// an API path. A trailing slash is removed so `{base}/api/...` stays correct.
+pub fn relay_endpoint_base(endpoint: &str) -> &str {
+    let endpoint = endpoint.trim();
+    let end = endpoint
+        .find(['?', '#'])
+        .unwrap_or(endpoint.len());
+    endpoint[..end].trim_end_matches('/')
+}
+
+/// Service version announced by the endpoint's `?v=` parameter, if any.
+///
+/// Only the first `v` parameter of the query is considered. Callers still
+/// validate the value; this helper only extracts it.
+pub fn relay_endpoint_version(endpoint: &str) -> Option<&str> {
+    let query = endpoint.split_once('?')?.1;
+    let query = query.split('#').next().unwrap_or(query);
+    query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("v="))
+        .filter(|value| !value.is_empty())
+}
+
+fn endpoint_authority(endpoint: &str) -> Option<(&str, &str)> {
+    let (scheme, rest) = endpoint.split_once("://")?;
+    if !matches!(scheme, "http" | "https") {
+        return None;
+    }
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    if authority.is_empty() || authority.contains('@') {
+        return None;
+    }
+    Some((scheme, authority))
+}
+
+/// Path portion of an endpoint, without query, fragment, or trailing slash.
+fn endpoint_path(endpoint: &str) -> &str {
+    let Some((_, rest)) = endpoint.trim().split_once("://") else {
+        return "";
+    };
+    let rest = match rest.find(['?', '#']) {
+        Some(end) => &rest[..end],
+        None => rest,
+    };
+    match rest.find('/') {
+        Some(index) => rest[index..].trim_end_matches('/'),
+        None => "",
+    }
+}
+
+/// Whether two endpoints resolve to the same deployed Relay.
+///
+/// Both live aliases of the same host count as one deployment, so a build that
+/// switches from `/v/1.0.2` to `/relay?v=` keeps its stored credential and
+/// master key. A different host, or a different `/v/<version>` path, does not.
+pub fn same_relay_deployment(left: &str, right: &str) -> bool {
+    let (Some((left_scheme, left_authority)), Some((right_scheme, right_authority))) =
+        (endpoint_authority(left), endpoint_authority(right))
+    else {
+        return false;
+    };
+    if left_scheme != right_scheme || !left_authority.eq_ignore_ascii_case(right_authority) {
+        return false;
+    }
+    let (left_path, right_path) = (endpoint_path(left), endpoint_path(right));
+    left_path == right_path
+        || (LIVE_RELAY_ENDPOINT_PATHS.contains(&left_path)
+            && LIVE_RELAY_ENDPOINT_PATHS.contains(&right_path))
+}
+
+/// User-facing page URL for an endpoint, keeping `?v=` before the fragment so
+/// the version survives in the address bar and in shared links.
+pub fn relay_page_url(endpoint: &str, fragment: &str) -> String {
+    let base = relay_endpoint_base(endpoint);
+    match relay_endpoint_version(endpoint) {
+        Some(version) => format!("{base}/?v={version}{fragment}"),
+        None => format!("{base}/{fragment}"),
+    }
+}
 
 /// Control-contract protocol number reported to the Relay alongside the build
 /// string when a device registers or opens its realtime connection.
@@ -252,5 +350,82 @@ mod identity_tests {
         )
         .unwrap();
         assert!(invalid.identity_id().is_none());
+    }
+}
+
+#[cfg(test)]
+mod relay_endpoint_tests {
+    use super::*;
+
+    #[test]
+    fn base_strips_version_query_and_fragment() {
+        assert_eq!(
+            relay_endpoint_base("https://remote.openbitfun.com/relay?v=1.0.9"),
+            "https://remote.openbitfun.com/relay"
+        );
+        assert_eq!(
+            relay_endpoint_base("https://remote.openbitfun.com/relay/?v=1.0.9"),
+            "https://remote.openbitfun.com/relay"
+        );
+        assert_eq!(
+            relay_endpoint_base("https://remote.openbitfun.com/v/1.0.2/"),
+            "https://remote.openbitfun.com/v/1.0.2"
+        );
+        assert_eq!(
+            relay_endpoint_base("https://relay.example.com/prefix#/pair"),
+            "https://relay.example.com/prefix"
+        );
+    }
+
+    #[test]
+    fn version_is_read_from_the_query_only() {
+        assert_eq!(
+            relay_endpoint_version("https://remote.openbitfun.com/relay?v=1.0.9"),
+            Some("1.0.9")
+        );
+        assert_eq!(
+            relay_endpoint_version("https://remote.openbitfun.com/relay?v=1.0.9#/pair?did=x"),
+            Some("1.0.9")
+        );
+        assert_eq!(
+            relay_endpoint_version("https://remote.openbitfun.com/v/1.0.2"),
+            None
+        );
+    }
+
+    #[test]
+    fn live_aliases_share_one_deployment_but_other_releases_do_not() {
+        assert!(same_relay_deployment(
+            "https://remote.openbitfun.com/relay?v=1.0.9",
+            "https://remote.openbitfun.com/v/1.0.2",
+        ));
+        assert!(same_relay_deployment(
+            "https://remote.openbitfun.com/relay",
+            "https://remote.openbitfun.com/relay/",
+        ));
+        assert!(!same_relay_deployment(
+            "https://remote.openbitfun.com/v/1.0.1",
+            "https://remote.openbitfun.com/relay",
+        ));
+        assert!(!same_relay_deployment(
+            "https://other.example.com/relay",
+            "https://remote.openbitfun.com/relay",
+        ));
+        assert!(!same_relay_deployment(
+            "http://remote.openbitfun.com/relay",
+            "https://remote.openbitfun.com/relay",
+        ));
+    }
+
+    #[test]
+    fn page_url_keeps_version_before_the_fragment() {
+        assert_eq!(
+            relay_page_url("https://remote.openbitfun.com/relay?v=1.0.9", "#/pair?did=abc"),
+            "https://remote.openbitfun.com/relay/?v=1.0.9#/pair?did=abc"
+        );
+        assert_eq!(
+            relay_page_url("https://remote.openbitfun.com/v/1.0.2", "#/pair?did=abc"),
+            "https://remote.openbitfun.com/v/1.0.2/#/pair?did=abc"
+        );
     }
 }

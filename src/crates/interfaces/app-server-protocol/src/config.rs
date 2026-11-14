@@ -225,6 +225,50 @@ pub struct ClearWebSearchCredentialMessage {
 #[cfg_attr(feature = "rpc", derive(JsonRpcResponse))]
 pub struct ClearWebSearchCredentialResponse(pub WebSearchCredentialStatus);
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[cfg_attr(feature = "rpc", derive(JsonRpcRequest))]
+#[cfg_attr(feature = "rpc", request(method = "config/getDecisionModelCredentialStatus", response = GetDecisionModelCredentialStatusResponse))]
+pub struct GetDecisionModelCredentialStatusMessage {}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionModelCredentialStatus {
+    pub configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "rpc", derive(JsonRpcResponse))]
+pub struct GetDecisionModelCredentialStatusResponse(pub DecisionModelCredentialStatus);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "rpc", derive(JsonRpcRequest))]
+#[cfg_attr(feature = "rpc", request(method = "config/saveDecisionModelCredential", response = SaveDecisionModelCredentialResponse))]
+pub struct SaveDecisionModelCredentialMessage {
+    pub request: SaveDecisionModelCredentialRequest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "rpc", derive(JsonRpcResponse))]
+pub struct SaveDecisionModelCredentialResponse(pub DecisionModelCredentialStatus);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "rpc", derive(JsonRpcRequest))]
+#[cfg_attr(feature = "rpc", request(method = "config/clearDecisionModelCredential", response = ClearDecisionModelCredentialResponse))]
+pub struct ClearDecisionModelCredentialMessage {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "rpc", derive(JsonRpcResponse))]
+pub struct ClearDecisionModelCredentialResponse(pub DecisionModelCredentialStatus);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SaveDecisionModelCredentialRequest {
+    pub secret: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "rpc", derive(JsonRpcRequest))]
 #[cfg_attr(feature = "rpc", request(method = "config/validateConfig", response = ValidateConfigResponse))]

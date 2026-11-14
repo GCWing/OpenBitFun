@@ -16,6 +16,7 @@ import {
 
 import { SSHRemoteProvider } from './SSHRemoteProvider';
 import { SSHContext, type ConnectionStatus, type SSHContextValue } from './SSHRemoteContext';
+import { SSH_OPERATION_TIMEOUT_EVENT } from './sshOperationEvents';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -629,6 +630,73 @@ describe('SSHRemoteProvider workspace connection state', () => {
     expect(sshApiMock.isConnected).not.toHaveBeenCalled();
   });
 
+  it('re-verifies the link on wake and leaves the connected state when it is gone', async () => {
+    vi.useFakeTimers();
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    expect(latestStatuses['conn-1']).toBe('connected');
+
+    // Waking from sleep must not wait up to 30 seconds for the next heartbeat.
+    let answer: (connected: boolean) => void = () => {};
+    sshApiMock.isConnected.mockClear();
+    sshApiMock.isConnected.mockReturnValueOnce(new Promise<boolean>(resolve => { answer = resolve; }));
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
+    });
+    expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-1');
+    // A healthy link answers before the row would flash "connecting".
+    expect(latestContext!.verifyingConnectionIds).toEqual({});
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(latestContext!.verifyingConnectionIds).toEqual({ 'conn-1': true });
+
+    const historyBeforeAnswer = statusHistory.length;
+    await act(async () => {
+      answer(false);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(latestContext!.verifyingConnectionIds).toEqual({});
+    // The lost link leaves the connected state at once (then reconnects).
+    expect(statusHistory.slice(historyBeforeAnswer).some(statuses => statuses['conn-1'] === 'error'))
+      .toBe(true);
+  });
+
+  it('re-verifies a connection right after one of its operations timed out', async () => {
+    vi.useFakeTimers();
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    sshApiMock.isConnected.mockClear();
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(SSH_OPERATION_TIMEOUT_EVENT, { detail: { connectionId: 'conn-1' } }));
+      await Promise.resolve();
+    });
+    expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-1');
+    expect(latestStatuses['conn-1']).toBe('connected');
+
+    // A burst of wake signals shares one check.
+    await act(async () => {
+      window.dispatchEvent(new Event('online'));
+      await Promise.resolve();
+    });
+    expect(sshApiMock.isConnected).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    await act(async () => {
+      window.dispatchEvent(new Event('online'));
+      await Promise.resolve();
+    });
+    expect(sshApiMock.isConnected).toHaveBeenCalledTimes(2);
+  });
+
   it('resumes local connection monitoring after leaving Peer mode without needing a catalog event', async () => {
     vi.useFakeTimers();
     const workspace = createRemoteWorkspace();
@@ -1046,9 +1114,10 @@ describe('SSHRemoteProvider workspace connection state', () => {
     expect(ACPClientAPI.invalidateRemoteRequirementProbeCache).toHaveBeenCalledWith('conn-1');
   });
 
-  it('mirrors peer-owned remote workspaces as connected without starting the reconnect timeout', async () => {
+  it('reads peer-owned remote workspace status from the peer without starting the reconnect timeout', async () => {
     vi.useFakeTimers();
     peerModeFlagMock.active = true;
+    sshApiMock.isConnected.mockResolvedValue(true);
 
     const remoteWorkspace = createRemoteWorkspace();
     workspaceManagerMock.getState.mockReturnValue({
@@ -1063,7 +1132,10 @@ describe('SSHRemoteProvider workspace connection state', () => {
     expect(sshApiMock.listSavedConnections).not.toHaveBeenCalled();
 
     emitWorkspaceManagerEvent({ type: 'workspace:opened', workspace: remoteWorkspace });
+    await act(async () => { await Promise.resolve(); });
 
+    expect(sshApiMock.isConnected).toHaveBeenCalledWith('conn-1');
+    expect(sshApiMock.connect).not.toHaveBeenCalled();
     expect(latestStatuses['conn-1']).toBe('connected');
 
     await act(async () => {
@@ -1073,6 +1145,67 @@ describe('SSHRemoteProvider workspace connection state', () => {
     expect(workspaceManagerMock.removeRemoteWorkspace).not.toHaveBeenCalled();
     expect(sshApiMock.removeWorkspace).not.toHaveBeenCalled();
     expect(notificationService.error).not.toHaveBeenCalled();
+  });
+
+  it('gives every peer remote workspace a status even when the hydrated list emits no per-workspace event', async () => {
+    peerModeFlagMock.active = true;
+    const remoteWorkspace = createRemoteWorkspace();
+    const second = { ...createRemoteWorkspace(), id: 'ws-remote-2', connectionId: 'conn-2' };
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false,
+      openedWorkspaces: new Map([[remoteWorkspace.id, remoteWorkspace], [second.id, second]]),
+      activeWorkspaceId: null,
+    });
+    sshApiMock.isConnected.mockImplementation(async (connectionId: string) => connectionId === 'conn-1');
+
+    await renderProvider();
+    emitWorkspaceManagerEvent({ type: 'workspace:loading', loading: false });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(latestStatuses).toEqual({ 'conn-1': 'connected', 'conn-2': 'disconnected' });
+  });
+
+  it('keeps a peer that does not report SSH state mirrored as connected, and an unreachable peer as an error', async () => {
+    peerModeFlagMock.active = true;
+    const remoteWorkspace = createRemoteWorkspace();
+    const second = { ...createRemoteWorkspace(), id: 'ws-remote-2', connectionId: 'conn-2' };
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false,
+      openedWorkspaces: new Map([[remoteWorkspace.id, remoteWorkspace], [second.id, second]]),
+      activeWorkspaceId: null,
+    });
+    sshApiMock.isConnected.mockImplementation(async (connectionId: string) => {
+      throw new Error(connectionId === 'conn-1'
+        ? "command 'ssh_is_connected' is not supported on cli peer host: the CLI peer host does not run this desktop IDE surface"
+        : 'peer request timed out');
+    });
+
+    await renderProvider();
+    emitWorkspaceManagerEvent({ type: 'workspace:active-changed', workspace: null });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(latestStatuses).toEqual({ 'conn-1': 'connected', 'conn-2': 'error' });
+  });
+
+  it('reads a newly rendered peer surface again instead of reusing another device status', async () => {
+    peerModeFlagMock.active = true;
+    const remoteWorkspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false,
+      openedWorkspaces: new Map([[remoteWorkspace.id, remoteWorkspace]]),
+      activeWorkspaceId: remoteWorkspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+
+    await renderProvider();
+    emitWorkspaceManagerEvent({ type: 'workspace:opened', workspace: remoteWorkspace });
+    await act(async () => { await Promise.resolve(); });
+    expect(latestStatuses['conn-1']).toBe('connected');
+
+    sshApiMock.isConnected.mockResolvedValue(false);
+    await act(async () => { activateSurface('peer-c'); await Promise.resolve(); });
+
+    expect(latestStatuses['conn-1']).toBe('disconnected');
   });
 
   it('cancels the pending reconnect timeout when peer device mode activates', async () => {

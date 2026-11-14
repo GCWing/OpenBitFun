@@ -9,9 +9,12 @@
 | Crate | 职责 | 本地文档 |
 |---|---|---|
 | `computer-use` | Desktop 与 CLI 共用的原生截图、无障碍、输入、权限和控制会话服务 | [AGENTS.md](computer-use/AGENTS.md) |
-| `services-core` | 不包含产品组装决策的本地 service primitive，包括 session storage、metadata store CRUD/index rebuild、metadata 构造/计数/索引/字段 mutation、lineage 规则和 JSON file IO | [AGENTS.md](services-core/AGENTS.md) |
-| `services-integrations` | MCP、git、remote、file watch、MiniApp runtime、产品领域 port 具体实现，以及平台无关的 Remote Connect primitives | [AGENTS.md](services-integrations/AGENTS.md) |
-| `legacy-migration` | 离线旧产品发现、加锁、一致性 SQLite 快照、暂存、journal 恢复和 owner adapter 编排 | — |
+| `services-core` | 不包含产品组装决策的可复用本地 service primitive，包括进程级 TLS provider 选择、受管进程树生命周期、filesystem helper、session storage 布局/索引/删除、metadata store CRUD/index rebuild、metadata 构造/计数/索引/字段 mutation/lineage 规则和 JSON file IO | [AGENTS.md](services-core/AGENTS.md) |
+| `services-integrations` | MCP、git、remote、file watch、MiniApp runtime、review-platform provider service、产品领域 port 具体实现，以及平台无关的 Remote Connect primitives | [AGENTS.md](services-integrations/AGENTS.md) |
+| `legacy-migration-adapters` | 面向共享配置/存储 owner 的离线旧数据转换器，不依赖 Core | [AGENTS.md](legacy-migration-adapters/AGENTS.md) |
+| `legacy-migration` | 离线旧产品发现、加锁、一致性 SQLite 快照、暂存、journal 恢复和 owner adapter 编排 | [AGENTS.md](legacy-migration/AGENTS.md) |
+| `miniapp-market-service` | MiniApp market 的具体 SQLite、artifact 存储、GitHub OAuth、包校验和 HTTP 行为 | [README.md](miniapp-market-service/README.md) |
+| `skin-market-service` | Skin market 的具体 SQLite、artifact 存储、Appearance 包校验、审核和 HTTP 行为 | [README.md](skin-market-service/README.md) |
 | `relay-service` | standalone 与 embedded 宿主共享的 Remote Connect relay 状态、存储及 HTTP/WebSocket 路由 | [AGENTS.md](relay-service/AGENTS.md) |
 | `page-function-runtime` | OpenBitFun Pages 嵌入式 JS Page Function runtime（rquickjs） | [AGENTS.md](page-function-runtime/AGENTS.md) |
 | `terminal` | PTY、shell integration 与 terminal session infrastructure | [AGENTS.md](terminal/AGENTS.md) |

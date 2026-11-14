@@ -1,4 +1,11 @@
-import { hostQueueSupported, hostDialogQueue, queueImageAttachments } from '../hostDialogQueue';
+import {
+  discardRefusedHostSubmission,
+  hostDialogQueue,
+  hostQueueSupported,
+  isHostSessionNotLoadedRefusal,
+  newQueueTurnId,
+  queueImageAttachments,
+} from '../hostDialogQueue';
 /**
  * Message handling module
  * Shared submission choreography: busy-gate planning, queueing, mode
@@ -14,8 +21,10 @@ import { createLogger } from '@/shared/utils/logger';
 import {
   getActiveSurfaceId,
   getActiveSurfaceScope,
+  isLocalSurface,
   isSurfaceChangedError,
   type DeviceSurfaceId,
+  type SurfaceScope,
 } from '@/infrastructure/peer-device/deviceSurface';
 import type { FlowChatContext } from './types';
 import { isProjectedSessionEmpty } from '../../utils/flowChatTurnIdentity';
@@ -27,11 +36,11 @@ import {
   isRuntimeSessionProjectionStale,
   subscribeRuntimeSessionAttachmentFinished,
 } from '@/infrastructure/peer-device/runtimeSessionEventGate';
-import { isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandError';
+import { isOutcomeUnknownError, isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandError';
 import { i18nService } from '@/infrastructure/i18n';
 import { driverForSession } from '../../session-drivers/registry';
 import { assertSessionConversationCanSubmit, getSessionConversationCapability } from '../../session-drivers/conversationCapability';
-import type { SendMessageOptions, SubmissionDraft, TurnTracker } from '../../session-drivers/types';
+import type { SendMessageOptions, SessionDriver, StartTurnResult, SubmissionDraft, TurnTracker } from '../../session-drivers/types';
 import { assertSessionSubmissionAllowed } from '../../store/sessionMutationStore';
 import { hasInterruptedTurnHoldingQueue } from '../../utils/interruptedTurnRecovery';
 import { interruptedTurnRecoveryGate } from '../interruptedTurnRecoveryGate';
@@ -49,6 +58,12 @@ import { finishSubmittedMessageScrollIntent, peekSubmittedMessageScrollIntent } 
 import { FLOWCHAT_MESSAGE_SUBMITTED_EVENT } from '../../events/flowchatNavigation';
 import { forkChatSession } from './SessionModule';
 import { viewedExternalForkTurn } from '../../utils/externalHistory';
+import {
+  confirmUncertainPeerSubmission,
+  isAdmittedTurnRefusal,
+  isUncertainDispatchSubmitFailure,
+  type UncertainSubmission,
+} from '../uncertainSubmission';
 
 export { syncSessionModelSelection } from '../../utils/modelSync';
 export { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
@@ -123,6 +138,112 @@ export function inFlightSubmissionCount(): number {
 }
 
 /**
+ * The retained queue item owns recovery: its device stopped being rendered, or
+ * the host outcome is unknown and the item settles once the host confirms it.
+ */
+class RetiredQueueSubmission extends Error {
+  constructor(readonly outcomeUnknown: boolean) {
+    super('Queued submission retained for recovery');
+  }
+}
+
+/**
+ * The host accepted a draft's first Turn: the session is real from now on.
+ * When `turnId` is given, only the draft that reserved it is cleared.
+ */
+async function adoptAcceptedDraft(
+  context: FlowChatContext,
+  scope: SurfaceScope,
+  sessionId: string,
+  turnId?: string,
+): Promise<void> {
+  if (!scope.isCurrent()) return;
+  let cleared = false;
+  context.flowChatStore.setState(state => {
+    const current = state.sessions.get(sessionId);
+    if (!current?.draft || (turnId !== undefined && current.draft.turnId !== turnId)) return state;
+    cleared = true;
+    return { ...state, sessions: new Map(state.sessions).set(sessionId, { ...current, draft: undefined }) };
+  });
+  if (!cleared && turnId !== undefined) return;
+  // Navigation failure cannot undo an accepted message or cause it to be resent.
+  try {
+    const { activateMainSession } = await import('../sessionActivation');
+    if (scope.isCurrent() && context.flowChatStore.getState().activeSessionId === sessionId) {
+      await activateMainSession(sessionId, { isCurrent: () => scope.isCurrent()
+        && context.flowChatStore.getState().activeSessionId === sessionId });
+    }
+  } catch (error) {
+    log.warn('Accepted draft could not activate its workspace', { sessionId, error });
+  }
+}
+
+/**
+ * A retry of a Turn whose earlier attempt the host admitted (its reply was
+ * lost) is refused as a duplicate Turn id. That refusal proves delivery: keep
+ * the Turn and let the host's records settle it. The re-read replaces a
+ * replica that may already hold the Turn's revision, so a Turn that finished
+ * meanwhile settles instead of staying pending. Device surfaces only: their
+ * submissions are the ones with an unknown outcome.
+ */
+function acceptAdmittedTurnRefusal(
+  context: FlowChatContext,
+  scope: SurfaceScope,
+  sessionId: string,
+  turnTracker: TurnTracker,
+  error: unknown,
+): boolean {
+  const turnId = turnTracker.createdLocalTurnId;
+  if (!turnId || !turnTracker.hostSubmitStarted || turnTracker.hostAcceptedTurn
+    || isLocalSurface(scope.surfaceId) || !scope.isCurrent() || !isAdmittedTurnRefusal(error, turnId)) {
+    return false;
+  }
+  log.info('Host already holds the retried Turn; treating it as delivered', { sessionId, turnId });
+  turnTracker.hostAcceptedTurn = true;
+  void context.flowChatStore.reloadRelaySessionFromHost(sessionId).catch(reloadError => {
+    log.warn('Failed to re-read a session after a duplicate Turn refusal', { sessionId, turnId, error: reloadError });
+  });
+  return true;
+}
+
+/**
+ * Adopt the host's refusal as the fact that this session is not executing
+ * there. Only when nothing changed the machine while the refused request was
+ * in flight: a newer turn start or settlement is a fresher host fact, and the
+ * caller then reports the refusal instead of sending around it. Returns
+ * whether the session is now idle for a direct send.
+ */
+function settleStaleBusyStateAfterHostRefusal(
+  context: FlowChatContext,
+  sessionId: string,
+  machineVersionAtSubmit: number | undefined,
+): boolean {
+  const machine = stateMachineManager.get(sessionId);
+  if (!machine) {
+    context.userCancelledSessionIds?.delete(sessionId);
+    return true;
+  }
+  if (machine.getContext().version !== machineVersionAtSubmit) return false;
+  const state = machine.getCurrentState();
+  context.userCancelledSessionIds?.delete(sessionId);
+  if (state !== SessionExecutionState.PROCESSING && state !== SessionExecutionState.FINISHING) return true;
+  log.warn('Settling a stale busy state after the host refused an unloaded session', {
+    sessionId,
+    state,
+    staleTurnId: machine.getContext().currentDialogTurnId,
+  });
+  machine.acceptRuntimeStatus({
+    state: SessionExecutionState.IDLE,
+    turnId: null,
+    roundId: null,
+    phase: null,
+    pendingTools: [],
+    error: null,
+  });
+  return true;
+}
+
+/**
  * Salvage a submission that lost the race against a device-surface switch.
  *
  * When the host never accepted the turn the message exists nowhere, so it goes
@@ -142,15 +263,18 @@ function recoverSubmissionAfterSurfaceSwitch(
     options?: SendMessageOptions;
   },
 ): void {
-  const hostHasTurn =
-    turnTracker.hostAcceptedTurn || turnTracker.hostSubmitStarted === true;
-  if (hostHasTurn) {
+  if (turnTracker.hostAcceptedTurn) {
     log.info('Device surface switched after the host accepted the turn; it keeps running there', {
       sessionId,
     });
     return;
   }
-  if (turnTracker.createdLocalTurnId) {
+  const outcomeUnknown = turnTracker.hostSubmitStarted === true;
+  // Host-queue submissions have their own durable outbox and no frontend
+  // optimistic turn. Leave recovery with that owner. Legacy submissions need
+  // a retained draft, but an ambiguous receipt must never auto-resubmit it.
+  if (outcomeUnknown && !turnTracker.createdLocalTurnId) return;
+  if (turnTracker.createdLocalTurnId && !outcomeUnknown) {
     context.flowChatStore.abandonOptimisticDialogTurn(
       surfaceId,
       sessionId,
@@ -159,9 +283,15 @@ function recoverSubmissionAfterSurfaceSwitch(
     stateMachineManager.resetForSurface(surfaceId, sessionId);
     context.processingManager.clearSessionStatusForSurface(surfaceId, sessionId);
   }
+  // A drain still owns its original item and FIFO position. Do not create a
+  // second entry and then remove the first one after returning to its caller.
+  if (draft.options?.bypassPendingQueue) return;
   try {
     pendingQueueManager.enqueueForSurface(surfaceId, {
       sessionId,
+      turnId: turnTracker.createdLocalTurnId ?? draft.options?.turnId,
+      initialStatus: outcomeUnknown ? 'failed' : 'queued',
+      retryCount: outcomeUnknown ? 1 : 0,
       content: draft.message,
       displayMessage: draft.displayMessage,
       agentType: draft.agentType,
@@ -170,8 +300,8 @@ function recoverSubmissionAfterSurfaceSwitch(
       composerDraft: draft.options?.pendingQueueDraft,
       userMessageMetadata: draft.options?.userMessageMetadata,
     });
-    log.info('Device surface switched before submit reached the host; message re-queued', {
-      sessionId,
+    log.info('Retained a message after its device surface changed', {
+      sessionId, outcomeUnknown,
     });
   } catch (error) {
     // A full queue is the only expected failure, and dropping the message
@@ -332,6 +462,7 @@ async function sendMessageInternal(
     imageContexts: options?.imageContexts,
   };
 
+  let refusedOutboxDiscard: (() => Promise<void>) | null = null;
   if (!options?.bypassPendingQueue) {
     const machineState = stateMachineManager.getCurrentState(sessionId);
     const sessionBusy =
@@ -356,75 +487,107 @@ async function sendMessageInternal(
         await driverForSession(sessionId, session).steer(context, sessionId, draft);
         return;
       }
+      let hostRefusedUnloadedSession = false;
       if (hostQueueSupported(sessionId)) {
-        beginSubmission();
-        try {
-          const queue = hostDialogQueue(sessionId);
-          const accepted = await queue.submit({ content: message, displayContent: displayMessage,
-            agentType: agentType?.trim() || session.mode || 'Standard',
-            attachments: queueImageAttachments(options?.imageContexts), metadata: options?.userMessageMetadata ?? {} },
-            { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData }, options?.turnId);
+        const queue = hostDialogQueue(sessionId);
+        const queueMessage = { content: message, displayContent: displayMessage,
+          agentType: agentType?.trim() || session.mode || 'Standard',
+          attachments: queueImageAttachments(options?.imageContexts), metadata: options?.userMessageMetadata ?? {} };
+        const queueDraft = { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts,
+          imageDisplayData: options?.imageDisplayData };
+        // Held so a refused submission can release exactly its own outbox copy.
+        const queueTurnId = options?.turnId?.trim() || newQueueTurnId();
+        const machineVersionAtSubmit = stateMachineManager.get(sessionId)?.getContext().version;
+        const submitToHostQueue = async () => {
+          const accepted = await queue.submit(queueMessage, queueDraft, queueTurnId);
           surfaceScopeAtSend.assertCurrent('accept queued message');
           if (options?.sendImmediately) {
             await promoteAcceptedHostMessage(queue, accepted);
             surfaceScopeAtSend.assertCurrent('accept immediate message');
           }
           completeSessionSend(sendCoordinationKey, sendAttempt);
-          return;
-        } finally { endSubmission(); }
-      }
-      const dialogTurnId = stateMachineManager.get(sessionId)?.getContext().currentDialogTurnId;
-      if (options?.sendImmediately && dialogTurnId && !isAcpFlowSession(session)
-        && driverForSession(sessionId, session).id === 'local') {
+        };
         beginSubmission();
         try {
-          await submitSteeringMessage({
-            sessionId,
-            dialogTurnId,
-            content: message,
-            displayContent: displayMessage ?? message,
-            imageContexts: options.imageContexts,
-            userMessageMetadata: options.userMessageMetadata,
-          }, options.imageDisplayData);
-          completeSessionSend(sendCoordinationKey, sendAttempt);
+          await submitToHostQueue();
           return;
+        } catch (error) {
+          // The host refused before creating a receipt: the session is not
+          // loaded there (an older host does not load it for a queue mutation),
+          // so nothing of it is executing and the busy state here is stale.
+          // Queueing behind that phantom turn can never succeed; send directly,
+          // which restores the session on the host first. A local legacy queue
+          // keeps its FIFO order, so it is not bypassed.
+          if (hasPendingQueue || !isHostSessionNotLoadedRefusal(error)) throw error;
+          surfaceScopeAtSend.assertCurrent('recover refused queued message');
+          if (!settleStaleBusyStateAfterHostRefusal(context, sessionId, machineVersionAtSubmit)) {
+            // A fresher host fact arrived meanwhile, typically a concurrent send
+            // that restored the session and started its turn. The host can now
+            // admit this message behind it; the queue retries the same outbox
+            // record after reading its receipt, so nothing is submitted twice.
+            await submitToHostQueue();
+            return;
+          }
+          // Release the refused outbox copy only once the direct send is
+          // accepted; until then it is a recovery copy of the composer draft.
+          refusedOutboxDiscard = () => discardRefusedHostSubmission(queue, queueMessage, queueTurnId);
+          hostRefusedUnloadedSession = true;
         } finally { endSubmission(); }
       }
-      try {
-        const item = pendingQueueManager.enqueue({
-          sessionId,
-          turnId: options?.turnId,
-          content: message,
-          displayMessage,
-          agentType,
-          imageContexts: options?.imageContexts,
-          imageDisplayData: options?.imageDisplayData,
-          composerDraft: options?.pendingQueueDraft,
-          userMessageMetadata: options?.userMessageMetadata,
-        });
-        log.info('Message enqueued: session busy or queue non-empty', {
-          sessionId,
-          state: machineState,
-          queuedItemId: item.id,
-          queueDepth: pendingQueueManager.list(sessionId).length,
-        });
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : 'Failed to queue message';
-        log.error('Failed to enqueue pending message', { sessionId, error });
-        notificationService.error(reason, {
-          title: 'Queue full',
-          duration: 4000,
-        });
-        throw error;
+      if (!hostRefusedUnloadedSession) {
+        const dialogTurnId = stateMachineManager.get(sessionId)?.getContext().currentDialogTurnId;
+        if (options?.sendImmediately && dialogTurnId && !isAcpFlowSession(session)
+          && driverForSession(sessionId, session).id === 'local') {
+          beginSubmission();
+          try {
+            await submitSteeringMessage({
+              sessionId,
+              dialogTurnId,
+              content: message,
+              displayContent: displayMessage ?? message,
+              imageContexts: options.imageContexts,
+              userMessageMetadata: options.userMessageMetadata,
+            }, options.imageDisplayData);
+            completeSessionSend(sendCoordinationKey, sendAttempt);
+            return;
+          } finally { endSubmission(); }
+        }
+        try {
+          const item = pendingQueueManager.enqueue({
+            sessionId,
+            turnId: options?.turnId,
+            content: message,
+            displayMessage,
+            agentType,
+            imageContexts: options?.imageContexts,
+            imageDisplayData: options?.imageDisplayData,
+            composerDraft: options?.pendingQueueDraft,
+            userMessageMetadata: options?.userMessageMetadata,
+          });
+          log.info('Message enqueued: session busy or queue non-empty', {
+            sessionId,
+            state: machineState,
+            queuedItemId: item.id,
+            queueDepth: pendingQueueManager.list(sessionId).length,
+          });
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : 'Failed to queue message';
+          log.error('Failed to enqueue pending message', { sessionId, error });
+          notificationService.error(reason, {
+            title: 'Queue full',
+            duration: 4000,
+          });
+          throw error;
+        }
+        completeSessionSend(
+          sendCoordinationKey,
+          sendAttempt,
+          options?.fromSessionConflictRetry
+            ? options.onSessionConflictRetrySuccess
+            : undefined,
+        );
+        return;
       }
-      completeSessionSend(
-        sendCoordinationKey,
-        sendAttempt,
-        options?.fromSessionConflictRetry
-          ? options.onSessionConflictRetrySuccess
-          : undefined,
-      );
-      return;
     }
   }
 
@@ -443,6 +606,9 @@ async function sendMessageInternal(
   const surfaceIdAtSend = surfaceScopeAtSend.surfaceId;
   const draftSubmissionKey = session.draft ? surfaceScopeAtSend.key('draft-submit', sessionId) : undefined;
   let previewTurnId: string | undefined;
+  let submittingDriver: SessionDriver | undefined;
+  /** The draft Turn id this submission materializes, if it is a draft's first message. */
+  let submittedDraftTurnId: string | undefined;
   if (draftSubmissionKey) {
     if (draftSubmissions.has(draftSubmissionKey)) throw new Error('Draft submission is already in progress');
     draftSubmissions.add(draftSubmissionKey);
@@ -461,6 +627,7 @@ async function sendMessageInternal(
     const currentAgentType = (agentType?.trim() || refreshedSession.mode || 'Standard').trim();
     const acpClientId = acpClientIdFromMode(currentAgentType);
     const driver = driverForSession(sessionId, refreshedSession);
+    submittingDriver = driver;
     if (
       options?.execution?.kind === 'fresh_external_subagent'
       && (acpClientId || driver.id !== 'local')
@@ -527,24 +694,31 @@ async function sendMessageInternal(
 
     if (readySession.draft) {
       options = { ...options, turnId: readySession.draft.turnId };
+      submittedDraftTurnId = readySession.draft.turnId;
       updateSessionDraft(context, sessionId, { phase: 'submitting' });
     }
 
-    const outcome = await driver.startTurn(
-      context,
-      {
-        surfaceScope: surfaceScopeAtSend,
-        sessionId,
-        message,
-        displayMessage,
-        currentAgentType,
-        acpClientId,
-        isFirstMessage,
-        readySession,
-        options,
-      },
-      turnTracker,
-    );
+    let outcome: StartTurnResult;
+    try {
+      outcome = await driver.startTurn(
+        context,
+        {
+          surfaceScope: surfaceScopeAtSend,
+          sessionId,
+          message,
+          displayMessage,
+          currentAgentType,
+          acpClientId,
+          isFirstMessage,
+          readySession,
+          options,
+        },
+        turnTracker,
+      );
+    } catch (error) {
+      if (!acceptAdmittedTurnRefusal(context, surfaceScopeAtSend, sessionId, turnTracker, error)) throw error;
+      outcome = 'completed';
+    }
     if (outcome === 'detached') {
       if (previewTurnId) finishSubmittedMessagePreview(surfaceScopeAtSend, sessionId, previewTurnId);
       // The message steered or continued target-owned work; the shared
@@ -558,22 +732,7 @@ async function sendMessageInternal(
     }
 
     if (readySession.draft && turnTracker.hostAcceptedTurn) {
-      context.flowChatStore.setState(state => {
-        const current = state.sessions.get(sessionId);
-        return current ? { ...state, sessions: new Map(state.sessions).set(sessionId, {
-          ...current, draft: undefined,
-        }) } : state;
-      });
-      // Navigation failure cannot undo an accepted message or cause it to be resent.
-      try {
-        const { activateMainSession } = await import('../sessionActivation');
-        if (surfaceScopeAtSend.isCurrent() && context.flowChatStore.getState().activeSessionId === sessionId) {
-          await activateMainSession(sessionId, { isCurrent: () => surfaceScopeAtSend.isCurrent()
-            && context.flowChatStore.getState().activeSessionId === sessionId });
-        }
-      } catch (error) {
-        log.warn('Accepted draft could not activate its workspace', { sessionId, error });
-      }
+      await adoptAcceptedDraft(context, surfaceScopeAtSend, sessionId);
     }
 
     completeSessionSend(
@@ -583,6 +742,13 @@ async function sendMessageInternal(
         ? options.onSessionConflictRetrySuccess
         : undefined,
     );
+    if (refusedOutboxDiscard) {
+      // Cleanup after an accepted send must never turn it into a failure.
+      const discard = refusedOutboxDiscard;
+      void Promise.resolve().then(discard).catch(error => {
+        log.warn('Failed to release a refused host queue copy after a direct send', { sessionId, error });
+      });
+    }
 
   } catch (error) {
     // The window moved to another device mid-submission. That is not a turn
@@ -603,6 +769,59 @@ async function sendMessageInternal(
       if (latestSendBySession.get(sendCoordinationKey) === sendAttempt) {
         latestSendBySession.delete(sendCoordinationKey);
       }
+      if (options?.bypassPendingQueue && !turnTracker.hostAcceptedTurn) {
+        throw new RetiredQueueSubmission(turnTracker.hostSubmitStarted === true);
+      }
+      return;
+    }
+
+    const uncertainTurnId = turnTracker.createdLocalTurnId;
+    const uncertainKind = uncertainTurnId && turnTracker.hostSubmitStarted && !turnTracker.hostAcceptedTurn
+      && !options?.preserveTurnOnStartError
+      ? submittingDriver?.id === 'dispatch'
+        ? isUncertainDispatchSubmitFailure(error) ? 'dispatch' : null
+        : !isLocalSurface(surfaceIdAtSend) && isOutcomeUnknownError(error) ? 'peer' : null
+      : null;
+    if (uncertainTurnId && uncertainKind) {
+      // The host may already own this Turn. Keep it, confirm with the host, and
+      // never hand the text back to the composer for a duplicating resend.
+      log.warn('Turn start outcome is unknown; confirming with the host', {
+        sessionId, turnId: uncertainTurnId, kind: uncertainKind,
+      });
+      if (previewTurnId) finishSubmittedMessagePreview(surfaceScopeAtSend, sessionId, previewTurnId);
+      // A drained queue item keeps the message and its FIFO position while the
+      // outcome is unknown; a retained copy would land behind later messages.
+      const queueItemId = options?.bypassPendingQueue ? options.pendingQueueItemId : undefined;
+      const uncertain: UncertainSubmission = {
+        scope: surfaceScopeAtSend,
+        sessionId,
+        turnId: uncertainTurnId,
+        retained: {
+          content: message,
+          displayMessage,
+          agentType,
+          imageContexts: options?.imageContexts,
+          imageDisplayData: options?.imageDisplayData,
+          composerDraft: options?.pendingQueueDraft,
+          userMessageMetadata: options?.userMessageMetadata,
+        },
+        queueItemId,
+      };
+      const resolution = submittingDriver?.confirmUncertainSubmission?.(context, uncertain, error)
+        ?? confirmUncertainPeerSubmission(context, uncertain);
+      void resolution.then(async resolved => {
+        // A confirmed first message materialized the draft exactly as an
+        // acknowledged one: its Turn id must not be reused by the next send.
+        if (resolved === 'delivered' && submittedDraftTurnId === uncertainTurnId) {
+          await adoptAcceptedDraft(context, surfaceScopeAtSend, sessionId, uncertainTurnId);
+        }
+      }).catch(resolveError => {
+        log.error('Failed to resolve a submission with an unknown outcome', { sessionId, error: resolveError });
+      });
+      if (latestSendBySession.get(sendCoordinationKey) === sendAttempt) {
+        latestSendBySession.delete(sendCoordinationKey);
+      }
+      if (queueItemId) throw new RetiredQueueSubmission(true);
       return;
     }
 
@@ -703,6 +922,7 @@ async function sendMessageInternal(
 }
 
 export async function cancelSessionTask(context: FlowChatContext, requestedSessionId?: string): Promise<boolean> {
+  let driverId: string | undefined;
   try {
     const state = context.flowChatStore.getState();
     const sessionId = requestedSessionId || state.activeSessionId;
@@ -713,9 +933,17 @@ export async function cancelSessionTask(context: FlowChatContext, requestedSessi
     }
 
     const session = state.sessions.get(sessionId);
-    return await driverForSession(sessionId, session).cancel(context, sessionId);
+    const driver = driverForSession(sessionId, session);
+    driverId = driver.id;
+    return await driver.cancel(context, sessionId);
   } catch (error) {
     log.error('Failed to cancel current task', error);
+    // A dispatch stop crosses the network: after its retries the driver
+    // reports, in translated copy, that the stop was not confirmed. Silence
+    // would leave the user believing the job stopped (or that it did not).
+    if (driverId === 'dispatch' && error instanceof Error && error.message) {
+      notificationService.error(error.message, { duration: 6000 });
+    }
     return false;
   }
 }
@@ -735,8 +963,15 @@ export async function drainPendingQueue(
 ): Promise<void> {
   if (isBtwSessionClosing(sessionId)) return;
   if (hostQueueSupported(sessionId) && !options?.allowInterruptedRecoveryAbandon) return;
-  if (isRuntimeSessionAttachmentInFlight(getActiveSurfaceId(), sessionId) ||
-      isRuntimeSessionProjectionStale(getActiveSurfaceId(), sessionId)) {
+  const scope = getActiveSurfaceScope();
+  const session = context.flowChatStore.getState().sessions.get(sessionId);
+  // Peer content/terminal facts are owned by the canonical subscriber, not
+  // the independent direct-event cursor repaired by local Runtime attach.
+  const peerReady = !isLocalSurface(scope.surfaceId) && session?.historyState === 'ready';
+  if (isLocalSurface(scope.surfaceId)
+    ? isRuntimeSessionAttachmentInFlight(scope.surfaceId, sessionId)
+      || isRuntimeSessionProjectionStale(scope.surfaceId, sessionId)
+    : !peerReady) {
     return;
   }
   const machineState = stateMachineManager.getCurrentState(sessionId);
@@ -750,10 +985,14 @@ export async function drainPendingQueue(
     return;
   }
   if (context.userCancelledSessionIds.has(sessionId)) {
-    log.debug('Pending queue held until cancellation outcome is authoritative', { sessionId });
-    return;
+    const latest = session?.dialogTurns.at(-1);
+    if (peerReady && latest && ['completed', 'cancelled', 'error'].includes(latest.status)) {
+      context.userCancelledSessionIds.delete(sessionId);
+    } else {
+      log.debug('Pending queue held until cancellation outcome is authoritative', { sessionId });
+      return;
+    }
   }
-  const session = context.flowChatStore.getState().sessions.get(sessionId);
   if (
     hasInterruptedTurnHoldingQueue(session)
     && !options?.allowInterruptedRecoveryAbandon
@@ -766,6 +1005,7 @@ export async function drainPendingQueue(
   // skipped here — the user must explicitly act on them to avoid re-entering
   // the same failure mode automatically.
   const allItems = pendingQueueManager.list(sessionId);
+  if (allItems.some(item => item.status === 'sending' || item.status === 'sending_now')) return;
   const next = allItems.find(
     (item) => (item.retryCount ?? 0) === 0 && item.status === 'queued',
   );
@@ -811,17 +1051,23 @@ export async function drainPendingQueue(
         pendingQueueDraft: next.composerDraft,
         userMessageMetadata: next.userMessageMetadata,
         bypassPendingQueue: true,
+        pendingQueueItemId: next.id,
       },
     );
     // Only remove the item AFTER sendMessage completes successfully so we keep
     // the original id / timestamp / retryCount on failure (no UI flicker, no
     // reset of the retry counter, and FIFO order is preserved).
-    pendingQueueManager.remove(sessionId, next.id);
+    pendingQueueManager.removeForSurface(scope.surfaceId, sessionId, next.id);
   } catch (error) {
+    if (error instanceof RetiredQueueSubmission) {
+      pendingQueueManager.setStatusForSurface(scope.surfaceId, sessionId, next.id,
+        error.outcomeUnknown ? 'failed' : 'queued');
+      return;
+    }
     log.error('Failed to drain pending queue item', { sessionId, itemId: next.id, error });
     // Mark in place. The auto-drain listener skips `failed` items so the user
     // can edit / send-now / delete without entering a tight retry loop.
-    pendingQueueManager.setStatus(sessionId, next.id, 'failed');
+    pendingQueueManager.setStatusForSurface(scope.surfaceId, sessionId, next.id, 'failed');
   }
 }
 
@@ -857,4 +1103,14 @@ export function installPendingQueueDrainListener(context: FlowChatContext): void
   subscribeRuntimeSessionAttachmentFinished((surfaceId, sessionId) => {
     if (surfaceId === getActiveSurfaceId()) schedulePendingQueueDrain(sessionId);
   });
+  pendingQueueManager.subscribe(sessionId => schedulePendingQueueDrain(sessionId));
+  // Recovery can confirm an already-idle session without another state-machine
+  // transition. Wake its queue when history becomes trustworthy again.
+  context.flowChatStore.subscribeSelector(
+    state => isLocalSurface(getActiveSurfaceId()) ? [] : [...state.sessions.values()]
+      .filter(session => session.historyState === 'ready' && pendingQueueManager.list(session.sessionId).length > 0)
+      .map(session => session.sessionId),
+    sessionIds => sessionIds.forEach(schedulePendingQueueDrain),
+    { isEqual: (a, b) => a.length === b.length && a.every((id, index) => id === b[index]) },
+  );
 }

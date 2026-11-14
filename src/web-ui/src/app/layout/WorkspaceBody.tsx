@@ -1,3 +1,4 @@
+import { VisualSkinSurfacePaint } from '@/infrastructure/visual-skin/VisualSkinSurfacePaint';
 /**
  * WorkspaceBody — main workspace container.
  *
@@ -82,8 +83,11 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
       className={`openbitfun-workspace-body${isEntering ? ' is-entering' : ''}${isExiting ? ' is-exiting' : ''} ${className}`}
       data-openbitfun-scene="workbench"
       data-openbitfun-part="workspace"
+      data-openbitfun-surface="workbench"
+      data-openbitfun-skin-slot="workbench-background"
       data-openbitfun-state={isNavCollapsed ? 'collapsed' : undefined}
     >
+      <VisualSkinSurfacePaint />
       <div
         className="openbitfun-workspace-body__material"
         data-openbitfun-scene="workbench"
@@ -104,10 +108,13 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
         className={`openbitfun-workspace-body__nav-area${isNavCollapsed ? ' is-collapsed' : ''}`}
         style={isNavCollapsed ? undefined : { '--nav-width': `${navWidth}px` } as React.CSSProperties}
         data-openbitfun-scene="workbench"
+        data-openbitfun-surface="navigation"
+        data-openbitfun-skin-slot="navigation-background"
         data-openbitfun-part="navArea"
         data-openbitfun-theme-scope="chrome"
         data-openbitfun-state={isNavCollapsed ? 'collapsed' : undefined}
       >
+        <VisualSkinSurfacePaint />
         <NavBar onExpandNav={toggleLeftPanel} onMaximize={onMaximize} />
         <NavPanel className="openbitfun-workspace-body__nav-panel" />
         <div data-openbitfun-creation-slot="sidebar-footer" />
@@ -143,11 +150,21 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
       {/* Right: visual scene surface + any shell-level overlay */}
       <div className="openbitfun-workspace-body__scene-area" data-openbitfun-scene="workbench" data-openbitfun-part="sceneArea">
         <div
+          className="openbitfun-workspace-body__corner-underlay"
+          data-openbitfun-surface-underlay="navigation"
+          data-openbitfun-theme-scope="chrome"
+          aria-hidden="true"
+        />
+        <div
           ref={sceneSurfaceRef}
           className="openbitfun-workspace-body__scene-surface"
           data-openbitfun-scene="workbench"
+          data-openbitfun-surface="workbench-content"
+          data-openbitfun-skin-slot="workbench-content-background"
           data-openbitfun-part="sceneSurface"
+          data-openbitfun-state={activeSceneId === null ? 'empty' : undefined}
         >
+          <VisualSkinSurfacePaint />
           <SceneChromeProvider activeSceneId={activeSceneId}>
             <div data-openbitfun-creation-slot="scene-header" />
             <WorkbenchLayout

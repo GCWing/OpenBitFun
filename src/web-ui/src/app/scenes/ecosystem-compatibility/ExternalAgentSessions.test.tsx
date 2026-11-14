@@ -2,6 +2,8 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { VisualSkinPackageParser } from '@/infrastructure/visual-skin/parser';
+import { VisualSkinRuntime } from '@/infrastructure/visual-skin/runtime';
 
 const mocks = vi.hoisted(() => ({ getConfig: vi.fn(), setConfig: vi.fn(), listRemoved: vi.fn(), epoch: 0 }));
 vi.mock('@/infrastructure/api/service-api/ConfigAPI', () => ({ configAPI: mocks }));
@@ -61,6 +63,29 @@ describe('external session automatic discovery toggle', () => {
     await act(async () => toggle().click());
     expect(mocks.setConfig).toHaveBeenCalledWith('app.external_session_discovery.codex', true);
     expect(toggle().checked).toBe(true);
+  });
+
+  it('paints the discovery explanation and its failure inside one local reading surface', async () => {
+    mocks.getConfig.mockRejectedValueOnce(new Error('Offline'));
+    await render();
+    const section = container.querySelector('section')!;
+    const skin = await new VisualSkinPackageParser().parse(new TextEncoder().encode(JSON.stringify({
+      manifest: { schema: 'openbitfun.visual-skin', schemaVersion: 1, id: 'reading', name: 'Reading', version: '1' },
+      modes: { light: {} },
+      components: [{ component: 'config-page', slots: { sectionBody: { backgroundToken: 'color.surface.panel' } } }],
+    })).buffer);
+    const runtime = new VisualSkinRuntime({ list: async () => ({ skins: [skin], invalidRecords: [] }), get: async () => skin,
+      put: async () => {}, delete: async () => {}, getSelection: async () => null, setSelection: async () => {} });
+    try {
+      await runtime.activate('reading');
+      expect(section.getAttribute('data-openbitfun-paint-layer')).toBe('before');
+      expect(document.querySelector('style[data-openbitfun-skin-runtime]')?.textContent).toMatch(/::before\{background-color:var\(--openbitfun-color-surface-panel\)/);
+      expect(getComputedStyle(section).backgroundColor).not.toContain('--openbitfun-color-surface-panel');
+      expect(section.querySelector('p')?.textContent).toContain('sessions.autoDiscovery.description');
+      expect(section.querySelector('[role="alert"]')).not.toBeNull();
+      expect(toggle().disabled).toBe(true);
+      expect(mocks.setConfig).not.toHaveBeenCalled();
+    } finally { runtime.dispose(); }
   });
 
   it('keeps source switches independent and lets the user disable discovery', async () => {

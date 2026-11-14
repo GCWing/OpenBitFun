@@ -100,6 +100,7 @@ export const CatalogSessionMenu: React.FC<{
 
   const isArchived = session.persistedStatus === 'archived';
   const isDispatched = isNonLocalDispatchTarget(session.config.dispatchTarget);
+  const sessionMutationDisabledReason = isDispatched ? t('nav.sessions.dispatchMutationUnsupported') : undefined;
   const capabilities = slot.isLocal
     ? null
     : peer?.attachments.find(attachment => attachment.deviceId === slot.deviceId)?.capabilities ?? null;
@@ -266,6 +267,8 @@ export const CatalogSessionMenu: React.FC<{
                 type="button"
                 leading={<Icon glyph={Archive} size="sm" />}
                 onClick={event => run(event, { kind: 'archive' })}
+                disabled={Boolean(sessionMutationDisabledReason)}
+                title={sessionMutationDisabledReason}
                 data-testid="nav-device-session-menu-archive"
               >
                 <span>{t('nav.sessions.archive')}</span>
@@ -275,7 +278,8 @@ export const CatalogSessionMenu: React.FC<{
                 sessionId={session.sessionId}
                 testId="nav-device-session-menu-delete"
                 label={t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSource' : 'nav.sessions.delete')}
-                description={t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSourceConfirmMessage' : 'nav.sessions.deleteConfirmMessage', { name: title })}
+                disabled={Boolean(sessionMutationDisabledReason)}
+                description={sessionMutationDisabledReason ?? t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSourceConfirmMessage' : 'nav.sessions.deleteConfirmMessage', { name: title })}
                 onConfirm={() => {
                   close();
                   runCatalogSessionAction(actions, peer, slot, session.sessionId, { kind: 'delete' }, t);

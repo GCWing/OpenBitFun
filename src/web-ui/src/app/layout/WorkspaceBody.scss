@@ -43,6 +43,40 @@ $_resize-target-width: 12px;
   inset: 0;
   z-index: -1;
   pointer-events: none;
+
+  :root[data-openbitfun-skin-id] & { display: none; }
+}
+
+// Keep the original glass sheet for unskinned/native-material windows. A skin
+// uses a separate curve-only plane anchored to the actual scene-area instead.
+.openbitfun-workspace-body__corner-underlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--openbitfun-color-surface-chrome);
+
+  :root[data-openbitfun-skin-id] & {
+    display: block;
+    --openbitfun-skin-surface-underlay-radius: var(--openbitfun-layout-split-view-content-panel-radius);
+    // Navigation paints its own fill. Only extend it behind the exposed curve,
+    // so translucent profiles are not composited twice over shell artwork.
+    // This paint belongs to scene-area, whose actual edge follows live resize
+    // and collapse. Do not estimate its origin from a sibling's width variable.
+    left: 0;
+    right: auto;
+    width: var(--openbitfun-skin-surface-underlay-radius);
+    // Paint only outside the scene's top/bottom curve. A transparent scene must
+    // not expose a solid strip of navigation material along its whole edge.
+    mask-image:
+      radial-gradient(circle at 100% 100%, transparent calc(var(--openbitfun-skin-surface-underlay-radius) - 0.5px), currentColor var(--openbitfun-skin-surface-underlay-radius)),
+      radial-gradient(circle at 100% 0%, transparent calc(var(--openbitfun-skin-surface-underlay-radius) - 0.5px), currentColor var(--openbitfun-skin-surface-underlay-radius));
+    mask-size: 100% var(--openbitfun-skin-surface-underlay-radius);
+    mask-position: left top, left bottom;
+    mask-repeat: no-repeat;
+
+  }
 }
 
 .openbitfun-workspace-body__nav-area {

@@ -254,20 +254,32 @@ public class AccountStore internal constructor(
                 )
                 return@launch
             }
-            if (restored.relayUrl.trimEnd('/').startsWith("https://remote.openbitfun.com/v/") &&
-                restored.relayUrl.trimEnd('/') != AccountDefaults.CLOUD_RELAY_URL) {
-                // Relay tokens belong to their issuing database. Keep the old encrypted
-                // record/cache, but require a fresh login before using the new endpoint.
-                selectedRelayUrl = AccountDefaults.CLOUD_RELAY_URL
+            val storedRelay = restored.relayUrl.trimEnd('/')
+            val currentRelay = AccountDefaults.CLOUD_RELAY_URL
+            // Relay tokens belong to their issuing database. `/relay` and the older
+            // `/v/1.0.2` are live aliases of one deployment and one database, so a
+            // credential saved against either keeps working; only some other
+            // versioned path means a relay this build must sign in against again.
+            if (storedRelay.startsWith("https://remote.openbitfun.com/v/") &&
+                !com.openbitfun.mobile.core.transport.sameRelayDeployment(storedRelay, currentRelay)) {
+                // Keep the old encrypted record/cache, but require a fresh login
+                // before using the new endpoint.
+                selectedRelayUrl = currentRelay
                 expireSession(AccountFailureReason.AUTHENTICATION, AccountFailureStage.AUTHENTICATION)
                 return@launch
             }
-            session = restored
-            selectedRelayUrl = restored.relayUrl
+            // Store today's endpoint identity: a session saved against a live alias
+            // or against the versioned official endpoint is joined and compared on
+            // the bare base, so the query can never reach a path.
+            val current = if (com.openbitfun.mobile.core.transport.sameRelayDeployment(storedRelay, currentRelay)) {
+                restored.copy(relayUrl = currentRelay)
+            } else restored
+            session = current
+            selectedRelayUrl = current.relayUrl
             // Local credential restoration and remote directory availability are
             // separate facts. Publish identity before any network wait, but grant
             // no target authority until an authenticated membership snapshot arrives.
-            publishReady(restored, emptyList(), selectionConfirmed = false)
+            publishReady(current, emptyList(), selectionConfirmed = false)
             refreshDevices()
         }
     }
@@ -335,7 +347,7 @@ public class AccountStore internal constructor(
             val preferred = AccountDevicePolicy.preferredTarget(devices, deviceId)
             val selected = loggedIn.copy(
                 targetDeviceId = preferred?.id,
-                targetDeviceName = preferred?.name,
+                targetDeviceName = preferred?.displayName,
             )
             if (!persistLogin(selected)) return@launch
             session = selected
@@ -377,7 +389,7 @@ public class AccountStore internal constructor(
                 ?: AccountDevicePolicy.preferredTarget(devices, deviceId)
             val selected = current.copy(
                 targetDeviceId = preferred?.id,
-                targetDeviceName = preferred?.name,
+                targetDeviceName = preferred?.displayName,
             )
             // This retry only refreshes the volatile device-list projection. The
             // authenticated bytes saved before the failed list request stay exact.
@@ -427,10 +439,10 @@ public class AccountStore internal constructor(
         val selected = ready.devices.firstOrNull { it.id == targetId }
             ?.takeIf { AccountDevicePolicy.canSelect(it, deviceId) }
             ?: return
-        val updated = current.copy(targetDeviceId = selected.id, targetDeviceName = selected.name)
+        val updated = current.copy(targetDeviceId = selected.id, targetDeviceName = selected.displayName)
         if (!persistLogin(updated)) return
         session = updated
-        _state.value = ready.copy(selectedDeviceId = selected.id, selectedDeviceName = selected.name)
+        _state.value = ready.copy(selectedDeviceId = selected.id, selectedDeviceName = selected.displayName)
     }
 
     /**
@@ -454,7 +466,7 @@ public class AccountStore internal constructor(
                     val active = session!!
                     val selected = if (pendingInitialDeviceSelection) {
                         val preferred = AccountDevicePolicy.preferredTarget(devices, deviceId)
-                        active.copy(targetDeviceId = preferred?.id, targetDeviceName = preferred?.name)
+                        active.copy(targetDeviceId = preferred?.id, targetDeviceName = preferred?.displayName)
                     } else active
                     pendingInitialDeviceSelection = false
                     session = selected
@@ -544,7 +556,8 @@ public class AccountStore internal constructor(
             username = displayedProfile?.takeIf { it.userId == current.userId }?.username ?: current.username,
             devices = controllableDevices,
             selectedDeviceId = current.targetDeviceId.takeIf { selectionConfirmed },
-            selectedDeviceName = current.targetDeviceName.takeIf { selectionConfirmed },
+            selectedDeviceName = (controllableDevices.firstOrNull { it.id == current.targetDeviceId }?.displayName
+                ?: current.targetDeviceName).takeIf { selectionConfirmed },
         ).copy(avatarUrl = displayedProfile?.takeIf { it.userId == current.userId }?.avatarUrl)
         enrichProfile(current)
     }
@@ -786,7 +799,7 @@ private class CloudBackend(
     private fun AccountSessionData.toTransportSession(): CloudAccountSession =
         CloudAccountSession(token, userId, masterKey)
 
-    private fun CloudAccountDevice.toUi(): AccountDeviceUi = AccountDeviceUi(deviceId, deviceName, online, lastSeenAt, compatible)
+    private fun CloudAccountDevice.toUi(): AccountDeviceUi = AccountDeviceUi(deviceId, deviceName, online, lastSeenAt, compatible, deviceAlias)
 }
 
 @Serializable

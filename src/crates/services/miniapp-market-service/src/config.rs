@@ -16,6 +16,7 @@ pub struct MarketConfig {
     pub github_client_secret: Option<String>,
     pub session_secret: String,
     pub admin_github_ids: HashSet<i64>,
+    pub admin_emails: HashSet<String>,
     pub public_browse: bool,
     pub web_submissions_enabled: bool,
 }
@@ -53,6 +54,7 @@ impl MarketConfig {
         }
         let admin_github_ids =
             parse_admin_github_ids(&env::var("MARKET_ADMIN_GITHUB_IDS").unwrap_or_default());
+        let admin_emails = parse_admin_emails(&env::var("MARKET_ADMIN_EMAILS").unwrap_or_default());
         let public_browse = env::var("MARKET_PUBLIC_BROWSE")
             .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes"))
             .unwrap_or(true);
@@ -71,6 +73,7 @@ impl MarketConfig {
             github_client_secret: non_empty_env("MARKET_GITHUB_CLIENT_SECRET"),
             session_secret,
             admin_github_ids,
+            admin_emails,
             public_browse,
             web_submissions_enabled,
         })
@@ -113,6 +116,18 @@ fn parse_admin_github_ids(raw: &str) -> HashSet<i64> {
         .collect()
 }
 
+/// Administrator identities that sign in with a verified email code instead of GitHub.
+///
+/// Emails are matched case-insensitively; only addresses proven by `email_identities`
+/// (verified one-time code) are ever attached to a user, so this cannot be spoofed by
+/// a public GitHub profile address.
+fn parse_admin_emails(raw: &str) -> HashSet<String> {
+    raw.split(',')
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| value.contains('@'))
+        .collect()
+}
+
 fn non_empty_env(key: &str) -> Option<String> {
     env::var(key)
         .ok()
@@ -135,6 +150,24 @@ mod tests {
         assert_eq!(
             parse_admin_github_ids(" 42, 0,not-a-number,7 "),
             HashSet::from([42, 0, 7])
+        );
+    }
+
+    #[test]
+    fn admin_emails_are_empty_without_an_explicit_deployment_setting() {
+        assert!(parse_admin_emails("").is_empty());
+        assert!(parse_admin_emails(" , ").is_empty());
+        assert!(parse_admin_emails("not-an-email, 42").is_empty());
+    }
+
+    #[test]
+    fn admin_emails_parse_and_normalize_case() {
+        assert_eq!(
+            parse_admin_emails(" Bob@Example.com , second@example.com,"),
+            HashSet::from([
+                "bob@example.com".to_string(),
+                "second@example.com".to_string()
+            ])
         );
     }
 

@@ -1,0 +1,418 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+import ts from 'typescript';
+
+async function moduleUrl(relative, imports = {}) {
+  let transformed = ts.transpileModule(await readFile(new URL(relative, import.meta.url), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  transformed = transformed.replace(/from (['"])([^'"]+)\1/g, (_, quote, specifier) => {
+    assert.ok(imports[specifier], `unexpected dependency ${specifier}`);
+    return `from ${JSON.stringify(imports[specifier])}`;
+  });
+  return `data:text/javascript;base64,${Buffer.from(transformed).toString('base64')}`;
+}
+const dataModule = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+const agentContract = await moduleUrl('../../shared/agent-harness/contract.generated.ts');
+const agentWire = await moduleUrl('../../shared/agent-harness/wire.ts', { './contract.generated': agentContract });
+const hostStream = await moduleUrl('../../shared/relay-transport/HostStream.ts');
+const workspaceIdentity = await moduleUrl('../src/services/workspaceIdentity.ts');
+const relayClientModule = dataModule('export class RemoteHostCommandError extends Error {}');
+const managerUrl = await moduleUrl('../src/services/RemoteSessionManager.ts', {
+  '../../../shared/agent-harness/wire': agentWire,
+  // Minimal idempotent queue: the transport receives the submit request.
+  '../../../shared/dialog-queue/HostDialogQueue': dataModule(`export class HostDialogQueue {
+    constructor(scope, sessionId, transport) { this.transport = transport; }
+    async submit(message) { const snapshot = await this.transport({ action: 'submit', message }); return { receipt: { turnId: snapshot.turnId } }; }
+  }`),
+  '../../../shared/relay-transport/HostStream': hostStream,
+  './controlClientIdentity': await moduleUrl('../src/services/controlClientIdentity.ts'),
+  './RelayHttpClient': relayClientModule,
+  './SessionSynchronizer': dataModule('export class SessionSynchronizer {}'),
+  './workspaceIdentity': workspaceIdentity,
+});
+const { RemoteSessionManager } = await import(managerUrl);
+const synchronizerUrl = await moduleUrl('../src/services/SessionSynchronizer.ts', {
+  '../../../shared/relay-transport/HostStream': hostStream,
+  '../../../shared/relay-transport/SessionRecordReplica': await moduleUrl('../../shared/relay-transport/SessionRecordReplica.ts'),
+  './SessionRecordPresentation': await moduleUrl('../src/services/SessionRecordPresentation.ts'),
+});
+const { SessionSynchronizer } = await import(synchronizerUrl);
+const { UNSUPPORTED_HOST_MESSAGE } = await import(hostStream);
+const tick = () => new Promise(resolve => setImmediate(resolve));
+
+function fakeClient(handler) {
+  const client = {
+    controlTargetEpoch: 1,
+    targetDeviceId: 'desktop-a',
+    accountUserId: 'user',
+    getControlTargetSnapshot: () => ({ epoch: client.controlTargetEpoch, deviceId: client.targetDeviceId }),
+    isControlTargetCurrent: snapshot => snapshot.epoch === client.controlTargetEpoch,
+    sendDeviceRpc: handler,
+  };
+  return client;
+}
+
+test('an unknown capability snapshot is learned before choosing the send path', async () => {
+  const calls = [];
+  let answerProbe;
+  const manager = new RemoteSessionManager(fakeClient(async (device, cmd) => {
+    calls.push(cmd.cmd);
+    if (cmd.cmd === 'get_workspace_info') return new Promise(resolve => { answerProbe = resolve; });
+    if (cmd.cmd === 'dialog_queue') return { snapshot: { turnId: 'queued-turn' } };
+    return { resp: 'message_sent', turn_id: 'legacy-turn' };
+  }));
+  const changes = [];
+  manager.onHostCapabilitiesChange(() => changes.push([manager.hostCapabilitiesKnown, manager.hostCapabilityProbing]));
+  assert.equal(manager.hostCapabilitiesKnown, false);
+  const sent = manager.sendMessage('session', 'hello', 'Standard');
+  while (!answerProbe) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(manager.hostCapabilityProbing, true, 'the composer can show the host check');
+  assert.deepEqual(calls, ['get_workspace_info'], 'nothing is sent while the capabilities are unknown');
+  answerProbe({ resp: 'workspace_info', has_workspace: false, capabilities: ['dialog_queue_v1'] });
+  assert.equal(await sent, 'queued-turn');
+  assert.deepEqual(calls, ['get_workspace_info', 'dialog_queue'], 'the idempotent queue is used, not send_message');
+  assert.deepEqual(changes.at(-1), [true, false]);
+});
+
+test('a failed capability probe fails the send before anything is submitted', async () => {
+  const calls = [];
+  const manager = new RemoteSessionManager(fakeClient(async (device, cmd) => {
+    calls.push(cmd.cmd);
+    if (cmd.cmd === 'get_workspace_info') throw new Error('Relay connection timed out; request was not submitted');
+    return { resp: 'message_sent', turn_id: 'legacy-turn' };
+  }));
+  await assert.rejects(manager.sendMessage('session', 'hello', 'Standard'), /not submitted/);
+  assert.deepEqual(calls, ['get_workspace_info']);
+  assert.equal(manager.hostCapabilityProbing, false, 'a failed probe re-enables sending');
+  assert.equal(await manager.probeHostCapabilities(), false);
+});
+
+test('hosts without the queue capability keep the legacy send path', async () => {
+  const calls = [];
+  const manager = new RemoteSessionManager(fakeClient(async (device, cmd) => {
+    calls.push(cmd.cmd);
+    if (cmd.cmd === 'get_workspace_info') return { resp: 'workspace_info', has_workspace: false };
+    return { resp: 'message_sent', turn_id: 'legacy-turn' };
+  }));
+  assert.equal(await manager.sendMessage('session', 'hello', 'Standard'), 'legacy-turn');
+  assert.deepEqual(calls, ['get_workspace_info', 'send_message']);
+});
+
+/** A manager double whose stream subscriptions and recovery signals the test drives. */
+function streamManager(outcomes) {
+  const manager = {
+    subscriptions: [], signals: new Set(), forgotten: 0,
+    onStreamRecoverySignal(streamId, listener) { manager.signals.add(listener); return () => manager.signals.delete(listener); },
+    signal(reason = 'relay-reconnect') { for (const listener of [...manager.signals]) listener(reason); },
+    forgetHostCapabilities() { manager.forgotten += 1; },
+    async subscribeSessionStream(streamId, callbacks) {
+      const outcome = outcomes.shift() ?? 'open';
+      const handle = { closed: false, wakes: 0, callbacks, close() { handle.closed = true; }, wake() { handle.wakes += 1; }, async loadOlder() {} };
+      manager.subscriptions.push(handle);
+      if (outcome instanceof Error) throw outcome;
+      return handle;
+    },
+  };
+  return manager;
+}
+function synchronizer(manager) {
+  const states = [], errors = [];
+  const sync = new SessionSynchronizer(manager, 's1', () => {}, 0, undefined, undefined, error => errors.push(error),
+    { onSyncState: state => states.push(state) });
+  return { sync, states, errors };
+}
+
+test('a stalled reader restarts on a recovery signal instead of waiting out its backoff', async () => {
+  const manager = streamManager([]);
+  const { sync, states, errors } = synchronizer(manager);
+  sync.start(); await tick();
+  const first = manager.subscriptions[0];
+  first.callbacks.onCaughtUp(); assert.equal(sync.state, 'live');
+  first.callbacks.onError(new Error('Relay connection changed; delivery outcome is unknown'));
+  assert.equal(sync.state, 'catching-up', 'the chat can say it is catching up');
+  assert.equal(errors.length, 1);
+  manager.signal('relay-reconnect'); await tick();
+  assert.equal(first.closed, true, 'the backing-off reader is replaced');
+  assert.equal(manager.subscriptions.length, 2);
+  manager.subscriptions[1].callbacks.onCaughtUp();
+  assert.equal(sync.state, 'live');
+  assert.deepEqual(states, ['live', 'catching-up', 'live']);
+  manager.signal('hint'); await tick();
+  assert.equal(manager.subscriptions.length, 2, 'a healthy reader follows hints itself');
+  sync.stop();
+  assert.equal(manager.signals.size, 0);
+});
+
+test('a pending subscribe retry is cut short by a hint and the delay resets', async () => {
+  const manager = streamManager([new Error('timed out'), new Error('timed out')]);
+  const { sync } = synchronizer(manager);
+  sync.start(); await tick();
+  assert.equal(manager.subscriptions.length, 1);
+  manager.signal('hint'); await tick();
+  assert.equal(manager.subscriptions.length, 2, 'no 1 s wait after a hint');
+  manager.signal('visible'); await tick();
+  assert.equal(manager.subscriptions.length, 3);
+  manager.subscriptions[2].callbacks.onCaughtUp();
+  assert.equal(sync.state, 'live');
+  sync.stop();
+});
+
+test('unsupported hosts are re-probed on recovery signals, never on a timer', async () => {
+  const manager = streamManager([new Error(UNSUPPORTED_HOST_MESSAGE)]);
+  const { sync } = synchronizer(manager);
+  sync.start(); await tick();
+  assert.equal(sync.state, 'unsupported');
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  assert.equal(manager.subscriptions.length, 1, 'no timer retry against an unsupported host');
+  manager.signal('host-online'); await tick();
+  assert.equal(manager.subscriptions.length, 2, 'an updated host gets another chance');
+  manager.subscriptions[1].callbacks.onCaughtUp();
+  assert.equal(sync.state, 'live');
+  sync.stop();
+});
+
+test('a host stream restart forgets capabilities, and refreshed() settles on the next catch-up', async () => {
+  const manager = streamManager([]);
+  const { sync } = synchronizer(manager);
+  sync.start(); await tick();
+  const handle = manager.subscriptions[0];
+  handle.callbacks.onCaughtUp();
+  handle.callbacks.onGap('host stream restarted');
+  assert.equal(manager.forgotten, 1);
+  let settled = false;
+  const refreshed = sync.refreshed(5000).then(() => { settled = true; });
+  assert.equal(handle.wakes, 1, 'refreshed() asks the host again');
+  await tick(); assert.equal(settled, false);
+  handle.callbacks.onCaughtUp(); await refreshed;
+  assert.equal(settled, true);
+  sync.stop();
+});
+
+test('a host that comes back online forgets capabilities and signals recovery', async () => {
+  let directory;
+  const calls = [];
+  const client = fakeClient(async (device, cmd) => {
+    calls.push(cmd.cmd);
+    return { resp: 'workspace_info', has_workspace: false, capabilities: calls.length > 1 ? ['host_stream_v1'] : [] };
+  });
+  client.onDeviceDirectorySnapshot = listener => { directory = listener; return () => { directory = null; }; };
+  client.onRelayReconnect = () => () => {};
+  const manager = new RemoteSessionManager(client, []);
+  const reasons = [];
+  const stop = manager.onRecoverySignal(reason => reasons.push(reason));
+  directory([{ device_id: 'desktop-a', online: false }]);
+  assert.deepEqual(reasons, []);
+  directory([{ device_id: 'desktop-a', online: true }]);
+  assert.deepEqual(reasons, ['host-online']);
+  assert.equal(manager.hostCapabilitiesKnown, false, 'the returning host may be a different build');
+  await tick(); await tick();
+  assert.equal(manager.hostCapabilitiesKnown, true, 'capabilities are probed again at once');
+  stop();
+  assert.equal(directory, null, 'sources are released with the last listener');
+});
+
+test('a host learned as unsupported is asked again before the stream is refused', async () => {
+  let streams = 0;
+  const calls = [];
+  const client = fakeClient(async (device, cmd) => {
+    calls.push(cmd.cmd);
+    return { resp: 'workspace_info', has_workspace: false, capabilities: ['host_stream_v1'] };
+  });
+  client.subscribeHostStream = async () => { streams += 1; return { close() {}, wake() {}, async loadOlder() {} }; };
+  const manager = new RemoteSessionManager(client, []);
+  const knownWhileAsking = [];
+  manager.onHostCapabilitiesChange(() => knownWhileAsking.push(manager.hostCapabilitiesKnown));
+  await manager.subscribeSessionStream('s1', { onEvent() {}, onError() {} });
+  assert.deepEqual(calls, ['get_workspace_info']);
+  assert.equal(streams, 1);
+  assert.ok(knownWhileAsking.length > 0);
+  assert.ok(knownWhileAsking.every(Boolean), 'a stream re-probe never puts the composer back into "checking"');
+});
+
+test('a re-probe of a still-unsupported host keeps the legacy send path available', async () => {
+  const calls = [];
+  let answerProbe;
+  const client = fakeClient(async (device, cmd) => {
+    calls.push(cmd.cmd);
+    if (cmd.cmd === 'get_workspace_info') return new Promise(resolve => { answerProbe = resolve; });
+    return { resp: 'message_sent', turn_id: 'legacy-turn' };
+  });
+  client.subscribeHostStream = async () => { throw new Error('a legacy host has no streams'); };
+  const manager = new RemoteSessionManager(client, []);
+  const subscribed = manager.subscribeSessionStream('s1', { onEvent() {}, onError() {} });
+  while (!answerProbe) await tick();
+  assert.equal(manager.hostCapabilitiesKnown, true, 'Send is not blocked while the stream check runs');
+  assert.equal(await manager.sendMessage('session', 'hello', 'Standard'), 'legacy-turn');
+  answerProbe({ resp: 'workspace_info', has_workspace: false });
+  await assert.rejects(subscribed, error => error.message === UNSUPPORTED_HOST_MESSAGE);
+  assert.deepEqual(calls, ['get_workspace_info', 'send_message']);
+});
+
+test('chat errors are classified into translated copy; host answers keep their text', async () => {
+  const { RemoteHostCommandError } = await import(relayClientModule);
+  const { describeChatError, isUnknownOutcomeFailure, isNotSubmittedFailure, sessionStreamNotice } = await import(await moduleUrl('../src/services/chatErrorPresentation.ts', {
+    '../../../shared/relay-transport/RelayFailure': await moduleUrl('../../shared/relay-transport/RelayFailure.ts'),
+    '../../../shared/relay-transport/HostStream': hostStream,
+    './RelayHttpClient': relayClientModule,
+    './RemoteSessionManager': managerUrl,
+  }));
+  const t = key => key;
+  const warn = console.warn; console.warn = () => {};
+  try {
+    assert.equal(describeChatError(new TypeError('Failed to fetch'), t), 'devices.failureNetwork');
+    assert.equal(describeChatError(new Error('Relay returned HTTP 503'), t), 'devices.failureRelayUnavailable');
+    assert.equal(describeChatError(new Error('RPC target unavailable'), t), 'chat.desktopUnavailable');
+    assert.equal(describeChatError(new Error('Relay connection changed; request was not submitted'), t), 'chat.notSubmitted');
+    assert.equal(describeChatError(new Error('Relay connection changed; delivery outcome is unknown'), t), 'chat.outcomeUnknown');
+    assert.equal(describeChatError(new Error('operation has timed out'), t), 'chat.outcomeUnknown');
+    assert.equal(describeChatError(new Error(UNSUPPORTED_HOST_MESSAGE), t), 'chat.hostStreamUnsupported');
+    assert.equal(describeChatError(new RemoteHostCommandError('Session not found'), t), 'Session not found');
+    assert.equal(describeChatError('Relay returned HTTP 502', t), 'devices.failureRelayUnavailable', 'queue view errors are strings');
+  } finally { console.warn = warn; }
+  assert.equal(isUnknownOutcomeFailure(new Error('RPC acknowledgement lost; delivery outcome is unknown')), true);
+  assert.equal(isUnknownOutcomeFailure(new RemoteHostCommandError('operation has timed out')), false, 'a host answer is an outcome');
+  assert.equal(isNotSubmittedFailure(new Error('RPC deadline elapsed before dispatch')), true);
+
+  // Stream reads recover on their own: never send-failure copy, never a second banner.
+  const lost = new Error('Relay connection changed; request was not submitted');
+  assert.equal(sessionStreamNotice('live', null, 'connected'), null);
+  assert.equal(sessionStreamNotice('catching-up', null, 'connected'), 'catching-up');
+  assert.equal(sessionStreamNotice('loading', lost, 'connected'), 'catching-up', 'a failed read only says it is catching up');
+  assert.equal(sessionStreamNotice('catching-up', lost, 'unreachable'), null, 'the app connection banner already explains it');
+  assert.equal(sessionStreamNotice('unsupported', null, 'unreachable'), 'unsupported');
+});
+
+test('connection state names the cause and needs two missed pings before blaming the desktop', async () => {
+  const { deriveConnectionState } = await import(await moduleUrl('../src/services/connectionState.ts'));
+  const base = { browserOnline: true, relayStatus: 'connected', presence: { online: true, lastSeenAt: 100 }, missedPings: 0, answered: true };
+  assert.deepEqual(deriveConnectionState(base), { health: 'connected', issue: null });
+  assert.deepEqual(deriveConnectionState({ ...base, missedPings: 1 }), { health: 'connected', issue: null }, 'one lost ping is noise');
+  assert.deepEqual(deriveConnectionState({ ...base, missedPings: 2 }).issue, { kind: 'unreachable' });
+  assert.deepEqual(deriveConnectionState({ ...base, missedPings: 2, relayStatus: 'disconnected' }).issue, { kind: 'relay' });
+  assert.deepEqual(deriveConnectionState({ ...base, browserOnline: false }), { health: 'connected', issue: null },
+    'a wrong navigator.onLine does not hide a desktop that answers');
+  assert.deepEqual(deriveConnectionState({ ...base, browserOnline: false, missedPings: 1 }).issue, { kind: 'offline' },
+    'one missed ping is enough evidence for no network');
+  assert.deepEqual(deriveConnectionState({ ...base, browserOnline: false, relayStatus: 'disconnected' }).issue, { kind: 'offline' });
+  assert.deepEqual(deriveConnectionState({ ...base, browserOnline: false, answered: false }).issue, { kind: 'offline' },
+    'without an answer there are no working pings to trust');
+  assert.deepEqual(deriveConnectionState({ ...base, presence: { online: false, lastSeenAt: 90 }, missedPings: 1 }).issue,
+    { kind: 'host-offline', lastSeenAt: 90 });
+  assert.deepEqual(deriveConnectionState({ ...base, presence: { online: false, lastSeenAt: 90 } }), { health: 'connected', issue: null },
+    'a stale offline listing does not hide a desktop that answers');
+  assert.deepEqual(deriveConnectionState({ ...base, answered: false }), { health: 'checking', issue: null });
+});
+
+/** Load the connection-health hook with an effect that runs at once and a recording store. */
+async function connectionHealthHarness(t) {
+  const states = [];
+  const cleanups = [];
+  globalThis.__connectionHealthTest = { states, cleanups };
+  const hookUrl = await moduleUrl('../src/hooks/useConnectionHealth.ts', {
+    react: dataModule(`export function useEffect(effect) { const cleanup = effect(); if (cleanup) globalThis.__connectionHealthTest.cleanups.push(cleanup); }
+      export function useRef(value) { return { current: value }; }`),
+    '../services/RelayHttpClient': dataModule('export const isAccountIdentityChangedError = () => false;'),
+    '../services/RemoteSessionManager': dataModule('export const isRemoteControlTargetChangedError = () => false; export class RemoteSessionManager {}'),
+    '../services/store': dataModule(`const store = {
+      setConnectionHealth: health => globalThis.__connectionHealthTest.states.push({ health, issue: null }),
+      setConnectionState: (health, issue) => globalThis.__connectionHealthTest.states.push({ health, issue: issue?.kind ?? null }),
+    };
+    export const useMobileStore = selector => selector(store);`),
+    '../services/connectionState': await moduleUrl('../src/services/connectionState.ts'),
+  });
+  const { useConnectionHealth } = await import(hookUrl);
+  const listeners = { recovery: new Set(), relay: new Set(), presence: new Set(), target: new Set() };
+  const on = set => listener => { set.add(listener); return () => set.delete(listener); };
+  const manager = {
+    relayStatus: 'connected',
+    presence: { online: true, lastSeenAt: 10 },
+    pings: [],
+    ping() { return new Promise((resolve, reject) => manager.pings.push({ resolve, reject })); },
+    controlTargetPresence() { return manager.presence; },
+    onControlTargetChange: on(listeners.target),
+    onRecoverySignal: on(listeners.recovery),
+    onRelayStatus: on(listeners.relay),
+    onControlTargetPresenceChange: on(listeners.presence),
+    setRelay(status) { manager.relayStatus = status; for (const listener of [...listeners.relay]) listener(); },
+    setHostOnline(online) { manager.presence = { online, lastSeenAt: 10 }; for (const listener of [...listeners.presence]) listener(); },
+    signal(reason) { for (const listener of [...listeners.recovery]) listener(reason); },
+    async answer(ok = true) {
+      const ping = manager.pings.at(-1);
+      if (ok) ping.resolve(); else ping.reject(new Error('Relay connection timed out'));
+      await tick(); await tick();
+    },
+    async miss() { manager.signal('visible'); await manager.answer(false); },
+  };
+  useConnectionHealth(manager);
+  const last = () => states.at(-1);
+  // Stop the hook even when an assertion fails, and settle outstanding pings
+  // so their timeout timers are cleared.
+  t.after(async () => {
+    for (const cleanup of cleanups.splice(0)) cleanup();
+    for (const ping of manager.pings) ping.resolve();
+    await tick();
+  });
+  return { manager, states, last };
+}
+
+test('a reconnected Relay lets the recovery ping decide instead of flashing "unreachable"', async t => {
+  const { manager, last } = await connectionHealthHarness(t);
+  await manager.answer();
+  assert.deepEqual(last(), { health: 'connected', issue: null });
+  manager.setRelay('disconnected');
+  await manager.miss(); await manager.miss();
+  assert.deepEqual(last(), { health: 'unreachable', issue: 'relay' });
+  manager.setRelay('connected');
+  assert.deepEqual(last(), { health: 'connected', issue: null }, 'the stale misses no longer blame the desktop');
+  manager.signal('relay-reconnect');
+  assert.equal(manager.pings.length, 4, 'the recovery ping is sent');
+  await manager.answer(false);
+  assert.deepEqual(last(), { health: 'unreachable', issue: 'unreachable' }, 'a failed recovery ping still reports');
+});
+
+test('a desktop that comes back online is not shown as unreachable before it answers', async t => {
+  const { manager, last } = await connectionHealthHarness(t);
+  await manager.answer();
+  manager.setHostOnline(false);
+  await manager.miss(); await manager.miss();
+  assert.deepEqual(last(), { health: 'unreachable', issue: 'host-offline' });
+  manager.setHostOnline(true);
+  assert.deepEqual(last(), { health: 'connected', issue: null });
+  manager.signal('host-online');
+  await manager.answer();
+  assert.deepEqual(last(), { health: 'connected', issue: null });
+});
+
+test('a recovery signal leaves an in-flight ping to answer and re-asks at once if it fails', async t => {
+  const { manager, states, last } = await connectionHealthHarness(t);
+  assert.equal(manager.pings.length, 1);
+  manager.signal('visible'); manager.signal('online'); manager.signal('relay-reconnect');
+  assert.equal(manager.pings.length, 1, 'no overlapping pings discard the one in flight');
+  const before = states.length;
+  manager.pings[0].reject(new Error('Relay connection changed; delivery outcome is unknown'));
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(manager.pings.length, 2, 'a ping that failed across a recovery is retried at once');
+  assert.equal(states.length, before, 'and is not counted as a miss');
+  await manager.answer();
+  assert.deepEqual(last(), { health: 'connected', issue: null });
+});
+
+test('a wrong "offline" from the browser needs a missed ping before it hides a desktop that answers', async t => {
+  const hadWindow = 'window' in globalThis;
+  globalThis.window = new EventTarget();
+  Object.defineProperty(globalThis.navigator, 'onLine', { value: true, configurable: true });
+  t.after(() => {
+    delete globalThis.navigator.onLine;
+    if (!hadWindow) delete globalThis.window;
+  });
+  const { manager, last } = await connectionHealthHarness(t);
+  await manager.answer();
+  Object.defineProperty(globalThis.navigator, 'onLine', { value: false, configurable: true });
+  globalThis.window.dispatchEvent(new Event('offline'));
+  assert.deepEqual(last(), { health: 'connected', issue: null }, 'working pings outweigh navigator.onLine');
+  assert.equal(manager.pings.length, 2, 'the desktop is asked at once');
+  await manager.answer(false);
+  assert.deepEqual(last(), { health: 'unreachable', issue: 'offline' }, 'a missed ping confirms no network');
+});

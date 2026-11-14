@@ -245,6 +245,9 @@ export class I18nService {
   private localeChangeSeq: number = 0;
   private readonly dateFormatterCache = new BoundedFormatterCache<Intl.DateTimeFormat>();
   private readonly numberFormatterCache = new BoundedFormatterCache<Intl.NumberFormat>();
+  // Reuse the resolved zone for the lifetime of its formatter so a new
+  // formatter can pick up changes to the host's default time zone.
+  private readonly resolvedTimeZones = new WeakMap<Intl.DateTimeFormat, string>();
 
   constructor() {
     this.i18nInstance = i18next.createInstance();
@@ -610,7 +613,15 @@ export class I18nService {
   }
 
   getResolvedTimeZone(): string {
-    return this.createDateTimeFormatter().resolvedOptions().timeZone || 'UTC';
+    const formatter = this.createDateTimeFormatter();
+    const cached = this.resolvedTimeZones.get(formatter);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const value = formatter.resolvedOptions().timeZone || 'UTC';
+    this.resolvedTimeZones.set(formatter, value);
+    return value;
   }
 
    

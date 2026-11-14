@@ -17,6 +17,11 @@ export interface GlobalConfig {
   last_modified: number;
 }
 
+export interface DecisionModelConfig {
+  endpoint: string;
+  model_name: string;
+}
+
 export type PermissionEffect = 'allow' | 'ask' | 'deny';
 
 export interface PermissionRule {
@@ -34,9 +39,25 @@ export interface PermissionInteractionConfig {
   auto_approve_ask: boolean;
 }
 
+export type PermissionApprovalStrategy = 'interactive' | 'immediate_allow' | 'model';
+export type PermissionApprovalModelKind = 'chat' | 'decision';
+export type PermissionApprovalOnAsk = 'user' | 'reject';
+export type PermissionApprovalOnError = 'ask' | 'reject';
+
+export interface PermissionApprovalConfig {
+  strategy: PermissionApprovalStrategy;
+  model_kind: PermissionApprovalModelKind;
+  chat_model_id: string;
+  timeout_ms: number;
+  on_ask: PermissionApprovalOnAsk;
+  on_error: PermissionApprovalOnError;
+}
+
 export interface ToolPermissionConfig {
   policy: PermissionPolicyConfig;
   interaction: PermissionInteractionConfig;
+  /** Existing installations may not have automatic-approval settings yet. */
+  approval?: PermissionApprovalConfig;
 }
 
 export type MemoryExternalContextPolicy = 'clear_tool_results' | 'allow' | 'skip_session';
@@ -482,6 +503,7 @@ export interface ModelRoutingConfig {
 }
 
 export interface AIConfig {
+  decision_model: DecisionModelConfig;
   generative_ui_library?: string;
   models: AIModelConfig[];
   tool_presentation_mode?: 'native' | 'ptc' | 'ptc_python';
@@ -606,6 +628,9 @@ export interface SkillScanDiagnostic {
 }
 
 export interface SkillScanReport<T = SkillInfo> {
+  /** Optional projection; absent on hosts that only support individual reads. */
+  skillCountsVersion?: number;
+  enabledSkillCounts?: Record<string, number>;
   /** Negotiated host support for durable external copies and identity-checked undo. */
   importOperationsVersion?: number;
   skills: T[];

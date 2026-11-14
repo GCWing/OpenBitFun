@@ -45,7 +45,7 @@ use openbitfun_ai_adapters::{
 };
 use openbitfun_core_types::errors::{AiProviderError, ErrorCategory};
 use openbitfun_core_types::ModelResponseReplay;
-use openbitfun_runtime_ports::PermissionRule;
+use openbitfun_runtime_ports::{PermissionApprovalStrategy, PermissionRule};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -2087,7 +2087,57 @@ impl RoundExecutor {
             );
             let permission_mode =
                 Self::resolve_permission_mode(&global_config, &context.context_vars);
-            let auto_approve_ask = permission_mode.auto_approve_ask();
+            let context_approval_strategy = context
+                .context_vars
+                .get(openbitfun_agent_runtime::permission::PERMISSION_APPROVAL_STRATEGY_CONTEXT_KEY)
+                .and_then(|value| match value.trim().to_ascii_lowercase().as_str() {
+                    "interactive" => Some(PermissionApprovalStrategy::Interactive),
+                    "immediate_allow" => Some(PermissionApprovalStrategy::ImmediateAllow),
+                    "model" => Some(PermissionApprovalStrategy::Model),
+                    _ => None,
+                });
+            let context_approval_override = context_approval_strategy.is_some();
+            let legacy_auto_approval = global_config.tool_permissions.interaction.auto_approve_ask;
+            let permission_approval_strategy = context_approval_strategy
+                .or_else(|| {
+                    context
+                        .context_vars
+                        .get(openbitfun_agent_runtime::permission::PERMISSION_MODE_CONTEXT_KEY)
+                        .and_then(|value| openbitfun_runtime_ports::PermissionMode::parse(value))
+                        .and_then(|mode| {
+                            (mode == openbitfun_runtime_ports::PermissionMode::AutoApprove)
+                                .then_some(PermissionApprovalStrategy::Model)
+                        })
+                })
+                .or_else(|| legacy_auto_approval.then_some(PermissionApprovalStrategy::Model))
+                .unwrap_or(global_config.tool_permissions.approval.strategy);
+            let approval_config_validation = global_config.tool_permissions.approval.validate();
+            let approval_config_valid = approval_config_validation.is_ok();
+            let auto_approve_ask =
+                permission_approval_strategy == PermissionApprovalStrategy::ImmediateAllow;
+            let permission_user_input_available = context
+                .context_vars
+                .get(openbitfun_agent_runtime::user_questions::USER_INPUT_AVAILABLE_CONTEXT_KEY)
+                .and_then(|value| value.parse::<bool>().ok())
+                .unwrap_or(true);
+            debug!(
+                "Resolved permission approval strategy: round_id={}, strategy={:?}, context_override={}, persisted_auto_approve={}, config_valid={}, user_input_available={}",
+                round_id,
+                permission_approval_strategy,
+                context_approval_override,
+                legacy_auto_approval,
+                approval_config_valid,
+                permission_user_input_available
+            );
+            if permission_approval_strategy == PermissionApprovalStrategy::Model {
+                if let Err(error) = approval_config_validation {
+                    warn!(
+                        "Permission approval configuration is invalid; provider binding will be skipped: round_id={}, error={}",
+                        round_id,
+                        error
+                    );
+                }
+            }
 
             let project_rules = match context.workspace.as_ref() {
                 Some(workspace) if workspace.is_remote() => {
@@ -2125,6 +2175,12 @@ impl RoundExecutor {
                 &context.permission_constraints,
                 context.permission_runtime_ceiling.as_ref(),
             );
+            let current_user_message = ai_messages.iter().rev().find_map(|message| {
+                (message.role == "user")
+                    .then(|| message.content.clone())
+                    .flatten()
+                    .filter(|content| !content.trim().is_empty())
+            });
 
             // Create tool execution options (use configured timeout values)
             let tool_options = ToolExecutionOptions {
@@ -2132,6 +2188,12 @@ impl RoundExecutor {
                 subagent_batch_execution_policy,
                 permission_policy,
                 auto_approve_ask,
+                permission_approval_strategy,
+                permission_approval_timeout_ms: global_config.tool_permissions.approval.timeout_ms,
+                permission_approval_on_ask: global_config.tool_permissions.approval.on_ask,
+                permission_approval_on_error: global_config.tool_permissions.approval.on_error,
+                current_user_message,
+                permission_user_input_available,
                 ..ToolExecutionOptions::default()
             };
 
@@ -2146,7 +2208,162 @@ impl RoundExecutor {
 
             // Execute tools — convert pipeline-level Err into per-tool error results
             // so the model always receives a tool_result for every tool_call.
-            let execution_results = match tool_pipeline
+            let execution_pipeline = if permission_approval_strategy
+                == PermissionApprovalStrategy::Model
+                && approval_config_valid
+            {
+                // Resolve the approval model on the executing host. A failed
+                // binding deliberately leaves the provider absent so the
+                // pipeline applies its configured fail-closed fallback.
+                let provider: Option<Arc<dyn openbitfun_runtime_ports::PermissionDecisionPort>> =
+                    match global_config.tool_permissions.approval.model_kind {
+                        openbitfun_runtime_ports::PermissionApprovalModelKind::Chat
+                            if !global_config
+                                .tool_permissions
+                                .approval
+                                .chat_model_id
+                                .trim()
+                                .is_empty() =>
+                        {
+                            debug!(
+                                "Binding chat permission approval provider: round_id={}, model_id={}",
+                                round_id,
+                                global_config.tool_permissions.approval.chat_model_id.trim()
+                            );
+                            let approval_client = if global_config
+                                .tool_permissions
+                                .approval
+                                .chat_model_id
+                                .trim()
+                                == context.model_config_id
+                            {
+                                Some(ai_client.clone())
+                            } else {
+                                match crate::infrastructure::ai::AIClientFactory::get_global().await
+                                {
+                                    Ok(factory) => {
+                                        match factory
+                                            .get_client_resolved(
+                                                global_config
+                                                    .tool_permissions
+                                                    .approval
+                                                    .chat_model_id
+                                                    .trim(),
+                                            )
+                                            .await
+                                        {
+                                            Ok(client) => Some(client),
+                                            Err(error) => {
+                                                warn!("Approval model is unavailable on the execution host: {error}");
+                                                None
+                                            }
+                                        }
+                                    }
+                                    Err(error) => {
+                                        warn!("Approval model factory is unavailable on the execution host: {error}");
+                                        None
+                                    }
+                                }
+                            };
+                            approval_client.map(|client| {
+                                Arc::new(
+                                    openbitfun_ai_adapters::permission::ChatPermissionDecisionProvider::new(
+                                        client,
+                                        Duration::from_millis(
+                                            global_config.tool_permissions.approval.timeout_ms,
+                                        ),
+                                    ),
+                                ) as Arc<dyn openbitfun_runtime_ports::PermissionDecisionPort>
+                            })
+                        }
+                        #[cfg(feature = "decision-model-credentials")]
+                        openbitfun_runtime_ports::PermissionApprovalModelKind::Decision
+                            if !global_config.ai.decision_model.model_name.trim().is_empty() =>
+                        {
+                            debug!(
+                                "Binding decision permission approval provider: round_id={}, model_name={}",
+                                round_id,
+                                global_config.ai.decision_model.model_name.trim()
+                            );
+                            let endpoint = global_config.ai.decision_model.endpoint.trim();
+                            let api_key = crate::service::decision_model::get_api_key().await;
+                            match (endpoint, api_key) {
+                                (endpoint, Ok(Some(api_key)))
+                                    if !endpoint.is_empty() && !api_key.trim().is_empty() =>
+                                {
+                                    openbitfun_ai_adapters::permission::JevPermissionDecisionProvider::new(
+                                        openbitfun_ai_adapters::permission::JevPermissionDecisionConfig {
+                                            endpoint: endpoint.to_string(),
+                                            api_key,
+                                            model: global_config.ai.decision_model.model_name.trim().to_string(),
+                                            timeout: Duration::from_millis(
+                                                global_config.tool_permissions.approval.timeout_ms,
+                                            ),
+                                        },
+                                    )
+                                    .map(|provider| {
+                                        Arc::new(provider)
+                                            as Arc<dyn openbitfun_runtime_ports::PermissionDecisionPort>
+                                    })
+                                    .map_err(|error| {
+                                        warn!("Jev approval provider is unavailable on the execution host: {error}");
+                                        error
+                                    })
+                                    .ok()
+                                }
+                                (endpoint, Ok(Some(_))) if endpoint.is_empty() => {
+                                    warn!("Jev approval provider is unavailable: decision-model endpoint is not configured");
+                                    None
+                                }
+                                (_, Ok(Some(_))) => {
+                                    warn!("Jev approval provider is unavailable: decision-model API key is empty");
+                                    None
+                                }
+                                (_, Ok(None)) => {
+                                    warn!("Jev approval provider is unavailable: decision-model API key is not configured");
+                                    None
+                                }
+                                (_, Err(error)) => {
+                                    warn!("Jev approval provider credential lookup failed: {error}");
+                                    None
+                                }
+                            }
+                        }
+                        #[cfg(not(feature = "decision-model-credentials"))]
+                        openbitfun_runtime_ports::PermissionApprovalModelKind::Decision => {
+                            warn!("Decision-model approval is unavailable because decision-model credentials are not enabled");
+                            None
+                        }
+                        _ => {
+                            warn!(
+                                "Permission approval model binding is missing or invalid: round_id={}",
+                                round_id
+                            );
+                            None
+                        }
+                    };
+                if let Some(provider) = provider {
+                    debug!(
+                        "Bound permission approval provider: round_id={}, strategy={:?}",
+                        round_id, permission_approval_strategy
+                    );
+                    Arc::new(
+                        (**tool_pipeline)
+                            .clone()
+                            .with_permission_decision_provider(provider),
+                    )
+                } else {
+                    warn!(
+                        "Permission approval provider unavailable; pipeline will apply fallback: round_id={}, strategy={:?}",
+                        round_id,
+                        permission_approval_strategy
+                    );
+                    tool_pipeline.clone()
+                }
+            } else {
+                tool_pipeline.clone()
+            };
+            let execution_results = match execution_pipeline
                 .execute_tools(tool_calls.clone(), tool_context, tool_options)
                 .await
             {

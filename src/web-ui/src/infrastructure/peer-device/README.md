@@ -215,6 +215,50 @@ notification metadata.
     records; it does not reconstruct a running turn from a second full snapshot.
     Lifecycle and approval events may update controls, but raw token/tool-body
     events cannot overwrite the canonical content owner.
+    A delayed start cannot reactivate a terminal turn or replace a newer admitted
+    turn. Stop requests capture their device activation and turn before awaiting
+    preparation; a late response cannot settle another turn or device's buffers.
+
+    A new subscription of a session rebases the replica's held revisions below
+    any stream revision (order kept, content kept): a host stream rebuilt after it
+    expired restamps its snapshot at or below them, and must still settle a turn
+    that finished while nothing was subscribed. Because the host runs one turn per
+    session, a start with a newer backend index adopts the controller's machine
+    even if the previous turn's terminal event never arrived. A stop that has not
+    settled after the host's drain window re-reads the session from the host,
+    whose record projects a turn without a live executor as settled. A host queue
+    mutation for a session released from host memory restores it first; only a
+    session the host cannot restore is refused, and the controller then treats the
+    refusal as proof that nothing runs and sends through the normal path.
+
+    Legacy frontend queues wait for canonical peer history to be ready; local
+    Runtime replay fences do not gate peer queues. An authoritative terminal
+    record releases a pending cancellation gate. Interrupted-turn recovery and
+    failed-message ordering still require their explicit user decisions. Queue
+    acknowledgements settle on the device where the send began. A device switch
+    preserves the original pending item and FIFO order when it was not submitted.
+    An uncertain legacy submission retains its draft and Turn id for explicit
+    recovery instead of being silently dropped or automatically resubmitted.
+
+    Native subscription events carry a controller-local `subscriptionId` so a
+    retired reader cannot fail its replacement. Untagged legacy events remain
+    accepted. A failed live read retains the cursor and retries with capped
+    backoff even when no further hint arrives, including during older-page IO.
+    `retrying: true` errors keep the reader alive; `live: true` ready events
+    restore availability without completing an unrelated historical page.
+    These fields do not change the Relay or host wire protocol. Older-page
+    failures retain the live reader and discard only the incomplete page.
+
+    All stream readers install hint/reconnect listeners before the first read,
+    retaining invalidations that arrive while the initial page is in flight.
+    Host stream leases additionally negotiate an optional wire `subscription_id`:
+    `read_stream` offers a per-reader ID and a supporting host echoes it in the
+    `stream_page` envelope. Only an acknowledged ID may be sent with
+    `unsubscribe_stream`. The host removes that exact lease; a legacy unscoped
+    unsubscribe removes only the legacy lease. Readers connected to older hosts
+    omit cleanup and let the existing ten-minute lease expire, so delayed cleanup
+    cannot cancel a replacement. Hints remain coalesced per controller device.
+    The Relay still forwards opaque encrypted payloads and holds no stream state.
 
     `get_session_interaction_mailbox` returns the Runtime's revisioned pending
     questions and permissions on attach/reconnect. Apply it with a captured
@@ -238,9 +282,33 @@ notification metadata.
     Request admission and byte budgets belong to the shared transport owner.
     Avoid independent UI slot limits or polling loops that compete with recovery.
     Mutations are not automatically replayed without an idempotency contract.
+    Lost mutation replies carry `outcome_unknown:`; confirmed unsent requests and
+    product refusals retain their known failure. Deletion may settle from the
+    host deletion event or an authoritative missing metadata record. A failed
+    readback or a still-present record keeps the session and unsent drafts.
     Dialog submissions reuse `(sessionId, turnId)` so an ambiguous acknowledgement
-    does not create another turn. A failed session list must leave loading state
-    and offer an explicit retry.
+    does not create another turn; a retry the host refuses as an already admitted
+    Turn id is accepted, never a definite failure. Hosts replay only an accepted
+    (or admitted) submission: a refusal before admission is forgotten once
+    settled, so an explicit retry runs again. A failed session list must
+    leave loading state and offer an explicit retry.
+
+    Reads never spin through several full RPC deadlines: an attempt keeps the
+    shared 120 s deadline (slow reads such as model catalogs, statistics, MCP
+    resources and SSH directories must keep succeeding), only an explicit
+    hot-path allowlist of cheap session-list and config hydrate reads uses 25 s
+    attempts that end at 60 s, retries happen only for unsent requests and lost
+    replies within 60 s, and a silent host ends in a typed
+    `peer_host_not_responding` error. `peer_host_ui_not_ready` means the host
+    refused before executing (its UI is starting; a Desktop host first waits
+    about 10 s for it, so older controllers that treat the refusal as final
+    rarely see it): reads retry within the budget, mutations fail as not
+    executed, and the status shows the host as starting. A disconnect whose
+    detach did not reach the host retries it in the background (and as soon as
+    the host is seen online again) a bounded number of times; a reconnect
+    retires that retry. A ping reporting `caller_attached: false` (capability
+    `peer_attachment_status_v1`) triggers a re-attach and a permission mailbox
+    re-read; a capability change of any key publishes a new snapshot.
 
 14. **History navigation uses the same canonical replica.** Latest-page loading,
     older-page prefetch and explicit full-history requests share the subscription.
@@ -350,6 +418,29 @@ notification metadata.
     choice means visible. Hiding a device removes its sidebar section without
     switching, disconnecting, deleting its data or stopping its work. Activating
     a hidden device does not override that choice.
+
+22. **Composer attachments from the controller never travel as controller
+    paths.** A file dropped or pasted into a peer session is read on the
+    controller through its own Tauri host (`controllerFileTransfer.ts`, local
+    provider marker), never through the rendered transport, and so is the
+    clipboard. Supported images become inline image contexts. Other files are
+    staged with `workspace_file_upload` under
+    `openbitfun://runtime/<workspaceId>/attachments/<id>/`, which the host's
+    agent tools resolve, only when the peer negotiated
+    `runtime_attachment_upload_v1`. Older peers, folders and oversize files get
+    an explicit reply; there is no path-reference fallback. The same intake
+    covers remote workspaces (local build uploads) and detached dispatch
+    (images only).
+
+    The Files panel follows the same rule for drops and OS-clipboard paste:
+    `uploadLocalPathsToWorkspaceDirectory` publishes controller bytes with
+    `workspace_file_upload` into the peer workspace (local-paste `name (1)`
+    naming, never replacing a file) instead of `paste_files` or SSH upload,
+    which would resolve the controller path on the peer. Folders are refused
+    because the controller explorer listing filters entries, and a cut
+    clipboard behaves as a copy. Controller-path imports without a byte
+    transport, such as `.bfminiapp` packages, are refused while a peer is
+    rendered.
 
 ### Workspace HTML resources
 

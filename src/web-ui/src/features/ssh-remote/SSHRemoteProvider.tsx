@@ -8,6 +8,7 @@ import { workspaceManager } from '@/infrastructure/services/business/workspaceMa
 import { WorkspaceKind } from '@/shared/types/global-state';
 import type { SSHConnectionConfig, RemoteWorkspace } from './types';
 import { sshApi } from './sshApi';
+import { SSH_OPERATION_TIMEOUT_EVENT, type SshOperationTimeoutDetail } from './sshOperationEvents';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { ACPClientAPI, ACP_REQUIREMENTS_INVALIDATED_EVENT } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { normalizeRemoteWorkspacePath } from '@/shared/utils/pathUtils';
@@ -16,9 +17,11 @@ import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFla
 import {
   getActiveSurfaceScope,
   isSurfaceChangedError,
+  onSurfaceActivated,
   runInSurfaceScope,
   type SurfaceScope,
 } from '@/infrastructure/peer-device/deviceSurface';
+import { classifyPeerHostRefusal } from '@/infrastructure/peer-device/peerHostRefusal';
 import { useI18n } from '@/infrastructure/i18n';
 import { confirmWarning } from '@/infrastructure/confirm-dialog';
 import {
@@ -147,6 +150,19 @@ interface SSHRemoteProviderProps {
   children: React.ReactNode;
 }
 
+/** Background liveness check cadence for each connection in use. */
+const SSH_HEARTBEAT_INTERVAL_MS = 30_000;
+/** Visibility, network and timeout events can arrive in bursts. */
+/** Show a wake re-verification only once it outlasts a normal round trip. */
+const SSH_VERIFYING_DISPLAY_DELAY_MS = 500;
+const SSH_WAKE_CHECK_MIN_GAP_MS = 2_000;
+
+interface SshHeartbeat {
+  timer: number;
+  epoch: number;
+  check: (trigger: 'interval' | 'wake') => Promise<void>;
+}
+
 export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }) => {
   const { t } = useI18n('common');
   // Restore callbacks feed the startup check effect; a language change must
@@ -167,7 +183,10 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
   const [remoteFileBrowserInitialPath, setRemoteFileBrowserInitialPath] = useState('/tmp');
   // Per-workspace connection statuses (keyed by connectionId)
   const [workspaceStatuses, setWorkspaceStatuses] = useState<Record<string, ConnectionStatus>>({});
-  const heartbeats = useRef(new Map<string, { timer: number; epoch: number }>());
+  const heartbeats = useRef(new Map<string, SshHeartbeat>());
+  // Connections whose link is being re-verified after a wake, a network change
+  // or an operation timeout. A green status is not trustworthy meanwhile.
+  const [verifyingConnectionIds, setVerifyingConnectionIds] = useState<Record<string, true>>({});
   const connectionIdRef = useRef(connectionId);
   const connectionSurfaceIdRef = useRef(getActiveSurfaceScope().surfaceId);
   const isConnectedRef = useRef(isConnected);
@@ -326,6 +345,40 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     }
 
     setWorkspaceStatuses(prev => ({ ...prev, [connId]: st }));
+  }, []);
+
+  /**
+   * Peer Device Mode: the peer owns every SSH transport, so ask it instead of
+   * leaving its remote workspaces without a status. A host that does not report
+   * SSH transport state (a CLI peer) still owns the workspace it opened, so it
+   * keeps the mirrored `connected` state; only an unreachable peer is an error.
+   */
+  const peerStatusProbesRef = useRef(new Map<string, number>());
+  const reconcilePeerRemoteStatuses = useCallback((force: boolean) => {
+    if (!mountedRef.current || !isPeerDeviceModeActive()) return;
+    const scope = getActiveSurfaceScope();
+    const probes = peerStatusProbesRef.current;
+    for (const workspace of workspaceManager.getState().openedWorkspaces.values()) {
+      const connId = workspace.workspaceKind === WorkspaceKind.Remote ? workspace.connectionId?.trim() : '';
+      if (!connId || probes.get(connId) === scope.epoch) continue;
+      if (!force && workspaceStatusesRef.current[connId]) continue;
+      probes.set(connId, scope.epoch);
+      void runInSurfaceScope(scope, 'probe peer SSH status', () => sshApi.isConnected(connId))
+        .then(
+          (connected): ConnectionStatus => (connected ? 'connected' : 'disconnected'),
+          (error): ConnectionStatus | null => {
+            if (isSurfaceChangedError(error)) return null;
+            if (classifyPeerHostRefusal(error)) return 'connected';
+            log.warn('Failed to read peer SSH connection status', { connectionId: connId, error });
+            return 'error';
+          },
+        )
+        .then(status => {
+          if (probes.get(connId) === scope.epoch) probes.delete(connId);
+          if (!status || !mountedRef.current || !scope.isCurrent() || !isPeerDeviceModeActive()) return;
+          setWorkspaceStatuses(prev => (prev[connId] === status ? prev : { ...prev, [connId]: status }));
+        });
+    }
   }, []);
 
   const reportRemoteWorkspaceReconnectFailure = useCallback((workspace: RemoteWorkspace) => {
@@ -606,6 +659,17 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     void checkRemoteWorkspaceRef.current();
   }, [restoredScope, setWorkspaceStatus, stopHeartbeat]);
 
+  const setVerifying = useCallback((connId: string, verifying: boolean) => {
+    if (!mountedRef.current) return;
+    setVerifyingConnectionIds(prev => {
+      if (verifying === Boolean(prev[connId])) return prev;
+      const next = { ...prev };
+      if (verifying) next[connId] = true;
+      else delete next[connId];
+      return next;
+    });
+  }, []);
+
   const startHeartbeat = useCallback((connId: string) => {
     if (!mountedRef.current || isPeerDeviceModeActive()) return;
     const scope = getActiveSurfaceScope();
@@ -613,28 +677,71 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     stopHeartbeat(connId);
 
     let checking = false;
-    const heartbeat = { timer: 0, epoch: scope.epoch };
-    heartbeat.timer = window.setInterval(async () => {
+    let lastCheckAt = 0;
+    const heartbeat: SshHeartbeat = { timer: 0, epoch: scope.epoch, check: async () => {} };
+    // The host answers with an active transport probe when its last
+    // confirmation is stale, so this is the place to catch a link that died
+    // while the machine slept or changed networks.
+    heartbeat.check = async (trigger) => {
       if (heartbeats.current.get(connId) !== heartbeat) return;
       if (!scope.isCurrent() || isPeerDeviceModeActive()) {
         stopHeartbeat(connId);
         return;
       }
       if (checking) return;
+      if (trigger === 'wake' && Date.now() - lastCheckAt < SSH_WAKE_CHECK_MIN_GAP_MS) return;
       checking = true;
+      // A healthy link answers within a frame or two; only a check that is
+      // still pending shows "connecting", so restoring the window does not
+      // flash every remote row.
+      const verifyingTimer = trigger === 'wake'
+        ? window.setTimeout(() => setVerifying(connId, true), SSH_VERIFYING_DISPLAY_DELAY_MS)
+        : undefined;
       try {
         const connected = await sshApi.isConnected(connId);
+        lastCheckAt = Date.now();
         if (!scope.isCurrent() || heartbeats.current.get(connId) !== heartbeat) return;
         if (!connected) handleConnectionLost(connId);
       } catch {
         // A transient invoke error is retried at the next heartbeat.
       } finally {
         checking = false;
+        if (verifyingTimer !== undefined) window.clearTimeout(verifyingTimer);
+        setVerifying(connId, false);
       }
-    }, 30000);
+    };
+    heartbeat.timer = window.setInterval(() => {
+      void heartbeat.check('interval');
+    }, SSH_HEARTBEAT_INTERVAL_MS);
     heartbeats.current.set(connId, heartbeat);
-  }, [handleConnectionLost, stopHeartbeat]);
+  }, [handleConnectionLost, setVerifying, stopHeartbeat]);
   startHeartbeatRef.current = startHeartbeat;
+
+  // Re-verify right away when the window comes back, the network returns, or
+  // an operation timed out, instead of showing a stale green status until the
+  // next heartbeat.
+  useEffect(() => {
+    const verifyAll = () => {
+      if (isPeerDeviceModeActive()) return;
+      for (const heartbeat of heartbeats.current.values()) void heartbeat.check('wake');
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') verifyAll();
+    };
+    const onOperationTimeout = (event: Event) => {
+      if (isPeerDeviceModeActive()) return;
+      const connId = (event as CustomEvent<SshOperationTimeoutDetail>).detail?.connectionId?.trim();
+      if (connId) void heartbeats.current.get(connId)?.check('wake');
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('online', verifyAll);
+    window.addEventListener(SSH_OPERATION_TIMEOUT_EVENT, onOperationTimeout);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('online', verifyAll);
+      window.removeEventListener(SSH_OPERATION_TIMEOUT_EVENT, onOperationTimeout);
+    };
+  }, []);
 
   const checkRemoteWorkspace = useCallback(async (activate = true) => {
     if (!mountedRef.current) return;
@@ -969,6 +1076,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
         }
         workspaceStatusTimeouts.current.clear();
         log.info('Paused SSH heartbeat while peer device mode is active');
+        reconcilePeerRemoteStatuses(true);
       } else if (detail?.active === false) {
         if (showFileBrowserRef.current && connectionIdRef.current && isConnectedRef.current
           && usedConnectionIds().has(connectionIdRef.current)) {
@@ -979,13 +1087,26 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     };
     window.addEventListener('peer-mode:changed', onPeerModeChanged);
     return () => window.removeEventListener('peer-mode:changed', onPeerModeChanged);
-  }, [stopHeartbeat, usedConnectionIds]);
+  }, [reconcilePeerRemoteStatuses, stopHeartbeat, usedConnectionIds]);
+
+  // Statuses are keyed by connection ID, which another device may reuse: a
+  // newly rendered peer surface reads every one of its connections again.
+  useEffect(() => onSurfaceActivated(() => reconcilePeerRemoteStatuses(true)), [reconcilePeerRemoteStatuses]);
 
   useEffect(() => {
     return workspaceManager.addEventListener(event => {
       if (event.type === 'workspace:closed' || event.type === 'workspace:removed') {
         restoredScope(getActiveSurfaceScope()).bindings.delete(event.workspaceId);
         pruneHeartbeats();
+        return;
+      }
+      if (isPeerDeviceModeActive()) {
+        // Peer Device Mode: the peer owns the SSH connection lifecycle. Never
+        // run the controller-side reconnect/timeout removal path — those
+        // invokes route to the peer and would delete the peer's workspace.
+        // A hydrated list may arrive without per-workspace events, so every
+        // change reads the status of any connection that has none yet.
+        reconcilePeerRemoteStatuses(false);
         return;
       }
       const workspace =
@@ -999,23 +1120,13 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       if (!connId) {
         return;
       }
-      if (isPeerDeviceModeActive()) {
-        // Peer Device Mode: the peer owns the SSH connection lifecycle. Mirror
-        // its opened remote workspaces as connected and never run the
-        // controller-side reconnect/timeout removal path — those invokes route
-        // to the peer and would delete the peer's workspace.
-        if (workspaceStatusesRef.current[connId] !== 'connected') {
-          setWorkspaceStatus(connId, 'connected');
-        }
-        return;
-      }
       if (!workspaceStatusesRef.current[connId]) {
         setWorkspaceStatus(connId, 'connecting');
       }
       const metadataOnly = event.type === 'workspace:updated' || event.type === 'workspace:primary-assistant-changed';
       void checkRemoteWorkspaceRef.current(!metadataOnly);
     });
-  }, [pruneHeartbeats, restoredScope, setWorkspaceStatus]);
+  }, [pruneHeartbeats, reconcilePeerRemoteStatuses, restoredScope, setWorkspaceStatus]);
 
   const connect = useCallback(async (
     _connId: string,
@@ -1271,6 +1382,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     remoteWorkspace,
     connectionError,
     workspaceStatuses,
+    verifyingConnectionIds,
     showConnectionDialog,
     showFileBrowser,
     error,

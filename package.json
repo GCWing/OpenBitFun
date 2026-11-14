@@ -1,7 +1,7 @@
 {
   "name": "OpenBitFun",
   "private": true,
-  "version": "1.0.9",
+  "version": "1.0.10",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -25,7 +25,6 @@
     "dev:web": "pnpm --dir src/web-ui dev",
     "dev:mobile-web": "pnpm --dir src/mobile-web dev",
     "dev:miniapp-market": "pnpm --dir src/miniapp-market-web dev",
-    "dev:skin-market": "pnpm --dir src/skin-market-web dev",
     "dev:mobile-web:host": "pnpm --dir src/mobile-web dev --host",
     "preview:mobile-web": "pnpm --dir src/mobile-web preview",
     "lint:web": "pnpm --dir src/web-ui run lint",
@@ -47,7 +46,6 @@
     "theme:color-audit:design-lab": "node scripts/audit-frontend-colors.mjs --surface design-lab",
     "theme:color-audit:design-system-ui": "node scripts/audit-frontend-colors.mjs --surface design-system-ui",
     "theme:color-audit:miniapp-market": "node scripts/audit-frontend-colors.mjs --surface miniapp-market",
-    "theme:color-audit:skin-market": "node scripts/audit-frontend-colors.mjs --surface skin-market",
     "theme:color-audit:website": "node scripts/audit-frontend-colors.mjs --surface website",
     "theme:color-audit:mobile": "node scripts/audit-frontend-colors.mjs --surface mobile-web",
     "theme:color-audit:installer": "node scripts/audit-frontend-colors.mjs --surface installer",
@@ -71,7 +69,7 @@
     "models-dev:update": "node scripts/update-models-dev-snapshot.mjs",
     "check:build-prereqs": "node scripts/check-build-prereqs.mjs",
     "harmony:architecture": "node scripts/check-harmonyos-architecture.mjs",
-    "mobile:architecture": "node scripts/check-mobile-architecture.mjs",
+    "mobile:architecture": "node scripts/check-mobile-architecture.mjs && node --test scripts/mobile-client-build.contract.test.mjs",
     "mobile:ui:generate": "node scripts/mobile-ui-design-system.mjs",
     "mobile:ui:check": "node scripts/mobile-ui-design-system.mjs --check && node scripts/mobile-ui-preview.mjs --check",
     "mobile:ui:preview": "node scripts/mobile-ui-design-system.mjs && node scripts/mobile-ui-preview.mjs",
@@ -96,9 +94,6 @@
     "build:miniapp-market": "pnpm --dir src/miniapp-market-web build",
     "type-check:miniapp-market": "pnpm --dir src/miniapp-market-web type-check",
     "test:miniapp-market": "pnpm --dir src/miniapp-market-web test",
-    "build:skin-market": "pnpm --dir src/skin-market-web build",
-    "type-check:skin-market": "pnpm --dir src/skin-market-web type-check",
-    "test:skin-market": "pnpm --dir src/skin-market-web test",
     "prepare:mobile-web": "node scripts/mobile-web-build.cjs",
     "prepare:dsh-profile": "node scripts/prepare-dsh-profile.mjs",
     "plugin-host:install": "bun install --cwd src/apps/extension-host --frozen-lockfile",

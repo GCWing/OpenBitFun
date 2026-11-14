@@ -49,6 +49,7 @@ export interface UpdateInstallState {
   getReminderAt: (stage: AppUpdateReminderStage, version: string) => number | null;
   deferReminder: (stage: AppUpdateReminderStage, version: string) => void;
   startInstall: (replacePending?: boolean, expectedVersion?: string) => Promise<void>;
+  cancelDownload: () => Promise<void>;
   requestInstall: () => void;
   confirmInstall: () => Promise<void>;
   deferInstall: () => void;
@@ -108,7 +109,7 @@ export const useUpdateInstallStore = create<UpdateInstallState>((set, get) => ({
         log.warn('Failed to read the controller application version', current.reason);
       }
       if (pending.status === 'fulfilled') {
-        if (pending.value) set({ status: 'ready', version: pending.value.version });
+        if (pending.value) set({ status: 'ready', version: pending.value.version, error: pending.value.installError ?? null });
       } else {
         log.error('Failed to restore pending update', pending.reason);
         set({ status: 'error', error: errorText(pending.reason) });
@@ -239,11 +240,21 @@ export const useUpdateInstallStore = create<UpdateInstallState>((set, get) => ({
         promptOpen: false, notice: null, noticeRevision: state.noticeRevision + 1,
       }));
     } catch (error) {
+      if (/update download cancel(?:l)?ed/i.test(errorText(error))) {
+        set(state => ({ status: state.version ? 'ready' : 'idle', downloadVersion: null, error: null, notice: null, progress: initialProgress }));
+        return;
+      }
       log.error('Update download failed', error);
       set(state => ({ status: state.version ? 'ready' : 'error', error: errorText(error),
         notice: state.detailsOpen ? null : 'error', noticeRevision: state.noticeRevision + 1,
       }));
     }
+  },
+
+  cancelDownload: async () => {
+    if (get().status !== 'downloading') return;
+    try { await systemAPI.cancelUpdateDownload(); }
+    catch (error) { set({ error: errorText(error) }); }
   },
 
   requestInstall: () => {

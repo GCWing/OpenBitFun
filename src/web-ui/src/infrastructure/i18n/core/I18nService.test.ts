@@ -133,6 +133,53 @@ describe('I18nService shared namespace contract', () => {
     expect(secondNumber).toBe(firstNumber);
   });
 
+  it('resolves the display time zone once per cached formatter', async () => {
+    vi.stubGlobal('document', {
+      documentElement: { setAttribute: vi.fn() },
+    });
+    const service = new I18nService();
+    const resolvedOptions = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions');
+
+    const firstResolution = service.getResolvedTimeZone();
+    const resolutionsAfterFirstCall = resolvedOptions.mock.calls.length;
+
+    for (let render = 0; render < 50; render += 1) {
+      expect(service.getResolvedTimeZone()).toBe(firstResolution);
+    }
+    expect(resolvedOptions.mock.calls.length).toBe(resolutionsAfterFirstCall);
+
+    vi.spyOn(
+      service as unknown as { saveCurrentLocale(locale: string): Promise<void> },
+      'saveCurrentLocale',
+    ).mockResolvedValue(undefined);
+    await service.changeLanguage('zh-TW');
+    service.getResolvedTimeZone();
+
+    expect(resolvedOptions.mock.calls.length).toBeGreaterThan(resolutionsAfterFirstCall);
+    resolvedOptions.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('refreshes the resolved display time zone when the date formatter expires', () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      vi.stubEnv('TZ', 'UTC');
+      const service = new I18nService();
+      expect(service.getResolvedTimeZone()).toBe('UTC');
+
+      vi.stubEnv('TZ', 'America/Los_Angeles');
+      clock.mockReturnValue(now + 29_999);
+      expect(service.getResolvedTimeZone()).toBe('UTC');
+
+      clock.mockReturnValue(now + 30_000);
+      expect(service.getResolvedTimeZone()).toBe('America/Los_Angeles');
+    } finally {
+      clock.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('does not cache options with custom prototypes', () => {
     const service = new I18nService();
     const createDateTimeFormatter = (

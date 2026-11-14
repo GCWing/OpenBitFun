@@ -8,13 +8,30 @@ import './HostPendingQueuePanel.scss';
 import { useQueueReorder } from '@openbitfun/ui/flow-chat';
 import { PendingQueueMessageActions } from './PendingQueueMessageActions';
 import { usePendingQueueDisclosure } from './usePendingQueueDisclosure';
+import { hostQueueErrorKey } from '../utils/hostQueueErrors';
+import { createLogger } from '@/shared/utils/logger';
 import { hostQueuePresentation, observePresentedHostQueue } from '../services/hostQueuePresentation';
-import { HostDialogQueue, type QueueOutboxRecord, type QueueItem } from '../../../../shared/dialog-queue/HostDialogQueue';
+import { HostDialogQueue, type QueueOutboxRecord, type QueueItem, type QueueSnapshot } from '../../../../shared/dialog-queue/HostDialogQueue';
 import {
   ChatComposerQueue, ChatComposerQueueHeader, ChatComposerQueueTitle, ChatComposerQueueToggle,
   ChatComposerQueueList, ChatComposerQueueItem, ChatComposerQueueItemContent, ChatComposerQueueItemMessage, ChatComposerQueueItemActions,
   ChatComposerQueueItemStatus, ChatComposerQueueAttachmentBadge,
 } from '@openbitfun/ui/flow-chat';
+
+const log = createLogger('HostPendingQueuePanel');
+
+/**
+ * The queue state a snapshot describes. Every poll publishes a new snapshot
+ * object, so object identity cannot tell whether anything changed.
+ */
+function snapshotVersion(snapshot: QueueSnapshot | null): string | null {
+  return snapshot ? `${snapshot.queueEpoch}:${snapshot.revision}` : null;
+}
+
+/** A failure this panel already describes with its own translated copy. */
+class QueuePanelError extends Error {
+  constructor(readonly key: string) { super(key); }
+}
 
 function QueueAction({ label, icon, disabled, onClick }: { label: string; icon: ReactNode; disabled: boolean; onClick: () => void }) {
   return <Tooltip content={label}>
@@ -31,11 +48,21 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
   const [showHelp, setShowHelp] = useState(false);
   const listId = useId();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The queue version a failed operation was judged against. A later read of
+  // a changed queue (new epoch or revision) retires the stale failure.
+  const [error, setError] = useState<{ key: string | null; version: string | null } | null>(null);
+  const version = snapshotVersion(view.snapshot);
   useEffect(() => observePresentedHostQueue(queue), [queue]);
+  useEffect(() => {
+    if (error && !busy && view.error === null && version !== error.version) setError(null);
+  }, [busy, error, view.error, version]);
   const run = async (operation: () => Promise<unknown>) => {
     setBusy(true); setError(null);
-    try { await operation(); } catch (e) { setError(String(e)); }
+    try { await operation(); } catch (e) {
+      log.warn('Host queue operation failed', { sessionId: queue.sessionId, error: e });
+      setError({ key: e instanceof QueuePanelError ? e.key : hostQueueErrorKey(String(e)),
+        version: snapshotVersion(queue.getSnapshot().snapshot) });
+    }
     finally { setBusy(false); }
   };
   const restoreDraft = async (saved: QueueOutboxRecord, knownItem?: QueueItem) => {
@@ -43,10 +70,10 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
     await queue.prepareRestore(saved);
     const message = saved.request.message;
     const item = knownItem ?? await queue.receipt(message.turnId, saved.request.queueEpoch);
-    if (!item) throw new Error(t('hostQueue.unknown'));
+    if (!item) throw new QueuePanelError('hostQueue.unknown');
     if (item.status !== 'cancelled') {
       const result = await queue.act(item, 'cancel');
-      if (result.receipt?.status !== 'cancelled') throw new Error(t('hostQueue.unknown'));
+      if (result.receipt?.status !== 'cancelled') throw new QueuePanelError('hostQueue.unknown');
     }
     const cache = saved.draft as Partial<QueuedMessage> | undefined;
     const restored = onRestore({ ...cache, id: item.turnId, sessionId: queue.sessionId,
@@ -66,8 +93,8 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
   const reorderIds = items.filter(item => item.status === 'queued').map(item => item.turnId);
   const reorder = useQueueReorder(reorderIds, !busy && !view.error && view.snapshot?.supportsReorder === true,
     `${view.snapshot?.queueEpoch}:${view.snapshot?.revision}`, (id, before) => void run(() => queue.reorder(id, before)));
-  const rawError = error || (view.error?.includes('Session is not loaded') ? null : view.error);
-  const visibleError = rawError?.includes('queue_conflict:') ? t('pendingQueue.orderChanged') : rawError;
+  const errorKey = error ? error.key : hostQueueErrorKey(view.error);
+  const visibleError = errorKey ? t(errorKey) : null;
   if (!items.length && !view.pending.length && !visibleError) return null;
   const locked = busy || !!view.error;
   const renderPreview = (text: string) => <OverflowText data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="preview"
@@ -95,7 +122,7 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
           onSend={() => void run(() => queue.act(item, 'promote'))}
           editLabel={t('hostQueue.edit')} editDisabled={locked || steering} onEdit={() => void run(async () => {
             const saved = await queue.savedDraft(item.turnId);
-            if (!saved || saved.request.action !== 'submit') throw new Error(t('hostQueue.noDraft'));
+            if (!saved || saved.request.action !== 'submit') throw new QueuePanelError('hostQueue.noDraft');
             await restoreDraft(saved, item);
           })}
           removeLabel={t('hostQueue.cancel')} removeDisabled={locked || steering}
@@ -113,7 +140,7 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
     return <ChatComposerQueueItem data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="item" key={record.key} leadingIcon={<Icon glyph={ListEnd} size="sm" />} state="failed">
       <ChatComposerQueueItemContent data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="content">
         {message && <ChatComposerQueueItemMessage>{renderPreview(message.displayContent ?? message.content)}</ChatComposerQueueItemMessage>}
-        <ChatComposerQueueItemStatus data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" tone="warning">{t('hostQueue.unknown')}</ChatComposerQueueItemStatus>
+        <ChatComposerQueueItemStatus data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="status" tone="warning">{record.notSubmitted ? t('hostQueue.notSent') : t('hostQueue.unknown')}</ChatComposerQueueItemStatus>
       </ChatComposerQueueItemContent>
       <ChatComposerQueueItemActions data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="actions">
         <Tooltip content={t(record.restoreIntent && message ? 'hostQueue.edit' : 'hostQueue.checkRetry')}>

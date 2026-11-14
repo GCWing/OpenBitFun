@@ -1,4 +1,0 @@
-interface:
-  display_name: "OpenBitFun Appearance Manual"
-  short_description: "Author and validate contract-safe OpenBitFun skins"
-  default_prompt: "Use $create-openbitfun-skin to inspect the current Appearance contract, choose a relevant style example, and author or repair a valid sparse skin."

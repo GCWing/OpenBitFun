@@ -24,7 +24,18 @@ export type ExternalFileIntakeAvailability =
 
 export interface ExternalFileIntakeFailure {
   path: string;
-  reason: 'metadata' | 'invalid-path' | 'image-limit';
+  reason:
+    | 'metadata'
+    | 'invalid-path'
+    | 'image-limit'
+    /** A controller folder cannot be staged on another execution host. */
+    | 'directory'
+    /** The execution host cannot receive controller files. */
+    | 'file-unsupported'
+    | 'too-large'
+    | 'read'
+    | 'upload';
+  detail?: string;
 }
 
 export interface BuildExternalFileContextsOptions {
@@ -75,6 +86,17 @@ export function shouldAttemptNativeClipboardImageRead(
   types: ReadonlyArray<string>,
 ): boolean {
   return types.length === 0;
+}
+
+/**
+ * The controller path a context was attached from. Controller files staged on
+ * another host carry a runtime path of that host, so duplicate detection keys
+ * by the path the user dropped instead.
+ */
+export function getContextExternalSourcePath(context: ContextItem): string | undefined {
+  const sourcePath = context.metadata?.controllerSourcePath;
+  if (typeof sourcePath === 'string' && sourcePath) return sourcePath;
+  return getContextLocalPath(context);
 }
 
 export function getContextLocalPath(context: ContextItem): string | undefined {
@@ -207,12 +229,7 @@ function withExternalMetadata<T extends FileContext | DirectoryContext>(
 export async function buildExternalFileContexts(
   options: BuildExternalFileContextsOptions,
 ): Promise<ExternalFileIntakeResult> {
-  const seen = new Set(
-    options.existingContexts
-      .map(getContextLocalPath)
-      .filter((path): path is string => Boolean(path))
-      .map(normalizeExternalFilePath),
-  );
+  const seen = externalSourcePathKeys(options.existingContexts);
   let imageCount = options.existingContexts.filter((context) => context.type === 'image').length;
   const contexts: ExternalFileIntakeResult['contexts'] = [];
   const failures: ExternalFileIntakeFailure[] = [];
@@ -276,4 +293,154 @@ export async function buildExternalFileContexts(
   }
 
   return { contexts, failures, duplicateCount };
+}
+
+function externalSourcePathKeys(contexts: ContextItem[]): Set<string> {
+  return new Set(
+    contexts
+      .map(getContextExternalSourcePath)
+      .filter((path): path is string => Boolean(path))
+      .map(normalizeExternalFilePath),
+  );
+}
+
+/** Image extensions the composer can send as inline pixels. */
+const INLINE_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+
+function isInlineImageName(name: string): boolean {
+  const extension = name.toLowerCase().split('.').pop() ?? '';
+  return extension !== name.toLowerCase() && INLINE_IMAGE_EXTENSIONS.has(extension);
+}
+
+export interface BuildControllerFileContextsOptions {
+  source: ExternalFileSource;
+  paths: string[];
+  existingContexts: ContextItem[];
+  maxImageCount: number;
+  /** Largest non-image file sent to the execution host. */
+  maxFileBytes: number;
+  /** Metadata read on the controller, never on the execution host. */
+  loadMetadata: (path: string) => Promise<FileMetadata>;
+  /** Read controller image pixels into an inline image context. */
+  readImage: (path: string, name: string, metadata: FileMetadata) => Promise<ImageContext>;
+  /**
+   * Stage a controller file on the execution host and return the path its
+   * agent tools resolve. Absent when that host cannot receive files.
+   */
+  uploadFile?: (path: string, name: string, metadata: FileMetadata) => Promise<string>;
+  /** Stop before further host work once the composer target changed. */
+  isCurrent?: () => boolean;
+}
+
+/**
+ * Attach controller files to a session whose execution host cannot read the
+ * controller filesystem (Peer Device, remote workspace, detached dispatch).
+ *
+ * Images travel as inline pixels, which every execution host already accepts.
+ * Other files are staged on the execution host when it supports that. A path
+ * of this controller is never sent as a reference: the host would resolve it
+ * against its own filesystem.
+ */
+export async function buildControllerFileContexts(
+  options: BuildControllerFileContextsOptions,
+): Promise<ExternalFileIntakeResult> {
+  const seen = externalSourcePathKeys(options.existingContexts);
+  let imageCount = options.existingContexts.filter((context) => context.type === 'image').length;
+  const contexts: ExternalFileIntakeResult['contexts'] = [];
+  const failures: ExternalFileIntakeFailure[] = [];
+  let duplicateCount = 0;
+  const isCurrent = options.isCurrent ?? (() => true);
+  const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+  for (const path of options.paths) {
+    if (!isCurrent()) break;
+    const normalizedPath = normalizeExternalFilePath(path);
+    if (!normalizedPath || seen.has(normalizedPath)) {
+      duplicateCount += 1;
+      continue;
+    }
+    seen.add(normalizedPath);
+
+    let metadata: FileMetadata;
+    try {
+      metadata = await options.loadMetadata(path);
+    } catch {
+      failures.push({ path, reason: 'metadata' });
+      continue;
+    }
+    if (metadata.isDir) {
+      failures.push({ path, reason: 'directory' });
+      continue;
+    }
+    if (!metadata.isFile) {
+      failures.push({ path, reason: 'invalid-path' });
+      continue;
+    }
+
+    const name = getPathName(path);
+    if (isInlineImageName(name)) {
+      if (imageCount >= options.maxImageCount) {
+        failures.push({ path, reason: 'image-limit' });
+        continue;
+      }
+      try {
+        const image = await options.readImage(path, name, metadata);
+        imageCount += 1;
+        contexts.push({
+          ...image,
+          metadata: {
+            ...image.metadata,
+            controllerSourcePath: path,
+            externalFileSource: options.source,
+          },
+        });
+      } catch (error) {
+        failures.push({ path, reason: 'read', detail: errorText(error) });
+      }
+      continue;
+    }
+
+    if (!options.uploadFile) {
+      failures.push({ path, reason: 'file-unsupported' });
+      continue;
+    }
+    if (metadata.size > options.maxFileBytes) {
+      failures.push({ path, reason: 'too-large' });
+      continue;
+    }
+    let hostPath: string;
+    try {
+      hostPath = await options.uploadFile(path, name, metadata);
+    } catch (error) {
+      failures.push({ path, reason: 'upload', detail: errorText(error) });
+      continue;
+    }
+    const context = createPathContext(hostPath, name, false) as FileContext;
+    contexts.push({
+      ...context,
+      fileSize: metadata.size,
+      mimeType: getFileMimeType(name),
+      metadata: {
+        ...context.metadata,
+        controllerSourcePath: path,
+        controllerUpload: true,
+        externalFileSource: options.source,
+      },
+    });
+  }
+
+  return { contexts, failures, duplicateCount };
+}
+
+/**
+ * File name safe to use as one runtime path segment on any host OS. The
+ * original name stays visible on the context pill.
+ */
+export function controllerAttachmentFileName(name: string): string {
+  const cleaned = Array.from(name.trim())
+    .map((ch) => (ch.charCodeAt(0) < 0x20 || '/\\:*?"<>|'.includes(ch) ? '_' : ch))
+    .join('')
+    .replace(/^\.+/, '_')
+    .slice(0, 180);
+  return cleaned || 'attachment';
 }

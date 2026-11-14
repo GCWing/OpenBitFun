@@ -7,7 +7,11 @@
  */
 
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
+import { resolveSessionDriverId } from '@/flow_chat/session-drivers/resolve';
+import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import { sessionMutationFailureMessage } from '@/flow_chat/utils/sessionMutationFailure';
 import { isOutcomeUnknownError } from '@/infrastructure/api/errors/TauriCommandError';
+import { i18nService } from '@/infrastructure/i18n';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { notificationService } from '@/shared/notification-system';
@@ -18,8 +22,16 @@ const log = createLogger('SessionRowActions');
 
 export type SessionRowTranslate = (key: string, options?: Record<string, unknown>) => string;
 
+function refuseDispatchSessionMutation(sessionId: string): boolean {
+  const session = flowChatStore.getState().sessions.get(sessionId);
+  if (resolveSessionDriverId(sessionId, session) !== 'dispatch') return false;
+  notificationService.error(i18nService.t('common:nav.sessions.dispatchMutationUnsupported'));
+  return true;
+}
+
 /** Delete after menu confirmation; the session module reports failures. */
 export async function deleteSessionRow(sessionId: string): Promise<void> {
+  if (refuseDispatchSessionMutation(sessionId)) return;
   try {
     await flowChatManager.deleteChatSession(sessionId);
   } catch (error) {
@@ -30,6 +42,7 @@ export async function deleteSessionRow(sessionId: string): Promise<void> {
 
 /** Archive a session; the archive module reports its own failures. */
 export async function archiveSessionRow(sessionId: string, t: SessionRowTranslate): Promise<void> {
+  if (refuseDispatchSessionMutation(sessionId)) return;
   try {
     await flowChatManager.archiveChatSession(sessionId);
     window.dispatchEvent(new CustomEvent('openbitfun:session-archived'));
@@ -61,12 +74,7 @@ export async function duplicateSessionRow(sessionId: string, t: SessionRowTransl
   } catch (error) {
     if (isSurfaceChangedError(error)) return;
     log.error('Failed to copy session', { sessionId, error });
-    notificationService.error(
-      error instanceof Error && error.message
-        ? error.message
-        : t('nav.sessions.duplicateFailed'),
-      { duration: 4000 },
-    );
+    notificationService.error(sessionMutationFailureMessage('duplicate', error), { duration: 4000 });
   }
 }
 
@@ -75,8 +83,11 @@ export async function renameSessionRow(sessionId: string, title: string, t: Sess
   try {
     await flowChatManager.renameChatSessionTitle(sessionId, title);
   } catch (err) {
+    if (isSurfaceChangedError(err)) return;
     log.error('Failed to update session title', { sessionId, error: err });
-    if (isOutcomeUnknownError(err)) {
+    if (!isOutcomeUnknownError(err)) {
+      notificationService.error(sessionMutationFailureMessage('rename', err), { duration: 4000 });
+    } else {
       notificationService.warning(t('nav.sessions.renameOutcomeUnknown'), { duration: 6000 });
       try {
         await flowChatManager.reloadSessionTitle(sessionId);

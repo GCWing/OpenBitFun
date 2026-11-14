@@ -35,11 +35,7 @@ export function ThemeSetup({ options, setOptions, onLaunch, onClose, previewOnly
     setFinishError(null);
 
     try {
-      try {
-        await invoke('set_theme_preference', { themePreference: options.themePreference });
-      } catch (err) {
-        console.warn('Failed to persist theme preference:', err);
-      }
+      await invoke('set_theme_preference', { themePreference: options.themePreference });
 
       if (options.launchAfterInstall) {
         await onLaunch();

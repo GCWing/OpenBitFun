@@ -229,6 +229,37 @@ class AccountStoreTest {
         assertIs<AccountUiState.Ready>(restored.state.value)
     }
 
+    /**
+     * `/relay` and the older `/v/1.0.2` are one deployment and one account
+     * database, so a record saved before the version moved into the query keeps
+     * its token and master key — and is stored against today's identity, which
+     * carries no version of its own.
+     */
+    @Test fun liveRelayAliasesKeepTheStoredTokenAndMasterKey() = runTest {
+        val secure = MemorySecureStore(); val backend = FakeAccountBackend()
+        val first = AccountStore.create(this, backend, secure, "phone-1", "Android")
+        first.dispatch(AccountIntent.Login); advanceUntilIdle()
+        val pristine = secure.read("github_device_session_v1")!!.decodeToString()
+        for (alias in listOf(
+            "https://remote.openbitfun.com/v/1.0.2",
+            AccountDefaults.CLOUD_RELAY_URL,
+            "https://remote.openbitfun.com/relay?v=1.0.9",
+        )) {
+            val stored = pristine.replace(AccountDefaults.CLOUD_RELAY_URL, alias)
+            secure.write("github_device_session_v1", stored.encodeToByteArray())
+            val requests = backend.listRequests
+            val restored = AccountStore.create(this, backend, secure, "phone-1", "Android")
+            restored.dispatch(AccountIntent.Restore); advanceUntilIdle()
+            val state = assertIs<AccountUiState.Ready>(restored.state.value)
+            assertEquals(AccountDefaults.CLOUD_RELAY_URL, state.relayUrl, alias)
+            // The directory was read with the retained credential, not after
+            // another sign-in, and the stored bytes are left alone.
+            assertEquals(requests + 1, backend.listRequests, alias)
+            assertEquals(AccountDefaults.CLOUD_RELAY_URL, backend.lastLoginRelay, alias)
+            assertEquals(stored, secure.read("github_device_session_v1")!!.decodeToString(), alias)
+        }
+    }
+
     @Test
     fun enrichesExistingAccountAndRetainsIdentityAndCacheOffline() = runTest {
         val secure = MemorySecureStore()
@@ -295,7 +326,10 @@ class AccountStoreTest {
 
     @Test
     fun onlyControllableDevicesReachTheList() = runTest {
-        val store = AccountStore.create(this, FakeAccountBackend(), MemorySecureStore(), "phone-1", "Android")
+        val backend = FakeAccountBackend().also {
+            it.deviceAliases = mapOf("phone-2" to "Studio Mac", "desktop-1" to "HarmonyOS Phone")
+        }
+        val store = AccountStore.create(this, backend, MemorySecureStore(), "phone-1", "Android")
         store.dispatch(AccountIntent.Login)
         advanceUntilIdle()
 
@@ -303,6 +337,46 @@ class AccountStoreTest {
         // This device and the user's other phone are gone; the offline desktop
         // stays, because "known but not running" is worth showing.
         assertEquals(listOf("desktop-1", "desktop-2"), ready.devices.map { it.id })
+        assertEquals("HarmonyOS Phone", ready.devices.first().displayName)
+        assertEquals("Desktop", ready.devices.first().name)
+    }
+
+    @Test
+    fun selectedDeviceAliasRefreshesAndClearsWithoutChangingItsIdentity() = runTest {
+        val backend = FakeAccountBackend().also {
+            it.desktop2Online = true
+            it.deviceAliases = mapOf("desktop-1" to "Studio", "desktop-2" to "Office")
+        }
+        val secure = MemorySecureStore()
+        val store = AccountStore.create(this, backend, secure, "phone-1", "Android")
+        store.dispatch(AccountIntent.Login)
+        advanceUntilIdle()
+        assertEquals("Studio", assertIs<AccountUiState.Ready>(store.state.value).selectedDeviceName)
+        store.dispatch(AccountIntent.SelectDevice("desktop-2"))
+        assertEquals("Office", assertIs<AccountUiState.Ready>(store.state.value).selectedDeviceName)
+        val saved = secure.read("github_device_session_v1")!!
+
+        backend.deviceAliases = mapOf("desktop-2" to "Work PC")
+        store.dispatch(AccountIntent.RefreshDevices)
+        advanceUntilIdle()
+        val refreshed = assertIs<AccountUiState.Ready>(store.state.value)
+        assertEquals("Work PC", refreshed.selectedDeviceName)
+        assertEquals("Work PC", refreshed.devices.single { it.id == "desktop-2" }.displayName)
+        assertEquals("desktop-2", refreshed.selectedDeviceId)
+
+        backend.deviceAliases = emptyMap()
+        store.dispatch(AccountIntent.RefreshDevices)
+        advanceUntilIdle()
+        assertEquals("DESKTOP-KM3L4UI", assertIs<AccountUiState.Ready>(store.state.value).selectedDeviceName)
+        assertContentEquals(saved, secure.read("github_device_session_v1"))
+        store.stop()
+
+        val restored = AccountStore.create(this, backend, secure, "phone-1", "Android")
+        restored.dispatch(AccountIntent.Restore)
+        advanceUntilIdle()
+        val ready = assertIs<AccountUiState.Ready>(restored.state.value)
+        assertEquals("desktop-2", ready.selectedDeviceId)
+        assertEquals("DESKTOP-KM3L4UI", ready.selectedDeviceName)
     }
 
     @Test
@@ -812,6 +886,7 @@ private class FakeAccountBackend : AccountBackend {
     var listThrowable: Throwable? = null
     var desktop1Online: Boolean = true
     var desktop2Online: Boolean = false
+    var deviceAliases: Map<String, String> = emptyMap()
     var settings: String? = null
     val transportTargets = mutableListOf<String>()
     override suspend fun login(
@@ -824,8 +899,10 @@ private class FakeAccountBackend : AccountBackend {
         lastLoginRelay = relayUrl
         loginThrowable?.let { throw it }
         failure?.let { throw CloudAccountException(it) }
+        // Mirrors the live backend: the session keeps the endpoint it signed in
+        // against, which the store only ever hands over as a base URL.
         return AccountSessionData(
-            "https://remote.openbitfun.com/v/1.0.2",
+            relayUrl,
             "user",
             "token",
             userId,
@@ -847,7 +924,7 @@ private class FakeAccountBackend : AccountBackend {
             AccountDeviceUi("phone-2", "HarmonyOS Phone", true, 1),
             AccountDeviceUi("desktop-1", "Desktop", desktop1Online, 1),
             AccountDeviceUi("desktop-2", "DESKTOP-KM3L4UI", desktop2Online, 1),
-        )
+        ).map { it.copy(deviceAlias = deviceAliases[it.id]) }
     }
 
 

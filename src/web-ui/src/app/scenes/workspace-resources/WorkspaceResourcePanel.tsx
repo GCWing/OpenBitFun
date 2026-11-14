@@ -7,7 +7,6 @@ import {
 import { useI18n } from '@/infrastructure/i18n';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
-import { globalEventBus } from '@/infrastructure/event-bus';
 import type { FileExplorerToolbarHandlers } from '@/tools/file-system';
 import { isTerminalPathInside } from '@/tools/terminal/services/terminalWorkspaceScope';
 import type { ShellInfo } from '@/tools/terminal/types/session';
@@ -19,7 +18,7 @@ import { DEFAULT_RESOURCE_LAYOUT, useWorkspaceResourceState } from './workspaceR
 import WorkspaceTerminals from './WorkspaceTerminals';
 import { useResourceSplit } from './useResourceSplit';
 import { showResourceMenu } from './resourceMenus';
-import { resolveResourceWorkspace, useNavSceneStore } from '../../stores/navSceneStore';
+import { resolveResourceWorkspace, useNavSceneStore, type ResourceWorkspaceTarget } from '../../stores/navSceneStore';
 import type { WorkspaceInfo } from '@/shared/types';
 import '../file-viewer/FileViewerNav.scss';
 
@@ -38,10 +37,12 @@ export default function WorkspaceResourcePanel() {
       resourceKey,
     );
   }, [migrateLayout, resourceKey, scope, workspace]);
-  return <WorkspaceResourceContent key={resourceKey} resourceKey={resourceKey} workspace={workspace} />;
+  return <WorkspaceResourceContent key={resourceKey} resourceKey={resourceKey} workspace={workspace} target={target} />;
 }
 
-function WorkspaceResourceContent({ resourceKey, workspace }: { resourceKey: string; workspace: WorkspaceInfo | null }) {
+function WorkspaceResourceContent({ resourceKey, workspace, target }: {
+  resourceKey: string; workspace: WorkspaceInfo | null; target: ResourceWorkspaceTarget | null;
+}) {
   const { t, formatNumber } = useI18n('common');
   const { t: tFiles } = useI18n('panels/files');
   const { t: tTools } = useI18n('tools');
@@ -55,7 +56,7 @@ function WorkspaceResourceContent({ resourceKey, workspace }: { resourceKey: str
   const mounted = useRef(true);
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectedTerminal, setSelectedTerminal] = useState<string | null>(null);
-  const [pendingReveal, setPendingReveal] = useState<string | null>(null);
+  const [pendingReveal, setPendingReveal] = useState<{ path: string; target: ResourceWorkspaceTarget | null } | null>(null);
   const [shells, setShells] = useState<ShellInfo[]>([]);
   const container = useRef<HTMLDivElement>(null);
   const filesId = useId();
@@ -64,6 +65,9 @@ function WorkspaceResourceContent({ resourceKey, workspace }: { resourceKey: str
   const hasTerminalContent = terminals.entries.length > 0 || Boolean(terminals.error || actionError);
   const showSplit = !layout.filesCollapsed && !layout.terminalsCollapsed && hasTerminalContent;
   const isRemote = workspace?.workspaceKind === 'remote';
+  const directoryPath = target?.directoryPath;
+  const fileRoot = directoryPath === undefined ? workspace?.rootPath
+    : workspace?.relatedPaths?.find(directory => directory.path === directoryPath)?.path;
 
   useEffect(() => {
     mounted.current = true;
@@ -94,15 +98,21 @@ function WorkspaceResourceContent({ resourceKey, workspace }: { resourceKey: str
     });
   }, [scope]);
   const revealDirectory = useCallback((path: string) => {
-    if (!mounted.current || !scope.isCurrent()) return;
+    if (!workspace || !mounted.current || !scope.isCurrent()) return;
+    const nav = useNavSceneStore.getState();
+    if (directoryPath !== undefined && !isTerminalPathInside(path, fileRoot ?? '', isRemote)) {
+      nav.openWorkspaceResources(workspace.id);
+    }
     updateLayout(resourceKey, { filesCollapsed: false, fileView: 'tree' });
-    setPendingReveal(path);
-  }, [resourceKey, scope, updateLayout]);
-  useEffect(() => {
-    if (!pendingReveal || layout.filesCollapsed || layout.fileView !== 'tree') return;
-    globalEventBus.emit('file-explorer:navigate', { path: pendingReveal, scrollIntoView: true });
-    setPendingReveal(null);
-  }, [pendingReveal, layout.filesCollapsed, layout.fileView]);
+    setPendingReveal({ path, target: useNavSceneStore.getState().resourceWorkspace });
+  }, [directoryPath, fileRoot, isRemote, resourceKey, scope, updateLayout, workspace]);
+  const changeFileView = useCallback((fileView: 'tree' | 'search') => {
+    if (fileView === 'search' && directoryPath !== undefined && workspace) {
+      useNavSceneStore.getState().openWorkspaceResources(workspace.id);
+    }
+    updateLayout(resourceKey, { filesCollapsed: false, fileView });
+  }, [directoryPath, resourceKey, updateLayout, workspace]);
+  const clearPendingReveal = useCallback(() => setPendingReveal(null), []);
 
   const error = actionError || terminals.error;
   const createTerminal = (shellType?: string, shellId?: string) => run(async () => {
@@ -136,13 +146,16 @@ function WorkspaceResourceContent({ resourceKey, workspace }: { resourceKey: str
                     <Tooltip content={layout.fileView === 'tree' ? tFiles('actions.switchToSearch') : tFiles('actions.switchToTree')}>
                       <IconButton size="xs" aria-label={layout.fileView === 'tree' ? tFiles('actions.switchToSearch') : tFiles('actions.switchToTree')}
                         icon={layout.fileView === 'tree' ? <Icon name="search" size="xs" /> : <List />}
-                        onClick={() => updateLayout(resourceKey, { filesCollapsed: false, fileView: layout.fileView === 'tree' ? 'search' : 'tree' })} />
+                        onClick={() => changeFileView(layout.fileView === 'tree' ? 'search' : 'tree')} />
                     </Tooltip>
                   </div>
                 </div>
                 <div id={filesId} hidden={layout.filesCollapsed} className="openbitfun-file-viewer-nav__section-body">
-                  <FilesPanel workspace={workspace} workspacePath={workspace.rootPath} searchStateKey={resourceKey} hideHeader hideExplorerToolbar onExplorerToolbarApi={setToolbar}
-                    viewMode={layout.fileView} onViewModeChange={fileView => updateLayout(resourceKey, { fileView })} />
+                  {fileRoot ? <FilesPanel key={fileRoot} workspace={workspace} workspacePath={fileRoot} searchStateKey={resourceKey}
+                    hideHeader hideExplorerToolbar onExplorerToolbarApi={setToolbar} viewMode={layout.fileView} onViewModeChange={changeFileView}
+                    revealDirectoryPath={pendingReveal && pendingReveal.target === target && !layout.filesCollapsed ? pendingReveal.path : undefined}
+                    onRevealHandled={clearPendingReveal} />
+                    : <p className="openbitfun-file-viewer-nav__empty" role="status">{tFiles('empty.directoryUnavailable')}</p>}
                 </div>
               </section>
               {showSplit && <div className="openbitfun-file-viewer-nav__divider" role="separator" tabIndex={0}

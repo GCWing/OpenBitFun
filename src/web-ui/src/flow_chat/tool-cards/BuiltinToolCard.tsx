@@ -49,7 +49,7 @@ export const BuiltinToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId, 
   const { t, formatNumber } = useI18n('flow-chat');
   const canViewPullRequests = useReviewPlatformSupport();
   const [isExpanded, setExpanded] = useToolCardDisclosure('isExpanded');
-  const [market, setMarket] = useState<'miniapps' | 'appearance'>();
+  const [market, setMarket] = useState<'miniapps'>();
   const [marketOpen, setMarketOpen] = useState(false);
   const name = toolItem.toolName;
   const model = useMemo(() => isSemanticBuiltinTool(name) ? buildBuiltinToolCardModel(toolItem, name, t, formatNumber) : undefined,
@@ -108,8 +108,8 @@ export const BuiltinToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId, 
       await workspaceManager.setActiveWorkspace(workspaceId);
       if (scope.isCurrent()) useSceneStore.getState().openScene(`miniapp:${link.value}`);
     }) });
-    if (link.kind === 'market') actions.push({ key, label: link.label, icon: 'store', disabled: detached,
-      onPress: () => { setMarket(link.value === 'appearance' ? 'appearance' : 'miniapps'); setMarketOpen(true); } });
+    if (link.kind === 'market' && link.value === 'miniapps') actions.push({ key, label: link.label, icon: 'store', disabled: detached,
+      onPress: () => { setMarket('miniapps'); setMarketOpen(true); } });
     if (link.kind === 'review') actions.push({ key, label: link.label, icon: 'git-pull-request', disabled: detached || !workspaceId || !canViewPullRequests,
       onPress: () => run(async () => {
         const scope = getActiveSurfaceScope();
@@ -169,7 +169,7 @@ export const BuiltinToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId, 
   };
   return <div ref={cardRootRef} data-openbitfun-adapter="builtin-semantic" data-tool-card-id={toolItem.id}>
     {model.family === 'agent-roster' ? <AgentRosterToolCard {...common} deleting={name === 'AgentDelete'} />
-      : model.family === 'marketplace-publish' ? <MarketplacePublishToolCard {...common} appearance={name === 'PublishAppearance'} />
+      : model.family === 'marketplace-publish' ? <MarketplacePublishToolCard {...common} />
         : model.family === 'mcp-resource' ? <McpResourceToolCard {...common} kind={name === 'ListMCPResources' ? 'resources'
           : name === 'ReadMCPResource' ? 'resource' : name === 'ListMCPPrompts' ? 'prompts' : 'prompt'} />
           : <View {...common} />}

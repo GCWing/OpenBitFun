@@ -55,6 +55,18 @@ describe('PeerConnectionStatus', () => {
     expect(container.textContent).toBe('');
   });
 
+  it('shows that a reachable host is still starting its UI', async () => {
+    peer = { ...peer, attachments: [{ ...peer.attachments[0], health: 'ready', hostStarting: true }] };
+    await render();
+    const status = container.querySelector('[role="status"]');
+    expect(status?.textContent).toContain('peerConnection.startingShort');
+    expect(status?.getAttribute('data-peer-connection-state')).toBe('starting');
+
+    peer = { ...peer, attachments: [{ ...peer.attachments[0], hostStarting: false }] };
+    await render();
+    expect(container.textContent).toBe('');
+  });
+
   it('does not warn for a background peer or a local-only surface', async () => {
     await render({ ...peer, peerMode: { active: true, deviceId: 'peer-b', deviceName: 'Other' } });
     expect(container.textContent).toBe('');

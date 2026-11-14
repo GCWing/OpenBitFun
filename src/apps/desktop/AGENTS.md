@@ -103,6 +103,25 @@ The `devtools` Cargo feature exists for debugging UI/UX in the desktop app. When
 
 ## Verification
 
+Application updates use the official `tauri-plugin-updater` for discovery,
+download and signature verification. `src/update_maintenance` owns native
+authorization, publication/recovery and Windows process handoff; keep those
+behaviors out of third-party source patches. Installation of a verified cached
+package must not require another update-server request.
+
+For updater adapter and persisted-record changes, run:
+
+```bash
+cargo test --locked -p openbitfun-desktop --no-default-features --lib update_maintenance
+cargo test --locked -p openbitfun-desktop --no-default-features --lib api::update_api::tests
+node --test scripts/updater-maintenance.test.mjs scripts/market/market-image-context.test.mjs
+pnpm --dir src/web-ui exec vitest run src/infrastructure/api/service-api/SystemAPI.test.ts src/infrastructure/update
+```
+
+The filesystem/process tests use disposable fixtures. Real UAC and alternate
+administrator accounts require a clean Windows VM; native macOS authorization
+and Linux package/AppImage replacement require their respective platforms.
+
 For application icon resources and packaging, run `pnpm run generate-brand-assets`
 and `node --test scripts/generate-brand-assets.test.mjs scripts/macos-icon-bundle.test.mjs scripts/desktop-tauri-build.test.mjs`.
 The [brand guide](../../../assets/brand/README.md#macos-icons) owns native exports.
@@ -433,3 +452,14 @@ adapter owns HTTP authentication, explicit-refresh headers and peer RPC wiring.
 Use `node tests/e2e/scripts/run-html-preview.mjs` after building Desktop and Web UI
 to verify CSS, JavaScript modules, images and concurrent preview cookies in native
 browser child views. The fixture uses isolated storage; see `tests/e2e/AGENTS.md`.
+
+For the LaTeX workspace compiler, run:
+
+```bash
+cargo test --locked -p openbitfun-desktop --no-default-features --lib latex_api::tests
+```
+
+Use `-- --include-ignored` with `latexmk`, pdfLaTeX, and XeLaTeX on PATH to
+exercise a multi-file paper build, error diagnostics, and temporary output.
+The POSIX build test checks the remote command in a local shell. Verify live
+SSH, container, and peer routing separately.

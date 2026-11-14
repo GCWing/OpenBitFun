@@ -82,9 +82,10 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
       );
 
   return (
-    <span className={classNames(styles.root, className)} data-openbitfun-component="search-field" data-variant={variant} data-size={size}>
+    <span className={classNames(styles.root, className)} data-openbitfun-component="search-field" data-variant={variant} data-size={size} data-openbitfun-paint-layer={variant === "panel" ? "self" : "none"}>
       <Input
         {...props}
+        data-openbitfun-paint-layer={variant === "default" ? "self" : "none"}
         className={classNames(styles.field, hasTrailingAction && styles.fieldWithAction)}
         disabled={disabled}
         leading={leadingIcon === undefined ? undefined : (

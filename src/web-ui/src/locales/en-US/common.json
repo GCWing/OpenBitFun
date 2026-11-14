@@ -83,7 +83,11 @@
       "noSessions": "No sessions yet",
       "sessionUnavailable": "This session is no longer on that device.",
       "sessionActionFailed": "Couldn't do that on the other device. Try again.",
-      "connecting": "Connecting to {{name}}…"
+      "connecting": "Connecting to {{name}}…",
+      "linkReconnecting": "Reconnecting",
+      "linkReconnectingLabel": "Reconnecting to {{name}}. Its sessions may be out of date.",
+      "linkStarting": "Starting",
+      "linkStartingLabel": "{{name}} is still starting OpenBitFun."
     },
     "aria": {
       "navControl": "Navigation controls",
@@ -400,6 +404,7 @@
       "duplicateEmpty": "Send a message before copying this session.",
       "duplicateRunning": "Wait for the running turn to finish before copying this session.",
       "duplicateDispatchUnsupported": "Sessions running on another device cannot be copied.",
+      "dispatchMutationUnsupported": "Archive or delete this session on the device that owns the task.",
       "openStorageDirectory": "Open session storage directory",
       "openStorageDirectoryFailed": "Failed to open session storage directory",
       "storageDirectoryDesktopOnly": "Available only for session data stored on this desktop instance.",
@@ -407,7 +412,7 @@
       "exportMarkdown": "Export as Markdown",
       "exportMarkdownFull": "Export full process",
       "exportMarkdownResult": "Export result",
-      "delete": "Delete",
+      "delete": "Delete session",
       "deleteConfirmTitle": "Delete session",
       "deleteConfirmMessage": "This session and its child sessions will be permanently deleted and cannot be restored.",
       "confirmEdit": "Confirm",
@@ -517,7 +522,11 @@
       "discoveryWarningTitle": "External session discovery",
       "discoveryReadFailed": "Some {{source}} session records could not be read. Existing sessions remain available.",
       "discoveryWorkspaceUnresolved": "Some {{source}} sessions could not be matched to a workspace. Existing sessions remain available.",
-      "discoveringExternal": "Discovering external sessions…"
+      "discoveringExternal": "Discovering external sessions…",
+      "deleteFailed": "Failed to delete session",
+      "archiveFailed": "Failed to archive session",
+      "renameFailed": "Failed to rename session",
+      "workspaceBindingMismatch": "This session belongs to a different workspace, so it cannot be changed from here. Reopen OpenBitFun to reload it under its own workspace."
     },
     "scheduledJobs": {
       "title": "Scheduled Jobs",
@@ -677,8 +686,7 @@
           "connected": "Connected",
           "connecting": "Connecting",
           "disconnected": "Disconnected",
-          "error": "Connection error",
-          "unknown": "Status unknown"
+          "error": "Connection error"
         }
       },
       "actions": {
@@ -929,6 +937,8 @@
   },
   "peerConnection": {
     "reconnectingShort": "Reconnecting…",
+    "startingShort": "Host starting…",
+    "starting": "{{name}} is still starting OpenBitFun. Requests will work once it is ready.",
     "returnLocalShort": "Go local",
     "returningShort": "Returning…",
     "reconnecting": "Reconnecting to {{name}}. Content may be out of date."
@@ -1277,7 +1287,7 @@
     "stateHandshaking": "Handshaking…",
     "stateVerifying": "Verifying…",
     "stateConnected": "Connected",
-    "cancelInvitation": "Cancel invitation",
+    "cancelInvitation": "Hide invitation",
     "accountConnectedHint": "This phone or browser is connected through your account. Cancelling the invitation or closing this window keeps that connection active.",
     "statusUnavailable": "Connection status is unavailable",
     "statusChecking": "Checking connection…",
@@ -2374,6 +2384,8 @@
   },
   "peerHost": {
     "connectionInterrupted": "The connection to the device was interrupted. Try again.",
+    "notResponding": "That device is not responding. Check that OpenBitFun is running there, then try again.",
+    "starting": "OpenBitFun on that device is still starting. Try again in a moment.",
     "unavailable": "This feature is not available on that device.",
     "updateRequired": "The OpenBitFun version on that device does not support this feature. Try updating OpenBitFun on that device.",
     "withDetail": "{{message}} ({{detail}})"

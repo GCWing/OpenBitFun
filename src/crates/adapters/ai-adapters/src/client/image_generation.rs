@@ -651,8 +651,11 @@ pub async fn generate(
     }
 
     let url = endpoint(target)?;
-    let client =
-        crate::client::http::create_http_client(target.proxy.clone(), target.skip_ssl_verify);
+    let client = crate::client::http::create_model_http_client(
+        target.proxy.clone(),
+        target.skip_ssl_verify,
+        &url,
+    );
 
     let body = build_body(target, &request);
     let model = body

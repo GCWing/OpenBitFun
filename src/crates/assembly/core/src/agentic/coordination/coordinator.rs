@@ -4689,6 +4689,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 user_input: prompt.clone(),
                 original_user_input: (display_input != prompt).then_some(display_input),
                 user_message_metadata: Some(user_message_metadata.clone()),
+                session_binding: self.session_manager.session_workspace_binding(&session_id),
             })
             .await;
             self.emit_event(AgenticEvent::ModelRoundStarted {
@@ -6213,6 +6214,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             user_input: MANUAL_COMPACTION_COMMAND.to_string(),
             original_user_input: None,
             user_message_metadata: user_message_metadata.clone(),
+            session_binding: self.session_manager.session_workspace_binding(&session_id),
         })
         .await;
 
@@ -7469,6 +7471,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 None
             },
             user_message_metadata: user_message_metadata.clone(),
+            session_binding: self.session_manager.session_workspace_binding(&session_id),
         })
         .await;
 
@@ -10168,6 +10171,44 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         self.reconcile_restored_session(session_id, session).await
     }
 
+    /// Load a persisted user session back into this runtime before accepting
+    /// user work for it. Idle sessions may be released from memory while a
+    /// remote controller keeps showing them; its next message must find the
+    /// same session instead of being refused.
+    ///
+    /// The storage binding committed when this process admitted the session
+    /// wins. Without one (e.g. after a host restart) the persisted workspace
+    /// binding selects storage and takes runtime ownership, exactly as a
+    /// mobile remote submission does.
+    pub(crate) async fn restore_unloaded_session_for_admission(
+        &self,
+        session_id: &str,
+    ) -> OpenBitFunResult<()> {
+        if self.session_manager.get_session(session_id).is_some() {
+            return Ok(());
+        }
+        if let Some(storage_path) = self
+            .session_manager
+            .committed_session_storage_path_for(session_id)
+        {
+            self.restore_session_from_storage_path(&storage_path, session_id)
+                .await?;
+            return Ok(());
+        }
+        let binding = self
+            .session_manager
+            .resolve_session_workspace_binding(session_id)
+            .await
+            .ok_or_else(|| {
+                OpenBitFunError::NotFound(format!(
+                    "Session workspace is unavailable on this host: {session_id}"
+                ))
+            })?;
+        self.restore_session_for_workspace_binding(&binding, session_id)
+            .await?;
+        Ok(())
+    }
+
     /// Restore a persisted session through its resolved workspace binding.
     pub async fn restore_session_for_workspace_binding(
         &self,
@@ -11187,6 +11228,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 user_input: user_input_text.clone(),
                 original_user_input: None,
                 user_message_metadata: None,
+                session_binding: self.session_manager.session_workspace_binding(&session_id),
             })
             .await;
         }
@@ -11934,7 +11976,9 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .get_context_messages(parent_session_id)
             .await?;
         let context_messages =
-            crate::agentic::fork_agent::normalize_fork_context_messages(context_messages);
+            crate::agentic::context_normalization::normalize_fork_context_messages(
+                context_messages,
+            );
         ForkAgentContextSnapshot::from_parent_session(&parent_session, context_messages)
     }
 
@@ -15944,6 +15988,9 @@ impl openbitfun_runtime_ports::AgentUserShellCommandPort for ConversationCoordin
             user_input: format!("!{}", request.command),
             original_user_input: None,
             user_message_metadata: None,
+            session_binding: self
+                .session_manager
+                .session_workspace_binding(&request.session_id),
         };
 
         let session_manager = Arc::clone(&self.session_manager);
@@ -21751,10 +21798,22 @@ pub(crate) mod tests {
             .expect("load turns");
         let turn = turns.last().expect("shell turn");
         let events = coordinator.event_queue.dequeue_batch(100).await;
-        assert!(events.iter().any(|envelope| matches!(
-            &envelope.event,
-            AgenticEvent::DialogTurnStarted { turn_id, .. } if turn_id == "turn-shell"
-        )));
+        let started_binding = events.iter().find_map(|envelope| match &envelope.event {
+            AgenticEvent::DialogTurnStarted {
+                turn_id,
+                session_binding,
+                ..
+            } if turn_id == "turn-shell" => Some(session_binding.clone()),
+            _ => None,
+        });
+        // A surface that has not loaded the session attributes the Turn to
+        // its owning workspace from this binding, not to its current one.
+        assert_eq!(
+            started_binding
+                .expect("turn started event")
+                .and_then(|binding| binding.workspace_path),
+            session.config.workspace_path
+        );
         assert!(!events.iter().any(|envelope| matches!(
             &envelope.event,
             AgenticEvent::DialogTurnFailed { turn_id, .. } if turn_id == "turn-shell"

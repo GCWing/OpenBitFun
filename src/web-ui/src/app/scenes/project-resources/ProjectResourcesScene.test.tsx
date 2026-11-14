@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { WorkspaceKind, WorkspaceType, type WorkspaceInfo } from '@/shared/types';
 import { resetDeviceSurfaceForTest } from '@/infrastructure/peer-device/deviceSurface';
+import { appManager } from '@/app/services/AppManager';
+import { useWorkspaceResourceState } from '../workspace-resources/workspaceResourceState';
 import ProjectResourcesScene from './ProjectResourcesScene';
 import { projectResourceSceneId } from './projectResourceTarget';
 
@@ -12,7 +14,10 @@ const mocks = vi.hoisted(() => ({
   activate: vi.fn(), refresh: vi.fn(), agentDialog: vi.fn(), skillDialog: vi.fn(),
   grants: vi.fn(), rules: vi.fn(), iconDialog: vi.fn(), directoryDialog: vi.fn(), jobsDialog: vi.fn(),
 }));
-vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string) => key, formatNumber: String, formatDate: String }) }));
+vi.mock('@/infrastructure/i18n', () => ({
+  useI18n: () => ({ t: (key: string) => key, formatNumber: String, formatDate: String }),
+  i18nService: { t: (key: string) => key },
+}));
 vi.mock('@/infrastructure/contexts/WorkspaceContext', () => ({
   useWorkspaceContext: () => ({ openedWorkspaces: mocks.workspaces, activeWorkspace: mocks.active, setActiveWorkspace: mocks.activate }),
 }));
@@ -106,16 +111,33 @@ it('renders project defaults above metrics and inline project permissions withou
 });
 
 it('opens files with the project and SSH identity rather than the current conversation', async () => {
-  mocks.workspaces.set('a', { ...workspace, workspaceKind: WorkspaceKind.Remote, connectionId: 'ssh-a' });
+  const relatedPath = '/srv/ref\\docs';
+  mocks.workspaces.set('a', { ...workspace, workspaceKind: WorkspaceKind.Remote, connectionId: 'ssh-a', relatedPaths: [{ path: relatedPath }] });
   await render();
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.project-resource-list__row')].find(button => button.textContent?.includes('Project agent'))!.click());
   await act(async () => [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'capabilities.openDefinition')!.click());
   expect(mocks.openFile).toHaveBeenCalledWith({ filePath: '/a/agent.md', scope: {
     surfaceId: 'local', workspaceId: 'a', workspacePath: '/a', remoteConnectionId: 'ssh-a',
   } });
-  const directory = container.querySelector<HTMLButtonElement>('button[aria-label="directories.openDirectory"]')!;
-  await act(async () => directory.click());
-  expect(mocks.browse).toHaveBeenCalledWith('a');
+  const [primary, related] = container.querySelectorAll<HTMLButtonElement>('button[aria-label="directories.openDirectory"]');
+  const previousLayout = appManager.getState().layout;
+  const layoutStore = useWorkspaceResourceState.getState();
+  const resourceKey = JSON.stringify(['local', 'workspace-resources', 'a']);
+  const legacyKey = JSON.stringify(['local', 'workspace-resources', 'ssh-a', 'a', '/a']);
+  try {
+    appManager.updateLayout({ leftPanelCollapsed: true });
+    layoutStore.updateLayout(legacyKey, { filesCollapsed: true, fileView: 'search', terminalFraction: 0.5 });
+    await act(async () => related.click());
+    expect(mocks.browse).toHaveBeenLastCalledWith('a', relatedPath);
+    expect(mocks.directoryDialog).not.toHaveBeenCalled();
+    expect(appManager.getState().layout.leftPanelCollapsed).toBe(false);
+    expect(useWorkspaceResourceState.getState().layouts[resourceKey]).toMatchObject({ filesCollapsed: false, fileView: 'tree', terminalFraction: 0.5 });
+    await act(async () => primary.click());
+    expect(mocks.browse).toHaveBeenLastCalledWith('a', undefined);
+  } finally {
+    appManager.updateLayout({ leftPanelCollapsed: previousLayout.leftPanelCollapsed, leftPanelActiveTab: previousLayout.leftPanelActiveTab });
+    useWorkspaceResourceState.setState({ layouts: layoutStore.layouts });
+  }
   expect(mocks.activate).not.toHaveBeenCalled();
 });
 

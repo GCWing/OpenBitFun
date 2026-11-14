@@ -81,7 +81,6 @@ Notes:
 | `FinalizeMiniApp` | Direct | None | - |
 | `PublishMiniApp` | Direct | None | - |
 | `FrontendWorkbench` | Direct | None | - |
-| `PublishAppearance` | Direct | None | - |
 | `PageManage` | Direct | None | - |
 | `PageDeploy` | Direct | None | - |
 | `PagePublish` | Direct | None | - |

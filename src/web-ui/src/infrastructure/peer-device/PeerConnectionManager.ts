@@ -27,6 +27,12 @@ export const PEER_CONTROL_RPC_TIMEOUT_MS = 15_000;
 export const PEER_KEEPALIVE_INTERVAL_MS = 20_000;
 export const PEER_RECONNECT_BASE_DELAY_MS = 1_000;
 export const PEER_RECONNECT_MAX_DELAY_MS = 15_000;
+/**
+ * Background attempts to deliver a `peer_control_detach` that could not reach
+ * the host during a disconnect. Until one lands, the host keeps fanning out to
+ * this controller and keeps its pending approvals waiting for it.
+ */
+export const PEER_DETACH_MAX_RETRIES = 4;
 
 /**
  * `connecting` → first handshake. `ready` → the peer answers. `degraded` → it
@@ -44,6 +50,12 @@ export interface PeerHostCapabilities {
   readonly idempotentDialogSubmit: boolean;
   /** Only true after explicit negotiation; older hosts need the upload API. */
   readonly inlineImageAttachmentsV1?: boolean;
+  /**
+   * `workspace_file_upload` accepts runtime `attachments/` targets, so the
+   * controller can attach its own local files. Older hosts keep the explicit
+   * unsupported reply.
+   */
+  readonly runtimeAttachmentUploadV1?: boolean;
   readonly btwInitialModelSelectionV1?: boolean;
   readonly btwModelPoolSelectionV1?: boolean;
   /** Terminal output arrives as replay pages announced on the host stream. */
@@ -71,6 +83,7 @@ export interface PeerHostCapabilities {
   readonly sessionTrajectoryV1?: boolean;
   readonly modelRoutingV1?: boolean;
   readonly modelPoolSelectionV1?: boolean;
+  readonly magpieDiscoveryV1?: boolean;
   readonly computerUseSharingV1?: boolean;
   /** Typed ProductControl HostInvoke, including shared config read-back. */
   readonly productControlV1?: boolean;
@@ -107,6 +120,8 @@ export interface PeerHostCapabilities {
   readonly sessionReferenceBrowseV1?: boolean;
   readonly workspaceIconV1?: boolean;
   readonly workspaceIdReferencesV1?: boolean;
+  readonly gitTrackedChangeCountV1?: boolean;
+  readonly workspaceLatexPreviewV1?: boolean;
   /**
    * Host implements `submit_user_answers` for Runtime-owned
    * AskUserQuestion interactions. Older Desktop hosts already implemented the
@@ -135,6 +150,12 @@ export interface PeerConnectionState {
   readonly capabilities: PeerHostCapabilities;
   /** Failed health checks since the last completed handshake; drives backoff. */
   readonly consecutiveFailures: number;
+  /**
+   * The host answers its control plane but its product UI is not ready yet
+   * (`peer_mode_ping.host_ui_ready === false`, or a `peer_host_ui_not_ready`
+   * refusal). Product requests fail fast as not executed until it clears.
+   */
+  readonly hostStarting: boolean;
 }
 
 /** Live handle. `adapter` is the product transport for this device. */
@@ -189,12 +210,30 @@ interface PeerModePingResult {
   capabilities?: Partial<Record<PeerHostCapabilityId, boolean>>;
   /** Additive: digest of the registry the host was built from. */
   surface_registry_digest?: string;
+  /**
+   * Additive (Desktop): whether the host's webview bridge can run product
+   * commands. Absent on older hosts, which are treated as ready.
+   */
+  host_ui_ready?: boolean;
+  /**
+   * Additive, advertised by `peer_attachment_status_v1`: whether this
+   * controller is still attached for DeviceEvent delivery on the host.
+   */
+  caller_attached?: boolean;
+}
+
+/** Ping facts that are not capabilities and may change between keepalives. */
+interface PeerPingStatus {
+  hostUiReady: boolean;
+  /** `null` when the host does not report it (older host). */
+  callerAttached: boolean | null;
 }
 
 const NO_CAPABILITIES: PeerHostCapabilities = {
   backgroundResultDeliveryV1: false,
   idempotentDialogSubmit: false,
   inlineImageAttachmentsV1: false,
+  runtimeAttachmentUploadV1: false,
   btwInitialModelSelectionV1: false,
   btwModelPoolSelectionV1: false,
   terminalCursorReplayV1: false,
@@ -216,6 +255,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   sessionTrajectoryV1: false,
   modelRoutingV1: false,
   modelPoolSelectionV1: false,
+  magpieDiscoveryV1: false,
   computerUseSharingV1: false,
   productControlV1: false,
   remoteConnectControlV1: false,
@@ -230,6 +270,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   sessionReferenceBrowseV1: false,
   workspaceIconV1: false,
   workspaceIdReferencesV1: false,
+  workspaceLatexPreviewV1: false,
   userQuestionResponse: null,
   // Host kind is unknown until the first `peer_mode_ping` resolves. Consumers
   // treat `null` optimistically. See PR #2428 round 5 #1.
@@ -256,7 +297,33 @@ interface ConnectionEntry {
   needsReattach: boolean;
   healthCheckInFlight: Promise<void> | null;
   reattachInFlight: Promise<void> | null;
+  hostStarting: boolean;
+  /** Probes while the host was starting; drives that poll's backoff. */
+  startingChecks: number;
   handle: PeerConnection;
+}
+
+export type PeerReattachListener = (deviceId: string) => void;
+
+/** A disconnect whose detach did not reach the host yet. */
+interface PendingDetach {
+  deviceId: string;
+  /** Background attempts made so far. */
+  attempts: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  inFlight: Promise<void> | null;
+  /** Last reported presence of the host, or null before the first report. */
+  presenceOnline: boolean | null;
+  /** Set when a reconnect or a final outcome retires this retry. */
+  settled: boolean;
+}
+
+/** The host answered a control-plane command and refused it. */
+class PeerControlRefusalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PeerControlRefusalError';
+  }
 }
 
 class PeerConnectionDisposedError extends Error {
@@ -268,9 +335,11 @@ class PeerConnectionDisposedError extends Error {
 
 export class PeerConnectionManager {
   private readonly entries = new Map<string, ConnectionEntry>();
+  private readonly pendingDetaches = new Map<string, PendingDetach>();
   private readonly legacyHostKinds = new Map<string, PeerHostKind>();
   private readonly attaching = new Map<string, Promise<PeerConnection>>();
   private readonly listeners = new Set<PeerConnectionListener>();
+  private readonly reattachListeners = new Set<PeerReattachListener>();
   private readonly deviceRpc: PeerDeviceRpc;
   private readonly resolveControllerDeviceId: () => Promise<string>;
   private readonly controlRpcTimeoutMs: number;
@@ -312,7 +381,10 @@ export class PeerConnectionManager {
     if (inFlight) {
       return inFlight;
     }
-    const attach = this.attach(deviceId, deviceName).finally(() => {
+    // A new attachment supersedes a disconnect still being delivered; its
+    // detach must not land after the attach and drop this controller again.
+    const priorDetach = this.retirePendingDetach(deviceId);
+    const attach = this.attach(deviceId, deviceName, priorDetach).finally(() => {
       this.attaching.delete(deviceId);
     });
     this.attaching.set(deviceId, attach);
@@ -341,14 +413,28 @@ export class PeerConnectionManager {
   }
 
   /**
+   * Fires after a health check re-attached this controller (recovery, a
+   * presence gap, or a host reporting it no longer attached). Events emitted
+   * while detached were not delivered, so owners re-read their mailboxes.
+   */
+  onReattached(listener: PeerReattachListener): () => void {
+    this.reattachListeners.add(listener);
+    return () => {
+      this.reattachListeners.delete(listener);
+    };
+  }
+
+  /**
    * End a control link for good: stop its timers, settle everything still
    * waiting on its transport, then tell the peer.
    *
-   * The detach RPC is last and its failure is re-thrown because the controller
-   * cannot otherwise confirm that the Host removed its delivery subscription
-   * and finalized controller-scoped interactions. Host-accepted work remains
-   * Host-owned and keeps running either way. Local teardown has already
-   * completed before the RPC settles.
+   * The detach RPC is last. A host refusal is re-thrown because the
+   * controller cannot otherwise confirm that the Host removed its delivery
+   * subscription and finalized controller-scoped interactions. A transport
+   * failure is not: the user's disconnect already completed locally, so the
+   * detach is retried in the background (and when the host is seen online
+   * again) until it lands, the host refuses it, or the device is reconnected.
+   * Host-accepted work remains Host-owned and keeps running either way.
    */
   async dispose(deviceId: string, options: PeerDisposeOptions = {}): Promise<void> {
     const entry = this.entries.get(deviceId);
@@ -377,9 +463,20 @@ export class PeerConnectionManager {
     log.info('Peer connection disposed', { deviceId });
 
     if (options.notifyPeer !== false) {
-      await this.hostInvoke(deviceId, 'peer_control_detach', {
-        controller_device_id: await this.controllerId(),
-      });
+      try {
+        await this.sendDetach(deviceId);
+      } catch (error) {
+        if (error instanceof PeerControlRefusalError) throw error;
+        log.warn('Peer detach could not reach the host; retrying in the background', {
+          deviceId,
+          error,
+        });
+        // A reconnect that started while this detach was in flight owns the
+        // link now; retrying would drop its attachment.
+        if (!this.entries.has(deviceId) && !this.attaching.has(deviceId)) {
+          this.queueDetachRetry(deviceId);
+        }
+      }
     }
   }
 
@@ -410,9 +507,21 @@ export class PeerConnectionManager {
         void this.runHealthCheck(entry);
       }
     }
+    // A host seen online again can probably take the detach it missed now.
+    for (const pending of this.pendingDetaches.values()) {
+      const wasOnline = pending.presenceOnline;
+      pending.presenceOnline = online.has(pending.deviceId);
+      if (pending.presenceOnline && wasOnline !== true) {
+        this.runDetachRetry(pending);
+      }
+    }
   }
 
-  private async attach(deviceId: string, deviceName: string): Promise<PeerConnection> {
+  private async attach(
+    deviceId: string,
+    deviceName: string,
+    priorDetach?: Promise<void>,
+  ): Promise<PeerConnection> {
     const adapter = new PeerDeviceTransportAdapter(
       deviceId,
       (target, commandJson, timeoutMs) => this.deviceRpc(target, commandJson, timeoutMs),
@@ -423,6 +532,12 @@ export class PeerConnectionManager {
           const current = this.entries.get(deviceId);
           if (current?.adapter === adapter) {
             this.requestRecovery(current, 'request', meta?.action);
+          }
+        },
+        onHostUiNotReady: () => {
+          const current = this.entries.get(deviceId);
+          if (current?.adapter === adapter) {
+            this.markHostStarting(current);
           }
         },
       },
@@ -441,6 +556,8 @@ export class PeerConnectionManager {
       needsReattach: false,
       healthCheckInFlight: null,
       reattachInFlight: null,
+      hostStarting: false,
+      startingChecks: 0,
       handle: {
         deviceId,
         surfaceId: adapter.surfaceId,
@@ -454,7 +571,12 @@ export class PeerConnectionManager {
     try {
       await adapter.connect();
       this.assertEntryActive(entry);
-      entry.capabilities = await this.probeCapabilities(entry);
+      const probe = await this.probeCapabilities(entry);
+      entry.capabilities = probe.capabilities;
+      entry.hostStarting = !probe.status.hostUiReady;
+      this.assertEntryActive(entry);
+      // Order the attach after a retried detach that was already on its way.
+      await priorDetach;
       this.assertEntryActive(entry);
       await this.sendAttach(deviceId);
       this.assertEntryActive(entry);
@@ -481,21 +603,33 @@ export class PeerConnectionManager {
       supportsGenUiLibrariesV1: entry.capabilities.genUiLibrariesV1,
       supportsModelRoutingV1: entry.capabilities.modelRoutingV1,
       supportsModelPoolSelectionV1: entry.capabilities.modelPoolSelectionV1,
+      supportsMagpieDiscoveryV1: entry.capabilities.magpieDiscoveryV1,
       supportsBtwModelPoolSelectionV1: entry.capabilities.btwModelPoolSelectionV1,
       supportsComputerUseSharingV1: entry.capabilities.computerUseSharingV1,
       supportsProductControlV1: entry.capabilities.productControlV1,
       supportsRemoteConnectControlV1: entry.capabilities.remoteConnectControlV1,
     });
     entry.health = 'ready';
-    this.scheduleKeepalive(entry);
+    if (entry.hostStarting) this.scheduleStartingProbe(entry);
+    else this.scheduleKeepalive(entry);
     this.publish();
-    log.info('Peer connection ready', { deviceId, capabilities: entry.capabilities });
+    log.info('Peer connection ready', {
+      deviceId,
+      capabilities: entry.capabilities,
+      hostStarting: entry.hostStarting,
+    });
     return entry.handle;
   }
 
-  private async probeCapabilities(entry: ConnectionEntry): Promise<PeerHostCapabilities> {
+  private async probeCapabilities(
+    entry: ConnectionEntry,
+  ): Promise<{ capabilities: PeerHostCapabilities; status: PeerPingStatus }> {
     this.assertEntryActive(entry);
-    const result = await this.hostInvoke<PeerModePingResult>(entry.deviceId, 'peer_mode_ping', {});
+    // Hosts that advertise `peer_attachment_status_v1` answer whether this
+    // controller id is attached; older hosts ignore the argument.
+    const result = await this.hostInvoke<PeerModePingResult>(entry.deviceId, 'peer_mode_ping', {
+      controller_device_id: await this.controllerId(),
+    });
     this.assertEntryActive(entry);
     const deviceId = entry.deviceId;
     // For the new fields (cancel_tool / tool_catalog) preserve `undefined` as
@@ -559,10 +693,17 @@ export class PeerConnectionManager {
       }
     }
 
-    return {
+    const status: PeerPingStatus = {
+      hostUiReady: result?.host_ui_ready !== false,
+      callerAttached: caps?.peer_attachment_status_v1 === true && typeof result?.caller_attached === 'boolean'
+        ? result.caller_attached
+        : null,
+    };
+    return { status, capabilities: {
       idempotentDialogSubmit: caps?.idempotent_dialog_submit === true,
       backgroundResultDeliveryV1: caps?.background_result_delivery_v1 === true,
       inlineImageAttachmentsV1: caps?.inline_image_attachments_v1 === true,
+      runtimeAttachmentUploadV1: caps?.runtime_attachment_upload_v1 === true,
       btwInitialModelSelectionV1: caps?.btw_initial_model_selection_v1 === true,
       btwModelPoolSelectionV1: caps?.btw_model_pool_selection_v1 === true,
       terminalCursorReplayV1: caps?.terminal_cursor_replay_v1 === true,
@@ -585,6 +726,7 @@ export class PeerConnectionManager {
       genUiLibrariesV1: caps?.gen_ui_libraries_v1 === true,
       modelRoutingV1: caps?.model_routing_v1 === true,
       modelPoolSelectionV1: caps?.model_pool_selection_v1 === true,
+      magpieDiscoveryV1: caps?.magpie_discovery_v1 === true,
       computerUseSharingV1: caps?.computer_use_sharing_v1 === true,
       productControlV1: caps?.product_control_v1 === true,
       remoteConnectControlV1: caps?.remote_connect_control_v1 === true,
@@ -598,17 +740,111 @@ export class PeerConnectionManager {
       sessionReferenceBrowseV1: caps?.session_reference_browse_v1 === true,
       workspaceIconV1: caps?.workspace_icon_v1 === true,
       workspaceIdReferencesV1: caps?.workspace_id_references_v1 === true,
+      gitTrackedChangeCountV1: caps?.git_tracked_change_count_v1 === true,
+      workspaceLatexPreviewV1: caps?.workspace_latex_preview_v1 === true,
       userQuestionResponse,
       userQuestionInteraction: caps?.user_question_interaction_v1 === true,
       dialogQueueV1: caps?.dialog_queue_v1 === true,
       hostKind,
-    };
+    } };
   }
 
   private async sendAttach(deviceId: string): Promise<void> {
     await this.hostInvoke(deviceId, 'peer_control_attach', {
       controller_device_id: await this.controllerId(),
     });
+  }
+
+  private async sendDetach(deviceId: string): Promise<void> {
+    await this.hostInvoke(deviceId, 'peer_control_detach', {
+      controller_device_id: await this.controllerId(),
+    });
+  }
+
+  private queueDetachRetry(deviceId: string): void {
+    this.retirePendingDetach(deviceId);
+    const pending: PendingDetach = {
+      deviceId,
+      attempts: 0,
+      timer: null,
+      inFlight: null,
+      presenceOnline: null,
+      settled: false,
+    };
+    this.pendingDetaches.set(deviceId, pending);
+    this.scheduleDetachRetry(pending);
+  }
+
+  private scheduleDetachRetry(pending: PendingDetach): void {
+    if (pending.timer !== null) clearTimeout(pending.timer);
+    const delayMs = Math.min(
+      this.reconnectBaseDelayMs * (2 ** pending.attempts),
+      this.reconnectMaxDelayMs,
+    );
+    pending.timer = setTimeout(() => {
+      pending.timer = null;
+      this.runDetachRetry(pending);
+    }, delayMs);
+  }
+
+  /** One background detach attempt; never throws and never blocks a caller. */
+  private runDetachRetry(pending: PendingDetach): void {
+    if (pending.settled || pending.inFlight) return;
+    if (pending.timer !== null) {
+      clearTimeout(pending.timer);
+      pending.timer = null;
+    }
+    pending.attempts += 1;
+    const finish = () => {
+      pending.settled = true;
+      if (this.pendingDetaches.get(pending.deviceId) === pending) {
+        this.pendingDetaches.delete(pending.deviceId);
+      }
+    };
+    pending.inFlight = this.sendDetach(pending.deviceId).then(
+      () => {
+        if (pending.settled) return;
+        log.info('Peer detach delivered after retry', {
+          deviceId: pending.deviceId,
+          attempts: pending.attempts,
+        });
+        finish();
+      },
+      (error: unknown) => {
+        if (pending.settled) return;
+        if (error instanceof PeerControlRefusalError) {
+          log.warn('Peer host refused a retried detach', { deviceId: pending.deviceId, error });
+          finish();
+        } else if (pending.attempts >= PEER_DETACH_MAX_RETRIES) {
+          log.warn('Peer detach could not reach the host; it drops this controller on presence loss', {
+            deviceId: pending.deviceId,
+            attempts: pending.attempts,
+            error,
+          });
+          finish();
+        } else {
+          this.scheduleDetachRetry(pending);
+        }
+      },
+    ).finally(() => {
+      pending.inFlight = null;
+    });
+  }
+
+  /**
+   * Stop retrying a detach for `deviceId`. Returns the attempt still in
+   * flight, if any, so a new attach can be ordered after it.
+   */
+  private retirePendingDetach(deviceId: string): Promise<void> | undefined {
+    const pending = this.pendingDetaches.get(deviceId);
+    if (!pending) return undefined;
+    this.pendingDetaches.delete(deviceId);
+    pending.settled = true;
+    if (pending.timer !== null) {
+      clearTimeout(pending.timer);
+      pending.timer = null;
+    }
+    return pending.inFlight ?? undefined;
   }
 
   private scheduleKeepalive(entry: ConnectionEntry): void {
@@ -635,6 +871,28 @@ export class PeerConnectionManager {
     }, delayMs);
   }
 
+  /** While the host UI starts, poll it with its own capped backoff. */
+  private scheduleStartingProbe(entry: ConnectionEntry): void {
+    this.cancelTimer(entry);
+    const delayMs = Math.min(
+      this.reconnectBaseDelayMs * (2 ** Math.max(0, entry.startingChecks - 1)),
+      this.reconnectMaxDelayMs,
+    );
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      void this.runHealthCheck(entry);
+    }, delayMs);
+  }
+
+  private markHostStarting(entry: ConnectionEntry): void {
+    if (this.entries.get(entry.deviceId) !== entry || entry.disposed) return;
+    if (!entry.hostStarting) {
+      entry.hostStarting = true;
+      this.publish();
+    }
+    if (!entry.healthCheckInFlight && entry.health === 'ready') this.scheduleStartingProbe(entry);
+  }
+
   /**
    * One probe covers both roles: while `ready` it is the keepalive, while
    * `degraded` it is the reconnect attempt. A degraded peer re-sends
@@ -654,8 +912,9 @@ export class PeerConnectionManager {
       entry.healthCheckInFlight = null;
       entry.probeRequested = false;
       if (this.entries.get(entry.deviceId) !== entry || entry.disposed) return;
-      if (entry.health === 'ready' && !entry.needsReattach) this.scheduleKeepalive(entry);
-      else this.scheduleReconnect(entry);
+      if (entry.health !== 'ready' || entry.needsReattach) this.scheduleReconnect(entry);
+      else if (entry.hostStarting) this.scheduleStartingProbe(entry);
+      else this.scheduleKeepalive(entry);
     });
     entry.healthCheckInFlight = check;
     return check;
@@ -663,10 +922,20 @@ export class PeerConnectionManager {
 
   private async checkHealth(entry: ConnectionEntry): Promise<void> {
     try {
-      const capabilities = await this.probeCapabilities(entry);
+      const { capabilities, status } = await this.probeCapabilities(entry);
+      // The host may have dropped this controller (presence loss, routing
+      // restart) while every request still succeeded; re-attach instead of
+      // reporting `ready` for a link that receives no events.
+      const lostAttachment = status.callerAttached === false;
+      if (lostAttachment) {
+        log.info('Peer host no longer has this controller attached; re-attaching', {
+          deviceId: entry.deviceId,
+        });
+      }
       // A request/presence failure may have arrived while the ping was in
       // flight. Check the current state, not the state at probe start.
-      if (entry.health === 'degraded' || entry.needsReattach) {
+      const reattached = entry.health === 'degraded' || entry.needsReattach || lostAttachment;
+      if (reattached) {
         entry.needsReattach = false;
         const reattach = this.sendAttach(entry.deviceId);
         entry.reattachInFlight = reattach;
@@ -692,6 +961,7 @@ export class PeerConnectionManager {
         supportsGenUiLibrariesV1: capabilities.genUiLibrariesV1,
         supportsModelRoutingV1: capabilities.modelRoutingV1,
         supportsModelPoolSelectionV1: capabilities.modelPoolSelectionV1,
+        supportsMagpieDiscoveryV1: capabilities.magpieDiscoveryV1,
         supportsBtwModelPoolSelectionV1: capabilities.btwModelPoolSelectionV1,
         supportsComputerUseSharingV1: capabilities.computerUseSharingV1,
         supportsProductControlV1: capabilities.productControlV1,
@@ -700,12 +970,18 @@ export class PeerConnectionManager {
       entry.consecutiveFailures = 0;
       const recovered = entry.health !== 'ready';
       entry.health = 'ready';
+      const startingChanged = entry.hostStarting !== !status.hostUiReady;
+      entry.hostStarting = !status.hostUiReady;
+      entry.startingChecks = entry.hostStarting ? entry.startingChecks + 1 : 0;
+      // Events emitted while this controller was not attached were not
+      // delivered; owners re-read their interaction mailboxes.
+      if (reattached) this.notifyReattached(entry.deviceId);
       // Publish when the host's advertised capabilities changed too, not only
       // on recovery: a peer that stayed `ready` but restarted on a different
       // build mid-session must push a fresh React snapshot, or UI keeps gating
       // on stale capabilities (e.g. a tool-catalog flag flipping). See #2428 #6.
       const capabilitiesChanged = !capabilitiesEqual(previousCapabilities, capabilities);
-      if (recovered || capabilitiesChanged) {
+      if (recovered || capabilitiesChanged || startingChanged) {
         if (recovered) {
           log.info('Peer connection recovered', { deviceId: entry.deviceId });
         }
@@ -786,10 +1062,10 @@ export class PeerConnectionManager {
     );
     const envelope = JSON.parse(raw) as HostInvokeEnvelope;
     if (envelope.resp === 'error') {
-      throw new Error(envelope.message || `Peer '${command}' failed`);
+      throw new PeerControlRefusalError(envelope.message || `Peer '${command}' failed`);
     }
     if (envelope.resp === 'host_invoke_result' && !envelope.ok) {
-      throw new Error(envelope.error || `Peer '${command}' failed`);
+      throw new PeerControlRefusalError(envelope.error || `Peer '${command}' failed`);
     }
     return envelope.value as T | undefined;
   }
@@ -802,7 +1078,18 @@ export class PeerConnectionManager {
       health: entry.health,
       capabilities: entry.capabilities,
       consecutiveFailures: entry.consecutiveFailures,
+      hostStarting: entry.hostStarting,
     };
+  }
+
+  private notifyReattached(deviceId: string): void {
+    for (const listener of Array.from(this.reattachListeners)) {
+      try {
+        listener(deviceId);
+      } catch (error) {
+        log.warn('Peer re-attach listener threw', error);
+      }
+    }
   }
 
   private publish(): void {
@@ -818,53 +1105,25 @@ export class PeerConnectionManager {
 }
 
 /**
- * Shallow-compare the capability fields a React snapshot exposes. Used by the
+ * Shallow-compare every capability field a React snapshot exposes. Used by the
  * keepalive path to decide whether a fresh `publish()` is warranted when a
  * `ready` peer's host reports different capabilities (e.g. after a restart on
  * a different build) without a state transition. `null` (unknown) and a boolean
  * are intentionally distinct: an unprobed field flipping to a concrete value is
- * a change the UI should react to.
+ * a change the UI should react to. The comparison walks the union of keys so a
+ * newly negotiated capability can never be forgotten here.
  */
-function capabilitiesEqual(
+export function capabilitiesEqual(
   a: PeerHostCapabilities,
   b: PeerHostCapabilities,
 ): boolean {
-  return a.idempotentDialogSubmit === b.idempotentDialogSubmit &&
-    a.backgroundResultDeliveryV1 === b.backgroundResultDeliveryV1 &&
-    a.inlineImageAttachmentsV1 === b.inlineImageAttachmentsV1 &&
-    a.btwInitialModelSelectionV1 === b.btwInitialModelSelectionV1 &&
-    a.btwModelPoolSelectionV1 === b.btwModelPoolSelectionV1 &&
-    a.controlConversationV1 === b.controlConversationV1 &&
-    a.controlConversationResetV1 === b.controlConversationResetV1 &&
-    a.targetedSessionRollback === b.targetedSessionRollback &&
-    a.tokenUsageStatistics === b.tokenUsageStatistics &&
-    a.miniAppAgentContextFilesV1 === b.miniAppAgentContextFilesV1 &&
-    a.miniAppAgentImagesV1 === b.miniAppAgentImagesV1 &&
-    a.wslWorkspacesV1 === b.wslWorkspacesV1 &&
-    a.sshNoneAuthV1 === b.sshNoneAuthV1 &&
-    a.sshPortScopedIdentityV1 === b.sshPortScopedIdentityV1 &&
-    a.subscriptionAccountPoolsV1 === b.subscriptionAccountPoolsV1 &&
-    a.subscriptionQuotaV1 === b.subscriptionQuotaV1 &&
-    a.grokQuotaV1 === b.grokQuotaV1 &&
-    a.subscriptionModelQuotaV1 === b.subscriptionModelQuotaV1 &&
-    a.modelChannelRoutingV1 === b.modelChannelRoutingV1 &&
-    a.wholeSessionCopyV1 === b.wholeSessionCopyV1 &&
-    a.sessionTrajectoryV1 === b.sessionTrajectoryV1 &&
-    a.genUiLibrariesV1 === b.genUiLibrariesV1 &&
-    a.modelRoutingV1 === b.modelRoutingV1 &&
-    a.modelPoolSelectionV1 === b.modelPoolSelectionV1 &&
-    a.computerUseSharingV1 === b.computerUseSharingV1 &&
-    a.cancelTool === b.cancelTool &&
-    a.toolCatalog === b.toolCatalog &&
-    a.reviewPlatformV1 === b.reviewPlatformV1 &&
-    a.chatMcpCatalogV1 === b.chatMcpCatalogV1 &&
-    a.sessionReferenceBrowseV1 === b.sessionReferenceBrowseV1 &&
-    a.workspaceIconV1 === b.workspaceIconV1 &&
-    a.workspaceIdReferencesV1 === b.workspaceIdReferencesV1 &&
-    a.userQuestionResponse === b.userQuestionResponse &&
-    a.userQuestionInteraction === b.userQuestionInteraction &&
-    a.dialogQueueV1 === b.dialogQueueV1 &&
-    a.hostKind === b.hostKind;
+  const left = a as unknown as Record<string, unknown>;
+  const right = b as unknown as Record<string, unknown>;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if (left[key] !== right[key]) return false;
+  }
+  return true;
 }
 
 function isUnsupportedPeerCommandError(error: unknown, command: string): boolean {

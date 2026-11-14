@@ -182,6 +182,7 @@ export class PeerDeviceSurfaceController {
         deviceId: connection.deviceId,
         deviceName: connection.deviceName,
         health: connection.health,
+        hostStarting: connection.hostStarting,
         capabilities: connection.capabilities,
       })),
     };

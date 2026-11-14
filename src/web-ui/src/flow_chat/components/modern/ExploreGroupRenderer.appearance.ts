@@ -25,7 +25,7 @@ export const contextLoadGroupAppearanceDescriptor: AppearanceSurfaceDescriptor =
 };
 export const shellGroupAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'shell-group',
-  // Existing skins address the unified collection through their saved Shell id.
+  // Existing appearance data addresses the unified collection through its saved Shell id.
   hostSelectorId: 'explore-group',
   parts: [
     { id: 'root' }, { id: 'header' }, { id: 'summary' },

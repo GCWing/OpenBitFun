@@ -9,6 +9,7 @@ pub mod command_router;
 pub mod feishu;
 pub mod locale;
 pub mod menu;
+pub(crate) mod pairing_gate;
 pub mod telegram;
 pub mod weixin;
 
@@ -27,10 +28,29 @@ pub use openbitfun_services_integrations::remote_connect::bot::{
     RemoteConnectFormState, RemoteDeviceTarget, SavedBotConnection, WorkspaceFileContent,
 };
 
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
+
+/// Authorization is never implied by missing state: a chat counts as paired
+/// only when its own state exists and says so. The check never creates state,
+/// so every outbound path can ask it about a chat it is about to address.
+pub(crate) async fn chat_is_paired<K, Q>(
+    states: &tokio::sync::RwLock<HashMap<K, BotChatState>>,
+    chat_id: &Q,
+) -> bool
+where
+    K: Eq + Hash + Borrow<Q>,
+    Q: Eq + Hash + ?Sized,
+{
+    states
+        .read()
+        .await
+        .get(chat_id)
+        .is_some_and(|state| state.paired)
+}
 
 /// Serializes persistence commits with lifecycle generation changes for one
 /// bot platform. A retired polling task can finish later, but it can no longer
@@ -77,6 +97,15 @@ impl BotSlotFence {
     }
 }
 
+/// Where a bot instance commits its saved connection. A standalone test fence
+/// keeps the document in memory, so a unit test can never replace a saved
+/// connection in the product home.
+enum BotConnectionStore {
+    Product,
+    #[cfg(test)]
+    Memory(StdMutex<BotPersistenceData>),
+}
+
 /// Shared account-identity epoch plus a per-platform lifecycle owner. Network
 /// work is not awaited during account replacement; instead every state commit
 /// is fenced and sanitized if it started under an older account epoch.
@@ -86,6 +115,7 @@ pub(crate) struct BotRuntimeFence {
     observed_identity_epoch: AtomicU64,
     slot: Arc<BotSlotFence>,
     lifecycle_generation: u64,
+    connection_store: BotConnectionStore,
 }
 
 impl BotRuntimeFence {
@@ -101,6 +131,7 @@ impl BotRuntimeFence {
             account_user_id: String::new(),
             slot,
             lifecycle_generation,
+            connection_store: BotConnectionStore::Product,
         }
     }
 
@@ -118,7 +149,37 @@ impl BotRuntimeFence {
         let account_identity_epoch = Arc::new(AtomicU64::new(0));
         let slot = Arc::new(BotSlotFence::default());
         let lifecycle_generation = slot.advance();
-        Self::new(account_identity_epoch, slot, lifecycle_generation)
+        let mut fence = Self::new(account_identity_epoch, slot, lifecycle_generation);
+        fence.connection_store = BotConnectionStore::Memory(StdMutex::default());
+        fence
+    }
+
+    /// The connection a standalone fence saved for `bot_type`.
+    #[cfg(test)]
+    pub(crate) fn saved_connection(&self, bot_type: &str) -> Option<SavedBotConnection> {
+        match &self.connection_store {
+            BotConnectionStore::Product => None,
+            BotConnectionStore::Memory(data) => data
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .get(bot_type)
+                .cloned(),
+        }
+    }
+
+    /// Saves `connection` as the single connection of its bot type, unless
+    /// this instance's lifecycle slot was replaced.
+    pub(crate) fn persist_connection(&self, connection: SavedBotConnection) {
+        self.commit_if_current(|| match &self.connection_store {
+            BotConnectionStore::Product => {
+                update_bot_persistence(|data| data.upsert(connection));
+            }
+            #[cfg(test)]
+            BotConnectionStore::Memory(data) => data
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .upsert(connection),
+        });
     }
 
     pub(crate) fn identity_epoch(&self) -> u64 {
@@ -157,6 +218,7 @@ impl BotRuntimeFence {
             .store(current, Ordering::Release);
     }
 
+    #[cfg(test)]
     pub(crate) fn sanitize_after_epoch(&self, started_epoch: u64, state: &mut BotChatState) {
         if started_epoch != self.identity_epoch() {
             state.clear_delegated_identity();
@@ -174,6 +236,73 @@ impl BotRuntimeFence {
     pub(crate) fn commit_if_current<R>(&self, commit: impl FnOnce() -> R) -> Option<R> {
         self.slot
             .commit_if_current(self.lifecycle_generation, commit)
+    }
+}
+
+/// Fixtures shared by the platform adapter tests.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::command_router::{BotInteractiveRequest, PendingAction};
+    use super::{BotChatState, BotPersistenceData, MenuView, SavedBotConnection};
+
+    /// A pairing code no test fixture guesses by accident.
+    pub(crate) const PAIRING_CODE: &str = "482913";
+
+    pub(crate) fn paired_state(chat_id: &str) -> BotChatState {
+        let mut state = BotChatState::new(chat_id.to_string());
+        state.paired = true;
+        state
+    }
+
+    /// A question a running turn asks the chat that started it.
+    pub(crate) fn question(tool_id: &str) -> BotInteractiveRequest {
+        BotInteractiveRequest {
+            remote_target: None,
+            reply: "Pick one".into(),
+            actions: Vec::new(),
+            menu: MenuView::plain("Pick one"),
+            pending_action: PendingAction::AskUserQuestion {
+                tool_id: tool_id.into(),
+                questions: Vec::new(),
+                current_index: 0,
+                answers: Vec::new(),
+                awaiting_custom_text: false,
+                pending_answer: None,
+            },
+        }
+    }
+
+    /// The persistence document as a release before the pairing gate fix
+    /// wrote it: no optional fields, a bare workspace path, `paired: true`.
+    pub(crate) fn legacy_saved_connection(
+        bot_type: &str,
+        chat_id: &str,
+        config: serde_json::Value,
+    ) -> SavedBotConnection {
+        let document = serde_json::json!({
+            "connections": [{
+                "account_user_id": "account",
+                "bot_type": bot_type,
+                "chat_id": chat_id,
+                "config": config,
+                "chat_state": {
+                    "chat_id": chat_id,
+                    "paired": true,
+                    "current_workspace": "/legacy/workspace",
+                    "current_assistant": null,
+                    "current_session_id": "legacy-session",
+                    "display_mode": "pro"
+                },
+                "connected_at": 1
+            }],
+            "form_state": {},
+            "verbose_mode": false
+        });
+        let data: BotPersistenceData =
+            serde_json::from_value(document).expect("legacy bot persistence must deserialize");
+        data.get(bot_type)
+            .cloned()
+            .expect("legacy connection must be present")
     }
 }
 
@@ -269,8 +398,9 @@ pub(crate) async fn read_output_file(
     })
 }
 
-/// Retire only the interactions actually observed in a completed remote turn.
-/// Another turn/device may still have a pending or queued question in this chat.
+/// Retire only the interactions actually observed in a completed turn
+/// (`target` is its device, `None` for a turn on this host). Another
+/// turn/device may still have a pending or queued question in this chat.
 pub(crate) async fn retire_remote_interactions<K: Eq + Hash>(
     states: &tokio::sync::RwLock<HashMap<K, BotChatState>>,
     chat_id: &K,
@@ -279,7 +409,6 @@ pub(crate) async fn retire_remote_interactions<K: Eq + Hash>(
     fence: &BotRuntimeFence,
     epoch: u64,
 ) -> Option<command_router::BotInteractiveRequest> {
-    let target = target?;
     if tool_ids.is_empty() {
         return None;
     }
@@ -287,5 +416,201 @@ pub(crate) async fn retire_remote_interactions<K: Eq + Hash>(
     if !fence.is_lifecycle_current() || fence.identity_epoch() != epoch {
         return None;
     }
-    command_router::retire_completed_remote_tools(states.get_mut(chat_id)?, target, tool_ids)
+    // A chat that is no longer paired has no prompt left to show or retire.
+    let state = states.get_mut(chat_id).filter(|state| state.paired)?;
+    command_router::retire_completed_remote_tools(state, target, tool_ids)
+}
+
+pub(crate) use openbitfun_services_integrations::remote_connect::bot::delivery::HeldReplies;
+
+/// Deliver a turn's final reply. The provider client already retried each
+/// part; whatever is still undelivered and may succeed later is held for the
+/// chat's next inbound message. The chat is told (best effort) that the reply
+/// was not delivered and how to get it. A reply the provider refused
+/// permanently (content rejected, forbidden) is not held: resending it would
+/// fail the same way on every later message.
+pub(crate) async fn deliver_final_reply<K, F, Fut>(
+    held: &HeldReplies<K>,
+    chat: &K,
+    text: &str,
+    send: F,
+) where
+    K: Eq + Hash + Clone,
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
+    use openbitfun_services_integrations::remote_connect::bot::delivery::{
+        may_deliver_later, undelivered_remainder,
+    };
+    if text.trim().is_empty() {
+        return;
+    }
+    let Err(error) = send(text.to_string()).await else {
+        return;
+    };
+    let s = locale::strings_for(locale::current_bot_language().await);
+    let notice = if may_deliver_later(&error) {
+        log::warn!("Bot final reply was not delivered; holding it for the next message: {error}");
+        let dropped = held.hold(chat, undelivered_remainder(&error, text));
+        if dropped > 0 {
+            log::warn!(
+                "Bot held-reply backlog exceeded its bound; dropped {dropped} older reply(s)"
+            );
+        }
+        s.reply_undelivered
+    } else {
+        log::warn!("Bot final reply was rejected by the provider and is not held: {error}");
+        s.reply_rejected
+    };
+    if let Err(error) = send(notice.to_string()).await {
+        log::debug!("Bot undelivered-reply notice also failed: {error}");
+    }
+}
+
+/// Resend replies held for `chat`, oldest first. A reply that still fails is
+/// kept (from its undelivered part, with its original hold time) together
+/// with every later one. A reply the provider now refuses permanently is
+/// dropped and the chat is told once. Adapters run this in the background, so
+/// only one resend per chat runs at a time to keep held replies in order.
+pub(crate) async fn resend_held_replies<K, F, Fut>(held: &HeldReplies<K>, chat: &K, send: F)
+where
+    K: Eq + Hash + Clone,
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
+    use openbitfun_services_integrations::remote_connect::bot::delivery::{
+        may_deliver_later, undelivered_remainder,
+    };
+    if held.is_empty(chat) {
+        return;
+    }
+    let Some(_resend) = held.begin_resend(chat) else {
+        return;
+    };
+    let s = locale::strings_for(locale::current_bot_language().await);
+    let replies = held.take(chat);
+    let mut resent = 0usize;
+    let mut rejected = 0usize;
+    for (index, reply) in replies.iter().enumerate() {
+        let message = format!("{}\n\n{}", s.held_reply_resent, reply.text);
+        let Err(error) = send(message.clone()).await else {
+            resent += 1;
+            continue;
+        };
+        if !may_deliver_later(&error) {
+            log::warn!("Bot held reply was rejected by the provider and is dropped: {error}");
+            rejected += 1;
+            continue;
+        }
+        let remainder = undelivered_remainder(&error, &message);
+        let first = if remainder == message {
+            reply.clone()
+        } else {
+            reply.with_text(remainder)
+        };
+        let mut keep = vec![first];
+        keep.extend(replies[index + 1..].iter().cloned());
+        let dropped = held.restore(chat, keep);
+        if dropped > 0 {
+            log::warn!(
+                "Bot held-reply backlog exceeded its bound; dropped {dropped} older reply(s)"
+            );
+        }
+        log::warn!("Bot held reply still could not be delivered: {error}");
+        break;
+    }
+    if resent > 0 {
+        log::info!("Bot resent {resent} held reply(s)");
+    }
+    if rejected > 0 {
+        if let Err(error) = send(s.reply_rejected.to_string()).await {
+            log::debug!("Bot rejected-reply notice also failed: {error}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod delivery_tests {
+    use super::*;
+    use openbitfun_services_integrations::remote_connect::bot::delivery::UndeliveredText;
+    use std::sync::Mutex as TestMutex;
+
+    #[tokio::test]
+    async fn undelivered_final_reply_is_held_and_resent_from_the_failed_part() {
+        let held = HeldReplies::<String>::default();
+        let chat = "chat".to_string();
+        let sent = TestMutex::new(Vec::<String>::new());
+        let fail = TestMutex::new(true);
+        let send = |text: String| {
+            let failing = *fail.lock().unwrap();
+            let outcome = if failing && text.starts_with("part one") {
+                sent.lock().unwrap().push("part one ".into());
+                Err(anyhow::Error::new(UndeliveredText {
+                    delivered_chunks: 1,
+                    remaining: vec!["part two".into()],
+                    cause: "HTTP 502".into(),
+                    retryable: true,
+                }))
+            } else if failing {
+                Err(anyhow::anyhow!("offline"))
+            } else {
+                sent.lock().unwrap().push(text);
+                Ok(())
+            };
+            async move { outcome }
+        };
+
+        deliver_final_reply(&held, &chat, "part one part two", &send).await;
+        assert!(!held.is_empty(&chat));
+        assert_eq!(*sent.lock().unwrap(), vec!["part one "]);
+
+        // Still offline: the reply stays held, unchanged.
+        resend_held_replies(&held, &chat, &send).await;
+        assert!(!held.is_empty(&chat));
+
+        *fail.lock().unwrap() = false;
+        resend_held_replies(&held, &chat, &send).await;
+        assert!(held.is_empty(&chat));
+        let sent = sent.lock().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert!(sent[1].ends_with("part two"));
+        assert!(!sent[1].contains("part one"));
+    }
+
+    #[tokio::test]
+    async fn permanently_rejected_replies_are_not_held_or_retried() {
+        let s = locale::strings_for(locale::current_bot_language().await);
+        let held = HeldReplies::<String>::default();
+        let chat = "chat".to_string();
+        let sent = TestMutex::new(Vec::<String>::new());
+        let send = |text: String| {
+            let outcome = if text.contains("forbidden content") {
+                Err(anyhow::Error::new(UndeliveredText {
+                    delivered_chunks: 0,
+                    remaining: vec![text.clone()],
+                    cause: "HTTP 403".into(),
+                    retryable: false,
+                }))
+            } else {
+                sent.lock().unwrap().push(text);
+                Ok(())
+            };
+            async move { outcome }
+        };
+
+        deliver_final_reply(&held, &chat, "forbidden content", &send).await;
+        assert!(held.is_empty(&chat));
+        assert_eq!(*sent.lock().unwrap(), vec![s.reply_rejected]);
+
+        // A held reply the provider now refuses is dropped; later ones still go.
+        sent.lock().unwrap().clear();
+        held.hold(&chat, "forbidden content".into());
+        held.hold(&chat, "later answer".into());
+        resend_held_replies(&held, &chat, &send).await;
+        assert!(held.is_empty(&chat));
+        let sent = sent.lock().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert!(sent[0].ends_with("later answer"));
+        assert_eq!(sent[1], s.reply_rejected);
+    }
 }

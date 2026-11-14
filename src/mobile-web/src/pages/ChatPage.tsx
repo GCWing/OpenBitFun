@@ -2,17 +2,19 @@ import { MobileHostQueue } from '../components/MobileHostQueue';
 import { downloadRuntimeFile } from '../services/RuntimeFileDownload';
 import { PermissionMailbox } from '../components/PermissionMailbox';
 import { QuestionInteractionContext } from "../components/ChatAskQuestionCard";
+import { InteractionVerifyContext, MailboxQuestionOwnerContext } from '../components/InteractionVerification';
 import { ChevronDown as LucideChevronDown } from 'lucide-react';
-import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { MobileButton, MobileConfirmSheet, MobileIconButton, MobileStatus, MobileTextarea } from '@openbitfun/ui/mobile';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useSyncExternalStore } from 'react';
+import { MobileBanner, MobileButton, MobileConfirmSheet, MobileIconButton, MobileStatus, MobileTextarea } from '@openbitfun/ui/mobile';
 import { useI18n } from '../i18n';
 import { useControlTargetEpoch } from '../hooks/useControlTargetEpoch';
+import { useHostCapabilityRevision } from '../hooks/useHostCapabilityRevision';
 import {
   isRemoteControlTargetChangedError,
   RemoteControlTargetChangedError,
   RemoteSessionManager,
-  RemoteSessionModelWriteUnconfirmedError,
   SessionSynchronizer,
+  type SessionSyncState,
   type PollResponse,
   type ChatMessage,
   type RemoteModelCatalog,
@@ -41,16 +43,15 @@ import ChatFeedback from '../components/ChatFeedback';
 import { copyToClipboard } from '../components/ChatMarkdown';
 import { ArtifactImageReader } from '../components/RemoteArtifactImage';
 import ChatTranscript from '../components/ChatTranscript';
+import { describeChatError, sessionStreamNotice } from '../services/chatErrorPresentation';
 
 function reportRemoteSessionError(
   error: unknown,
   setError: (message: string) => void,
-  t?: (key: string) => string,
+  t: (key: string, params?: Record<string, string | number>) => string,
 ): void {
   if (isRemoteControlTargetChangedError(error)) return;
-  setError(error instanceof RemoteSessionModelWriteUnconfirmedError && t
-    ? t(error.messageKey)
-    : error instanceof Error ? error.message : String(error));
+  setError(describeChatError(error, t));
 }
 
 interface ChatPageProps {
@@ -88,6 +89,9 @@ const ChatPage: React.FC<ChatPageProps> = ({
   wideLayout = false,
 }) => {
   const { t } = useI18n();
+  // Long-lived subscriptions read the current language without resubscribing.
+  const translateRef = useRef(t);
+  translateRef.current = t;
   const {
     getMessages,
     setMessages,
@@ -157,10 +161,23 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [transcriptHydrating, setTranscriptHydrating] = useState(true);
+  const [streamState, setStreamState] = useState<SessionSyncState>('loading');
+  const [streamIssue, setStreamIssue] = useState<unknown>(null);
   const isLoadingMoreRef = useRef(false);
   const hasMoreRef = useRef(true);
   const controlTargetEpoch = useControlTargetEpoch(sessionMgr);
+  useHostCapabilityRevision(sessionMgr);
   const queueSupported = sessionMgr.supportsHostCapability('dialog_queue_v1');
+  // The send path (idempotent queue vs legacy command) depends on the host's
+  // capabilities. While they are being learned, sending waits instead of
+  // guessing; a failed probe re-enables sending, which probes again first.
+  const checkingHost = !sessionMgr.hostCapabilitiesKnown && sessionMgr.hostCapabilityProbing;
+  const subscribeUploads = useCallback((listener: () => void) => sessionMgr.onPayloadUploadActivity(listener), [sessionMgr]);
+  const readUploads = useCallback(() => sessionMgr.payloadUploadsInFlight, [sessionMgr]);
+  const payloadUploads = useSyncExternalStore(subscribeUploads, readUploads, readUploads);
+  useEffect(() => {
+    if (!sessionMgr.hostCapabilitiesKnown) void sessionMgr.probeHostCapabilities();
+  }, [sessionMgr, controlTargetEpoch]);
   const hostQueue = useMemo(() => queueSupported ? sessionMgr.dialogQueue(sessionId) : null,
     [sessionMgr, sessionId, controlTargetEpoch, queueSupported]);
   const cacheScope = useMemo(() => createRemoteCacheScope(
@@ -262,6 +279,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
       setSelectedModelId('auto');
       setMessages(sessionId, []);
       setTranscriptHydrating(true);
+      setStreamState('loading');
+      setStreamIssue(null);
       setMenuMessage(null);
       setDeletingMsg(false);
       setRollbackTarget(null);
@@ -315,14 +334,18 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const handleAnswerQuestion = useCallback(async (toolId: string, answers: any) => {
     const targetEpoch = captureChatTargetEpoch();
     if (targetEpoch === null) throw new RemoteControlTargetChangedError();
-    try {
-      await sessionMgr.answerQuestion(toolId, answers);
-      if (!isChatTargetCurrent(targetEpoch)) throw new RemoteControlTargetChangedError();
-    } catch (err) {
-      reportRemoteSessionError(err, setError);
-      throw err;
-    }
-  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionMgr, setError]);
+    // The question card owns the failure: it states it inline, re-reads the
+    // host, and offers Retry while the question is still pending.
+    await sessionMgr.answerQuestion(toolId, answers);
+    if (!isChatTargetCurrent(targetEpoch)) throw new RemoteControlTargetChangedError();
+    streamRef.current?.nudge();
+  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionMgr]);
+
+  const [mailboxQuestionIds, setMailboxQuestionIds] = useState<ReadonlySet<string>>(() => new Set());
+  const verifyInteractions = useCallback(async () => {
+    setMailboxInvalidation(value => value + 1);
+    await streamRef.current?.refreshed();
+  }, []);
 
   const handleApproveTool = useCallback(async (toolId: string, updatedInput?: Record<string, unknown>) => {
     const targetEpoch = captureChatTargetEpoch();
@@ -351,7 +374,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const handleCancelTool = useCallback((toolId: string, reason = t('common.cancel')) => {
     if (captureChatTargetEpoch() === null) return;
     sessionMgr.cancelTool(toolId, reason).catch((error) => {
-      reportRemoteSessionError(error, setError);
+      reportRemoteSessionError(error, setError, t);
     });
   }, [captureChatTargetEpoch, sessionMgr, setError, t]);
 
@@ -404,10 +427,10 @@ const ChatPage: React.FC<ChatPageProps> = ({
         sessionId, isCurrent: () => isChatTargetCurrent(targetEpoch), onProgress,
       });
     } catch (err) {
-      if (isChatTargetCurrent(targetEpoch)) reportRemoteSessionError(err, setError);
+      if (isChatTargetCurrent(targetEpoch)) reportRemoteSessionError(err, setError, t);
       throw err;
     }
-  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionId, sessionMgr, setError]);
+  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionId, sessionMgr, setError, t]);
 
   const loadModelCatalog = useCallback(async () => {
     const targetEpoch = captureChatTargetEpoch();
@@ -559,7 +582,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       if (
         requestSeq === messagesRequestSeqRef.current
         && isChatTargetCurrent(targetEpoch)
-      ) reportRemoteSessionError(e, setError);
+      ) reportRemoteSessionError(e, setError, t);
     } finally {
       if (
         requestSeq === messagesRequestSeqRef.current
@@ -569,7 +592,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
         setIsLoadingMore(false);
       }
     }
-  }, [cacheScope, captureChatTargetEpoch, getMessages, isChatTargetCurrent, sessionId, sessionMgr, setError, setMessages]);
+  }, [cacheScope, captureChatTargetEpoch, getMessages, isChatTargetCurrent, sessionId, sessionMgr, setError, setMessages, t]);
 
   // ── Message long-press context menu ──────────────────────────────
   const clearMsgLongPressTimer = () => {
@@ -630,9 +653,9 @@ const ChatPage: React.FC<ChatPageProps> = ({
       if (!isChatTargetCurrent(targetEpoch)) return;
       streamRef.current?.nudge();
     } catch (e: any) {
-      if (isChatTargetCurrent(targetEpoch)) reportRemoteSessionError(e, setError);
+      if (isChatTargetCurrent(targetEpoch)) reportRemoteSessionError(e, setError, t);
     }
-  }, [captureChatTargetEpoch, isChatTargetCurrent, menuMessage, sessionAgentType, sessionId, sessionMgr, setError]);
+  }, [captureChatTargetEpoch, isChatTargetCurrent, menuMessage, sessionAgentType, sessionId, sessionMgr, setError, t]);
 
   const handleDeleteMessage = useCallback(async () => {
     if (!menuMessage) return;
@@ -743,7 +766,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       if (isCurrentAttempt()) {
         streamRef.current?.nudge();
       }
-      if (isCurrentAttempt()) reportRemoteSessionError(e, setError);
+      if (isCurrentAttempt()) reportRemoteSessionError(e, setError, t);
     } finally {
       if (rollbackInFlightRef.current === attempt) {
         rollbackInFlightRef.current = null;
@@ -897,15 +920,27 @@ const ChatPage: React.FC<ChatPageProps> = ({
           if (resp.prompt_suggestion !== undefined) setPromptSuggestion(resp.prompt_suggestion);
           setActiveTurn(resp.active_turn ?? null);
         }, 0, history => { if(isInitCurrent()){setHasMore(history.hasMore);hasMoreRef.current=history.hasMore;} }, () => { if(isInitCurrent())setMailboxInvalidation(value=>value+1); },
-        // Stream failures are stated, not hidden: an older host or a lost
-        // connection shows up in the same banner as any other remote error.
-        error => { if (isInitCurrent()) { reportRemoteSessionError(error, setError); setTranscriptHydrating(false); } });
+        // Stream failures are stated, not hidden, but they belong to the
+        // reader: the notice says the transcript is catching up (never a
+        // send failure) and clears itself once the host has been read again.
+        error => {
+          if (!isInitCurrent() || isRemoteControlTargetChangedError(error)) return;
+          setStreamIssue(error);
+          setTranscriptHydrating(false);
+        },
+        {
+          onSyncState: state => {
+            if (!isInitCurrent()) return;
+            setStreamState(state);
+            if (state === 'live') setStreamIssue(null);
+          },
+        });
 
         synchronizer.start(initialMsgCount);
         streamRef.current = synchronizer;
       } catch (error) {
         if (isInitCurrent()) {
-          reportRemoteSessionError(error, setError);
+          reportRemoteSessionError(error, setError, translateRef.current);
           setTranscriptHydrating(false);
         }
       }
@@ -1001,6 +1036,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
     // Attachments belong to the draft, which a suggestion leaves untouched.
     const imgs = explicitText === null ? pendingImages : [];
     if ((!text && imgs.length === 0) || imageAnalyzing || sendInFlightRef.current) return;
+    if (!sessionMgr.hostCapabilitiesKnown && sessionMgr.hostCapabilityProbing) return;
     const targetEpoch = captureChatTargetEpoch();
     if (targetEpoch === null) return;
     const wasStreaming = isStreaming;
@@ -1184,6 +1220,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   });
   const displayName = liveTitle || sessionName || t('chat.session');
   const isRemoteWorkspace = isRemoteSessionWorkspace(sessionAgentType, sessionContext, currentWorkspace, knownWorkspaces);
+  const streamNotice = sessionStreamNotice(streamState, streamIssue, connectionHealth);
 
   return (
     <div className={`chat-page${wideLayout ? ' chat-page--wide' : ''}`} style={{ '--chat-composer-height': `${composerHeight}px` } as React.CSSProperties}>
@@ -1199,7 +1236,17 @@ const ChatPage: React.FC<ChatPageProps> = ({
         workspaceName={workspaceName}
       />
 
-      <PermissionMailbox key={`${sessionId}:${controlTargetEpoch}`} manager={sessionMgr} sessionId={sessionId} invalidation={mailboxInvalidation} />
+      <PermissionMailbox key={`${sessionId}:${controlTargetEpoch}`} manager={sessionMgr} sessionId={sessionId} invalidation={mailboxInvalidation} onQuestionIds={setMailboxQuestionIds} />
+      {streamNotice && (
+        <MobileBanner
+          className="chat-page__stream-notice"
+          data-stream-state={streamState}
+          role="status"
+          tone={streamNotice === 'unsupported' ? 'danger' : 'warning'}
+        >
+          {t(streamNotice === 'unsupported' ? 'chat.hostStreamUnsupported' : 'chat.catchingUp')}
+        </MobileBanner>
+      )}
       {/* Messages */}
       <div className="chat-page__messages" ref={messagesContainerRef} onScroll={handleScroll}>
         {transcriptHydrating && messages.length === 0 ? (
@@ -1211,6 +1258,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
         )}
 
         <QuestionInteractionContext.Provider value={handleQuestionInteraction}>
+        <InteractionVerifyContext.Provider value={verifyInteractions}>
+        <MailboxQuestionOwnerContext.Provider value={mailboxQuestionIds}>
         <ArtifactImageReader.Provider value={readArtifactImage}>
           <ChatTranscript
             key={`${sessionId}:${controlTargetEpoch}`}
@@ -1245,6 +1294,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
             }}
           />
         </ArtifactImageReader.Provider>
+        </MailboxQuestionOwnerContext.Provider>
+        </InteractionVerifyContext.Provider>
         </QuestionInteractionContext.Provider>
           </>
         )}
@@ -1334,6 +1385,14 @@ const ChatPage: React.FC<ChatPageProps> = ({
         input={input}
         inputRef={inputRef}
         remoteUnavailable={connectionHealth === 'unreachable'}
+        sendBlocked={checkingHost}
+        composerStatus={checkingHost
+          ? t('chat.checkingHost')
+          : isSending && imageAnalyzing
+            // Images first travel to the Relay; afterwards the desktop has to
+            // take the message. The two waits fail and recover differently.
+            ? t(payloadUploads > 0 ? 'chat.uploadingImages' : 'chat.waitingForDesktop')
+            : null}
         modelControls={(
           <>
             {modelCatalogFailed && !modelCatalog && (

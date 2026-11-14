@@ -98,6 +98,7 @@ function Install-OpenBitFunCli(
     [string]$Destination
 ) {
     New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    $installLock = [IO.File]::Open((Join-Path $Destination '.openbitfun-cli-install.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     $stageDir = Join-Path $Destination ".openbitfun-install-$([guid]::NewGuid().ToString('N'))"
     $stagedPrimary = Join-Path $stageDir 'openbitfun.exe'
     $stagedPluginHost = Join-Path $stageDir 'ext-host'
@@ -105,13 +106,14 @@ function Install-OpenBitFunCli(
     $pluginHostTarget = Join-Path $Destination 'resources\ext-host'
     $primaryBackup = Join-Path $stageDir 'previous-openbitfun.exe'
     $pluginHostBackup = Join-Path $stageDir 'previous-ext-host'
+    $completed = $false
     $primaryBackedUp = $false
     $pluginHostBackedUp = $false
     $primaryCommitted = $false
     $pluginHostCommitted = $false
 
-    New-Item -ItemType Directory -Path $stageDir | Out-Null
     try {
+        New-Item -ItemType Directory -Path $stageDir | Out-Null
         Copy-Item -LiteralPath $PrimarySource -Destination $stagedPrimary
         New-Item -ItemType Directory -Path $stagedPluginHost | Out-Null
         Copy-Item -LiteralPath (Join-Path $PluginHostSource 'extension-host.js') -Destination $stagedPluginHost
@@ -134,6 +136,7 @@ function Install-OpenBitFunCli(
         $pluginHostCommitted = $true
         Assert-Entrypoint $primaryTarget
         Assert-PluginHostResources $pluginHostTarget
+        $completed = $true
     }
     catch {
         $installError = $_
@@ -150,10 +153,22 @@ function Install-OpenBitFunCli(
             New-Item -ItemType Directory -Path (Split-Path -Parent $pluginHostTarget) -Force | Out-Null
             Move-Item -LiteralPath $pluginHostBackup -Destination $pluginHostTarget -Force
         }
+        $completed = $true
         throw "CLI installation failed; the previous OpenBitFun CLI was restored. $installError"
     }
     finally {
-        Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue
+        try {
+            $resolvedStage = [IO.Path]::GetFullPath($stageDir)
+            $resolvedRoot = [IO.Path]::GetFullPath($Destination).TrimEnd('\') + '\'
+            if (-not $resolvedStage.StartsWith($resolvedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Invalid CLI staging path'
+            }
+            if ($completed) { Remove-Item -LiteralPath $resolvedStage -Recurse -Force -ErrorAction SilentlyContinue }
+            else { Write-Warning "CLI recovery requires repair. Backups retained at $resolvedStage" }
+        }
+        finally {
+            $installLock.Dispose()
+        }
     }
 }
 

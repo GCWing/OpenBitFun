@@ -27,21 +27,57 @@ export function estimateFlowGroupItemsHeight(items: readonly FlowItem[]): number
   }, 0);
 }
 
-/** Stable append boundaries keep reasoning beside its successor and capsule runs together. */
-export function buildFlowGroupRenderSegments(items: readonly FlowItem[]): FlowGroupRenderSegment[] {
+/**
+ * Stable append boundaries keep reasoning beside its successor and capsule runs together.
+ * When `previous` segments are provided, settled prefix segments are reused verbatim by reference,
+ * while changed segments get new snapshots so retained render callbacks remain consistent.
+ */
+export function buildFlowGroupRenderSegments(
+  items: readonly FlowItem[],
+  previous?: readonly FlowGroupRenderSegment[],
+): FlowGroupRenderSegment[] {
   const segments: FlowGroupRenderSegment[] = [];
   let start = 0;
+
   const append = (end: number) => {
     const members = items.slice(start, end);
-    segments.push({ key: members[0].id, items: members, startIndex: start,
-      estimatedHeightPx: estimateFlowGroupItemsHeight(members),
-    });
+    const segIdx = segments.length;
+    const reusable = previous?.[segIdx];
+
+    // Reuse only segments whose members are completely unchanged by reference.
+    if (
+      reusable &&
+      reusable.startIndex === start &&
+      reusable.key === members[0]?.id &&
+      reusable.items.length === members.length &&
+      reusable.items.every((it, idx) => it === members[idx])
+    ) {
+      segments.push(reusable);
+    }
+    // Changed members must not mutate a snapshot held by a committed render.
+    else {
+      segments.push({
+        key: members[0]?.id ?? `seg-${start}`,
+        items: members,
+        startIndex: start,
+        estimatedHeightPx: estimateFlowGroupItemsHeight(members),
+      });
+    }
     start = end;
   };
+
   for (let index = 1; index < items.length; index += 1) {
-    if (index - start >= SEGMENT_ITEMS && items[index - 1].type !== 'thinking'
-      && !(isCapsule(items[index - 1]) && isCapsule(items[index]))) append(index);
+    if (
+      index - start >= SEGMENT_ITEMS &&
+      items[index - 1].type !== 'thinking' &&
+      !(isCapsule(items[index - 1]) && isCapsule(items[index]))
+    ) {
+      append(index);
+    }
   }
-  if (start < items.length) append(items.length);
+  if (start < items.length) {
+    append(items.length);
+  }
+
   return segments;
 }

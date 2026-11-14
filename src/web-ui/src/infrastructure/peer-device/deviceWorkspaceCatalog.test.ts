@@ -192,6 +192,42 @@ describe('DeviceWorkspaceCatalog', () => {
     expect(catalog.getSnapshot('peer-a').status).toBe('error');
   });
 
+  it('keeps a retrying catalog stream and reports it reconnecting until it is live again', async () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    io.listen = vi.fn((event: string, callback: (payload: unknown) => void) => {
+      listeners.set(event, callback);
+      return () => undefined;
+    });
+    catalog = new DeviceWorkspaceCatalog(io);
+    const release = catalog.retain('peer-a');
+    await flush();
+    const syncError = listeners.get('account://session-sync-error')!;
+    expect(listeners.has('relay://session-ready')).toBe(true);
+
+    // A retired reader's error is ignored.
+    syncError({ sessionId: '@host/catalog', targetDeviceId: 'peer-a', subscriptionId: 'sub-0', retrying: false });
+    expect(catalog.getSnapshot('peer-a')).toMatchObject({ live: true });
+    expect(catalog.getSnapshot('peer-a').reconnecting).toBeFalsy();
+
+    syncError({ sessionId: '@host/catalog', targetDeviceId: 'peer-a', subscriptionId: 'sub-1', retrying: true });
+    expect(catalog.getSnapshot('peer-a')).toMatchObject({ live: true, reconnecting: true });
+    expect(io.unsubscribeCatalog).not.toHaveBeenCalled();
+
+    invoke.mockClear();
+    routeSurfaceEvent('relay://session-ready', {
+      sessionId: '@host/catalog', live: true, subscriptionId: 'sub-1', __openbitfunSourceDeviceId: 'peer-a',
+    });
+    expect(catalog.getSnapshot('peer-a').reconnecting).toBe(false);
+    await vi.advanceTimersByTimeAsync(DEVICE_CATALOG_INVALIDATE_DEBOUNCE_MS);
+    expect(invoke).toHaveBeenCalledWith('peer-a', 'get_opened_workspaces', { request: {} });
+
+    // A terminal error releases the native reader it belongs to.
+    syncError({ sessionId: '@host/catalog', targetDeviceId: 'peer-a', subscriptionId: 'sub-1', retrying: false });
+    expect(io.unsubscribeCatalog).toHaveBeenCalledWith('sub-1');
+    expect(catalog.getSnapshot('peer-a')).toMatchObject({ live: false, reconnecting: false });
+    release();
+  });
+
   it('stops the host stream only after the release grace period', async () => {
     const release = catalog.retain('peer-a');
     await flush();

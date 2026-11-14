@@ -170,8 +170,8 @@ export const FlowTextBlock = React.memo<FlowTextBlockProps>(({
   // A live message stays one selection/reveal owner. Only its changing suffix
   // enters ReactMarkdown; sealed semantic prefixes keep memoized renderers.
   const sections = useMemo(() => markdownSection || parsedContent.hasProtocol || !textItem.isMarkdown
-    ? [{ start: 0, end: displayContent.length }] : markdownSections(displayContent),
-  [displayContent, markdownSection, parsedContent.hasProtocol, textItem.isMarkdown]);
+    ? [{ start: 0, end: displayContent.length }] : markdownSections(displayContent, { streaming: isVisuallyStreaming }),
+  [displayContent, isVisuallyStreaming, markdownSection, parsedContent.hasProtocol, textItem.isMarkdown]);
 
   const renderMarkdown = (markdownContent: string, key?: React.Key, streaming = markdownStreaming, continuation = false) => (
     <MarkdownRenderer

@@ -20,7 +20,7 @@ use openbitfun_product_domains::remote_surface::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Notify};
 
 use super::remote_connect_api::{account_app_handle, current_device_id_for_peer, RelayRoute};
 
@@ -52,6 +52,26 @@ struct PeerControlState {
 /// permission requests projected to them.
 static PEER_CONTROL_STATE: OnceLock<Mutex<PeerControlState>> = OnceLock::new();
 
+/// True once this host's webview registered its HostInvoke bridge listener.
+/// Product commands are executed through that listener; while it is absent
+/// (startup, a reload) a bridged request could only wait for its timeout.
+static PEER_HOST_BRIDGE_READY: AtomicBool = AtomicBool::new(false);
+
+/// Wakes requests waiting for the bridge listener to register.
+static PEER_HOST_BRIDGE_READY_CHANGED: Notify = Notify::const_new();
+
+/// How long a product request waits for the bridge before it is refused.
+///
+/// Older controllers treat `peer_host_ui_not_ready` as a final error, so a
+/// request that arrives while this host is starting or reloading its webview
+/// waits for the bridge first. Newer controllers retry the refusal, so this
+/// only shortens their wait.
+const PEER_HOST_BRIDGE_READY_WAIT: Duration = Duration::from_secs(10);
+
+/// Stable prefix of the refusal sent while the bridge listener is not
+/// registered. The request was not executed, so a controller may retry it.
+pub(crate) const PEER_HOST_UI_NOT_READY: &str = "peer_host_ui_not_ready";
+
 /// True while this process is acting as a Peer Mode controller (Remote: B).
 /// Used to pause cloud settings pull that would rewrite local disk mid-remote.
 static PEER_CONTROLLER_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -62,6 +82,41 @@ fn pending_map() -> &'static Mutex<HashMap<String, oneshot::Sender<HostInvokeBri
 
 fn peer_control_state() -> &'static Mutex<PeerControlState> {
     PEER_CONTROL_STATE.get_or_init(|| Mutex::new(PeerControlState::default()))
+}
+
+pub(crate) fn set_peer_host_bridge_ready(ready: bool) {
+    PEER_HOST_BRIDGE_READY.store(ready, Ordering::SeqCst);
+    if ready {
+        PEER_HOST_BRIDGE_READY_CHANGED.notify_waiters();
+    }
+}
+
+pub(crate) fn is_peer_host_bridge_ready() -> bool {
+    PEER_HOST_BRIDGE_READY.load(Ordering::SeqCst)
+}
+
+/// Wait up to `timeout` for the bridge listener; returns whether it is ready.
+async fn wait_for_peer_host_bridge_ready(timeout: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        // Register before checking, so a readiness change between the check
+        // and the wait still wakes this request.
+        let changed = PEER_HOST_BRIDGE_READY_CHANGED.notified();
+        tokio::pin!(changed);
+        changed.as_mut().enable();
+        if is_peer_host_bridge_ready() {
+            return true;
+        }
+        if tokio::time::timeout_at(deadline, changed).await.is_err() {
+            return is_peer_host_bridge_ready();
+        }
+    }
+}
+
+fn peer_host_ui_not_ready_error() -> String {
+    format!(
+        "{PEER_HOST_UI_NOT_READY}: OpenBitFun on this device is still starting; the request was not executed"
+    )
 }
 
 pub fn set_peer_controller_active(active: bool) {
@@ -123,20 +178,23 @@ fn detach_from_state(state: &mut PeerControlState, device_id: &str) -> Vec<Strin
     detach_route_from_state(state, RelayRoute::Official, device_id)
 }
 
+/// An explicit detach that leaves no controller attached fails tracked
+/// requests closed, whether or not the caller was still attached: a route
+/// loss may already have removed it, and nobody would answer them otherwise.
 fn detach_route_from_state(
     state: &mut PeerControlState,
     route: RelayRoute,
     device_id: &str,
 ) -> Vec<String> {
-    let removed = state.controllers.remove(&(route, device_id.to_string()));
-    if removed && state.controllers.is_empty() {
+    state.controllers.remove(&(route, device_id.to_string()));
+    if state.controllers.is_empty() {
         return state.permission_request_ids.drain().collect();
     }
     Vec::new()
 }
 
-/// Detach one controller and return requests that must fail closed when it was
-/// the final controller.
+/// Detach one controller and return requests that must fail closed because no
+/// controller remains attached.
 pub fn detach_controller(device_id: &str) -> Vec<String> {
     detach_route_controller(RelayRoute::Official, device_id)
 }
@@ -167,17 +225,22 @@ pub(crate) fn retain_online_controllers(route: RelayRoute, online_device_ids: &H
     retain_online_in_state(&mut state, route, online_device_ids);
 }
 
-/// Clear all attached controllers after the device-routing stream closes.
-pub(crate) fn disconnect_route_controllers(route: RelayRoute) -> Vec<String> {
-    let Ok(mut state) = peer_control_state().lock() else {
-        return Vec::new();
-    };
+fn disconnect_route_in_state(state: &mut PeerControlState, route: RelayRoute) {
     state.controllers.retain(|(owner, _)| *owner != route);
-    if state.controllers.is_empty() {
-        state.permission_request_ids.drain().collect()
-    } else {
-        Vec::new()
-    }
+}
+
+/// Clear the route's DeviceEvent delivery targets after its device-routing
+/// stream closed, reconnects or stops.
+///
+/// Losing the route is presence loss, not a controller decision: pending
+/// permission requests stay with the Runtime (still answerable on this
+/// machine) and a re-attaching controller restores them from the interaction
+/// mailbox. Only an explicit final `peer_control_detach` fails them closed.
+pub(crate) fn disconnect_route_controllers(route: RelayRoute) {
+    let Ok(mut state) = peer_control_state().lock() else {
+        return;
+    };
+    disconnect_route_in_state(&mut state, route);
 }
 
 pub fn track_permission_event(
@@ -280,6 +343,30 @@ pub async fn peer_host_invoke_complete(
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerHostBridgeReadyRequest {
+    pub ready: bool,
+}
+
+/// The webview reports that its HostInvoke bridge listener is (un)registered.
+#[tauri::command]
+pub async fn peer_host_bridge_ready(request: PeerHostBridgeReadyRequest) -> Result<(), String> {
+    set_peer_host_bridge_ready(request.ready);
+    log::info!(
+        "Peer host bridge readiness changed: ready={}",
+        request.ready
+    );
+    Ok(())
+}
+
+fn is_route_controller_attached(route: RelayRoute, device_id: &str) -> bool {
+    peer_control_state()
+        .lock()
+        .map(|state| state.controllers.contains(&(route, device_id.to_string())))
+        .unwrap_or(false)
+}
+
 #[tauri::command]
 pub async fn peer_control_attach(controller_device_id: String) -> Result<(), String> {
     if controller_device_id.trim().is_empty() {
@@ -297,7 +384,22 @@ pub async fn peer_control_detach(controller_device_id: String) -> Result<(), Str
 
 #[tauri::command]
 pub async fn peer_mode_ping() -> Result<Value, String> {
-    Ok(serde_json::json!({
+    Ok(peer_mode_ping_value(None))
+}
+
+/// `peer_mode_ping` answered for a controller reached over `route`.
+///
+/// Additive fields: `caller_attached` (advertised by
+/// `peer_attachment_status_v1`) tells the controller whether it is still a
+/// delivery target, so a link that lost its attachment during a relay blip
+/// re-attaches instead of reporting `ready`; `host_ui_ready` says whether
+/// product commands can run yet. Older controllers ignore both.
+pub(crate) fn peer_mode_ping_for_caller(route: RelayRoute, caller_device_id: &str) -> Value {
+    peer_mode_ping_value(Some(is_route_controller_attached(route, caller_device_id)))
+}
+
+fn peer_mode_ping_value(caller_attached: Option<bool>) -> Value {
+    let mut value = serde_json::json!({
         "ok": true,
         "peer": true,
         "device_id": current_device_id_for_peer()
@@ -319,7 +421,12 @@ pub async fn peer_mode_ping() -> Result<Value, String> {
         // Additive: lets a controller detect that this host and its own
         // generated tables were built from different registries.
         "surface_registry_digest": remote_surface_digest(),
-    }))
+        "host_ui_ready": is_peer_host_bridge_ready(),
+    });
+    if let Some(attached) = caller_attached {
+        value["caller_attached"] = Value::Bool(attached);
+    }
+    value
 }
 
 /// Mark this process as a Peer Mode controller so cloud pull does not rewrite local settings.
@@ -414,6 +521,18 @@ pub async fn dispatch(command: &str, args: Value) -> HostInvokeBridgeResult {
     use openbitfun_core_types::agent_identity_wire::{
         translate_agent_identity_command, translate_agent_identity_response, AgentIdentityDialect,
     };
+    // Fail fast instead of emitting into a webview with no bridge listener:
+    // the request would only time out, and the controller could not tell
+    // whether it ran. This refusal proves it did not. A starting or reloading
+    // webview usually registers within a few seconds, so wait for it first.
+    if !wait_for_peer_host_bridge_ready(PEER_HOST_BRIDGE_READY_WAIT).await {
+        return HostInvokeBridgeResult {
+            ok: false,
+            value: None,
+            error: Some(peer_host_ui_not_ready_error()),
+        };
+    }
+
     let args =
         match translate_agent_identity_command(command, args, AgentIdentityDialect::Canonical) {
             Ok(args) => args,
@@ -444,13 +563,46 @@ pub async fn dispatch(command: &str, args: Value) -> HostInvokeBridgeResult {
                     }
                 }
             }
-            result
+            accept_duplicate_dialog_submission(command, result)
         }
         Err(error) => HostInvokeBridgeResult {
             ok: false,
             value: None,
             error: Some(error),
         },
+    }
+}
+
+/// Stable prefix of the Runtime's refusal of a Turn id it already admitted
+/// (`DIALOG_TURN_ID_ALREADY_SETTLED_MESSAGE` in the core scheduler).
+const DIALOG_TURN_ALREADY_ADMITTED: &str = "Dialog turn ID is already active or completed";
+
+/// `start_dialog_turn` carries a controller-generated `(sessionId, turnId)`.
+/// When the Runtime refuses that id as already admitted, an earlier attempt of
+/// the same submission is running or finished (typically a late controller
+/// retry that missed the webview's outcome cache), so report it as accepted.
+fn accept_duplicate_dialog_submission(
+    command: &str,
+    result: HostInvokeBridgeResult,
+) -> HostInvokeBridgeResult {
+    let duplicate = command == "start_dialog_turn"
+        && !result.ok
+        && result
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains(DIALOG_TURN_ALREADY_ADMITTED));
+    if !duplicate {
+        return result;
+    }
+    log::info!("Peer dialog submission was already admitted; reporting it as accepted");
+    HostInvokeBridgeResult {
+        ok: true,
+        value: Some(serde_json::json!({
+            "success": true,
+            "message": "Dialog turn already accepted",
+            "duplicate": true,
+        })),
+        error: None,
     }
 }
 
@@ -768,23 +920,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn appearance_market_stays_on_the_controller_device() {
-        for command in [
-            "appearance_market_browse",
-            "appearance_market_get_listing",
-            "appearance_market_download_release",
-            "appearance_market_get_review_submission",
-            "appearance_market_list_review_submissions",
-            "appearance_market_list_submissions",
-            "appearance_market_review_submission",
-            "appearance_market_submit_package",
-            "appearance_market_withdraw_submission",
-        ] {
-            assert!(is_local_only_command(command), "{command}");
-        }
-    }
-
     /// The controller-side FE deny list is an optimization, not the boundary.
     /// A controller on an older build (or a non-FE controller) still reaches
     /// this host, so every controller-owned command must be refused here too.
@@ -947,6 +1082,126 @@ mod tests {
 
         retain_online_in_state(&mut state, RelayRoute::Official, &HashSet::new());
         assert!(state.controllers.is_empty());
+        assert!(state.permission_request_ids.contains("request-1"));
+    }
+
+    #[test]
+    fn ping_reports_bridge_readiness_and_the_callers_attachment() {
+        let route = RelayRoute::Lan;
+        let caller = "ping-attachment-caller";
+        let detached = peer_mode_ping_for_caller(route, caller);
+        assert_eq!(detached.get("caller_attached"), Some(&Value::Bool(false)));
+        assert!(detached.get("host_ui_ready").is_some_and(Value::is_boolean));
+        assert_eq!(
+            detached
+                .pointer("/capabilities/peer_attachment_status_v1")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        attach_route_controller(route, caller.to_string());
+        let attached = peer_mode_ping_for_caller(route, caller);
+        assert_eq!(attached.get("caller_attached"), Some(&Value::Bool(true)));
+        // The same device on the other route is a different attachment.
+        assert_eq!(
+            peer_mode_ping_for_caller(RelayRoute::Official, caller).get("caller_attached"),
+            Some(&Value::Bool(false))
+        );
+        detach_route_controller(route, caller);
+        assert!(peer_mode_ping_value(None).get("caller_attached").is_none());
+    }
+
+    #[test]
+    fn the_not_ready_refusal_carries_its_stable_prefix() {
+        assert!(peer_host_ui_not_ready_error().starts_with("peer_host_ui_not_ready: "));
+    }
+
+    /// The only test that changes the process-wide readiness flag.
+    #[tokio::test(start_paused = true)]
+    async fn a_request_waits_for_the_starting_bridge_before_it_is_refused() {
+        set_peer_host_bridge_ready(false);
+        let waiter = tokio::spawn(wait_for_peer_host_bridge_ready(PEER_HOST_BRIDGE_READY_WAIT));
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        set_peer_host_bridge_ready(true);
+        assert!(waiter.await.expect("waiter"), "ready bridge ends the wait");
+        assert!(wait_for_peer_host_bridge_ready(Duration::ZERO).await);
+
+        // A bridge that never registers is refused once the wait elapses.
+        set_peer_host_bridge_ready(false);
+        let started = tokio::time::Instant::now();
+        assert!(!wait_for_peer_host_bridge_ready(PEER_HOST_BRIDGE_READY_WAIT).await);
+        assert!(started.elapsed() >= PEER_HOST_BRIDGE_READY_WAIT);
+    }
+
+    #[test]
+    fn a_retry_of_an_admitted_dialog_turn_is_reported_as_accepted() {
+        let refused = |error: &str| HostInvokeBridgeResult {
+            ok: false,
+            value: None,
+            error: Some(error.to_string()),
+        };
+        let duplicate = refused(
+            "Failed to start dialog turn: Dialog turn ID is already active or completed: session_id=s, turn_id=t",
+        );
+        let accepted = accept_duplicate_dialog_submission("start_dialog_turn", duplicate.clone());
+        assert!(accepted.ok);
+        assert_eq!(
+            accepted.value.as_ref().and_then(|v| v.get("duplicate")),
+            Some(&Value::Bool(true))
+        );
+        // Other commands and other failures keep their error.
+        assert!(!accept_duplicate_dialog_submission("delete_session", duplicate).ok);
+        assert!(
+            !accept_duplicate_dialog_submission("start_dialog_turn", refused("Session not found"))
+                .ok
+        );
+    }
+
+    #[test]
+    fn route_loss_clears_delivery_targets_but_keeps_pending_permissions() {
+        let mut state = control_state(&["controller-a"], &["request-1"]);
+        state
+            .controllers
+            .insert((RelayRoute::Lan, "controller-lan".into()));
+
+        disconnect_route_in_state(&mut state, RelayRoute::Official);
+        assert_eq!(state.controllers.len(), 1);
+        disconnect_route_in_state(&mut state, RelayRoute::Lan);
+        assert!(state.controllers.is_empty());
+        assert!(state.permission_request_ids.contains("request-1"));
+
+        // A controller that re-attaches after the blip and then explicitly
+        // detaches as the last controller still fails the request closed.
+        state
+            .controllers
+            .insert((RelayRoute::Official, "controller-a".into()));
+        assert_eq!(
+            detach_from_state(&mut state, "controller-a"),
+            vec!["request-1".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_detach_after_route_loss_drains_requests_without_a_reattach() {
+        let mut state = control_state(&["controller-a"], &["request-1"]);
+        disconnect_route_in_state(&mut state, RelayRoute::Official);
+        assert!(state.controllers.is_empty());
+        assert!(state.permission_request_ids.contains("request-1"));
+
+        // The user disconnects before the controller re-attached: the turn must
+        // not keep waiting for an answer nobody can give.
+        assert_eq!(
+            detach_from_state(&mut state, "controller-a"),
+            vec!["request-1".to_string()]
+        );
+        assert!(state.permission_request_ids.is_empty());
+    }
+
+    #[test]
+    fn a_detach_while_another_controller_remains_keeps_requests() {
+        let mut state = control_state(&["controller-b"], &["request-1"]);
+        // controller-a was already removed by presence loss.
+        assert!(detach_from_state(&mut state, "controller-a").is_empty());
         assert!(state.permission_request_ids.contains("request-1"));
     }
 

@@ -138,6 +138,7 @@ struct ComposerBar: View {
         .onChange(of: scenePhase) { if $0 != .active { speech.stop() } }
         .onChange(of: model.selectedSessionID) { _ in speech.stop() }
         .onChange(of: model.remoteTargetEpoch) { _ in speech.stop() }
+        .onChange(of: model.surface) { _ in speech.stop() }
         .onAppear {
             if model.composerModelPickerPreview {
                 modelSelectorOpen = true
@@ -274,7 +275,15 @@ struct ComposerBar: View {
             ZStack(alignment: .leading) {
                 TextField(
                     "",
-                    text: $model.draft,
+                    text: Binding(
+                        get: { model.draft },
+                        set: { edited in
+                            // Only user edits travel through this binding. Stop even
+                            // while authorization is pending, before a queued result.
+                            speech.stop()
+                            model.draft = edited
+                        }
+                    ),
                     prompt: Text(speech.isListening ? model.localized("正在聆听") : placeholder)
                         .foregroundColor(speech.isListening ? OpenBitFunTheme.statusSuccess : OpenBitFunTheme.muted),
                     axis: .vertical
@@ -596,11 +605,24 @@ struct ComposerBar: View {
     }
 
     private func startVoiceInput() {
-        let existing = model.draft
+        let surface = model.surface
+        let sessionID = model.selectedSessionID
+        let targetEpoch = model.remoteTargetEpoch
+        var dictation = DictationDraftSession(draft: model.draft)
         speech.start(
             localeIdentifier: model.appLanguage == .simplifiedChinese ? "zh-CN" : "en-US",
             onPartial: { transcript in
-                model.draft = VoiceDraftPolicy.shared.merge(base: existing, transcript: transcript)
+                guard model.surface == surface, model.selectedSessionID == sessionID,
+                      model.remoteTargetEpoch == targetEpoch,
+                      let updated = dictation.apply(
+                          transcript: transcript,
+                          currentDraft: model.draft,
+                          merge: { VoiceDraftPolicy.shared.merge(base: $0, transcript: $1) }
+                      ) else {
+                    speech.stop()
+                    return
+                }
+                model.draft = updated
             },
             onFailure: { message in model.showToast(model.localized(message)) }
         )

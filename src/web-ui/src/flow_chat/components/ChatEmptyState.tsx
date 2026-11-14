@@ -1,3 +1,4 @@
+import { VisualSkinSurfacePaint } from '@/infrastructure/visual-skin/VisualSkinSurfacePaint';
 import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
@@ -33,7 +34,10 @@ export const ChatEmptyState: React.FC = () => {
   const loading = !!currentWorkspace?.id && !isRepository && !currentBranch;
 
   return (
-    <div data-openbitfun-component="chat-empty-state" data-openbitfun-part="root" data-openbitfun-state={loading ? 'loading' : ''} className="fc-chat-empty">
+    <div data-openbitfun-component="chat-empty-state" data-openbitfun-part="root"
+      data-openbitfun-surface="empty-state" data-openbitfun-skin-slot="empty-state"
+      data-openbitfun-state={loading ? 'loading' : ''} className="fc-chat-empty">
+        <VisualSkinSurfacePaint />
       <div data-openbitfun-component="chat-empty-state" data-openbitfun-part="container" className="fc-chat-empty__container">
         {!loading && currentWorkspace && (
           <>

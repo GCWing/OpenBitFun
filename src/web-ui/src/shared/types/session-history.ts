@@ -59,7 +59,6 @@ export interface SessionCustomMetadata extends Record<string, unknown> {
   titleUserEdited?: boolean;
   titleKey?: string | null;
   titleParams?: Record<string, unknown> | null;
-  workspaceSessionNumber?: number;
 }
 
 export type SessionContextUsageSource = 'model_request' | 'context_compression';

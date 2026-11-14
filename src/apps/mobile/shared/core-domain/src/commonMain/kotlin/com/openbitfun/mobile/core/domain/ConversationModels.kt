@@ -49,12 +49,26 @@ public data class RemoteSession public constructor(
     public val workspaceName: String?,
     public val workspaceIdentity: RemoteWorkspaceIdentity?,
     /** Set when the session hangs off another one (btw/review/miniapp/subagent). */
-    public val parentSessionId: String? = null,
-    public val relationshipKind: String? = null,
+    public val parentSessionId: String?,
+    public val relationshipKind: String?,
 ) {
+    // Explicit overloads keep legacy callers working on both Kotlin and Swift.
+    // Kotlin default arguments are not exported as Swift initializers.
     public constructor(id: String, title: String, agentType: String, status: String, updatedAt: String,
         createdAt: String, messageCount: Int, workspacePath: String?, workspaceName: String?) :
         this(id, title, agentType, status, updatedAt, createdAt, messageCount, workspacePath, workspaceName, null)
+
+    public constructor(id: String, title: String, agentType: String, status: String, updatedAt: String,
+        createdAt: String, messageCount: Int, workspacePath: String?, workspaceName: String?,
+        workspaceIdentity: RemoteWorkspaceIdentity?) :
+        this(id, title, agentType, status, updatedAt, createdAt, messageCount, workspacePath, workspaceName,
+            workspaceIdentity, null, null)
+
+    public constructor(id: String, title: String, agentType: String, status: String, updatedAt: String,
+        createdAt: String, messageCount: Int, workspacePath: String?, workspaceName: String?,
+        workspaceIdentity: RemoteWorkspaceIdentity?, parentSessionId: String?) :
+        this(id, title, agentType, status, updatedAt, createdAt, messageCount, workspacePath, workspaceName,
+            workspaceIdentity, parentSessionId, null)
 }
 
 public data class ChatSessionCursor public constructor(

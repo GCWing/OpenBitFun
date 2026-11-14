@@ -10,7 +10,7 @@ pub(crate) const REJECT_AND_REPORT_REASON: &str =
 
 pub(crate) const fn cli_policy(policy: DispatchApprovalPolicy) -> CliApprovalPolicy {
     match policy {
-        DispatchApprovalPolicy::Auto => CliApprovalPolicy::Auto,
+        DispatchApprovalPolicy::Auto => CliApprovalPolicy::ImmediateAllow,
         DispatchApprovalPolicy::RejectAndReport => CliApprovalPolicy::Reject,
         DispatchApprovalPolicy::Remote => CliApprovalPolicy::DisableAuto,
     }

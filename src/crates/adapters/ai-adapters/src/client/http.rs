@@ -14,8 +14,8 @@ pub(crate) fn create_router_http_client(
     create_router_http_client_with_connection_mode(timeout, proxy_config, skip_ssl_verify, false)
 }
 
-/// Only explicit local classifier profiles opt into a direct loopback connection.
-/// Other Router and model traffic keeps the existing shared proxy policy.
+/// Callers with a verified loopback target may opt into a direct connection.
+/// Other Router traffic keeps the existing shared proxy policy.
 pub(crate) fn create_router_http_client_with_connection_mode(
     timeout: std::time::Duration,
     proxy_config: Option<ProxyConfig>,
@@ -39,6 +39,50 @@ pub(crate) fn create_http_client(
     proxy_config: Option<ProxyConfig>,
     skip_ssl_verify: bool,
 ) -> Client {
+    create_http_client_with_connection_mode(proxy_config, skip_ssl_verify, false)
+}
+
+/// Loopback model servers belong to the inference host, not its outbound proxy.
+/// Inspect the effective request URL so custom remote endpoints still use proxy policy.
+pub(crate) fn create_model_http_client(
+    proxy_config: Option<ProxyConfig>,
+    skip_ssl_verify: bool,
+    request_url: &str,
+) -> Client {
+    if is_loopback_url(request_url) {
+        create_http_client_with_connection_mode(proxy_config, skip_ssl_verify, true)
+    } else {
+        create_http_client(proxy_config, skip_ssl_verify)
+    }
+}
+
+pub(crate) fn is_loopback_url(address: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(address) else {
+        return false;
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    if host.trim_end_matches('.').eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    match host.trim_matches(['[', ']']).parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => ip.is_loopback(),
+        Ok(std::net::IpAddr::V6(ip)) => {
+            ip.is_loopback() || ip.to_ipv4_mapped().is_some_and(|ipv4| ipv4.is_loopback())
+        }
+        Err(_) => false,
+    }
+}
+
+fn create_http_client_with_connection_mode(
+    proxy_config: Option<ProxyConfig>,
+    skip_ssl_verify: bool,
+    direct: bool,
+) -> Client {
     openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
     let mut builder = Client::builder()
         .tls_backend_rustls()
@@ -61,7 +105,17 @@ pub(crate) fn create_http_client(
         );
     }
 
-    builder = apply_proxy_policy(builder, proxy_config.clone());
+    let apply_policy = |builder: ClientBuilder| {
+        if direct {
+            // Do not let a local gateway redirect a direct client to another host.
+            builder
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+        } else {
+            apply_proxy_policy(builder, proxy_config.clone())
+        }
+    };
+    builder = apply_policy(builder);
 
     match builder.build() {
         Ok(client) => client,
@@ -70,9 +124,9 @@ pub(crate) fn create_http_client(
                 "HTTP client initialization failed: {}, using default transport options",
                 e
             );
-            apply_proxy_policy(Client::builder(), proxy_config)
+            apply_policy(Client::builder())
                 .build()
-                .expect("Failed to initialize HTTP client with configured proxy policy")
+                .expect("Failed to initialize HTTP client with configured connection policy")
         }
     }
 }
@@ -182,6 +236,66 @@ mod tests {
         let url = format!("http://{}", listener.local_addr().unwrap());
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         (url, server)
+    }
+
+    #[test]
+    fn loopback_target_matcher_rejects_remote_and_lookalike_hosts() {
+        for url in [
+            "http://127.0.0.1:3425/v1",
+            "http://127.2.3.4/",
+            "http://localhost/",
+            "https://LOCALHOST./v1",
+            "http://[::1]:3425/",
+            "http://[::ffff:127.0.0.1]/",
+        ] {
+            assert!(super::is_loopback_url(url), "{url}");
+        }
+        for url in [
+            "http://localhost.example/",
+            "http://localhost@remote.example/",
+            "http://192.168.1.1/",
+            "http://[::2]/",
+            "file://localhost/tmp/key",
+            "invalid",
+        ] {
+            assert!(!super::is_loopback_url(url), "{url}");
+        }
+    }
+
+    #[tokio::test]
+    async fn model_transport_bypasses_proxy_only_for_loopback_targets() {
+        let (direct_url, direct_server) = response_fixture("local model").await;
+        let (proxy_url, proxy_server) = response_fixture("configured proxy").await;
+        let proxy = Some(ProxyConfig {
+            enabled: true,
+            url: proxy_url,
+            ..Default::default()
+        });
+        for url in [
+            direct_url.clone(),
+            direct_url.replace("127.0.0.1", "localhost"),
+        ] {
+            let client = super::create_model_http_client(proxy.clone(), false, &url);
+            assert_eq!(
+                client.get(url).send().await.unwrap().text().await.unwrap(),
+                "local model"
+            );
+        }
+        let remote = "http://remote-magpie.invalid/v1";
+        let client = super::create_model_http_client(proxy, false, remote);
+        assert_eq!(
+            client
+                .get(remote)
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap(),
+            "configured proxy"
+        );
+        direct_server.abort();
+        proxy_server.abort();
     }
 
     #[tokio::test]

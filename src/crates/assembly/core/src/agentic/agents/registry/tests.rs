@@ -280,6 +280,7 @@ fn top_level_modes_default_to_auto() {
         "Creative",
         "Claw",
         "DeepResearch",
+        "PaperWriting",
         "Ultimate",
     ] {
         assert_eq!(default_model_id_for_builtin_agent(agent_type), "primary");
@@ -2538,4 +2539,38 @@ fn local_route_resolves_review_agents_as_session_primaries() {
             "{agent_type} must not resolve through a Local route"
         );
     }
+}
+
+#[tokio::test]
+async fn mode_catalog_counts_match_management_visibility_and_shared_profiles() {
+    let registry = AgentRegistry::new();
+    let modes = registry.get_modes_info_for_workspace(None, false).await;
+    assert!(!modes.is_empty());
+    let counts = registry
+        .mode_manageable_subagent_counts(&modes, None, false)
+        .await;
+    let mut checked = std::collections::HashSet::new();
+    for mode in &modes {
+        let profile = mode.config_profile_id.as_deref().unwrap_or(&mode.id);
+        if !checked.insert(profile) {
+            continue;
+        }
+        let children = registry
+            .get_subagents_for_query(&SubagentQueryContext {
+                parent_agent_type: Some(&mode.id),
+                workspace_id: None,
+                list_scope: SubagentListScope::RegistryManagement,
+                include_disabled: true,
+                external_sources_supported: false,
+            })
+            .await;
+        assert_eq!(
+            counts[profile],
+            children
+                .iter()
+                .filter(|agent| agent.effective_enabled)
+                .count()
+        );
+    }
+    assert_eq!(counts.len(), checked.len());
 }

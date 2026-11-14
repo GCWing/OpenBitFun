@@ -276,7 +276,10 @@ class PendingQueueManager {
   }
 
   remove(sessionId: string, id: string): boolean {
-    const surfaceId = getActiveSurfaceId();
+    return this.removeForSurface(getActiveSurfaceId(), sessionId, id);
+  }
+
+  removeForSurface(surfaceId: DeviceSurfaceId, sessionId: string, id: string): boolean {
     const key = this.queueKey(sessionId, surfaceId);
     const items = this.queues.get(key);
     if (!items) return false;
@@ -287,8 +290,8 @@ class PendingQueueManager {
     } else {
       this.queues.set(key, next);
     }
-    this.persist(sessionId);
-    this.notify(sessionId);
+    this.persist(sessionId, surfaceId);
+    this.notifySurface(surfaceId, sessionId);
     return true;
   }
 
@@ -326,13 +329,17 @@ class PendingQueueManager {
   }
 
   setStatus(sessionId: string, id: string, status: QueuedMessage['status']): void {
-    const items = this.queues.get(this.queueKey(sessionId));
+    this.setStatusForSurface(getActiveSurfaceId(), sessionId, id, status);
+  }
+
+  setStatusForSurface(surfaceId: DeviceSurfaceId, sessionId: string, id: string, status: QueuedMessage['status']): void {
+    const items = this.queues.get(this.queueKey(sessionId, surfaceId));
     if (!items) return;
     const idx = items.findIndex(item => item.id === id);
     if (idx === -1) return;
     items[idx] = { ...items[idx], status };
-    this.persist(sessionId);
-    this.notify(sessionId);
+    this.persist(sessionId, surfaceId);
+    this.notifySurface(surfaceId, sessionId);
   }
 
   /** Update a still-pending payload atomically without changing FIFO identity or attachments. */

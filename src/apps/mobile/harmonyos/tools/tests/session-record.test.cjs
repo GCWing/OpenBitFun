@@ -3,6 +3,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
+const activeControllers = new Set();
+test.afterEach(() => {
+  for (const controller of activeControllers) controller.stop();
+  activeControllers.clear();
+});
+function createController(Controller, manager, hooks) {
+  // These transcript fixtures model hosts without a message queue. Leaving
+  // the capability method absent starts error/retry timers in the real store.
+  const controller = new Controller(Object.assign(manager, { supportsMessageQueue: () => false }), hooks);
+  activeControllers.add(controller);
+  return controller;
+}
 function load(name, dependencies = {}) {
   const source = fs.readFileSync(path.join(__dirname, '../../entry/src/main/ets/services', `${name}.ets`), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
@@ -18,6 +30,7 @@ const { DurableSessionReducer } = reducerModule;
 const subagentModule = load('SubagentStreamCoordinator', { './DurableSessionReducer': reducerModule });
 function loadController() {
   return load('ChatSessionController', {
+    './MessageQueueStore': load('MessageQueueStore', { '../model/MessageQueue': load('../model/MessageQueue') }),
     './DurableSessionReducer': reducerModule, './InteractionMailboxStore': mailboxModule,
     './SubagentStreamCoordinator': subagentModule
   });
@@ -33,7 +46,7 @@ function suggestionFixture() {
   const snapshots = [];
   const manager = { getModelCatalog: async () => ({version: 1, models: [], default_models: {}}),
     subscribeSession: (_id, next) => { callbacks = next; return {wake() {}, close() {}}; } };
-  const controller = new ChatSessionController(manager, {onSnapshot: value => snapshots.push(value), canPoll: () => true, onError: error => {throw error;}});
+  const controller = createController(ChatSessionController, Object.assign(manager, { supportsMessageQueue: () => false }), {onSnapshot: value => snapshots.push(value), canPoll: () => true, onError: error => {throw error;}});
   controller.start('session', {pollVersion: 0, knownMessageCount: 0, knownModelCatalogVersion: 0});
   return { controller, snapshots, stream: () => callbacks, latest: () => snapshots.at(-1) };
 }
@@ -126,7 +139,7 @@ test('controller hydrates from the same record log without transcript RPC', asyn
   const { ChatSessionController } = loadController();
   let callbacks, snapshots = [];
   const manager = { getModelCatalog: async () => ({ version: 1, models: [], default_models: {} }), subscribeSession: (_id, next) => { callbacks = next; return { wake() {}, close() {} }; }, getSessionMessages: () => { throw new Error('Snapshot RPC is forbidden'); } };
-  const controller = new ChatSessionController(manager, { onSnapshot: value => snapshots.push(value), canPoll: () => true, onError: error => { throw error; } });
+  const controller = createController(ChatSessionController, Object.assign(manager, { supportsMessageQueue: () => false }), { onSnapshot: value => snapshots.push(value), canPoll: () => true, onError: error => { throw error; } });
   controller.start('session', { pollVersion: 0, knownMessageCount: 0, knownModelCatalogVersion: 0 });
   await callbacks.onEvent(record(1, 'partial'));
   assert.equal(snapshots.length, 0);
@@ -180,7 +193,7 @@ test('initial and resumed mailbox restores questions independently of transcript
       return {sessionId:'session',permissions:{revision:0,requests:[]},userQuestions:{revision:1,questions:[{toolId:'question-tool',sessionId:'session',questions:question,registeredAtMs:1}]}};
     }
   };
-  const controller = new ChatSessionController(manager,{onSnapshot:value=>snapshot=value,onMailbox:value=>mailbox=value,onError:error=>{throw error;},canPoll:()=>true});
+  const controller = createController(ChatSessionController, Object.assign(manager, { supportsMessageQueue: () => false }),{onSnapshot:value=>snapshot=value,onMailbox:value=>mailbox=value,onError:error=>{throw error;},canPoll:()=>true});
   controller.start('session',{pollVersion:0,knownMessageCount:0,knownModelCatalogVersion:0});
   await callbacks.onResumed(); await callbacks.onCaughtUp();
   assert.equal(snapshot.activeTurn,undefined);
@@ -321,7 +334,7 @@ test('history publishes user and assistant together after reduction, including a
     getModelCatalog: () => new Promise(resolve => { resolveCatalog = resolve; }),
     subscribeSession: (_id, next) => { callbacks = next; return { close() {} }; }
   };
-  const controller = new ChatSessionController(manager, { canPoll: () => true,
+  const controller = createController(ChatSessionController, Object.assign(manager, { supportsMessageQueue: () => false }), { canPoll: () => true,
     onSnapshot: value => snapshots.push(value), onError: error => { throw error; } });
   controller.start('session', { pollVersion: 0, knownMessageCount: 0, knownModelCatalogVersion: 0 });
   await callbacks.onCaughtUp();
@@ -355,7 +368,7 @@ async function durableTimelineHarness() {
   timeline.reset('session');
   let stream;
   const { ChatSessionController } = loadController();
-  const controller = new ChatSessionController({
+  const controller = createController(ChatSessionController, {
     getModelCatalog: async () => ({ version: 1, models: [], default_models: {} }),
     subscribeSession: (_id, callbacks) => { stream = callbacks; return { wake() {}, close() {} }; }
   }, { onSnapshot: snapshot => timeline.applySnapshot(snapshot), canPoll: () => true,
@@ -455,7 +468,7 @@ test('host restart terminal record settles active turn without reporting success
   const { ChatSessionController } = loadController();
   let stream, snapshot;
   const timeline = new ChatTimelineStore(); timeline.reset('session');
-  const controller = new ChatSessionController({ getModelCatalog: async () => ({version:1,models:[],default_models:{}}),
+  const controller = createController(ChatSessionController, { getModelCatalog: async () => ({version:1,models:[],default_models:{}}),
     subscribeSession: (_id, callbacks) => { stream=callbacks; return {wake(){},close(){}}; }
   }, { onSnapshot: value => { snapshot=value; timeline.applySnapshot(value); }, canPoll:()=>true, onError:error=>{throw error;} });
   controller.start('session',{pollVersion:0,knownMessageCount:0,knownModelCatalogVersion:0});

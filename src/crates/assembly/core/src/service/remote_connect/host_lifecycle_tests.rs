@@ -255,7 +255,10 @@ async fn official_and_lan_invitations_use_the_same_authenticated_device_protocol
         let result = service.start(method.clone()).await.unwrap();
         assert_eq!(
             result.qr_url,
-            Some(format!("{url}/#/pair?did=authenticated-host-1"))
+            Some(openbitfun_product_domains::account::relay_page_url(
+                &url,
+                "#/pair?did=authenticated-host-1"
+            ))
         );
         assert!(result
             .qr_data
@@ -268,6 +271,180 @@ async fn official_and_lan_invitations_use_the_same_authenticated_device_protocol
         service.stop_device_connection().await;
         assert!(service.start(method).await.is_err());
     }
+}
+
+#[tokio::test]
+async fn restored_base_endpoint_keeps_the_announced_version_in_the_invitation() {
+    let host = Arc::new(RecordingEmbeddedRelayHost::default());
+    let service = RemoteConnectService::new(RemoteConnectConfig::default(), host).unwrap();
+    let prepared = service
+        .prepare_relay(&ConnectionMethod::OpenBitFunServer)
+        .await
+        .unwrap();
+    assert!(prepared.contains("?v="));
+    *service.authenticated_device_id.write().await = Some("restored-host".into());
+    *service.device_relay_url.write().await =
+        Some(openbitfun_product_domains::account::relay_endpoint_base(&prepared).to_string());
+    let result = service
+        .start(ConnectionMethod::OpenBitFunServer)
+        .await
+        .unwrap();
+    assert_eq!(
+        result.qr_url,
+        Some(openbitfun_product_domains::account::relay_page_url(
+            &prepared,
+            "#/pair?did=restored-host"
+        ))
+    );
+}
+
+/// A restored sign-in connects device routing before any invitation is asked
+/// for. Asking for the official invitation must find that connection in
+/// place afterwards, however often it is asked.
+#[tokio::test]
+async fn official_invitation_adopts_device_routing_that_is_already_connected() {
+    use openbitfun_product_domains::account::{relay_endpoint_base, relay_page_url};
+
+    let host = Arc::new(RecordingEmbeddedRelayHost::default());
+    let service = RemoteConnectService::new(RemoteConnectConfig::default(), host.clone()).unwrap();
+    let endpoint = relay_endpoint_base(&service.config.openbitfun_server_url).to_string();
+    *service.authenticated_device_id.write().await = Some("restored-host".into());
+    *service.device_relay_url.write().await = Some(endpoint.clone());
+    *service.active_device_connection_id.write().await = Some(7);
+    assert_eq!(service.active_method().await, None);
+
+    for _ in 0..3 {
+        let prepared = service
+            .prepare_relay(&ConnectionMethod::OpenBitFunServer)
+            .await
+            .unwrap();
+        assert!(prepared.contains("?v="));
+        // The connection is the one that was there: nothing stopped it.
+        assert_eq!(
+            service.authenticated_device_id.read().await.as_deref(),
+            Some("restored-host")
+        );
+        assert_eq!(*service.active_device_connection_id.read().await, Some(7));
+        assert_eq!(
+            service.device_relay_url().await.as_deref(),
+            Some(endpoint.as_str())
+        );
+        assert_eq!(
+            service.active_method().await,
+            Some(ConnectionMethod::OpenBitFunServer)
+        );
+        let result = service
+            .start(ConnectionMethod::OpenBitFunServer)
+            .await
+            .unwrap();
+        assert_eq!(
+            result.qr_url,
+            Some(relay_page_url(&prepared, "#/pair?did=restored-host"))
+        );
+    }
+    assert_eq!(host.start_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(host.stop_calls.load(Ordering::SeqCst), 0);
+
+    // Routing that is connected to another endpoint is not this endpoint's:
+    // preparing still replaces it.
+    let service = RemoteConnectService::new(RemoteConnectConfig::default(), host.clone()).unwrap();
+    *service.authenticated_device_id.write().await = Some("restored-host".into());
+    *service.device_relay_url.write().await = Some("https://relay.example/other".into());
+    service
+        .prepare_relay(&ConnectionMethod::OpenBitFunServer)
+        .await
+        .unwrap();
+    assert!(service.authenticated_device_id.read().await.is_none());
+    assert!(service
+        .start(ConnectionMethod::OpenBitFunServer)
+        .await
+        .is_err());
+
+    // A LAN endpoint is never adopted: its local relay has to be started.
+    let port = unused_port().await;
+    let host = Arc::new(RecordingEmbeddedRelayHost::default());
+    let service = RemoteConnectService::new(lan_config(port), host.clone()).unwrap();
+    *service.authenticated_device_id.write().await = Some("restored-host".into());
+    *service.device_relay_url.write().await = Some(format!("http://127.0.0.1:{port}"));
+    service.prepare_relay(&lan_method()).await.unwrap();
+    assert!(service.authenticated_device_id.read().await.is_none());
+    assert_eq!(host.start_calls.load(Ordering::SeqCst), 1);
+    service.stop_relay().await;
+}
+
+/// A LAN relay that is running serves a request that names no interface or
+/// the interface it uses, also when that interface was chosen automatically.
+/// Only a request for another interface is a request for another endpoint.
+#[tokio::test]
+async fn running_lan_relay_serves_requests_for_the_interface_it_uses() {
+    let lan = |ip: Option<&str>| ConnectionMethod::Lan {
+        ip: ip.map(str::to_owned),
+    };
+    let host = Arc::new(RecordingEmbeddedRelayHost::default());
+    let service = RemoteConnectService::new(lan_config(9700), host.clone()).unwrap();
+
+    // Nothing is running.
+    for requested in [
+        lan(None),
+        lan(Some("192.168.7.9")),
+        ConnectionMethod::OpenBitFunServer,
+    ] {
+        assert_eq!(service.serving_method(&requested).await, None);
+    }
+
+    // Started without naming an interface; 192.168.7.9 was chosen.
+    *service.active_method.write().await = Some(lan(None));
+    *service.prepared_relay_url.write().await = Some("http://192.168.7.9:9700".into());
+    assert_eq!(service.serving_method(&lan(None)).await, Some(lan(None)));
+    assert_eq!(
+        service.serving_method(&lan(Some("192.168.7.9"))).await,
+        Some(lan(None))
+    );
+    assert_eq!(service.serving_method(&lan(Some("10.0.0.2"))).await, None);
+    assert_eq!(
+        service
+            .serving_method(&ConnectionMethod::OpenBitFunServer)
+            .await,
+        None
+    );
+    // The invitation is asked for with the method that is running; the
+    // request's own spelling of it is not the active method.
+    *service.authenticated_device_id.write().await = Some("device-1".into());
+    *service.device_relay_url.write().await = Some("http://192.168.7.9:9700".into());
+    let invitation = service.start(lan(None)).await.unwrap();
+    assert!(invitation
+        .qr_url
+        .unwrap()
+        .starts_with("http://192.168.7.9:9700/"));
+    assert!(service.start(lan(Some("192.168.7.9"))).await.is_err());
+
+    // Started on a named interface.
+    *service.active_method.write().await = Some(lan(Some("192.168.7.9")));
+    assert_eq!(
+        service.serving_method(&lan(Some("192.168.7.9"))).await,
+        Some(lan(Some("192.168.7.9")))
+    );
+    assert_eq!(
+        service.serving_method(&lan(None)).await,
+        Some(lan(Some("192.168.7.9")))
+    );
+    assert_eq!(service.serving_method(&lan(Some("10.0.0.2"))).await, None);
+
+    // The official endpoint is only ever itself.
+    *service.active_method.write().await = Some(ConnectionMethod::OpenBitFunServer);
+    assert_eq!(
+        service
+            .serving_method(&ConnectionMethod::OpenBitFunServer)
+            .await,
+        Some(ConnectionMethod::OpenBitFunServer)
+    );
+    assert_eq!(service.serving_method(&lan(None)).await, None);
+    assert_eq!(
+        service.serving_method(&lan(Some("192.168.7.9"))).await,
+        None
+    );
+    assert_eq!(host.start_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(host.stop_calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

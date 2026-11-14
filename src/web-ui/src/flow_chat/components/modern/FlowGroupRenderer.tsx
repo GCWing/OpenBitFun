@@ -28,7 +28,7 @@ import { isToolCapsule } from '../../tool-cards/toolCardMetadata';
 import { getConcurrentCapsuleRows, type ConcurrentCapsuleRow } from '../../tool-cards/toolCapsuleLayout';
 import { useFlowChatContext, useFlowChatVolatileContext } from './FlowChatContext';
 import { FileEditGroupView } from './FileEditGroupView';
-import { buildFlowGroupRenderSegments, estimateFlowGroupItemsHeight } from './flowGroupRenderSegments';
+import { buildFlowGroupRenderSegments, estimateFlowGroupItemsHeight, type FlowGroupRenderSegment } from './flowGroupRenderSegments';
 import './ExploreRegion.scss';
 import { useFlowChatReaderValue } from '../../timeline/readerState';
 
@@ -38,6 +38,8 @@ export interface FlowGroupRendererProps {
   expandedThinkingItemIds?: readonly string[];
   placement?: 'standalone' | 'inline';
   timelineExpanded?: boolean;
+  /** The timeline lists this running group's in-flight members below its header. */
+  timelineLiveMembers?: boolean;
 }
 
 interface FlowGroupView {
@@ -77,6 +79,7 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
   expandedThinkingItemIds,
   placement,
   timelineExpanded,
+  timelineLiveMembers,
 }) => {
   const { t, formatNumber } = useI18n('flow-chat');
   const category = getFlowGroupCategory(data);
@@ -110,7 +113,13 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
   const groupRevealGate = useMemo(() => ({ ...revealGate, report }), [revealGate, report]);
   const allItems = useMemo(() => recordedItems.filter(isFlowItemVisible), [recordedItems]);
   const parallelRows = useMemo(() => getConcurrentCapsuleRows(allItems), [allItems]);
-  const renderSegments = useMemo(() => buildFlowGroupRenderSegments(allItems), [allItems]);
+  const prevSegmentsRef = useRef<readonly FlowGroupRenderSegment[]>([]);
+  const renderSegments = useMemo(
+    () => buildFlowGroupRenderSegments(allItems, prevSegmentsRef.current), [allItems],
+  );
+  useLayoutEffect(() => {
+    prevSegmentsRef.current = renderSegments;
+  }, [renderSegments]);
   const toolItemCount = useMemo(() => allItems.filter(item => item.type === 'tool').length, [allItems]);
   const filePath = category === 'file-edit' ? fileEditTarget(allItems.find(item => item.type === 'tool')) : undefined;
   const fileStatus = useMemo(() => fileEditGroupStatus(category === 'file-edit' ? allItems : []), [category, allItems]);
@@ -183,6 +192,7 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
       || (item.type === 'tool' && (item as FlowToolItem).toolResult?.success === false)) ? 'immediate' : undefined,
     streaming: isGroupStreaming, itemCount: toolItemCount,
     'data-flow-group-phase': data.phase,
+    'data-flow-group-live-members': timelineLiveMembers ? 'true' : undefined,
     ...summaryPresentation, ...policy.attributes(allItems), onExpandedChange: handleExpandedChange,
     // The transcript owns scrolling; individual completions do not close or pulse the group.
     receiveFeedback: data.phase === undefined ? groupReceiveFeedback?.get(groupId) : undefined,

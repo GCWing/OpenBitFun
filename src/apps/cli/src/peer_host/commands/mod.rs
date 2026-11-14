@@ -33,6 +33,7 @@ pub(crate) fn dispatch<'a>(
     state: &'a PeerHostState,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, String>> + Send + 'a>> {
     match command {
+        "probe_magpie_gateway" => Box::pin(models::probe_magpie_gateway(args)),
         "list_ai_models_by_config" => Box::pin(models::list_ai_models_by_config(args)),
         "list_visible_subagents" | "list_subagents" | "list_manageable_subagents" => Box::pin(tools::list_subagents(command, args)),
         "get_session_permission_mode" => Box::pin(permission::session_permission_mode(state, args, false, false)),
@@ -73,6 +74,9 @@ pub(crate) fn dispatch<'a>(
         "get_web_search_credential_status" => Box::pin(config::get_web_search_credential_status(args)),
         "save_web_search_credential" => Box::pin(config::save_web_search_credential(args)),
         "clear_web_search_credential" => Box::pin(config::clear_web_search_credential(args)),
+        "get_decision_model_credential_status" => Box::pin(config::get_decision_model_credential_status(args)),
+        "save_decision_model_credential" => Box::pin(config::save_decision_model_credential(args)),
+        "clear_decision_model_credential" => Box::pin(config::clear_decision_model_credential(args)),
         "product_control_invoke" => Box::pin(product_control::invoke(state, args)),
         "get_agent_profile_config" => Box::pin(config::get_agent_profile_config(args)),
         "get_agent_profile_configs" => Box::pin(config::get_agent_profile_configs()),
@@ -224,6 +228,7 @@ pub(crate) fn dispatch<'a>(
         "git_get_repository"
         | "git_get_repository_basic"
         | "git_get_status"
+        | "git_get_tracked_change_count"
         | "git_get_branches"
         | "git_get_enhanced_branches"
         | "git_get_commits"
@@ -321,6 +326,7 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "get_session_permission_mode",
     "list_visible_subagents",
     "list_ai_models_by_config",
+    "probe_magpie_gateway",
     "apply_external_source_control_action_command",
     "archive_session",
     "cancel_dialog_turn",
@@ -331,6 +337,7 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "cleanup_invalid_workspaces",
     "clear_project_permission_grants",
     "clear_web_search_credential",
+    "clear_decision_model_credential",
     "create_directory",
     "create_session",
     "ensure_control_conversation",
@@ -368,12 +375,14 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "get_system_info",
     "get_token_usage_statistics",
     "get_web_search_credential_status",
+    "get_decision_model_credential_status",
     "get_workspace_info",
     "git_get_repository_trust",
     "git_is_repository",
     "git_get_repository",
     "git_get_repository_basic",
     "git_get_status",
+    "git_get_tracked_change_count",
     "git_get_branches",
     "git_get_enhanced_branches",
     "git_get_commits",
@@ -408,6 +417,7 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "save_session_metadata",
     "save_session_turn",
     "save_web_search_credential",
+    "save_decision_model_credential",
     "search_session_content",
     "set_config",
     "set_external_mcp_server_decision_command",

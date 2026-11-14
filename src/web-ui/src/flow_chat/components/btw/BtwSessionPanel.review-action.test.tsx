@@ -218,7 +218,7 @@ vi.mock('../../services/FlowChatManager', () => ({
 }));
 
 vi.mock('../../store/modernFlowChatStore', () => ({
-  sessionToVirtualItems: () => panelMocks.virtualItems,
+  createSessionVirtualItemProjector: () => () => panelMocks.virtualItems,
 }));
 
 vi.mock('../../services/ReviewActionBarPersistenceService', () => ({

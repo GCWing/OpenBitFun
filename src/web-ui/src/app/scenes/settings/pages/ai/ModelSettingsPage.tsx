@@ -2,6 +2,8 @@ import { modelSelectionsConfigPath } from '@/infrastructure/config/services/mode
 import '@/app/scenes/settings/pages/ai/ModelSettingsPage.scss';
 import { ModelDiscoveryPicker, type ModelDiscoveryOption } from './ModelDiscoveryPicker';
 import { ModelPoolsSection } from './ModelPoolsSection';
+import { MagpieSourceSection } from './MagpieSourceSection';
+import { isMagpieModel } from '@/infrastructure/config/services/magpieModels';
 import { ModelPoolCardActions } from './ModelPoolCardActions';
 import { ZcodeSubscriptionGroup } from './ZcodeSubscriptionGroup';
 import { SubscriptionProviderPicker } from './SubscriptionProviderPicker';
@@ -91,8 +93,10 @@ import {
   getProviderGroupKey,
   getProviderInstanceId,
   getProviderTemplateId,
+  groupModelConfigsByProvider,
   PROVIDER_INSTANCE_METADATA_KEY,
   removeProviderModelConfigs,
+  type ProviderModelGroup,
 } from '@/infrastructure/config/services/modelConfigs';
 import { normalizeProviderBaseUrl } from '@/infrastructure/config/services/providerCatalog';
 import {
@@ -195,12 +199,7 @@ interface SelectedModelDraft {
   };
 }
 
-interface ProviderGroup {
-  key: string;
-  providerName: string;
-  providerId?: string;
-  models: AIModelConfigType[];
-}
+type ProviderGroup = ProviderModelGroup<AIModelConfigType>;
 
 interface SubscriptionLoginPanelState {
   provider: SubscriptionProvider;
@@ -1902,7 +1901,9 @@ const ModelSettingsPage: React.FC = () => {
       name: providerName,
       base_url: template.baseUrl,
       request_url: '',
-      api_key: '',
+      // Magpie accepts an app identity as the key on loopback. A remote
+      // gateway requires the user's gateway key in its place.
+      api_key: providerId === 'magpie' ? 'magpie-openbitfun' : '',
       model_name: '',
       provider: template.format,
       enabled: true,
@@ -1910,7 +1911,7 @@ const ModelSettingsPage: React.FC = () => {
       category: 'multimodal',
       capabilities: getCapabilitiesByCategory('multimodal'),
       recommended_for: [],
-      metadata: {},
+      metadata: providerId === 'magpie' ? { model_source: 'magpie' } : {},
       inline_think_in_text: true,
     });
     // Provider templates supply available choices, never an implicit selection.
@@ -2643,23 +2644,7 @@ const ModelSettingsPage: React.FC = () => {
     && editingModalHasUnsavedChanges;
 
   const providerGroups = useMemo<ProviderGroup[]>(() => {
-    const grouped = aiModels.reduce<Map<string, ProviderGroup>>((map, model) => {
-      const groupKey = getProviderGroupKey(model);
-      const providerName = getProviderDisplayName(model);
-      const existingGroup = map.get(groupKey);
-      if (existingGroup) {
-        existingGroup.models.push(model);
-        return map;
-      }
-
-      map.set(groupKey, {
-        key: groupKey,
-        providerName,
-        providerId: getProviderTemplateId(model),
-        models: [model],
-      });
-      return map;
-    }, new Map());
+    const grouped = groupModelConfigsByProvider(aiModels);
 
     return Array.from(grouped.values()).sort((a, b) => {
       const indexA = a.providerId ? providerOrder.indexOf(a.providerId) : -1;
@@ -2673,7 +2658,7 @@ const ModelSettingsPage: React.FC = () => {
     });
   }, [aiModels, providerOrder]);
 
-  const apiProviderGroups = providerGroups.filter(group => !subscriptionProviderOf(group.models[0].auth));
+  const apiProviderGroups = providerGroups.filter(group => !subscriptionProviderOf(group.models[0].auth) && !isMagpieModel(group.models[0]));
   const subscriptionProviderGroups = providerGroups
     .filter(group => !!subscriptionProviderOf(group.models[0].auth))
     .map(group => {
@@ -3685,7 +3670,8 @@ const ModelSettingsPage: React.FC = () => {
 
     const apiKeyRequired = !isOpenCodeZenApiKeyConfig(editingConfig);
     const renderApiKeyRow = (label: string) => (
-      <ConfigPageRow label={label} required={apiKeyRequired} align="center" wide>
+      <ConfigPageRow label={label} required={apiKeyRequired} align="center" wide
+        description={selectedProviderId === 'magpie' ? t('magpie.keyHint') : undefined}>
         <Input
           data-testid="settings-model-api-key-input"
           hideNativePasswordReveal
@@ -4858,6 +4844,9 @@ const ModelSettingsPage: React.FC = () => {
               </ul>
             ) : <span className="openbitfun-model-settings__pool-caption">{t('acquisition.noneConfigured')}</span>}
           </ConfigPageRow>
+          <MagpieSourceSection models={aiModels} ready={modelConfigReady} onModelsChange={setAiModels}
+            onManual={() => requestEditorOpen('new-provider:magpie', () => handleSelectProvider('magpie'))}
+            onRemoveModel={(config, trigger) => { void requestDelete(config, trigger); }} />
           <ConfigPageRow multiline className="openbitfun-model-settings__acquisition-row"
             label={(
               <div className="openbitfun-model-settings__import-row">
@@ -4941,8 +4930,6 @@ const ModelSettingsPage: React.FC = () => {
           </ConfigPageRow>
 
         </ConfigPageSection>
-
-        <ModelPoolsSection models={aiModels} />
 
         <div>
           <ConfigPageSection title={t('sections.pool')} bodySurface={false}
@@ -5032,6 +5019,8 @@ const ModelSettingsPage: React.FC = () => {
             )}
           </ConfigPageSection>
         </div>
+
+        <ModelPoolsSection models={aiModels} />
 
         <Disclosure summary={t('sections.more')} className="openbitfun-model-settings__more-settings"
           contentInnerClassName="openbitfun-model-settings__more-content">

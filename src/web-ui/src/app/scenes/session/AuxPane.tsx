@@ -48,7 +48,7 @@ const AuxPane = forwardRef<AuxPaneRef, AuxPaneProps>(
   ({ workspacePath, externalToolbar = false, isSceneActive = true, terminalResizeSuspended = false, resizeSuspended = false, isFullscreen = false, onToggleFullscreen }, ref) => {
     const { t } = useI18n('components');
     const activeSessionId = useSyncExternalStore(
-      flowChatStore.subscribe.bind(flowChatStore),
+      notify => flowChatStore.subscribeSelector(s => s.activeSessionId, () => notify()),
       () => flowChatStore.getState().activeSessionId,
       () => flowChatStore.getState().activeSessionId,
     );

@@ -39,8 +39,8 @@ export default function ContentResourceView({ resourceId, isActive }: { resource
       cancelText: t('workbench.cancel'), type: 'warning' });
     if (choice === 'cancel') return false;
     if (choice === 'secondary') return true;
-    if (!document?.save || latest.scope.surfaceId !== getActiveSurfaceId()) return false;
-    await document.save();
+    if (!document || latest.scope.surfaceId !== getActiveSurfaceId()) return false;
+    await document.saveAll();
     return !useContentResourceStore.getState().resources[resourceId]?.isDirty;
   }), [document, resourceId, t]);
   useTabCloseShortcut('workbench-content',

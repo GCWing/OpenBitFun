@@ -289,7 +289,13 @@ impl WeixinProviderClient {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
         if !status.is_success() {
-            return Err(anyhow!("ilink {endpoint} HTTP {status}: {text}"));
+            return Err(anyhow::Error::new(
+                super::delivery::SendFailure::from_status(
+                    status.as_u16(),
+                    None,
+                    format!("ilink {endpoint} HTTP {status}: {text}"),
+                ),
+            ));
         }
         let value: Value = serde_json::from_str(&text)
             .with_context(|| format!("ilink {endpoint}: invalid JSON response"))?;
@@ -401,17 +407,25 @@ impl WeixinProviderClient {
         Ok(())
     }
 
+    /// Send `text` in WeChat-sized parts. Transport failures are retried with
+    /// backoff; application errors (such as a stale context_token) are not.
+    /// On final failure the error is a [`super::delivery::UndeliveredText`]
+    /// holding the unsent parts.
     pub async fn send_text_chunks(
         &self,
         to_user_id: &str,
         context_token: &str,
         text: &str,
     ) -> Result<()> {
-        for chunk in chunk_text_for_weixin(text) {
-            self.send_message_raw(to_user_id, context_token, &chunk)
-                .await?;
-        }
-        Ok(())
+        super::delivery::send_chunks(
+            chunk_text_for_weixin(text),
+            &super::delivery::RetryPolicy::default(),
+            |chunk| async move {
+                self.send_message_raw(to_user_id, context_token, &chunk)
+                    .await
+            },
+        )
+        .await
     }
 
     pub fn is_context_token_error(err: &anyhow::Error) -> bool {

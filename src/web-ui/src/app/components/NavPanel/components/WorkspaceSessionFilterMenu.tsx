@@ -1,11 +1,9 @@
-import { deviceWorkspaceCatalog } from '@/infrastructure/peer-device/deviceWorkspaceCatalog';
-import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 
 import { useI18n } from '@/infrastructure/i18n';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
-import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import { markAllSessionsRead } from '@/app/services/markAllSessionsRead';
 import { useSubmenuIntent } from '@/shared/utils/useSubmenuIntent';
 import { EXTERNAL_SESSION_NAMES, type ExternalSessionEcosystem } from '@/shared/types/external-session';
 import { subscribeOverlayInteraction, createOverlayPortal, Icon, IconButton, Menu, MenuItem, MenuSection, MenuSeparator, Tooltip } from '@openbitfun/ui';
@@ -296,12 +294,8 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
         ) : null}
         <MenuItem
           onClick={() => {
-            flowChatStore.clearAllSessionUnreadCompletions();
             // The sidebar lists every device: mark theirs read on their hosts too.
-            const rendered = getActiveSurfaceId();
-            for (const surfaceId of deviceWorkspaceCatalog.loadedSurfaces()) {
-              if (surfaceId !== rendered) void deviceWorkspaceCatalog.markAllRead(surfaceId);
-            }
+            markAllSessionsRead();
             close();
           }}
         >

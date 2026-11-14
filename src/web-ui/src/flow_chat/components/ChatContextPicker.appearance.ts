@@ -13,7 +13,7 @@ export const chatContextPickerAppearanceDescriptor: AppearanceSurfaceDescriptor 
   ],
 };
 
-/** Reads pre-rename Appearance packages while targeting the current DOM contract. */
+/** Reads pre-rename Appearance data while targeting the current DOM contract. */
 export const legacyFileMentionPickerAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'file-mention-picker',
   hostSelectorId: 'chat-context-picker',

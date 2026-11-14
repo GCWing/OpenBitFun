@@ -83,7 +83,11 @@
       "noSessions": "暂无会话",
       "sessionUnavailable": "该设备上已找不到这个会话。",
       "sessionActionFailed": "无法在另一台设备上完成此操作，请重试。",
-      "connecting": "正在连接 {{name}}…"
+      "connecting": "正在连接 {{name}}…",
+      "linkReconnecting": "重连中",
+      "linkReconnectingLabel": "正在重新连接 {{name}}，其会话可能暂未更新。",
+      "linkStarting": "启动中",
+      "linkStartingLabel": "{{name}} 上的 OpenBitFun 仍在启动。"
     },
     "aria": {
       "navControl": "导航控制",
@@ -400,6 +404,7 @@
       "duplicateEmpty": "请发送消息后再复制该会话。",
       "duplicateRunning": "请等待当前对话结束后再复制该会话。",
       "duplicateDispatchUnsupported": "运行在其他设备上的会话无法复制。",
+      "dispatchMutationUnsupported": "请在任务所属设备上归档或删除此会话。",
       "openStorageDirectory": "打开会话存储目录",
       "openStorageDirectoryFailed": "打开会话存储目录失败",
       "storageDirectoryDesktopOnly": "仅支持打开存储在当前桌面实例上的会话目录。",
@@ -407,7 +412,7 @@
       "exportMarkdown": "导出为 Markdown",
       "exportMarkdownFull": "导出完整过程",
       "exportMarkdownResult": "导出结果",
-      "delete": "删除",
+      "delete": "删除会话",
       "deleteConfirmTitle": "删除会话",
       "deleteConfirmMessage": "会话及其子会话将被永久删除，无法恢复。",
       "confirmEdit": "确认",
@@ -517,7 +522,11 @@
       "discoveryWarningTitle": "外部会话发现",
       "discoveryReadFailed": "部分 {{source}} 会话记录无法读取，已有会话仍可使用。",
       "discoveryWorkspaceUnresolved": "部分 {{source}} 会话无法匹配到工作区，已有会话仍可使用。",
-      "discoveringExternal": "正在发现外部会话…"
+      "discoveringExternal": "正在发现外部会话…",
+      "deleteFailed": "删除会话失败",
+      "archiveFailed": "归档会话失败",
+      "renameFailed": "重命名会话失败",
+      "workspaceBindingMismatch": "该会话属于其他工作区，无法在此处修改。请重新打开 OpenBitFun，会话会在其所属工作区下重新加载。"
     },
     "scheduledJobs": {
       "title": "定时任务",
@@ -677,8 +686,7 @@
           "connected": "已连接",
           "connecting": "连接中",
           "disconnected": "已断开",
-          "error": "连接异常",
-          "unknown": "状态未知"
+          "error": "连接异常"
         }
       },
       "actions": {
@@ -929,6 +937,8 @@
   },
   "peerConnection": {
     "reconnectingShort": "正在重连…",
+    "startingShort": "主机启动中…",
+    "starting": "「{{name}}」上的 OpenBitFun 仍在启动，就绪后即可使用。",
     "returnLocalShort": "返回本机",
     "returningShort": "正在返回…",
     "reconnecting": "正在重新连接「{{name}}」。内容可能暂未更新。"
@@ -1277,7 +1287,7 @@
     "stateHandshaking": "握手中…",
     "stateVerifying": "验证中…",
     "stateConnected": "已连接",
-    "cancelInvitation": "取消邀请",
+    "cancelInvitation": "收起邀请",
     "accountConnectedHint": "手机或浏览器已通过账号连接。取消邀请或关闭此窗口不会断开该连接。",
     "statusUnavailable": "连接状态暂不可用",
     "statusChecking": "正在检查连接…",
@@ -2374,6 +2384,8 @@
   },
   "peerHost": {
     "connectionInterrupted": "与设备的连接中断了，请重试。",
+    "notResponding": "该设备没有响应。请确认该设备上的 OpenBitFun 正在运行，然后重试。",
+    "starting": "该设备上的 OpenBitFun 仍在启动，请稍后重试。",
     "unavailable": "此功能在该设备上不可用。",
     "updateRequired": "该设备上的 OpenBitFun 版本不支持此功能。请尝试在该设备上更新 OpenBitFun。",
     "withDetail": "{{message}}（{{detail}}）"

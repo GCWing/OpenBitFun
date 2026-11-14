@@ -105,7 +105,12 @@ Permission and other control events remain separate from transcript content.
 The relay stores none of this. A controller opens a stream with the
 `read_stream` device RPC (`{stream_id, after|before, epoch, subscribe}`), which
 answers a `stream_page` with `epoch`, `cursor`, `events`, `has_more` and
-`oldest_seq`; `unsubscribe_stream` releases the hint lease. While subscribed,
+`oldest_seq`; `unsubscribe_stream` releases the hint lease. A subscribing read
+holds the lease for 10 minutes and controllers renew it with a keepalive read
+every 4 minutes. Account presence ends a lease early only for a device that
+presence has reported and that is now absent. Hidden (user-scoped) controllers
+such as mobile web, KMP and HarmonyOS never appear in presence, so they keep
+their lease until they unsubscribe or stop renewing. While subscribed,
 the host fans out an encrypted `host-stream-changed` device event naming only
 the stream id, epoch and newest sequence; controllers treat it as a nudge and
 read the missing range themselves. The catalog is the `@host/catalog` stream,
@@ -385,17 +390,17 @@ not a whitelist assembled by the login UI. Its scope is:
 | `editor`, `terminal`, `workspace` | Preferences in the global document; workspace files and machine connection records are separate |
 | `tool_permissions`, `memories` | User permission policy and memory preferences; project permission files and generated memory content are separate |
 | `mcp_servers`, `acp_clients`, `plugin`, `project` | Declarations present in the global document; external executables, installed packages and separately stored project overlays are not copied |
-| `appearance`, `font` | Appearance selection and UI font preferences; imported skin assets are stored separately |
+| `appearance`, `font` | Appearance selection and UI font preferences; imported appearance assets are stored separately |
 
 The frontend refreshes the config cache and the appearance, font and language
 runtimes after a settings-applied event. Keybindings register a path watcher
 even when their initial value came from the bootstrap hint, and an empty or
 removed override restores the registered default. Applying these preferences
-does not save them again. An unavailable imported skin keeps the persisted
+does not save them again. An unavailable imported appearance keeps the persisted
 selection and exposes the existing degraded/unavailable state.
 
 This is settings synchronization, not a user-home backup: custom Agent and Skill
-source files, `hooks.json` declarations/scripts, plugin packages, skin/pet
+source files, `hooks.json` declarations/scripts, plugin packages, appearance/pet
 assets, local credential-vault entries, SSH profiles and browser storage are
 outside this payload. A synchronized declaration or asset path does not imply
 that its dependency is installed or usable on another host. Runtime-only model
@@ -503,12 +508,42 @@ FS) and must not be mixed with Peer Device Mode.
 - Desktop `PeerDeviceTransportAdapter` orders each pending dispatch burst as
   interactive, normal, then background work. It does not maintain an independent
   in-flight count limit or reserved slot. Actual admission belongs to the Relay
-  memory budget. Its read and mutation deadlines use the same 120s
-  `DEFAULT_RPC_TIMEOUT_MS` contract as `AccountRealtime`; explicit caller
-  deadlines continue to flow to the native transport and server. Retryable reads
-  retain bounded exponential-backoff recovery. Explicitly idempotent dialog
-  submissions reuse their stable session/turn identity; ordinary mutations remain
-  single-shot because a missing acknowledgement is an unknown outcome.
+  memory budget. Mutation deadlines use the same 120s `DEFAULT_RPC_TIMEOUT_MS`
+  contract as `AccountRealtime`; explicit caller deadlines continue to flow to
+  the native transport and server. Reads keep the 120s attempt by default, so
+  slow but legitimate reads (provider model lists, usage reports, statistics,
+  large file trees, remote-workspace directories) still complete. Only a named
+  hot-path set (session and workspace lists, config hydrate, the permission
+  mailbox, app state) uses a 25s attempt inside a 60s overall deadline. Reads
+  retry only a request that was never submitted or whose reply was lost; a
+  silent host ends in a typed `peer_host_not_responding` error that the read
+  owner presents with a retry.
+  Explicitly idempotent dialog submissions reuse their stable session/turn
+  identity for up to five attempts; both hosts coalesce retries of an attempt
+  still in flight and keep a settled outcome for 15 minutes only when it was
+  accepted (a CLI failure after Runtime admission also stays cached), so an
+  explicit Retry after a transient failure runs again. The Runtime's duplicate
+  Turn id refusal for the same identity is reported as accepted. Ordinary
+  mutations remain single-shot because a missing acknowledgement is an unknown
+  outcome.
+- A Desktop host executes product commands through its webview bridge, which
+  reports readiness with `peer_host_bridge_ready`. Until then the host refuses
+  product commands with `peer_host_ui_not_ready:` (definitely not executed),
+  after waiting up to 10s for a webview that is still starting, and
+  `peer_mode_ping` reports `host_ui_ready: false`; the controller shows the host
+  as starting and polls it. A main-webview reload clears readiness again. Older
+  hosts omit the field and are treated as ready.
+- Hosts advertising `peer_attachment_status_v1` answer `peer_mode_ping` with
+  `caller_attached` for the calling controller (Desktop by route and source
+  device, CLI by the `controller_device_id` argument). A controller that is no
+  longer attached re-attaches and re-reads the rendered device's permission
+  mailbox instead of reporting a link that receives no events as ready.
+- Relay route loss on a host (a blip, a routing restart, a stopped route) only
+  clears controller delivery targets. Pending permission requests stay with the
+  Runtime; a `peer_control_detach` that leaves no attached controller fails them
+  closed, including after a route loss already removed that controller. A
+  controller whose detach fails on transport still disconnects locally and
+  retries the detach in the background, and again when the host reappears.
 - Mobile delegated-auth recovery retries only a Relay HTTP 401. A decrypted host
   application error mentioning an upstream 401 must not repeat a mutation.
   Captured account and target identities fence credential refresh and delivery.

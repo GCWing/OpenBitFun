@@ -14,10 +14,19 @@ const log = createLogger('RelaySessionHistory');
 const RECORD_FLUSH_DELAY_MS = 16;
 
 /**
- * How long opening may wait for the host's first page. Past it, opening fails
- * with a retryable error instead of parking the surface in hydration.
+ * How long opening may wait for the host's first page once the subscription
+ * was granted. Past it, opening fails with a retryable error instead of
+ * parking the surface in hydration.
  */
 const FIRST_PAGE_TIMEOUT_MS = 15_000;
+
+/**
+ * How long the subscribe request itself may take. On a large session or a slow
+ * relay the grant can legitimately use the whole relay RPC budget (120 s), and
+ * a retry would only wait for the same grant again, so the first-page deadline
+ * starts after the grant. The ceiling still ends a grant the host never sends.
+ */
+const SUBSCRIBE_GRANT_TIMEOUT_MS = 130_000;
 
 /** The host did not deliver the first page in time; retrying opens a fresh read. */
 export class RelayHistoryFirstPageOverdueError extends Error {
@@ -110,6 +119,9 @@ export interface RelayHistoryReady {
   oldestSeq: number;
   cursor: number;
   historyBatches?: boolean;
+  /** Live catch-up recovered; this does not complete a historical page. */
+  live?: boolean;
+  subscriptionId?: string;
 }
 
 /** One session subscription, shared by opening history and receiving live records. */
@@ -117,6 +129,7 @@ export class RelaySessionHistory {
   private readonly scope = getActiveSurfaceScope();
   private readonly listeners: Array<() => void> = [];
   private subscriptionId: string | null = null;
+  private pendingOwnedEvents: WarmSessionStream['events'] = [];
   private closed = false;
   private failed = false;
   private ready: RelayHistoryReady | null = null;
@@ -156,7 +169,7 @@ export class RelaySessionHistory {
     readonly sessionId: string,
     onRecord: (record: SessionRecord) => boolean | void,
     onReady: (ready: RelayHistoryReady) => void,
-    onError: (error: unknown) => void,
+    onError: (error: unknown, options?: { retrying: boolean }) => void,
     onResumed?: () => Promise<void>,
     private readonly onFlush?: () => void,
     onResync?: () => void,
@@ -171,7 +184,7 @@ export class RelaySessionHistory {
     // has registered. Unlisten/relisten would lose events during async setup.
     this.warm = takeWarmStream(this.scope.surfaceId, sessionId);
     // Register before asking Rust to replay its cache or fetch the first page.
-    this.listeners.push(remoteConnectAPI.onSessionRecord(this.handlers.record = value => {
+    this.listeners.push(remoteConnectAPI.onSessionRecord(this.owned('record', value => {
       if (!this.isCurrent() || this.failed) return;
       const record = value as SessionRecord;
       if (record.sessionId !== this.sessionId) return;
@@ -184,26 +197,41 @@ export class RelaySessionHistory {
         if (onRecord(record) === true) this.flush();
         else this.scheduleFlush();
       } catch (error) { this.fail(error); }
-    }));
+    })));
     // A restarted host stream replays its latest page under fresh revisions and
     // sends no tombstones for what it dropped (a rollback, undo, or history
     // rewrite). Records already received are rendered first; the replay that
     // follows, up to its ready event, is then the whole truth.
-    this.listeners.push(remoteConnectAPI.onSessionGap(this.handlers.gap = gap => {
+    this.listeners.push(remoteConnectAPI.onSessionGap(this.owned('gap', gap => {
       if (!this.isCurrent() || gap.sessionId !== this.sessionId || gap.resync !== true) return;
       this.flush();
       this.collectingHistory = true;
       this.historyRecords = [];
       try { onResync?.(); } catch (error) { this.fail(error); }
-    }));
-    this.listeners.push(remoteConnectAPI.onSessionSyncError(this.handlers.syncError = error => {
+    })));
+    this.listeners.push(remoteConnectAPI.onSessionSyncError(this.owned('syncError', error => {
       if (!this.isCurrent() || error.sessionId !== this.sessionId || error.targetDeviceId !== this.scope.surfaceId) return;
       // Records received before the failure stay rendered.
       this.flush();
-      this.fail(new Error(error.message));
-    }));
-    this.listeners.push(remoteConnectAPI.onSessionReady(this.handlers.ready = ready => {
+      if (error.retrying === true) {
+        onError(new Error(error.message), { retrying: true });
+      } else {
+        this.fail(new Error(error.message));
+      }
+    })));
+    this.listeners.push(remoteConnectAPI.onSessionReady(this.owned('ready', ready => {
       if (!this.isCurrent() || this.failed || ready.sessionId !== this.sessionId) return;
+      if (ready.live === true) {
+        // Recovery may finish while an older immutable Turn is still loading.
+        // Keep its staged records and promise intact until its own ready event.
+        if (!this.ready || !this.flush()) return;
+        this.ready = { ...this.ready, ...ready };
+        onReady(ready);
+        if (onResumed) void onResumed().catch(error => {
+          log.warn('Session interaction mailbox refresh failed', { sessionId: this.sessionId, error });
+        });
+        return;
+      }
       try {
         for (const record of this.historyRecords) onRecord(record);
         this.historyRecords = [];
@@ -218,11 +246,11 @@ export class RelaySessionHistory {
       onReady(ready);
       this.resolveReady();
       this.pageApplied?.();
-    }));
-    this.listeners.push(remoteConnectAPI.onSessionInteractionChanged(this.handlers.interaction = event => {
+    })));
+    this.listeners.push(remoteConnectAPI.onSessionInteractionChanged(this.owned('interaction', event => {
       if (!this.isCurrent() || event.sessionId !== this.sessionId || !onResumed) return;
       void onResumed().catch(error => log.warn('Session interaction mailbox refresh failed', {sessionId:this.sessionId,error}));
-    }));
+    })));
     this.warm?.dispose();
     // A closed subscription may never have had an open() caller.
     void this.firstPage.catch(() => {});
@@ -238,6 +266,9 @@ export class RelaySessionHistory {
   }
 
   private isCurrent(): boolean { return !this.closed && this.scope.isCurrent(); }
+
+  /** Still opening: the host has not delivered this subscription's first page. */
+  awaitingFirstPage(): boolean { return this.ready === null && !this.closed && !this.failed; }
 
   private scheduleFlush(): void {
     if (this.flushTimer !== null) return;
@@ -282,25 +313,46 @@ export class RelaySessionHistory {
     if (this.resumeInteraction) void this.resumeInteraction().catch(error => {
       log.warn('Session interaction mailbox refresh failed', { sessionId: this.sessionId, error });
     });
+    // Each phase has a deadline, including a subscribe request the host never
+    // answers; otherwise a stalled grant parks hydration forever.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const deadline = (ms: number) => {
+      if (timer !== null) clearTimeout(timer);
+      return new Promise<'overdue'>(resolve => { timer = setTimeout(() => resolve('overdue'), ms); });
+    };
     try {
       // A stream warmed by the click: what it buffered is applied first, in order.
       const warm = this.warm;
       if (warm) for (const event of warm.events.splice(0)) this.handlers[event.kind]?.(event.value);
-      const id = warm
-        ? await warm.subscription.catch(() => remoteConnectAPI.subscribeSession(this.scope.surfaceId, this.sessionId))
-        : await remoteConnectAPI.subscribeSession(this.scope.surfaceId, this.sessionId);
+      const subscribing = warm
+        ? warm.subscription.catch(() => remoteConnectAPI.subscribeSession(this.scope.surfaceId, this.sessionId))
+        : remoteConnectAPI.subscribeSession(this.scope.surfaceId, this.sessionId);
+      const granted = await Promise.race([subscribing.then(id => ({ id })), deadline(SUBSCRIBE_GRANT_TIMEOUT_MS)]);
+      if (granted === 'overdue') {
+        // The grant may still arrive; release it so the host lease does not leak.
+        void subscribing.then(
+          id => remoteConnectAPI.unsubscribeSession(id),
+          () => undefined,
+        ).catch(error => log.warn('Session unsubscribe failed', { error }));
+        this.firstPageOverdue();
+      }
+      const id = granted.id;
       if (!this.isCurrent()) {
         await remoteConnectAPI.unsubscribeSession(id);
         this.scope.assertCurrent('finish opening relay session history');
         throw new Error('Session subscription is closed');
       }
       this.subscriptionId = id;
-      await this.waitForFirstPage();
+      const overdue = deadline(FIRST_PAGE_TIMEOUT_MS);
+      for (const event of this.pendingOwnedEvents.splice(0)) this.handlers[event.kind]?.(event.value);
+      await this.waitForFirstPage(overdue);
       this.scheduleHistoryPrefetch();
     } catch (error) {
       this.rejectReady(error);
       this.close();
       throw error;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
     }
   }
 
@@ -310,17 +362,13 @@ export class RelaySessionHistory {
    * stay rendered, the interaction mailbox is read directly so a blocking
    * question stays answerable, and opening fails with a retryable error.
    */
-  private async waitForFirstPage(): Promise<void> {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const overdue = new Promise<'overdue'>(resolve => {
-      timer = setTimeout(() => resolve('overdue'), FIRST_PAGE_TIMEOUT_MS);
-    });
-    try {
-      const outcome = await Promise.race([this.firstPage.then(() => 'ready' as const), overdue]);
-      if (outcome === 'ready') return;
-    } finally {
-      if (timer !== null) clearTimeout(timer);
-    }
+  private async waitForFirstPage(overdue: Promise<'overdue'>): Promise<void> {
+    const outcome = await Promise.race([this.firstPage.then(() => 'ready' as const), overdue]);
+    if (outcome === 'ready') return;
+    this.firstPageOverdue();
+  }
+
+  private firstPageOverdue(): never {
     const error = new RelayHistoryFirstPageOverdueError(this.sessionId);
     if (!this.isCurrent()) throw error;
     log.warn('Relay session first page overdue; failing the open as retryable', { sessionId: this.sessionId });
@@ -364,12 +412,34 @@ export class RelaySessionHistory {
     try {
       await Promise.all([remoteConnectAPI.loadOlderSession(this.subscriptionId), applied]);
     } catch (error) {
-      this.fail(error);
-      this.close();
+      // A failed optional/history read does not end the live subscription.
+      // Its incomplete batch stays invisible and a later reader may retry it.
+      this.historyRecords = [];
+      this.collectingHistory = false;
+      if (this.failed) this.close();
       throw error;
     } finally { this.pageApplied = null; this.rejectPage = null; }
     this.scope.assertCurrent('finish loading older relay history');
     return true;
+  }
+
+  private owned(kind: WarmSessionStream['events'][number]['kind'], handler: (value: any) => void): (value: any) => void {
+    const receive = (value: any): void => {
+      if (!this.isCurrent() || value?.sessionId !== this.sessionId
+        || (value.targetDeviceId && value.targetDeviceId !== this.scope.surfaceId)) return;
+      // Older controller bridges omit the additive identity. New bridges tag
+      // even the first page, which can arrive before subscribeSession resolves.
+      if (typeof value.subscriptionId === 'string') {
+        if (this.subscriptionId === null) {
+          this.pendingOwnedEvents.push({ kind, value });
+          return;
+        }
+        if (value.subscriptionId !== this.subscriptionId) return;
+      }
+      handler(value);
+    };
+    this.handlers[kind] = receive;
+    return receive;
   }
 
   close(): void {
@@ -378,6 +448,7 @@ export class RelaySessionHistory {
     if (this.flushTimer !== null) this.flush();
     if (this.closed) return;
     this.closed = true;
+    this.pendingOwnedEvents = [];
     this.historyRecords = [];
     if (this.historyTimer !== null) clearTimeout(this.historyTimer);
     this.historyTimer = null;

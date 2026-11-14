@@ -7,6 +7,7 @@ import { expect, it } from 'vitest';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
+import { markdownGfmOptions } from './markdownGfmOptions';
 
 const configFile = fileURLToPath(new URL('../../../vite.config.ts', import.meta.url));
 const root = path.dirname(configFile);
@@ -39,11 +40,12 @@ it('builds a Markdown worker that initializes and parses GFM without a DOM', asy
   runInNewContext(String(worker.source), { self }, { timeout: 2000 });
   expect(self.onmessage).toBeTypeOf('function');
   for (const source of [
+    '24~30°C, rain 1~2mm; ~~removed~~; `~code~`',
     '# Entities &copy; &amp; &NotEqualTilde; &#x1F680; &unknown;\n\n[link][target]\n\n[target]: https://example.com',
     '| A | B |\n| - | - |\n| ~~x~~ | y |\n\n- [x] done\n\nNote[^1]\n\n[^1]: Footnote',
   ]) {
     self.onmessage!({ data: source });
-    expect(replies.pop()).toEqual({ tree: unified().use(remarkParse).use(remarkGfm).parse(source) });
+    expect(replies.pop()).toEqual({ tree: unified().use(remarkParse).use(remarkGfm, markdownGfmOptions).parse(source) });
   }
 }, 20_000);
 

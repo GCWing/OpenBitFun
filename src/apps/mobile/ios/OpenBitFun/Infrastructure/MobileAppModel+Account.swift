@@ -258,7 +258,7 @@ extension MobileAppModel {
                 let targetKey = "account:\(device.id)"
                 return MobileAccountDevice(
                     id: device.id,
-                    name: device.name,
+                    name: device.displayName,
                     online: device.online ||
                         (targetKey == remoteExpectedDeviceKey && remoteConnected && remoteInitialSessionReady),
                     selected: device.id == ready.selectedDeviceId

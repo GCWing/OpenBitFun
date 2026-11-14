@@ -263,3 +263,44 @@ WantedBy=timers.target
 is cheap: hourly traffic moves past the window in seconds, versus 455 seconds
 for the first pass over 2.17 M rows. Pruning and retiring are separate steps —
 pruning only buys time until the version reaches the retirement switch above.
+
+## Version-by-query endpoint and the Page origin
+
+Releases used to be separated by a proxy location (`/v/<version>/`). A client
+now targets `https://remote.openbitfun.com/relay?v=<service-version>`: the
+version travels as a query parameter, one proxy location serves every build,
+and the bare origin is the account controller. `/v/1.0.2/` stays live on the
+same process and database for builds that predate the parameter, so both
+aliases share credentials and device registration.
+
+```nginx
+location = /relay { return 308 /relay/; }
+location ^~ /relay/ {
+    proxy_pass http://127.0.0.1:19702/;   # strip the prefix
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;          # bare host: the Relay compares it verbatim
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_buffering off;
+    client_max_body_size 65m;
+}
+location = / { proxy_pass http://127.0.0.1:19702/; }   # the controller SPA
+location = /index.html { proxy_pass http://127.0.0.1:19702/index.html; }
+location ^~ /assets/ { proxy_pass http://127.0.0.1:19702; }
+location ^~ /brand/ { proxy_pass http://127.0.0.1:19702; }
+location / { return 410; }   # keep unversioned paths closed
+```
+
+Published Pages must not share a browser origin with the controller: Page
+documents execute user-authored JavaScript, and the controller keeps its device
+key and Relay credential in that origin's IndexedDB. Serve `/p/` and
+`/api/page-auth/` from a separate host (`RELAY_PAGE_PUBLIC_BASE_URL`) and keep
+`RELAY_PAGE_AUTH_BASE_URL` on a third origin. Redirect the old path instead of
+serving content there:
+
+```nginx
+location ^~ /v/1.0.2/p/ { rewrite ^/v/1\.0\.2(/p/.*)$ https://pages.example.com$1 redirect; }
+location ^~ /relay/p/   { rewrite ^/relay(/p/.*)$      https://pages.example.com$1 redirect; }
+```

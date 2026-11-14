@@ -3,6 +3,7 @@ import { MobileButton, MobileBanner, MobileIconButton, MobileSheet } from '@open
 import { HostDialogQueue, observeHostQueue } from '../../../shared/dialog-queue/HostDialogQueue';
 import { useQueueReorder } from '@openbitfun/ui/flow-chat';
 import { useI18n } from '../i18n';
+import { describeChatError } from '../services/chatErrorPresentation';
 import { ArrowUp, ArrowDown, CornerDownRight, GripVertical, MoreHorizontal, Paperclip, Trash2, ChevronDown, ChevronUp, Info } from 'lucide-react';
 import '../styles/host-queue.scss';
 
@@ -15,11 +16,11 @@ export function MobileHostQueue({ queue, onRestore }: { queue: HostDialogQueue; 
   const listId = useId();
   const helpId = useId();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   useEffect(() => observeHostQueue(queue), [queue]);
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true); setError(null);
-    try { await action(); } catch (e) { setError(String(e)); }
+    try { await action(); } catch (e) { setError(e ?? new Error('Queue action failed')); }
     finally { setBusy(false); }
   };
   const items = view.snapshot?.items ?? [];
@@ -29,10 +30,15 @@ export function MobileHostQueue({ queue, onRestore }: { queue: HostDialogQueue; 
     (id, before) => void run(() => queue.reorder(id, before)));
   const selected = items.find(item => item.turnId === selectedId);
   const selectedIndex = selected ? reorderIds.indexOf(selected.turnId) : -1;
-  const rawError = error || view.error;
-  const visibleError = rawError?.includes('queue_conflict:') ? t('queue.orderChanged') : rawError;
+  // Transport detail stays in the console; the banner says what happened in
+  // the user's language. A queue revision conflict has its own sentence.
+  const rawError = error ?? view.error;
+  const rawText = rawError === null || rawError === undefined ? ''
+    : typeof rawError === 'string' ? rawError : rawError instanceof Error ? rawError.message : String(rawError);
+  const visibleError = rawError === null || rawError === undefined ? null
+    : rawText.includes('queue_conflict:') ? t('queue.orderChanged') : describeChatError(rawError, t);
   const count = (view.snapshot?.items.length ?? 0) + view.pending.length;
-  if (!view.snapshot?.items.length && !view.pending.length && !view.error && !error) return null;
+  if (!view.snapshot?.items.length && !view.pending.length && !view.error && error === null) return null;
   return <section className="host-message-queue" aria-label={t('queue.title')}>
     <div className="host-message-queue__header">
       <MobileButton appearance="plain" size="sm" className="host-message-queue__toggle" aria-expanded={expanded} aria-controls={listId}
@@ -47,7 +53,7 @@ export function MobileHostQueue({ queue, onRestore }: { queue: HostDialogQueue; 
     <div className="host-message-queue__body">
       {showHelp && <p id={helpId} className="host-message-queue__help">{t('queue.memoryNotice')}{!view.snapshot?.supportsReorder && ` ${t('queue.reorderUnsupported')}`}</p>}
       {visibleError && <MobileBanner tone="danger" role="alert">{visibleError}</MobileBanner>}
-      {(error || view.error) && <MobileButton appearance="plain" size="sm" disabled={busy} onClick={() => void run(() => queue.refresh())}>{t('queue.refresh')}</MobileButton>}
+      {(error !== null || view.error) && <MobileButton appearance="plain" size="sm" disabled={busy} onClick={() => void run(() => queue.refresh())}>{t('queue.refresh')}</MobileButton>}
       <ul id={listId} hidden={!expanded && !items.some(item => item.status === 'blocked') && !view.pending.length} className="host-message-queue__list">
         {items.filter(item => expanded || item.status === 'blocked').map(item => <li key={item.turnId} className="host-message-queue__row" {...reorder.rowProps(item.turnId)}>
           {item.status === 'queued' && view.snapshot?.supportsReorder && <MobileIconButton appearance="plain" size="sm" className="host-message-queue__handle"

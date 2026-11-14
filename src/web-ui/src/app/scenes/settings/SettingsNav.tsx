@@ -18,6 +18,7 @@ import type { i18n as I18nApi } from 'i18next';
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -108,6 +109,38 @@ function buildSettingsSearchIndex(t: SettingsT, i18n: I18nApi): SettingsSearchRo
   });
 }
 
+function useSettingsSearchIndex(t: SettingsT, i18n: I18nApi, hasSearched: boolean) {
+  const [resourcesRevision, setResourcesRevision] = useState(0);
+  const { store, languages } = i18n;
+
+  useLayoutEffect(() => {
+    if (!hasSearched) return;
+
+    const namespaces = new Set(['settings']);
+    for (const page of SETTINGS_PAGE_MANIFESTS) {
+      for (const entry of [page, ...(page.sections ?? []), ...(page.views ?? [])]) {
+        for (const { namespace } of entry.searchPhrases) namespaces.add(namespace);
+      }
+    }
+    const invalidate = (language: string, namespace: string) => {
+      if (languages.includes(language) && namespaces.has(namespace)) {
+        setResourcesRevision(revision => revision + 1);
+      }
+    };
+    store.on('added', invalidate);
+    store.on('removed', invalidate);
+    return () => {
+      store.off('added', invalidate);
+      store.off('removed', invalidate);
+    };
+  }, [hasSearched, languages, store]);
+
+  return useMemo(
+    () => hasSearched ? buildSettingsSearchIndex(t, i18n) : [],
+    [hasSearched, i18n, resourcesRevision, t],
+  );
+}
+
 function highlightFirstMatch(text: string, query: string): React.ReactNode {
   const needle = query.trim();
   if (!needle) return text;
@@ -139,6 +172,7 @@ const SettingsNav: React.FC = () => {
   const searchQuery = useSettingsStore((state) => state.searchQuery);
   const setSearchQuery = useSettingsStore((state) => state.setSearchQuery);
   const [draftQuery, setDraftQuery] = useState('');
+  const [hasSearched, setHasSearched] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -152,11 +186,14 @@ const SettingsNav: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setSearchQuery(draftQuery), SEARCH_DEBOUNCE_MS);
+    const timer = window.setTimeout(() => {
+      if (draftQuery.trim()) setHasSearched(true);
+      setSearchQuery(draftQuery);
+    }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [draftQuery, setSearchQuery]);
 
-  const searchIndex = useMemo(() => buildSettingsSearchIndex(t, i18n), [i18n, t]);
+  const searchIndex = useSettingsSearchIndex(t, i18n, hasSearched);
   const results = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];

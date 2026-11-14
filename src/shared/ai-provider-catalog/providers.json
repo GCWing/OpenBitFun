@@ -3,6 +3,26 @@
   "catalog_kind": "openbitfun_builtin_provider_overlay",
   "providers": [
     {
+      "id": "magpie",
+      "display_order": 5,
+      "region": "any",
+      "name": "Magpie",
+      "description": "Connect models and routing groups through the Magpie gateway",
+      "help_url": "https://usemagpie.ai/docs/integrate",
+      "requires_api_key": false,
+      "catalog_provider_ids": [],
+      "endpoints": [
+        { "id": "openai", "base_url": "http://127.0.0.1:3425/v1", "api_format": "openai", "label": "openai", "is_default": true, "trusted_for_auto_detection": false, "catalog_provider_ids": [] },
+        { "id": "responses", "base_url": "http://127.0.0.1:3425/v1", "api_format": "responses", "label": "responses", "trusted_for_auto_detection": false, "catalog_provider_ids": [] },
+        { "id": "anthropic", "base_url": "http://127.0.0.1:3425", "api_format": "anthropic", "label": "anthropic", "trusted_for_auto_detection": false, "catalog_provider_ids": [] }
+      ],
+      "model_policy": {
+        "mode": "curated",
+        "curated_models": [],
+        "additional_models": []
+      }
+    },
+    {
       "id": "openbitfun",
       "display_order": 0,
       "region": "any",

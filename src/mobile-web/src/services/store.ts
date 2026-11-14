@@ -10,12 +10,27 @@ import type {
 
 export type ConnectionStatus = 'idle' | 'pairing' | 'paired' | 'error';
 export type ConnectionHealth = 'unpaired' | 'checking' | 'connected' | 'unreachable';
+/**
+ * Why the controlled desktop is unreachable; only set while `connectionHealth`
+ * is `unreachable`, so banners, indicators and disabled states agree.
+ * - `offline`: this browser has no network.
+ * - `relay`: the account's Relay connection is reconnecting.
+ * - `host-offline`: the Relay lists the desktop as offline (`lastSeenAt` in seconds).
+ * - `unreachable`: Relay connected and the desktop listed, but it does not answer.
+ */
+export type ConnectionIssue =
+  | { kind: 'offline' }
+  | { kind: 'relay' }
+  | { kind: 'host-offline'; lastSeenAt: number | null }
+  | { kind: 'unreachable' };
 
 interface MobileStore {
   connectionStatus: ConnectionStatus;
   setConnectionStatus: (s: ConnectionStatus) => void;
   connectionHealth: ConnectionHealth;
   setConnectionHealth: (h: ConnectionHealth) => void;
+  connectionIssue: ConnectionIssue | null;
+  setConnectionState: (health: ConnectionHealth, issue: ConnectionIssue | null) => void;
 
   currentWorkspace: WorkspaceInfo | null;
   setCurrentWorkspace: (w: WorkspaceInfo | null) => void;
@@ -78,7 +93,12 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
   connectionStatus: 'idle',
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
   connectionHealth: 'unpaired',
-  setConnectionHealth: (connectionHealth) => set({ connectionHealth }),
+  setConnectionHealth: (connectionHealth) => set({ connectionHealth, connectionIssue: null }),
+  connectionIssue: null,
+  setConnectionState: (connectionHealth, connectionIssue) => set({
+    connectionHealth,
+    connectionIssue: connectionHealth === 'unreachable' ? connectionIssue ?? { kind: 'unreachable' } : null,
+  }),
 
   currentWorkspace: null,
   setCurrentWorkspace: (currentWorkspace) => set({ currentWorkspace }),

@@ -1,6 +1,7 @@
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { CloudAccountDevice } from '../../services/CloudAccountClient';
+import { DeviceDirectoryState } from '../state/DeviceDirectoryState';
 import { ConnectAccountDevicePage } from './ConnectAccountDevicePage';
 import { AppActionButton, AppActionStyle } from './AppActionButton';
 import { NavigationBackButton } from './NavigationBackButton';
@@ -21,6 +22,7 @@ import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
  */
 @ComponentV2
 export struct ConnectView {
+  @Param directoryState: DeviceDirectoryState = new DeviceDirectoryState();
   @Param remoteUrl: string = '';
   @Param userId: string = '';
   @Param statusText: string = RemoteI18n.t('status.waitingConnection');
@@ -72,6 +74,7 @@ export struct ConnectView {
   @Builder
   AccountDeviceSelectionPage() {
     ConnectAccountDevicePage({
+      directoryState: this.directoryState,
       deviceId: this.deviceId,
       controlTargetDeviceId: this.controlTargetDeviceId,
       connectionState: this.connectionState,

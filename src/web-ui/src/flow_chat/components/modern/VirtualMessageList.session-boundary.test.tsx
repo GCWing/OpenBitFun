@@ -21,6 +21,7 @@ import type { TrajectorySelection } from '../../trajectory/TrajectoryExplorer';
 import type { Session } from '../../types/flow-chat';
 import { useFlowChatReaderValue } from '../../timeline/readerState';
 import { projectAdjacentFlowGroups } from '../../grouping/groupProjection';
+import * as viewportGeometry from './flowChatViewportGeometry';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -204,6 +205,7 @@ vi.mock('./useFlowChatVirtualizer', async () => {
         scrollItemIntoView: mocks.scrollItemIntoView,
         scrollToOffset: mocks.scrollToOffset,
         cancelAim: mocks.cancelAim,
+        snapshotItemSizes: () => new Map(),
       };
     },
   };
@@ -427,6 +429,33 @@ describe('VirtualMessageList natural scroll contract', () => {
     act(() => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+  });
+
+  it('shares a snapshot geometry read with the anchor when a scroll has no travel', async () => {
+    const restoreLayout = fakeLayout({ clientHeight: 600, scrollHeight: 2000, turnTopFromScrollerTop: 120 });
+    const onViewportSnapshot = vi.fn();
+    const readGeometry = vi.spyOn(viewportGeometry, 'readFlowChatViewportGeometry');
+    try {
+      act(() => root.render(<VirtualMessageList onViewportSnapshot={onViewportSnapshot} />));
+      await settleOpenReveal();
+      const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+      act(() => scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true })));
+      // Prime the reader's scroll register, then deliver an unchanged offset
+      // while the wheel intent still permits anchor capture.
+      act(() => scroller.dispatchEvent(new Event('scroll')));
+      readGeometry.mockClear();
+      onViewportSnapshot.mockClear();
+      const row = container.querySelector<HTMLElement>('.virtual-item-wrapper')!;
+      const readRow = vi.spyOn(row, 'getBoundingClientRect');
+      act(() => scroller.dispatchEvent(new Event('scroll')));
+      expect(onViewportSnapshot).toHaveBeenCalledTimes(1);
+      expect(readGeometry).toHaveBeenCalledTimes(1);
+      expect(readRow).toHaveBeenCalledTimes(1);
+      readRow.mockRestore();
+    } finally {
+      readGeometry.mockRestore();
+      restoreLayout();
+    }
   });
 
   it.each([

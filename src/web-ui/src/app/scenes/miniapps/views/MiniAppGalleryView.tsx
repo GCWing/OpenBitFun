@@ -44,6 +44,7 @@ import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext'
 import { useMiniAppStore } from '../miniAppStore';
 import { useMiniAppCreation } from '../hooks/useMiniAppCreation';
 import { useI18n } from '@/infrastructure/i18n';
+import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
 import { useGallerySceneAutoRefresh } from '@/app/hooks/useGallerySceneAutoRefresh';
 import { useNotification } from '@/shared/notification-system';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
@@ -274,6 +275,12 @@ const MiniAppGalleryView: React.FC<MiniAppGalleryViewProps> = ({ tabs }) => {
 
   const preparePackageImport = useCallback(async (path: string) => {
     if (!path.toLowerCase().endsWith('.bfminiapp')) return;
+    // The package path belongs to this controller; a rendered peer would
+    // resolve it against its own filesystem.
+    if (isPeerDeviceModeActive()) {
+      notification.warning(t('market.import.peerUnsupported'));
+      return;
+    }
     try {
       const inspection = await miniAppMarketAPI.inspectPackage(path);
       setPendingPackage({ path, inspection });
@@ -284,6 +291,10 @@ const MiniAppGalleryView: React.FC<MiniAppGalleryViewProps> = ({ tabs }) => {
   }, [notification, t]);
 
   const handleAddPackage = async () => {
+    if (isPeerDeviceModeActive()) {
+      notification.warning(t('market.import.peerUnsupported'));
+      return;
+    }
     const selected = await open({
       directory: false,
       multiple: false,

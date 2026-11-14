@@ -1,6 +1,6 @@
 [package]
 name = "openbitfun-installer"
-version = "1.0.9"
+version = "1.0.10"
 authors = ["OpenBitFun Team"]
 edition = "2021"
 description = "OpenBitFun Custom Installer - Modern branded installation experience"
@@ -29,8 +29,10 @@ tauri-plugin-dialog = "=2.7.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+semver = "1"
 anyhow = "1.0"
 log = "0.4"
+tempfile = "3"
 dirs = "5.0"
 zip = { version = "9.0.3", default-features = false, features = ["deflate"] }
 openbitfun-core-types = { path = "../../src/crates/contracts/core-types" }
@@ -50,9 +52,6 @@ tauri-utils = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74
 tauri-macros = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
 tauri-codegen = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
 tauri-plugin = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
-
-[dev-dependencies]
-tempfile = "3"
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

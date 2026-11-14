@@ -99,7 +99,8 @@
     "loadingFileTree": "Loading file tree..."
   },
   "empty": {
-    "selectWorkspace": "File tree will be displayed after selecting a workspace"
+    "selectWorkspace": "File tree will be displayed after selecting a workspace",
+    "directoryUnavailable": "The selected directory is unavailable."
   },
   "dialog": {
     "newFile": {
@@ -131,6 +132,10 @@
     "cancelled": "Transfer cancelled",
     "failed": "File transfer failed: {{error}}",
     "dropHint": "Drop files here to upload",
+    "peerMissingWorkspace": "The peer workspace could not be identified. Reopen it and try again.",
+    "peerFolderUnsupported": "Folders from this device cannot be uploaded to a peer device yet. Upload the files inside instead.",
+    "peerNotAFile": "Only regular files can be uploaded to a peer device.",
+    "peerFileTooLarge": "Files larger than {{limit}} MB cannot be uploaded to a peer device.",
     "stop": "Stop"
   },
   "archive": {

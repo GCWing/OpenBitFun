@@ -55,6 +55,8 @@ struct DeviceRpcTransport {
     account: AccountSession,
     relay: String,
     target: String,
+    subscription_id: String,
+    scoped_subscription: std::sync::atomic::AtomicBool,
 }
 
 #[async_trait::async_trait]
@@ -62,6 +64,7 @@ impl StreamTransport for DeviceRpcTransport {
     async fn read_stream(&self, request: StreamReadRequest) -> Result<StreamPage> {
         let command = serde_json::json!({
             "cmd": "read_stream",
+            "subscription_id": self.subscription_id,
             "stream_id": request.stream_id,
             "after": request.after,
             "before": request.before,
@@ -78,11 +81,26 @@ impl StreamTransport for DeviceRpcTransport {
                 &command.to_string(),
             )
             .await?;
-        parse_stream_page(&response)
+        let page = parse_stream_page(&response)?;
+        let value: serde_json::Value = serde_json::from_str(&response)?;
+        self.scoped_subscription.store(
+            value["subscription_id"].as_str() == Some(&self.subscription_id),
+            std::sync::atomic::Ordering::Release,
+        );
+        Ok(page)
     }
 
     async fn unsubscribe_stream(&self, stream_id: &str) -> Result<()> {
-        let command = serde_json::json!({"cmd":"unsubscribe_stream","stream_id":stream_id});
+        // Old hosts share one lease across all readers on this device. A late
+        // unscoped unsubscribe could silence the replacement reader, so leave
+        // that lease to its existing expiry unless scoped cleanup was accepted.
+        if !self
+            .scoped_subscription
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Ok(());
+        }
+        let command = serde_json::json!({"cmd":"unsubscribe_stream","stream_id":stream_id,"subscription_id":self.subscription_id});
         AccountClient::new()
             .device_rpc(
                 &self.relay,
@@ -113,6 +131,18 @@ pub struct HostStreamSubscriber {
     older: mpsc::Sender<oneshot::Sender<Result<()>>>,
     worker: tokio::task::JoinHandle<()>,
     unsubscribe: Option<Box<dyn FnOnce() + Send>>,
+}
+
+/// Whether the host dropped live events past `cursor`, so returning the
+/// surviving suffix would silently skip them. A fencing host reports what it
+/// evicted (and already moves such a reader to a fresh epoch). Hosts that
+/// predate the fence only mark the stream truncated, which stays set after any
+/// eviction; there the suffix starting past the cursor is the only signal.
+fn evicted_past_cursor(page: &StreamPage, cursor: u64) -> bool {
+    match page.evicted_through {
+        Some(evicted_through) => evicted_through > cursor,
+        None => page.truncated && page.oldest_seq > cursor.saturating_add(1),
+    }
 }
 
 #[derive(Clone)]
@@ -354,10 +384,19 @@ impl Reader {
     }
 
     fn emit_ready(&self) -> Result<()> {
+        self.emit_ready_kind(false)
+    }
+
+    fn emit_ready_kind(&self, live: bool) -> Result<()> {
+        let mut payload = serde_json::json!({"sessionId":self.session_id,"hasMore":self.has_more,"oldestSeq":self.oldest,"cursor":self.cursor,"historyBatches":true});
+        if live {
+            // Controller-local recovery, not the end of an older history page.
+            payload["live"] = true.into();
+        }
         (self.emit)(SessionEvent {
             session_id: self.session_id.clone(),
             event: "relay://session-ready".into(),
-            payload: serde_json::json!({"sessionId":self.session_id,"hasMore":self.has_more,"oldestSeq":self.oldest,"cursor":self.cursor,"historyBatches":true}),
+            payload,
         })
     }
 
@@ -408,6 +447,15 @@ impl Reader {
                 })
                 .await?;
             if page.epoch != self.epoch {
+                return Ok(false);
+            }
+            if evicted_past_cursor(&page, self.cursor) {
+                log::warn!(
+                    "Host stream evicted records past the reader cursor: session_id={} cursor={} oldest_seq={}",
+                    self.session_id,
+                    self.cursor,
+                    page.oldest_seq
+                );
                 return Ok(false);
             }
             self.emit_page(&page, false)?;
@@ -496,6 +544,47 @@ impl Reader {
     }
 }
 
+struct LiveRecovery {
+    retry_at: Option<tokio::time::Instant>,
+    delay: Duration,
+}
+
+impl Default for LiveRecovery {
+    fn default() -> Self {
+        Self {
+            retry_at: None,
+            delay: Duration::from_secs(1),
+        }
+    }
+}
+
+async fn retry_due(deadline: Option<tokio::time::Instant>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep_until(deadline).await,
+        None => std::future::pending().await,
+    }
+}
+
+impl LiveRecovery {
+    async fn refresh(&mut self, reader: &mut Reader, error: &(dyn Fn(String) + Send + Sync)) {
+        let result = reader.refresh().await.and_then(|()| {
+            if self.retry_at.is_some() {
+                reader.emit_ready_kind(true)
+            } else {
+                Ok(())
+            }
+        });
+        match result {
+            Ok(()) => *self = Self::default(),
+            Err(failure) => {
+                self.retry_at = Some(tokio::time::Instant::now() + self.delay);
+                self.delay = (self.delay * 2).min(Duration::from_secs(30));
+                error(describe_stream_error(&failure));
+            }
+        }
+    }
+}
+
 impl HostStreamSubscriber {
     pub async fn start(
         account: AccountSession,
@@ -510,6 +599,8 @@ impl HostStreamSubscriber {
             account,
             relay,
             target: target.clone(),
+            subscription_id: uuid::Uuid::new_v4().to_string(),
+            scoped_subscription: std::sync::atomic::AtomicBool::new(false),
         });
         Self::start_with_transport(transport, hints, target, session_id, emit, error).await
     }
@@ -543,14 +634,15 @@ impl HostStreamSubscriber {
             .map_err(|error| anyhow!("{}", describe_stream_error(&error)))?;
         let (older, mut older_requests) = mpsc::channel::<oneshot::Sender<Result<()>>>(1);
         let worker = tokio::spawn(async move {
-            let mut retry = 1u64;
+            let mut recovery = LiveRecovery::default();
             let mut keepalive = tokio::time::interval(KEEPALIVE);
+            keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             keepalive.tick().await;
             loop {
                 let wake = tokio::select! {
                     hint = hints.recv() => match hint {
                         Ok(Some(hint)) => {
-                            if !reader.hint_is_new(&hint, &target) {
+                            if !reader.hint_is_new(&hint, &target) || recovery.retry_at.is_some() {
                                 continue;
                             }
                             Wake::Refresh
@@ -559,14 +651,17 @@ impl HostStreamSubscriber {
                         Err(broadcast::error::RecvError::Closed) => return,
                     },
                     _ = keepalive.tick() => Wake::Refresh,
+                    _ = retry_due(recovery.retry_at) => Wake::Refresh,
                     request = older_requests.recv() => match request {
                         Some(reply) if !reply.is_closed() => Wake::Older(reply),
                         Some(_) => continue,
                         None => return,
                     },
                 };
-                let result = match wake {
-                    Wake::Refresh => reader.refresh().await,
+                match wake {
+                    Wake::Refresh => {
+                        recovery.refresh(&mut reader, error.as_ref()).await;
+                    }
                     Wake::Older(reply) => {
                         // A large historical Turn may span several RPCs. Its
                         // immutable snapshot lets live catch-up keep running;
@@ -580,17 +675,27 @@ impl HostStreamSubscriber {
                                     result = &mut page => break result,
                                     hint = hints.recv() => {
                                         let refresh = match hint {
-                                            Ok(Some(hint)) => reader.hint_is_new(&hint, &target),
+                                            Ok(Some(hint)) => recovery.retry_at.is_none() && reader.hint_is_new(&hint, &target),
                                             Ok(None) | Err(broadcast::error::RecvError::Lagged(_)) => true,
                                             Err(broadcast::error::RecvError::Closed) => return,
                                         };
                                         if refresh {
-                                            if let Err(failure) = reader.refresh().await {
-                                                error(describe_stream_error(&failure));
-                                            }
+                                            recovery.refresh(&mut reader, error.as_ref()).await;
                                             if reader.epoch != history_reader.epoch {
                                                 break Err(anyhow!("Session history restarted during the older read"));
                                             }
+                                        }
+                                    }
+                                    _ = retry_due(recovery.retry_at) => {
+                                        recovery.refresh(&mut reader, error.as_ref()).await;
+                                        if reader.epoch != history_reader.epoch {
+                                            break Err(anyhow!("Session history restarted during the older read"));
+                                        }
+                                    }
+                                    _ = keepalive.tick() => {
+                                        recovery.refresh(&mut reader, error.as_ref()).await;
+                                        if reader.epoch != history_reader.epoch {
+                                            break Err(anyhow!("Session history restarted during the older read"));
                                         }
                                     }
                                 }
@@ -613,14 +718,6 @@ impl HostStreamSubscriber {
                         continue;
                     }
                 };
-                match result {
-                    Ok(()) => retry = 1,
-                    Err(failure) => {
-                        error(describe_stream_error(&failure));
-                        tokio::time::sleep(Duration::from_secs(retry)).await;
-                        retry = (retry * 2).min(30);
-                    }
-                }
             }
         });
         let unsubscribe = Box::new(move || {
@@ -820,6 +917,7 @@ mod tests {
             cursor: 100,
             oldest_seq: 1,
             truncated: false,
+            evicted_through: None,
             turn_history: None,
         }
     }
@@ -853,6 +951,66 @@ mod tests {
     }
     fn item(id: &str) -> serde_json::Value {
         serde_json::json!({"sessionId":"s","id":format!("item/{id}"),"turn":{"turnId":"one","sessionId":"s","status":"completed"},"round":{"id":"r","turnId":"one"},"item":{"type":"text","data":{"id":id}}})
+    }
+
+    #[tokio::test]
+    async fn legacy_host_eviction_past_the_cursor_is_a_resync_not_a_silent_skip() {
+        let mut evicted = history_page(40, vec![item("late")], false);
+        evicted.truncated = true;
+        evicted.oldest_seq = 40;
+        let mut contiguous = history_page(11, vec![item("next")], false);
+        contiguous.truncated = true;
+        contiguous.oldest_seq = 11;
+        let (mut reader, _, events) = scripted_reader(vec![evicted, contiguous]);
+        reader.epoch = 1;
+        reader.cursor = 10;
+        assert!(!reader.catch_up().await.unwrap());
+        assert!(events.lock().unwrap().is_empty(), "no partial suffix");
+        assert!(reader.catch_up().await.unwrap());
+        assert_eq!(events.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_fencing_host_resyncs_only_for_evictions_past_the_cursor() {
+        // Truncated long ago and its control events past the cursor were
+        // dropped, but no record past the cursor was evicted: keep reading.
+        let mut earlier_eviction = history_page(40, vec![item("late")], false);
+        earlier_eviction.truncated = true;
+        earlier_eviction.oldest_seq = 40;
+        earlier_eviction.evicted_through = Some(5);
+        earlier_eviction.cursor = 40;
+        let mut evicted = history_page(60, vec![item("later")], false);
+        evicted.truncated = true;
+        evicted.oldest_seq = 60;
+        evicted.evicted_through = Some(55);
+        let (mut reader, _, events) = scripted_reader(vec![earlier_eviction, evicted]);
+        reader.epoch = 1;
+        reader.cursor = 10;
+        assert!(reader.catch_up().await.unwrap());
+        assert_eq!(events.lock().unwrap().len(), 1);
+        assert!(!reader.catch_up().await.unwrap(), "evicted past the cursor");
+        assert_eq!(events.lock().unwrap().len(), 1, "no partial suffix");
+    }
+
+    #[test]
+    fn eviction_watermark_is_additive_on_the_wire() {
+        let legacy = parse_stream_page(
+            r#"{"resp":"stream_page","stream_id":"s","epoch":7,"events":[],"has_more":false,"cursor":9,"oldest_seq":4,"truncated":true}"#,
+        )
+        .unwrap();
+        assert_eq!(legacy.evicted_through, None);
+        assert!(evicted_past_cursor(&legacy, 2));
+        assert!(!evicted_past_cursor(&legacy, 3));
+
+        let mut current = legacy.clone();
+        current.evicted_through = Some(0);
+        assert!(!evicted_past_cursor(&current, 2));
+        let wire = serde_json::to_value(&current).unwrap();
+        assert_eq!(wire["evicted_through"], 0);
+        assert!(serde_json::to_value(&legacy)
+            .unwrap()
+            .get("evicted_through")
+            .is_none());
     }
 
     #[tokio::test]
@@ -997,6 +1155,16 @@ mod tests {
 
     #[tokio::test]
     async fn older_snapshot_io_does_not_block_live_catch_up_and_never_publishes_half_a_turn() {
+        live_catch_up_during_older_snapshot(false).await;
+    }
+
+    #[tokio::test]
+    async fn failed_live_read_retries_while_older_snapshot_io_is_blocked() {
+        live_catch_up_during_older_snapshot(true).await;
+    }
+
+    async fn live_catch_up_during_older_snapshot(fail_once: bool) {
+        tokio::time::pause();
         use super::super::host_stream::HistoryBatch;
         use std::sync::atomic::{AtomicUsize, Ordering};
         struct Transport {
@@ -1004,6 +1172,7 @@ mod tests {
             blocked: tokio::sync::Notify,
             release: tokio::sync::Notify,
             reads: AtomicUsize,
+            failures_left: AtomicUsize,
         }
         #[async_trait::async_trait]
         impl StreamTransport for Transport {
@@ -1015,6 +1184,16 @@ mod tests {
                 {
                     self.blocked.notify_one();
                     self.release.notified().await;
+                }
+                if request.after.is_some()
+                    && self
+                        .failures_left
+                        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                            left.checked_sub(1)
+                        })
+                        .is_ok()
+                {
+                    bail!("temporary lost live reply during history read");
                 }
                 self.hub
                     .read_history("controller", &request, |before| {
@@ -1049,6 +1228,7 @@ mod tests {
             blocked: Default::default(),
             release: Default::default(),
             reads: AtomicUsize::new(0),
+            failures_left: AtomicUsize::new(usize::from(fail_once)),
         });
         let events = Arc::new(Mutex::new(Vec::<SessionEvent>::new()));
         let live = Arc::new(tokio::sync::Notify::new());
@@ -1089,7 +1269,16 @@ mod tests {
             .await
             .unwrap();
         assert!(!older.is_finished());
-        assert_eq!(events.lock().unwrap().len(), 3); // Live output arrived during blocked history IO.
+        // The completed record arrives even while the historical read is blocked.
+        assert_eq!(
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|event| event.event == "session-record")
+                .count(),
+            2
+        );
         transport.release.notify_one();
         older.await.unwrap().unwrap();
         let events = events.lock().unwrap();
@@ -1102,7 +1291,7 @@ mod tests {
             202
         );
         assert_eq!(transport.reads.load(Ordering::SeqCst), 2); // One source read per Turn, not per packet.
-        assert!(errors.lock().unwrap().is_empty());
+        assert_eq!(errors.lock().unwrap().len(), usize::from(fail_once));
     }
 
     #[tokio::test]
@@ -1118,6 +1307,87 @@ mod tests {
         let ready = &lab.events.lock().unwrap()[0].1;
         assert_eq!(ready["hasMore"], false);
         assert_eq!(ready["cursor"], 0);
+    }
+
+    #[tokio::test]
+    async fn failed_live_read_retries_without_another_hint_and_keeps_its_cursor() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct Flaky {
+            inner: Arc<HubTransport>,
+            failures: AtomicUsize,
+        }
+        #[async_trait::async_trait]
+        impl StreamTransport for Flaky {
+            async fn read_stream(&self, request: StreamReadRequest) -> Result<StreamPage> {
+                if request.after.is_some()
+                    && self
+                        .failures
+                        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                            left.checked_sub(1)
+                        })
+                        .is_ok()
+                {
+                    bail!("temporary lost reply");
+                }
+                self.inner.read_stream(request).await
+            }
+            async fn unsubscribe_stream(&self, stream: &str) -> Result<()> {
+                self.inner.unsubscribe_stream(stream).await
+            }
+        }
+        tokio::time::pause();
+        let lab = lab();
+        let transport = Arc::new(Flaky {
+            inner: lab.transport.clone(),
+            failures: AtomicUsize::new(0),
+        });
+        let events = lab.events.clone();
+        let errors = lab.errors.clone();
+        let recovered = Arc::new(tokio::sync::Notify::new());
+        let done = recovered.clone();
+        let _subscriber = HostStreamSubscriber::start_with_transport(
+            transport.clone(),
+            lab.hints.subscribe(),
+            "desktop".into(),
+            "s".into(),
+            Arc::new(move |event| {
+                let ready = event.event == "relay://session-ready" && event.payload["live"] == true;
+                events.lock().unwrap().push((event.event, event.payload));
+                if ready {
+                    done.notify_one();
+                }
+                Ok(())
+            }),
+            Arc::new(move |error| errors.lock().unwrap().push(error)),
+        )
+        .await
+        .unwrap();
+        transport.failures.store(2, Ordering::SeqCst);
+        lab.hub
+            .synchronize_records("s".into(), false, || async {
+                Ok(vec![record("s", "last", "completed")])
+            })
+            .await
+            .unwrap();
+        // This is the final host change: recovery must not depend on another
+        // token, another user action or the four-minute keepalive.
+        tokio::time::timeout(Duration::from_secs(7), recovered.notified())
+            .await
+            .expect("the retry timer must catch up and report recovery");
+        assert_eq!(lab.errors.lock().unwrap().len(), 2);
+        let reads = lab.transport.reads.lock().unwrap();
+        assert_eq!(reads.len(), 2);
+        assert_eq!(reads[1].after, Some(0));
+        assert!(reads[1].epoch.is_some());
+        let events = lab.events.lock().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|(name, _)| name == "session-record")
+                .count(),
+            1
+        );
+        assert_eq!(events.last().unwrap().1["hasMore"], false);
     }
 
     #[tokio::test]

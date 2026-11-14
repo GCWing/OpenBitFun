@@ -1,6 +1,8 @@
 import { Dialog, DialogClose, Icon } from '@openbitfun/ui';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { i18nService } from '@/infrastructure/i18n';
+import { ImageLightboxCopyButton } from './ImageLightboxCopy';
+import { useImageLightboxCopy } from './useImageLightboxCopy';
 import './ImageLightbox.scss';
 
 export interface ImageLightboxState {
@@ -22,6 +24,7 @@ export function ImageLightbox({ image, onClose }: {
   image: ImageLightboxState | null;
   onClose: () => void;
 }) {
+  const imageCopy = useImageLightboxCopy(image?.source);
   if (!image) return null;
   const label = image.alt || i18nService.t('components:imageLightbox.label');
   return (
@@ -42,9 +45,17 @@ export function ImageLightbox({ image, onClose }: {
       closeOnPointerOutside={false}
       onClick={event => { if (event.target === event.currentTarget) onClose(); }}
     >
+      {imageCopy.canCopy && (
+        <ImageLightboxCopyButton
+          className="image-lightbox-copy"
+          copied={imageCopy.copied}
+          onCopy={() => { void imageCopy.copy(); }}
+        />
+      )}
       <DialogClose className="image-lightbox-close" icon={<Icon name="xmark" size="lg" style={{ width: 20, height: 20 }} />} />
       <img
         src={image.source}
+        onContextMenu={imageCopy.onContextMenu}
         alt={image.alt ?? ''}
         data-openbitfun-component="image-lightbox"
         data-openbitfun-part="image"

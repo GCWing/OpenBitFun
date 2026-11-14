@@ -4,6 +4,7 @@
 //! concrete session/runtime dependencies are reduced to service ports.
 
 mod command;
+pub mod delivery;
 pub mod feishu;
 pub mod inbound_files;
 mod locale;

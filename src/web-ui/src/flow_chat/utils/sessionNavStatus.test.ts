@@ -113,6 +113,11 @@ describe('session navigation status', () => {
   it('keeps an unavailable status explicit', () => {
     expect(deriveSessionNavStatus({ session: session(), unavailable: true }).kind).toBe('syncing');
   });
+
+  it('keeps a delivered approval answerable while activity is unavailable', () => {
+    expect(deriveSessionNavStatus({ session: session([turn('work', 'processing')]), unavailable: true,
+      permissions: [permission()] })).toEqual({ kind: 'approval', pendingCount: 1 });
+  });
   it('shows execution for ordinary project sessions as well as selected sessions', () => {
     const value = session([turn('work', 'processing')]);
     expect(deriveSessionNavStatus({ session: value }).kind).toBe('running');
@@ -193,6 +198,16 @@ describe('session navigation status', () => {
     const value = session([], { config: { agentType: 'Standard', dispatchJobState: 'running' } });
     expect(deriveSessionNavStatus({ session: value }).kind).toBe('running');
     expect(deriveSessionNavStatus({ session: value, reachability: 'unreachable' }).kind).toBe('syncing');
+    // Approval ranks below an unreachable target: the prompt may be stale and
+    // a reply could not be delivered anyway.
+    const awaiting = session([turn('work', 'processing', [tool('Bash')])],
+      { config: { agentType: 'Standard', dispatchJobState: 'running' } });
+    expect(deriveSessionNavStatus({ session: awaiting }).kind).toBe('approval');
+    expect(deriveSessionNavStatus({ session: awaiting, reachability: 'unreachable' }).kind).toBe('syncing');
+    expect(deriveSessionNavStatus({ session: value, reachability: 'unreachable',
+      permissions: [permission({ sessionId: 'session' })] }).kind).toBe('syncing');
+    expect(deriveSessionNavStatus({ session: value, reachability: 'reachable',
+      permissions: [permission({ sessionId: 'session' })] }).kind).toBe('approval');
     expect(deriveSessionNavStatus({ session: { ...value, hasUnreadCompletion: 'error',
       config: { ...value.config, dispatchJobState: 'failed' } } }).kind).toBe('error');
     expect(deriveSessionNavStatus({ session: { ...value,

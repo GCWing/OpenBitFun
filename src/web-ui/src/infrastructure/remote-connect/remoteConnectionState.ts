@@ -1,20 +1,22 @@
 import type { ConnectionResult, RemoteConnectionMethod, RemoteConnectStatus } from '../api/service-api/RemoteConnectAPI';
+import {
+  OFFICIAL_RELAY_URL,
+  relayEndpointBase,
+  sameRelayDeployment,
+} from '../../../../shared/relay-transport/RelayEndpoint';
 
 export type RemoteNetworkMethod = 'lan' | 'openbitfun_server';
-export const OFFICIAL_RELAY_URL = 'https://remote.openbitfun.com/v/1.0.2';
+export { OFFICIAL_RELAY_URL };
 
 export function remoteNetworkMethod(method: RemoteConnectionMethod | null | undefined): RemoteNetworkMethod | null {
   if (typeof method === 'object' && method !== null && 'lan' in method) return 'lan';
   return method === 'openbitfun_server' ? 'openbitfun_server' : null;
 }
 
+/** Endpoint identity used for joins, comparisons, and status: the version
+ * parameter is accepted once and removed. */
 export function normalizeRelayUrl(value: string | null | undefined): string | null {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) return null;
-    return url.href.replace(/\/+$/, '');
-  } catch { return null; }
+  return relayEndpointBase(value);
 }
 
 export function invitationRelayUrl(invitation: ConnectionResult | null | undefined): string | null {
@@ -41,7 +43,7 @@ export function selectRemoteNetworkConnection(
 ) {
   const legacyUrl = normalizeRelayUrl(status?.relay_url);
   const legacyMethod = remoteNetworkMethod(status?.active_method)
-    ?? (legacyUrl ? legacyUrl === OFFICIAL_RELAY_URL ? 'openbitfun_server' : 'lan' : null);
+    ?? (legacyUrl ? sameRelayDeployment(legacyUrl, OFFICIAL_RELAY_URL) ? 'openbitfun_server' : 'lan' : null);
   const method = requestedMethod ?? remoteNetworkMethod(invitation?.method)
     ?? status?.connections?.find(route => route.relay_connected)?.method ?? legacyMethod;
   const route = status?.connections?.find(route => route.method === method);

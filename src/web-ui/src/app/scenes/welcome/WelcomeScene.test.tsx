@@ -95,4 +95,32 @@ describe('welcome startup timing', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(phrase()).toBe(initial);
   });
+
+  it('switches the type scale through a width attribute, not container queries', () => {
+    let notify: ((entries: Array<{ contentRect: { width: number } }>) => void) | undefined;
+    const disconnect = vi.fn();
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: typeof notify) { notify = callback; }
+      observe() {}
+      disconnect = disconnect;
+    });
+    act(() => root.render(<WelcomeScene />));
+    const scene = container.querySelector('section')!;
+    // jsdom lays out nothing, so a zero width must keep the regular tier.
+    expect(scene.dataset.density).toBe('regular');
+
+    // Startup or a resize can lay the scene out narrow before it widens.
+    act(() => notify!([{ contentRect: { width: 360 } }]));
+    expect(scene.dataset.density).toBe('tiny');
+    act(() => notify!([{ contentRect: { width: 520 } }]));
+    expect(scene.dataset.density).toBe('compact');
+    act(() => notify!([{ contentRect: { width: 0 } }]));
+    expect(scene.dataset.density).toBe('compact');
+    act(() => notify!([{ contentRect: { width: 1200 } }]));
+    expect(scene.dataset.density).toBe('regular');
+
+    act(() => root.unmount());
+    expect(disconnect).toHaveBeenCalled();
+    root = createRoot(container);
+  });
 });

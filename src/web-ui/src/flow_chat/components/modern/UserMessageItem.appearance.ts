@@ -5,6 +5,7 @@ export const userMessageItemAppearanceDescriptor: AppearanceSurfaceDescriptor = 
   componentAttribute: 'data-openbitfun-product-component',
   parts: [
     { id: 'root' }, { id: 'main' }, { id: 'content' },
+    { id: 'surface', propertyProfile: 'paint', visualRole: 'card' },
     { id: 'steeringTag' }, { id: 'meta' }, { id: 'actions' }, { id: 'images' }, { id: 'image' },
     { id: 'timestamp' }, { id: 'lightbox' }, { id: 'loading' },
   ],

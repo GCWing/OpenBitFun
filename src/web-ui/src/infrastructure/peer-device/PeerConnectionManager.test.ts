@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  PEER_DETACH_MAX_RETRIES,
   PeerConnectionManager,
+  capabilitiesEqual,
   type PeerConnectionState,
+  type PeerHostCapabilities,
 } from './PeerConnectionManager';
 
 const KEEPALIVE_MS = 20_000;
@@ -98,6 +101,7 @@ describe('PeerConnectionManager attach', () => {
             session_trajectory_v1: true,
             btw_initial_model_selection_v1: true,
             btw_model_pool_selection_v1: true,
+            magpie_discovery_v1: true,
           },
         },
       }),
@@ -117,6 +121,7 @@ describe('PeerConnectionManager attach', () => {
     expect(caps.sessionTrajectoryV1).toBe(true);
     expect(caps.btwInitialModelSelectionV1).toBe(true);
     expect(caps.btwModelPoolSelectionV1).toBe(true);
+    expect(caps.magpieDiscoveryV1).toBe(true);
   });
 
   it('parses host_type into hostKind for desktop and cli', async () => {
@@ -149,6 +154,7 @@ describe('PeerConnectionManager attach', () => {
     expect(desktop.getState().capabilities.sessionTrajectoryV1).toBe(false);
     expect(desktop.getState().capabilities.btwInitialModelSelectionV1).toBe(false);
     expect(desktop.getState().capabilities.btwModelPoolSelectionV1).toBe(false);
+    expect(desktop.getState().capabilities.magpieDiscoveryV1).toBe(false);
     expect(desktop.getState().capabilities.chatMcpCatalogV1).toBe(false);
 
     const cli = await makeManager('cli').connect('peer-2', 'Studio');
@@ -392,6 +398,138 @@ describe('PeerConnectionManager health', () => {
 
 });
 
+describe('capabilitiesEqual', () => {
+  it('detects a change in any negotiated capability, including later additions', () => {
+    const base = {
+      idempotentDialogSubmit: true,
+      targetedSessionRollback: false,
+      tokenUsageStatistics: false,
+      miniAppAgentContextFilesV1: false,
+      miniAppAgentImagesV1: false,
+      cancelTool: null,
+      toolCatalog: null,
+      userQuestionResponse: null,
+      hostKind: 'cli',
+      terminalCursorReplayV1: true,
+      productControlV1: true,
+      productControlNativeV1: false,
+      productControlPresentationV1: false,
+      remoteConnectControlV1: false,
+    } satisfies PeerHostCapabilities;
+    expect(capabilitiesEqual(base, { ...base })).toBe(true);
+    for (const key of [
+      'terminalCursorReplayV1',
+      'productControlV1',
+      'productControlNativeV1',
+      'productControlPresentationV1',
+      'remoteConnectControlV1',
+    ] as const) {
+      expect(capabilitiesEqual(base, { ...base, [key]: !base[key] }), key).toBe(false);
+    }
+    const { remoteConnectControlV1: _omitted, ...withoutKey } = base;
+    expect(capabilitiesEqual(base, withoutKey as PeerHostCapabilities)).toBe(false);
+  });
+});
+
+describe('PeerConnectionManager host readiness and attachment status', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function pingRpc(ping: () => Record<string, unknown>) {
+    const commands: Array<{ command: string; args: Record<string, unknown> }> = [];
+    const deviceRpc = vi.fn(async (_target: string, commandJson: string): Promise<string> => {
+      const parsed = JSON.parse(commandJson) as { command?: string; args?: Record<string, unknown> };
+      const command = parsed.command ?? 'unknown';
+      commands.push({ command, args: parsed.args ?? {} });
+      if (command === 'peer_mode_ping') {
+        return JSON.stringify({ resp: 'host_invoke_result', ok: true, value: ping() });
+      }
+      return JSON.stringify({ resp: 'host_invoke_result', ok: true, value: null });
+    });
+    return { deviceRpc, commands };
+  }
+
+  it('reports a host whose UI is starting and clears it once the ping says ready', async () => {
+    let hostUiReady = false;
+    const rpc = pingRpc(() => ({ host_type: 'desktop', capabilities: {}, host_ui_ready: hostUiReady }));
+    const manager = createManager(rpc.deviceRpc);
+    const connection = await manager.connect('peer-1', 'Studio');
+    expect(connection.getState()).toMatchObject({ health: 'ready', hostStarting: true });
+
+    // A starting host is polled sooner than the keepalive.
+    hostUiReady = true;
+    await vi.advanceTimersByTimeAsync(RECONNECT_BASE_MS);
+    expect(connection.getState().hostStarting).toBe(false);
+  });
+
+  it('treats an older host without the readiness field as ready', async () => {
+    const rpc = pingRpc(() => ({ host_type: 'desktop', capabilities: {} }));
+    const manager = createManager(rpc.deviceRpc);
+    const connection = await manager.connect('peer-1', 'Studio');
+    expect(connection.getState().hostStarting).toBe(false);
+  });
+
+  it('re-attaches when a capable host reports this controller detached', async () => {
+    let callerAttached = true;
+    const rpc = pingRpc(() => ({
+      host_type: 'cli',
+      capabilities: { peer_attachment_status_v1: true },
+      caller_attached: callerAttached,
+    }));
+    const manager = createManager(rpc.deviceRpc);
+    const reattached = vi.fn();
+    manager.onReattached(reattached);
+    await manager.connect('peer-1', 'Studio');
+    expect(rpc.commands.find(call => call.command === 'peer_mode_ping')?.args)
+      .toEqual({ controller_device_id: 'controller-1' });
+
+    await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+    expect(rpc.commands.filter(call => call.command === 'peer_control_attach')).toHaveLength(1);
+    expect(reattached).not.toHaveBeenCalled();
+
+    callerAttached = false;
+    await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+    expect(rpc.commands.filter(call => call.command === 'peer_control_attach')).toHaveLength(2);
+    expect(reattached).toHaveBeenCalledExactlyOnceWith('peer-1');
+    expect(manager.get('peer-1')?.getState().health).toBe('ready');
+  });
+
+  it('ignores caller_attached from a host that does not advertise the capability', async () => {
+    const rpc = pingRpc(() => ({ host_type: 'cli', capabilities: {}, caller_attached: false }));
+    const manager = createManager(rpc.deviceRpc);
+    await manager.connect('peer-1', 'Studio');
+    await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+    expect(rpc.commands.filter(call => call.command === 'peer_control_attach')).toHaveLength(1);
+  });
+
+  it('marks the host starting when a product request is refused as not ready', async () => {
+    const commands: string[] = [];
+    const deviceRpc = vi.fn(async (_target: string, commandJson: string): Promise<string> => {
+      const command = (JSON.parse(commandJson) as { command?: string }).command ?? 'unknown';
+      commands.push(command);
+      if (command === 'peer_mode_ping') {
+        return JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { host_type: 'desktop', capabilities: {} } });
+      }
+      if (command === 'delete_session') {
+        return JSON.stringify({
+          resp: 'host_invoke_result',
+          ok: false,
+          error: 'peer_host_ui_not_ready: OpenBitFun on this device is still starting; the request was not executed',
+        });
+      }
+      return JSON.stringify({ resp: 'host_invoke_result', ok: true, value: null });
+    });
+    const manager = createManager(deviceRpc);
+    const connection = await manager.connect('peer-1', 'Studio');
+
+    await expect(connection.adapter.request('delete_session', { request: { sessionId: 's' } }))
+      .rejects.toMatchObject({ name: 'PeerHostUiNotReadyError' });
+    expect(connection.getState().hostStarting).toBe(true);
+    await vi.advanceTimersByTimeAsync(RECONNECT_BASE_MS);
+    expect(connection.getState().hostStarting).toBe(false);
+  });
+});
+
 describe('PeerConnectionManager disposal', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -413,6 +551,135 @@ describe('PeerConnectionManager disposal', () => {
     const afterDispose = rpc.commands().length;
     await vi.advanceTimersByTimeAsync(KEEPALIVE_MS * 3);
     expect(rpc.commands().length).toBe(afterDispose);
+  });
+
+  it('completes a manual disconnect when the detach cannot reach the host', async () => {
+    const rpc = createRpc();
+    const manager = createManager(rpc.deviceRpc);
+    await manager.connect('peer-1', 'Studio');
+
+    rpc.failAll();
+    await expect(manager.dispose('peer-1')).resolves.toBeUndefined();
+    expect(rpc.commands()).toContain('peer_control_detach');
+    expect(manager.get('peer-1')).toBeUndefined();
+  });
+
+  it('retries a detach that could not reach the host in the background until it lands', async () => {
+    const rpc = createRpc();
+    const manager = createManager(rpc.deviceRpc);
+    await manager.connect('peer-1', 'Studio');
+    const detaches = () => rpc.commands().filter(command => command === 'peer_control_detach').length;
+
+    rpc.failNext(2);
+    await expect(manager.dispose('peer-1')).resolves.toBeUndefined();
+    expect(detaches()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(RECONNECT_BASE_MS);
+    expect(detaches()).toBe(2);
+    await vi.advanceTimersByTimeAsync(RECONNECT_BASE_MS * 2);
+    expect(detaches()).toBe(3);
+
+    // Delivered: no further attempts, and presence no longer triggers one.
+    await vi.advanceTimersByTimeAsync(RECONNECT_MAX_MS * 4);
+    manager.reportPresence(['peer-1']);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(detaches()).toBe(3);
+    expect(rpc.args('peer_control_detach')).toEqual({ controller_device_id: 'controller-1' });
+  });
+
+  it('stops retrying a detach after a bounded number of attempts', async () => {
+    const rpc = createRpc();
+    const manager = createManager(rpc.deviceRpc);
+    await manager.connect('peer-1', 'Studio');
+    const detaches = () => rpc.commands().filter(command => command === 'peer_control_detach').length;
+
+    rpc.failAll();
+    await manager.dispose('peer-1');
+    await vi.advanceTimersByTimeAsync(RECONNECT_MAX_MS * (PEER_DETACH_MAX_RETRIES + 2));
+    expect(detaches()).toBe(1 + PEER_DETACH_MAX_RETRIES);
+    manager.reportPresence(['peer-1']);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(detaches()).toBe(1 + PEER_DETACH_MAX_RETRIES);
+  });
+
+  it('retries a missed detach as soon as the host is seen online again', async () => {
+    const rpc = createRpc();
+    const manager = createManager(rpc.deviceRpc);
+    await manager.connect('peer-1', 'Studio');
+    const detaches = () => rpc.commands().filter(command => command === 'peer_control_detach').length;
+
+    rpc.failNext(1);
+    await manager.dispose('peer-1');
+    manager.reportPresence([]);
+    expect(detaches()).toBe(1);
+
+    manager.reportPresence(['peer-1']);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(detaches()).toBe(2);
+    // The scheduled retry was replaced by the delivered one.
+    await vi.advanceTimersByTimeAsync(RECONNECT_MAX_MS * 4);
+    expect(detaches()).toBe(2);
+  });
+
+  it('does not let a retried detach drop a reconnected controller', async () => {
+    const rpc = createRpc();
+    const manager = createManager(rpc.deviceRpc);
+    await manager.connect('peer-1', 'Studio');
+
+    rpc.failNext(1);
+    await manager.dispose('peer-1');
+    await manager.connect('peer-1', 'Studio');
+    await vi.advanceTimersByTimeAsync(RECONNECT_MAX_MS * (PEER_DETACH_MAX_RETRIES + 2));
+
+    const commands = rpc.commands();
+    expect(commands.filter(command => command === 'peer_control_detach')).toHaveLength(1);
+    expect(commands.lastIndexOf('peer_control_attach')).toBeGreaterThan(commands.lastIndexOf('peer_control_detach'));
+    expect(manager.get('peer-1')?.getState().health).toBe('ready');
+  });
+
+  it('orders a reconnect after a retried detach already in flight', async () => {
+    const retry = deferred<string>();
+    const commands: string[] = [];
+    let detachCount = 0;
+    const deviceRpc = vi.fn(async (_target: string, commandJson: string): Promise<string> => {
+      const command = (JSON.parse(commandJson) as { command?: string }).command ?? 'unknown';
+      commands.push(command);
+      if (command === 'peer_control_detach') {
+        detachCount += 1;
+        if (detachCount === 1) throw new Error('relay unavailable');
+        return retry.promise;
+      }
+      if (command === 'peer_mode_ping') {
+        return JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { capabilities: {} } });
+      }
+      return JSON.stringify({ resp: 'host_invoke_result', ok: true, value: null });
+    });
+    const manager = createManager(deviceRpc);
+    await manager.connect('peer-1', 'Studio');
+    await manager.dispose('peer-1');
+    await vi.advanceTimersByTimeAsync(RECONNECT_BASE_MS);
+    expect(detachCount).toBe(2);
+
+    const reconnect = manager.connect('peer-1', 'Studio');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(commands.at(-1)).not.toBe('peer_control_attach');
+
+    retry.resolve(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: null }));
+    await reconnect;
+    expect(commands.at(-1)).toBe('peer_control_attach');
+  });
+
+  it('surfaces a detach the host answered with a refusal', async () => {
+    const rpc = createRpc();
+    const manager = createManager(async (target, commandJson, timeoutMs) => {
+      if (commandJson.includes('peer_control_detach')) {
+        return JSON.stringify({ resp: 'host_invoke_result', ok: false, error: 'Failed to cancel Peer permission requests' });
+      }
+      return rpc.deviceRpc(target, commandJson, timeoutMs);
+    });
+    await manager.connect('peer-1', 'Studio');
+
+    await expect(manager.dispose('peer-1')).rejects.toThrow('Failed to cancel Peer permission requests');
   });
 
   it('skips the detach RPC for a peer that is already gone', async () => {
@@ -640,7 +907,7 @@ describe('PeerConnectionManager disposal', () => {
 });
 
 function createManager(
-  deviceRpc: ReturnType<typeof createRpc>['deviceRpc'],
+  deviceRpc: (target: string, commandJson: string, timeoutMs?: number) => Promise<string>,
 ): PeerConnectionManager {
   return new PeerConnectionManager({
     deviceRpc,

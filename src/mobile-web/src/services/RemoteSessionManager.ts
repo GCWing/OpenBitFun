@@ -383,10 +383,15 @@ export class RemoteSessionModelWriteUnconfirmedError extends Error {
   }
 }
 
+/** Why a stalled reader is asked to try again now. */
+export type RecoveryReason = 'relay-reconnect' | 'host-online' | 'visible' | 'online' | 'hint';
+
 export class RemoteSessionManager {
   private client: RelayHttpClient;
   private hostCapabilities: HostCapabilitySnapshot;
-  private hostCapabilityProbe: Promise<void> | null = null;
+  private hostCapabilityProbe: { epoch: number; promise: Promise<void> } | null = null;
+  private hostCapabilityListeners = new Set<() => void>();
+  private hostCapabilityRevisionValue = 0;
   private sessionModelWrites = new Map<string, Set<SessionModelWrite>>();
   private modelWriteFenceCapability: { epoch: number; supported: boolean } | null = null;
 
@@ -434,6 +439,28 @@ export class RemoteSessionManager {
     return this.currentHostCapabilities()?.known ?? false;
   }
 
+  /** A probe for the current control target is in flight. */
+  get hostCapabilityProbing(): boolean {
+    return this.hostCapabilityProbe?.epoch === this.client.controlTargetEpoch;
+  }
+
+  /** Changes whenever the capability snapshot or its probe state changes. */
+  get hostCapabilityRevision(): number {
+    return this.hostCapabilityRevisionValue;
+  }
+
+  onHostCapabilitiesChange(listener: () => void): () => void {
+    this.hostCapabilityListeners.add(listener);
+    return () => { this.hostCapabilityListeners.delete(listener); };
+  }
+
+  private notifyHostCapabilities(): void {
+    this.hostCapabilityRevisionValue += 1;
+    for (const listener of [...this.hostCapabilityListeners]) {
+      try { listener(); } catch (error) { console.error('[RemoteSessionManager] capability listener failed', error); }
+    }
+  }
+
   private replaceHostCapabilities(capabilities: string[] | undefined, epoch: number): void {
     if (epoch !== this.client.controlTargetEpoch) return;
     this.hostCapabilities = {
@@ -441,27 +468,72 @@ export class RemoteSessionManager {
       known: true,
       capabilities: RemoteSessionManager.capabilitySet(capabilities),
     };
+    this.notifyHostCapabilities();
+  }
+
+  /**
+   * The host may have restarted or been updated: keep the last capability set
+   * for presentation, but require a fresh answer before the next send or
+   * stream subscription chooses a path from it, and start that probe now.
+   */
+  forgetHostCapabilities(): void {
+    const current = this.currentHostCapabilities();
+    if (!current?.known) return;
+    this.hostCapabilities = { ...current, known: false };
+    this.notifyHostCapabilities();
+    void this.probeHostCapabilities();
+  }
+
+  /**
+   * Learn the current target's capabilities if they are unknown. Resolves
+   * false when the host could not be asked; callers keep their own fallback
+   * and the next ID-bearing or send command probes again.
+   */
+  async probeHostCapabilities(): Promise<boolean> {
+    try {
+      await this.ensureHostCapabilitiesKnown(this.client.getControlTargetSnapshot());
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
    * Learn the target's capabilities before the first ID-bearing command. The
    * host advertises them on `get_workspace_info`; hosts that predate the
    * capability list answer without one, which records an empty set.
+   * `revalidate` asks a host whose set is already known again; the known set
+   * keeps choosing paths until the answer replaces it.
    */
-  private async ensureHostCapabilitiesKnown(target: ControlTargetSnapshot): Promise<void> {
+  private async ensureHostCapabilitiesKnown(
+    target: ControlTargetSnapshot,
+    options: { revalidate?: boolean } = {},
+  ): Promise<void> {
     this.ensureControlTargetCurrent(target);
-    if (this.hostCapabilitiesKnown) return;
-    if (!this.hostCapabilityProbe) {
-      this.hostCapabilityProbe = this.request<{ capabilities?: string[] }>(
-        { cmd: 'get_workspace_info' },
-        target,
-      ).then((resp) => {
-        this.replaceHostCapabilities(resp.capabilities, target.epoch);
-      }).finally(() => {
-        this.hostCapabilityProbe = null;
-      });
+    if (this.hostCapabilitiesKnown && !options.revalidate) return;
+    // A probe belongs to one control target; a switched target probes again
+    // instead of waiting on the previous target's answer.
+    let probe = this.hostCapabilityProbe;
+    if (!probe || probe.epoch !== target.epoch) {
+      const created: { epoch: number; promise: Promise<void> } = {
+        epoch: target.epoch,
+        promise: this.request<{ capabilities?: string[] }>(
+          { cmd: 'get_workspace_info' },
+          target,
+        ).then((resp) => {
+          this.replaceHostCapabilities(resp.capabilities, target.epoch);
+        }).finally(() => {
+          if (this.hostCapabilityProbe === created) {
+            this.hostCapabilityProbe = null;
+            this.notifyHostCapabilities();
+          }
+        }),
+      };
+      probe = created;
+      this.hostCapabilityProbe = created;
+      this.notifyHostCapabilities();
     }
-    await this.hostCapabilityProbe;
+    await probe.promise;
     this.ensureControlTargetCurrent(target);
   }
 
@@ -504,6 +576,109 @@ export class RemoteSessionManager {
 
   onControlTargetChange(listener: () => void): () => void {
     return this.client.onControlTargetChange(listener);
+  }
+
+  private recoveryListeners = new Set<(reason: RecoveryReason) => void>();
+  private stopRecoverySources: (() => void) | null = null;
+
+  /**
+   * Moments when a stalled reader should try again at once instead of waiting
+   * out its backoff: the Relay reconnected, the page became visible, the
+   * browser came back online, or the controlled host came back online (which
+   * may be a restarted or updated host, so its capabilities are forgotten).
+   */
+  onRecoverySignal(listener: (reason: RecoveryReason) => void): () => void {
+    this.recoveryListeners.add(listener);
+    if (!this.stopRecoverySources) this.stopRecoverySources = this.bindRecoverySources();
+    return () => {
+      this.recoveryListeners.delete(listener);
+      if (this.recoveryListeners.size === 0 && this.stopRecoverySources) {
+        this.stopRecoverySources();
+        this.stopRecoverySources = null;
+      }
+    };
+  }
+
+  /** Recovery signals plus hints naming `streamId` from the current target. */
+  onStreamRecoverySignal(streamId: string, listener: (reason: RecoveryReason) => void): () => void {
+    const stopRecovery = this.onRecoverySignal(listener);
+    const client = this.client as Partial<Pick<RelayHttpClient, 'onStreamHint'>>;
+    const stopHints = client.onStreamHint?.(hint => {
+      if (hint.stream_id === streamId && hint.sourceDeviceId === this.client.targetDeviceId) listener('hint');
+    }) ?? (() => {});
+    return () => { stopRecovery(); stopHints(); };
+  }
+
+  /** Bulk payloads (image attachments) uploading to the Relay before their RPC. */
+  get payloadUploadsInFlight(): number {
+    return (this.client as Partial<Pick<RelayHttpClient, 'payloadUploadsInFlight'>>).payloadUploadsInFlight ?? 0;
+  }
+
+  onPayloadUploadActivity(listener: () => void): () => void {
+    const client = this.client as Partial<Pick<RelayHttpClient, 'onPayloadUploadActivity'>>;
+    return client.onPayloadUploadActivity?.(listener) ?? (() => {});
+  }
+
+  /** Status of the account's Relay connection; `connected` when unknown. */
+  get relayStatus(): 'connecting' | 'connected' | 'disconnected' | 'closed' {
+    const client = this.client as Partial<Pick<RelayHttpClient, 'relayStatus'>>;
+    return client.relayStatus ?? 'connected';
+  }
+
+  onRelayStatus(listener: () => void): () => void {
+    const client = this.client as Partial<Pick<RelayHttpClient, 'onRelayStatus'>>;
+    return client.onRelayStatus?.(() => listener()) ?? (() => {});
+  }
+
+  /** Directory updates that may change `controlTargetPresence()`. */
+  onControlTargetPresenceChange(listener: () => void): () => void {
+    const client = this.client as Partial<Pick<RelayHttpClient, 'onDeviceDirectorySnapshot'>>;
+    return client.onDeviceDirectorySnapshot?.(() => listener()) ?? (() => {});
+  }
+
+  /** Last directory presence of the control target, when the directory lists it. */
+  controlTargetPresence(): { online: boolean; lastSeenAt: number | null } | null {
+    const deviceId = this.client.targetDeviceId;
+    const client = this.client as Partial<Pick<RelayHttpClient, 'devicePresence'>>;
+    const device = deviceId && client.devicePresence ? client.devicePresence(deviceId) : null;
+    return device ? { online: device.online, lastSeenAt: device.last_seen_at ?? null } : null;
+  }
+
+  private emitRecovery(reason: RecoveryReason): void {
+    for (const listener of [...this.recoveryListeners]) {
+      try { listener(reason); } catch (error) { console.error('[RemoteSessionManager] recovery listener failed', error); }
+    }
+  }
+
+  private bindRecoverySources(): () => void {
+    const stops: Array<() => void> = [];
+    const client = this.client as Partial<Pick<RelayHttpClient, 'onRelayReconnect' | 'onDeviceDirectorySnapshot'>>;
+    if (client.onRelayReconnect) stops.push(client.onRelayReconnect(() => this.emitRecovery('relay-reconnect')));
+    if (client.onDeviceDirectorySnapshot) {
+      let lastOnline = this.controlTargetPresence()?.online ?? null;
+      let lastTarget = this.client.targetDeviceId;
+      stops.push(client.onDeviceDirectorySnapshot(devices => {
+        const target = this.client.targetDeviceId;
+        const online = devices.find(device => device.device_id === target)?.online ?? null;
+        const cameBack = target === lastTarget && lastOnline === false && online === true;
+        lastOnline = online;
+        lastTarget = target;
+        if (!cameBack) return;
+        this.forgetHostCapabilities();
+        this.emitRecovery('host-online');
+      }));
+    }
+    if (typeof document !== 'undefined') {
+      const visible = () => { if (document.visibilityState === 'visible') this.emitRecovery('visible'); };
+      document.addEventListener('visibilitychange', visible);
+      stops.push(() => document.removeEventListener('visibilitychange', visible));
+    }
+    if (typeof window !== 'undefined') {
+      const online = () => this.emitRecovery('online');
+      window.addEventListener('online', online);
+      stops.push(() => window.removeEventListener('online', online));
+    }
+    return () => { for (const stop of stops) stop(); };
   }
 
   private ensureControlTargetCurrent(snapshot: ControlTargetSnapshot): void {
@@ -665,8 +840,17 @@ export class RemoteSessionManager {
    * device over encrypted RPC and never cached by the Relay or this client. */
   async subscribeSessionStream(streamId: string, callbacks: SessionStreamCallbacks): Promise<SessionStreamHandle> {
     const target = this.client.getControlTargetSnapshot();
+    const learnedEarlier = this.hostCapabilitiesKnown;
     await this.ensureHostCapabilitiesKnown(target);
     this.ensureControlTargetCurrent(target);
+    if (!this.supportsHostStreams() && learnedEarlier) {
+      // "Unsupported" may describe a host that has since been updated. Ask
+      // again before repeating it; callers retry only on recovery signals.
+      // The known set stays in force while asking, so the send path (and the
+      // composer) does not wait on a check that only concerns streams.
+      await this.ensureHostCapabilitiesKnown(target, { revalidate: true });
+      this.ensureControlTargetCurrent(target);
+    }
     if (!this.supportsHostStreams()) throw new Error(UNSUPPORTED_HOST_MESSAGE);
     return this.client.subscribeHostStream(streamId, callbacks);
   }
@@ -999,6 +1183,11 @@ export class RemoteSessionManager {
       await this.getModelCatalog(sessionId);
       this.ensureControlTargetCurrent(target);
     }
+    // The idempotent queue and the legacy `send_message` are chosen from the
+    // host's advertised capabilities. An unknown snapshot must not fall through
+    // to the non-idempotent legacy command, so learn it first; a failed probe
+    // fails the send before anything is submitted.
+    await this.ensureHostCapabilitiesKnown(target);
     if (this.supportsHostCapability('dialog_queue_v1')) {
       const result = await this.dialogQueue(sessionId).submit({ content, agentType: agentType || 'Standard',
         attachments: (imageContexts ?? []).map(image => ({ kind: 'remote_image', id: image.id,
@@ -1271,4 +1460,4 @@ export class RemoteSessionManager {
 
 }
 
-export { SessionSynchronizer } from './SessionSynchronizer';
+export { SessionSynchronizer, type SessionSyncState } from './SessionSynchronizer';

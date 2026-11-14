@@ -1,3 +1,4 @@
+import { VisualSkinSurfacePaint } from '@/infrastructure/visual-skin/VisualSkinSurfacePaint';
 /**
  * Terminal base component built on xterm.js.
  * Optimizations include debounced resize and visibility-aware refresh.
@@ -943,12 +944,15 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
       className={`openbitfun-terminal ${className}`}
       data-openbitfun-component="terminal-tool"
       data-openbitfun-part="root"
+      data-openbitfun-surface="terminal"
+      data-openbitfun-skin-slot="terminal-background"
       data-shortcut-scope="terminal"
       data-terminal-id={terminalId}
       data-session-id={sessionId}
       data-testid="shell-command-item"
       data-command-id={sessionId}
     >
+      <VisualSkinSurfacePaint />
       <div 
         ref={containerRef} 
         className="openbitfun-terminal__container"

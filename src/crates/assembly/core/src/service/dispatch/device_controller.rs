@@ -401,7 +401,8 @@ pub async fn status_device(
             "dispatch_target_status",
             json!({ "jobId": request.job_id, "cursor": request.cursor }),
         )
-        .await?;
+        .await
+        .map_err(|error| super::classify_target_status_error(&request.job_id, error))?;
     if let Err(error) = store.acknowledge_preparation(&record.job_id).await {
         log::warn!(
             "Failed to remove device dispatch preparation after status confirmation: job_id={} error={}",
@@ -971,6 +972,62 @@ mod tests {
                 json!({"kind": "readFile", "content": "target content"})
             })
         }
+    }
+
+    /// Answers every status request with a fixed device error string.
+    struct FailingStatusRpc(&'static str);
+
+    #[async_trait]
+    impl DeviceDispatchRpc for FailingStatusRpc {
+        async fn invoke(
+            &self,
+            _device_id: &str,
+            command: &str,
+            _args: Value,
+        ) -> anyhow::Result<Value> {
+            assert_eq!(command, "dispatch_target_status");
+            Err(anyhow!("{}", self.0))
+        }
+    }
+
+    #[tokio::test]
+    async fn device_status_types_a_job_the_target_does_not_know() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = device_store(temp.path()).await;
+        // Current and older device targets: both must reach the renderer as
+        // the typed marker, never as a transport outage.
+        for device_error in [
+            "[dispatch_job_not_found] dispatch job not found: job-1: No such file or directory (os error 2)",
+            "dispatch job not found: job-1: No such file or directory (os error 2)",
+        ] {
+            let error = status_device(
+                &FailingStatusRpc(device_error),
+                &store,
+                DispatchStatusRequest {
+                    job_id: "job-1".into(),
+                    cursor: 0,
+                },
+            )
+            .await
+            .unwrap_err();
+            assert!(error
+                .downcast_ref::<super::super::DispatchJobNotFoundOnTarget>()
+                .is_some());
+            assert!(error
+                .to_string()
+                .starts_with(super::super::DISPATCH_JOB_NOT_FOUND_MARKER));
+        }
+        let error = status_device(
+            &FailingStatusRpc("device relay timed out"),
+            &store,
+            DispatchStatusRequest {
+                job_id: "job-1".into(),
+                cursor: 0,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.to_string(), "device relay timed out");
     }
 
     #[tokio::test]

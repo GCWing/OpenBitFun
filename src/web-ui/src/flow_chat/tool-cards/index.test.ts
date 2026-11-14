@@ -121,7 +121,6 @@ describe('tool card registry', () => {
       'FrontendWorkbench',
       'FinalizeMiniApp',
       'PublishMiniApp',
-      'PublishAppearance',
       'Playbook',
       'DesktopCard',
     ]);
@@ -150,7 +149,7 @@ describe('tool card registry', () => {
     },
   );
 
-  it.each(['FinalizeMiniApp', 'PublishMiniApp', 'PublishAppearance'])(
+  it.each(['FinalizeMiniApp', 'PublishMiniApp'])(
     'keeps consequential %s dedicated cards outside exploration',
     (toolName) => {
       expect(usesDefaultToolCard(toolName)).toBe(false);

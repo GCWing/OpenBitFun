@@ -93,6 +93,7 @@ final class SpeechInputController: ObservableObject {
     }
 
     private func finishRecognition() {
+        let hadAudioCapture = request != nil || tapInstalled || audioEngine.isRunning
         if audioEngine.isRunning {
             audioEngine.stop()
         }
@@ -105,6 +106,10 @@ final class SpeechInputController: ObservableObject {
         recognitionTask?.cancel()
         recognitionTask = nil
         isListening = false
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Editing an idle draft may invalidate authorization callbacks too, but
+        // must not deactivate audio owned by another feature.
+        if hadAudioCapture {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 }

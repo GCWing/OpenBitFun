@@ -10,6 +10,29 @@ const clean = (value: unknown): unknown => JSON.parse(JSON.stringify(value, (key
 const prefix = ('A paragraph with **bold**, `inline`, [link](https://example.org) and Unicode 中文 👩🏽‍💻.\n\n').repeat(170);
 
 describe('Markdown presentation sections', () => {
+  it('keeps the same semantic boundaries when journal blank lines cross the section budget', () => {
+    const source = Array.from({ length: 40 }, (_, index) => `Paragraph ${index}: ${'x'.repeat(970)}\n\n\n\n`).join('');
+    const normalized = source.replace(/\n{3,}/g, '\n\n');
+    const slices = markdownSections(source).map(section => source.slice(section.start, section.end));
+    expect(slices.join('')).toBe(source);
+    expect(slices.map(slice => slice.replace(/\n{3,}/g, '\n\n')))
+      .toEqual(markdownSections(normalized).map(section => normalized.slice(section.start, section.end)));
+    expect(clean(slices.flatMap(slice => parser.parse(slice).children))).toEqual(clean(parser.parse(source).children));
+  });
+
+  it('keeps settled sections cached while a reply streams past many prefixes', () => {
+    const settled = prefix + '# Settled\n\n' + prefix;
+    const sections = markdownSections(settled);
+    let streaming = prefix;
+    for (let index = 0; index < 80; index += 1) {
+      streaming += `Streamed paragraph ${index}.\n\n`;
+      markdownSections(streaming, { streaming: true });
+    }
+    expect(markdownSections(settled)).toBe(sections);
+    // A streamed source and its settled read share the same boundaries.
+    expect(markdownSections(streaming)).toEqual(markdownSections(streaming, { streaming: true }));
+  });
+
   it.each(['\n', '\r\n', '\r'])('keeps complete semantic blocks and exact source with %j line endings', newline => {
     const document = (prefix + [
       '# Heading\n\nSetext heading\n---\n\n',

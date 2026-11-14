@@ -308,9 +308,13 @@ enum Commands {
         #[arg(long, conflicts_with = "verify_final_changes")]
         no_verify_final_changes: bool,
 
-        /// Auto-approve tool permissions that are not explicitly denied
+        /// Automatically approve tool permissions that are not explicitly denied for this run
         #[arg(long, conflicts_with = "confirm")]
         auto: bool,
+
+        /// Use automatic approval with the configured approval model
+        #[arg(long, value_enum, conflicts_with_all = ["auto", "confirm"])]
+        approval: Option<ExecApprovalMode>,
 
         /// Deprecated compatibility flag; confirmations are rejected in non-interactive mode
         #[arg(long, hide = true, conflicts_with = "auto")]
@@ -1421,10 +1425,13 @@ async fn run_cli() -> Result<()> {
             verify_final_changes,
             no_verify_final_changes,
             auto,
+            approval,
             confirm,
         }) => {
             let approval_mode = if auto {
                 ExecApprovalMode::Auto
+            } else if let Some(approval) = approval {
+                approval
             } else {
                 if confirm {
                     eprintln!(

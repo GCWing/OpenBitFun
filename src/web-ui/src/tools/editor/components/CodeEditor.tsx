@@ -6,7 +6,7 @@
  */
 
 import { Button } from '@openbitfun/ui';
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { AlertCircle } from 'lucide-react';
 import type * as monaco from 'monaco-editor';
 import { monacoInitManager } from '../services/MonacoInitManager';
@@ -92,6 +92,8 @@ export interface CodeEditorProps {
   className?: string;
   /** Content change callback */
   onContentChange?: (content: string, hasChanges: boolean) => void;
+  /** Host actions operate on the retained editor instead of global focus. */
+  onEditorReady?: (editor: monaco.editor.IStandaloneCodeEditor | null) => void;
   /** Save callback */
   onSave?: (content: string) => void;
   /** Jump to line number (deprecated, use jumpToRange) */
@@ -178,6 +180,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   className = '',
   onContentChange,
   onSave,
+  onEditorReady,
   jumpToLine,
   jumpToColumn,
   jumpToRange,
@@ -207,6 +210,16 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   const standaloneFiles = useMemo(() => standaloneEditorFileAccess(workspaceId), [workspaceId]);
   const documentFiles: EditorFileAccess = documentSession?.files ?? standaloneFiles;
   const documentInvoke = documentSession?.invoke;
+  const isMemoryContent = initialContent !== undefined;
+  const saveTarget = useMemo(
+    () => ({ documentFiles, filePath, modelKey, workspacePath, isMemoryContent }),
+    [documentFiles, filePath, modelKey, workspacePath, isMemoryContent],
+  );
+  const currentSaveTargetRef = useRef<typeof saveTarget>();
+  useLayoutEffect(() => {
+    currentSaveTargetRef.current = saveTarget;
+    return () => { currentSaveTargetRef.current = undefined; };
+  }, [saveTarget]);
 
   const { t } = useI18n('tools');
   
@@ -259,7 +272,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     line_numbers: 'on',
     minimap: { enabled: showMinimap, side: 'right', size: 'proportional' }
   });
-  const isMemoryContent = initialContent !== undefined;
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
   const [selection, setSelection] = useState({ chars: 0, lines: 0 });
   const [statusBarPopover, setStatusBarPopover] = useState<null | 'position' | 'indent' | 'encoding' | 'language'>(null);
@@ -303,6 +315,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   const navigationSettleFrameRef = useRef<number | null>(null);
   const filePathRef = useRef<string>(filePath);
   const saveFileContentRef = useRef<() => Promise<void>>();
+  const saveInFlightRef = useRef<Promise<void>>();
+  const queuedSaveRef = useRef<() => Promise<void>>();
   const latestEditorConfigRef = useRef<Partial<EditorConfigType> | null>(null);
   const delayedFontApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userLanguageOverrideRef = useRef(false);
@@ -319,6 +333,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   const showLineNumbersRuntimeRef = useRef(showLineNumbers);
   const showMinimapRuntimeRef = useRef(showMinimap);
   const onContentChangeRef = useRef(onContentChange);
+  const onEditorReadyRef = useRef(onEditorReady);
+  onEditorReadyRef.current = onEditorReady;
   const tRef = useRef(t);
   const contentRef = useRef(content);
   const loadingRef = useRef(loading);
@@ -676,12 +692,12 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         }
         
         let createFontSize = DEFAULT_EDITOR_FONT_SIZE;
-        let createFontFamily = resolveEditorFontFamily(editorConfigRuntimeRef.current.font_family);
+        let createFontFamilyOption = editorConfigRuntimeRef.current.font_family;
         let createFontWeight = editorConfigRuntimeRef.current.font_weight || DEFAULT_EDITOR_FONT_WEIGHT;
         let createLineHeight = 0;
         const applyFontConfig = (c: Partial<EditorConfigType>) => {
           createFontSize = c.font_size ?? DEFAULT_EDITOR_FONT_SIZE;
-          createFontFamily = resolveEditorFontFamily(c.font_family);
+          createFontFamilyOption = c.font_family;
           createFontWeight = c.font_weight || createFontWeight;
           createLineHeight = c.line_height ? Math.round(createFontSize * c.line_height) : 0;
         };
@@ -697,6 +713,12 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         
         const monacoRuntime = await monacoInitManager.initialize();
         if (cancelled) return;
+
+        // Resolve typography together after async configuration/library loading,
+        // before model/view writes. Reading it on both sides of those writes
+        // repeatedly flushed the entire workbench during first editor creation.
+        const createFontFamily = resolveEditorFontFamily(createFontFamilyOption);
+        const createInlayFontFamily = resolveEditorFontFamily();
 
         model = monacoModelManager.getOrCreateModel(
           filePath,
@@ -773,7 +795,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           inlayHints: {
             enabled: initialLargeFileMode ? 'off' : 'on',
             fontSize: DEFAULT_EDITOR_INLAY_FONT_SIZE,
-            fontFamily: resolveEditorFontFamily(),
+            fontFamily: createInlayFontFamily,
             padding: false
           },
 
@@ -827,6 +849,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
 
         editor = monacoApi.editor.create(container, editorOptions);
         editorRef.current = editor;
+        onEditorReadyRef.current?.(editor);
         if (documentSession?.viewState) editor.restoreViewState(documentSession.viewState as monaco.editor.ICodeEditorViewState);
         // Monaco's viewState does not serialize find/replace state. Keep the
         // view while it owns a query, including a closed widget used by F3.
@@ -1079,6 +1102,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       }
       
       if (editorRef.current) {
+        onEditorReadyRef.current?.(null);
         if (documentSession) documentSession.viewState = editorRef.current.saveViewState();
         editorRef.current.dispose();
         editorRef.current = null;
@@ -1088,7 +1112,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         delete (container as any).__monacoEditor;
       }
 
-      monacoModelManager.releaseModel(modelKey);
+      // Cleanup can run before asynchronous Monaco initialization acquires a
+      // model. Release only the reference owned by this initialization.
+      if (model) monacoModelManager.releaseModel(modelKey);
 
     };
   }, [clearScheduledNavigationSettlement, detectedLanguage, detectLargeFileMode, documentSession, filePath, modelKey, viewResident]);
@@ -1642,28 +1668,22 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     updateLargeFileMode,
   ]);
 
-  // Save file content
-  const saveFileContent = useCallback(async () => {
-    if (!filePath) return;
-    if (isMemoryContent) return;
-    
-    // Read latest hasChanges state from ref to avoid closure issues
-    const currentHasChanges = hasChangesRef.current;
-    const currentContent = modelRef.current?.getValue() || '';
-    const savedVersion = modelRef.current?.getAlternativeVersionId();
-    
-    // Use ref value instead of state
-    if (!currentHasChanges) {
-      return;
-    }
+  const persistFileContent = useCallback(async () => {
+    const { documentFiles, filePath, modelKey, workspacePath, isMemoryContent } = saveTarget;
+    const model = modelRef.current;
+    const isCurrentSave = () => currentSaveTargetRef.current === saveTarget && modelRef.current === model
+      && (!documentSession || documentSession.isCurrent());
+    if (!filePath || isMemoryContent || !model || !isCurrentSave() || !hasChangesRef.current
+      || monacoModelManager.getModel(modelKey) !== model) return;
 
+    const currentContent = model.getValue();
+    const savedVersion = model.getAlternativeVersionId();
     setSaving(true);
     setError(null);
 
     try {
-      const workspaceAPI = documentFiles;
-
       const fileInfoPre = await fetchFileMetadata();
+      if (!isCurrentSave()) return;
       if (isFileMissingFromMetadata(fileInfoPre)) {
         reportFileMissingFromDisk(true);
       } else {
@@ -1681,31 +1701,32 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           cancelText: t('editor.codeEditor.reloadFromDisk'),
           confirmDanger: true,
         });
+        if (!isCurrentSave()) return;
         if (!overwrite) {
-          const diskContent = await workspaceAPI.readFileContent(filePath);
+          const diskContent = await documentFiles.readFileContent(filePath);
           const fileInfoAfter = await fetchFileMetadata();
-          const vAfter = diskVersionFromMetadata(fileInfoAfter);
-          applyDiskSnapshotToEditor(diskContent, vAfter);
+          if (isCurrentSave()) applyDiskSnapshotToEditor(diskContent, diskVersionFromMetadata(fileInfoAfter));
           return;
         }
       }
 
-      await workspaceAPI.writeFileContent(workspacePath || '', filePath, currentContent);
+      await documentFiles.writeFileContent(workspacePath || '', filePath, currentContent);
+      if (!isCurrentSave()) return;
 
       monacoModelManager.markAsSaved(modelKey, currentContent, savedVersion);
       originalContentRef.current = currentContent;
-      const latestContent = modelRef.current?.getValue() ?? currentContent;
+      const latestContent = model.getValue();
       const stillDirty = latestContent !== currentContent;
       setHasChanges(stillDirty);
       hasChangesRef.current = stillDirty;
-      if (savedVersion !== undefined) savedVersionIdRef.current = savedVersion;
+      savedVersionIdRef.current = savedVersion;
       documentSession?.capture(latestContent, stillDirty, currentContent);
       onSave?.(currentContent);
       onContentChangeRef.current?.(latestContent, stillDirty);
 
       try {
         const fileInfo = await fetchFileMetadata();
-        if (!isFileMissingFromMetadata(fileInfo)) {
+        if (isCurrentSave() && !isFileMissingFromMetadata(fileInfo)) {
           reportFileMissingFromDisk(false);
           const v = diskVersionFromMetadata(fileInfo);
           if (v) {
@@ -1718,25 +1739,35 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
 
       globalEventBus.emit('file-tree:refresh');
     } catch (err) {
+      if (!isCurrentSave()) return;
       const errorMsg = t('editor.common.saveFailedWithMessage', { message: String(err) });
       setError(errorMsg);
       log.error('Failed to save file', err);
     } finally {
-      setSaving(false);
+      if (currentSaveTargetRef.current) setSaving(false);
     }
-  }, [
-    applyDiskSnapshotToEditor,
-    documentFiles,
-    documentSession,
-    fetchFileMetadata,
-    filePath,
-    isMemoryContent,
-    modelKey,
-    onSave,
-    reportFileMissingFromDisk,
-    t,
-    workspacePath,
-  ]);
+  }, [applyDiskSnapshotToEditor, documentSession, fetchFileMetadata, onSave, reportFileMissingFromDisk, saveTarget, t]);
+
+  const saveFileContent = useCallback(async () => {
+    if (currentSaveTargetRef.current !== saveTarget) return;
+    // Keep the requesting file's save callback: the view may switch to a
+    // different document before the in-flight write completes.
+    queuedSaveRef.current = persistFileContent;
+    if (!saveInFlightRef.current) {
+      saveInFlightRef.current = (async () => {
+        try {
+          while (queuedSaveRef.current) {
+            const save = queuedSaveRef.current;
+            queuedSaveRef.current = undefined;
+            await save();
+          }
+        } finally {
+          saveInFlightRef.current = undefined;
+        }
+      })();
+    }
+    await saveInFlightRef.current;
+  }, [persistFileContent, saveTarget]);
   
   useEffect(() => {
     saveFileContentRef.current = saveFileContent;

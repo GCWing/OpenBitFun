@@ -14,7 +14,7 @@ import { useFlowChatVolatileContext } from './FlowChatContext';
 import { TurnCompletionNoticeItem } from './TurnCompletionNoticeItem';
 import { TurnFailureNoticeItem } from './TurnFailureNoticeItem';
 import './VirtualItemRenderer.scss';
-import { getVirtualItemStableKey } from './virtualItemIdentity';
+import { getVirtualItemBookmarkKey, getVirtualItemStableKey } from './virtualItemIdentity';
 import { useFlowChatSearchPresentation } from './useFlowChatSearchPresentation';
 import { useConversationExcerptMarkers } from '../../selection/ConversationExcerptMarkers';
 import { getKnownVirtualItemHeightPx } from './virtualItemHeightEstimators';
@@ -91,7 +91,8 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
         
         case 'model-round':
           if (item.timeline?.kind === 'group-header') return <FlowGroupRenderer data={item.timeline.group!}
-            turnId={item.turnId} placement="standalone" timelineExpanded={item.timeline.expanded} />;
+            turnId={item.turnId} placement="standalone" timelineExpanded={item.timeline.expanded}
+            timelineLiveMembers={item.timeline.liveMembers} />;
           if (item.timeline?.kind === 'group-members' || item.timeline?.kind === 'content') return <TimelineContentBlock item={item} />;
           return (
             <ModelRoundItem 
@@ -166,6 +167,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
         data-turn-boundary-after={endsBeforeUserTurn ? 'true' : undefined}
         data-ambient-tool-run-continuation-after={continuesAmbientToolRunAfter ? 'true' : undefined}
         data-virtual-item-key={getVirtualItemStableKey(item)}
+        data-virtual-bookmark-key={getVirtualItemBookmarkKey(item)}
         data-virtual-index={index}
         data-markdown-section-start={item.timeline?.markdownSection?.start}
         data-item-index={index}

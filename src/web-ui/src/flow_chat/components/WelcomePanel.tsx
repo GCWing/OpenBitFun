@@ -25,10 +25,11 @@ import { FlowChatManager } from '../services/FlowChatManager';
 import { resolveChatInputExecutionLevelPolicy } from '../utils/chatInputExecutionLevelPolicy';
 import { isSessionBindingLocked } from '../utils/sessionLifecycle';
 import { acpAgentTypeFromSession } from '../utils/acpSession';
-import { sessionProjectWorkspacePath } from '../utils/sessionWorkspace';
+import { sessionProjectWorkspacePath, sessionWorkspaceId } from '../utils/sessionWorkspace';
 import type { Session } from '../types/flow-chat';
 import { useChatInputState } from '../store/chatInputStateStore';
 import { computeFlowChatInputOverlayInsetPx } from '../utils/flowChatScrollLayout';
+import { WelcomeWorkspaceChanges } from './WelcomeWorkspaceChanges';
 import './WelcomePanel.css';
 
 const log = createLogger('WelcomePanel');
@@ -170,6 +171,7 @@ interface WelcomePanelProps {
   /** Owning workspace ID of the session being welcomed; selects the assistant identity document. */
   workspaceId?: string;
   workspacePath?: string;
+  isActive?: boolean;
 }
 
 export const WelcomePanel: React.FC<WelcomePanelProps> = ({
@@ -179,6 +181,7 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
   sessionMode: initialSessionMode,
   workspaceId: initialWorkspaceId,
   workspacePath: initialWorkspacePath = '',
+  isActive = true,
 }) => {
   const { t } = useTranslation('flow-chat');
   const { t: tCommon } = useTranslation('common');
@@ -209,6 +212,11 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
   const sessionModeLower = (sessionMode || '').toLowerCase();
   const isCoworkSession = sessionModeLower === 'cowork';
   const isClawSession = sessionModeLower === 'claw';
+  const executionWorkspaceId = session
+    ? session.draft?.workspaceId ?? sessionWorkspaceId(session)
+    : workspaceId;
+  const executionWorkspace = (executionWorkspaceId ? openedWorkspaces.get(executionWorkspaceId) : undefined)
+    ?? workspace;
   const harnessProfile = canonicalHarnessId(sessionMode || 'Standard');
   const isModeExpanded = Boolean(harnessProfile && modeSelectorExpanded);
   const workspaceName = hasWorkspace ? workspace?.name.trim() : undefined;
@@ -454,6 +462,11 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
             />
           </div>
         </div>
+
+        {isActive && hasWorkspace && !isCoworkSession && !isClawSession && executionWorkspaceId && (
+          <WelcomeWorkspaceChanges workspaceId={executionWorkspaceId}
+            remoteWorkspace={executionWorkspace?.workspaceKind === WorkspaceKind.Remote} />
+        )}
 
         <MenuPopover
           anchorRef={workspaceTriggerRef}

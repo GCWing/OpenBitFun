@@ -1,4 +1,3 @@
-import legacyDefaultTitles from '../../../../shared/session-naming/legacy-default-titles.json';
 import type { SessionMetadata } from '@/shared/types/session-history';
 import type { Session } from '../types/flow-chat';
 
@@ -7,7 +6,6 @@ export interface SessionTitleDescriptor {
   text: string;
   key?: string;
   params?: Record<string, unknown>;
-  workspaceSessionNumber?: number;
 }
 
 type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
@@ -16,10 +14,6 @@ const DEFAULT_SESSION_TITLE_KEY = 'flow-chat:session.new';
 
 function normalizeTitleText(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-export function normalizeWorkspaceSessionNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
 export function isDefaultSessionTitle(session: TitleState): boolean {
@@ -43,20 +37,16 @@ export function createDefaultSessionTitleDescriptor(translate: TranslateFn): Ses
   return { ...descriptor, params: { defaultTitleText: descriptor.text } };
 }
 
-export function deriveSessionTitleState(descriptor?: SessionTitleDescriptor): TitleState & Pick<Session, 'workspaceSessionNumber'> {
+export function deriveSessionTitleState(descriptor?: SessionTitleDescriptor): TitleState {
   if (descriptor?.source === 'i18n' && descriptor.key === DEFAULT_SESSION_TITLE_KEY) {
     return {
       title: normalizeTitleText(descriptor.text),
       titleSource: 'i18n',
       titleI18nKey: descriptor.key,
       titleI18nParams: descriptor.params,
-      workspaceSessionNumber: normalizeWorkspaceSessionNumber(descriptor.workspaceSessionNumber),
     };
   }
-  return {
-    ...freezeSessionTitleState(descriptor?.text ?? ''),
-    workspaceSessionNumber: normalizeWorkspaceSessionNumber(descriptor?.workspaceSessionNumber),
-  };
+  return freezeSessionTitleState(descriptor?.text ?? '');
 }
 
 export function freezeSessionTitleState(title: string): TitleState {
@@ -70,34 +60,22 @@ export function freezeSessionTitleState(title: string): TitleState {
 
 export function deriveSessionTitleStateFromMetadata(
   metadata?: Pick<SessionMetadata, 'sessionName' | 'customMetadata' | 'turnCount'> | null,
-): TitleState & Pick<Session, 'workspaceSessionNumber'> {
-  let custom = metadata?.customMetadata;
-  const key = custom?.titleKey as keyof typeof legacyDefaultTitles;
-  const count = normalizeWorkspaceSessionNumber(custom?.titleParams?.count);
-  const provenLegacy = (metadata?.turnCount ?? 0) === 0 && custom?.titleSource === 'i18n'
-    && custom?.titleUserEdited !== true && Object.prototype.hasOwnProperty.call(legacyDefaultTitles, key)
-    && legacyDefaultTitles[key].some(template => (!template.includes('{{count}}') || count !== undefined)
-      && template.replace('{{count}}', String(count)) === metadata?.sessionName);
-  if (provenLegacy) {
-    metadata = { ...metadata!, sessionName: 'New Session' };
-    custom = { ...custom, titleKey: DEFAULT_SESSION_TITLE_KEY, titleParams: { defaultTitleText: 'New Session' }, workspaceSessionNumber: undefined };
-  }
-  const workspaceSessionNumber = normalizeWorkspaceSessionNumber(custom?.workspaceSessionNumber);
+): TitleState {
+  const custom = metadata?.customMetadata;
   // Only proven default descriptors are localized; all custom text stays verbatim.
   const useDynamicTitle = custom?.titleSource === 'i18n'
     && custom.titleUserEdited !== true
     && custom.titleKey === DEFAULT_SESSION_TITLE_KEY
     && custom.titleParams?.defaultTitleText === metadata?.sessionName
     && (metadata?.turnCount ?? 0) === 0;
-  return {
-    ...(useDynamicTitle ? {
+  return useDynamicTitle
+    ? {
       title: normalizeTitleText(metadata?.sessionName),
       titleSource: 'i18n' as const,
       titleI18nKey: DEFAULT_SESSION_TITLE_KEY,
       titleI18nParams: custom?.titleParams ?? undefined,
-    } : freezeSessionTitleState(metadata?.sessionName ?? '')),
-    workspaceSessionNumber,
-  };
+    }
+    : freezeSessionTitleState(metadata?.sessionName ?? '');
 }
 
 export function resolveSessionTitle(

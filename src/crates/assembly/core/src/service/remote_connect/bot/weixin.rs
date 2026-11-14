@@ -21,12 +21,11 @@ use tokio::sync::{Mutex, Notify, RwLock};
 
 use super::command_router::{
     complete_im_bot_pairing, current_bot_language, execute_forwarded_turn_with_submission,
-    handle_command, parse_command, welcome_message, BotChatState, BotInteractionHandler,
-    BotInteractiveRequest, BotMessageSender, HandleResult,
+    handle_command, parse_command, BotChatState, BotInteractionHandler, BotInteractiveRequest,
+    BotMessageSender, HandleResult,
 };
-use super::{
-    load_bot_persistence, update_bot_persistence, BotConfig, BotRuntimeFence, SavedBotConnection,
-};
+use super::pairing_gate::{PairingGate, UnpairedDecision};
+use super::{load_bot_persistence, BotConfig, BotRuntimeFence, SavedBotConnection};
 use crate::agentic::coordination::get_global_coordinator;
 use crate::agentic::events::{AgenticEvent, EventSubscriber};
 use crate::service::remote_connect::remote_server::ImageAttachment;
@@ -237,14 +236,9 @@ fn merge_pending(pending: &[PendingOutbound]) -> String {
     kept.join(PENDING_SEPARATOR)
 }
 
-#[derive(Debug, Clone)]
-struct PendingPairing {
-    created_at: i64,
-}
-
 pub struct WeixinBot {
     api: Arc<WeixinProviderClient>,
-    pending_pairings: Arc<RwLock<HashMap<String, PendingPairing>>>,
+    pairing_gate: PairingGate,
     chat_states: Arc<RwLock<HashMap<String, BotChatState>>>,
     context_tokens: Arc<RwLock<HashMap<String, String>>>,
     runtime_fence: BotRuntimeFence,
@@ -259,6 +253,12 @@ pub struct WeixinBot {
     /// Identity of this instance's proactive session-output subscription, so a
     /// replaced bot retires its own hook instead of the replacement's.
     session_output_hook_id: String,
+    /// Final replies of this bot's own turns that could not be delivered.
+    /// Resent with the peer's next message, which also carries the fresh
+    /// context_token a failed send usually lacked. The proactive backlog is
+    /// not used for them because it caps a backlog at one reply part and
+    /// would cut the tail off a long answer.
+    held_replies: super::HeldReplies<String>,
 }
 
 pub async fn weixin_qr_start(base_url_override: Option<String>) -> Result<WeixinQrStartResponse> {
@@ -296,7 +296,7 @@ impl WeixinBot {
         let context_tokens = weixin_provider::load_context_tokens(&config.bot_account_id);
         Self {
             api: Arc::new(WeixinProviderClient::new(config)),
-            pending_pairings: Arc::new(RwLock::new(HashMap::new())),
+            pairing_gate: PairingGate::new(),
             chat_states: Arc::new(RwLock::new(HashMap::new())),
             context_tokens: Arc::new(RwLock::new(context_tokens)),
             runtime_fence,
@@ -304,7 +304,35 @@ impl WeixinBot {
             pending_outbound: Arc::new(Mutex::new(HashMap::new())),
             outbound_wakeup: Arc::new(Notify::new()),
             session_output_hook_id: format!("weixin_session_output_{}", uuid::Uuid::new_v4()),
+            held_replies: Default::default(),
         }
+    }
+
+    async fn deliver_final_reply(&self, peer_id: &str, text: &str) {
+        let peer = peer_id.to_string();
+        super::deliver_final_reply(&self.held_replies, &peer, text, |text| async move {
+            if !super::chat_is_paired(&self.chat_states, peer_id).await {
+                return Ok(());
+            }
+            self.send_text(peer_id, &text).await
+        })
+        .await;
+    }
+
+    async fn resend_held_replies(&self, peer_id: &str) {
+        let peer = peer_id.to_string();
+        super::resend_held_replies(&self.held_replies, &peer, |text| async move {
+            self.send_text(peer_id, &text).await
+        })
+        .await;
+    }
+
+    /// The provider rejected the iLink token. Polling cannot recover without
+    /// a new QR login, so the loop stops; `requires_login` keeps reporting the
+    /// state through the existing bot status until the user signs in again.
+    fn session_expired(resp: &Value) -> bool {
+        resp["errcode"].as_i64() == Some(WEIXIN_SESSION_EXPIRED_ERRCODE)
+            || resp["ret"].as_i64() == Some(WEIXIN_SESSION_EXPIRED_ERRCODE)
     }
 
     pub async fn restore_chat_state(&self, peer_id: &str, mut state: BotChatState) {
@@ -329,6 +357,8 @@ impl WeixinBot {
         {
             Ok(mut states) => {
                 self.runtime_fence.clear_states(&mut states);
+                // Held replies belong to the previous account's sessions.
+                self.held_replies.clear();
                 let snapshots: Vec<_> = states
                     .iter()
                     .map(|(peer_id, state)| (peer_id.clone(), state.clone()))
@@ -344,23 +374,60 @@ impl WeixinBot {
         }
     }
 
+    /// Only a valid code can replace the chat that owns this connection.
+    /// Keep admission serialized with commands, and never create state for a refusal.
+    async fn handle_pairing_message(&self, peer_id: &str, text: &str) -> bool {
+        let epoch = self.runtime_fence.identity_epoch();
+        let mut states = self.chat_states.write().await;
+        if !self.runtime_fence.is_lifecycle_current() {
+            return false;
+        }
+        self.runtime_fence.reconcile_states(&mut states);
+        if states.get(peer_id).is_some_and(|state| state.paired) {
+            return true;
+        }
+        let connected_elsewhere = states.values().any(|state| state.paired);
+        match self
+            .pairing_gate
+            .evaluate(peer_id, text, connected_elsewhere)
+        {
+            UnpairedDecision::Pair => {
+                let mut state = BotChatState::new(peer_id.to_string());
+                let result = complete_im_bot_pairing(&mut state).await;
+                if !self.runtime_fence.is_lifecycle_current()
+                    || self.runtime_fence.identity_epoch() != epoch
+                {
+                    return false;
+                }
+                states.clear();
+                states.insert(peer_id.to_string(), state.clone());
+                self.persist_chat_state(peer_id, &state).await;
+                drop(states);
+                self.send_handle_result(peer_id, &result).await;
+                true
+            }
+            UnpairedDecision::Reply(reply) => {
+                drop(states);
+                let language = current_bot_language().await;
+                if self.runtime_fence.is_lifecycle_current()
+                    && self.runtime_fence.identity_epoch() == epoch
+                {
+                    self.try_send_text(peer_id, &reply.text(language), "pairing-prompt")
+                        .await;
+                }
+                false
+            }
+            UnpairedDecision::Silent => false,
+        }
+    }
+
     pub async fn register_pairing(&self, pairing_code: &str) -> Result<()> {
-        self.pending_pairings.write().await.insert(
-            pairing_code.to_string(),
-            PendingPairing {
-                created_at: chrono::Utc::now().timestamp(),
-            },
-        );
+        self.pairing_gate.register(pairing_code);
         Ok(())
     }
 
     pub async fn verify_pairing_code(&self, code: &str) -> bool {
-        let mut pairings = self.pending_pairings.write().await;
-        if let Some(pairing) = pairings.remove(code) {
-            let age = chrono::Utc::now().timestamp() - pairing.created_at;
-            return age < 300;
-        }
-        false
+        self.pairing_gate.consume(code)
     }
 
     pub async fn send_text(&self, peer_id: &str, text: &str) -> Result<()> {
@@ -443,6 +510,11 @@ impl WeixinBot {
                     _ = stop.changed() => break,
                     _ = wakeup.notified() => {}
                     _ = tokio::time::sleep(Duration::from_secs(OUTBOUND_RETRY_INTERVAL_SECS)) => {}
+                }
+                if bot.api.requires_login() {
+                    // Sends cannot succeed until the user signs in again; the
+                    // backlog stays queued within its retention window.
+                    continue;
                 }
                 bot.flush_pending_outbound().await;
             }
@@ -737,7 +809,13 @@ impl WeixinBot {
         }
     }
 
-    async fn send_handle_result(&self, peer_id: &str, result: &HandleResult) {
+    /// Returns false when the peer did not receive the result.
+    async fn send_handle_result(&self, peer_id: &str, result: &HandleResult) -> bool {
+        if !self.runtime_fence.is_lifecycle_current()
+            || !super::chat_is_paired(&self.chat_states, peer_id).await
+        {
+            return true;
+        }
         let language = current_bot_language().await;
         let text = if result.menu.items.is_empty() && result.menu.title.is_empty() {
             result.reply.clone()
@@ -745,11 +823,13 @@ impl WeixinBot {
             result.menu.render_plain_text(language)
         };
         if text.trim().is_empty() {
-            return;
+            return true;
         }
         if let Err(err) = self.send_text(peer_id, &text).await {
             warn!("weixin send_handle_result: {err}");
+            return false;
         }
+        true
     }
 
     async fn inbound_image_attachments_from_message(
@@ -802,6 +882,7 @@ impl WeixinBot {
         for reference in super::extract_output_file_references(text) {
             if !self.runtime_fence.is_lifecycle_current()
                 || self.runtime_fence.identity_epoch() != identity_epoch
+                || !super::chat_is_paired(&self.chat_states, peer_id).await
             {
                 return;
             }
@@ -818,6 +899,7 @@ impl WeixinBot {
             .await;
             if !self.runtime_fence.is_lifecycle_current()
                 || self.runtime_fence.identity_epoch() != identity_epoch
+                || !super::chat_is_paired(&self.chat_states, peer_id).await
             {
                 return;
             }
@@ -860,9 +942,7 @@ impl WeixinBot {
             chat_state: snapshot,
             connected_at: chrono::Utc::now().timestamp(),
         };
-        self.runtime_fence.commit_if_current(|| {
-            update_bot_persistence(|data| data.upsert(connection));
-        });
+        self.runtime_fence.persist_connection(connection);
     }
 
     pub async fn wait_for_pairing(
@@ -902,24 +982,21 @@ impl WeixinBot {
             let ret = resp["ret"].as_i64().unwrap_or(0);
             let errcode = resp["errcode"].as_i64().unwrap_or(0);
             if weixin_provider::updates_failed(&resp) {
-                if errcode == WEIXIN_SESSION_EXPIRED_ERRCODE
-                    || ret == WEIXIN_SESSION_EXPIRED_ERRCODE
-                {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    continue;
+                if Self::session_expired(&resp) {
+                    error!(
+                        "weixin: iLink session expired while waiting for pairing; sign in again with a new QR login"
+                    );
+                    return Err(anyhow!("weixin_login_required: iLink session expired"));
                 }
                 warn!("weixin getupdates ret={ret} errcode={errcode}");
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 continue;
             }
 
-            if let Some(new_buf) = resp["get_updates_buf"]
+            let next_buf = resp["get_updates_buf"]
                 .as_str()
                 .filter(|buf| !buf.is_empty())
-            {
-                buf = new_buf.to_string();
-                weixin_provider::save_sync_buf(&self.api.config().bot_account_id, &buf);
-            }
+                .map(str::to_string);
 
             if let Some(msgs) = resp["msgs"].as_array() {
                 for msg in msgs {
@@ -933,63 +1010,27 @@ impl WeixinBot {
                         self.remember_context_token(&peer, token).await;
                     }
                     let text = weixin_provider::body_from_message(msg).trim().to_string();
-                    let language = current_bot_language().await;
-
-                    if text == "/start" {
-                        self.try_send_text(&peer, welcome_message(language), "welcome")
-                            .await;
-                        continue;
+                    if *stop_rx.borrow() || !self.runtime_fence.is_lifecycle_current() {
+                        return Err(anyhow!("bot lifecycle replaced during pairing"));
                     }
-
-                    if text.len() == 6 && text.chars().all(|c| c.is_ascii_digit()) {
-                        if self.verify_pairing_code(&text).await {
-                            info!("Weixin pairing successful peer={peer}");
-                            let mut state = BotChatState::new(peer.clone());
-                            let identity_epoch = self.runtime_fence.identity_epoch();
-                            let result = complete_im_bot_pairing(&mut state).await;
-                            if *stop_rx.borrow() || !self.runtime_fence.is_lifecycle_current() {
-                                return Err(anyhow!("bot lifecycle replaced during pairing"));
-                            }
-                            let mut states = self.chat_states.write().await;
-                            self.runtime_fence.reconcile_states(&mut states);
-                            self.runtime_fence
-                                .sanitize_after_epoch(identity_epoch, &mut state);
-                            states.insert(peer.clone(), state.clone());
-                            drop(states);
-                            self.persist_chat_state(&peer, &state).await;
-
-                            self.send_handle_result(&peer, &result).await;
-                            return Ok(peer);
+                    if self.handle_pairing_message(&peer, &text).await {
+                        // The pairing message was handled; never replay it.
+                        if let Some(next_buf) = next_buf.as_deref() {
+                            weixin_provider::save_sync_buf(
+                                &self.api.config().bot_account_id,
+                                next_buf,
+                            );
                         }
-                        let err = if language.is_chinese() {
-                            "\u{914d}\u{5bf9}\u{7801}\u{65e0}\u{6548}\u{6216}\u{5df2}\u{8fc7}\u{671f}\u{ff0c}\u{8bf7}\u{91cd}\u{8bd5}\u{3002}"
-                        } else {
-                            "Invalid or expired pairing code."
-                        };
-                        self.try_send_text(&peer, err, "pairing-invalid").await;
-                    } else if !text.is_empty() {
-                        let err = if language.is_chinese() {
-                            "\u{8bf7}\u{8f93}\u{5165} OpenBitFun \u{684c}\u{9762}\u{7aef}\u{8fdc}\u{7a0b}\u{8fde}\u{63a5}\u{4e2d}\u{663e}\u{793a}\u{7684} 6 \u{4f4d}\u{914d}\u{5bf9}\u{7801}\u{3002}"
-                        } else {
-                            "Please send the 6-digit pairing code from OpenBitFun Desktop Remote Connect."
-                        };
-                        self.try_send_text(&peer, err, "pairing-prompt").await;
-                    } else if weixin_provider::has_inbound_file_items(msg) {
-                        self.try_send_text(
-                            &peer,
-                            super::locale::strings_for(language).need_pairing,
-                            "pairing-file-hint",
-                        )
-                        .await;
-                    } else if weixin_provider::has_inbound_image_items(msg) {
-                        let err = if language.is_chinese() {
-                            "\u{914d}\u{5bf9}\u{8bf7}\u{76f4}\u{63a5}\u{53d1}\u{9001} 6 \u{4f4d}\u{6570}\u{5b57}\u{914d}\u{5bf9}\u{7801}\u{ff1b}\u{5b8c}\u{6210}\u{914d}\u{5bf9}\u{540e}\u{518d}\u{53d1}\u{9001}\u{56fe}\u{7247}\u{4e0e}\u{52a9}\u{624b}\u{5bf9}\u{8bdd}\u{3002}"
-                        } else {
-                            "To pair, send the 6-digit code only. After pairing you can send images to chat."
-                        };
-                        self.try_send_text(&peer, err, "pairing-image-hint").await;
+                        return Ok(peer);
                     }
                 }
+            }
+
+            // Persist the cursor only after the batch was handled, so a stop
+            // or crash mid-batch replays it instead of skipping it.
+            if let Some(next_buf) = next_buf {
+                buf = next_buf;
+                weixin_provider::save_sync_buf(&self.api.config().bot_account_id, &buf);
             }
         }
     }
@@ -1034,28 +1075,27 @@ impl WeixinBot {
             let ret = resp["ret"].as_i64().unwrap_or(0);
             let errcode = resp["errcode"].as_i64().unwrap_or(0);
             if weixin_provider::updates_failed(&resp) {
-                if errcode == WEIXIN_SESSION_EXPIRED_ERRCODE
-                    || ret == WEIXIN_SESSION_EXPIRED_ERRCODE
-                {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    continue;
+                if Self::session_expired(&resp) {
+                    error!(
+                        "weixin: iLink session expired; stopped polling until the user signs in again with a new QR login"
+                    );
+                    break;
                 }
+                warn!("weixin getupdates ret={ret} errcode={errcode}");
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 continue;
             }
 
-            if let Some(new_buf) = resp["get_updates_buf"]
+            let next_buf = resp["get_updates_buf"]
                 .as_str()
                 .filter(|buf| !buf.is_empty())
-            {
-                buf = new_buf.to_string();
-                weixin_provider::save_sync_buf(&self.api.config().bot_account_id, &buf);
-            }
+                .map(str::to_string);
 
-            let Some(msgs) = resp["msgs"].as_array() else {
-                continue;
-            };
-
+            let msgs = resp["msgs"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let mut admitted = true;
             for msg in msgs {
                 if !weixin_provider::is_user_message(msg) {
                     continue;
@@ -1071,11 +1111,31 @@ impl WeixinBot {
                     .entry(peer.clone())
                     .or_insert_with(|| self.spawn_inbound_peer(peer.clone(), stop.clone()));
                 tokio::select! {
-                    _ = stop.changed() => break,
+                    _ = stop.changed() => {
+                        admitted = false;
+                        break;
+                    }
                     sent = sender.send((msg.clone(), poll_identity_epoch)) => {
-                        if sent.is_err() { warn!("Weixin inbound worker stopped before message admission"); }
+                        if sent.is_err() {
+                            warn!("Weixin inbound worker stopped before message admission");
+                            admitted = false;
+                        }
                     }
                 }
+            }
+            // Persist the cursor only once the whole batch was admitted to the
+            // per-peer workers. A stop mid-batch keeps the previous cursor, so
+            // the provider replays the batch instead of skipping messages
+            // (a message admitted just before the stop may then repeat).
+            if admitted {
+                if let Some(next_buf) = next_buf {
+                    buf = next_buf;
+                    weixin_provider::save_sync_buf(&self.api.config().bot_account_id, &buf);
+                }
+            } else if let Some(next_buf) = next_buf {
+                // Keep polling forward in this process; only the durable
+                // cursor waits for admission.
+                buf = next_buf;
             }
         }
         self.unsubscribe_session_output();
@@ -1117,6 +1177,11 @@ impl WeixinBot {
         if !self.runtime_fence.is_lifecycle_current()
             || self.runtime_fence.identity_epoch() != identity_epoch
         {
+            return;
+        }
+        if !super::chat_is_paired(&self.chat_states, peer.as_str()).await {
+            self.handle_pairing_message(&peer, &weixin_provider::body_from_message(&message))
+                .await;
             return;
         }
         let language = current_bot_language().await;
@@ -1269,57 +1334,30 @@ impl WeixinBot {
         {
             return;
         }
+        if super::chat_is_paired(&self.chat_states, peer_id.as_str()).await
+            && !self.held_replies.is_empty(&peer_id)
+        {
+            // Resend in the background: a held reply under provider backoff
+            // must not delay handling this message.
+            let bot = self.clone();
+            let peer = peer_id.clone();
+            tokio::spawn(async move {
+                if bot.runtime_fence.is_lifecycle_current()
+                    && bot.runtime_fence.identity_epoch() == command_identity_epoch
+                {
+                    bot.resend_held_replies(&peer).await;
+                }
+            });
+        }
         let mut states = self.chat_states.write().await;
         self.runtime_fence.reconcile_states(&mut states);
-        let state = states.entry(peer_id.clone()).or_insert_with(|| {
-            let mut state = BotChatState::new(peer_id.clone());
-            state.paired = true;
-            state
-        });
-        let language = current_bot_language().await;
-
-        if !state.paired {
-            let trimmed = text.trim();
-            if trimmed == "/start" {
-                drop(states);
-                self.try_send_text(&peer_id, welcome_message(language), "welcome")
-                    .await;
-                return;
-            }
-            if trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_digit()) {
-                if self.verify_pairing_code(trimmed).await {
-                    let identity_epoch = self.runtime_fence.identity_epoch();
-                    let result = complete_im_bot_pairing(state).await;
-                    self.runtime_fence
-                        .sanitize_after_epoch(identity_epoch, state);
-                    self.persist_chat_state(&peer_id, state).await;
-                    drop(states);
-                    if !self.runtime_fence.is_lifecycle_current()
-                        || self.runtime_fence.identity_epoch() != command_identity_epoch
-                    {
-                        return;
-                    }
-                    self.send_handle_result(&peer_id, &result).await;
-                    return;
-                }
-                let err = if language.is_chinese() {
-                    "\u{914d}\u{5bf9}\u{7801}\u{65e0}\u{6548}\u{6216}\u{5df2}\u{8fc7}\u{671f}\u{3002}"
-                } else {
-                    "Invalid or expired pairing code."
-                };
-                drop(states);
-                self.try_send_text(&peer_id, err, "pairing-invalid").await;
-                return;
-            }
+        if !states.get(&peer_id).is_some_and(|state| state.paired) {
             drop(states);
-            let err = if language.is_chinese() {
-                "\u{8bf7}\u{8f93}\u{5165} 6 \u{4f4d}\u{914d}\u{5bf9}\u{7801}\u{3002}"
-            } else {
-                "Please send the 6-digit pairing code."
-            };
-            self.try_send_text(&peer_id, err, "pairing-prompt").await;
+            self.handle_pairing_message(&peer_id, text).await;
             return;
         }
+        let state = states.get_mut(&peer_id).expect("paired chat exists");
+        let language = current_bot_language().await;
 
         if self.runtime_fence.identity_epoch() != command_identity_epoch {
             return;
@@ -1413,6 +1451,7 @@ impl WeixinBot {
                     Box::pin(async move {
                         if !msg_bot.runtime_fence.is_lifecycle_current()
                             || msg_bot.runtime_fence.identity_epoch() != output_identity_epoch
+                            || !super::chat_is_paired(&msg_bot.chat_states, peer_s.as_str()).await
                         {
                             return;
                         }
@@ -1436,6 +1475,7 @@ impl WeixinBot {
                 .await;
                 if !bot.runtime_fence.is_lifecycle_current()
                     || bot.runtime_fence.identity_epoch() != output_identity_epoch
+                    || !super::chat_is_paired(&bot.chat_states, peer.as_str()).await
                 {
                     return;
                 }
@@ -1453,9 +1493,8 @@ impl WeixinBot {
                         .await;
                 }
                 if !turn_result.display_text.is_empty() {
-                    if let Err(err) = bot.send_text(&peer, &turn_result.display_text).await {
-                        warn!("weixin: send final reply to peer {peer} failed: {err}");
-                    }
+                    bot.deliver_final_reply(&peer, &turn_result.display_text)
+                        .await;
                 }
                 bot.notify_files_ready(
                     &peer,
@@ -1482,11 +1521,9 @@ impl WeixinBot {
         }
         let mut states = self.chat_states.write().await;
         self.runtime_fence.reconcile_states(&mut states);
-        let state = states.entry(peer_id.clone()).or_insert_with(|| {
-            let mut state = BotChatState::new(peer_id.clone());
-            state.paired = true;
-            state
-        });
+        let Some(state) = states.get_mut(&peer_id).filter(|state| state.paired) else {
+            return;
+        };
         if self.runtime_fence.identity_epoch() != identity_epoch {
             return;
         }
@@ -1497,12 +1534,17 @@ impl WeixinBot {
         drop(states);
 
         let result = HandleResult {
-            reply: interaction.reply,
-            actions: interaction.actions,
+            reply: interaction.reply.clone(),
+            actions: interaction.actions.clone(),
             forward_to_session: None,
-            menu: interaction.menu,
+            menu: interaction.menu.clone(),
         };
-        self.send_handle_result(&peer_id, &result).await;
+        if !self.send_handle_result(&peer_id, &result).await {
+            // Re-sent by the turn watcher's next re-presentation.
+            if let Some(state) = self.chat_states.write().await.get_mut(&peer_id) {
+                super::command_router::mark_interaction_undelivered(state, &interaction);
+            }
+        }
     }
 }
 
@@ -1878,7 +1920,7 @@ mod tests {
     async fn unsupported_media_and_empty_input_never_route_partial_or_empty_turns() {
         let (base, mut requests, server) = mock_outbound(vec!["{}"; 3], None).await;
         let bot = test_bot(base).await;
-        bot.chat_states.write().await.clear();
+        let original = serde_json::to_value(&*bot.chat_states.read().await).unwrap();
         let epoch = bot.runtime_fence.identity_epoch();
         for message in [
             json!({"item_list":[{"type":3,"voice_item":{}},{"type":1,"text_item":{"text":"transcribe this voice"}}]}),
@@ -1892,7 +1934,10 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .contains("Agent"));
-            assert!(bot.chat_states.read().await.is_empty());
+            assert_eq!(
+                serde_json::to_value(&*bot.chat_states.read().await).unwrap(),
+                original
+            );
         }
         server.await.unwrap();
         assert!(!weixin_provider::has_unsupported_media_items(
@@ -1905,7 +1950,6 @@ mod tests {
         let (release, gate) = tokio::sync::oneshot::channel();
         let (base, mut requests, server) = mock_outbound(vec!["{}", "{}"], Some(gate)).await;
         let bot = test_bot(base).await;
-        bot.chat_states.write().await.clear();
         let (stop, stopped) = tokio::sync::watch::channel(false);
         let sender = bot.spawn_inbound_peer("peer".into(), stopped);
         let epoch = bot.runtime_fence.identity_epoch();
@@ -1923,23 +1967,18 @@ mod tests {
             .contains("Agent"));
         sender
             .send((
-                json!({"item_list":[{"type":1,"text_item":{"text":"hello"}}]}),
+                json!({"item_list":[{"type":1,"text_item":{"text":"/help"}}]}),
                 epoch,
             ))
             .await
             .unwrap();
         // The failed media reply is still in flight. The subsequent text must
-        // not route/create state until that first input finishes.
-        assert!(tokio::time::timeout(Duration::from_millis(30), async {
-            loop {
-                if bot.chat_states.read().await.contains_key("peer") {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .is_err());
+        // not route or answer until that first input finishes.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), requests.recv())
+                .await
+                .is_err()
+        );
         release.send(()).unwrap();
         tokio::time::timeout(Duration::from_secs(5), requests.recv())
             .await
@@ -2146,5 +2185,437 @@ mod tests {
             bot.pending_snapshot("second-peer").await[0].text,
             "scheduled result"
         );
+    }
+
+    const OWNER: &str = "owner-peer";
+    const STRANGER: &str = "stranger-peer";
+
+    /// A loopback provider that answers every call until the test ends.
+    /// `getupdates` polls replay `update_batches` and then stay open, like a
+    /// long poll with no traffic; every other call succeeds and is recorded.
+    async fn mock_provider(
+        update_batches: Vec<Value>,
+    ) -> (
+        String,
+        tokio::sync::mpsc::UnboundedReceiver<Value>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/", listener.local_addr().unwrap());
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let updates = Arc::new(std::sync::Mutex::new(VecDeque::from(update_batches)));
+        let task = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let tx = tx.clone();
+                let updates = updates.clone();
+                tokio::spawn(async move {
+                    let mut request = Vec::new();
+                    let mut chunk = [0; 4096];
+                    let body: Value = loop {
+                        let count = stream.read(&mut chunk).await.unwrap_or(0);
+                        if count == 0 {
+                            return;
+                        }
+                        request.extend_from_slice(&chunk[..count]);
+                        let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") else {
+                            continue;
+                        };
+                        let headers = String::from_utf8_lossy(&request[..end]);
+                        let length: usize = headers
+                            .lines()
+                            .find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse().unwrap())
+                            })
+                            .unwrap_or(0);
+                        if request.len() >= end + 4 + length {
+                            break serde_json::from_slice(&request[end + 4..end + 4 + length])
+                                .unwrap();
+                        }
+                    };
+                    let response = if body.get("get_updates_buf").is_some() {
+                        let next = updates.lock().unwrap().pop_front();
+                        match next {
+                            Some(batch) => batch.to_string(),
+                            None => std::future::pending().await,
+                        }
+                    } else {
+                        let _ = tx.send(body);
+                        "{}".to_string()
+                    };
+                    let _ = stream
+                        .write_all(
+                            format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                response.len(),
+                                response
+                            )
+                            .as_bytes(),
+                        )
+                        .await;
+                });
+            }
+        });
+        (base, rx, task)
+    }
+
+    /// A bot that can answer `OWNER` and `STRANGER`, with no chat paired yet.
+    async fn gate_bot(base_url: String) -> Arc<WeixinBot> {
+        let bot = Arc::new(WeixinBot::new(WeixinConfig {
+            ilink_token: "fixture-token".into(),
+            base_url,
+            bot_account_id: format!("gate-test-{}", uuid::Uuid::new_v4()),
+        }));
+        let mut tokens = bot.context_tokens.write().await;
+        tokens.insert(OWNER.into(), "owner-context".into());
+        tokens.insert(STRANGER.into(), "stranger-context".into());
+        drop(tokens);
+        bot
+    }
+
+    /// A bot whose first pairing already completed with `OWNER`.
+    async fn connected_bot(base_url: String) -> Arc<WeixinBot> {
+        let bot = gate_bot(base_url).await;
+        bot.restore_chat_state(OWNER, super::super::test_support::paired_state(OWNER))
+            .await;
+        bot
+    }
+
+    fn text_message(text: &str) -> Value {
+        json!({"item_list":[{"type":1,"text_item":{"text":text}}]})
+    }
+
+    fn update(peer: &str, text: &str) -> Value {
+        let mut message = text_message(text);
+        message["message_type"] = json!(1);
+        message["from_user_id"] = json!(peer);
+        message
+    }
+
+    fn updates(messages: Vec<Value>) -> Value {
+        json!({ "ret": 0, "msgs": messages })
+    }
+
+    /// The texts sent to `peer` since the previous call.
+    fn replies_to(
+        requests: &mut tokio::sync::mpsc::UnboundedReceiver<Value>,
+        peer: &str,
+    ) -> Vec<String> {
+        let mut replies = Vec::new();
+        while let Ok(request) = requests.try_recv() {
+            if request["msg"]["to_user_id"] == peer {
+                replies.push(
+                    request["msg"]["item_list"][0]["text_item"]["text"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+            }
+        }
+        replies
+    }
+
+    fn saved_chat_id(bot: &WeixinBot) -> Option<String> {
+        bot.runtime_fence
+            .saved_connection("weixin")
+            .map(|saved| saved.chat_id)
+    }
+
+    async fn pair_through_updates(bot: &WeixinBot) -> String {
+        let (_stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
+        tokio::time::timeout(Duration::from_secs(10), bot.wait_for_pairing(&mut stop_rx))
+            .await
+            .expect("pairing must finish with the scripted updates")
+            .expect("pairing must succeed")
+    }
+
+    #[tokio::test]
+    async fn expired_session_stops_polling_and_reports_login_required() {
+        let (base, _sent, _provider) = mock_provider(vec![
+            json!({"ret": WEIXIN_SESSION_EXPIRED_ERRCODE, "errcode": WEIXIN_SESSION_EXPIRED_ERRCODE,
+                "errmsg": "session timeout", "msgs": []}),
+        ])
+        .await;
+        let bot = gate_bot(base).await;
+        let (_stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+
+        tokio::time::timeout(
+            Duration::from_secs(20),
+            bot.clone().run_message_loop(stop_rx),
+        )
+        .await
+        .expect("an expired session must end polling instead of retrying silently");
+        assert!(bot.requires_login());
+    }
+
+    #[tokio::test]
+    async fn unknown_peer_after_first_pairing_is_refused_and_cannot_run_a_command() {
+        let (base, mut requests, server) = mock_provider(vec![]).await;
+        let bot = connected_bot(base).await;
+        let epoch = bot.runtime_fence.identity_epoch();
+
+        bot.process_provider_message(STRANGER.into(), text_message("/help"), epoch)
+            .await;
+
+        assert!(
+            !bot.chat_states.read().await.contains_key(STRANGER),
+            "a peer that never paired must not gain state"
+        );
+        assert_eq!(replies_to(&mut requests, STRANGER).len(), 1);
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(OWNER));
+
+        bot.process_provider_message(OWNER.into(), text_message("/help"), epoch)
+            .await;
+        assert!(
+            !bot.chat_states.read().await[OWNER]
+                .last_menu_commands
+                .is_empty(),
+            "the paired peer keeps its commands"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn outbound_paths_never_create_state_or_reach_an_unpaired_peer() {
+        let (base, mut requests, server) = mock_provider(vec![]).await;
+        let bot = connected_bot(base).await;
+        let epoch = bot.runtime_fence.identity_epoch();
+
+        bot.deliver_interaction(
+            STRANGER.into(),
+            super::super::test_support::question("tool-1"),
+            epoch,
+        )
+        .await;
+        bot.notify_files_ready(
+            STRANGER,
+            "missing-session",
+            None,
+            "[report](computer://report.pdf)",
+            epoch,
+        )
+        .await;
+        assert!(!bot.chat_states.read().await.contains_key(STRANGER));
+        assert_eq!(replies_to(&mut requests, STRANGER), Vec::<String>::new());
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(OWNER));
+
+        // A peer that is known but never completed pairing is treated the
+        // same, including by the proactive session-output channel.
+        let mut unpaired = BotChatState::new(STRANGER.into());
+        unpaired.current_session_id = Some("session".into());
+        bot.chat_states
+            .write()
+            .await
+            .insert(STRANGER.into(), unpaired);
+        bot.deliver_interaction(
+            STRANGER.into(),
+            super::super::test_support::question("tool-2"),
+            epoch,
+        )
+        .await;
+        bot.notify_session_output("session", "scheduled result")
+            .await;
+        bot.flush_pending_outbound().await;
+        assert_eq!(replies_to(&mut requests, STRANGER), Vec::<String>::new());
+        assert!(bot.pending_snapshot(STRANGER).await.is_empty());
+        let states = bot.chat_states.read().await;
+        assert!(!states[STRANGER].paired);
+        assert!(states[STRANGER].pending_action.is_none());
+        drop(states);
+
+        // The paired peer still receives its interaction.
+        bot.deliver_interaction(
+            OWNER.into(),
+            super::super::test_support::question("tool-3"),
+            epoch,
+        )
+        .await;
+        assert_eq!(replies_to(&mut requests, OWNER).len(), 1);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn wrong_codes_are_limited_per_peer_without_locking_the_owner_or_burning_the_code() {
+        use super::super::test_support::PAIRING_CODE;
+        let mut messages = vec![update(STRANGER, "000000"); 5];
+        // The right code no longer helps a peer that used up its attempts.
+        messages.push(update(STRANGER, PAIRING_CODE));
+        messages.push(update(OWNER, "111111"));
+        messages.push(update(OWNER, PAIRING_CODE));
+        let (base, mut requests, server) = mock_provider(vec![updates(messages)]).await;
+        let bot = gate_bot(base).await;
+        bot.register_pairing(PAIRING_CODE).await.unwrap();
+
+        assert_eq!(pair_through_updates(&bot).await, OWNER);
+
+        let states = bot.chat_states.read().await;
+        assert!(states.get(OWNER).is_some_and(|state| state.paired));
+        assert!(!states.contains_key(STRANGER));
+        drop(states);
+        // Four "wrong code" replies, then one lockout notice, then silence.
+        assert_eq!(replies_to(&mut requests, STRANGER).len(), 5);
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(OWNER));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn repeated_messages_from_an_unpaired_peer_get_a_bounded_number_of_replies() {
+        use super::super::test_support::PAIRING_CODE;
+        // While the first pairing is still pending.
+        let mut messages = vec![update(STRANGER, "hello"); 20];
+        messages.push(update(OWNER, PAIRING_CODE));
+        let (base, mut requests, server) = mock_provider(vec![updates(messages)]).await;
+        let bot = gate_bot(base).await;
+        bot.register_pairing(PAIRING_CODE).await.unwrap();
+        assert_eq!(pair_through_updates(&bot).await, OWNER);
+        let replies = replies_to(&mut requests, STRANGER).len();
+        assert!(
+            (1..=3).contains(&replies),
+            "replies while pairing: {replies}"
+        );
+
+        // After pairing, in the message loop: text, raw voice and empty input.
+        let epoch = bot.runtime_fence.identity_epoch();
+        for index in 0..20 {
+            let message = match index % 3 {
+                0 => text_message("hello again"),
+                1 => json!({"item_list":[{"type":3,"voice_item":{}}]}),
+                _ => text_message("   "),
+            };
+            bot.process_provider_message(STRANGER.into(), message, epoch)
+                .await;
+        }
+        let replies = replies_to(&mut requests, STRANGER).len();
+        assert!(
+            (1..=3).contains(&replies),
+            "replies when connected: {replies}"
+        );
+        assert!(!bot.chat_states.read().await.contains_key(STRANGER));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn code_issued_for_a_connected_bot_moves_the_connection_to_the_peer_that_presents_it() {
+        use super::super::test_support::PAIRING_CODE;
+        let (base, mut requests, server) = mock_provider(vec![]).await;
+        let bot = connected_bot(base).await;
+        let epoch = bot.runtime_fence.identity_epoch();
+        bot.register_pairing(PAIRING_CODE).await.unwrap();
+
+        bot.process_provider_message(STRANGER.into(), text_message("111111"), epoch)
+            .await;
+        assert!(!bot.chat_states.read().await.contains_key(STRANGER));
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(OWNER));
+
+        bot.process_provider_message(STRANGER.into(), text_message(PAIRING_CODE), epoch)
+            .await;
+        let states = bot.chat_states.read().await;
+        assert!(states.get(STRANGER).is_some_and(|state| state.paired));
+        assert!(
+            !states.contains_key(OWNER),
+            "one connection has one chat: the previous peer is no longer paired"
+        );
+        drop(states);
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(STRANGER));
+        assert!(
+            !bot.verify_pairing_code(PAIRING_CODE).await,
+            "the pairing code is single use"
+        );
+        assert!(!replies_to(&mut requests, STRANGER).is_empty());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn legacy_persisted_paired_peer_is_restored_without_pairing_again() {
+        let saved = super::super::test_support::legacy_saved_connection(
+            "weixin",
+            OWNER,
+            json!({
+                "bot_type": "weixin",
+                "ilink_token": "fixture-token",
+                "base_url": "https://ilinkai.weixin.qq.com",
+                "bot_account_id": "fixture-bot"
+            }),
+        );
+        let (base, mut requests, server) = mock_provider(vec![]).await;
+        let bot = gate_bot(base).await;
+        let epoch = bot.runtime_fence.identity_epoch();
+
+        bot.restore_chat_state(OWNER, saved.chat_state.clone())
+            .await;
+        bot.process_provider_message(OWNER.into(), text_message("/help"), epoch)
+            .await;
+
+        assert_eq!(replies_to(&mut requests, OWNER).len(), 1);
+        assert!(
+            !bot.chat_states.read().await[OWNER]
+                .last_menu_commands
+                .is_empty(),
+            "the restored peer reaches the command router without a pairing prompt"
+        );
+        let resaved = bot
+            .runtime_fence
+            .saved_connection("weixin")
+            .expect("restored connection is saved");
+        assert_eq!(resaved.chat_id, OWNER);
+        assert!(resaved.chat_state.paired);
+        // The stored shape is unchanged: an older build reads it back.
+        let stored = serde_json::to_value(&resaved.chat_state).unwrap();
+        let legacy = serde_json::to_value(&saved.chat_state).unwrap();
+        assert_eq!(stored, legacy);
+        assert_eq!(stored["paired"], json!(true));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn retired_or_reidentified_bot_neither_answers_nor_delivers() {
+        let (base, mut requests, server) = mock_provider(vec![]).await;
+        let bot = connected_bot(base).await;
+        let epoch = bot.runtime_fence.identity_epoch();
+
+        // An account change invalidates work that started before it.
+        bot.runtime_fence
+            .account_identity_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        bot.process_provider_message(OWNER.into(), text_message("/help"), epoch)
+            .await;
+        bot.process_provider_message(STRANGER.into(), text_message("/help"), epoch)
+            .await;
+        bot.deliver_interaction(
+            OWNER.into(),
+            super::super::test_support::question("tool-1"),
+            epoch,
+        )
+        .await;
+        bot.notify_files_ready(
+            OWNER,
+            "missing-session",
+            None,
+            "[report](computer://report.pdf)",
+            epoch,
+        )
+        .await;
+
+        // A replaced instance stays silent for paired and unpaired peers alike.
+        let epoch = bot.runtime_fence.identity_epoch();
+        bot.runtime_fence.slot.advance();
+        bot.process_provider_message(OWNER.into(), text_message("/help"), epoch)
+            .await;
+        bot.process_provider_message(STRANGER.into(), text_message("/help"), epoch)
+            .await;
+        bot.deliver_interaction(
+            OWNER.into(),
+            super::super::test_support::question("tool-2"),
+            epoch,
+        )
+        .await;
+
+        assert!(requests.try_recv().is_err());
+        assert!(!bot.chat_states.read().await.contains_key(STRANGER));
+        assert_eq!(saved_chat_id(&bot).as_deref(), Some(OWNER));
+        server.abort();
     }
 }

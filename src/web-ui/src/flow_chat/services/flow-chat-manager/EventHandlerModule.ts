@@ -1,5 +1,6 @@
 import { modelPoolAPI, supportsModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { isRuntimeSessionProjectionStale } from '@/infrastructure/peer-device/runtimeSessionEventGate';
 import { sessionWorkspaceId, sessionProjectWorkspacePath } from '../../utils/sessionWorkspace';
 import { shouldIncludeInternalSession } from '../../utils/internalSession';
 /**
@@ -14,7 +15,7 @@ import { FlowChatStore, mergeModelRoundAttemptDiagnostics } from '../../store/Fl
 import { initializeAcpPlanState } from '../acpPlanState';
 import { isSessionTurnRetired } from '../../store/sessionMutationStore';
 import { stateMachineManager } from '../../state-machine';
-import { SessionExecutionEvent, SessionExecutionState } from '../../state-machine/types';
+import { ProcessingPhase, SessionExecutionEvent, SessionExecutionState } from '../../state-machine/types';
 import { agenticEventListener, type AgenticEventCallbacks } from '../AgenticEventListener';
 import { 
   generateTextChunkKey,
@@ -55,7 +56,7 @@ import { MCPAPI } from '@/infrastructure/api/service-api/MCPAPI';
 import { ACPClientAPI, type AcpPermissionRequestEvent } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import type { FlowChatContext, DialogTurn, ModelRound, FlowToolItem } from './types';
-import type { Session, SteeringImage } from '../../types/flow-chat';
+import type { AnyFlowItem, Session, SteeringImage } from '../../types/flow-chat';
 import {
   normalizeAiErrorDetail,
   type AiErrorDetail,
@@ -226,10 +227,12 @@ function mergeParamsPartialEventData(
 export const __test_only__ = {
   relayRecordsBeforeEvent,
   handleSessionDeleted,
+  handleSessionCreated,
   resolveDialogTurnDisplayContent,
   mergeParamsPartialEventData,
   findSubagentParentInfoByRound,
   handleDialogTurnStarted,
+  handleImageAnalysisStarted,
   handleDialogTurnFailed,
   handleSubagentSessionLinked,
   handleModelRoundStart,
@@ -240,6 +243,7 @@ export const __test_only__ = {
   handleDialogTurnInterrupted,
   handleDialogTurnRecovered,
   handleDialogTurnCancelled,
+  finalizeTurnCompletionState,
   buildBuiltInBrowserTabOptions,
   handleOpenBuiltInBrowser,
 };
@@ -261,6 +265,11 @@ function logDroppedDataEvent(
   turnId: string | null,
   details: Record<string, unknown>
 ): void {
+  // Missing UI state does not identify an internal background session. Preserve
+  // the first replay gap, then coalesce repeated drops until it materializes.
+  if (details.reason === 'missing_state_machine'
+    && !FlowChatStore.getInstance().getState().sessions.has(sessionId)
+    && isRuntimeSessionProjectionStale(getActiveSurfaceScope().surfaceId, sessionId)) return;
   requestRuntimeProjectionRepair(sessionId);
   log.debug('Dropped agentic data event', {
     eventName,
@@ -1065,21 +1074,24 @@ function handleSessionCreated(context: FlowChatContext, event: any): void {
 
   const store = FlowChatStore.getInstance();
   const existing = store.getState().sessions.get(sessionId);
-  const { workspaceId, workspacePath } = resolveExternalSessionWorkspace(context, event);
-  const projectWorkspacePath =
-    (typeof event.projectWorkspacePath === 'string' && event.projectWorkspacePath)
-    || (typeof event.project_workspace_path === 'string' && event.project_workspace_path)
-    || workspacePath;
-  const executionTarget =
-    event.executionTarget && typeof event.executionTarget === 'object'
-      ? event.executionTarget
-      : event.execution_target && typeof event.execution_target === 'object'
-        ? event.execution_target
-        : undefined;
+  const {
+    workspaceId, workspacePath, projectWorkspacePath, executionTarget,
+  } = resolveExternalSessionBinding(context, event);
   const remoteConnectionId = extractEventRemoteConnectionId(event);
   const remoteSshHost = extractEventRemoteSshHost(event);
 
-  if (existing) return;
+  if (existing) {
+    // An earlier event (image analysis) may have projected this session
+    // before its creation event arrived; correct that guess, never a
+    // session this surface loaded itself.
+    if (existing.externalPlaceholder && workspaceId) {
+      store.rebindExternalPlaceholder(sessionId, {
+        workspaceId, workspacePath, projectWorkspacePath, executionTarget, remoteConnectionId, remoteSshHost,
+      });
+      adoptPersistedPlaceholderMetadata(sessionId, workspaceId);
+    }
+    return;
+  }
 
   store.addExternalSession(
     sessionId,
@@ -1094,6 +1106,51 @@ function handleSessionCreated(context: FlowChatContext, event: any): void {
     remoteConnectionId,
     remoteSshHost
   );
+}
+
+/**
+ * Owning workspace, persistence root and execution target of an external
+ * session, read from the facts the host attaches to `session-created` and
+ * (from newer hosts) `dialog-turn-started`.
+ */
+function resolveExternalSessionBinding(
+  context: FlowChatContext,
+  event: Record<string, any>,
+): ExternalSessionWorkspace & {
+  projectWorkspacePath?: string;
+  executionTarget?: Session['config']['executionTarget'];
+} {
+  const workspace = resolveExternalSessionWorkspace(context, event);
+  const projectWorkspacePath =
+    (typeof event.projectWorkspacePath === 'string' && event.projectWorkspacePath)
+    || (typeof event.project_workspace_path === 'string' && event.project_workspace_path)
+    || workspace.workspacePath;
+  const executionTarget =
+    event.executionTarget && typeof event.executionTarget === 'object'
+      ? event.executionTarget
+      : event.execution_target && typeof event.execution_target === 'object'
+        ? event.execution_target
+        : undefined;
+  return { ...workspace, projectWorkspacePath, executionTarget };
+}
+
+function hasExternalSessionBindingFacts(event: Record<string, any>): boolean {
+  return [event.workspaceId, event.workspace_id, event.workspacePath, event.workspace_path]
+    .some(value => typeof value === 'string' && value.trim().length > 0);
+}
+
+/**
+ * Replace a remote-driven placeholder's guessed title and identity with the
+ * host's persisted record. A missing record (a session that is genuinely new)
+ * keeps the placeholder; it is never an error to surface.
+ */
+function adoptPersistedPlaceholderMetadata(sessionId: string, workspaceId: string | undefined): void {
+  if (!workspaceId) return;
+  void FlowChatStore.getInstance()
+    .ensurePersistedSessionMetadata(sessionId, workspaceId, true)
+    .catch(error => {
+      log.debug('Remote placeholder metadata is not available yet', { sessionId, workspaceId, error });
+    });
 }
 
 interface ExternalSessionWorkspace {
@@ -1247,6 +1304,11 @@ function flushPendingBatchedEvents(context: FlowChatContext): void {
   }
 }
 
+function isStreamingTextItem(item: AnyFlowItem): boolean {
+  return (item.type === 'text' || item.type === 'thinking')
+    && ((item as { isStreaming?: boolean }).isStreaming === true || item.status === 'streaming');
+}
+
 function finalizeTurnCompletionState(
   context: FlowChatContext,
   sessionId: string,
@@ -1277,16 +1339,27 @@ function finalizeTurnCompletionState(
   context.flowChatStore.updateDialogTurn(sessionId, turnId, turn => {
     const completedAt = Date.now();
     const updatedModelRounds = turn.modelRounds.map((round) => {
+      // A text or thinking item whose end chunk was never delivered is not in
+      // `activeTextItems`; left streaming, a trailing thinking item stays
+      // expanded and reads as the answer. The turn is settled: close it the
+      // same way its own end chunk would have.
+      const items = round.items.some(isStreamingTextItem)
+        ? round.items.map(item => (isStreamingTextItem(item)
+          ? { ...item, isStreaming: false, status: 'completed' as const,
+            ...(item.type === 'thinking' ? { isCollapsed: true } : {}) }
+          : item))
+        : round.items;
       if (round.isStreaming) {
         return {
           ...round,
+          items,
           isStreaming: false,
           isComplete: true,
           status: 'completed' as const,
           endTime: round.endTime ?? completedAt
         };
       }
-      return round;
+      return items === round.items ? round : { ...round, items };
     });
 
     return {
@@ -1777,7 +1850,7 @@ function handleImageAnalysisStarted(context: FlowChatContext, event: ImageAnalys
       'Remote Session',
       'Standard',
       workspace.workspacePath,
-      { workspaceId: workspace.workspaceId },
+      { workspaceId: workspace.workspaceId, externalPlaceholder: true },
       extractEventRemoteConnectionId(event as any),
       extractEventRemoteSshHost(event as any)
     );
@@ -1882,6 +1955,41 @@ function handleImageAnalysisCompleted(_context: FlowChatContext, event: ImageAna
   log.info('Image analysis completed', { sessionId, success, durationMs });
 }
 
+/**
+ * The host runs one Turn per Session at a time, so admitting a distinct newer
+ * Turn proves the previous one settled there even when its terminal event never
+ * reached this window (a dropped stream, or a controller that missed it while
+ * detached). START cannot leave PROCESSING or FINISHING, and every event of the
+ * new Turn would then be dropped as a turn mismatch. Adopt the host fact
+ * directly instead of passing through IDLE, which would release queued input.
+ * Only a strictly newer backend index qualifies; a delayed start of an older
+ * Turn, or one without an index, never replaces the Turn being tracked.
+ */
+function adoptNewerAdmittedTurn(sessionId: string, turnId: string, turnIndex: unknown): boolean {
+  const machine = stateMachineManager.get(sessionId);
+  if (!machine || typeof turnIndex !== 'number') return false;
+  const state = machine.getCurrentState();
+  if (state !== SessionExecutionState.PROCESSING && state !== SessionExecutionState.FINISHING) return false;
+  const trackedTurnId = machine.getContext().currentDialogTurnId;
+  if (!trackedTurnId || trackedTurnId === turnId) return false;
+  const tracked = FlowChatStore.getInstance().getState().sessions.get(sessionId)?.dialogTurns
+    .find(turn => turn.id === trackedTurnId);
+  const trackedIndex = tracked?.backendTurnIndex ?? tracked?.storageTurnIndex;
+  if (trackedIndex !== undefined && turnIndex <= trackedIndex) return false;
+  log.warn('Adopting a newer host-admitted turn over a stale tracked turn', {
+    sessionId, turnId, turnIndex, trackedTurnId, trackedIndex, state,
+  });
+  machine.acceptRuntimeStatus({
+    state: SessionExecutionState.PROCESSING,
+    turnId,
+    roundId: null,
+    phase: ProcessingPhase.STARTING,
+    pendingTools: [],
+    error: null,
+  });
+  return true;
+}
+
 function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
   const { sessionId, turnId, turnIndex, userInput, originalUserInput, userMessageMetadata } = event;
 
@@ -1890,11 +1998,24 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
     return;
   }
 
+  // Canonical history and direct control events travel independently. A delayed
+  // start must not resurrect a settled turn or supersede a newer admitted turn.
+  // Optimistic queued turns have no backend index and do not block admission.
+  const store = FlowChatStore.getInstance();
+  const knownTurns = store.getState().sessions.get(sessionId)?.dialogTurns ?? [];
+  const knownTurn = knownTurns.find(turn => turn.id === turnId);
+  const admittedIndex = typeof turnIndex === 'number'
+    ? turnIndex : knownTurn?.backendTurnIndex ?? knownTurn?.storageTurnIndex;
+  if (knownTurn && ['completed', 'cancelled', 'error'].includes(knownTurn.status)
+    || admittedIndex !== undefined && knownTurns.some(turn =>
+      (turn.backendTurnIndex ?? turn.storageTurnIndex ?? -1) > admittedIndex)) {
+    log.debug('Dropped stale DialogTurnStarted', { sessionId, turnId, admittedIndex });
+    return;
+  }
+
   clearPromptSuggestion(sessionId);
   finalizePendingTurnCompletionNow(context, sessionId);
   clearPendingTurnCompletion(context, sessionId, turnId);
-
-  const store = FlowChatStore.getInstance();
 
   // Clean up temp image analysis turn if one exists for this session
   const tempTurnId = pendingImageAnalysisTurns.get(sessionId);
@@ -1930,7 +2051,10 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
       ? userMessageMetadata.appId
       : undefined;
     log.warn('DialogTurnStarted: session not in store, creating placeholder', { sessionId, sessionsCount: state.sessions.size, isMiniAppAgentRun });
-    const workspace = resolveExternalSessionWorkspace(context, event);
+    // Newer hosts attach the session's owning workspace. Without it the
+    // placeholder falls back to the current workspace, which misattributes a
+    // persisted session driven from another surface (remote control, bot).
+    const workspace = resolveExternalSessionBinding(context, event);
     store.addExternalSession(
       sessionId,
       isMiniAppAgentRun ? (miniAppId ? `MiniApp: ${miniAppId}` : 'MiniApp Agent') : isBtwRun ? 'Side thread' : 'Remote Session',
@@ -1941,10 +2065,26 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
         : isBtwRun
           ? { sessionKind: 'btw', isTransient: true, agentBackedTransient: true,
               parentSessionId: userMessageMetadata.parentSessionId, workspaceId: workspace.workspaceId }
-        : { workspaceId: workspace.workspaceId },
+        : {
+            workspaceId: workspace.workspaceId,
+            projectWorkspacePath: workspace.projectWorkspacePath,
+            executionTarget: workspace.executionTarget,
+            externalPlaceholder: true,
+            persistedHistory: typeof turnIndex === 'number' && turnIndex > 0,
+          },
       extractEventRemoteConnectionId(event),
       extractEventRemoteSshHost(event)
     );
+    if (!isMiniAppAgentRun && !isBtwRun) adoptPersistedPlaceholderMetadata(sessionId, workspace.workspaceId);
+  } else if (session.externalPlaceholder && hasExternalSessionBindingFacts(event)) {
+    const workspace = resolveExternalSessionBinding(context, event);
+    store.rebindExternalPlaceholder(sessionId, {
+      ...workspace,
+      remoteConnectionId: extractEventRemoteConnectionId(event),
+      remoteSshHost: extractEventRemoteSshHost(event),
+      persistedHistory: typeof turnIndex === 'number' && turnIndex > 0,
+    });
+    adoptPersistedPlaceholderMetadata(sessionId, workspace.workspaceId);
   }
 
   // Extract image display data from metadata (sent by coordinator for all platforms)
@@ -2064,7 +2204,7 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
     context.contentBuffers.set(sessionId, new Map());
     context.activeTextItems.set(sessionId, new Map());
 
-    if (!hadTempTurn) {
+    if (!hadTempTurn && !adoptNewerAdmittedTurn(sessionId, turnId, turnIndex)) {
       stateMachineManager.transition(sessionId, SessionExecutionEvent.START, {
         taskId: sessionId,
         dialogTurnId: turnId,

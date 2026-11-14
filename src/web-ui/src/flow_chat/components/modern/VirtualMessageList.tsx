@@ -13,6 +13,7 @@ import React, {
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react';
@@ -95,9 +96,10 @@ import {
 import { getKnownVirtualItemHeightPx } from './virtualItemHeightEstimators';
 import { resolveVisibleFlowChatTurnIds } from './flowChatVisibleTurns';
 import type { FlowChatViewportSnapshot } from './flowChatViewportSnapshot';
-import { getVirtualItemStableKey } from './virtualItemIdentity';
+import { getVirtualItemBookmarkKey, getVirtualItemStableKey } from './virtualItemIdentity';
 import { useConversationTimeline } from '../../timeline/useConversationTimeline';
 import { FlowChatReaderProvider } from '../../timeline/readerState';
+import { retainedTranscriptRowSizes } from '../../timeline/retainedViewMemory';
 import { findTimelineBlockIndex } from '../../timeline/document';
 import { localizeMarkdownMatch } from '../../timeline/markdownSectionSearch';
 import { useTimelineInteraction, type TimelineReaderInteraction } from '../../timeline/useTimelineInteraction';
@@ -138,12 +140,13 @@ const HISTORY_WINDOW_DIRECTIONS: readonly SessionHistoryWindowDirection[] = ['be
  * Transcripts mounted this session, counted.
  *
  * The list is keyed on the session id, so a switch is a full remount: new
- * scroller, empty measurement cache, fresh opening reveal, and a follow hook
- * that has never followed anything. Nothing in the trail said which instance a
+ * scroller, a measurement cache seeded only from retained row sizes, fresh
+ * opening reveal, and a follow hook that has never followed anything. Nothing in the trail said which instance a
  * line came from, and two of the three viewport faults measured here turned out
  * to be two instances disagreeing rather than one instance changing its mind.
  */
 let nextViewportInstanceId = 0;
+
 const IDLE_HISTORY_WINDOW_BOUNDARY_STATE: Record<
   SessionHistoryWindowDirection,
   'idle' | 'loading' | 'error'
@@ -243,6 +246,9 @@ export interface VirtualMessageListProps {
   onViewportSnapshot?: (snapshot: FlowChatViewportSnapshot) => void;
   onViewportRestoreSettled?: (sessionId: string) => void;
   initialViewportSnapshot?: FlowChatViewportSnapshot | null;
+  /** Pane-owned dimensions survive a cold session's temporary loading surface. */
+  viewportRectRef?: React.MutableRefObject<{ width: number; height: number } | undefined>;
+  contentPresented?: boolean;
 }
 
 type PreparedTurnNavigation = {
@@ -383,7 +389,12 @@ function isElementVisibleInScroller(element: HTMLElement, scroller: HTMLElement)
   return elementRect.bottom > scrollerRect.top && elementRect.top < scrollerRect.bottom;
 }
 
-const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessageListProps>(({
+type ViewportRect = { width: number; height: number };
+interface SessionListProps extends VirtualMessageListProps {
+  paneViewportRect: React.MutableRefObject<ViewportRect | undefined>;
+}
+
+const VirtualMessageListSession = forwardRef<VirtualMessageListRef, SessionListProps>(({
   items,
   latestTurnId,
   isViewportActive = true,
@@ -400,6 +411,8 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   onViewportSnapshot,
   onViewportRestoreSettled,
   initialViewportSnapshot = null,
+  paneViewportRect,
+  contentPresented = true,
 }, ref) => {
   const { t } = useTranslation('flow-chat');
   const modernStore = useModernFlowChatStoreApi();
@@ -418,6 +431,11 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   }, [activeSessionState.isProcessing]);
   const activeSessionId = activeSession?.sessionId ?? null;
   const { items: virtualItems, reader } = useConversationTimeline(sourceItems, activeSessionId ?? undefined, 'main');
+  // Read once for the virtualizer's mount; claimed and handed back below.
+  const [retainedRows] = useState(() => retainedTranscriptRowSizes.peek(reader));
+  // The hosting pane keeps its box when sessions change. Only reserve geometry:
+  // native observation and the ordinary opening gate still decide presentation.
+  const [initialViewportRect] = useState(() => paneViewportRect.current ?? retainedRows?.viewportRect);
   const timelineItemsRef = useRef(virtualItems);
   timelineItemsRef.current = virtualItems;
   const nextVisibleItemIndexes = useMemo(() => getNextVisibleVirtualItemIndexes(virtualItems), [virtualItems]);
@@ -468,13 +486,16 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     setSubmissionKey(key);
   }, []);
   const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
-  const [viewportHeightPx, setViewportHeightPx] = useState(0);
-  const [viewportWidthPx, setViewportWidthPx] = useState(0);
+  // Reservations only: native resize observation still replaces this box.
+  // Reopening need not first render a zero-height window and zero-width estimates.
+  const [viewportHeightPx, setViewportHeightPx] = useState(initialViewportRect?.height ?? 0);
+  const [viewportWidthPx, setViewportWidthPx] = useState(initialViewportRect?.width ?? 0);
   useLayoutEffect(() => {
     if (scrollerElement && extentElementRef.current) centerFlowChatExtent(scrollerElement, extentElementRef.current);
   }, [scrollerElement, viewportWidthPx, endOrigin]);
   /** Native minimization withdraws the scroller without unmounting the session. */
   const isViewportSuspendedRef = useRef(false);
+  const [, commitResumedViewport] = useReducer(revision => revision + 1, 0);
   const measurementSuspendedRef = useRef(measurementSuspended);
   measurementSuspendedRef.current = measurementSuspended;
   /** The last width the observer saw while the pane was still moving. */
@@ -511,6 +532,48 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     && initialViewportSnapshot.anchorTurnId !== null
     && initialViewportSnapshot.anchorOffsetPx !== null
   );
+  const [speculativeOverscanItems, setSpeculativeOverscanItems] = useState(2);
+  const overscanPreparationStarted = useRef(false);
+  useEffect(() => {
+    if (!endOrigin || shouldRestoreInitialSnapshot || !isOpenViewportSettled || !contentPresented
+      || !isViewportActive || measurementSuspended || speculativeOverscanItems >= 8) return;
+    let frame = 0, idle: number | undefined;
+    const cancel = () => {
+      cancelAnimationFrame(frame); frame = 0;
+      if (idle !== undefined) window.cancelIdleCallback(idle);
+      idle = undefined;
+    };
+    const prepare = (deadline?: IdleDeadline) => {
+      idle = undefined;
+      if (document.hidden || isViewportSuspendedRef.current) return;
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define -- The deferred callback runs after schedule is initialized.
+      if (deadline && !deadline.didTimeout && deadline.timeRemaining() < 4) { schedule(); return; }
+      setSpeculativeOverscanItems(value => Math.min(8, value + 1));
+    };
+    const schedule = () => {
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (document.hidden) return;
+        if (window.requestIdleCallback) idle = window.requestIdleCallback(prepare, { timeout: 250 });
+        else prepare();
+      });
+    };
+    const start = () => {
+      cancel();
+      if (document.hidden) return;
+      if (overscanPreparationStarted.current) schedule();
+      else frame = requestAnimationFrame(() => {
+        overscanPreparationStarted.current = true;
+        schedule();
+      });
+    };
+    // Visible content owns opening. Prepare one extra leaf per idle frame after
+    // its two-paint handoff, rather than one synchronous offscreen tool burst.
+    document.addEventListener('visibilitychange', start);
+    start();
+    return () => { cancel(); document.removeEventListener('visibilitychange', start); };
+  }, [contentPresented, endOrigin, isOpenViewportSettled, isViewportActive, measurementSuspended,
+    shouldRestoreInitialSnapshot, speculativeOverscanItems]);
   const preparedTurnNavigationRef = useRef<PreparedTurnNavigation | null>(null);
   // Selection identity only; this must never hold or reposition the viewport.
   const navigatedTurnIdRef = useRef<string | null>(null);
@@ -548,7 +611,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   }, [viewportOwner]);
   const isExpandingSearchSourceRef = useRef(false);
   const readerInteractionRef = useRef<(kind: TimelineReaderInteraction) => void>(() => {});
-  const interactionKeys = useTimelineInteraction(scrollerElementRef, reader, () => viewportOwner.currentOwner() === 'follow-output', undefined, kind => readerInteractionRef.current(kind));
+  const interactionKeys = useTimelineInteraction(scrollerElementRef, reader, () => viewportOwner.currentOwner() === 'follow-output', undefined, kind => readerInteractionRef.current(kind), isViewportActive);
   const displayedTailTurnId = virtualItems.at(-1)?.turnId;
   const displayedTailStart = useMemo(() => virtualItems.findIndex(item => item.turnId === displayedTailTurnId),
     [virtualItems, displayedTailTurnId]);
@@ -574,10 +637,16 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       .map(([groupId, expanded]) => `${groupId}:${expanded ? 1 : 0}`)
       .join(','),
   ].join('|'), [availableWidthPx, activeSession?.isHistorical, exploreGroupStates]);
+  const preparedTurn = preparedTurnNavigationRef.current;
+  const preparedTarget = preparedTurn && preparedTurn.behavior !== 'smooth'
+    ? virtualItems.find(item => item.turnId === preparedTurn.turnId
+      && (item.type === 'user-message' || item.type === 'background-run')) : undefined;
   const virtualizer = useFlowChatVirtualizer({
     endOrigin,
     footerRef: footerElementRef,
     pinnedKeys,
+    isReaderScrolling: () => viewportOwner.currentOwner() === 'user-gesture',
+    pendingNavigationKey: preparedTarget ? getVirtualItemStableKey(preparedTarget) : undefined,
     items: virtualItems,
     startAtTailOnMount: presentationMode !== 'history-window' && !shouldRestoreInitialSnapshot,
     reconcileOpeningMeasurement: () => reconcileOpeningMeasurementRef.current(),
@@ -598,11 +667,50 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     writeViewport: viewportOwner.write,
     shiftViewport: shiftMeasuredViewport,
     getViewportAnchorKey: () => measurementAnchorKeyRef.current(),
+    retainedItemSizes: retainedRows?.sizes,
+    retainedItemWidthPx: retainedRows?.widthPx,
+    retainedViewportRect: initialViewportRect,
+    speculativeOverscanItems: endOrigin && !shouldRestoreInitialSnapshot ? speculativeOverscanItems : 8,
   });
+  const { snapshotItemSizes, syncViewportOffset } = virtualizer;
+  const measuredWidthRef = useRef(availableWidthPx);
+  measuredWidthRef.current = availableWidthPx;
+  const retainedViewportRectRef = useRef(initialViewportRect);
+  if (isUsableFlowChatViewportRect({ width: viewportWidthPx, height: viewportHeightPx })) {
+    retainedViewportRectRef.current = { width: viewportWidthPx, height: viewportHeightPx };
+  }
+  useLayoutEffect(() => {
+    if (isViewportActive && !isViewportSuspendedRef.current
+      && isUsableFlowChatViewportRect({ width: viewportWidthPx, height: viewportHeightPx })) {
+      paneViewportRect.current = { width: viewportWidthPx, height: viewportHeightPx };
+    }
+  }, [isViewportActive, paneViewportRect, viewportWidthPx, viewportHeightPx]);
+  useLayoutEffect(() => {
+    retainedTranscriptRowSizes.take(reader);
+    // Observed sizes only: unmount reads no geometry from a changing DOM.
+    return () => retainedTranscriptRowSizes.put(reader, {
+      sizes: snapshotItemSizes(),
+      widthPx: measuredWidthRef.current > 0 ? measuredWidthRef.current : undefined,
+      viewportRect: retainedViewportRectRef.current,
+    });
+  }, [reader, snapshotItemSizes]);
 
-  const userMessageItems = useMemo(() => virtualItems
-    .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.type === 'user-message' || item.type === 'background-run'), [virtualItems]);
+  // Streaming replaces `virtualItems` every flush while its Turn boundaries
+  // stay the same. Keep the previous array then, so callbacks and observers
+  // derived from it are not rebuilt for each streamed chunk.
+  const userMessageItemsRef = useRef<Array<{ item: (typeof virtualItems)[number]; index: number }>>([]);
+  const userMessageItems = useMemo(() => {
+    const next = virtualItems
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => item.type === 'user-message' || item.type === 'background-run');
+    const previous = userMessageItemsRef.current;
+    if (previous.length === next.length
+      && next.every((entry, position) => entry.item === previous[position].item && entry.index === previous[position].index)) {
+      return previous;
+    }
+    userMessageItemsRef.current = next;
+    return next;
+  }, [virtualItems]);
 
   const isStreamingOutput = useMemo(() => {
     if (viewportMode === 'history-reading') return false;
@@ -1220,7 +1328,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       presentationMode,
       viewportMode,
       historyWindow,
-      anchorItemKey: anchorEntry?.key ?? null,
+      anchorItemKey: anchorEntry?.element.dataset.virtualBookmarkKey ?? anchorEntry?.key ?? null,
       anchorItemType: anchorEntry?.itemType ?? null,
       anchorMarkdownStart: anchorEntry?.element.dataset.markdownSectionStart === undefined
         ? undefined : Number(anchorEntry.element.dataset.markdownSectionStart),
@@ -1247,10 +1355,12 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     const exactAnchor = snapshot.anchorItemKey
       ? Array.from(
         scroller.querySelectorAll<HTMLElement>('.virtual-item-wrapper[data-virtual-item-key]'),
-      ).find(element => element.dataset.virtualItemKey === snapshot.anchorItemKey) ?? null
+      ).find(element => element.dataset.virtualBookmarkKey === snapshot.anchorItemKey
+        || element.dataset.virtualItemKey === snapshot.anchorItemKey) ?? null
       : null;
     const exactAnchorIndex = snapshot.anchorItemKey
-      ? virtualItems.findIndex(item => getVirtualItemStableKey(item) === snapshot.anchorItemKey)
+      ? virtualItems.findIndex(item => getVirtualItemBookmarkKey(item) === snapshot.anchorItemKey
+        || getVirtualItemStableKey(item) === snapshot.anchorItemKey)
       : -1;
     const sourceRow = virtualItems[exactAnchorIndex];
     if (snapshot.anchorMarkdownStart === undefined && sourceRow?.timeline?.markdownSection?.start === 0
@@ -1303,14 +1413,15 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   }, [activeSessionId, reader, viewportAnchor, viewportOwner, virtualItems]);
 
   const publishViewportSnapshot = useCallback((sample?: FlowChatViewportGeometry) => {
+    if (!onViewportSnapshotRef.current) return;
     const snapshot = captureViewportSnapshot(sample);
-    if (snapshot) onViewportSnapshotRef.current?.(snapshot);
+    if (snapshot) onViewportSnapshotRef.current(snapshot);
   }, [captureViewportSnapshot]);
   const publishViewportSnapshotRef = useRef(publishViewportSnapshot);
   publishViewportSnapshotRef.current = publishViewportSnapshot;
 
   const scheduleViewportSnapshot = useCallback(() => {
-    if (viewportSnapshotFrameRef.current !== null) return;
+    if (!onViewportSnapshotRef.current || viewportSnapshotFrameRef.current !== null) return;
     viewportSnapshotFrameRef.current = requestAnimationFrame(() => {
       viewportSnapshotFrameRef.current = null;
       publishViewportSnapshotRef.current();
@@ -1520,6 +1631,10 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     if (!isViewportSuspendedRef.current) return;
 
     isViewportSuspendedRef.current = false;
+    // The restored box may be unchanged and output may have already stopped.
+    // Commit so pending row attachments and layout measurements can resume
+    // without waiting for a new message, resize or reader gesture.
+    commitResumedViewport();
     const suspendedScrollTopPx = suspendedViewportScrollTopRef.current;
     suspendedViewportScrollTopRef.current = null;
     const wasFollowingOutput = isFollowingOutputNow();
@@ -1605,20 +1720,26 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       } = nativeScrollCallbacksRef.current;
       // Share this event's read phase. It cannot outlive the event: commits,
       // ResizeObserver and explicit navigation must measure their own layout.
-      const geometry = readFlowChatViewportGeometry(scrollerElement);
       const position = viewportOwner.readReaderScrollPosition();
       const previous = readerScrollPositionRef.current;
       readerScrollPositionRef.current = position;
       const owner = viewportOwner.currentOwner();
       const delta = previous === null ? 0 : position - previous;
       const direction = delta < -0.5 ? 'before' : delta > 0.5 ? 'after' : undefined;
+      let geometrySample: FlowChatViewportGeometry | undefined;
+      const getGeometry = () => {
+        if (!geometrySample || geometrySample.scrollTop !== readFlowChatScrollTop(scrollerElement)) {
+          geometrySample = readFlowChatViewportGeometry(scrollerElement);
+        }
+        return geometrySample;
+      };
       // Synchronous corrections are removed by the register. Smooth owned
       // navigation/follow scrolls are excluded here; unowned momentum counts.
       if (direction && (owner === null || owner === 'user-gesture')) {
-        captureLeadingExtent(readFlowChatScrollTop(scrollerElement), true, geometry);
+        captureLeadingExtent(readFlowChatScrollTop(scrollerElement), true, getGeometry());
         historyPager.readerIntent(direction);
       }
-      if (owner === 'one-shot-navigation') captureLeadingExtent(readFlowChatScrollTop(scrollerElement), true, geometry);
+      if (owner === 'one-shot-navigation') captureLeadingExtent(readFlowChatScrollTop(scrollerElement), true, getGeometry());
       /*
        * A scroll under a scrollbar press is the one case where a plain scroll
        * event does carry intent — the press is what qualifies it. Left
@@ -1638,9 +1759,15 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
        * Re-anchor to wherever the user has arrived, and only there. The rule
        * for "was this scroll the user's" lives with the anchor.
        */
-      viewportAnchor.captureAnchorForScroll(readFlowChatScrollTop(scrollerElement) === geometry.scrollTop ? geometry : undefined);
+      // A snapshot subscriber will need geometry even if this event had no
+      // reader travel. Share that read with the anchor instead of sampling twice.
+      const sample = onViewportSnapshotRef.current ? getGeometry() : geometrySample;
+      const currentSample = sample && readFlowChatScrollTop(scrollerElement) === sample.scrollTop ? sample : undefined;
+      viewportAnchor.captureAnchorForScroll(currentSample);
       scheduleVisibleTurnInfoUpdate();
-      publishViewportSnapshot(readFlowChatScrollTop(scrollerElement) === geometry.scrollTop ? geometry : undefined);
+      if (onViewportSnapshotRef.current) {
+        publishViewportSnapshot(currentSample);
+      }
       /*
        * Paging is a question about where the reader is, so a scroll is its
        * primary input. Through a ref: this listener must not be torn down and
@@ -1708,9 +1835,30 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     viewportOwner,
   ]);
 
+  // Streaming replaces several of these callbacks on every flush. Rebinding
+  // the observer for each one disconnected it and delivered a fresh initial
+  // observation, which re-measured every mounted row once per streamed chunk.
+  // Keep the observer for the scroller's lifetime and read committed callbacks,
+  // as the native scroll listener above does.
+  const resizeCallbacksRef = useRef({
+    resumeSuspendedViewport, scheduleFollowToLatest, scheduleViewportSnapshot,
+    scheduleVisibleTurnInfoUpdate, updateIsAtScrollStart, updateIsAtBottom, viewportAnchor,
+  });
+  useLayoutEffect(() => {
+    resizeCallbacksRef.current = {
+      resumeSuspendedViewport, scheduleFollowToLatest, scheduleViewportSnapshot,
+      scheduleVisibleTurnInfoUpdate, updateIsAtScrollStart, updateIsAtBottom, viewportAnchor,
+    };
+  });
+
   useEffect(() => {
     if (!scrollerElement) return;
+    const resumeFromFrame = () => resizeCallbacksRef.current.resumeSuspendedViewport();
     const observer = new ResizeObserver(() => {
+      const {
+        scheduleFollowToLatest, scheduleViewportSnapshot, scheduleVisibleTurnInfoUpdate,
+        updateIsAtScrollStart, updateIsAtBottom, viewportAnchor,
+      } = resizeCallbacksRef.current;
       const nextViewportBox = {
         width: scrollerElement.clientWidth,
         height: scrollerElement.clientHeight,
@@ -1739,7 +1887,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         setViewportHeightPx(nextViewportBox.height);
         setViewportWidthPx(nextViewportBox.width);
         if (viewportResumeFrameRef.current === null) {
-          viewportResumeFrameRef.current = requestAnimationFrame(resumeSuspendedViewport);
+          viewportResumeFrameRef.current = requestAnimationFrame(resumeFromFrame);
         }
         return;
       }
@@ -1792,17 +1940,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     if (content) observer.observe(content, { box: 'border-box' });
     observer.observe(scrollerElement);
     return () => observer.disconnect();
-  }, [
-    resumeSuspendedViewport,
-    scheduleFollowToLatest,
-    scheduleViewportSnapshot,
-    scheduleVisibleTurnInfoUpdate,
-    scrollerElement,
-    updateIsAtScrollStart,
-    updateIsAtBottom,
-    viewportAnchor,
-    viewportOwner,
-  ]);
+  }, [scrollerElement]);
 
   /*
    * One re-measure for a pane drag, against the width the drag ended on.
@@ -2027,8 +2165,14 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     const prepared = preparedTurnNavigationRef.current;
     if (!prepared) return;
     const status = navigateToTurnWithStatus(prepared.turnId, { behavior: prepared.behavior });
-    if (status === 'settled') preparedTurnNavigationRef.current = null;
-  }, [navigateToTurnWithStatus, virtualItems]);
+    if (status === 'settled') {
+      preparedTurnNavigationRef.current = null;
+      const scroller = scrollerElementRef.current;
+      if (prepared.behavior !== 'smooth' && scroller && !isViewportSuspendedRef.current) {
+        syncViewportOffset(readFlowChatScrollTop(scroller));
+      }
+    }
+  }, [navigateToTurnWithStatus, syncViewportOffset, virtualItems]);
 
   /**
    * Land on a Turn by its position in the transcript on screen.
@@ -2674,7 +2818,9 @@ VirtualMessageListSession.displayName = 'VirtualMessageListSession';
 
 export const VirtualMessageList = forwardRef<VirtualMessageListRef, VirtualMessageListProps>((props, ref) => {
   const activeSession = useActiveSession();
-  return <VirtualMessageListSession key={activeSession?.sessionId ?? 'no-active-session'} ref={ref} {...props} />;
+  const paneViewportRect = useRef<ViewportRect>();
+  return <VirtualMessageListSession key={activeSession?.sessionId ?? 'no-active-session'} ref={ref}
+    {...props} paneViewportRect={props.viewportRectRef ?? paneViewportRect} />;
 });
 
 VirtualMessageList.displayName = 'VirtualMessageList';

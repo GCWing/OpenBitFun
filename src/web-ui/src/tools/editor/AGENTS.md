@@ -37,6 +37,11 @@ This directory follows `src/web-ui/AGENTS.md`.
 
 ## Focused verification
 
+During first Monaco creation, resolve computed typography after asynchronous
+configuration/library loading and before model/view writes. Keep late configuration
+updates and retained document/view state; repeated style reads across those writes
+can synchronously lay out the surrounding workbench.
+
 Document-backed code editors may suspend inactive Monaco views after 30 seconds;
 at most three inactive views stay warm across hosts. Visible views and active IME
 composition are protected. Find/replace widgets and nonempty queries also keep
@@ -85,6 +90,15 @@ pnpm --dir src/web-ui run test:run src/tools/editor/components/MarkdownEditor.te
 For UI, types, and theme contracts, also follow the parent guide's `check:web`
 command. Local DOM tests do not establish remote workspace, Remote Connect,
 Peer Device Mode, or Detached Dispatch behavior.
+
+For the LaTeX source and PDF split, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/tools/editor/components/LatexEditor.test.tsx src/tools/editor/components/PdfViewer.test.tsx src/infrastructure/api/service-api/LatexAPI.test.ts
+```
+
+The fixtures cover save ordering, coalesced rebuilds, last-successful preview,
+and the peer capability gate. Use the Desktop compiler tests for real TeX.
 
 For rich-text interaction changes, run the focused browser E2E from the root:
 

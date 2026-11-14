@@ -5,8 +5,9 @@
  * session tabs share one Session host backed by the authoritative selection;
  * their resource identity is independent of the host's mounting lifetime.
  *
- * When no tabs are open, the viewport renders WelcomeScene as a shell-owned
- * landing surface rather than manufacturing a tab for it.
+ * When no scene is selected, the viewport renders WelcomeScene as a shell-owned
+ * landing surface rather than manufacturing a tab for it. Background tabs may
+ * remain open while the shell is idle.
  */
 import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 
@@ -135,6 +136,21 @@ interface SceneViewportProps {
   paned?: boolean;
 }
 
+interface SceneContentProps {
+  sceneId: SceneTabId;
+  workspacePath?: string;
+  isEntering?: boolean;
+  isActive: boolean;
+}
+
+// Keep retained scenes subscribed to their own data/context, without rendering
+// every open scene again for each navigation and transition phase in the deck.
+const SceneContent = React.memo(function SceneContent({
+  sceneId, workspacePath, isEntering, isActive,
+}: SceneContentProps) {
+  return renderScene(sceneId, workspacePath, isEntering, isActive);
+});
+
 const SceneViewport: React.FC<SceneViewportProps> = ({ workspacePath, isEntering = false, paned = false }) => {
   const {
     openTabs,
@@ -258,7 +274,7 @@ const SceneViewport: React.FC<SceneViewportProps> = ({ workspacePath, isEntering
                   }
                 >
                   <SceneReadyBoundary sceneId={tabId} onReady={transition.markSceneReady}>
-                    {renderScene(tabId, workspacePath, isEntering, isActive)}
+                    <SceneContent sceneId={tabId} workspacePath={workspacePath} isEntering={isEntering} isActive={isActive} />
                   </SceneReadyBoundary>
                 </Suspense>
               )}

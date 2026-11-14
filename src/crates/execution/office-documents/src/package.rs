@@ -175,7 +175,7 @@ pub(crate) fn read_source(
     let Some(source) = entries.get(SOURCE_PART) else {
         return Err(OfficeError::new(
             OfficeErrorKind::NotGenerated,
-            "this file was not created by GenOfficeFile (or another program re-saved it and dropped the editable source); read it with the Read tool and create a new file instead",
+            "this file was not created by GenOfficeFile (or another program re-saved it and dropped the editable source); use the Read tool to read or analyze it; GenOfficeFile can only open files it generated",
         ));
     };
     let envelope: SourceEnvelope = serde_json::from_slice(source).map_err(|err| {

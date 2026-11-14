@@ -156,19 +156,35 @@ background input.
 
 ## Ownership and execution
 
-Portable DTOs and `AppInputAction` live in `tool-contracts`; the host port lives in
-Core. Desktop owns native resources and platform adapters. Assembly must not own
-OS APIs, native focus workarounds or concrete capture implementations.
+This section details the split stated in
+[Native provider ownership](#native-provider-ownership). Core does not depend on
+`services/computer-use`; it reaches the provider only through the injected port.
 
-The shared action catalog and structural target validation live in
-`tool-contracts`. Desktop's `control_session/admission.rs` is a deterministic
-owner/mode/lease state machine; its facade alone performs native cleanup and
-carries tokens across workers. `desktop_host/observation.rs` coordinates native
-reads, while `observation_cache.rs` stores bounded references without owning input
-permission. `computer_use_geometry` adapts the independent `computer-use-rust`
-project's image/content/surface mapping for all three platforms. The reference
-project's macOS-only capture/input and standalone MCP/session shell are not a
-replacement for the existing Windows, Linux or product runtime providers.
+| Owner | Owns | Must not |
+|---|---|---|
+| `tool-contracts` (`computer_use*` modules) | Portable DTOs, `AppInputAction` and its structural target validation, the shared action catalog (`ControlActionPolicy`), control and permission facts, `CaptureGeometry`, the settle decision and the `ComputerUseHost` port | Hold OS handles or make permission decisions |
+| `services/computer-use` | Native resources and platform adapters for Windows, macOS and Linux: capture, AX/UIA/AT-SPI, input, OS permission probes and requests, remembered grants, the control session and `NativeComputerUseHost`; `host_runtime` holds CLI graphical-session admission and the macOS main run loop | Import Core, Tauri or the CLI, or discover Core config |
+| Core (Assembly) | The ComputerUse tool and its permission policy, the `computer_use_program` executor, the `ai.computer_use_enabled`, missing-provider and remote-workspace gates, and release of a turn's control through the port; its `computer_use_host` module only re-exports that port | Own OS APIs, native focus workarounds or concrete capture implementations |
+| Desktop | Provider injection and its diagnostic directory, the Tauri status, permission, sharing and preview commands, and the devtools-only full Tool fixtures | Reintroduce a native implementation |
+| CLI | Provider injection and its diagnostic directory for chat/exec inside a graphical login session, the main-thread run-loop adapter and the `computer-use` command | Reintroduce a native implementation, or infer a provider for Dispatch, ACP or the stdio server |
+
+Service paths below are relative to
+`src/crates/services/computer-use/src/computer_use/`.
+`control_session/admission.rs` is a deterministic owner/mode/lease state machine
+with no OS handles; its facade `control_session.rs` alone performs native
+cleanup and carries tokens across workers. `desktop_host/` implements the port
+for `NativeComputerUseHost`. The directory kept its name when it moved out of
+the Desktop app; Desktop and CLI share it. `desktop_host/observation.rs`
+coordinates native reads, while `observation_cache.rs` stores bounded references
+without owning input permission. The
+[Native Computer Use guide](../../src/crates/services/computer-use/AGENTS.md)
+has the full module map.
+
+`tool-contracts::computer_use_geometry` adapts the independent
+`computer-use-rust` project's image/content/surface mapping for all three
+platforms. The reference project's macOS-only capture/input and standalone
+MCP/session shell are not a replacement for the existing Windows, Linux or
+product runtime providers.
 
 ### Reference implementation migration
 
@@ -178,8 +194,8 @@ runtime, build, test or filesystem dependency of OpenBitFun.
 
 | Area | Reference source | OpenBitFun owner and adaptation |
 |---|---|---|
-| Permission query/request | `src/native/permissions.rs`, native permission probes | `computer_use_permissions` contracts, Desktop `permissions.rs`, `ComputerUsePermissions.tsx`; four separate read-only probes and explicit request receipts; Windows capability/UIPI facts and Linux AT-SPI/session consent replace macOS-specific assumptions |
-| App sharing and control grants | `src/sharing.rs`, `src/grants.rs`, sharing controls in `src/gui.rs` | Admission state machine plus Desktop `sharing.rs`, `shared_preview.rs`, `process_identity.rs`, `grants.rs`, `share_grants.rs`; user-selected native window, observe first, separate revocable grant, executable-bound remembered preference, manual preview gestures |
+| Permission query/request | `src/native/permissions.rs`, native permission probes | `computer_use_permissions` contracts, native service `permissions.rs`, Web `ComputerUsePermissions.tsx`; four separate read-only probes and explicit request receipts; Windows capability/UIPI facts and Linux AT-SPI/session consent replace macOS-specific assumptions |
+| App sharing and control grants | `src/sharing.rs`, `src/grants.rs`, sharing controls in `src/gui.rs` | Admission state machine plus native service `sharing.rs`, `shared_preview.rs`, `process_identity.rs`, `grants.rs`, `share_grants.rs`; user-selected native window, observe first, separate revocable grant, executable-bound remembered preference, manual preview gestures |
 | Coordinate conversion | `CoordinateMap` in `src/sharing.rs` | Portable `CaptureGeometry` and Web `previewGeometry.ts`; image/content/global/preview round trips, aspect fit, negative origins, independent X/Y scales, strict padding rejection and immutable screenshot identity |
 | Virtual mouse | `src/cursor.rs`, GUI cursor rendering | Web `VirtualCursor.ts` ports the deterministic physical model, rendered by `PreviewCursor.tsx`; 63 Rust-generated reference samples cover movement, retargeting, immediate placement, resize and visibility. Existing passive native overlays remain platform adapters |
 | Background control | Native directed/semantic input and desktop-state comparison | Existing AX/UIA/AT-SPI and directed-input providers plus `background_guard.rs`; diagnostic focus/pointer/window-order evidence, explicit unsupported routes, no restore or replay. Concurrent human input does not revoke Agent control. The reference's implicit Command modifier is not copied because it changes the requested click |
@@ -407,15 +423,16 @@ until the next information boundary and reuses the returned observation. It does
 not reduce the user's selected reasoning effort or impose step/retry-count caps.
 
 `get_app_state`, `app_batch` and single app-input aliases accept optional
-`include_image` (default `true`). With `false`, Desktop reads AX and refreshes
-observation/node identities without retrieving or encoding a model screenshot.
-This is suitable for sufficient semantic state or known keyboard flows. Canvas,
-visual verification and selecting image coordinates still need an image-bearing
-observation. Target preparation, control leases, cancellation and native consent
-remain unchanged; AX-only is not a different input route. Legacy port providers
-can retain their old capture path and omit the image from its result. Existing
-callers/persisted tool calls omit the field and retain their previous behavior.
-The option is local tool presentation, not a new remote GUI capability.
+`include_image` (default `true`). With `false`, the native provider reads AX and
+refreshes observation/node identities without retrieving or encoding a model
+screenshot. This is suitable for sufficient semantic state or known keyboard
+flows. Canvas, visual verification and selecting image coordinates still need an
+image-bearing observation. Target preparation, control leases, cancellation and
+native consent remain unchanged; AX-only is not a different input route. Legacy
+port providers can retain their old capture path and omit the image from its
+result. Existing callers/persisted tool calls omit the field and retain their
+previous behavior. The option is local tool presentation, not a new remote GUI
+capability.
 
 Program receipts include `observation_elapsed_ms` alongside per-step and total
 elapsed time. These measure host execution, not model reasoning or end-to-end

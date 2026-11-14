@@ -2,6 +2,7 @@
 
 use super::extract::{self, ESTIMATED_INSTALL_SIZE};
 use super::generated_locale_contract::INSTALLER_GENERATED_LOCALES;
+use super::transaction::{self, Transaction};
 use super::types::{
     ConnectionTestResult, DiskSpaceInfo, InstallOptions, InstallProgress, ModelConfig,
     RemoteModelInfo,
@@ -11,7 +12,7 @@ use openbitfun_core_types::{
     installer_config_handoff::{
         InstallerConfigHandoff, InstallerModelHandoff, INSTALLER_CONFIG_HANDOFF_FILE_NAME,
     },
-    product_identity::{data_namespace, hidden_data_directory},
+    product_identity::data_namespace,
 };
 use openbitfun_services_core::json_store::JsonFileStore;
 use serde::{Deserialize, Serialize};
@@ -21,16 +22,342 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    LazyLock,
+};
 use tauri::{Emitter, Manager, Window};
 
-#[cfg(target_os = "windows")]
-#[derive(Default)]
-struct WindowsInstallState {
-    manufacturer_registered: bool,
-    uninstall_registered: bool,
-    desktop_shortcut_created: bool,
-    start_menu_shortcut_created: bool,
+static MAINTENANCE_BUSY: AtomicBool = AtomicBool::new(false);
+struct OperationGuard {
+    _lock: Option<File>,
+}
+impl OperationGuard {
+    fn acquire(machine: bool) -> Result<Self, String> {
+        MAINTENANCE_BUSY
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| "Another maintenance operation is already in progress".to_string())?;
+        let result = (|| {
+            let directory = if machine {
+                let directory = PathBuf::from(
+                    std::env::var_os("PROGRAMDATA")
+                        .ok_or("Machine data directory is unavailable")?,
+                )
+                .join(data_namespace())
+                .join("maintenance");
+                std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+                directory
+            } else {
+                ensure_config_directory()?
+            };
+            let path = directory.join("maintenance.lock");
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(path)
+                .map_err(|e| e.to_string())?;
+            file.try_lock()
+                .map_err(|_| "Another maintenance process is already running".to_string())?;
+            Ok(Self { _lock: Some(file) })
+        })();
+        if result.is_err() {
+            MAINTENANCE_BUSY.store(false, Ordering::Release);
+        }
+        result
+    }
+}
+impl Drop for OperationGuard {
+    fn drop(&mut self) {
+        self._lock.take();
+        MAINTENANCE_BUSY.store(false, Ordering::Release);
+    }
+}
+pub(crate) fn maintenance_busy() -> bool {
+    MAINTENANCE_BUSY.load(Ordering::Acquire)
+}
+
+pub(crate) fn persist_native_outcome(code: u32, error: Option<&str>) {
+    #[cfg(windows)]
+    super::elevation::persist_native_outcome(code, error);
+    #[cfg(not(windows))]
+    let _ = (code, error);
+}
+
+struct UiOperation;
+impl UiOperation {
+    fn acquire() -> Result<Self, String> {
+        MAINTENANCE_BUSY
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| "Another maintenance operation is already running".to_string())?;
+        Ok(Self)
+    }
+}
+impl Drop for UiOperation {
+    fn drop(&mut self) {
+        MAINTENANCE_BUSY.store(false, Ordering::Release);
+    }
+}
+
+/// Kept in the executable so release collection can reject pre-protocol installers.
+pub(crate) const MAINTENANCE_PROTOCOL: &str = "OPENBITFUN_MAINTENANCE_V1";
+
+pub(crate) fn native_mode() -> Option<Result<(), String>> {
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if args.iter().any(|arg| arg == "--maintenance-protocol") {
+        println!("{MAINTENANCE_PROTOCOL}");
+        return Some(Ok(()));
+    }
+    let flags = args
+        .iter()
+        .take_while(|arg| !arg.eq_ignore_ascii_case("/ARGS"))
+        .collect::<Vec<_>>();
+    let update = flags.iter().any(|arg| arg.eq_ignore_ascii_case("/UPDATE"));
+    let install = flags
+        .iter()
+        .any(|arg| arg.eq_ignore_ascii_case("/NATIVE_INSTALL"));
+    let quiet = flags
+        .iter()
+        .any(|arg| *arg == "--quiet" || arg.eq_ignore_ascii_case("/NATIVE_UNINSTALL"));
+    if !update && !quiet && !install {
+        return None;
+    }
+    if crate::preview::is_enabled() {
+        return Some(Err("Preview cannot execute maintenance".into()));
+    }
+    Some(tauri::async_runtime::block_on(async {
+        #[cfg(windows)]
+        if let Some(owner) = args.iter().find_map(|arg| arg.strip_prefix("/OWNER_SID=")) {
+            let target = args
+                .iter()
+                .find_map(|arg| arg.strip_prefix("/OPENBITFUN_TARGET="))
+                .or_else(|| {
+                    args.iter()
+                        .position(|arg| arg == "--uninstall")
+                        .and_then(|index| args.get(index + 1))
+                        .map(String::as_str)
+                })
+                .map(PathBuf::from);
+            let machine = flags
+                .iter()
+                .any(|arg| arg.eq_ignore_ascii_case("/ALLUSERS"))
+                || target
+                    .as_ref()
+                    .is_some_and(|target| super::registry::is_machine_install(target));
+            if !machine && super::elevation::owner_sid()? != owner {
+                return Err("The administrator account differs from the installation owner. Run maintenance as the original owner or ask your administrator to repair the installation; no files were changed".into());
+            }
+        }
+        if update || install {
+            let target = args
+                .iter()
+                .find_map(|arg| arg.strip_prefix("/OPENBITFUN_TARGET=").map(str::to_string))
+                .unwrap_or_else(get_initial_install_path);
+            let validated = prepare_install_target(Path::new(&target))?;
+            let space = get_disk_space(validated.to_string_lossy().into_owned())?;
+            if !space.sufficient {
+                return Err("Insufficient disk space for update staging".into());
+            }
+            #[cfg(windows)]
+            wait_for_update_parent(&args, &validated)?;
+            #[cfg(windows)]
+            if update && !args.iter().any(|arg| arg.starts_with("/READY_EVENT=")) {
+                wait_for_legacy_update_parent(&validated)?;
+            }
+            let options = InstallOptions {
+                install_path: target.clone(),
+                all_users: flags
+                    .iter()
+                    .any(|arg| arg.eq_ignore_ascii_case("/ALLUSERS")),
+                desktop_shortcut: flags
+                    .iter()
+                    .any(|arg| arg.eq_ignore_ascii_case("/DESKTOP_SHORTCUT")),
+                start_menu: flags
+                    .iter()
+                    .any(|arg| arg.eq_ignore_ascii_case("/START_MENU")),
+                launch_after_install: false,
+                app_language: "en-US".into(),
+                theme_preference: "system".into(),
+                model_config: None,
+            };
+            let result = install_impl(None, options).await?;
+            if flags.iter().any(|arg| arg.eq_ignore_ascii_case("/R")) {
+                launch_application(target)?;
+            }
+            if result.cleanup_pending {
+                return Err("Update installed, but maintenance cleanup remains pending; reopen the application and retry cleanup".into());
+            }
+        } else {
+            let path = args
+                .iter()
+                .position(|arg| arg == "--uninstall")
+                .and_then(|index| args.get(index + 1))
+                .cloned()
+                .ok_or("Silent uninstall requires an explicit installation path")?;
+            let result = uninstall_impl(None, path).await?;
+            if result.cleanup_pending {
+                return Err(
+                    "Uninstall completed, but some maintenance files remain; retry cleanup".into(),
+                );
+            }
+        }
+        Ok(())
+    }))
+}
+
+#[cfg(windows)]
+fn wait_for_legacy_update_parent(root: &Path) -> Result<(), String> {
+    let powershell = system_powershell()?;
+    let script = r#"$ErrorActionPreference='Stop'
+$target=[IO.Path]::GetFullPath($env:OPENBITFUN_LEGACY_UPDATE_TARGET)
+$name=[IO.Path]::GetFileNameWithoutExtension($target)
+$deadline=[DateTime]::UtcNow.AddMinutes(3)
+foreach($process in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
+  try { $path=$process.Path } catch { if($process.HasExited) { continue }; throw }
+  if(!$path) { if($process.HasExited) { continue }; throw 'Cannot inspect an OpenBitFun process; close all application instances and retry' }
+  if([String]::Equals([IO.Path]::GetFullPath($path),$target,[StringComparison]::OrdinalIgnoreCase)) {
+    $left=[int][Math]::Max(0,($deadline-[DateTime]::UtcNow).TotalMilliseconds)
+    if(!$process.WaitForExit($left)) { throw 'OpenBitFun did not exit; close the application and retry. No installation files were changed.' }
+  }
+}
+"#;
+    let result = create_windows_silent_command(powershell)
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .env("OPENBITFUN_LEGACY_UPDATE_TARGET", root.join(MAIN_APP_EXE))
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !result.status.success() {
+        return Err(format!(
+            "Cannot wait for the previous OpenBitFun version to exit: {}",
+            String::from_utf8_lossy(&result.stderr)
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn wait_for_update_parent(args: &[String], root: &Path) -> Result<(), String> {
+    use std::ffi::c_void;
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
+        fn QueryFullProcessImageNameW(
+            process: *mut c_void,
+            flags: u32,
+            image: *mut u16,
+            size: *mut u32,
+        ) -> i32;
+        fn OpenEventW(access: u32, inherit: i32, name: *const u16) -> *mut c_void;
+        fn SetEvent(event: *mut c_void) -> i32;
+        fn WaitForMultipleObjects(
+            count: u32,
+            objects: *const *mut c_void,
+            all: i32,
+            milliseconds: u32,
+        ) -> u32;
+        fn CloseHandle(object: *mut c_void) -> i32;
+    }
+    let Some(event_name) = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("/READY_EVENT="))
+    else {
+        return Ok(());
+    };
+    if !event_name.starts_with("Local\\OpenBitFunUpdate-") || event_name.len() > 128 {
+        return Err("Invalid update handoff event".into());
+    }
+    let pid = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("/WAITPID="))
+        .ok_or("Update parent process is missing")?
+        .parse::<u32>()
+        .map_err(|_| "Update parent process is invalid")?;
+    if pid == std::process::id() {
+        return Err("Cannot wait for the maintenance process itself".into());
+    }
+    struct Handle(*mut c_void);
+    impl Drop for Handle {
+        fn drop(&mut self) {
+            unsafe {
+                CloseHandle(self.0);
+            }
+        }
+    }
+    let parent = Handle(unsafe { OpenProcess(0x00100000 | 0x1000, 0, pid) });
+    if parent.0.is_null() {
+        return Err("Cannot establish update parent identity; no files were changed".into());
+    }
+    let mut image = vec![0_u16; 32768];
+    let mut length = image.len() as u32;
+    if unsafe { QueryFullProcessImageNameW(parent.0, 0, image.as_mut_ptr(), &mut length) } == 0
+        || !windows_path_eq_case_insensitive(
+            Path::new(&String::from_utf16_lossy(&image[..length as usize])),
+            &root.join(MAIN_APP_EXE),
+        )
+    {
+        return Err("Update parent does not belong to the target installation".into());
+    }
+    let supervisor_pid = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("/SUPERVISOR_PID="))
+        .ok_or("Update supervisor process is missing")?
+        .parse::<u32>()
+        .map_err(|_| "Invalid update supervisor process")?;
+    let supervisor = Handle(unsafe { OpenProcess(0x00100000, 0, supervisor_pid) });
+    if supervisor.0.is_null() {
+        return Err("Update supervisor is unavailable".into());
+    }
+    let name = std::ffi::OsStr::new(event_name)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let ready = Handle(unsafe { OpenEventW(2, 0, name.as_ptr()) });
+    if ready.0.is_null() || unsafe { SetEvent(ready.0) } == 0 {
+        return Err("Update supervisor is unavailable".into());
+    }
+    // A canceled/timed-out supervisor cannot leave an orphan installer that
+    // applies a formerly canceled update when the user later closes the app.
+    let handles = [supervisor.0, parent.0];
+    if unsafe { WaitForMultipleObjects(2, handles.as_ptr(), 0, 180_000) } != 1 {
+        return Err("Update handoff was canceled or the application did not exit; no installation files were changed".into());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+#[derive(Serialize, Deserialize)]
+struct IntegrationSnapshot {
+    registry: super::registry::Snapshot,
+    shortcuts: super::shortcut::Snapshot,
+}
+
+fn restore_integrations(path: &Path, snapshot: &Value) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let snapshot: IntegrationSnapshot =
+            serde_json::from_value(snapshot.clone()).map_err(|e| e.to_string())?;
+        super::registry::restore(path, &snapshot.registry).map_err(|e| e.to_string())?;
+        super::shortcut::restore(path, &snapshot.shortcuts).map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(windows))]
+    let _ = (path, snapshot);
+    Ok(())
+}
+
+fn snapshot_integrations(path: &Path, tx: &mut Transaction, machine: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let snapshot = IntegrationSnapshot {
+            registry: super::registry::snapshot(path, machine).map_err(|e| e.to_string())?,
+            shortcuts: super::shortcut::snapshot(path, machine).map_err(|e| e.to_string())?,
+        };
+        tx.snapshot_integrations(serde_json::to_value(snapshot).map_err(|e| e.to_string())?)?;
+    }
+    #[cfg(not(windows))]
+    let _ = (path, tx, machine);
+    Ok(())
 }
 
 const MIN_WINDOWS_APP_EXE_BYTES: u64 = 5 * 1024 * 1024;
@@ -47,8 +374,32 @@ const INSTALLER_STATE_FILE: &str = "installer-state.json";
 const EMBEDDED_PAYLOAD_ZIP: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/embedded_payload.zip"));
 
+#[cfg(windows)]
+pub(crate) fn windows_system_directory() -> Result<PathBuf, String> {
+    use std::os::windows::ffi::OsStringExt;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetSystemDirectoryW(buffer: *mut u16, size: u32) -> u32;
+    }
+    let mut buffer = vec![0_u16; 32768];
+    let length = unsafe { GetSystemDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) } as usize;
+    if length == 0 || length >= buffer.len() {
+        return Err("Windows system directory is unavailable".into());
+    }
+    Ok(PathBuf::from(std::ffi::OsString::from_wide(
+        &buffer[..length],
+    )))
+}
+
+#[cfg(windows)]
+pub(crate) fn system_powershell() -> Result<PathBuf, String> {
+    Ok(windows_system_directory()?.join("WindowsPowerShell/v1.0/powershell.exe"))
+}
+
 #[cfg(target_os = "windows")]
-fn create_windows_silent_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
+pub(crate) fn create_windows_silent_command<S: AsRef<std::ffi::OsStr>>(
+    program: S,
+) -> std::process::Command {
     use std::os::windows::process::CommandExt;
 
     const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -74,12 +425,12 @@ static INSTALLER_APP_LANGUAGE_ALIASES_BY_PRIORITY: LazyLock<Vec<(&'static str, &
         aliases
     });
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct PayloadManifest {
     files: Vec<PayloadManifestFile>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct PayloadManifestFile {
     path: String,
     size: u64,
@@ -121,14 +472,19 @@ struct InstallerState {
 
 /// Get the default installation path.
 #[tauri::command]
-pub(crate) fn get_default_install_path() -> String {
+pub(crate) fn get_default_install_path(all_users: Option<bool>) -> String {
     let base = if cfg!(target_os = "windows") {
-        std::env::var("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                dirs::data_local_dir()
-                    .unwrap_or_else(|| PathBuf::from(["C:", "Program Files"].join("\\")))
-            })
+        if all_users == Some(true) {
+            std::env::var_os("ProgramW6432")
+                .or_else(|| std::env::var_os("ProgramFiles"))
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(r"C:\Program Files"))
+        } else {
+            std::env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .or_else(dirs::data_local_dir)
+                .unwrap_or_else(|| PathBuf::from(r"C:\Program Files"))
+        }
     } else if cfg!(target_os = "macos") {
         dirs::home_dir()
             .map(|h| h.join("Applications"))
@@ -149,22 +505,22 @@ pub(crate) fn get_initial_install_path() -> String {
     {
         use super::registry;
         if let Some(data) = registry::read_existing_install_from_uninstall_registry() {
-            if let Ok(resolved) = prepare_install_target(Path::new(&data.install_location)) {
+            if let Ok(resolved) = resolve_install_target(Path::new(&data.install_location)) {
                 return resolved.to_string_lossy().to_string();
             }
         }
         if let Some(from_reg) = registry::read_tauri_install_location() {
-            if let Ok(resolved) = prepare_install_target(Path::new(&from_reg)) {
+            if let Ok(resolved) = resolve_install_target(Path::new(&from_reg)) {
                 return resolved.to_string_lossy().to_string();
             }
         }
     }
     if let Some(saved) = read_last_install_path() {
-        if let Ok(resolved) = prepare_install_target(Path::new(&saved)) {
+        if let Ok(resolved) = resolve_install_target(Path::new(&saved)) {
             return resolved.to_string_lossy().to_string();
         }
     }
-    get_default_install_path()
+    get_default_install_path(None)
 }
 
 /// Detect an existing OpenBitFun install (Tauri NSIS or this installer) via Add/Remove Programs registry.
@@ -303,7 +659,7 @@ fn launch_windows_registered_uninstaller(
 }
 
 #[cfg(target_os = "windows")]
-fn parse_windows_command_line(command_line: &str) -> Result<Vec<String>, String> {
+pub(super) fn parse_windows_command_line(command_line: &str) -> Result<Vec<String>, String> {
     use std::ffi::{c_void, OsStr, OsString};
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
@@ -388,20 +744,14 @@ pub(crate) fn get_disk_space(path: String) -> Result<DiskSpaceInfo, String> {
                 return Ok(DiskSpaceInfo {
                     total: total_bytes,
                     available: free_bytes_available,
-                    required: ESTIMATED_INSTALL_SIZE,
-                    sufficient: free_bytes_available >= ESTIMATED_INSTALL_SIZE,
+                    required: required_install_space()?,
+                    sufficient: free_bytes_available >= required_install_space()?,
                 });
             }
         }
     }
 
-    // Fallback: assume sufficient space
-    Ok(DiskSpaceInfo {
-        total: 0,
-        available: u64::MAX,
-        required: ESTIMATED_INSTALL_SIZE,
-        sufficient: true,
-    })
+    Err("Cannot determine available disk space; check the target drive and retry".into())
 }
 
 #[cfg(target_os = "windows")]
@@ -473,31 +823,147 @@ pub(crate) fn get_launch_context() -> LaunchContext {
 #[tauri::command]
 pub(crate) fn validate_install_path(path: String) -> Result<InstallPathValidation, String> {
     let requested_path = PathBuf::from(&path);
-    let install_path = prepare_install_target(&requested_path)?;
+    // Validation must be read-only. Permission probing belongs to execution,
+    // where the native worker can request elevation for a protected directory.
+    let install_path = resolve_install_target(&requested_path)?;
     Ok(InstallPathValidation {
         install_path: install_path.to_string_lossy().to_string(),
     })
 }
 
 /// Main installation command. Emits progress events to the frontend.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MaintenanceResult {
+    is_update: bool,
+    cleanup_pending: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warning: Option<String>,
+}
+
 #[tauri::command]
 pub(crate) async fn start_installation(
     window: Window,
     options: InstallOptions,
-) -> Result<(), String> {
+) -> Result<MaintenanceResult, String> {
+    #[cfg(windows)]
+    {
+        let path = resolve_install_target(Path::new(&options.install_path))?;
+        super::registry::validate_scope(&path, options.all_users).map_err(|e| e.to_string())?;
+        let needs_elevation = !super::elevation::is_elevated()
+            && (options.all_users
+                || super::registry::is_machine_install(&path)
+                || prepare_install_target(&path)
+                    .is_err_and(|error| error.ends_with("not_writable")));
+        if needs_elevation {
+            let _ui = UiOperation::acquire()?;
+            let is_update =
+                path.join(MAIN_APP_EXE).exists() || path.join(transaction::INVENTORY).exists();
+            emit_progress(
+                Some(&window),
+                "prepare",
+                0,
+                "Waiting for administrator authorization...",
+            );
+            let mut args = vec![
+                "/NATIVE_INSTALL".into(),
+                format!("/OPENBITFUN_TARGET={}", path.display()),
+                format!("/OWNER_SID={}", super::elevation::owner_sid()?),
+            ];
+            if options.all_users || super::registry::is_machine_install(&path) {
+                args.push("/ALLUSERS".into());
+            }
+            if options.desktop_shortcut {
+                args.push("/DESKTOP_SHORTCUT".into());
+            }
+            if options.start_menu {
+                args.push("/START_MENU".into());
+            }
+            let current = std::env::current_exe().map_err(|e| e.to_string())?;
+            let code = tauri::async_runtime::spawn_blocking(move || {
+                super::elevation::run(&current, &args)
+            })
+            .await
+            .map_err(|e| e.to_string())??;
+            if code != 0 && code != 2 {
+                return Err(format!("Administrator maintenance failed (exit code {code}); inspect the reported error before retrying"));
+            }
+            let warning = if !is_update {
+                apply_first_launch_language(&options.app_language)
+                    .await
+                    .err()
+            } else {
+                None
+            };
+            persist_last_install_path(&path);
+            emit_progress(Some(&window), "complete", 100, "Installation complete");
+            return Ok(MaintenanceResult {
+                is_update,
+                cleanup_pending: code == 2,
+                warning,
+            });
+        }
+    }
+    install_impl(Some(window), options).await
+}
+
+async fn install_impl(
+    window: Option<Window>,
+    options: InstallOptions,
+) -> Result<MaintenanceResult, String> {
+    #[cfg(windows)]
+    let machine_lock =
+        options.all_users || super::registry::is_machine_install(Path::new(&options.install_path));
+    #[cfg(not(windows))]
+    let machine_lock = options.all_users;
+    let _operation = OperationGuard::acquire(machine_lock)?;
     let install_path = prepare_install_target(Path::new(&options.install_path))?;
-    let install_dir_was_absent = !install_path.exists();
-    #[cfg(target_os = "windows")]
-    let mut windows_state = WindowsInstallState::default();
+    #[cfg(windows)]
+    super::registry::validate_scope(&install_path, options.all_users).map_err(|e| e.to_string())?;
+    let space = get_disk_space(install_path.to_string_lossy().into_owned())?;
+    if !space.sufficient {
+        return Err(
+            "Insufficient disk space for installation staging and maintenance files".into(),
+        );
+    }
+    let mut transaction = Transaction::open_with_recovery(&install_path, restore_integrations)?;
+    let is_update = install_path.join(MAIN_APP_EXE).exists()
+        || install_path.join(transaction::INVENTORY).exists();
+    let previous = read_installed_inventory(&install_path)?;
+    let stored_version = std::fs::read(install_path.join(transaction::INVENTORY))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|value| {
+            value
+                .get("version")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        });
+    #[cfg(windows)]
+    let stored_version =
+        stored_version.or_else(|| super::registry::installed_version(&install_path));
+    if let Some(version) = stored_version {
+        validate_upgrade_version(&version, env!("CARGO_PKG_VERSION"))?;
+    }
+    #[cfg(windows)]
+    if let Some(version) = installed_binary_version(&install_path.join(MAIN_APP_EXE)) {
+        validate_upgrade_version(&version, env!("CARGO_PKG_VERSION"))?;
+    }
+
+    #[cfg(windows)]
+    let machine = options.all_users || super::registry::is_machine_install(&install_path);
+    #[cfg(not(windows))]
+    let machine = options.all_users;
+    let staging_path = transaction.stage();
 
     let result: Result<(), String> = async {
         // Step 1: Create target directory
-        emit_progress(&window, "prepare", 5, "Creating installation directory...");
+        emit_progress(window.as_ref(), "prepare", 5, "Creating installation directory...");
         std::fs::create_dir_all(&install_path)
             .map_err(|e| format!("Failed to create directory: {}", e))?;
 
         // Step 2: Extract / copy application files
-        emit_progress(&window, "extract", 15, "Extracting application files...");
+        emit_progress(window.as_ref(), "extract", 15, "Extracting application files...");
 
         let mut extracted = false;
         let mut used_debug_placeholder = false;
@@ -513,7 +979,7 @@ pub(crate) async fn start_installation(
             )?);
             extract::extract_zip_bytes_with_filter(
                 EMBEDDED_PAYLOAD_ZIP,
-                &install_path,
+                &staging_path,
                 should_install_payload_path,
             )
             .map_err(|e| format!("Embedded payload extraction failed: {}", e))?;
@@ -529,7 +995,7 @@ pub(crate) async fn start_installation(
             .to_path_buf();
 
         if !extracted {
-            for candidate in build_payload_candidates(&window, &exe_dir) {
+            for candidate in build_payload_candidates(window.as_ref(), &exe_dir) {
                 if candidate.is_zip {
                     checked_locations.push(format!("zip: {}", candidate.path.display()));
                     if !candidate.path.exists() {
@@ -542,7 +1008,7 @@ pub(crate) async fn start_installation(
                     )?);
                     extract::extract_zip_with_filter(
                         &candidate.path,
-                        &install_path,
+                        &staging_path,
                         should_install_payload_path,
                     )
                     .map_err(|e| format!("Extraction failed from {}: {}", candidate.label, e))?;
@@ -562,7 +1028,7 @@ pub(crate) async fn start_installation(
                 )?);
                 extract::copy_directory_with_filter(
                     &candidate.path,
-                    &install_path,
+                    &staging_path,
                     should_install_payload_path,
                 )
                 .map_err(|e| format!("File copy failed from {}: {}", candidate.label, e))?;
@@ -576,7 +1042,7 @@ pub(crate) async fn start_installation(
             if cfg!(debug_assertions) {
                 // Development mode: create a placeholder to simplify local UI iteration.
                 log::warn!("No payload found - running in development mode");
-                let placeholder = install_path.join(MAIN_APP_EXE);
+                let placeholder = staging_path.join(MAIN_APP_EXE);
                 if !placeholder.exists() {
                     std::fs::write(&placeholder, "placeholder")
                         .map_err(|e| format!("Failed to write placeholder: {}", e))?;
@@ -594,10 +1060,26 @@ pub(crate) async fn start_installation(
             let manifest = installed_manifest.as_ref().ok_or_else(|| {
                 "Installer payload manifest was not retained after extraction".to_string()
             })?;
-            verify_installed_payload(&install_path, manifest)?;
+            verify_installed_payload(&staging_path, manifest)?;
         }
 
-        emit_progress(&window, "extract", 50, "Files extracted successfully");
+        emit_progress(window.as_ref(), "extract", 50, "Files extracted successfully");
+
+        let mut manifest = installed_manifest.unwrap_or(PayloadManifest { files: vec![] });
+        #[cfg(windows)] {
+            let current = std::env::current_exe().map_err(|e| e.to_string())?;
+            let uninstaller = staging_path.join("uninstall.exe");
+            std::fs::copy(current, &uninstaller).map_err(|e| format!("Cannot stage uninstaller: {e}"))?;
+            manifest.files.push(PayloadManifestFile { path: "uninstall.exe".into(), size: std::fs::metadata(&uninstaller).map_err(|e| e.to_string())?.len(), sha256: sha256_file(&uninstaller)? });
+        }
+        let inventory = serde_json::json!({ "schema": 1, "productId": "openbitfun", "version": env!("CARGO_PKG_VERSION"), "allUsers": machine, "files": manifest.files });
+        std::fs::write(staging_path.join(transaction::INVENTORY), serde_json::to_vec(&inventory).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        let mut replacements = manifest.files.iter().map(|file| file.path.clone()).collect::<Vec<_>>();
+        if used_debug_placeholder { replacements.push(MAIN_APP_EXE.into()); }
+        replacements.push(transaction::INVENTORY.into());
+        let obsolete = previous.map(|old| old.files.into_iter().map(|file| file.path).filter(|path| !replacements.contains(path)).collect::<Vec<_>>()).unwrap_or_default();
+        snapshot_integrations(&install_path, &mut transaction, machine)?;
+        transaction.publish(&replacements, &obsolete)?;
 
         // Step 3: Windows-specific operations
         #[cfg(target_os = "windows")]
@@ -605,223 +1087,369 @@ pub(crate) async fn start_installation(
             use super::registry;
             use super::shortcut;
 
-            let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
             let uninstaller_path = install_path.join("uninstall.exe");
-            std::fs::copy(&current_exe, &uninstaller_path)
-                .map_err(|e| format!("Failed to create uninstaller executable: {}", e))?;
             let uninstall_command = format!("\"{}\"", uninstaller_path.display());
 
-            emit_progress(&window, "registry", 60, "Registering application...");
+            emit_progress(window.as_ref(), "registry", 60, "Registering application...");
             registry::register_tauri_install_location(&install_path)
                 .map_err(|e| format!("Registry error: {}", e))?;
-            windows_state.manufacturer_registered = true;
+
             registry::register_uninstall_entry(
                 &install_path,
                 env!("CARGO_PKG_VERSION"),
                 &uninstall_command,
             )
             .map_err(|e| format!("Registry error: {}", e))?;
-            windows_state.uninstall_registered = true;
+
 
             // Desktop shortcut
             if options.desktop_shortcut {
-                emit_progress(&window, "shortcuts", 70, "Creating desktop shortcut...");
+                emit_progress(window.as_ref(), "shortcuts", 70, "Creating desktop shortcut...");
                 shortcut::create_desktop_shortcut(&install_path)
                     .map_err(|e| format!("Shortcut error: {}", e))?;
-                windows_state.desktop_shortcut_created = true;
+
             }
 
             // Start Menu
             if options.start_menu {
-                emit_progress(&window, "shortcuts", 75, "Creating Start Menu entry...");
+                emit_progress(window.as_ref(), "shortcuts", 75, "Creating Start Menu entry...");
                 shortcut::create_start_menu_shortcut(&install_path)
                     .map_err(|e| format!("Start Menu error: {}", e))?;
-                windows_state.start_menu_shortcut_created = true;
+
             }
         }
 
         // Step 4: Pass startup preferences to the desktop configuration manager,
         // which remains the only writer of the canonical app.json.
-        emit_progress(&window, "config", 92, "Applying startup preferences...");
-        apply_first_launch_language(&options.app_language)
-            .await
-            .map_err(|e| format!("Failed to apply startup preferences: {}", e))
+        emit_progress(window.as_ref(), "config", 92, "Applying startup preferences...");
+        if !is_update && window.is_some() {
+            apply_first_launch_language(&options.app_language).await
+                .map_err(|e| format!("Failed to apply startup preferences: {e}"))?;
+        }
+        Ok(())
     }
     .await;
 
-    if let Err(err) = result {
-        #[cfg(target_os = "windows")]
-        rollback_installation(&install_path, install_dir_was_absent, &windows_state);
-        #[cfg(not(target_os = "windows"))]
-        rollback_installation(&install_path, install_dir_was_absent);
-        return Err(err);
+    if let Err(error) = result {
+        return match transaction.rollback() {
+            Ok(()) => Err(error),
+            Err(recovery) => Err(format!(
+                "{error}. Recovery failed: {recovery}; installation backup was preserved"
+            )),
+        };
     }
+    let cleaned = transaction.commit()?;
 
-    persist_last_install_path(&install_path);
-    emit_progress(&window, "complete", 100, "Installation complete!");
+    if window.is_some() {
+        persist_last_install_path(&install_path);
+    }
+    emit_progress(window.as_ref(), "complete", 100, "Installation complete!");
 
-    Ok(())
+    Ok(MaintenanceResult {
+        is_update,
+        cleanup_pending: !cleaned,
+        warning: None,
+    })
 }
 
 /// Uninstall OpenBitFun (for the uninstaller companion).
 #[tauri::command]
-pub(crate) async fn uninstall(install_path: String) -> Result<(), String> {
-    let install_path = PathBuf::from(&install_path);
-    let uninstall_targets = collect_uninstall_targets(&install_path)?;
-
-    #[cfg(target_os = "windows")]
+pub(crate) async fn uninstall(
+    window: Window,
+    install_path: String,
+) -> Result<MaintenanceResult, String> {
+    #[cfg(windows)]
     {
-        use super::registry;
-        use super::shortcut;
-
-        let _ = shortcut::remove_desktop_shortcut();
-        let _ = shortcut::remove_start_menu_shortcut();
-        let _ = registry::remove_context_menu();
-        let _ = registry::remove_from_path(&install_path);
-        let _ = registry::remove_autostart_run_entry();
-        let _ = registry::remove_tauri_install_location();
-        let _ = registry::remove_uninstall_entry();
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let current_exe = std::env::current_exe().ok();
-        let running_uninstall_binary = current_exe
-            .as_ref()
-            .and_then(|exe| exe.file_stem().map(|s| s.to_string_lossy().to_string()))
-            .map(|stem| stem.eq_ignore_ascii_case("uninstall"))
-            .unwrap_or(false);
-
-        let current_exe_parent = current_exe
-            .as_ref()
-            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()));
-        let running_from_install_dir = current_exe_parent
-            .as_ref()
-            .map(|parent| windows_path_eq_case_insensitive(parent, &install_path))
-            .unwrap_or(false);
-
-        append_uninstall_runtime_log(&format!(
-            "uninstall called: install_path='{}', current_exe='{}', running_uninstall_binary={}, running_from_install_dir={}",
-            install_path.display(),
-            current_exe
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "<unknown>".to_string()),
-            running_uninstall_binary,
-            running_from_install_dir
-        ));
-
-        let current_exe_path = current_exe.as_deref();
-        remove_installed_targets(&install_path, &uninstall_targets, current_exe_path)?;
-
-        if (running_uninstall_binary || running_from_install_dir)
-            && current_exe_path
-                .map(|exe| {
-                    windows_path_eq_case_insensitive(exe, &install_path.join("uninstall.exe"))
-                })
-                .unwrap_or(false)
+        let path = PathBuf::from(&install_path);
+        if !super::elevation::is_elevated()
+            && (super::registry::is_machine_install(&path)
+                || prepare_install_target(&path)
+                    .is_err_and(|error| error.ends_with("not_writable")))
         {
-            schedule_windows_self_uninstall_cleanup(current_exe_path.unwrap())?;
+            let _ui = UiOperation::acquire()?;
+            let current = std::env::current_exe().map_err(|e| e.to_string())?;
+            let mut args = vec![
+                "/NATIVE_UNINSTALL".into(),
+                "--uninstall".into(),
+                install_path,
+                format!("/OPENBITFUN_TARGET={}", path.display()),
+                format!("/OWNER_SID={}", super::elevation::owner_sid()?),
+            ];
+            if super::registry::is_machine_install(&path) {
+                args.push("/ALLUSERS".into());
+            }
+            let code = tauri::async_runtime::spawn_blocking(move || {
+                super::elevation::run(&current, &args)
+            })
+            .await
+            .map_err(|e| e.to_string())??;
+            if code != 0 && code != 2 {
+                return Err(format!("Administrator uninstall failed (exit code {code}); installation recovery data was retained"));
+            }
+            return Ok(MaintenanceResult {
+                is_update: false,
+                cleanup_pending: code == 2,
+                warning: None,
+            });
         }
     }
-
-    #[cfg(not(target_os = "windows"))]
-    remove_installed_targets(&install_path, &uninstall_targets, None)?;
-    Ok(())
+    uninstall_impl(Some(window), install_path).await
 }
 
-#[cfg(target_os = "windows")]
-fn schedule_windows_self_uninstall_cleanup(uninstall_exe_path: &Path) -> Result<(), String> {
-    let temp_dir = std::env::temp_dir();
-    let pid = std::process::id();
-    let script_path = temp_dir.join(format!("{}-uninstall-{}.cmd", data_namespace(), pid));
-    let log_path = temp_dir.join(format!(
-        "{}-uninstall-cleanup-{}.log",
-        data_namespace(),
-        pid
-    ));
-    let fallback_log_name = format!("{}-uninstall-cleanup.log", data_namespace());
-
-    let script = format!(
-        r#"@echo off
-setlocal enableextensions
-set "TARGET=%~1"
-set "LOG=%~2"
-set "TARGET_DIR=%~dp1"
-if "%TARGET%"=="" exit /b 2
-if "%LOG%"=="" set "LOG=%TEMP%\{fallback_log_name}"
-echo [%DATE% %TIME%] cleanup start > "%LOG%"
-cd /d "%TEMP%"
-for /L %%i in (1,1,30) do (
-  if not exist "%TARGET%" (
-    echo [%DATE% %TIME%] cleanup success on try %%i >> "%LOG%"
-    exit /b 0
-  )
-  del /f /q "%TARGET%" >> "%LOG%" 2>&1
-  if not exist "%TARGET%" (
-    if not "%TARGET_DIR%"=="" rmdir "%TARGET_DIR%" >> "%LOG%" 2>&1
-    echo [%DATE% %TIME%] cleanup success on try %%i >> "%LOG%"
-    exit /b 0
-  )
-  timeout /t 1 /nobreak >nul
-)
-echo [%DATE% %TIME%] cleanup failed after retries >> "%LOG%"
-exit /b 1
-"#
+async fn uninstall_impl(
+    window: Option<Window>,
+    install_path: String,
+) -> Result<MaintenanceResult, String> {
+    #[cfg(windows)]
+    let machine_lock = super::registry::is_machine_install(Path::new(&install_path));
+    #[cfg(not(windows))]
+    let machine_lock = false;
+    let _operation = OperationGuard::acquire(machine_lock)?;
+    let install_path = PathBuf::from(&install_path);
+    if !install_path.is_absolute() || !install_path.is_dir() {
+        return Err("Installed directory is unavailable".into());
+    }
+    if !install_path.join(MAIN_APP_EXE).is_file()
+        && !install_path.join(transaction::INVENTORY).is_file()
+        && !install_path
+            .join(transaction::WORK_DIR)
+            .join("journal.json")
+            .is_file()
+    {
+        return Err(
+            "Cannot establish ownership of this installation; no files were removed".into(),
+        );
+    }
+    // Running from the installation prevents a safe transactional rename.
+    if std::env::current_exe()
+        .ok()
+        .is_some_and(|exe| paths_equal_for_platform(&exe, &install_path.join("uninstall.exe")))
+    {
+        return Err(
+            "Restart the uninstaller from its registered entry before removing files".into(),
+        );
+    }
+    let mut transaction = Transaction::open_with_recovery(&install_path, restore_integrations)?;
+    let targets = collect_uninstall_targets(&install_path)?;
+    let relative = targets
+        .iter()
+        .map(|path| {
+            path.strip_prefix(&install_path)
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .map_err(|e| e.to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    #[cfg(windows)]
+    let machine = super::registry::is_machine_install(&install_path);
+    #[cfg(not(windows))]
+    let machine = false;
+    snapshot_integrations(&install_path, &mut transaction, machine)?;
+    emit_progress(
+        window.as_ref(),
+        "prepare",
+        10,
+        "Preparing uninstallation...",
     );
-
-    std::fs::write(&script_path, script)
-        .map_err(|e| format!("Failed to write cleanup script: {}", e))?;
-
-    append_uninstall_runtime_log(&format!(
-        "scheduled cleanup script='{}', target='{}', cleanup_log='{}'",
-        script_path.display(),
-        uninstall_exe_path.display(),
-        log_path.display()
-    ));
-
-    let child = create_windows_silent_command("cmd")
-        .arg("/C")
-        .arg("call")
-        .arg(&script_path)
-        .arg(uninstall_exe_path)
-        .arg(&log_path)
-        .current_dir(&temp_dir)
-        .spawn()
-        .map_err(|e| format!("Failed to schedule uninstall cleanup: {}", e))?;
-
-    append_uninstall_runtime_log(&format!("cleanup process spawned: pid={}", child.id()));
-
-    Ok(())
+    transaction.publish(&[], &relative)?;
+    let cleanup = (|| -> Result<(), String> {
+        #[cfg(windows)]
+        {
+            use super::{registry, shortcut};
+            emit_progress(
+                window.as_ref(),
+                "shortcuts",
+                60,
+                "Removing owned shortcuts...",
+            );
+            shortcut::remove_desktop_shortcut(&install_path).map_err(|e| e.to_string())?;
+            shortcut::remove_start_menu_shortcut(&install_path).map_err(|e| e.to_string())?;
+            registry::remove_context_menu(&install_path).map_err(|e| e.to_string())?;
+            registry::remove_from_path(&install_path).map_err(|e| e.to_string())?;
+            registry::remove_autostart_run_entry(&install_path).map_err(|e| e.to_string())?;
+            emit_progress(
+                window.as_ref(),
+                "registry",
+                85,
+                "Removing owned registration...",
+            );
+            registry::remove_tauri_install_location(&install_path).map_err(|e| e.to_string())?;
+            registry::remove_uninstall_entry(&install_path).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })();
+    if let Err(error) = cleanup {
+        return match transaction.rollback() {
+            Ok(()) => Err(format!(
+                "Uninstall failed; previous files restored: {error}"
+            )),
+            Err(recovery) => Err(format!(
+                "Uninstall failed: {error}; recovery needs repair: {recovery}"
+            )),
+        };
+    }
+    let cleaned = transaction.commit()?;
+    drop(transaction);
+    if cleaned {
+        for dir in collect_parent_directories(&install_path, &targets) {
+            let _ = std::fs::remove_dir(dir);
+        }
+        let _ = std::fs::remove_dir(&install_path);
+    }
+    emit_progress(
+        window.as_ref(),
+        "complete",
+        100,
+        "Uninstallation complete; user data preserved",
+    );
+    Ok(MaintenanceResult {
+        is_update: false,
+        cleanup_pending: !cleaned,
+        warning: None,
+    })
 }
 
-#[cfg(target_os = "windows")]
-fn windows_path_eq_case_insensitive(a: &Path, b: &Path) -> bool {
+#[cfg(windows)]
+pub(super) fn windows_path_eq_case_insensitive(a: &Path, b: &Path) -> bool {
     fn normalize(path: &Path) -> String {
-        let mut s = path.to_string_lossy().replace('/', "\\").to_lowercase();
-        while s.ends_with('\\') {
-            s.pop();
-        }
-        s
+        std::fs::canonicalize(path)
+            .unwrap_or_else(|_| path.to_path_buf())
+            .to_string_lossy()
+            .replace('/', "\\")
+            .trim_start_matches(r"\\?\")
+            .trim_end_matches('\\')
+            .to_lowercase()
     }
     normalize(a) == normalize(b)
 }
 
-#[cfg(target_os = "windows")]
-fn append_uninstall_runtime_log(message: &str) {
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let log_path = std::env::temp_dir().join(format!("{}-uninstall-runtime.log", data_namespace()));
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
+/// Relocate before creating a WebView so the installed executable is never in use
+/// while the removal transaction backs it up. No command-shell cleanup is needed.
+pub(crate) fn relocate_uninstaller() -> Result<bool, String> {
+    #[cfg(windows)]
     {
-        use std::io::Write;
-        let _ = writeln!(file, "[{}] {}", ts, message);
+        if crate::preview::is_enabled() || !is_running_as_uninstall_binary() {
+            return Ok(false);
+        }
+        let current = std::env::current_exe().map_err(|e| e.to_string())?;
+        let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
+        let root = arguments
+            .iter()
+            .position(|arg| arg == "--uninstall")
+            .and_then(|index| arguments.get(index + 1))
+            .map(PathBuf::from)
+            .or_else(|| current.parent().map(Path::to_path_buf))
+            .ok_or("Uninstaller has no installation directory")?;
+        let temp = tempfile::Builder::new()
+            .prefix("openbitfun-uninstall-")
+            .tempdir()
+            .map_err(|e| e.to_string())?;
+        let copy = temp.path().join("openbitfun-maintenance.exe");
+        std::fs::copy(&current, &copy).map_err(|e| e.to_string())?;
+        let mut child = create_windows_silent_command(&copy)
+            .arg("--uninstall")
+            .arg(&root)
+            .args(&arguments)
+            .spawn()
+            .map_err(|e| format!("Cannot start uninstall maintenance: {e}"))?;
+        let _retained = temp.keep();
+        if arguments.iter().any(|arg| arg == "--quiet") {
+            // Management tools must receive the worker's real result. Keeping
+            // this image mapped may defer backup cleanup (exit 2), but a failed
+            // removal must never be reported as a successful spawn (exit 0).
+            let status = child
+                .wait()
+                .map_err(|e| format!("Cannot read uninstall result: {e}"))?;
+            std::process::exit(status.code().unwrap_or(1));
+        }
+        return Ok(true);
     }
+    #[cfg(not(windows))]
+    Ok(false)
+}
+
+pub(crate) fn schedule_uninstaller_cleanup() {
+    #[cfg(windows)]
+    {
+        let schedule = || -> Result<(), String> {
+            let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+            if executable.file_name() != Some(std::ffi::OsStr::new("openbitfun-maintenance.exe")) {
+                return Ok(());
+            }
+            let directory = executable
+                .parent()
+                .ok_or("Temporary uninstaller directory is unavailable")?;
+            let parent = directory
+                .parent()
+                .ok_or("Temporary uninstaller parent is unavailable")?;
+            if !directory
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("openbitfun-uninstall-"))
+                || !windows_path_eq_case_insensitive(parent, &std::env::temp_dir())
+            {
+                return Ok(());
+            }
+            let powershell = system_powershell()?;
+            // Only the exact relocated executable and its now-empty directory
+            // may be removed. Never recursively delete a computed temp path.
+            let script = r#"$ErrorActionPreference='Stop'
+$process=Get-Process -Id ([int]$env:OPENBITFUN_CLEANUP_PARENT) -ErrorAction SilentlyContinue
+if($process) { $null=$process.Handle; $process.WaitForExit() }
+$file=Join-Path $env:OPENBITFUN_CLEANUP_DIRECTORY 'openbitfun-maintenance.exe'
+for($attempt=0;$attempt -lt 20;$attempt++) {
+  try {
+    if(Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force }
+    [IO.Directory]::Delete($env:OPENBITFUN_CLEANUP_DIRECTORY,$false)
+    break
+  } catch { Start-Sleep -Milliseconds 500 }
+}
+"#;
+            create_windows_silent_command(powershell)
+                .args(["-NoProfile", "-NonInteractive", "-Command", script])
+                .env("OPENBITFUN_CLEANUP_PARENT", std::process::id().to_string())
+                .env("OPENBITFUN_CLEANUP_DIRECTORY", directory)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        };
+        if let Err(error) = schedule() {
+            eprintln!("Temporary uninstaller cleanup could not be scheduled: {error}");
+        }
+    }
+}
+
+/// Keep uninstall usable when an existing machine has no WebView2 runtime.
+#[cfg(windows)]
+pub(crate) fn uninstall_without_webview(path: String) -> Result<(), String> {
+    let root = Path::new(&path);
+    if !super::elevation::is_elevated()
+        && (super::registry::is_machine_install(root)
+            || prepare_install_target(root).is_err_and(|error| error.ends_with("not_writable")))
+    {
+        let args = vec![
+            "/NATIVE_UNINSTALL".into(),
+            "--uninstall".into(),
+            path,
+            format!("/OWNER_SID={}", super::elevation::owner_sid()?),
+        ];
+        let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+        return match super::elevation::run(&executable, &args)? {
+            0 => Ok(()),
+            2 => {
+                Err("Uninstall completed, but some maintenance files remain; retry cleanup".into())
+            }
+            code => Err(format!(
+                "Uninstall failed with exit code {code}; recovery data was retained"
+            )),
+        };
+    }
+    let result = tauri::async_runtime::block_on(uninstall_impl(None, path))?;
+    if result.cleanup_pending {
+        return Err("Uninstall completed, but some maintenance files remain; retry cleanup".into());
+    }
+    Ok(())
 }
 
 /// Launch the installed application.
@@ -866,6 +1494,9 @@ pub(crate) fn launch_legacy_data_migrator(
 /// Close the installer window.
 #[tauri::command]
 pub(crate) fn close_installer(window: Window) {
+    if maintenance_busy() {
+        return;
+    }
     let _ = window.close();
 }
 
@@ -1094,13 +1725,15 @@ fn parse_custom_request_body(raw: &Option<String>) -> Result<Option<Map<String, 
     Ok(Some(obj.clone()))
 }
 
-fn emit_progress(window: &Window, step: &str, percent: u32, message: &str) {
+fn emit_progress(window: Option<&Window>, step: &str, percent: u32, message: &str) {
     let progress = InstallProgress {
         step: step.to_string(),
         percent,
         message: message.to_string(),
     };
-    let _ = window.emit("install-progress", &progress);
+    if let Some(window) = window {
+        let _ = window.emit("install-progress", &progress);
+    }
     log::info!("[{}%] {}: {}", percent, step, message);
 }
 
@@ -1132,10 +1765,12 @@ struct PayloadCandidate {
     is_zip: bool,
 }
 
-fn build_payload_candidates(window: &Window, exe_dir: &Path) -> Vec<PayloadCandidate> {
+fn build_payload_candidates(window: Option<&Window>, exe_dir: &Path) -> Vec<PayloadCandidate> {
     let mut candidates = Vec::new();
 
-    if let Ok(resource_dir) = window.app_handle().path().resource_dir() {
+    if let Some(resource_dir) =
+        window.and_then(|window| window.app_handle().path().resource_dir().ok())
+    {
         candidates.push(PayloadCandidate {
             label: "resource_dir/payload.zip".to_string(),
             path: resource_dir.join("payload.zip"),
@@ -1198,6 +1833,18 @@ fn find_existing_ancestor(path: &Path) -> PathBuf {
 /// Actual install root is always under an `OpenBitFun` directory: `{user choice}/OpenBitFun`.
 /// If the user already chose a path whose last segment is `OpenBitFun`, do not append again.
 fn with_openbitfun_install_subdir(path: PathBuf) -> PathBuf {
+    if path.join(transaction::INVENTORY).exists()
+        || path
+            .join(transaction::WORK_DIR)
+            .join("journal.json")
+            .is_file()
+        || get_existing_installation()
+            .install_location
+            .as_deref()
+            .is_some_and(|existing| paths_equal_for_platform(Path::new(existing), &path))
+    {
+        return path;
+    }
     let already_openbitfun = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -1213,7 +1860,7 @@ fn with_openbitfun_install_subdir(path: PathBuf) -> PathBuf {
 /// Stable codes for `validate_install_path` / `prepare_install_target`; localized in the frontend.
 const INSTALL_PATH_ERR_PREFIX: &str = "INSTALL_PATH::";
 
-fn prepare_install_target(requested_path: &Path) -> Result<PathBuf, String> {
+fn resolve_install_target(requested_path: &Path) -> Result<PathBuf, String> {
     if !requested_path.is_absolute() {
         return Err(format!("{}not_absolute", INSTALL_PATH_ERR_PREFIX));
     }
@@ -1232,7 +1879,13 @@ fn prepare_install_target(requested_path: &Path) -> Result<PathBuf, String> {
         if !install_path.is_dir() {
             return Err(format!("{}path_not_directory", INSTALL_PATH_ERR_PREFIX));
         }
-        if directory_has_entries(&install_path)? && !install_path.join(MAIN_APP_EXE).exists() {
+        if directory_has_entries(&install_path)?
+            && !install_path.join(MAIN_APP_EXE).exists()
+            && !install_path
+                .join(transaction::WORK_DIR)
+                .join("journal.json")
+                .is_file()
+        {
             return Err(format!(
                 "{}directory_must_be_empty_or_openbitfun",
                 INSTALL_PATH_ERR_PREFIX
@@ -1240,32 +1893,128 @@ fn prepare_install_target(requested_path: &Path) -> Result<PathBuf, String> {
         }
     }
 
-    let writable_dir = if install_path.exists() {
+    Ok(install_path)
+}
+
+fn prepare_install_target(requested_path: &Path) -> Result<PathBuf, String> {
+    let install_path = resolve_install_target(requested_path)?;
+    let writable = if install_path.exists() {
         install_path.clone()
     } else {
         find_existing_ancestor(&install_path)
     };
-    let test_file = writable_dir.join(format!("{}_install_test", hidden_data_directory()));
-    match std::fs::write(&test_file, "test") {
-        Ok(_) => {
-            let _ = std::fs::remove_file(&test_file);
-            Ok(install_path)
+    let probe = tempfile::Builder::new()
+        .prefix(".openbitfun-write-probe-")
+        .tempfile_in(&writable);
+    match probe {
+        Ok(_) => Ok(install_path),
+        Err(error) if error.raw_os_error() == Some(112) => {
+            Err("Insufficient disk space for maintenance staging".into())
         }
+        Err(error) if error.kind() != std::io::ErrorKind::PermissionDenied => Err(format!(
+            "Cannot probe installation directory {}: {error}",
+            writable.display()
+        )),
         Err(_) if install_path.exists() => {
-            Err(format!("{}directory_not_writable", INSTALL_PATH_ERR_PREFIX))
+            Err(format!("{INSTALL_PATH_ERR_PREFIX}directory_not_writable"))
         }
-        Err(_) => Err(format!("{}parent_not_writable", INSTALL_PATH_ERR_PREFIX)),
+        Err(_) => Err(format!("{INSTALL_PATH_ERR_PREFIX}parent_not_writable")),
     }
 }
 
 fn directory_has_entries(path: &Path) -> Result<bool, String> {
-    let mut entries = std::fs::read_dir(path)
-        .map_err(|_| format!("{}inspect_directory_failed", INSTALL_PATH_ERR_PREFIX))?;
-    Ok(entries
-        .next()
-        .transpose()
-        .map_err(|_| format!("{}inspect_directory_failed", INSTALL_PATH_ERR_PREFIX))?
-        .is_some())
+    for entry in std::fs::read_dir(path)
+        .map_err(|_| format!("{INSTALL_PATH_ERR_PREFIX}inspect_directory_failed"))?
+    {
+        let entry =
+            entry.map_err(|_| format!("{INSTALL_PATH_ERR_PREFIX}inspect_directory_failed"))?;
+        if ![
+            transaction::WORK_DIR,
+            transaction::LOCK_FILE,
+            transaction::INVENTORY,
+        ]
+        .iter()
+        .any(|name| entry.file_name() == std::ffi::OsStr::new(name))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+#[cfg(windows)]
+fn installed_binary_version(path: &Path) -> Option<String> {
+    let output = create_windows_silent_command(system_powershell().ok()?)
+        .args(["-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); [Console]::Write([Diagnostics.FileVersionInfo]::GetVersionInfo($env:OPENBITFUN_VERSION_TARGET).ProductVersion)"])
+        .env("OPENBITFUN_VERSION_TARGET", path).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let version = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    // Numeric Windows file versions can lose prerelease information. Only an
+    // exact semantic ProductVersion may override legacy registration metadata.
+    semver::Version::parse(&version).ok().map(|_| version)
+}
+
+fn validate_upgrade_version(installed: &str, incoming: &str) -> Result<(), String> {
+    let installed = semver::Version::parse(installed).map_err(|_| {
+        "Installed version is unreadable; retain the installation and repair its metadata"
+    })?;
+    let incoming = semver::Version::parse(incoming).map_err(|_| "Installer version is invalid")?;
+    if incoming < installed {
+        return Err(format!("Downgrade from {installed} to {incoming} was refused to protect existing configuration and session data"));
+    }
+    Ok(())
+}
+
+fn required_install_space() -> Result<u64, String> {
+    let manifest = if embedded_payload_available() {
+        Some(read_payload_manifest_from_zip_bytes(
+            EMBEDDED_PAYLOAD_ZIP,
+            "embedded payload",
+        )?)
+    } else {
+        None
+    };
+    let payload = manifest
+        .map(|m| {
+            m.files
+                .iter()
+                .map(|f| f.size.saturating_add(8192))
+                .sum::<u64>()
+        })
+        .unwrap_or(ESTIMATED_INSTALL_SIZE);
+    let uninstaller = std::env::current_exe()
+        .ok()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .unwrap_or(0);
+    Ok(payload
+        .saturating_add(uninstaller)
+        .saturating_add(1024 * 1024))
+}
+
+fn read_installed_inventory(root: &Path) -> Result<Option<PayloadManifest>, String> {
+    match std::fs::read(root.join(transaction::INVENTORY)) {
+        Ok(bytes) => {
+            let value: Value = serde_json::from_slice(&bytes).map_err(|e| {
+                format!("Installed inventory is unreadable; retained for repair: {e}")
+            })?;
+            if value.get("schema").and_then(Value::as_u64) != Some(1)
+                || value.get("productId").and_then(Value::as_str) != Some("openbitfun")
+            {
+                return Err("Unsupported installed inventory; no files were removed".into());
+            }
+            let manifest: PayloadManifest =
+                serde_json::from_value(value).map_err(|e| e.to_string())?;
+            for file in &manifest.files {
+                transaction::relative_path(&file.path)?;
+            }
+            Ok(Some(manifest))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("Cannot read installed inventory: {e}")),
+    }
 }
 
 fn ensure_config_directory() -> Result<PathBuf, String> {
@@ -1702,7 +2451,11 @@ fn collect_payload_relative_paths_for_uninstall() -> Result<Vec<String>, String>
 }
 
 fn collect_uninstall_targets(install_path: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut relative_paths = collect_payload_relative_paths_for_uninstall()?;
+    let mut relative_paths = match read_installed_inventory(install_path)? {
+        Some(manifest) => manifest.files.into_iter().map(|file| file.path).collect(),
+        None => collect_payload_relative_paths_for_uninstall()?,
+    };
+    relative_paths.push(transaction::INVENTORY.into());
     relative_paths.push("uninstall.exe".to_string());
 
     let mut targets: Vec<PathBuf> = relative_paths
@@ -1715,38 +2468,6 @@ fn collect_uninstall_targets(install_path: &Path) -> Result<Vec<PathBuf>, String
     targets.sort();
     targets.dedup();
     Ok(targets)
-}
-
-fn remove_installed_targets(
-    install_path: &Path,
-    targets: &[PathBuf],
-    skip_file: Option<&Path>,
-) -> Result<(), String> {
-    for path in targets {
-        if skip_file
-            .map(|skip| paths_equal_for_platform(path, skip))
-            .unwrap_or(false)
-        {
-            continue;
-        }
-
-        if !path.exists() {
-            continue;
-        }
-
-        if path.is_file() {
-            std::fs::remove_file(path).map_err(|e| {
-                format!("Failed to remove installed file {}: {}", path.display(), e)
-            })?;
-        }
-    }
-
-    for dir in collect_parent_directories(install_path, targets) {
-        let _ = std::fs::remove_dir(&dir);
-    }
-    let _ = std::fs::remove_dir(install_path);
-
-    Ok(())
 }
 
 fn collect_parent_directories(root: &Path, paths: &[PathBuf]) -> Vec<PathBuf> {
@@ -1775,19 +2496,7 @@ fn collect_parent_directories(root: &Path, paths: &[PathBuf]) -> Vec<PathBuf> {
 }
 
 fn sanitize_manifest_relative_path(raw: &str) -> Result<PathBuf, String> {
-    let path = PathBuf::from(raw);
-    if path.is_absolute() {
-        return Err(format!("Manifest entry must be relative: {}", raw));
-    }
-
-    if path
-        .components()
-        .any(|component| matches!(component, std::path::Component::ParentDir))
-    {
-        return Err(format!("Manifest entry escapes install directory: {}", raw));
-    }
-
-    Ok(path)
+    transaction::relative_path(raw)
 }
 
 fn verify_installed_payload(install_path: &Path, manifest: &PayloadManifest) -> Result<(), String> {
@@ -1861,43 +2570,6 @@ fn paths_equal_for_platform(a: &Path, b: &Path) -> bool {
     }
 }
 
-#[cfg(target_os = "windows")]
-fn rollback_installation(
-    install_path: &Path,
-    install_dir_was_absent: bool,
-    windows_state: &WindowsInstallState,
-) {
-    use super::registry;
-    use super::shortcut;
-
-    log::warn!("Installation failed, starting rollback");
-
-    if windows_state.manufacturer_registered {
-        let _ = registry::remove_tauri_install_location();
-    }
-    if windows_state.start_menu_shortcut_created {
-        let _ = shortcut::remove_start_menu_shortcut();
-    }
-    if windows_state.desktop_shortcut_created {
-        let _ = shortcut::remove_desktop_shortcut();
-    }
-    if windows_state.uninstall_registered {
-        let _ = registry::remove_uninstall_entry();
-    }
-
-    if install_dir_was_absent && install_path.exists() {
-        let _ = std::fs::remove_dir_all(install_path);
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn rollback_installation(install_path: &Path, install_dir_was_absent: bool) {
-    log::warn!("Installation failed, starting rollback");
-    if install_dir_was_absent && install_path.exists() {
-        let _ = std::fs::remove_dir_all(install_path);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1910,6 +2582,162 @@ mod tests {
     };
     use std::io::{Cursor, Write};
     use zip::write::SimpleFileOptions;
+
+    #[test]
+    fn upgrades_accept_repair_and_prerelease_transitions_but_refuse_downgrades() {
+        assert!(super::validate_upgrade_version("1.0.9", "1.0.10").is_ok());
+        assert!(super::validate_upgrade_version("1.0.10", "1.0.10").is_ok());
+        assert!(super::validate_upgrade_version("1.0.10-beta.1", "1.0.10").is_ok());
+        assert!(super::validate_upgrade_version("1.0.10", "1.0.10-beta.1").is_err());
+        assert!(super::validate_upgrade_version("2.0.0", "1.0.10").is_err());
+        assert!(super::validate_upgrade_version("invalid", "1.0.10").is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires OPENBITFUN_PACKAGED_VERSION_FIXTURE pointing to a built desktop executable"]
+    fn packaged_binary_version_prevents_unregistered_downgrades() {
+        let executable = std::env::var_os("OPENBITFUN_PACKAGED_VERSION_FIXTURE")
+            .expect("packaged executable fixture");
+        let version = super::installed_binary_version(std::path::Path::new(&executable))
+            .expect("built application must expose a semantic ProductVersion");
+        assert_eq!(version, env!("CARGO_PKG_VERSION"));
+        assert!(super::validate_upgrade_version(&version, "0.0.0").is_err());
+        assert!(super::validate_upgrade_version(&version, &version).is_ok());
+    }
+
+    #[test]
+    fn path_validation_keeps_interrupted_roots_recoverable_before_the_main_binary_is_restored() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("OpenBitFun");
+        std::fs::create_dir_all(root.join(super::transaction::WORK_DIR)).unwrap();
+        std::fs::write(root.join("runtime.js"), "old runtime").unwrap();
+        assert!(super::validate_install_path(root.to_string_lossy().into()).is_err());
+        std::fs::write(
+            root.join(super::transaction::WORK_DIR).join("journal.json"),
+            "invalid journal retained for repair",
+        )
+        .unwrap();
+        let validated = super::validate_install_path(root.to_string_lossy().into()).unwrap();
+        assert_eq!(std::path::PathBuf::from(validated.install_path), root);
+        assert!(super::Transaction::open(&root).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn legacy_update_flags_wait_for_the_previous_executable_to_exit() {
+        use std::process::Stdio;
+        let temp = tempfile::tempdir().unwrap();
+        let ping = std::path::PathBuf::from(std::env::var_os("SYSTEMROOT").unwrap())
+            .join("System32/ping.exe");
+        let target = temp.path().join(MAIN_APP_EXE);
+        std::fs::copy(ping, &target).unwrap();
+        let mut previous = super::create_windows_silent_command(&target)
+            .args(["-n", "2", "127.0.0.1"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        super::wait_for_legacy_update_parent(temp.path()).unwrap();
+        assert!(
+            previous.try_wait().unwrap().is_some(),
+            "legacy handoff must not publish while the old executable is still running"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn update_handoff_waits_for_the_parent_and_aborts_when_the_supervisor_dies() {
+        use std::{
+            ffi::c_void,
+            process::{Child, Stdio},
+        };
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn CreateEventW(
+                attributes: *mut c_void,
+                manual: i32,
+                initial: i32,
+                name: *const u16,
+            ) -> *mut c_void;
+            fn WaitForSingleObject(handle: *mut c_void, timeout: u32) -> u32;
+            fn CloseHandle(handle: *mut c_void) -> i32;
+        }
+        struct Process(Child);
+        impl Drop for Process {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        struct Event(*mut c_void);
+        impl Drop for Event {
+            fn drop(&mut self) {
+                unsafe {
+                    CloseHandle(self.0);
+                }
+            }
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let ping = std::path::PathBuf::from(std::env::var_os("SYSTEMROOT").unwrap())
+            .join("System32/ping.exe");
+        let fake_app = temp.path().join(MAIN_APP_EXE);
+        std::fs::copy(&ping, &fake_app).unwrap();
+        let spawn = |path: &std::path::Path| {
+            Process(
+                super::create_windows_silent_command(path)
+                    .args(["-n", "30", "127.0.0.1"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .unwrap(),
+            )
+        };
+        for parent_exits in [true, false] {
+            let mut parent = spawn(&fake_app);
+            let mut supervisor = spawn(&ping);
+            let name = format!(
+                "Local\\OpenBitFunUpdate-fixture-{}-{parent_exits}",
+                std::process::id()
+            );
+            let wide = name
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect::<Vec<_>>();
+            let ready = Event(unsafe { CreateEventW(std::ptr::null_mut(), 1, 0, wide.as_ptr()) });
+            assert!(!ready.0.is_null());
+            let args = vec![
+                format!("/READY_EVENT={name}"),
+                format!("/WAITPID={}", parent.0.id()),
+                format!("/SUPERVISOR_PID={}", supervisor.0.id()),
+            ];
+            let root = temp.path().to_path_buf();
+            let waiter = std::thread::spawn(move || super::wait_for_update_parent(&args, &root));
+            assert_eq!(
+                unsafe { WaitForSingleObject(ready.0, 10_000) },
+                0,
+                "native preflight must acknowledge readiness"
+            );
+            assert!(
+                !waiter.is_finished(),
+                "readiness must not authorize replacement before parent exit"
+            );
+            if parent_exits {
+                parent.0.kill().unwrap();
+                parent.0.wait().unwrap();
+            } else {
+                supervisor.0.kill().unwrap();
+                supervisor.0.wait().unwrap();
+            }
+            let result = waiter.join().unwrap();
+            assert_eq!(result.is_ok(), parent_exits, "{result:?}");
+            if !parent_exits {
+                assert!(parent.0.try_wait().unwrap().is_none());
+            }
+        }
+    }
 
     #[test]
     fn legacy_migration_command_reports_the_independent_distribution() {

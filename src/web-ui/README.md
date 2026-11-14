@@ -9,6 +9,13 @@ This directory contains OpenBitFun’s **Web UI** (React + TypeScript). The same
 - **Desktop**: loaded via **Tauri**
 - **Server/Web**: built into static assets and served by the backend
 
+## Markdown in conversations
+
+Use `~~text~~` for strikethrough. Single tildes stay literal, so ranges such as
+`24~30°C` and `1~2mm` can appear in the same paragraph. Escaped tildes (`\~`)
+and tildes inside code stay literal too. This applies to streamed and completed
+replies, including replies containing math; saved message text is unchanged.
+
 ## Closing tabs with the keyboard
 
 In Desktop, **Ctrl+W** on Windows/Linux or **Cmd+W** on macOS closes the current
@@ -74,6 +81,34 @@ Folder addition uses the system picker on this computer and an environment-scope
 All folders in one project must belong to the same connection/environment; remove
 the selected folders before changing either source dimension.
 The form does not show recent projects.
+
+## Connecting Magpie
+
+Open **Settings → Models → Model sources → Detect Magpie**. The inline panel
+checks gateway identity and reads its published model catalog without sending
+an inference request. Start Magpie (or run a Magpie server) on the OpenBitFun host;
+the default address is `http://127.0.0.1:3425/v1` with `magpie-openbitfun` as
+the local app identity. Enter a custom address for another port or reverse proxy.
+Remote/Docker gateways require a gateway key created in Magpie.
+Loopback gateways connect directly on that host even when an outbound model proxy
+is enabled; remote gateway addresses keep the configured proxy policy.
+
+Select the desired models or routing groups and choose **Add models**. They appear
+in **All models**, where they can be tested, assigned as defaults, or added to
+OpenBitFun model pools. Magpie manages the members and routing inside its own
+groups. **Manage models** reopens existing gateways; refreshing never deletes
+saved models, defaults or pool references. Missing entries are shown explicitly.
+
+Discovery runs on the selected OpenBitFun inference host, including Desktop and
+CLI peers; an SSH workspace does not move inference onto that SSH machine. Older
+peers show an unsupported state and retain manual gateway configuration. Remote
+control and detached jobs use the host's saved models through their existing
+model-selection paths; they do not need this settings panel attached. Directory
+access does not establish that inference works. Use the model's connection test
+when you want to send an actual inference request.
+
+Chat Completions is the import default. Use the existing model editor for
+Responses, Anthropic Messages, or manual setup when detection is unavailable.
 
 ## MCP configuration
 

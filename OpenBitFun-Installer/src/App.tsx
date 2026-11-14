@@ -150,7 +150,7 @@ function App() {
               />
             </div>
           )}
-          <WindowControls />
+          <WindowControls busy={installer.isInstalling || installer.isUninstalling} />
         </div>
 
         {installer.step !== 'lang' && installer.step !== 'uninstall' && (

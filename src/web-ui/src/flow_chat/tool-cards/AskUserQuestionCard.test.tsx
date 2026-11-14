@@ -35,6 +35,11 @@ vi.mock('@/infrastructure/api/service-api/ToolAPI', () => ({
   },
 }));
 
+const mailboxMock = vi.hoisted(() => vi.fn());
+vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
+  agentAPI: { getSessionInteractionMailbox: mailboxMock },
+}));
+
 import { toolAPI } from '@/infrastructure/api/service-api/ToolAPI';
 import { AskUserQuestionCard } from './AskUserQuestionCard';
 
@@ -627,6 +632,74 @@ describe('AskUserQuestionCard', () => {
       { 0: ['PostgreSQL'] },
       'session-a',
     );
+  });
+
+  it.each([
+    ['settled', [], null],
+    ['still pending', [{ toolId: 'question-tool-1' }], 'toolCards.askUser.submitFailed'],
+  ])('confirms a lost answer reply from the interaction mailbox (%s)', async (_label, questions, label) => {
+    vi.mocked(toolAPI.submitUserAnswers).mockRejectedValueOnce(new Error('outcome_unknown: reply lost'));
+    let readMailbox!: () => void;
+    mailboxMock.mockReturnValueOnce(new Promise(resolve => {
+      readMailbox = () => resolve({ sessionId: 'session-a', userQuestions: { revision: 1, questions } });
+    }));
+    act(() => {
+      root.render(
+        <AskUserQuestionCard
+          toolItem={questionTool('pending_confirmation')}
+          config={config}
+          sessionId="session-a"
+          isLastItem
+        />,
+      );
+    });
+    act(() => {
+      container.querySelector<HTMLInputElement>('input[value="PostgreSQL"]')?.click();
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>(
+      '[data-openbitfun-part="submit"] button',
+    )?.click());
+    expect(container.querySelector('[data-openbitfun-part="status-label"]')?.textContent)
+      .toBe('toolCards.askUser.confirming');
+    await act(async () => { readMailbox(); });
+    expect(mailboxMock).toHaveBeenCalledWith('session-a');
+    if (label) {
+      expect(container.querySelector('[data-openbitfun-part="status-label"]')?.textContent).toBe(label);
+    } else {
+      // The host no longer waits: the card shows the submitted answers, not an error.
+      expect(container.querySelector('[data-openbitfun-part="answer-pair"]')).not.toBeNull();
+      expect(container.textContent).not.toContain('toolCards.askUser.submitFailed');
+    }
+  });
+
+  it('says a question that settled without this answer was already resolved', async () => {
+    vi.mocked(toolAPI.submitUserAnswers).mockRejectedValueOnce(new Error('Waiting channel not found: question-tool-1'));
+    mailboxMock.mockResolvedValueOnce({ sessionId: 'session-a', userQuestions: { revision: 2, questions: [] } });
+    act(() => {
+      root.render(
+        <AskUserQuestionCard
+          toolItem={questionTool('pending_confirmation')}
+          config={config}
+          sessionId="session-a"
+          isLastItem
+        />,
+      );
+    });
+    act(() => {
+      container.querySelector<HTMLInputElement>('input[value="PostgreSQL"]')?.click();
+    });
+    const submitButton = container.querySelector<HTMLButtonElement>(
+      '[data-openbitfun-part="submit"] button',
+    );
+    await act(async () => submitButton?.click());
+
+    expect(mailboxMock).toHaveBeenCalledWith('session-a');
+    // The refused answer is neither shown as submitted nor offered for a retry.
+    expect(container.querySelector('[data-openbitfun-part="status-label"]')?.textContent)
+      .toBe('toolCards.askUser.alreadyResolved');
+    expect(container.querySelector('[data-openbitfun-part="answer-pair"]')).toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('[data-openbitfun-part="submit"] button')?.disabled)
+      .toBe(true);
   });
 
   it('keeps the form retryable and reports a failed response submission', async () => {

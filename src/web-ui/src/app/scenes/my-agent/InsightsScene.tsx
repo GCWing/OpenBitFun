@@ -300,7 +300,7 @@ const InsightsScene: React.FC = () => {
               <Loader2 size={16} className="insights-scene__spinner" />
             </div>
           ) : reportMetas.length === 0 ? (
-            <div className="insights-scene__empty" data-openbitfun-scene="insights" data-openbitfun-part="empty">{t('insights.noReports')}</div>
+            <div className="insights-scene__empty" data-openbitfun-reading-surface="before" data-openbitfun-scene="insights" data-openbitfun-part="empty">{t('insights.noReports')}</div>
           ) : (
             <div className="insights-scene__report-list">
               {reportMetas.map((meta) => (
@@ -620,7 +620,7 @@ const ReportView: React.FC<{ report: InsightsReport; onBack: () => void }> = ({ 
           {(report.wins_intro || report.big_wins.length > 0) && (
             <section className="insights-section" data-section="wins">
               <h3>{t('insights.bigWins')}</h3>
-              {report.wins_intro && <p className="insights-section-intro"><MarkdownInline text={report.wins_intro} /></p>}
+              {report.wins_intro && <p className="insights-section-intro" data-openbitfun-reading-surface="before"><MarkdownInline text={report.wins_intro} /></p>}
               <div className="insights-wins">
                 {report.big_wins.map((win) => (
                   <div key={win.title} className="insights-win-card">
@@ -638,7 +638,7 @@ const ReportView: React.FC<{ report: InsightsReport; onBack: () => void }> = ({ 
           {(report.friction_intro || report.friction_categories.length > 0) && (
             <section className="insights-section" data-section="friction">
               <h3>{t('insights.friction')}</h3>
-              {report.friction_intro && <p className="insights-section-intro"><MarkdownInline text={report.friction_intro} /></p>}
+              {report.friction_intro && <p className="insights-section-intro" data-openbitfun-reading-surface="before"><MarkdownInline text={report.friction_intro} /></p>}
               <div className="insights-friction">
                 {report.friction_categories.map((f) => (
                   <div key={f.category} className="insights-friction-card">
@@ -665,7 +665,7 @@ const ReportView: React.FC<{ report: InsightsReport; onBack: () => void }> = ({ 
             <section className="insights-section" data-section="horizon">
               <h3>{t('insights.horizon')}</h3>
               {report.horizon_intro && (
-                <p className="insights-section-intro"><MarkdownInline text={report.horizon_intro} /></p>
+                <p className="insights-section-intro" data-openbitfun-reading-surface="before"><MarkdownInline text={report.horizon_intro} /></p>
               )}
               <div className="insights-horizon">
                 {report.on_the_horizon.map((h, i) => (
@@ -740,7 +740,7 @@ const InteractionStyleSection: React.FC<{ report: InsightsReport }> = ({ report 
   return (
     <section className="insights-section">
       <h3>{t('insights.interactionStyle')}</h3>
-      <div className="insights-interaction">
+      <div className="insights-interaction" data-openbitfun-reading-surface="before">
         <p className="insights-interaction__narrative"><MarkdownInline text={interaction_style.narrative} /></p>
         {interaction_style.key_patterns.length > 0 && (
           <div className="insights-interaction__patterns">

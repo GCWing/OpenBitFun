@@ -567,6 +567,63 @@ pub async fn get_clipboard_image(app: tauri::AppHandle) -> Result<ClipboardImage
     }
 }
 
+/// Decodes a PNG into the RGBA bitmap the system clipboard takes.
+fn decode_clipboard_png(png: &[u8]) -> Result<tauri::image::Image<'static>, String> {
+    let rgba = image::load_from_memory_with_format(png, image::ImageFormat::Png)
+        .map_err(|error| format!("Clipboard image is not a readable PNG: {error}"))?
+        .into_rgba8();
+    let (width, height) = rgba.dimensions();
+    Ok(tauri::image::Image::new_owned(
+        rgba.into_raw(),
+        width,
+        height,
+    ))
+}
+
+/// Reads the PNG bytes of a `write_clipboard_image` call.
+///
+/// The webview sends them as the raw IPC body. The postMessage IPC fallback
+/// delivers the same bytes as a JSON number array, which is still accepted.
+fn clipboard_png_from_body(body: &tauri::ipc::InvokeBody) -> Result<Vec<u8>, String> {
+    let png = match body {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        tauri::ipc::InvokeBody::Json(value) => serde_json::from_value::<Vec<u8>>(value.clone())
+            .map_err(|_| {
+                "write_clipboard_image expects PNG bytes as the request body".to_string()
+            })?,
+    };
+    if png.is_empty() {
+        return Err("write_clipboard_image received an empty image".to_string());
+    }
+    Ok(png)
+}
+
+/// Writes a PNG image to this machine's system clipboard.
+///
+/// The webview prefers its own clipboard API and only falls back here. The PNG
+/// travels as the raw IPC body so a large image crosses the bridge as compressed
+/// bytes rather than a JSON array of RGBA pixels built on the UI thread; it is
+/// decoded on a blocking worker. Clipboard writes are controller-local: a Peer
+/// host refuses this command before dispatch.
+#[tauri::command]
+pub async fn write_clipboard_image(
+    app: tauri::AppHandle,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt as _;
+
+    let png = clipboard_png_from_body(request.body())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let image = decode_clipboard_png(&png)?;
+        app.clipboard()
+            .write_image(&image)
+            .map_err(|error| format!("Failed to write clipboard image: {error}"))
+    })
+    .await
+    .map_err(|error| format!("Clipboard image write task failed: {error}"))?
+    .inspect_err(|error| log::warn!("Clipboard image write failed: {}", error))
+}
+
 /// Pastes clipboard files between controller-local paths.
 ///
 /// The remote file provider exposes no copy primitive, so a remote workspace path is refused here
@@ -727,10 +784,53 @@ pub(crate) fn copy_directory_recursive(source: &Path, target: &Path) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::{
-        copy_directory_recursive, decode_file_uri, generate_unique_path,
-        parse_clipboard_path_segments, parse_uri_list, sniff_image_mime,
+        clipboard_png_from_body, copy_directory_recursive, decode_clipboard_png, decode_file_uri,
+        generate_unique_path, parse_clipboard_path_segments, parse_uri_list, sniff_image_mime,
     };
     use std::path::Path;
+
+    fn encode_png(width: u32, height: u32, rgba: Vec<u8>) -> Vec<u8> {
+        let mut png = Vec::new();
+        image::RgbaImage::from_raw(width, height, rgba)
+            .expect("pixel buffer matches dimensions")
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .expect("encode PNG fixture");
+        png
+    }
+
+    #[test]
+    fn clipboard_png_decodes_to_rgba() {
+        let pixels = vec![255, 0, 0, 255, 0, 0, 255, 128];
+        let image = decode_clipboard_png(&encode_png(2, 1, pixels.clone())).expect("decode");
+        assert_eq!((image.width(), image.height()), (2, 1));
+        assert_eq!(image.rgba(), pixels.as_slice());
+    }
+
+    #[test]
+    fn clipboard_png_rejects_other_bytes() {
+        let error = decode_clipboard_png(b"not a png").expect_err("non-PNG must fail");
+        assert!(error.starts_with("Clipboard image is not a readable PNG"));
+    }
+
+    #[test]
+    fn clipboard_png_body_accepts_raw_and_json_fallback() {
+        let png = encode_png(1, 1, vec![1, 2, 3, 4]);
+        assert_eq!(
+            clipboard_png_from_body(&tauri::ipc::InvokeBody::Raw(png.clone())),
+            Ok(png.clone())
+        );
+        assert_eq!(
+            clipboard_png_from_body(&tauri::ipc::InvokeBody::Json(serde_json::json!(png))),
+            Ok(png)
+        );
+        assert!(clipboard_png_from_body(&tauri::ipc::InvokeBody::Raw(Vec::new())).is_err());
+        assert!(
+            clipboard_png_from_body(&tauri::ipc::InvokeBody::Json(serde_json::json!({
+                "image": "not bytes"
+            })))
+            .is_err()
+        );
+    }
 
     #[test]
     fn sniff_image_mime_detects_png_header() {

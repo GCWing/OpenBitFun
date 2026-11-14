@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "8a02be2b328791ebb823e4b7a956bf0371c523caa7f881a6c778cbaa42d72575",
+  "catalogDigest": "778506ae9a8c979c4cea4de5c575be1bde0517def6ee5854dba203665098fa29",
   "commandCount": 705,
   "coverage": {
     "commandCount": 705,
-    "documentedCommandCount": 644,
-    "implementationCommandCount": 61,
-    "implementationDigest": "fdb6f78b009b95270d26834349aade36e0987553167f325a9c674a085b876a2d"
+    "documentedCommandCount": 638,
+    "implementationCommandCount": 67,
+    "implementationDigest": "3c03db6cdd74260fd8b7203d30ea4ab7224b4cfdea4a532c11e41a587cd92b19"
   },
   "commands": [
     {
@@ -409,150 +409,6 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
-      "id": "appearance_market_browse",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:appearance-market"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_browse",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_browse( request: AppearanceMarketBrowseRequest, ) -> Result<AppearanceCursorPage<AppearanceMarketListingSummary>, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_download_release",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:appearance-market"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_download_release",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_download_release( request: AppearanceMarketDownloadRequest, ) -> Result<tauri::ipc::Response, String>",
-      "remoteWorkspacePolicy": "LocalOnly"
-    },
-    {
-      "id": "appearance_market_get_listing",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:appearance-market"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_get_listing",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_get_listing( request: AppearanceMarketSlugRequest, ) -> Result<AppearanceMarketListingDetail, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_get_review_submission",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:market-review"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_get_review_submission",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_get_review_submission( request: AppearanceMarketSubmissionIdRequest, ) -> Result<AppearanceAdminSubmissionDetail, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_list_review_submissions",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:market-review"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_list_review_submissions",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_list_review_submissions( ) -> Result<Vec<AppearanceMarketSubmission>, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_list_submissions",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:market-submissions"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_list_submissions",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_list_submissions() -> Result<Vec<AppearanceMarketSubmission>, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_review_submission",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:market-review"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_review_submission",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_review_submission( request: AppearanceMarketReviewRequest, ) -> Result<AppearanceAdminSubmissionDetail, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "appearance_market_submit_package",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:agent-market-submit"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_submit_package",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_submit_package( request: AppearanceMarketSubmitPackageRequest, ) -> Result<AppearanceMarketSubmission, String>",
-      "remoteWorkspacePolicy": "LocalOnly"
-    },
-    {
-      "id": "appearance_market_withdraw_submission",
-      "moduleId": "appearance_market",
-      "capabilityId": "setting.application.appearance",
-      "capabilityIds": [
-        "setting.application.appearance"
-      ],
-      "documentedItemIds": [
-        "setting.application.appearance:market-submissions"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::appearance_market_api::appearance_market_withdraw_submission",
-      "sourceFile": "src/apps/desktop/src/api/appearance_market_api.rs",
-      "signature": "fn appearance_market_withdraw_submission( request: AppearanceMarketSubmissionIdRequest, ) -> Result<AppearanceMarketSubmission, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
       "id": "append_flow_chat_diagnostics",
       "moduleId": "config",
       "capabilityId": "setting.data.diagnostics",
@@ -949,6 +805,22 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
+      "id": "cancel_app_update_download",
+      "moduleId": "update",
+      "capabilityId": "setting.application.general",
+      "capabilityIds": [
+        "setting.application.general"
+      ],
+      "documentedItemIds": [
+        "setting.application.general:manual-update"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::update_api::cancel_app_update_download",
+      "sourceFile": "src/apps/desktop/src/api/update_api.rs",
+      "signature": "fn cancel_app_update_download(request: PendingUpdateRequest) -> Result<(), String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "cancel_dialog_turn",
       "moduleId": "agentic",
       "capabilityId": "feature.ai-assistant",
@@ -1219,6 +1091,20 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
+      "id": "clear_decision_model_credential",
+      "moduleId": "config",
+      "capabilityId": "setting.application.general",
+      "capabilityIds": [
+        "setting.application.general"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "clear_decision_model_credential",
+      "sourceFile": "src/apps/desktop/src/api/config_api.rs",
+      "signature": "fn clear_decision_model_credential( _state: State<'_, AppState>, _request: GetDecisionModelCredentialStatusRequest, ) -> Result<openbitfun_core::service::decision_model::DecisionModelCredentialStatus, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "clear_mcp_remote_auth",
       "moduleId": "mcp",
       "capabilityId": "setting.tools.mcp",
@@ -1314,6 +1200,20 @@
       "rustPath": "api::agentic_api::compact_session",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
       "signature": "fn compact_session( coordinator: State<'_, Arc<ConversationCoordinator>>, request: CompactSessionRequest, ) -> Result<CompactSessionResponse, String>",
+      "remoteWorkspacePolicy": "RemoteRouted"
+    },
+    {
+      "id": "compile_workspace_latex",
+      "moduleId": "latex",
+      "capabilityId": "feature.files-editor",
+      "capabilityIds": [
+        "feature.files-editor"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::latex_api::compile_workspace_latex",
+      "sourceFile": "src/apps/desktop/src/api/latex_api.rs",
+      "signature": "fn compile_workspace_latex( request: CompileWorkspaceLatexRequest, ) -> Result<CompileWorkspaceLatexResponse, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -3238,6 +3138,20 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
+      "id": "get_decision_model_credential_status",
+      "moduleId": "config",
+      "capabilityId": "setting.application.general",
+      "capabilityIds": [
+        "setting.application.general"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "get_decision_model_credential_status",
+      "sourceFile": "src/apps/desktop/src/api/config_api.rs",
+      "signature": "fn get_decision_model_credential_status( _state: State<'_, AppState>, _request: GetDecisionModelCredentialStatusRequest, ) -> Result<openbitfun_core::service::decision_model::DecisionModelCredentialStatus, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "get_default_review_team_definition",
       "moduleId": "agentic",
       "capabilityId": "feature.code-review",
@@ -3781,7 +3695,7 @@
       "visibility": "documented",
       "rustPath": "get_mode_skill_configs",
       "sourceFile": "src/apps/desktop/src/api/skill_api.rs",
-      "signature": "fn get_mode_skill_configs( state: State<'_, AppState>, mode_id: String, force_refresh: Option<bool>, include_diagnostics: Option<bool>, workspace_id: Option<String>, workspace_path: Option<String>, ) -> Result<Value, String>",
+      "signature": "fn get_mode_skill_configs( state: State<'_, AppState>, mode_id: String, force_refresh: Option<bool>, include_diagnostics: Option<bool>, workspace_id: Option<String>, workspace_path: Option<String>, summary_mode_ids: Option<Vec<String>>, ) -> Result<Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -4804,6 +4718,22 @@
       "rustPath": "git_get_status",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
       "signature": "fn git_get_status( state: State<'_, AppState>, mut request: GitRepositoryRequest, ) -> Result<GitStatus, String>",
+      "remoteWorkspacePolicy": "RemoteRouted"
+    },
+    {
+      "id": "git_get_tracked_change_count",
+      "moduleId": "git",
+      "capabilityId": "feature.git",
+      "capabilityIds": [
+        "feature.git"
+      ],
+      "documentedItemIds": [
+        "feature.git:status-diff"
+      ],
+      "visibility": "documented",
+      "rustPath": "git_get_tracked_change_count",
+      "sourceFile": "src/apps/desktop/src/api/git_api.rs",
+      "signature": "fn git_get_tracked_change_count( state: State<'_, AppState>, request: GitTrackedChangeCountRequest, ) -> Result<Option<usize>, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -7047,6 +6977,20 @@
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
+      "id": "peer_host_bridge_ready",
+      "moduleId": "peer_host_invoke",
+      "capabilityId": "feature.remote-connect",
+      "capabilityIds": [
+        "feature.remote-connect"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::peer_host_invoke::peer_host_bridge_ready",
+      "sourceFile": "src/apps/desktop/src/api/peer_host_invoke.rs",
+      "signature": "fn peer_host_bridge_ready(request: PeerHostBridgeReadyRequest) -> Result<(), String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "peer_host_invoke_complete",
       "moduleId": "peer_host_invoke",
       "capabilityId": "feature.remote-connect",
@@ -7159,6 +7103,22 @@
       "sourceFile": "src/apps/desktop/src/api/acp_client_api.rs",
       "signature": "fn probe_acp_client_requirements( state: State<'_, AppState>, startup_trace: State<'_, DesktopStartupTrace>, request: ProbeAcpClientRequirementsRequest, ) -> Result<Vec<AcpClientRequirementProbe>, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "probe_magpie_gateway",
+      "moduleId": "commands",
+      "capabilityId": "setting.ai.models",
+      "capabilityIds": [
+        "setting.ai.models"
+      ],
+      "documentedItemIds": [
+        "setting.ai.models:available-models"
+      ],
+      "visibility": "documented",
+      "rustPath": "probe_magpie_gateway",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn probe_magpie_gateway( state: State<'_, AppState>, request: openbitfun_core_types::magpie::MagpieProbeRequest, ) -> Result<openbitfun_core_types::magpie::MagpieProbeResult, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "product_control_invoke",
@@ -8702,6 +8662,20 @@
       "rustPath": "save_cloud_speech_config",
       "sourceFile": "src/apps/desktop/src/api/config_api.rs",
       "signature": "fn save_cloud_speech_config( state: State<'_, AppState>, request: SaveCloudSpeechConfigRequest, ) -> Result<SaveCloudSpeechConfigResult, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
+      "id": "save_decision_model_credential",
+      "moduleId": "config",
+      "capabilityId": "setting.application.general",
+      "capabilityIds": [
+        "setting.application.general"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "save_decision_model_credential",
+      "sourceFile": "src/apps/desktop/src/api/config_api.rs",
+      "signature": "fn save_decision_model_credential( _state: State<'_, AppState>, request: openbitfun_core::service::decision_model::SaveDecisionModelCredentialRequest, ) -> Result<openbitfun_core::service::decision_model::DecisionModelCredentialStatus, String>",
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
@@ -11245,6 +11219,20 @@
       "sourceFile": "src/apps/desktop/src/api/worktree_api.rs",
       "signature": "fn worktree_remove( mut request: WorktreeRemoveRequest, ) -> Result<WorktreeRemoveResult, WorktreeError>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
+    },
+    {
+      "id": "write_clipboard_image",
+      "moduleId": "clipboard_file",
+      "capabilityId": "feature.files-editor",
+      "capabilityIds": [
+        "feature.files-editor"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "write_clipboard_image",
+      "sourceFile": "src/apps/desktop/src/api/clipboard_file_api.rs",
+      "signature": "fn write_clipboard_image( app: tauri::AppHandle, request: tauri::ipc::Request<'_>, ) -> Result<(), String>",
+      "remoteWorkspacePolicy": "LocalOnly"
     },
     {
       "id": "write_file_content",

@@ -42,7 +42,10 @@ export function deriveSessionNavStatus({
   session, machine, permissions = [], reachability, activity, unavailable,
 }: SessionNavStatusInput): SessionNavStatus {
   if (!session) return status('idle');
-  if (unavailable) return status('syncing');
+  // An unreachable target cannot receive an answer, and its last known
+  // prompts may already be resolved there. Rank this above approval so the
+  // row never invites a reply that cannot be delivered.
+  if (reachability === 'unreachable') return status('syncing');
   const latestTurn = lastUserDialogTurn(session);
   const trackedId = machine?.context.currentDialogTurnId;
   const turn = trackedId && latestTurn?.id !== trackedId
@@ -69,6 +72,9 @@ export function deriveSessionNavStatus({
         && terminalToolStates.has(item.status)));
   });
   if (pending.length > 0) return status('approval', new Set(pending.map(request => request.requestId)).size);
+  // A delivered approval is answerable even while the activity read cannot
+  // describe the session; only then does the row fall back to syncing.
+  if (unavailable) return status('syncing');
 
   // An unopened Session has no transcript/state-machine projection. The host
   // summary also corrects old hydrated history after a reconnect or restart.
@@ -116,7 +122,7 @@ export function deriveSessionNavStatus({
       session.needsUserAttention === 'tool_confirm' ? 1 : 0);
   }
 
-  if (reachability === 'unreachable' || dispatchState === 'submission_unknown') return status('syncing');
+  if (dispatchState === 'submission_unknown') return status('syncing');
   if (dispatchState === 'submitting' || dispatchState === 'queued') return status('queued');
   if (executing || dispatchState === 'running') return status('running');
   if (isTurnAwaitingRecovery(latestTurn)) return status('paused');

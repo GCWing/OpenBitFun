@@ -198,6 +198,25 @@ pub async fn dispatch(
                 .map_err(|error| anyhow!(error.to_string()))?;
             Ok(serde_json::to_value(status)?)
         }
+        "get_decision_model_credential_status" => {
+            let status = openbitfun_core::service::decision_model::get_credential_status()
+                .await
+                .map_err(|error| anyhow!(error.to_string()))?;
+            Ok(serde_json::to_value(status)?)
+        }
+        "save_decision_model_credential" => {
+            let request = serde_json::from_value(extract_request(&params)?.clone())?;
+            let status = openbitfun_core::service::decision_model::save_credential(request)
+                .await
+                .map_err(|error| anyhow!(error.to_string()))?;
+            Ok(serde_json::to_value(status)?)
+        }
+        "clear_decision_model_credential" => {
+            let status = openbitfun_core::service::decision_model::clear_credential()
+                .await
+                .map_err(|error| anyhow!(error.to_string()))?;
+            Ok(serde_json::to_value(status)?)
+        }
         "get_model_configs" => {
             let models = state
                 .config_service

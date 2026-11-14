@@ -15,6 +15,7 @@ pub use definitions::custom::{CustomMode, CustomSubagent, CustomSubagentKind};
 #[cfg(feature = "external-sources")]
 pub(crate) use definitions::external::ExternalProvidedAgent;
 pub use definitions::hidden::{CodeReviewAgent, DeepReviewAgent, OpenBitFunAgent};
+use definitions::modes::PaperWritingAgent;
 pub use definitions::modes::{
     ClawMode, CoworkMode, CreativeHarness, DeepResearchMode, MinimalHarness, StandardHarness,
     UltimateHarness,
@@ -128,7 +129,6 @@ pub fn standard_harness_tools() -> Vec<String> {
         // further out than an hour, to Cron rather than holding the turn open
         // for the interval.
         "Cron".to_string(),
-        "PublishAppearance".to_string(),
         "PageManage".to_string(),
     ]
 }

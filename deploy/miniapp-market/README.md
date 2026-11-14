@@ -38,11 +38,6 @@ MiniApp 市场网页源码在 `src/miniapp-market-web/`，后端入口在
 
 不要单独上传 `dist/`，也不要在服务器上直接改源码。
 
-Skin 市场复用本服务的 GitHub OAuth、桌面 token 和 Web 会话别名。修改
-`miniapp-market-service/src/auth.rs`、`routes.rs` 或 OAuth 回跳参数时，必须同时
-验证 Skin 的“我的投稿”和“审核”接口；Skin 容器只能通过它自己的部署手册和
-专用 checkout 更新，不能从 MiniApp Compose 项目重建。
-
 ## 部署边界
 
 本目录只能部署 MiniApp 市场。如果同一主机上还运行 Relay、官网或其他服务，不要
@@ -497,8 +492,8 @@ backup root；不要放宽该保护。
 
 GitHub OAuth App 的注册 callback 为
 `https://auth.example.com/api/v1/auth/github/callback`。统一入口将 code/state 原样转交市场的兼容完成端点；只有市场
-host 写入两组 host-only Cookie（`/miniapp` 与 `/skin`），然后桌面授权跳转到
-独立完成页；不要通过 `Domain=.example.com` 扩大 Cookie 信任范围。桌面
+host 写入 host-only Cookie（`/miniapp`），然后桌面授权跳转到独立完成页；不要通过
+`Domain=.example.com` 扩大 Cookie 信任范围。桌面
 poll token 仍受一次性 transaction secret 约束。旧市场 API 与旧完成页路径保留，
 已有安装无需手动迁移。
 
@@ -515,7 +510,7 @@ API 的 Relay/客户端。两个市场各自的网页仍在所属 Compose 项目
 ## 邮箱验证码发布补充
 
 邮箱登录与 GitHub 登录是独立账号，不自动绑定或合并。部署前需同时验证身份服务、
-当前版本 Relay 和 Skin 身份消费者；保留旧 GitHub 数字账号及旧授权启动行为。
+当前版本 Relay 身份消费者；保留旧 GitHub 数字账号及旧授权启动行为。
 客户端使用 `methods=all` 主动选择统一登录页，旧客户端继续走原 GitHub URL。
 
 SMTP 配置单独存放在 `/etc/openbitfun-miniapp-market/smtp.env`，root:root 0600，

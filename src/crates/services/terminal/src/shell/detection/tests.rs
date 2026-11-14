@@ -116,6 +116,20 @@ fn cached_validation_keeps_the_current_discovery_source() {
     assert_eq!(from_path.id, from_system.id);
 }
 
+#[test]
+fn powershell_core_candidate_remains_available_when_version_probe_fails() {
+    let executable = std::env::current_exe().expect("current test executable");
+    let shell = ShellDetector::validate_candidate(ShellCandidate::new(
+        executable.clone(),
+        ShellType::PowerShellCore,
+        ShellDiscoverySource::Path,
+    ))
+    .expect("a discovered executable remains available if its version probe fails");
+
+    assert_eq!(shell.path, executable);
+    assert_eq!(shell.version, None);
+}
+
 #[cfg(unix)]
 #[test]
 fn approval_time_shell_resolution_never_runs_a_version_probe() {

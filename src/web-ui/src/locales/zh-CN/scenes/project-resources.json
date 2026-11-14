@@ -33,7 +33,6 @@
     "primary": "主目录",
     "related": "关联目录",
     "openDirectory": "打开目录 {{name}}",
-    "editDirectory": "编辑目录 {{name}}",
     "scrollPrevious": "查看前面的目录",
     "scrollNext": "查看后面的目录",
     "add": "添加目录",

@@ -5,12 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatInputImagePreview } from './ChatInputImagePreview';
 import type { ImageContext } from '@/types/context';
 const scope = vi.hoisted(() => ({ epoch: 1 }));
-vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({ getActiveSurfaceScope: () => scope }));
+vi.mock('@/infrastructure/peer-device/deviceSurface', async importOriginal => ({
+  ...await importOriginal<typeof import('@/infrastructure/peer-device/deviceSurface')>(),
+  getActiveSurfaceScope: () => scope,
+}));
 
 const { readFileContent } = vi.hoisted(() => ({ readFileContent: vi.fn() }));
 vi.mock('@/infrastructure/api/service-api/WorkspaceAPI', () => ({ workspaceAPI: { readFileContent } }));
 vi.mock('@/infrastructure/i18n', () => ({
-  useI18n: () => ({ t: (_key: string, values: { message: string }) => `Load failed: ${values.message}` }),
+  useI18n: () => ({
+    t: (key: string, values?: { message: string }) => (values ? `Load failed: ${values.message}` : key),
+  }),
   i18nService: { t: (key: string) => key },
 }));
 vi.mock('@/shared/utils/logger', () => ({ createLogger: () => ({ warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() }) }));

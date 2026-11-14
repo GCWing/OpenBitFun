@@ -145,7 +145,14 @@ const OverlaySurface = forwardRef<HTMLDivElement, OverlaySurfaceProps>(function 
   ownerRef.current = rendered.anchor?.owner ?? null;
   returnFocusRef.current = anchorRef.current?.isConnected ? anchorRef.current : ownerRef.current;
   const anchored = Boolean(rendered.anchor);
-  const layout = useAnchoredLayer({ open: present && anchored, anchorRef, layerRef: surfaceRef, fallbackRect: rendered.anchor?.rect });
+  const layout = useAnchoredLayer({
+    open: present && anchored,
+    anchorRef,
+    layerRef: surfaceRef,
+    // Confirmations sit under the trailing actions that open them.
+    align: "end",
+    fallbackRect: rendered.anchor?.rect,
+  });
 
   const close = useCallback((reason: DialogCloseReason) => {
     if (open) onOpenChange(false, reason);
@@ -281,12 +288,17 @@ export const DialogHeading = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivEl
   },
 );
 
-export const DialogTitle = forwardRef<HTMLHeadingElement, HTMLAttributes<HTMLHeadingElement>>(
-  function DialogTitle({ children, className, id, ...props }, ref) {
+export interface DialogTitleProps extends HTMLAttributes<HTMLHeadingElement> {
+  /** Wrap the title up to this many lines instead of truncating it to one. */
+  lines?: number;
+}
+
+export const DialogTitle = forwardRef<HTMLHeadingElement, DialogTitleProps>(
+  function DialogTitle({ children, className, id, lines, ...props }, ref) {
     const context = useDialogContext("DialogTitle");
     return (
       <h2 {...props} className={classNames(styles.title, className)} data-openbitfun-part="title" id={id ?? context.titleId} ref={ref}>
-        <OverflowText>{children}</OverflowText>
+        <OverflowText lines={lines}>{children}</OverflowText>
       </h2>
     );
   },

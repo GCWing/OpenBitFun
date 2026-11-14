@@ -5,8 +5,10 @@ import type { FlowItem, FlowToolItem } from '../types/flow-chat';
 import type { VirtualItem } from '../types/flow-chat-projection';
 import { estimateVirtualItemHeight } from '../components/modern/virtualItemHeightEstimators';
 import { buildInlineToolGroupData } from '../grouping/roundGroups';
+import { projectAdjacentFlowGroups } from '../grouping/groupProjection';
 import { toolCapsuleStateKey } from '../tool-cards/toolCapsuleModel';
 import { localizeMarkdownMatch } from './markdownSectionSearch';
+import { getVirtualItemBookmarkKey } from '../components/modern/virtualItemIdentity';
 
 const tool = (id: string, status: FlowToolItem['status'] = 'completed'): FlowToolItem => ({
   id, type: 'tool', toolName: 'Read', timestamp: 1, status,
@@ -22,6 +24,90 @@ const agent = (id: string, toolName = 'AgentSpawn', status: FlowToolItem['status
 });
 
 describe('desktop conversation document', () => {
+  it('retains live reading rows when a single settled attempt omits item metadata and restores blank lines', () => {
+    const raw = Array.from({ length: 300 }, (_, index) => `\n\nStream paragraph ${index}: ${'Readable **text**. '.repeat(24)}`
+      + (index % 8 === 7 ? '\n\n```typescript\nexport const streamed = true;\n```\n' : '')).join('');
+    const clean = raw.replace(/\n{3,}/g, '\n\n');
+    const text = { id: 'live', type: 'text', content: clean.slice(0, clean.lastIndexOf('\n\nStream paragraph 240:')),
+      attemptId: 'first-attempt', attemptIndex: 1, isMarkdown: true, isStreaming: true, status: 'streaming' } as FlowItem;
+    const projection = new ConversationDocumentProjection(), opts = options();
+    const live = projection.project([source([text])], opts).filter(row => row.timeline?.markdownSection);
+    const durable = { ...text, id: 'journal-text', content: raw, attemptId: undefined, attemptIndex: undefined,
+      isStreaming: false, status: 'completed' } as FlowItem;
+    const incoming = source([durable]); incoming.data.attemptCount = 1;
+    const settled = projection.project([incoming], opts).filter(row => row.timeline?.markdownSection);
+    expect(settled.slice(0, live.length).map(row => row.timeline?.key)).toEqual(live.map(row => row.timeline?.key));
+    expect(settled.map(row => raw.slice(row.timeline!.markdownSection!.start, row.timeline!.markdownSection!.end)).join('')).toBe(raw);
+    expect(settled.every(row => row.type === 'model-round' && row.data.items[0] === durable)).toBe(true);
+    const reopened = new ConversationDocumentProjection().project([incoming], options()).filter(row => row.timeline?.markdownSection);
+    expect(reopened.map(getVirtualItemBookmarkKey)).toEqual(settled.map(getVirtualItemBookmarkKey));
+    expect(settled.some((row, index) => index > 0 && row.timeline?.key !== `turn:live:markdown:${row.timeline?.markdownSection?.start}`)).toBe(true);
+  });
+
+  it.each([undefined, 2])('does not guess missing attempt identity with attempt count %s', attemptCount => {
+    const text = { id: 'live', type: 'text', content: 'Answer', attemptId: 'first-attempt', attemptIndex: 1, status: 'completed' } as FlowItem;
+    const projection = new ConversationDocumentProjection(), opts = options();
+    projection.project([source([text])], opts);
+    const incoming = source([{ ...text, id: 'journal', attemptId: undefined, attemptIndex: undefined } as FlowItem]);
+    incoming.data.attemptCount = attemptCount;
+    expect(projection.project([incoming], opts)[0].timeline?.key).toBe('turn:journal');
+  });
+
+  it('keeps measured section keys while adopting durable narrative IDs and a missing suffix', () => {
+    const content = 'A paragraph with some text.\n\n'.repeat(600);
+    const thought = { id: 'thinking-live', type: 'thinking', content: 'Reasoning.\n\nMore.', status: 'completed' } as FlowItem;
+    const text = { id: 'text-live', type: 'text', content, isMarkdown: true, status: 'completed', isStreaming: false } as FlowItem;
+    const projection = new ConversationDocumentProjection(), opts = options();
+    const live = projection.project([source([thought, text])], opts).filter(row => row.timeline?.markdownSection);
+    const durable = [{ ...thought, id: 'round-thinking-0', content: 'Reasoning.\n\n\nMore.' },
+      { ...text, id: 'round-text-1', content: content + 'Recovered suffix.\n\n'.repeat(400) }] as FlowItem[];
+    const incoming = source(durable);
+    const before = JSON.stringify(incoming);
+    const settled = projection.project([incoming], opts).filter(row => row.timeline?.markdownSection);
+    expect(settled.slice(0, live.length).map(row => row.timeline?.key)).toEqual(live.map(row => row.timeline?.key));
+    expect(settled[0].timeline?.memberIds).toEqual(['round-thinking-0', 'round-text-1']);
+    expect(settled.every(row => row.type === 'model-round' && row.data.items.at(-1) === durable[1])).toBe(true);
+    expect(findTimelineBlockIndex(settled, 0, 'round-text-1', settled[1].timeline!.markdownSection!.start)).toBe(1);
+    expect(JSON.stringify(incoming)).toBe(before);
+    // A repeated host read retains the alias; another view starts from canonical IDs.
+    expect(projection.project([source(durable.map(item => ({ ...item })))], opts).map(row => row.timeline?.key))
+      .toEqual(projection.project([incoming], opts).map(row => row.timeline?.key));
+    const reopened = new ConversationDocumentProjection().project([incoming], options());
+    expect(reopened[0].timeline?.key).toBe('turn:round-thinking-0');
+    expect(reopened.filter(row => row.timeline?.markdownSection).map(getVirtualItemBookmarkKey))
+      .toEqual(settled.map(getVirtualItemBookmarkKey));
+  });
+
+  it.each(['retry', 'replacement', 'insertion', 'tool', 'round', 'turn', 'eviction'] as const)(
+    'does not alias unrelated narrative during %s', change => {
+    const text = { id: 'live', type: 'text', content: 'Original answer', status: 'completed', attemptId: 'attempt', attemptIndex: 0 } as FlowItem;
+    const projection = new ConversationDocumentProjection(), opts = options();
+    const before = source([text, tool('tool')]);
+    projection.project([before], opts);
+    const replacement = { ...text, id: 'durable', ...(change === 'retry' ? { attemptId: 'retry', attemptIndex: 1 }
+      : change === 'replacement' ? { content: 'Different answer' } : {}) } as FlowItem;
+    const after = source([replacement, tool(change === 'tool' ? 'other-tool' : 'tool'),
+      ...(change === 'insertion' ? [tool('inserted')] : [])]);
+    if (change === 'round') after.data = { ...after.data, id: 'another-round' };
+    if (change === 'turn') after.turnId = 'another-turn';
+    if (change === 'eviction') projection.project([], opts);
+    const rows = projection.project([after], opts);
+    expect(rows[findTimelineBlockIndex(rows, 0, 'durable')].timeline?.key).toBe(`${after.turnId}:durable`);
+  });
+
+  it('avoids duplicate display keys when a later canonical item uses an earlier alias', () => {
+    const projection = new ConversationDocumentProjection(), opts = options();
+    const text = { id: 'live', type: 'text', content: 'Answer', status: 'completed' } as FlowItem;
+    projection.project([source([text])], opts);
+    const durable = { ...text, id: 'durable' };
+    const settledSource = source([durable]);
+    expect(projection.project([settledSource], opts)[0].timeline?.key).toBe('turn:live');
+    const rows = projection.project([source([durable, { ...text, content: 'New text' } as FlowItem])], opts);
+    expect(new Set(rows.map(row => row.timeline?.key)).size).toBe(rows.length);
+    expect(rows[0].timeline?.key).toBe('turn:durable');
+    expect(projection.project([settledSource], opts)[0].timeline?.key).toBe('turn:durable');
+  });
+
   it('windows large Markdown with canonical identity, bounded estimates and exact search occurrences', () => {
     const content = Array.from({ length: 300 }, (_, i) => `Paragraph ${i}: fixture **text**.\n\n`).join('')
       + '\n```ts\n' + 'const example = 1;\n'.repeat(100) + '```\n\n' + 'End fixture.\n\n'.repeat(400);
@@ -195,6 +281,114 @@ describe('desktop conversation document', () => {
       .toBe(first.find(item => item.timeline?.memberIds[0] === 'a'));
     expect(next.find(item => item.timeline?.memberIds[0] === 'b'))
       .not.toBe(first.find(item => item.timeline?.memberIds[0] === 'b'));
+  });
+
+  describe('running group presentation', () => {
+    // Group lifecycle comes from the same projection the transcript uses.
+    const live = (items: FlowItem[]) => projectAdjacentFlowGroups([{
+      type: 'model-round', turnId: 'turn', isLastRound: true, isTurnComplete: false,
+      data: { id: 'round', index: 0, startTime: 1, status: 'streaming', isStreaming: true, isComplete: false, items },
+    } as VirtualItem], { isTurnComplete: false })[0];
+    const shown = (rows: VirtualItem[]) => rows.filter(row => row.timeline?.kind === 'group-members')
+      .flatMap(row => row.timeline!.memberIds);
+    const header = (rows: VirtualItem[]) => rows.find(row => row.timeline?.kind === 'group-header')!.timeline!;
+
+    it('shows only the call in flight for a serial run', () => {
+      const rows = new ConversationDocumentProjection().project([live([tool('a'), tool('b'), tool('c', 'running')])], options());
+      expect(header(rows)).toMatchObject({ expanded: false, liveMembers: true });
+      expect(header(rows).group!.phase).toBe('collecting');
+      expect(shown(rows)).toEqual(['c']);
+    });
+
+    it('shows only the calls still running in a parallel batch', () => {
+      const rows = new ConversationDocumentProjection().project(
+        [live([tool('a'), tool('b', 'running'), tool('c'), tool('d', 'running')])], options());
+      expect(shown(rows)).toEqual(['b', 'd']);
+    });
+
+    it('keeps the latest call between serial steps instead of emptying the group', () => {
+      const rows = new ConversationDocumentProjection().project([live([tool('a'), tool('b')])], options());
+      expect(header(rows).liveMembers).toBe(true);
+      expect(shown(rows)).toEqual(['b']);
+    });
+
+    it('lists every member once the reader expands the running group', () => {
+      const projection = new ConversationDocumentProjection();
+      const input = live([tool('a'), tool('b'), tool('c', 'running')]);
+      const id = header(projection.project([input], options())).group!.groupId;
+      const rows = projection.project([input], { ...options(), groupStates: new Map([[id, true]]) });
+      expect(header(rows)).toMatchObject({ expanded: true });
+      expect(header(rows).liveMembers).toBeUndefined();
+      expect(shown(rows)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('keeps an approval answerable inside a folded group without the settled calls', () => {
+      const projection = new ConversationDocumentProjection();
+      const input = live([tool('a'), tool('b'), tool('c')]);
+      const id = header(projection.project([input], options())).group!.groupId;
+      const rows = projection.project([input], {
+        ...options(), groupStates: new Map([[id, false]]), pendingPermissionToolCallIds: new Set(['b']),
+      });
+      expect(shown(rows)).toEqual(['b']);
+    });
+
+    it('keeps a held running group on its live call instead of expanding it', () => {
+      const projection = new ConversationDocumentProjection();
+      const opts = options();
+      const input = live([tool('a'), tool('b'), tool('c', 'running')]);
+      const id = header(projection.project([input], opts)).group!.groupId;
+      // A revealing member and an on-screen reader both hold the group.
+      const release = opts.reader.holdGroup(id, 'reveal:text');
+      expect(shown(projection.project([input], opts))).toEqual(['c']);
+      // Settling under the hold keeps what the reader sees until it releases.
+      const settled = source([tool('a'), tool('b'), tool('c')]);
+      const held = projection.project([settled], opts);
+      expect(header(held).liveMembers).toBe(true);
+      expect(shown(held)).toEqual(['c']);
+      release();
+      expect(shown(projection.project([settled], opts))).toEqual([]);
+    });
+
+    it('keeps the assistant narrative visible while finished calls fold', () => {
+      const note = { id: 'note', type: 'text', content: 'Checking the branch.', isMarkdown: true, isStreaming: false,
+        status: 'completed', timestamp: 1 } as FlowItem;
+      const rows = new ConversationDocumentProjection().project([live([tool('a'), note, tool('b'), tool('c', 'running')])], options());
+      expect(shown(rows)).toEqual(['note', 'c']);
+    });
+
+    it('folds settled thinking with finished calls and keeps the live thought', () => {
+      const thought = (id: string, isStreaming = false) => ({ id, type: 'thinking', content: `Thinking ${id}`,
+        isStreaming, isCollapsed: true, status: isStreaming ? 'streaming' : 'completed', timestamp: 1 }) as FlowItem;
+      const rows = new ConversationDocumentProjection().project([live([
+        thought('t1'), tool('a'), thought('t2'), tool('b'), thought('t3'), tool('c', 'running'), thought('t4', true),
+      ])], options());
+      expect(shown(rows)).toEqual(['c', 't4']);
+      // A thought that just finished stays until something follows it.
+      const settledThought = new ConversationDocumentProjection().project([live([
+        thought('t1'), tool('a'), thought('t2'),
+      ])], options());
+      expect(shown(settledThought)).toEqual(['a', 't2']);
+    });
+
+    it('keeps a settled call that holds focus or a selection', () => {
+      const projection = new ConversationDocumentProjection();
+      const opts = options();
+      const first = projection.project([live([tool('a'), tool('b', 'running')])], opts);
+      const row = first.find(item => item.timeline?.kind === 'group-members' && item.timeline.memberIds.includes('b'))!;
+      opts.reader.setPinnedRows(new Set([row.timeline!.key]));
+      const next = projection.project([live([tool('a'), tool('b'), tool('c', 'running')])], opts);
+      expect(shown(next)).toEqual(['b', 'c']);
+      expect(next.find(item => item.timeline?.memberIds.includes('b'))!.timeline!.key).toBe(row.timeline!.key);
+      opts.reader.setPinnedRows(new Set());
+      expect(shown(projection.project([live([tool('a'), tool('b'), tool('c', 'running')])], opts))).toEqual(['c']);
+    });
+
+    it('folds a settled group to its header', () => {
+      const rows = new ConversationDocumentProjection().project([source([tool('a'), tool('b'), tool('c')])], options());
+      expect(header(rows)).toMatchObject({ expanded: false });
+      expect(header(rows).liveMembers).toBeUndefined();
+      expect(shown(rows)).toEqual([]);
+    });
   });
 
   it('honors explicit folding without destroying child choices and always exposes permission requests', () => {

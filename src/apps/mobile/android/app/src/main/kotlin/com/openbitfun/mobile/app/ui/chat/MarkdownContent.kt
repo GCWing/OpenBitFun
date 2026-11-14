@@ -190,6 +190,8 @@ private fun annotatedInlines(
 
             "emphasis" -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(inline.text) }
 
+            "delete" -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { append(inline.text) }
+
             "code" -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(inline.text) }
 
             // A link in an agent turn is nearly always a file it just touched,

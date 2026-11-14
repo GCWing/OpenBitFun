@@ -46,6 +46,17 @@ Run from repository root:
     pnpm --dir src/web-ui exec node scripts/run-vitest.mjs run src/tools/generative-ui src/tools/generative-widget/GenerativeWidgetPanel.test.tsx src/flow_chat/utils/generativeWidgetProjection.test.ts src/flow_chat/services/flow-chat-manager/PersistenceModule.test.ts src/flow_chat/services/FlowChatManager.test.ts --maxWorkers=50%
     pnpm run check:web
 
+For globally loaded component spacing styles, use the focused selector contract:
+
+    pnpm --dir src/web-ui exec node scripts/run-vitest.mjs run src/tools/generative-ui/genUISpacing.test.ts --maxWorkers=2
+
+Keep element-child gap matching and selector specificity stable. Universal sibling
+rules in these styles can invalidate unrelated FlowChat rows even when no GenUI
+document is open. Use native invalidation/Selector Stats evidence to locate a
+hotspot, then ordinary traces to verify the gain; matching counts alone are not
+performance evidence. Preserve hidden-child and nested-stack spacing when changing
+the selector or considering layout gap.
+
 For shared schema or tool changes:
 
     cargo test --locked -p openbitfun-product-domains --no-default-features --lib generative_ui

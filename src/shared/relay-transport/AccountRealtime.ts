@@ -3,6 +3,7 @@ import { CLIENT_PROTOCOL_VERSION, CLIENT_VERSION } from './ClientBuild';
 /** Shared account connection. Protocol reference: Happy apiSocket/RpcHandlerManager. */
 import { io, type Socket } from 'socket.io-client';
 import { RpcPayload } from './RpcPayload';
+import { relayEndpointBase } from './RelayEndpoint';
 
 /** Encrypted `DeviceEvent` forwarded by the Relay from another account device.
  * The Relay sees only ciphertext; the owner decrypts with the pairwise key. */
@@ -34,10 +35,9 @@ export class AccountRealtime {
 
   constructor(options: RealtimeOptions) {
     this.payloads = new RpcPayload(options.url, options.token);
-    const url = new URL(options.url);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-      throw new Error('Invalid Relay URL');
-    }
+    const base = relayEndpointBase(options.url);
+    if (!base) throw new Error('Invalid Relay URL');
+    const url = new URL(base);
     const path = `${url.pathname.replace(/\/$/, '')}/v1/updates`;
     this.socket = io(url.origin, {
       path, transports: ['websocket'], forceNew: true, autoConnect: false,

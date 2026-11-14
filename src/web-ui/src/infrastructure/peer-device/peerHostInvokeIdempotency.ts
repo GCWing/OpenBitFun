@@ -45,15 +45,25 @@ export function peerHostInvokeIdempotencyKey(
 }
 
 /**
- * Coalesces concurrent retries and briefly caches the completed result. The
- * controller can therefore replay the same turn submission after an
- * ambiguous Relay failure without executing the prompt twice on the host.
+ * How long a settled submission stays replayable on this host. It must outlive
+ * the controller's whole retry budget for one idempotent submission (five
+ * attempts of up to 120 s plus backoff, about 10.2 minutes); a shorter TTL let
+ * a late retry miss the cache and run into the Runtime's duplicate-turn refusal.
+ */
+export const PEER_HOST_INVOKE_IDEMPOTENCY_TTL_MS = 15 * 60_000;
+
+/**
+ * Coalesces concurrent retries and caches an accepted result. The controller
+ * can therefore replay the same turn submission after an ambiguous Relay
+ * failure without executing the prompt twice on the host. A failed
+ * submission was not admitted, so it is forgotten once settled: an explicit
+ * retry after a transient failure runs again instead of replaying the error.
  */
 export class PeerHostInvokeIdempotencyCache {
   private readonly entries = new Map<string, CachedExecution>();
 
   constructor(
-    private readonly ttlMs = 2 * 60_000,
+    private readonly ttlMs = PEER_HOST_INVOKE_IDEMPOTENCY_TTL_MS,
     private readonly maxEntries = 128,
     private readonly now: () => number = Date.now,
   ) {}
@@ -75,11 +85,20 @@ export class PeerHostInvokeIdempotencyCache {
     }
 
     const promise = Promise.resolve().then(operation);
-    this.entries.set(key, {
+    const entry: CachedExecution = {
       expiresAt: this.now() + this.ttlMs,
       promise,
-    });
+    };
+    this.entries.set(key, entry);
     this.enforceCapacity();
+    const forget = () => {
+      if (this.entries.get(key) === entry) {
+        this.entries.delete(key);
+      }
+    };
+    promise.then(result => {
+      if (!result.ok) forget();
+    }, forget);
     return promise;
   }
 

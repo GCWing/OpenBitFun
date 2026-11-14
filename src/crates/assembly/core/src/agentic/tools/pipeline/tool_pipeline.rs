@@ -24,7 +24,6 @@ use openbitfun_agent_runtime::permission::{
     plan_permission_intents, PendingPermissionReceiver, PermissionIntentPlan,
     PermissionRequestManager, PermissionWaitOutcome,
 };
-use openbitfun_agent_runtime::sdk::PermissionReplySource;
 use openbitfun_agent_stream::ToolArgumentRepairKind;
 use openbitfun_agent_tools::{
     build_invalid_tool_call_error_message, build_normal_tool_json_repair_notice,
@@ -42,8 +41,11 @@ use openbitfun_agent_tools::{
 #[cfg(feature = "ptc-runtime")]
 use openbitfun_core_types::PtcLanguage;
 use openbitfun_runtime_ports::{
-    PermissionReply, PermissionRequest, PermissionRequestSource, PermissionRequestSourceKind,
-    PermissionResourceCaseSensitivity, RoundInjectionToolPreemption,
+    PermissionApprovalOnAsk, PermissionApprovalOnError, PermissionApprovalStrategy,
+    PermissionDecision, PermissionDecisionInput, PermissionDecisionOutcome, PermissionDecisionPort,
+    PermissionReasonCode, PermissionReply, PermissionReplySource, PermissionRequest,
+    PermissionRequestSource, PermissionRequestSourceKind, PermissionResourceCaseSensitivity,
+    PermissionRiskClass, RoundInjectionToolPreemption,
 };
 #[cfg(feature = "ptc-runtime")]
 use openbitfun_runtime_ports::{
@@ -711,6 +713,59 @@ fn permission_resource_case_sensitivity(
     }
 }
 
+fn approval_resource_summary(resource: &str) -> String {
+    let mut summary = resource.trim().replace('\n', " ").replace('\r', " ");
+    for marker in [
+        "api_key",
+        "api-key",
+        "token",
+        "password",
+        "secret",
+        "authorization",
+    ] {
+        let lower = summary.to_ascii_lowercase();
+        if let Some(start) = lower.find(marker) {
+            let end = summary[start..]
+                .find(|character: char| {
+                    character.is_whitespace() || character == ',' || character == ';'
+                })
+                .map(|offset| start + offset)
+                .unwrap_or(summary.len());
+            summary.replace_range(start..end, "[REDACTED]");
+        }
+    }
+    if summary.len() > 160 {
+        summary.truncate(160);
+        summary.push('…');
+    }
+    summary
+}
+
+fn permission_decision_input(
+    request: &PermissionRequest,
+    current_user_message: Option<&str>,
+) -> PermissionDecisionInput {
+    PermissionDecisionInput {
+        request_id: request.request_id.clone(),
+        action: request.action.clone(),
+        tool_identity: request.source.identity.clone(),
+        resource_summaries: request
+            .resources
+            .iter()
+            .map(|resource| approval_resource_summary(resource))
+            .collect(),
+        workspace_scope: request.project_path.clone(),
+        current_user_message: current_user_message.map(ToOwned::to_owned),
+        delegation: request.delegation.as_ref().map(|delegation| {
+            openbitfun_runtime_ports::PermissionDecisionDelegation {
+                parent_session_id: delegation.parent_session_id.clone(),
+                parent_tool_call_id: delegation.parent_tool_call_id.clone(),
+                subagent_type: delegation.subagent_type.clone(),
+            }
+        }),
+    }
+}
+
 const SUBAGENT_LAUNCH_TOOL_NAMES: &[&str] = &["Task", "AgentSpawn"];
 
 /// Native hook session facts derived from one tool task.
@@ -747,6 +802,7 @@ pub struct ToolPipeline {
     cancellation_tokens: ToolCancellationTokenStore,
     computer_use_host: Option<ComputerUseHostRef>,
     permission_request_manager: Option<Arc<PermissionRequestManager>>,
+    permission_decision_provider: Option<Arc<dyn PermissionDecisionPort>>,
     permission_plans: Arc<TokioMutex<HashMap<String, PermissionExecutionPlan>>>,
     /// Tool task ids a PreToolUse hook approved. The approval waives the
     /// interactive permission prompt only; policy denials still apply.
@@ -943,6 +999,7 @@ impl ToolPipeline {
             cancellation_tokens: ToolCancellationTokenStore::new(),
             computer_use_host,
             permission_request_manager: None,
+            permission_decision_provider: None,
             permission_plans: Arc::new(TokioMutex::new(HashMap::new())),
             hook_preapprovals: Arc::new(TokioMutex::new(HashSet::new())),
             hook_asks: Arc::new(TokioMutex::new(HashMap::new())),
@@ -954,6 +1011,17 @@ impl ToolPipeline {
         permission_request_manager: Arc<PermissionRequestManager>,
     ) -> Self {
         self.permission_request_manager = Some(permission_request_manager);
+        self
+    }
+
+    /// Injects the approval provider owned by the execution host. Keeping the
+    /// provider on the pipeline ensures remote and detached hosts make the
+    /// decision where the tools execute rather than on a controller.
+    pub fn with_permission_decision_provider(
+        mut self,
+        provider: Arc<dyn PermissionDecisionPort>,
+    ) -> Self {
+        self.permission_decision_provider = Some(provider);
         self
     }
 
@@ -1102,7 +1170,8 @@ impl ToolPipeline {
         &self,
         requests: Vec<PermissionRequest>,
         dialog_turn_id: &str,
-        auto_approve: bool,
+        options: &ToolExecutionOptions,
+        cancellation_token: &CancellationToken,
     ) -> OpenBitFunResult<Vec<PendingPermissionReceiver>> {
         let manager = self.permission_request_manager.as_ref().ok_or_else(|| {
             OpenBitFunError::service(
@@ -1110,43 +1179,261 @@ impl ToolPipeline {
             )
         })?;
 
-        let receivers = if auto_approve {
-            manager
-                .register_batch_non_interactive_for_turn(
-                    requests.clone(),
-                    dialog_turn_id.to_string(),
-                )
-                .await
+        let mut decisions = vec![None; requests.len()];
+        let strategy = if options.auto_approve_ask {
+            PermissionApprovalStrategy::ImmediateAllow
         } else {
-            manager
-                .register_batch_for_turn(requests.clone(), dialog_turn_id.to_string())
-                .await
-        }
-        .map_err(|error| OpenBitFunError::service(error.to_string()))?;
-
-        if auto_approve {
-            for request in &requests {
-                if let Err(error) = manager
-                    .reply(
-                        &request.request_id,
-                        PermissionReply::Once,
-                        openbitfun_runtime_ports::PermissionReplySource::AutoApprove,
-                    )
-                    .await
+            options.permission_approval_strategy
+        };
+        debug!(
+            "Starting permission approval: dialog_turn_id={}, request_count={}, strategy={:?}, user_input_available={}",
+            dialog_turn_id,
+            requests.len(),
+            strategy,
+            options.permission_user_input_available
+        );
+        if matches!(strategy, PermissionApprovalStrategy::Model) {
+            if let Some(provider) = self.permission_decision_provider.as_ref() {
+                let approval_started_at = Instant::now();
+                debug!(
+                    "Calling permission approval provider: dialog_turn_id={}, request_count={}",
+                    dialog_turn_id,
+                    requests.len()
+                );
+                let inputs = requests
+                    .iter()
+                    .map(|request| {
+                        permission_decision_input(request, options.current_user_message.as_deref())
+                    })
+                    .collect();
+                let evaluated = provider.evaluate(inputs, cancellation_token.clone()).await;
+                match evaluated {
+                    Ok(values)
+                        if values.len() == requests.len()
+                            && values
+                                .iter()
+                                .zip(requests.iter())
+                                .all(|(decision, request)| {
+                                    decision.request_id == request.request_id
+                                }) =>
+                    {
+                        debug!(
+                            "Permission approval provider returned decisions: dialog_turn_id={}, request_count={}, duration_ms={}",
+                            dialog_turn_id,
+                            values.len(),
+                            elapsed_ms_u64(approval_started_at)
+                        );
+                        for (index, value) in values.into_iter().enumerate() {
+                            decisions[index] = Some(value);
+                        }
+                    }
+                    Ok(values) => {
+                        warn!(
+                            "Permission approval provider returned an invalid decision set: dialog_turn_id={}, expected_count={}, actual_count={}, duration_ms={}",
+                            dialog_turn_id,
+                            requests.len(),
+                            values.len(),
+                            elapsed_ms_u64(approval_started_at)
+                        );
+                        if matches!(
+                            options.permission_approval_on_error,
+                            PermissionApprovalOnError::Ask
+                        ) && options.permission_user_input_available
+                        {
+                            debug!(
+                                "Routing invalid permission approval result to user confirmation: dialog_turn_id={}",
+                                dialog_turn_id
+                            );
+                            let receivers = manager
+                                .register_batch_for_turn(requests, dialog_turn_id.to_string())
+                                .await
+                                .map_err(|error| OpenBitFunError::service(error.to_string()))?;
+                            return Ok(receivers);
+                        }
+                        decisions.fill(Some(PermissionDecision {
+                            request_id: String::new(),
+                            outcome: PermissionDecisionOutcome::Deny,
+                            probability: None,
+                            risk_class: Some(PermissionRiskClass::Unknown),
+                            reason_code: Some(PermissionReasonCode::ProviderError),
+                        }));
+                    }
+                    Err(error) => {
+                        warn!(
+                            "Permission approval provider failed: dialog_turn_id={}, request_count={}, duration_ms={}, error={}",
+                            dialog_turn_id,
+                            requests.len(),
+                            elapsed_ms_u64(approval_started_at),
+                            error
+                        );
+                        if matches!(
+                            options.permission_approval_on_error,
+                            PermissionApprovalOnError::Ask
+                        ) && options.permission_user_input_available
+                        {
+                            let receivers = manager
+                                .register_batch_for_turn(requests, dialog_turn_id.to_string())
+                                .await
+                                .map_err(|error| OpenBitFunError::service(error.to_string()))?;
+                            debug!(
+                                "Routing permission approval provider failure to user confirmation: dialog_turn_id={}",
+                                dialog_turn_id
+                            );
+                            return Ok(receivers);
+                        }
+                        decisions.fill(Some(PermissionDecision {
+                            request_id: String::new(),
+                            outcome: PermissionDecisionOutcome::Deny,
+                            probability: None,
+                            risk_class: Some(PermissionRiskClass::Unknown),
+                            reason_code: Some(PermissionReasonCode::ProviderError),
+                        }));
+                    }
+                }
+            } else {
+                warn!(
+                    "Permission approval requested without a provider: dialog_turn_id={}, request_count={}, on_error={:?}, user_input_available={}",
+                    dialog_turn_id,
+                    requests.len(),
+                    options.permission_approval_on_error,
+                    options.permission_user_input_available
+                );
+                if matches!(
+                    options.permission_approval_on_error,
+                    PermissionApprovalOnError::Reject
+                ) || !options.permission_user_input_available
                 {
-                    self.cancel_permission_request_ids(
-                        requests
-                            .iter()
-                            .map(|request| request.request_id.clone())
-                            .collect(),
-                        "Automatic permission approval failed".to_string(),
-                    )
-                    .await;
-                    return Err(OpenBitFunError::service(error.to_string()));
+                    decisions.fill(Some(PermissionDecision {
+                        request_id: String::new(),
+                        outcome: PermissionDecisionOutcome::Deny,
+                        probability: None,
+                        risk_class: Some(PermissionRiskClass::Unknown),
+                        reason_code: Some(PermissionReasonCode::ProviderError),
+                    }));
+                }
+                // No provider is a service error. The configured ask fallback
+                // remains interactive; reject is handled below without ever
+                // widening the request.
+                if matches!(
+                    options.permission_approval_on_error,
+                    PermissionApprovalOnError::Ask
+                ) && options.permission_user_input_available
+                {
+                    let receivers = manager
+                        .register_batch_for_turn(requests, dialog_turn_id.to_string())
+                        .await
+                        .map_err(|error| OpenBitFunError::service(error.to_string()))?;
+                    debug!(
+                        "Routing missing permission approval provider to user confirmation: dialog_turn_id={}",
+                        dialog_turn_id
+                    );
+                    return Ok(receivers);
                 }
             }
         }
 
+        let mut receivers = Vec::with_capacity(requests.len());
+        for (index, request) in requests.into_iter().enumerate() {
+            let decision = decisions[index].as_ref();
+            let (mut interactive, mut reply, mut source) = match (strategy, decision) {
+                (PermissionApprovalStrategy::ImmediateAllow, _) => {
+                    (false, PermissionReply::Once, PermissionReplySource::ImmediateAllow)
+                }
+                (PermissionApprovalStrategy::Model, Some(decision)) => match decision.outcome {
+                    PermissionDecisionOutcome::Allow => {
+                        (false, PermissionReply::Once, PermissionReplySource::Model)
+                    }
+                    PermissionDecisionOutcome::Deny => (
+                        false,
+                        PermissionReply::Reject {
+                            feedback: Some(if decision.reason_code
+                                == Some(PermissionReasonCode::ProviderError)
+                            {
+                                "Approval provider failed; policy is configured to reject on error"
+                            } else {
+                                "Approval model denied this request"
+                            }
+                            .into()),
+                        },
+                        if decision.reason_code == Some(PermissionReasonCode::ProviderError) {
+                            PermissionReplySource::Model
+                        } else {
+                            PermissionReplySource::ModelDeny
+                        },
+                    ),
+                    PermissionDecisionOutcome::Ask => match options.permission_approval_on_ask {
+                        PermissionApprovalOnAsk::User => (true, PermissionReply::Once, PermissionReplySource::User),
+                        PermissionApprovalOnAsk::Reject => (
+                            false,
+                            PermissionReply::Reject {
+                                feedback: Some("Approval model requested user confirmation; policy is configured to reject it".into()),
+                            },
+                            PermissionReplySource::ModelAsk,
+                        ),
+                    },
+                },
+                (PermissionApprovalStrategy::Model, None) => (
+                    false,
+                    PermissionReply::Reject {
+                        feedback: Some("Approval provider did not return a decision".into()),
+                    },
+                    PermissionReplySource::Model,
+                ),
+                _ => (true, PermissionReply::Once, PermissionReplySource::User),
+            };
+            if interactive && !options.permission_user_input_available {
+                interactive = false;
+                reply = PermissionReply::Reject {
+                    feedback: Some(
+                        "Permission requires user confirmation, but this execution host has no user mailbox"
+                            .into(),
+                    ),
+                };
+                source = match strategy {
+                    PermissionApprovalStrategy::Model => PermissionReplySource::ModelAsk,
+                    _ => PermissionReplySource::System,
+                };
+                warn!(
+                    "Permission approval requires user confirmation but no mailbox is available: request_id={}, strategy={:?}",
+                    request.request_id,
+                    strategy
+                );
+            }
+            debug!(
+                "Resolved permission approval: request_id={}, strategy={:?}, outcome={:?}, risk_class={:?}, reason_code={:?}, interactive={}, source={:?}",
+                request.request_id,
+                strategy,
+                decision.map(|value| value.outcome),
+                decision.and_then(|value| value.risk_class),
+                decision.and_then(|value| value.reason_code),
+                interactive,
+                source
+            );
+            let pending = if interactive {
+                manager
+                    .register_batch_for_turn(vec![request.clone()], dialog_turn_id.to_string())
+                    .await
+            } else {
+                manager
+                    .register_batch_non_interactive_for_turn(
+                        vec![request.clone()],
+                        dialog_turn_id.to_string(),
+                    )
+                    .await
+            }
+            .map_err(|error| OpenBitFunError::service(error.to_string()))?;
+            receivers.extend(pending);
+            if !interactive {
+                manager
+                    .reply(&request.request_id, reply, source)
+                    .await
+                    .map_err(|error| OpenBitFunError::service(error.to_string()))?;
+                debug!(
+                    "Applied automatic permission reply: request_id={}, source={:?}",
+                    request.request_id, source
+                );
+            }
+        }
         Ok(receivers)
     }
 
@@ -1529,10 +1816,16 @@ impl ToolPipeline {
                 .iter()
                 .map(|(_, request)| request.clone())
                 .collect::<Vec<_>>();
-            let auto_approve = task_ids
+            let base_options = task_ids
                 .first()
                 .and_then(|task_id| self.state_manager.get_task(task_id))
-                .is_some_and(|task| task.options.auto_approve_ask);
+                .map(|task| task.options.clone())
+                .ok_or_else(|| OpenBitFunError::service("Permission batch lost its owning task"))?;
+            let auto_approve = base_options.auto_approve_ask;
+            let parent_cancellation = base_options
+                .parent_cancellation_token
+                .clone()
+                .unwrap_or_else(CancellationToken::new);
             let dialog_turn_id = task_ids
                 .first()
                 .and_then(|task_id| self.state_manager.get_task(task_id))
@@ -1563,8 +1856,18 @@ impl ToolPipeline {
                 }
             }
             for (approve, requests) in groups {
+                let mut options = base_options.clone();
+                if auto_approve && !approve {
+                    options.auto_approve_ask = false;
+                    options.permission_approval_strategy = PermissionApprovalStrategy::Interactive;
+                }
                 match self
-                    .register_permission_requests(requests, &dialog_turn_id, approve)
+                    .register_permission_requests(
+                        requests,
+                        &dialog_turn_id,
+                        &options,
+                        &parent_cancellation,
+                    )
                     .await
                 {
                     Ok(group) => receivers.extend(group),
@@ -1798,19 +2101,36 @@ impl ToolPipeline {
             PermissionPlanDraft::Rejected { reason } => {
                 PermissionExecutionPlan::Rejected { reason }
             }
-            PermissionPlanDraft::Requests(requests) => PermissionExecutionPlan::Awaiting(
-                self.register_permission_requests(
-                    requests,
-                    &task.context.dialog_turn_id,
-                    task.options.auto_approve_ask
-                        && !self
-                            .hook_asks
-                            .lock()
-                            .await
-                            .contains_key(&task.tool_call.tool_id),
+            PermissionPlanDraft::Requests(requests) => {
+                let mut approval_options = task.options.clone();
+                if !approval_options.auto_approve_ask
+                    || self
+                        .hook_asks
+                        .lock()
+                        .await
+                        .contains_key(&task.tool_call.tool_id)
+                {
+                    approval_options.auto_approve_ask = false;
+                    if self
+                        .hook_asks
+                        .lock()
+                        .await
+                        .contains_key(&task.tool_call.tool_id)
+                    {
+                        approval_options.permission_approval_strategy =
+                            PermissionApprovalStrategy::Interactive;
+                    }
+                }
+                PermissionExecutionPlan::Awaiting(
+                    self.register_permission_requests(
+                        requests,
+                        &task.context.dialog_turn_id,
+                        &approval_options,
+                        cancellation_token,
+                    )
+                    .await?,
                 )
-                .await?,
-            ),
+            }
         };
 
         self.await_permission_execution_plan(plan, cancellation_token)
@@ -5911,7 +6231,7 @@ mod tests {
             audit[1].event,
             PermissionAuditEvent::Replied {
                 reply: PermissionReply::Once,
-                source: openbitfun_runtime_ports::PermissionReplySource::AutoApprove,
+                source: openbitfun_runtime_ports::PermissionReplySource::ImmediateAllow,
             }
         ));
         assert!(matches!(

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
 import {
   buildFlowChatSearchMatches,
+  createFlowChatSearchMatcher,
   useFlowChatSearch,
   type UseFlowChatSearchReturn,
 } from './useFlowChatSearch';
@@ -35,6 +36,20 @@ function SearchHarness({
 }
 
 describe('buildFlowChatSearchMatches', () => {
+  it('reuses settled matches during search and releases them when that view closes search', () => {
+    const first = createFlowChatSearchMatcher();
+    const side = createFlowChatSearchMatcher();
+    const items = searchableItems(2);
+    const before = first(items, 'needle');
+    const sideBefore = side(items, 'needle');
+    expect(first([...items], 'needle')[0]).toBe(before[0]);
+    expect(first(items, '')).toEqual([]);
+    const reopened = first(items, 'needle');
+    expect(reopened).toEqual(before);
+    expect(reopened[0]).not.toBe(before[0]);
+    expect(side(items, 'needle')[0]).toBe(sideBefore[0]);
+  });
+
   it('searches retained quiet execution content through its folded receipt', () => {
     const items = [{ type: 'background-run', turnId: 'run', turn: { userMessage: { content: 'Generic task needle' }, modelRounds: [{ items: [{ id: 'text', type: 'text', content: 'Original needle output' }, { id: 'thinking', type: 'thinking', content: 'needle reasoning' }] }] } }] as unknown as VirtualItem[];
     expect(buildFlowChatSearchMatches(items, 'needle')).toMatchObject([

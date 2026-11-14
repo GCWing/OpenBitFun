@@ -12,6 +12,7 @@ import {
   requestDispatchJobRefresh,
 } from './DispatchJobObserver';
 import { dispatchJobStore } from './dispatchJobStore';
+import { dispatchJobDeliveryStatus } from './dispatchTransport';
 import {
   DISPATCH_TRANSCRIPT_SCHEMA_VERSION,
   type DispatchEvent,
@@ -535,12 +536,13 @@ describe('DispatchJobObserver', () => {
       requestDispatchJobRefresh('job-1');
       requestDispatchJobRefresh('job-2');
       await vi.advanceTimersByTimeAsync(2 * DISPATCH_JOB_POLL_INTERVAL_MS);
-      expect(mocks.listJobs).toHaveBeenCalledTimes(1);
+      // Index discovery is not held hostage by the slow target read, but reads
+      // of the same target stay serial: nothing overlaps the pending one.
+      expect(mocks.listJobs).toHaveBeenCalledTimes(2);
       expect(mocks.status).toHaveBeenCalledTimes(1);
 
       targetRead.resolve(status());
       await vi.advanceTimersByTimeAsync(0);
-      expect(mocks.listJobs).toHaveBeenCalledTimes(2);
       expect(mocks.status.mock.calls).toEqual([
         ['job-1', 0], ['job-1', 0], ['job-2', 0],
       ]);
@@ -588,6 +590,141 @@ describe('DispatchJobObserver', () => {
       document.dispatchEvent(new Event('visibilitychange'));
       await vi.advanceTimersByTimeAsync(0);
       expect(mocks.listJobs).toHaveBeenCalledTimes(3);
+    });
+
+    function registerSecondTargetJob(context: any): void {
+      const target = {
+        kind: 'ssh' as const,
+        connectionId: 'ssh-2',
+        workspacePath: '/repo',
+        displayName: 'other-host',
+      };
+      dispatchJobStore.getState().registerJob({
+        ...dispatchJobStore.getState().jobs['job-1'],
+        jobId: 'job-2',
+        sessionId: 'session-2',
+        target,
+        targetRequest: { kind: 'ssh', connectionId: 'ssh-2', workspacePath: '/repo' },
+      });
+      mocks.listJobs.mockResolvedValue([
+        runningOutboundRecord(),
+        { ...runningOutboundRecord(), jobId: 'job-2', sessionId: 'session-2', target },
+      ]);
+      const sessions = context.flowChatStore.getState().sessions;
+      sessions.set('session-2', {
+        ...sessions.get('session-1'),
+        sessionId: 'session-2',
+        config: { ...sessions.get('session-1').config, dispatchJobId: 'job-2', dispatchTarget: target },
+      });
+    }
+
+    it('keeps polling other targets while one target read hangs', async () => {
+      registerRunningJob();
+      const context = createContext();
+      registerSecondTargetJob(context);
+      const hung = createDeferred<DispatchStatusResponse>();
+      const permission = { requestId: 'approval-2', type: 'tool' };
+      mocks.status.mockImplementation((jobId: string) => (
+        jobId === 'job-1'
+          ? hung.promise
+          : Promise.resolve(status({ pendingPermissions: [permission] }))
+      ));
+      cleanup = installDispatchJobObserver(context);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatchJobStore.getState().jobs['job-2'].pendingPermissions).toEqual([permission]);
+
+      // The other target keeps its fast cadence while job-1's read is stuck.
+      await vi.advanceTimersByTimeAsync(3 * DISPATCH_JOB_POLL_INTERVAL_MS);
+      const job2Reads = mocks.status.mock.calls.filter(([jobId]) => jobId === 'job-2').length;
+      expect(job2Reads).toBeGreaterThanOrEqual(4);
+      expect(mocks.status.mock.calls.filter(([jobId]) => jobId === 'job-1')).toHaveLength(1);
+
+      // An answered permission on the healthy target is confirmed at once.
+      mocks.status.mockImplementation((jobId: string) => (
+        jobId === 'job-1' ? hung.promise : Promise.resolve(status())
+      ));
+      requestDispatchJobRefresh('job-2');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatchJobStore.getState().jobs['job-2'].pendingPermissions).toEqual([]);
+      expect(dispatchJobStore.getState().transportByJobId['job-2'].reachability).toBe('reachable');
+
+      hung.resolve(status());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatchJobStore.getState().transportByJobId['job-1'].reachability).toBe('reachable');
+    });
+
+    it('backs off periodic polls of an unreachable target but serves explicit refreshes', async () => {
+      registerRunningJob();
+      const context = createContext();
+      registerSecondTargetJob(context);
+      mocks.status.mockImplementation((jobId: string) => (
+        jobId === 'job-1'
+          ? Promise.reject(new Error('SSH target is offline'))
+          : Promise.resolve(status())
+      ));
+      cleanup = installDispatchJobObserver(context);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatchJobStore.getState().transportByJobId['job-1'].reachability).toBe('unreachable');
+      const readsOf = (jobId: string) => mocks.status.mock.calls.filter(([id]) => id === jobId).length;
+      expect(readsOf('job-1')).toBe(1);
+
+      // The first retry waits for the backoff; the healthy target does not.
+      await vi.advanceTimersByTimeAsync(DISPATCH_JOB_POLL_INTERVAL_MS);
+      expect(readsOf('job-1')).toBe(1);
+      expect(readsOf('job-2')).toBe(2);
+      await vi.advanceTimersByTimeAsync(DISPATCH_JOB_POLL_INTERVAL_MS);
+      expect(readsOf('job-1')).toBe(2);
+
+      // A user action (answering a prompt, stopping) is never delayed.
+      requestDispatchJobRefresh('job-1');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(readsOf('job-1')).toBe(3);
+
+      // Waking the window retries at once instead of honoring old backoff.
+      mocks.status.mockResolvedValue(status());
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(readsOf('job-1')).toBe(4);
+      expect(dispatchJobStore.getState().transportByJobId['job-1'].reachability).toBe('reachable');
+    });
+
+    it.each([
+      ['a current controller', '[dispatch_job_not_found] Dispatch job job-1 was not found on the target'],
+      ['an older controller and target', 'dispatch status failed (exit 1): dispatch job not found: job-1: No such file or directory (os error 2)'],
+    ])('reports a job unknown to its target as not delivered with %s', async (_label, message) => {
+      registerRunningJob();
+      dispatchJobStore.getState().registerJob({
+        ...dispatchJobStore.getState().jobs['job-1'],
+        state: 'submission_unknown',
+      });
+      mocks.listJobs.mockResolvedValue([{ ...runningOutboundRecord(), lastState: 'submission_unknown' }]);
+      const context = createContext();
+      registerSecondTargetJob(context);
+      // Same transport as job-1: a missing job must not back the target off.
+      dispatchJobStore.getState().registerJob({
+        ...dispatchJobStore.getState().jobs['job-2'],
+        target: dispatchJobStore.getState().jobs['job-1'].target,
+        targetRequest: dispatchJobStore.getState().jobs['job-1'].targetRequest,
+      });
+      mocks.listJobs.mockResolvedValue([
+        { ...runningOutboundRecord(), lastState: 'submission_unknown' },
+        { ...runningOutboundRecord(), jobId: 'job-2', sessionId: 'session-2' },
+      ]);
+      mocks.status.mockImplementation((jobId: string) => (
+        jobId === 'job-1' ? Promise.reject(message) : Promise.resolve(status())
+      ));
+      cleanup = installDispatchJobObserver(context);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(dispatchJobStore.getState().transportByJobId['job-1']).toMatchObject({
+        reachability: 'notFound',
+      });
+      expect(dispatchJobDeliveryStatus('job-1')).toBe('notDelivered');
+      expect(dispatchJobStore.getState().jobs['job-1'].state).toBe('submission_unknown');
+      expect(dispatchJobStore.getState().transportByJobId['job-2'].reachability).toBe('reachable');
+      const readsOf = (jobId: string) => mocks.status.mock.calls.filter(([id]) => id === jobId).length;
+      await vi.advanceTimersByTimeAsync(DISPATCH_JOB_POLL_INTERVAL_MS);
+      expect(readsOf('job-2')).toBe(2);
     });
 
     it('keeps controller polling suppressed in peer mode and replaces observers cleanly', async () => {

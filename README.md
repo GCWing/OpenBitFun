@@ -1,4 +1,4 @@
-**English** · [中文](README.zh-CN.md)
+**English** · [中文](README.zh-CN.md) · [日本語](README.ja.md)
 
 <div align="center">
 
@@ -19,6 +19,14 @@ OpenBitFun is a highly customizable, open-source agent workspace that keeps work
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://openbitfun.com/download)
 
 [![Trendshift](https://trendshift.io/api/badge/repositories/44672)](https://trendshift.io/repositories/44672)
+
+## Join the community
+
+Scan the QR code with WeChat to add us and request to join the OpenBitFun community group.
+
+<a href="./png/openbitfun-community-wechat.png">
+  <img src="./png/openbitfun-community-wechat.png" alt="WeChat QR code for joining the OpenBitFun community" width="147" />
+</a>
 
 </div>
 
@@ -88,7 +96,7 @@ Install and reuse the apps you build, or explore the [Mini App Marketplace](http
 
 - **Build a specialist agent.** Choose a model, define its role, and equip it with the tools and workflows it needs for motion comic production, visual design, code review, or your own field.
 - **Connect tools and workflows.** Connect tools through MCP, turn repeatable processes into Skills, and use Hooks to customize how tasks run.
-- **Change the interface and source.** Install [skins](https://market.openbitfun.com/skin/) for a new look, or modify the UI, tools, and runtime source to build your own version of OpenBitFun.
+- **Change the interface and source.** Choose a built-in theme, or modify the UI, tools, and runtime source to build your own version of OpenBitFun.
 
 **You can ask OpenBitFun's Code Agent to modify and extend OpenBitFun itself.**
 
@@ -125,7 +133,7 @@ Getting there means making long-running tasks more reliable, the runtime more ef
 
 **Share what you build, offer feedback, or contribute code to help shape OpenBitFun.**
 
-Share your use cases and experience, contribute agents, Skills, Mini Apps, or skins, or help improve the docs, interface, and runtime. Ideas and questions are welcome in this repository's Issues and Discussions. See the [contribution guide](./CONTRIBUTING.md) for the development workflow.
+Share your use cases and experience, contribute agents, Skills, or Mini Apps, or help improve the docs, interface, and runtime. Ideas and questions are welcome in this repository's Issues and Discussions. See the [contribution guide](./CONTRIBUTING.md) for the development workflow.
 
 <details>
 <summary>Download, setup, and running from source</summary>
@@ -148,12 +156,6 @@ Desktop development supports frontend hot reload and automatic Rust rebuilds. Se
 </details>
 
 Core code is licensed under the [MIT License](./LICENSE). Third-party dependencies and assets retain their own licenses. Thanks to the open-source authors and contributors who make this work possible. To report a vulnerability, see the [security policy](./SECURITY.md).
-
-## Join the community
-
-Scan the QR code with WeChat to add us and request to join the OpenBitFun community group.
-
-<img src="./png/openbitfun-community-wechat.png" alt="WeChat QR code for joining the OpenBitFun community" width="360" />
 
 ## Star History
 

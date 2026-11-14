@@ -63,7 +63,7 @@ new-conversation action. Files carry the owning workspace
 and connection into the workbench. Directory management uses the Home device strip's
 horizontal cards, icon/name/path hierarchy and status pills. The primary directory
 leads, followed by related directories; overflowing cards have scroll controls.
-The primary card opens files, while related cards and the header action open the editor. Editing reuses
+Each directory card opens its directory in the left file tree. The header's Manage action reuses
 the existing directory dialog, with an External Import-style list of directory paths,
 descriptions and row actions. Related rows expand inline for editing; external references
 remain read-only, and changes are only persisted on Save. Project guides are not listed in this section.

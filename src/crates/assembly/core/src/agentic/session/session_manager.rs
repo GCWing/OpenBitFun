@@ -3,13 +3,13 @@
 //! Responsible for session CRUD, lifecycle management, and resource association
 
 use crate::agentic::agents::get_agent_registry;
+use crate::agentic::context_normalization::normalize_incomplete_tool_calls;
 use crate::agentic::core::{
     new_turn_id, CompressionContract, CompressionState, InternalReminderKind, Message,
     MessageContent, MessageRole, MessageSemanticKind, ProcessingPhase, Session,
     SessionAgentRouteOwner, SessionConfig, SessionKind, SessionModelBindingPolicy, SessionState,
     SessionSummary, ToolPresentationMode, TurnStats,
 };
-use crate::agentic::fork_agent::normalize_incomplete_tool_calls;
 use crate::agentic::image_analysis::ImageContextData;
 use crate::agentic::keyed_lock::{KeyedAsyncLock, KeyedAsyncLockGuard};
 use crate::agentic::memories::db::{MemoryDatabase, MEMORY_PHASE2_GLOBAL_JOB_KEY};
@@ -1246,6 +1246,12 @@ impl SessionManager {
             .get(session_id)
             .filter(|binding| binding.committed)
             .map(|binding| binding.path.clone())
+    }
+
+    /// Storage binding committed by an earlier create/restore admission, kept
+    /// after the session is unloaded from memory.
+    pub(crate) fn committed_session_storage_path_for(&self, session_id: &str) -> Option<PathBuf> {
+        Self::committed_session_storage_path(&self.session_storage_path_index, session_id)
     }
 
     /// Reuse the storage binding admitted when this session was created/restored.
@@ -3009,6 +3015,25 @@ impl SessionManager {
     /// Get session
     pub fn get_session(&self, session_id: &str) -> Option<Session> {
         self.sessions.get(session_id).map(|s| s.clone())
+    }
+
+    /// Owning workspace facts for Turn lifecycle events, read without cloning
+    /// the session. `None` when this host has not loaded the session.
+    pub fn session_workspace_binding(
+        &self,
+        session_id: &str,
+    ) -> Option<openbitfun_events::SessionWorkspaceBinding> {
+        self.sessions.get(session_id).map(|session| {
+            let config = &session.config;
+            openbitfun_events::SessionWorkspaceBinding {
+                workspace_path: config.workspace_path.clone(),
+                project_workspace_path: config.project_workspace_path.clone(),
+                execution_target: config.execution_target.clone(),
+                workspace_id: config.workspace_id.clone(),
+                remote_connection_id: config.remote_connection_id.clone(),
+                remote_ssh_host: config.remote_ssh_host.clone(),
+            }
+        })
     }
 
     /// Read selector facts without restoring history, reserving runtime capacity,
@@ -6595,6 +6620,36 @@ impl SessionManager {
             }
         };
 
+        // A process can exit after the assistant tool-call message is persisted
+        // and before the tool result is appended. Providers reject that history
+        // shape, so close the final active round during ordinary restore. The
+        // repaired snapshot becomes the durable recovery boundary for the next
+        // process as well; no interrupted tool is re-executed here.
+        let repaired_incomplete_tool_calls = normalize_incomplete_tool_calls(
+            &mut messages,
+            "Tool execution was still in progress when the application closed; the result is unknown. Verify any external side effects before continuing.",
+        );
+        if repaired_incomplete_tool_calls {
+            let repaired_snapshot_turn_index = latest_turn_index
+                .into_iter()
+                .chain(persisted_turns.last().map(|turn| turn.turn_index))
+                .max();
+            if let Some(turn_index) = repaired_snapshot_turn_index {
+                self.persistence_manager
+                    .save_turn_context_snapshot(
+                        session_storage_path,
+                        session_id,
+                        turn_index,
+                        &messages,
+                    )
+                    .await?;
+                info!(
+                    "Normalized incomplete tool calls during session restore: session_id={}, turn_index={}",
+                    session_id, turn_index
+                );
+            }
+        }
+
         if messages.is_empty() {
             debug!(
                 "Session {} has empty persisted messages (may be new session)",
@@ -8816,15 +8871,16 @@ impl SessionManager {
         new_messages: &[Message],
         timestamp: u64,
     ) -> usize {
-        let mut next_round_index = turn
-            .model_rounds
-            .iter()
-            .map(|round| round.round_index)
-            .max()
-            .map_or(0, |index| index.saturating_add(1));
         let generated_rounds =
             Self::build_model_rounds_from_messages(new_messages, turn_id, timestamp);
         let generated_count = generated_rounds.len();
+        if generated_count == 0 {
+            return 0;
+        }
+        let mut generation_order = BTreeMap::new();
+        for (index, round) in generated_rounds.iter().enumerate() {
+            generation_order.entry(round.id.clone()).or_insert(index);
+        }
         for mut round in generated_rounds {
             if let Some(existing_index) = turn
                 .model_rounds
@@ -8917,7 +8973,6 @@ impl SessionManager {
                     .cloned()
                     .collect::<Vec<_>>();
                 round.tool_items.extend(derived_tool_items);
-                round.round_index = existing.round_index;
                 round.round_group_id = existing.round_group_id.clone();
                 round.timestamp = existing.timestamp;
                 round.start_time = existing.start_time;
@@ -8954,11 +9009,39 @@ impl SessionManager {
                 }
                 turn.model_rounds[existing_index] = round;
             } else {
-                round.round_index = next_round_index;
-                next_round_index = next_round_index.saturating_add(1);
                 turn.model_rounds.push(round);
             }
         }
+
+        // A client can checkpoint only a suffix or scattered rounds. Appending
+        // missing earlier rounds behind that checkpoint puts the final answer
+        // in the middle. The generation journal owns their relative order.
+        // Keep older generations before the first shared round; other rounds
+        // absent from this journal stay beside their preceding shared round.
+        // Nothing is discarded, including interrupted or client-only records.
+        let mut preceding_generation_index = None;
+        let mut ordered = std::mem::take(&mut turn.model_rounds)
+            .into_iter()
+            .map(|round| {
+                let generation_index = generation_order.get(&round.id).copied();
+                if generation_index.is_some() {
+                    preceding_generation_index = generation_index;
+                }
+                (
+                    (preceding_generation_index, generation_index.is_none()),
+                    round,
+                )
+            })
+            .collect::<Vec<_>>();
+        ordered.sort_by_key(|(order, _)| *order);
+        turn.model_rounds = ordered
+            .into_iter()
+            .enumerate()
+            .map(|(index, (_, mut round))| {
+                round.round_index = index;
+                round
+            })
+            .collect();
         generated_count
     }
 
@@ -10994,6 +11077,133 @@ mod tests {
     }
 
     #[test]
+    fn generation_round_order_follows_journal_for_sparse_checkpoints() {
+        let ids = ["z-opening", "b-tool", "y-analysis", "a-tool", "m-final"];
+        let messages = ids
+            .iter()
+            .map(|id| Message::assistant((*id).into()).with_round_id((*id).into()))
+            .collect::<Vec<_>>();
+        // Runtime-rebuilt rounds can all have the completion timestamp. Neither
+        // timestamps, lexical IDs nor a partial checkpoint's indexes own order.
+        let rounds = SessionManager::build_model_rounds_from_messages(&messages, "turn", 10);
+        for mask in 0..(1 << ids.len()) {
+            for reverse in [false, true] {
+                let mut turn = DialogTurnData::new(
+                    "turn".into(),
+                    0,
+                    "session".into(),
+                    UserMessageData {
+                        id: "input".into(),
+                        content: "request".into(),
+                        timestamp: 1,
+                        metadata: None,
+                    },
+                );
+                turn.model_rounds = rounds
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| mask & (1 << index) != 0)
+                    .map(|(_, round)| round.clone())
+                    .collect();
+                if reverse {
+                    turn.model_rounds.reverse();
+                }
+                for (index, round) in turn.model_rounds.iter_mut().enumerate() {
+                    round.round_index = index;
+                    round.provider_id = Some("checkpoint-provider".into());
+                }
+                // The saved legacy shape needs no new fields to recover order.
+                let mut turn: DialogTurnData =
+                    serde_json::from_value(serde_json::to_value(turn).unwrap()).unwrap();
+                for _ in 0..2 {
+                    assert_eq!(
+                        SessionManager::append_generation_rounds(&mut turn, "turn", &messages, 10),
+                        ids.len()
+                    );
+                    assert_eq!(
+                        turn.model_rounds
+                            .iter()
+                            .map(|round| round.id.as_str())
+                            .collect::<Vec<_>>(),
+                        ids,
+                        "mask={mask}, reverse={reverse}"
+                    );
+                    for (index, round) in turn.model_rounds.iter().enumerate() {
+                        assert_eq!(round.round_index, index);
+                        assert_eq!(round.text_items[0].content, ids[index]);
+                        if mask & (1 << index) != 0 {
+                            assert_eq!(round.provider_id.as_deref(), Some("checkpoint-provider"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn generation_round_order_preserves_prior_generations_and_unjournaled_rounds() {
+        let message = |id: &str| Message::assistant(id.into()).with_round_id(id.into());
+        let mut turn = DialogTurnData::new(
+            "turn".into(),
+            0,
+            "session".into(),
+            UserMessageData {
+                id: "input".into(),
+                content: "request".into(),
+                timestamp: 1,
+                metadata: None,
+            },
+        );
+        turn.model_rounds = SessionManager::build_model_rounds_from_messages(
+            &[
+                message("interrupted"),
+                message("second"),
+                message("retry"),
+                message("final"),
+                message("pending"),
+            ],
+            "turn",
+            10,
+        );
+        turn.model_rounds[0].status = "cancelled".into();
+        turn.model_rounds[2].status = "error".into();
+        turn.model_rounds[4].status = "streaming".into();
+        let preserved = [0, 2, 4].map(|index| turn.model_rounds[index].clone());
+        let messages = [message("first"), message("second"), message("final")];
+        for _ in 0..2 {
+            SessionManager::append_generation_rounds(&mut turn, "turn", &messages, 20);
+            assert_eq!(
+                turn.model_rounds
+                    .iter()
+                    .map(|round| round.id.as_str())
+                    .collect::<Vec<_>>(),
+                [
+                    "interrupted",
+                    "first",
+                    "second",
+                    "retry",
+                    "final",
+                    "pending"
+                ]
+            );
+            for (old, index) in preserved.iter().zip([0, 3, 5]) {
+                let mut expected = old.clone();
+                expected.round_index = index;
+                assert_eq!(
+                    serde_json::to_value(&turn.model_rounds[index]).unwrap(),
+                    serde_json::to_value(expected).unwrap()
+                );
+            }
+        }
+        let before = serde_json::to_value(&turn).unwrap();
+        assert_eq!(
+            SessionManager::append_generation_rounds(&mut turn, "turn", &[], 30),
+            0
+        );
+        assert_eq!(serde_json::to_value(&turn).unwrap(), before);
+    }
+
+    #[test]
     fn classified_edit_history_preserves_detail_and_readable_error() {
         let assistant = Message::assistant_with_tools(
             String::new(),
@@ -11755,7 +11965,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn completion_replaces_a_projected_text_prefix_with_runtime_generation_content() {
+    async fn generation_round_order_survives_completion_with_a_projected_final_prefix() {
         let workspace = TestWorkspace::new();
         let persistence_manager = Arc::new(
             PersistenceManager::new(workspace.path_manager()).expect("persistence manager"),
@@ -11815,17 +12025,48 @@ mod tests {
             .expect("projected prefix should persist");
 
         let complete_response = "Saved prefix: 1. first item\n2. second item";
+        let earlier = Message::assistant_with_tools(
+            "Checking the source".into(),
+            vec![ToolCall {
+                tool_id: "read-source".into(),
+                tool_name: "Read".into(),
+                arguments: json!({"path": "README.md"}),
+                raw_arguments: None,
+                is_error: false,
+                parse_error: None,
+                recovered_from_truncation: false,
+                repair_kind: Default::default(),
+            }],
+        )
+        .with_turn_id(turn_id.clone())
+        .with_round_id("round-first".into());
+        let result = Message::tool_result(ToolResult {
+            tool_id: "read-source".into(),
+            tool_name: "Read".into(),
+            effective_tool_name: None,
+            result: json!({"content": "source"}),
+            result_for_assistant: None,
+            is_error: false,
+            duration_ms: Some(1),
+            image_attachments: None,
+        })
+        .with_turn_id(turn_id.clone())
+        .with_round_id("round-first".into());
         manager
             .complete_dialog_turn(
                 &session.session_id,
                 &turn_id,
                 complete_response.to_string(),
-                &[Message::assistant(complete_response.to_string())
-                    .with_turn_id(turn_id.clone())
-                    .with_round_id("round-final".to_string())],
+                &[
+                    earlier,
+                    result,
+                    Message::assistant(complete_response.to_string())
+                        .with_turn_id(turn_id.clone())
+                        .with_round_id("round-final".to_string()),
+                ],
                 TurnStats {
-                    total_rounds: 1,
-                    total_tools: 0,
+                    total_rounds: 2,
+                    total_tools: 1,
                     total_tokens: 0,
                     duration_ms: 1,
                 },
@@ -11843,15 +12084,25 @@ mod tests {
         assert_eq!(completed.status, TurnStatus::Completed);
         assert_eq!(completed.finish_reason.as_deref(), Some("complete"));
         assert_eq!(completed.has_final_response, Some(true));
-        assert_eq!(completed.model_rounds.len(), 1);
-        assert_eq!(completed.model_rounds[0].id, "round-final");
+        assert_eq!(completed.model_rounds.len(), 2);
+        assert_eq!(completed.model_rounds[0].id, "round-first");
+        assert_eq!(completed.model_rounds[0].round_index, 0);
+        assert!(
+            completed.model_rounds[0].tool_items[0]
+                .tool_result
+                .as_ref()
+                .unwrap()
+                .success
+        );
+        assert_eq!(completed.model_rounds[1].id, "round-final");
+        assert_eq!(completed.model_rounds[1].round_index, 1);
         assert_eq!(
-            completed.model_rounds[0].text_items[0].content,
+            completed.model_rounds[1].text_items[0].content,
             complete_response,
         );
-        assert_eq!(completed.model_rounds[0].tool_items.len(), 1);
+        assert_eq!(completed.model_rounds[1].tool_items.len(), 1);
         assert_eq!(
-            completed.model_rounds[0].tool_items[0].id,
+            completed.model_rounds[1].tool_items[0].id,
             "plan-display-test",
         );
     }
@@ -18181,6 +18432,92 @@ mod tests {
             .context_store
             .get_context_messages(&session_id)
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn restore_session_repairs_and_persists_incomplete_tool_calls() {
+        let workspace = TestWorkspace::new();
+        let persistence_manager = Arc::new(
+            PersistenceManager::new(workspace.path_manager()).expect("persistence manager"),
+        );
+        let manager = test_manager(persistence_manager.clone());
+        let session_id = Uuid::new_v4().to_string();
+        let mut session = Session::new_with_id(
+            session_id.clone(),
+            "Interrupted tool call".to_string(),
+            "Standard".to_string(),
+            SessionConfig {
+                tool_presentation_mode: Default::default(),
+                workspace_path: Some(workspace.path().to_string_lossy().to_string()),
+                ..Default::default()
+            },
+        );
+        session.dialog_turn_ids = vec!["turn-1".to_string()];
+        persistence_manager
+            .save_session(workspace.path(), &session)
+            .await
+            .expect("session should save");
+
+        let mut turn = DialogTurnData::new(
+            "turn-1".to_string(),
+            0,
+            session_id.clone(),
+            UserMessageData {
+                id: "turn-1-user".to_string(),
+                content: "read the file".to_string(),
+                timestamp: 1,
+                metadata: None,
+            },
+        );
+        turn.mark_completed();
+        persistence_manager
+            .save_dialog_turn(workspace.path(), &turn)
+            .await
+            .expect("turn should save");
+
+        let assistant = Message::assistant_with_tools(
+            String::new(),
+            vec![ToolCall {
+                tool_id: "call-1".to_string(),
+                tool_name: "Read".to_string(),
+                arguments: json!({"path": "a.txt"}),
+                ..Default::default()
+            }],
+        )
+        .with_turn_id("turn-1".to_string())
+        .with_round_id("round-1".to_string());
+        persistence_manager
+            .save_turn_context_snapshot(workspace.path(), &session_id, 0, &[assistant])
+            .await
+            .expect("incomplete snapshot should save");
+
+        manager
+            .restore_session(workspace.path(), &session_id)
+            .await
+            .expect("session should restore");
+
+        let restored = manager
+            .get_context_messages(&session_id)
+            .await
+            .expect("context should load");
+        assert_eq!(restored.len(), 2);
+        assert!(matches!(
+            &restored[1].content,
+            MessageContent::ToolResult { tool_id, result, .. }
+                if tool_id == "call-1"
+                    && result == &json!("Tool execution was still in progress when the application closed; the result is unknown. Verify any external side effects before continuing.")
+        ));
+
+        let persisted = persistence_manager
+            .load_turn_context_snapshot(workspace.path(), &session_id, 0)
+            .await
+            .expect("repaired snapshot should load")
+            .expect("repaired snapshot should exist");
+        assert_eq!(persisted.len(), 2);
+        assert!(matches!(
+            &persisted[1].content,
+            MessageContent::ToolResult { tool_id, .. } if tool_id == "call-1"
+        ));
     }
 
     #[tokio::test]

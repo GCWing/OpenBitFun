@@ -3,11 +3,21 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
+function load(name, dependencies = {}) {
+  const source = fs.readFileSync(path.join(__dirname, '../../entry/src/main/ets', `${name}.ets`), 'utf8');
+  const exports = {};
+  new Function('require', 'exports', ts.transpileModule(source, { compilerOptions: {
+    target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
+  } }).outputText)(key => dependencies[key] || {}, exports);
+  return exports;
+}
+const queueModule = load('services/MessageQueueStore', { '../model/MessageQueue': load('model/MessageQueue') });
 const source = fs.readFileSync(path.join(__dirname, '../../entry/src/main/ets/services/ChatSessionController.ets'), 'utf8');
 const exported = {};
 new Function('require', 'exports', ts.transpileModule(source, {compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS}}).outputText)(name => ({
+  './MessageQueueStore': queueModule,
   './InteractionMailboxStore': { InteractionMailboxStore: class { select() {} } },
-  './DurableSessionReducer': { DurableSessionReducer: class { messages() { return []; } } },
+  './DurableSessionReducer': load('services/DurableSessionReducer'),
   './SubagentStreamCoordinator': { SubagentStreamCoordinator: class {
     beginSession() {}
     endSession() {}
@@ -20,6 +30,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 function fixture() {
   const requests = [], streams = [], snapshots = [], errors = [];
   const manager = {
+    supportsMessageQueue: () => false,
     getModelCatalog(sessionId) { return new Promise((resolve, reject) => requests.push({sessionId, resolve, reject})); },
     subscribeSession(sessionId, callbacks) { streams.push(callbacks); return {close() {}, isClosed() {return false;}}; },
   };

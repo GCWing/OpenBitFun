@@ -4,14 +4,18 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CanvasToolbarHost, CanvasToolbarProvider } from '../CanvasToolbar';
 import { useAgentCanvasStore } from '../stores';
-import type { EditorGroupId, SplitMode } from '../types';
+import type { EditorGroupId, PanelContentType, SplitMode } from '../types';
 import { EditorArea } from './EditorArea';
 
 vi.mock('react-i18next', async original => ({
   ...await original<typeof import('react-i18next')>(),
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-vi.mock('../../base/FlexiblePanel', () => ({ default: () => null }));
+vi.mock('../../base/FlexiblePanel', () => ({
+  default: ({ content, isActive }: { content: { title: string }; isActive: boolean }) => (
+    <input data-panel-title={content.title} data-active={isActive} />
+  ),
+}));
 
 // Exercise real groups, tab bars and toolbar registration without mounting editors.
 describe('split canvas tab placement', () => {
@@ -34,9 +38,9 @@ describe('split canvas tab placement', () => {
     vi.unstubAllGlobals();
   });
 
-  function addTab(groupId: EditorGroupId, title: string = groupId) {
+  function addTab(groupId: EditorGroupId, title: string = groupId, type: PanelContentType = 'text-viewer') {
     useAgentCanvasStore.getState().addTab({
-      type: 'text-viewer', title, data: { content: title },
+      type, title, data: { content: title },
     }, 'active', groupId);
     return useAgentCanvasStore.getState()[`${groupId}Group`].activeTabId!;
   }
@@ -129,5 +133,43 @@ describe('split canvas tab placement', () => {
     expect(headerGroups()).toEqual([]);
     expect(group('primary').querySelector('[role="tablist"]')).not.toBeNull();
     expect(group('secondary').querySelector('[role="tablist"]')).not.toBeNull();
+  });
+
+  it('keeps hidden editors laid out and inert until selected again', () => {
+    const editorId = addTab('primary', 'Editor', 'code-editor');
+    render();
+    let diffId!: string;
+    let terminalId!: string;
+    act(() => { diffId = addTab('primary', 'Diff', 'diff-code-editor'); });
+    act(() => { terminalId = addTab('primary', 'Terminal', 'terminal'); });
+
+    const pane = (title: string) => container.querySelector(`[data-panel-title="${title}"]`)!
+      .closest<HTMLElement>('[data-openbitfun-part="tabContent"]')!;
+    const inactive = 'canvas-editor-group__tab-content--inactive-editor';
+    const editor = pane('Editor');
+    const diff = pane('Diff');
+    const terminal = pane('Terminal');
+    for (const hidden of [editor, diff]) {
+      expect(hidden.classList.contains(inactive)).toBe(true);
+      expect(hidden.style.display).toBe('');
+      expect(hidden.getAttribute('aria-hidden')).toBe('true');
+      expect(hidden.hasAttribute('inert')).toBe(true);
+      expect(hidden.querySelector('input')?.getAttribute('data-active')).toBe('false');
+    }
+
+    for (const [id, title, retained] of [[editorId, 'Editor', editor], [diffId, 'Diff', diff]] as const) {
+      act(() => tab(id).click());
+      expect(pane(title)).toBe(retained);
+      expect(retained.classList.contains(inactive)).toBe(false);
+      expect(retained.hasAttribute('inert')).toBe(false);
+      expect(retained.hasAttribute('aria-hidden')).toBe(false);
+      expect(retained.querySelector('input')?.getAttribute('data-active')).toBe('true');
+      expect(terminal.style.display).toBe('none');
+      expect(terminal.classList.contains(inactive)).toBe(false);
+    }
+
+    act(() => tab(terminalId).click());
+    expect(pane('Terminal')).toBe(terminal);
+    expect(terminal.style.display).toBe('');
   });
 });

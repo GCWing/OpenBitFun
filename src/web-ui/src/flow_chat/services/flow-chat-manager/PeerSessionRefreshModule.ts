@@ -81,8 +81,16 @@ export function isSessionProjectionAttachable(
 type RefreshRequester = (sessionId?: string) => void;
 let installedRefreshRequester: RefreshRequester | null = null;
 
+function canReconcileSession(sessionId?: string): boolean {
+  return isSurfaceReconcileEnabled()
+    || Boolean(sessionId && isRuntimeSessionProjectionStale(
+      getActiveSurfaceScope().surfaceId,
+      sessionId,
+    ));
+}
+
 export function requestPeerSessionRefresh(sessionId?: string): void {
-  if (!isSurfaceReconcileEnabled()) {
+  if (!canReconcileSession(sessionId)) {
     return;
   }
   installedRefreshRequester?.(sessionId);
@@ -452,10 +460,18 @@ export function installPeerSessionRefresh(context: FlowChatContext): () => void 
     requestedSessionId?: string,
     staleOnly = false,
   ): Promise<void> {
-    if (disposed || inFlight || !isSurfaceReconcileEnabled()) {
+    if (disposed || inFlight) {
       if (inFlight) {
         enqueueFollowUpRefresh(requestedSessionId);
       }
+      return;
+    }
+    const state = context.flowChatStore.getState();
+    const sessionId = requestedSessionId || state.activeSessionId;
+    // A pristine local window can reload while its host keeps executing. Its
+    // explicitly stale projection needs the same fenced journal replay as a
+    // device switch, without enabling reconciliation for ordinary idle opens.
+    if (!canReconcileSession(sessionId ?? undefined)) {
       return;
     }
     // Peer history and live records share the durable subscription. Runtime
@@ -482,8 +498,6 @@ export function installPeerSessionRefresh(context: FlowChatContext): () => void 
       void context.ensureLiveSubscription?.();
     }
 
-    const state = context.flowChatStore.getState();
-    const sessionId = requestedSessionId || state.activeSessionId;
     // Attach is per (surface, session), not per the tab currently focused.
     // After a switch, every live session on this surface may have missed
     // DialogTurnStarted; dropped-event refresh requests name those sessions
@@ -564,7 +578,7 @@ export function installPeerSessionRefresh(context: FlowChatContext): () => void 
           // every non-active running chat after a multi-session switch.
           requireActiveSession: false,
           shouldApply: () => {
-            if (!isSurfaceReconcileEnabled()) {
+            if (!canReconcileSession(sessionId)) {
               return false;
             }
             const currentMachine = stateMachineManager.get(sessionId);

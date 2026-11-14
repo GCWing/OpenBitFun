@@ -86,7 +86,7 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
   const canvasScopeKey = useCanvasStore(state => state.scopeKey);
   const { workspace: currentWorkspace } = useCurrentWorkspace();
   const activeSessionId = useSyncExternalStore(
-    flowChatStore.subscribe.bind(flowChatStore),
+    notify => flowChatStore.subscribeSelector(s => s.activeSessionId, () => notify()),
     () => flowChatStore.getState().activeSessionId,
     () => flowChatStore.getState().activeSessionId,
   );

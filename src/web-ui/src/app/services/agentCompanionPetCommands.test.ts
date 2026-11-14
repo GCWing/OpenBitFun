@@ -9,6 +9,12 @@ const saveSettingsMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 const openSettingsMock = vi.hoisted(() => vi.fn());
 const invokeMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
+const markAllSessionsReadMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@/app/services/markAllSessionsRead', () => ({
+  markAllSessionsRead: markAllSessionsReadMock,
+}));
+
 vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({
   api: {
     invoke: invokeMock,
@@ -57,6 +63,13 @@ describe('handleAgentCompanionPetCommand', () => {
     getSettingsAsyncMock.mockResolvedValue({
       enable_agent_companion: true,
     });
+  });
+
+  it('marks every session read like the sidebar view menu', async () => {
+    markAllSessionsReadMock.mockClear();
+    await handleAgentCompanionPetCommand({ type: 'mark-all-read' });
+
+    expect(markAllSessionsReadMock).toHaveBeenCalledTimes(1);
   });
 
   it('opens the companion personalization settings', async () => {

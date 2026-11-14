@@ -2,6 +2,7 @@ import type { BaseNode, ParsedNode } from 'stream-markdown-parser';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
+import { markdownGfmOptions } from './markdownGfmOptions';
 import remarkRehype from 'remark-rehype';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
@@ -36,7 +37,7 @@ const htmlBlocks = new Set(['address', 'article', 'aside', 'blockquote', 'detail
 
 // Only exceptional HTML/file-image fragments use the existing safe Markdown
 // pipeline. Ordinary streaming text stays on the incremental parser's AST.
-const fragmentParser = unified().use(remarkParse).use(remarkGfm)
+const fragmentParser = unified().use(remarkParse).use(remarkGfm, markdownGfmOptions)
   .use(remarkRehype, { allowDangerousHtml: true }).use(rehypeRaw).use(rehypeSanitize);
 
 function fragmentNodes(source: string): ParsedNode[] {

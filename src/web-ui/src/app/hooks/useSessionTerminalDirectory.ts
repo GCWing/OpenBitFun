@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import { sessionProjectWorkspaceId } from '@/flow_chat/utils/sessionWorkspace';
@@ -38,12 +38,15 @@ export function activeSessionTerminalDirectory(workspaceId: string | undefined):
   );
 }
 
-const subscribeFlowChatStore = (listener: () => void) => flowChatStore.subscribe(listener);
-
 /** Terminal default cwd for `workspaceId`, tracking the active session. */
 export function useSessionTerminalDirectory(workspaceId: string | undefined): string | undefined {
+  const subscribe = useCallback((notify: () => void) => flowChatStore.subscribeSelector(
+    () => activeSessionTerminalDirectory(workspaceId),
+    () => notify(),
+  ), [workspaceId]);
+
   return useSyncExternalStore(
-    subscribeFlowChatStore,
+    subscribe,
     () => activeSessionTerminalDirectory(workspaceId),
     () => undefined,
   );

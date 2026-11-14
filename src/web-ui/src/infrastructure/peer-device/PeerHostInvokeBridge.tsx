@@ -62,6 +62,22 @@ async function executeHostInvoke(
   }
 }
 
+/**
+ * Tell the native host whether this bridge can execute product commands. While
+ * it cannot, the host refuses controller requests as definitely not executed
+ * instead of emitting into a webview with no listener.
+ */
+async function reportBridgeReady(ready: boolean): Promise<void> {
+  try {
+    await invoke('peer_host_bridge_ready', { request: { ready } });
+  } catch {
+    log.warn('Failed to report peer host bridge readiness', {
+      ready,
+      error_category: 'bridge_readiness',
+    });
+  }
+}
+
 export function PeerHostInvokeBridge(): null {
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -70,6 +86,7 @@ export function PeerHostInvokeBridge(): null {
 
     let disposed = false;
     let unlisten: UnlistenFn | null = null;
+    let reportedReady = false;
     const idempotencyCache = new PeerHostInvokeIdempotencyCache();
 
     void (async () => {
@@ -104,6 +121,8 @@ export function PeerHostInvokeBridge(): null {
           return;
         }
         unlisten = resolvedUnlisten;
+        reportedReady = true;
+        await reportBridgeReady(true);
       } catch {
         log.error('Failed to register peer host invoke listener', {
           error_category: 'listener_registration',
@@ -115,6 +134,9 @@ export function PeerHostInvokeBridge(): null {
       disposed = true;
       if (unlisten) {
         unlisten();
+      }
+      if (reportedReady) {
+        void reportBridgeReady(false);
       }
     };
   }, []);

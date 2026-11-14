@@ -1,11 +1,8 @@
 package com.openbitfun.mobile.app.ui.chat
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.speech.RecognizerIntent
-import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -35,6 +32,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +48,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.openbitfun.mobile.app.R
+import com.openbitfun.mobile.app.platform.launchComposerActivity
+import com.openbitfun.mobile.app.platform.prepareComposerImage
 import com.openbitfun.mobile.app.ui.common.CircleControl
 import com.openbitfun.mobile.app.ui.common.AdaptiveModalSurface
 import com.openbitfun.mobile.app.ui.settings.ModelServiceScreen
@@ -58,11 +59,11 @@ import com.openbitfun.mobile.core.feature.layout.SettingsPlacement
 import com.openbitfun.mobile.core.feature.generalchat.GeneralChatFailureReason
 import com.openbitfun.mobile.core.feature.generalchat.GeneralChatIntent
 import com.openbitfun.mobile.core.feature.session.ChatComposerCapabilities
-import com.openbitfun.mobile.core.feature.session.ComposerImage
 import com.openbitfun.mobile.core.feature.session.ConversationRowKind
 import com.openbitfun.mobile.core.feature.session.ModelOption
 import com.openbitfun.mobile.core.feature.session.conversationRows
-import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 internal const val GENERAL_CHAT_TEST_TAG: String = "general-chat"
 // Keep the shell-level automation id while the control is now owned by the
@@ -70,9 +71,6 @@ internal const val GENERAL_CHAT_TEST_TAG: String = "general-chat"
 internal const val GENERAL_CHAT_SIDEBAR_TEST_TAG: String = "shell-menu"
 internal const val GENERAL_CHAT_MENU_TEST_TAG: String = "general-chat-menu"
 internal const val GENERAL_CHAT_MODEL_TEST_TAG: String = "general-chat-model"
-
-/** Matches the remote composer and HarmonyOS image picker. */
-private const val MAX_GENERAL_CHAT_IMAGE_BYTES = 8 * 1024 * 1024
 
 /**
  * The general-chat surface, the counterpart of `ConversationView` for a
@@ -139,42 +137,34 @@ internal fun GeneralChatScreen(
         }
     }
 
-    val voiceInput = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val text = result.data
-                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                ?.firstOrNull()
-                .orEmpty()
-            if (text.isNotBlank()) {
-                val merged = listOf(state.draft.trim(), text.trim())
-                    .filter(String::isNotEmpty)
-                    .joinToString(" ")
-                viewModel.dispatch(GeneralChatIntent.UpdateDraft(merged))
-            }
-        }
+    val voiceInput = rememberComposerVoiceInput(state.sessionId) { text ->
+        viewModel.dispatch(GeneralChatIntent.UpdateDraft(listOf(state.draft.trim(), text.trim()).filter(String::isNotEmpty).joinToString(" ")))
     }
-
+    val pickerScope = rememberCoroutineScope()
+    val currentState by rememberUpdatedState(state)
+    var pickerOwner by rememberSaveable { mutableStateOf<String?>(null) }
+    var preparingImage by remember(state.sessionId) { mutableStateOf(false) }
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
-            if (
-                bytes != null &&
-                bytes.size <= MAX_GENERAL_CHAT_IMAGE_BYTES &&
-                state.images.size < MAX_COMPOSER_IMAGES
-            ) {
-                viewModel.dispatch(
-                    GeneralChatIntent.SetImages(
-                        state.images + ComposerImage(
-                            id = "android-" + UUID.randomUUID(),
-                            dataUrl = "data:" + mime + ";base64," +
-                                Base64.encodeToString(bytes, Base64.NO_WRAP),
-                            mimeType = mime,
-                        ),
-                    ),
-                )
+        val target = pickerOwner
+        pickerOwner = null
+        if (uri != null && target == state.sessionId && state.images.size < MAX_COMPOSER_IMAGES) {
+            preparingImage = true
+            pickerScope.launch {
+                try {
+                    val prepared = prepareComposerImage(context.contentResolver, uri)
+                    val latest = currentState
+                    if (latest.sessionId == target && latest.images.size < MAX_COMPOSER_IMAGES) {
+                        viewModel.dispatch(GeneralChatIntent.SetImages(latest.images + prepared))
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (currentState.sessionId == target) {
+                        Toast.makeText(context, R.string.chat_image_prepare_failed, Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    if (currentState.sessionId == target) preparingImage = false
+                }
             }
         }
     }
@@ -379,7 +369,8 @@ internal fun GeneralChatScreen(
         ComposerBar(
             draft = state.draft,
             images = state.images,
-            busy = state.busy,
+            busy = state.busy || preparingImage,
+            inputEnabled = !state.busy && !preparingImage,
             streaming = state.timeline.activeTurn != null,
             // Never consulted: general chat's capabilities do not require a
             // desktop, so the phase cannot gate the send.
@@ -393,25 +384,17 @@ internal fun GeneralChatScreen(
                 viewModel.dispatch(GeneralChatIntent.SetImages(state.images.filterNot { it.id == id }))
             },
             onAttach = {
-                photoPicker.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                )
+                pickerOwner = state.sessionId
+                if (!launchComposerActivity(context, R.string.chat_photo_picker_unavailable) {
+                        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }) pickerOwner = null
             },
             onOpenModels = { showModelService = true },
             onSelectModel = { viewModel.dispatch(GeneralChatIntent.SelectModel(it)) },
             onSend = { viewModel.dispatch(GeneralChatIntent.Send) },
             onStop = { viewModel.dispatch(GeneralChatIntent.Cancel) },
             modifier = Modifier,
-            onVoice = {
-                voiceInput.launch(
-                    Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                        putExtra(
-                            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
-                        )
-                    },
-                )
-            },
+            onVoice = voiceInput,
         )
     }
 

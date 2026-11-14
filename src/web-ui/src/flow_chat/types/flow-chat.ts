@@ -441,7 +441,6 @@ export interface Session {
   titleI18nKey?: string;
   titleI18nParams?: Record<string, unknown>;
   /** Host-assigned display slot, occupied only while this session has its default title. */
-  workspaceSessionNumber?: number;
   titleStatus?: 'generating' | 'generated' | 'failed';
   /**
    * In-memory canonical working set for this session.
@@ -661,6 +660,13 @@ export interface Session {
 
   /** Transient UI session backed by a real agent session. */
   agentBackedTransient?: boolean;
+
+  /**
+   * Created from a remote-driven event before this surface loaded the
+   * session. It adopts the host's persisted metadata when that arrives and
+   * never writes its own placeholder title over the persisted one.
+   */
+  externalPlaceholder?: boolean;
 }
 
 export interface SessionConfig {

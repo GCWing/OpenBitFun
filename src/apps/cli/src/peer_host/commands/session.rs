@@ -1007,6 +1007,31 @@ pub(crate) async fn get_available_modes(
     let mode_infos = get_agent_registry()
         .get_modes_info_for_workspace(workspace_id.as_deref(), workspace_id.is_some())
         .await;
+    let include_counts = request
+        .get("includeSubagentCounts")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let counts = if include_counts {
+        let local_scope = match workspace_id.as_deref() {
+            Some(id) => {
+                state
+                    .workspace_service
+                    .require_workspace(id)
+                    .await
+                    .map_err(|error| error.to_string())?
+                    .workspace_kind
+                    != openbitfun_core::service::workspace::WorkspaceKind::Remote
+            }
+            None => false,
+        };
+        Some(
+            get_agent_registry()
+                .mode_manageable_subagent_counts(&mode_infos, workspace_id.as_deref(), local_scope)
+                .await,
+        )
+    } else {
+        None
+    };
     let dtos: Vec<Value> = mode_infos
         .into_iter()
         .map(|info| {
@@ -1014,7 +1039,11 @@ pub(crate) async fn get_available_modes(
                 .config_profile_id
                 .clone()
                 .unwrap_or_else(|| info.id.clone());
-            json!({
+            let count = counts
+                .as_ref()
+                .and_then(|counts| counts.get(&config_profile_id))
+                .copied();
+            let mut dto = json!({
                 "id": info.id,
                 "name": info.name,
                 "description": info.description,
@@ -1028,7 +1057,13 @@ pub(crate) async fn get_available_modes(
                 "source": info.source,
                 "path": info.path,
                 "model": info.model,
-            })
+            });
+            if let Some(count) = count {
+                dto.as_object_mut()
+                    .unwrap()
+                    .insert("manageableSubagentCount".into(), Value::from(count));
+            }
+            dto
         })
         .collect();
     Ok(Value::Array(dtos))

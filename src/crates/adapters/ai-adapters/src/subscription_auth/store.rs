@@ -457,6 +457,15 @@ fn test_secrets() -> &'static Mutex<HashMap<PathBuf, HashMap<String, Vec<u8>>>> 
     SECRETS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Test-only stand-in for the pre-file-vault macOS Keychain. The migration
+/// tests use this map so they can exercise the old store without touching a
+/// developer's real Keychain.
+#[cfg(test)]
+fn test_legacy_keychain() -> &'static Mutex<HashMap<(String, String), Vec<u8>>> {
+    static SECRETS: OnceLock<Mutex<HashMap<(String, String), Vec<u8>>>> = OnceLock::new();
+    SECRETS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 #[cfg(test)]
 fn unavailable_test_vaults() -> &'static Mutex<HashSet<PathBuf>> {
     static PATHS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
@@ -1114,6 +1123,223 @@ fn file_credential_vault(
     )
 }
 
+/// The v2 store used the native Keychain on macOS before the encrypted file
+/// vault was introduced. Keep the historical service names readable so an
+/// upgrade can copy those entries into the current vault.
+const LEGACY_MACOS_KEYRING_SERVICES: &[&str] = &[
+    concat!("openbitfun.", "bit", "fun", ".subscription-auth.v1"),
+    "openbitfun.subscription-auth.v1",
+];
+
+async fn get_legacy_keychain_secret(service: &str, entry_name: &str) -> Result<Option<Vec<u8>>> {
+    #[cfg(test)]
+    {
+        return test_legacy_keychain()
+            .lock()
+            .map_err(|_| anyhow!("subscription legacy Keychain test lock poisoned"))
+            .map(|entries| {
+                entries
+                    .get(&(service.to_string(), entry_name.to_string()))
+                    .cloned()
+            });
+    }
+
+    #[cfg(all(target_os = "macos", not(test)))]
+    {
+        let service = service.to_string();
+        let entry_name = entry_name.to_string();
+        return tokio::task::spawn_blocking(move || {
+            use keyring_core::api::CredentialStoreApi;
+
+            let store = apple_native_keyring_store::keychain::Store::new()
+                .map_err(|error| format!("open legacy macOS Keychain: {error}"))?;
+            let entry = store
+                .build(&service, &entry_name, None)
+                .map_err(|error| format!("open legacy macOS Keychain entry: {error}"))?;
+            match entry.get_secret() {
+                Ok(secret) => Ok(Some(secret)),
+                Err(keyring_core::Error::NoEntry) => Ok(None),
+                Err(error) => Err(format!("read legacy macOS Keychain entry: {error}")),
+            }
+        })
+        .await
+        .context("join legacy macOS Keychain read task")?
+        .map_err(vault_unavailable);
+    }
+
+    #[cfg(not(any(test, target_os = "macos")))]
+    {
+        let _ = (service, entry_name);
+        Ok(None)
+    }
+}
+
+async fn read_legacy_chunked_field(
+    service: &str,
+    provider: &str,
+    set_id: &str,
+    field: &str,
+    parts: u32,
+) -> Result<Option<String>> {
+    if parts == 0 {
+        return Ok(None);
+    }
+    let mut bytes = Vec::new();
+    for entry_name in secret_entry_names(provider, set_id, field, parts) {
+        let Some(mut part) = get_legacy_keychain_secret(service, &entry_name).await? else {
+            return Ok(None);
+        };
+        bytes.append(&mut part);
+    }
+    Ok(String::from_utf8(bytes).ok())
+}
+
+async fn read_legacy_secret_material(
+    provider: &str,
+    metadata: &CredentialMetadata,
+) -> Result<Option<SecretMaterial>> {
+    #[cfg(not(any(test, target_os = "macos")))]
+    {
+        let _ = (provider, metadata);
+        return Ok(None);
+    }
+
+    for service in LEGACY_MACOS_KEYRING_SERVICES {
+        let material = match metadata {
+            CredentialMetadata::Oauth {
+                secret_set_id: Some(set_id),
+                refresh_parts,
+                access_parts,
+                ..
+            } => {
+                let Some(refresh) =
+                    read_legacy_chunked_field(service, provider, set_id, "refresh", *refresh_parts)
+                        .await?
+                else {
+                    continue;
+                };
+                let Some(access) =
+                    read_legacy_chunked_field(service, provider, set_id, "access", *access_parts)
+                        .await?
+                else {
+                    continue;
+                };
+                Some(SecretMaterial::Oauth { refresh, access })
+            }
+            CredentialMetadata::Api {
+                secret_set_id: Some(set_id),
+                key_parts,
+                ..
+            } => read_legacy_chunked_field(service, provider, set_id, "api-key", *key_parts)
+                .await?
+                .map(|key| SecretMaterial::Api { key }),
+            _ => {
+                let Some(bytes) = get_legacy_keychain_secret(service, provider).await? else {
+                    continue;
+                };
+                let Ok(credential) = serde_json::from_slice::<StoredCredential>(&bytes) else {
+                    continue;
+                };
+                Some((&credential).into())
+            }
+        };
+        if material.is_some() {
+            return Ok(material);
+        }
+    }
+    Ok(None)
+}
+
+/// Copies credentials from the old macOS Keychain into the current vault.
+/// This runs while the normal store transaction is held, so metadata and
+/// vault writes remain serialized across OpenBitFun processes.
+async fn migrate_legacy_keychain_entries(path: &Path, secure: &mut SecureStoreFile) -> Result<()> {
+    #[cfg(not(any(test, target_os = "macos")))]
+    {
+        let _ = (path, secure);
+        return Ok(());
+    }
+
+    let providers: Vec<String> = secure.accounts.keys().cloned().collect();
+    let mut metadata_changed = false;
+    for provider in providers {
+        let Some(metadata) = secure.accounts.get(&provider).cloned() else {
+            continue;
+        };
+        if metadata.management()?.requires_reauthentication {
+            continue;
+        }
+
+        if metadata.vault_entries(&provider).is_empty() {
+            let legacy = match read_legacy_secret_material(&provider, &metadata).await {
+                Ok(legacy) => legacy,
+                Err(error) => {
+                    log::warn!(
+                        "legacy macOS subscription credential migration deferred for {provider}: {error:#}"
+                    );
+                    continue;
+                }
+            };
+            let Some(legacy) = legacy else {
+                continue;
+            };
+            let Some(credential) = metadata.combine(legacy) else {
+                continue;
+            };
+            let migrated = CredentialMetadata::from_credential(&credential);
+            if let Err(error) = schedule_cleanup(path, migrated.vault_entries(&provider)).await {
+                log::warn!(
+                    "legacy macOS subscription credential migration cleanup scheduling deferred for {provider}: {error:#}"
+                );
+                continue;
+            }
+            if let Err(error) = write_secret_material(&provider, &migrated, &credential).await {
+                log::warn!(
+                    "legacy macOS subscription credential migration write deferred for {provider}: {error:#}"
+                );
+                continue;
+            }
+            secure.accounts.insert(provider, migrated);
+            metadata_changed = true;
+            continue;
+        }
+
+        match read_secret_material(&provider, &metadata).await {
+            Ok(Some(_)) => continue,
+            // Leave vault-unavailable errors for the normal load path. That
+            // path reports a retryable vault state instead of turning it into
+            // a migration failure.
+            Err(_) => continue,
+            Ok(None) => {}
+        }
+        let legacy = match read_legacy_secret_material(&provider, &metadata).await {
+            Ok(legacy) => legacy,
+            Err(error) => {
+                log::warn!(
+                    "legacy macOS subscription credential migration deferred for {provider}: {error:#}"
+                );
+                continue;
+            }
+        };
+        let Some(legacy) = legacy else {
+            continue;
+        };
+        let Some(credential) = metadata.combine(legacy) else {
+            continue;
+        };
+        if let Err(error) = write_secret_material(&provider, &metadata, &credential).await {
+            log::warn!(
+                "legacy macOS subscription credential migration write deferred for {provider}: {error:#}"
+            );
+        }
+    }
+
+    if metadata_changed {
+        write_secure_file(path, secure).await?;
+    }
+    Ok(())
+}
+
 async fn get_secret_bytes(entry_name: &str) -> Result<Option<Vec<u8>>> {
     if let Some(path) = overridden_store_path() {
         if test_vault_is_unavailable(&path) {
@@ -1514,7 +1740,9 @@ async fn load_with_state_unlocked(path: &Path) -> Result<LoadState> {
         });
     };
 
-    let secure = parse_secure_file(&bytes, path)?;
+    let mut secure = parse_secure_file(&bytes, path)?;
+
+    migrate_legacy_keychain_entries(path, &mut secure).await?;
 
     // Validate management before reconciling vault cleanup or interpreting
     // credentials. Unknown versions remain intact and fail explicitly.
@@ -2393,5 +2621,186 @@ mod file_lock_tests {
         let message = format!("{error:#}");
         assert!(message.contains("transaction lock"));
         assert!(message.contains("directory") || message.contains("regular file"));
+    }
+}
+
+#[cfg(test)]
+mod legacy_keychain_migration_tests {
+    use super::*;
+
+    const LEGACY_SERVICE: &str = LEGACY_MACOS_KEYRING_SERVICES[0];
+
+    fn temporary_metadata_path(label: &str) -> PathBuf {
+        std::env::temp_dir()
+            .join(format!(
+                "openbitfun-subauth-legacy-{label}-{}",
+                uuid::Uuid::new_v4()
+            ))
+            .join("subscription_auth.json")
+    }
+
+    fn fixture() -> StoredCredential {
+        StoredCredential::Oauth {
+            refresh: "legacy-refresh-token".into(),
+            access: "legacy-access-token".into(),
+            expires: chrono::Utc::now().timestamp_millis() + 3_600_000,
+            account_id: Some("legacy-seat".into()),
+            metadata: Some(serde_json::json!({"email":"legacy@example.com"})),
+        }
+    }
+
+    fn clear_legacy_entries() {
+        test_legacy_keychain()
+            .lock()
+            .expect("legacy Keychain test lock")
+            .clear();
+    }
+
+    #[tokio::test]
+    async fn migrates_v2_keychain_chunks_into_the_file_vault_and_is_idempotent() {
+        let _guard = super::super::tests::test_lock().lock().await;
+        let path = temporary_metadata_path("v2");
+        set_store_path_and_file_vault_for_test(path.clone());
+        clear_legacy_entries();
+
+        let credential = fixture();
+        let metadata = CredentialMetadata::from_credential(&credential);
+        let entries = metadata.vault_entries("codex");
+        let secure = SecureStoreFile {
+            version: STORE_VERSION,
+            accounts: HashMap::from([(String::from("codex"), metadata.clone())]),
+            provider_revisions: HashMap::new(),
+        };
+        write_secure_file(&path, &secure).await.unwrap();
+
+        let (refresh, access) = match &credential {
+            StoredCredential::Oauth {
+                refresh, access, ..
+            } => (refresh, access),
+            _ => unreachable!(),
+        };
+        let mut legacy = test_legacy_keychain().lock().unwrap();
+        for (entry, chunk) in secret_entry_names(
+            "codex",
+            match &metadata {
+                CredentialMetadata::Oauth {
+                    secret_set_id: Some(set_id),
+                    ..
+                } => set_id,
+                _ => unreachable!(),
+            },
+            "refresh",
+            secret_part_count(refresh),
+        )
+        .zip(secret_chunks(refresh))
+        .chain(
+            secret_entry_names(
+                "codex",
+                match &metadata {
+                    CredentialMetadata::Oauth {
+                        secret_set_id: Some(set_id),
+                        ..
+                    } => set_id,
+                    _ => unreachable!(),
+                },
+                "access",
+                secret_part_count(access),
+            )
+            .zip(secret_chunks(access)),
+        ) {
+            legacy.insert((LEGACY_SERVICE.to_string(), entry), chunk);
+        }
+        drop(legacy);
+
+        let state = load_with_state().await.unwrap();
+        assert!(matches!(
+            state.credentials.get("codex"),
+            Some(StoredCredential::Oauth { refresh, access, .. })
+                if refresh == "legacy-refresh-token" && access == "legacy-access-token"
+        ));
+        assert!(state.requires_reauthentication.is_empty());
+        for entry in &entries {
+            assert!(file_credential_vault(&path)
+                .get(entry)
+                .await
+                .unwrap()
+                .is_some());
+        }
+
+        clear_legacy_entries();
+        let second = load_with_state().await.unwrap();
+        assert!(matches!(
+            second.credentials.get("codex"),
+            Some(StoredCredential::Oauth { refresh, access, .. })
+                if refresh == "legacy-refresh-token" && access == "legacy-access-token"
+        ));
+
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn migrates_legacy_combined_keychain_credentials_and_upgrades_metadata() {
+        let _guard = super::super::tests::test_lock().lock().await;
+        let path = temporary_metadata_path("combined");
+        set_store_path_and_file_vault_for_test(path.clone());
+        clear_legacy_entries();
+
+        let credential = fixture();
+        let metadata = CredentialMetadata::Oauth {
+            expires: match &credential {
+                StoredCredential::Oauth { expires, .. } => *expires,
+                _ => unreachable!(),
+            },
+            account_id: Some("legacy-seat".into()),
+            metadata: Some(serde_json::json!({"email":"legacy@example.com"})),
+            needs_reauthentication: false,
+            secret_set_id: None,
+            refresh_parts: 0,
+            access_parts: 0,
+        };
+        write_secure_file(
+            &path,
+            &SecureStoreFile {
+                version: STORE_VERSION,
+                accounts: HashMap::from([(String::from("codex"), metadata)]),
+                provider_revisions: HashMap::new(),
+            },
+        )
+        .await
+        .unwrap();
+        test_legacy_keychain().lock().unwrap().insert(
+            (LEGACY_SERVICE.into(), "codex".into()),
+            serde_json::to_vec(&credential).unwrap(),
+        );
+
+        let state = load_with_state().await.unwrap();
+        assert!(matches!(
+            state.credentials.get("codex"),
+            Some(StoredCredential::Oauth { refresh, access, .. })
+                if refresh == "legacy-refresh-token" && access == "legacy-access-token"
+        ));
+        let migrated = read_secure_file(&path)
+            .await
+            .unwrap()
+            .accounts
+            .remove("codex")
+            .unwrap();
+        assert!(matches!(
+            migrated,
+            CredentialMetadata::Oauth {
+                secret_set_id: Some(_),
+                refresh_parts: 1,
+                access_parts: 1,
+                ..
+            }
+        ));
+
+        clear_legacy_entries();
+        assert!(matches!(
+            load_with_state().await.unwrap().credentials.get("codex"),
+            Some(StoredCredential::Oauth { refresh, access, .. })
+                if refresh == "legacy-refresh-token" && access == "legacy-access-token"
+        ));
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

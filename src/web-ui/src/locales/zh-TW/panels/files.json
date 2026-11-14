@@ -99,7 +99,8 @@
     "loadingFileTree": "正在載入檔案樹..."
   },
   "empty": {
-    "selectWorkspace": "選擇工作區後將顯示檔案樹"
+    "selectWorkspace": "選擇工作區後將顯示檔案樹",
+    "directoryUnavailable": "所選目錄無法使用。"
   },
   "dialog": {
     "newFile": {
@@ -131,6 +132,10 @@
     "cancelled": "傳輸已取消",
     "failed": "檔案傳輸失敗：{{error}}",
     "dropHint": "將檔案拖放到此處以上傳",
+    "peerMissingWorkspace": "無法識別被控裝置上的工作區，請重新開啟後再試。",
+    "peerFolderUnsupported": "暫不支援將此裝置上的資料夾上傳到被控裝置，請改為上傳其中的檔案。",
+    "peerNotAFile": "只能將一般檔案上傳到被控裝置。",
+    "peerFileTooLarge": "超過 {{limit}} MB 的檔案無法上傳到被控裝置。",
     "stop": "停止"
   },
   "archive": {

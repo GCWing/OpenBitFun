@@ -25,22 +25,38 @@ fn resolve_profile_id(mode_id: &str) -> String {
 pub async fn load_user_mode_skill_overrides(
     mode_id: &str,
 ) -> OpenBitFunResult<UserModeSkillOverrides> {
+    Ok(load_user_mode_skill_overrides_batch(&[mode_id.to_owned()])
+        .await?
+        .remove(mode_id)
+        .unwrap_or_default())
+}
+
+pub async fn load_user_mode_skill_overrides_batch(
+    mode_ids: &[String],
+) -> OpenBitFunResult<HashMap<String, UserModeSkillOverrides>> {
     let config_service = GlobalConfigManager::get_service().await?;
     let stored_configs: HashMap<String, AgentProfileConfig> = config_service
         .get_config(Some("ai.agent_profiles"))
         .await
         .unwrap_or_default();
-    let profile_id = resolve_profile_id(mode_id);
-
-    let config = stored_configs.get(&profile_id);
-    Ok(normalize_user_mode_skill_overrides(
-        config
-            .map(|item| item.disabled_user_skills.clone())
-            .unwrap_or_default(),
-        config
-            .map(|item| item.enabled_user_skills.clone())
-            .unwrap_or_default(),
-    ))
+    Ok(mode_ids
+        .iter()
+        .map(|id| {
+            let profile_id = resolve_profile_id(id);
+            let config = stored_configs.get(&profile_id);
+            (
+                id.clone(),
+                normalize_user_mode_skill_overrides(
+                    config
+                        .map(|item| item.disabled_user_skills.clone())
+                        .unwrap_or_default(),
+                    config
+                        .map(|item| item.enabled_user_skills.clone())
+                        .unwrap_or_default(),
+                ),
+            )
+        })
+        .collect())
 }
 
 pub async fn set_user_mode_skill_state(
@@ -436,21 +452,23 @@ pub async fn load_disabled_mode_skills_remote(
     remote_root: &str,
     mode_id: &str,
 ) -> OpenBitFunResult<Vec<String>> {
-    let path = project_agent_profiles_path_for_remote(remote_root);
-    let exists = fs.exists(&path).await.unwrap_or(false);
-    if !exists {
-        return Ok(Vec::new());
-    }
+    let document = load_project_mode_skills_document_remote(fs, remote_root).await?;
+    Ok(get_disabled_mode_skills_from_document(&document, mode_id))
+}
 
+pub async fn load_project_mode_skills_document_remote(
+    fs: &dyn WorkspaceFileSystem,
+    remote_root: &str,
+) -> OpenBitFunResult<ProjectAgentProfilesDocument> {
+    let path = project_agent_profiles_path_for_remote(remote_root);
+    if !fs.exists(&path).await.unwrap_or(false) {
+        return Ok(ProjectAgentProfilesDocument::default());
+    }
     let content = fs.read_file_text(&path).await.map_err(|error| {
         OpenBitFunError::config(format!(
             "Failed to read remote project mode profiles: {}",
             error
         ))
     })?;
-    let document = deserialize_project_agent_profiles_document(&content)?;
-    Ok(get_disabled_project_skills(
-        &document,
-        &resolve_profile_id(mode_id),
-    ))
+    deserialize_project_agent_profiles_document(&content)
 }

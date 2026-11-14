@@ -105,7 +105,7 @@
    blocks, more air above a heading than below it, lists tucked under their lead-in. */
 .iui-markdown { display: flex; flex-direction: column; min-width: 0; font-size: 16px; line-height: 1.65; overflow-wrap: anywhere; }
 .iui-markdown > * { margin: 0; }
-.iui-markdown > * + * { margin-top: 12px; }
+.iui-markdown > :where(:not(:first-child)) { margin-top: 12px; }
 .iui-markdown > p + :is(ul, ol) { margin-top: 6px; }
 .iui-markdown > * + .iui-md-h { margin-top: 26px; }
 .iui-markdown > .iui-md-h + * { margin-top: 8px; }
@@ -367,9 +367,11 @@
      to the block it introduces.
    - inner (8px): a title to its own subtitle, tags or paragraph; tight (4px)
      for an eyebrow caption above a title. */
-.iui-flow > * + * { margin-top: var(--iui-space-section); }
+/* Preserve element-child spacing without invalidating unrelated virtual rows
+   whenever this globally loaded stylesheet sees sibling insertion/removal. */
+.iui-flow > :where(:not(:first-child)) { margin-top: var(--iui-space-section); }
 .iui-flow > .iui-title + * { margin-top: var(--iui-space-group); }
-:is(.iui-flow .iui-flow, .iui-card.iui-flow) > * + * { margin-top: var(--iui-space-group); }
+:is(.iui-flow .iui-flow, .iui-card.iui-flow) > :where(:not(:first-child)) { margin-top: var(--iui-space-group); }
 .iui-flow > .iui-text + .iui-text { margin-top: var(--iui-space-group); }
 .iui-flow > .iui-title + :is(.iui-text, .iui-caption, .iui-row:has(> .iui-badge)) { margin-top: var(--iui-space-inner); }
 .iui-flow > .iui-caption + .iui-title { margin-top: var(--iui-space-tight); }

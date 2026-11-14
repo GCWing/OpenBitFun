@@ -51,11 +51,27 @@ describe('permissionMode', () => {
     expect(permissionModeToConfig(base, 'auto_approve')).toMatchObject({
       policy: { preset: 'ask' },
       interaction: { auto_approve_ask: true },
+      approval: { strategy: 'model' },
     });
     expect(permissionModeToConfig(base, 'full_access')).toMatchObject({
       policy: { preset: 'full_access' },
       interaction: { auto_approve_ask: false },
+      approval: { strategy: 'interactive' },
     });
+  });
+
+  it('treats the persisted automatic approval strategy as the auto mode', () => {
+    expect(permissionModeFromConfig({
+      ...config('ask', false),
+      approval: {
+        strategy: 'model',
+        model_kind: 'chat',
+        chat_model_id: 'approval-model',
+        timeout_ms: 30_000,
+        on_ask: 'user',
+        on_error: 'ask',
+      },
+    })).toBe('auto_approve');
   });
 
   it('round trips a configuration through the mode it represents', () => {

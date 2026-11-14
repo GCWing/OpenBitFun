@@ -2269,11 +2269,11 @@ mod tests {
     #[test]
     fn oauth_start_query_accepts_canonical_and_legacy_return_target_names() {
         for parameter in ["returnTo", "return_to"] {
-            let uri = format!("/auth/github/start?{parameter}=%2Fskin%2Fadmin")
+            let uri = format!("/auth/github/start?{parameter}=%2Fminiapp%2Fadmin")
                 .parse()
                 .unwrap();
             let Query(query) = Query::<OAuthStartQuery>::try_from_uri(&uri).unwrap();
-            assert_eq!(query.return_to.as_deref(), Some("/skin/admin"));
+            assert_eq!(query.return_to.as_deref(), Some("/miniapp/admin"));
         }
     }
 
@@ -2356,6 +2356,7 @@ mod tests {
             github_client_secret: Some("client-secret".to_string()),
             session_secret: "test-session-secret-at-least-24".to_string(),
             admin_github_ids: HashSet::from([24753352]),
+            admin_emails: HashSet::new(),
             public_browse: true,
             web_submissions_enabled: false,
         };
@@ -2548,6 +2549,7 @@ mod tests {
             github_client_secret: Some("client-secret".to_string()),
             session_secret: "test-session-secret-at-least-24".to_string(),
             admin_github_ids: HashSet::from([24753352]),
+            admin_emails: HashSet::new(),
             public_browse: true,
             web_submissions_enabled: false,
         };
@@ -2725,6 +2727,7 @@ mod tests {
             github_client_secret: Some("client-secret".to_string()),
             session_secret: "test-session-secret-at-least-24".to_string(),
             admin_github_ids: HashSet::from([24753352]),
+            admin_emails: HashSet::new(),
             public_browse: true,
             web_submissions_enabled: false,
         };
@@ -2890,6 +2893,7 @@ mod tests {
             github_client_secret: Some("client-secret".to_string()),
             session_secret: "test-session-secret-at-least-24".to_string(),
             admin_github_ids: HashSet::from([24753352]),
+            admin_emails: HashSet::new(),
             public_browse: true,
             web_submissions_enabled: false,
         };

@@ -227,3 +227,20 @@ mod tests {
         server.await.unwrap();
     }
 }
+
+/// Discovery uses this host's network and proxy configuration.
+pub(crate) async fn probe_magpie_gateway(args: &Value) -> Result<Value, String> {
+    let request = serde_json::from_value(crate::peer_host::args::request_value(args).clone())
+        .map_err(|_| "Invalid Magpie discovery request".to_string())?;
+    let config: openbitfun_core::service::config::GlobalConfig =
+        openbitfun_core::service::config::get_global_config_service()
+            .await
+            .map_err(|_| "Failed to read proxy configuration".to_string())?
+            .get_config(None)
+            .await
+            .map_err(|_| "Failed to read proxy configuration".to_string())?;
+    serde_json::to_value(
+        openbitfun_core::infrastructure::ai::magpie::probe(request, Some(config.ai.proxy)).await,
+    )
+    .map_err(|error| error.to_string())
+}

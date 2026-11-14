@@ -24,17 +24,19 @@ export async function buildMiniAppChatStyles() {
   const style = output.find(file => file.type === 'asset' && file.fileName.endsWith('.css'));
   if (!script || !style || script.imports.length || script.dynamicImports.length) throw new Error('MiniApp chat projection must contain only CSS and static class names');
   const header = '/* Generated from the Hi and FlowChat style owners by scripts/generate-miniapp-chat-styles.mjs. */\n';
-  return { 'chat-style-classes.js': header + script.code, 'chat-styles.css': header + style.source };
+  // Vite preserves imported CSS line endings; generated projections use LF on every host.
+  return { 'chat-style-classes.js': header + script.code, 'chat-styles.css': header + String(style.source).replace(/\r\n?/g, '\n') };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const files = await buildMiniAppChatStyles();
+  const normalizeEol = value => value.replace(/\r\n/g, '\n');
   for (const [name, content] of Object.entries(files)) {
     const path = resolve(generated, name);
     if (process.argv.includes('--check')) {
-      if (readFileSync(path, 'utf8') !== content) throw new Error(`Stale MiniApp chat style projection: ${name}`);
-    } else if (!existsSync(path) || readFileSync(path, 'utf8') !== content) {
-      mkdirSync(generated, { recursive: true }); writeFileSync(path, content);
+      if (normalizeEol(readFileSync(path, 'utf8')) !== normalizeEol(content)) throw new Error(`Stale MiniApp chat style projection: ${name}`);
+    } else if (!existsSync(path) || normalizeEol(readFileSync(path, 'utf8')) !== normalizeEol(content)) {
+      mkdirSync(generated, { recursive: true }); writeFileSync(path, normalizeEol(content));
     }
   }
 }
