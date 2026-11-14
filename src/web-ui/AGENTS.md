@@ -200,6 +200,21 @@ scroll-strip coordinate. Preserve reveal across edge-control layout changes, and
 release automatic reveal when the user wheels or pages the strip. These fixtures
 use supplied geometry; native overflow coverage is in `tests/e2e/AGENTS.md`.
 
+For SceneBar projection caching and render costs:
+
+```bash
+SCENE_BAR_BENCH=1 pnpm --dir src/web-ui run test:run src/app/components/SceneBar/SceneBar.performance.test.tsx
+```
+
+This fixture uses the real scene manager, session-label hooks and TabGroup with
+24 tabs, ten warm-up renders and 100 updates per scenario. It reports React
+Profiler render time and item-array identities for parent renders, history-only
+updates and selection payloads including `lastUsed`. Timing is diagnostic, not a
+CI threshold. To compare the same fixture against an unoptimized checkout, set
+`SCENE_BAR_BASELINE=1` to omit optimization-specific assertions. These jsdom
+fixtures cover simulated SSH resource badges and Peer surface/title changes;
+they do not measure native layout/paint, live transport or end-to-end navigation.
+
 For project creation entry points, work-location/environment selection, and local / SSH / WSL / Docker routing:
 
 ```bash

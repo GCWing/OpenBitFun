@@ -5,6 +5,8 @@
  * write to the same Zustand store, so state is always in sync.
  */
 
+import { useMemo, useSyncExternalStore } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { SCENE_TAB_REGISTRY, getMiniAppSceneDef, getSceneDef } from '../scenes/registry';
 import type { SceneTabDef, SceneTabId } from '../components/SceneBar/types';
 import { selectedScene, tabPane, type WorkbenchPane } from '../workbench/scenePaneModel';
@@ -15,7 +17,7 @@ import { useI18n } from '@/infrastructure/i18n';
 import { useContentResourceStore } from '../workbench/contentResourceStore';
 import { useOptionalWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { parseProjectResourceTarget } from '../scenes/project-resources/projectResourceTarget';
-import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceId, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 
 export interface UseSceneManagerReturn {
   openTabs: ReturnType<typeof useSceneStore.getState>['openTabs'];
@@ -41,46 +43,66 @@ export function useSceneManager(pane?: WorkbenchPane): UseSceneManagerReturn {
     activateScene,
     openScene,
     closeScene,
-  } = useSceneStore();
+  } = useSceneStore(useShallow(state => ({
+    openTabs: state.openTabs,
+    activeTabId: state.activeTabId,
+    pendingTabId: state.pendingTabId,
+    paneSelections: state.paneSelections,
+    navigationMotion: state.navigationMotion,
+    navigationSequence: state.navigationSequence,
+    activateScene: state.activateScene,
+    openScene: state.openScene,
+    closeScene: state.closeScene,
+  })));
   const apps = useMiniAppStore((s) => s.apps);
   const { currentLanguage } = useI18n();
   const resources = useContentResourceStore(state => state.resources);
   const workspaceContext = useOptionalWorkspaceContext();
-  const projectDefs: SceneTabDef[] = openTabs.flatMap(tab => {
-    const target = parseProjectResourceTarget(tab.id);
-    const def = target && getSceneDef(tab.id);
-    if (!target || !def) return [];
-    const workspace = target.surfaceId === getActiveSurfaceId()
-      ? workspaceContext?.openedWorkspaces.get(target.workspaceId) : undefined;
-    return [{ ...def, ...(workspace ? { label: workspace.name, labelKey: undefined } : {}) }];
-  });
-  const contentDefs: SceneTabDef[] = openTabs.flatMap(tab => {
-    const resource = tab.contentId ? resources[tab.contentId] : undefined;
-    return resource ? [{ id: tab.id, label: resource.content.title, pinned: false,
-      closable: true, singleton: false, defaultOpen: false }] : [];
-  });
-
-  const miniAppDefs: SceneTabDef[] = openTabs
-    .filter((t) => typeof t.id === 'string' && t.id.startsWith('miniapp:'))
-    .map((t) => {
-      const appId = (t.id as string).slice('miniapp:'.length);
-      const app = apps.find((a) => a.id === appId);
-      const localizedName = app ? pickLocalizedString(app, currentLanguage, 'name') : undefined;
-      return getMiniAppSceneDef(appId, localizedName ?? app?.name);
+  const activeSurfaceId = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceId, getActiveSurfaceId);
+  const openedWorkspaces = workspaceContext?.openedWorkspaces;
+  // Preserve projections during selection/parent renders so label snapshots and
+  // SceneBar item compilation can reuse their inputs. Surface changes still
+  // invalidate workspace labels even when the tab list itself is retained.
+  const paneTabs = useMemo(() => pane ? openTabs.filter(tab => tabPane(tab) === pane) : openTabs, [openTabs, pane]);
+  const tabDefs = useMemo(() => {
+    const projectDefs: SceneTabDef[] = openTabs.flatMap(tab => {
+      const target = parseProjectResourceTarget(tab.id);
+      const def = target && getSceneDef(tab.id);
+      if (!target || !def) return [];
+      const workspace = target.surfaceId === activeSurfaceId
+        ? openedWorkspaces?.get(target.workspaceId) : undefined;
+      return [{ ...def, ...(workspace ? { label: workspace.name, labelKey: undefined } : {}) }];
+    });
+    const contentDefs: SceneTabDef[] = openTabs.flatMap(tab => {
+      const resource = tab.contentId ? resources[tab.contentId] : undefined;
+      return resource ? [{ id: tab.id, label: resource.content.title, pinned: false,
+        closable: true, singleton: false, defaultOpen: false }] : [];
     });
 
-  const sessionDefs: SceneTabDef[] = openTabs
-    .filter(tab => tab.session)
-    .map(tab => ({ ...getSceneDef('session')!, id: tab.id }));
+    const miniAppDefs: SceneTabDef[] = openTabs
+      .filter((t) => typeof t.id === 'string' && t.id.startsWith('miniapp:'))
+      .map((t) => {
+        const appId = (t.id as string).slice('miniapp:'.length);
+        const app = apps.find((a) => a.id === appId);
+        const localizedName = app ? pickLocalizedString(app, currentLanguage, 'name') : undefined;
+        return getMiniAppSceneDef(appId, localizedName ?? app?.name);
+      });
+
+    const sessionDefs: SceneTabDef[] = openTabs
+      .filter(tab => tab.session)
+      .map(tab => ({ ...getSceneDef('session')!, id: tab.id }));
+
+    return [...SCENE_TAB_REGISTRY, ...sessionDefs, ...miniAppDefs, ...contentDefs, ...projectDefs];
+  }, [openTabs, apps, currentLanguage, resources, openedWorkspaces, activeSurfaceId]);
 
   return {
-    openTabs: pane ? openTabs.filter(tab => tabPane(tab) === pane) : openTabs,
+    openTabs: paneTabs,
     activeTabId: pane ? selectedScene(paneSelections[pane]) : activeTabId,
     pendingTabId: !pane || openTabs.some(tab => tab.id === pendingTabId && tabPane(tab) === pane) ? pendingTabId : null,
     paneSelections,
     navigationMotion,
     navigationSequence,
-    tabDefs: [...SCENE_TAB_REGISTRY, ...sessionDefs, ...miniAppDefs, ...contentDefs, ...projectDefs],
+    tabDefs,
     activateScene,
     openScene,
     closeScene,
