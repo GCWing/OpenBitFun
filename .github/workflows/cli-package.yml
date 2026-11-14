@@ -270,20 +270,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_DISPATCH_TOKEN }}
           RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-          OFFICIAL_REPOSITORY: ${{ github.repository == 'GCWing/OpenBitFun' }}
+          TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ -z "${GH_TOKEN}" ]]; then
-            if [[ "${OFFICIAL_REPOSITORY}" == "true" ]]; then
-              echo "::error::HOMEBREW_TAP_DISPATCH_TOKEN is required for the official post-publication notification."
+            if [[ -n "${TAP_REPOSITORY}" ]]; then
+              echo "::error::HOMEBREW_TAP_DISPATCH_TOKEN is required for the configured tap."
               exit 1
             fi
-            echo "HOMEBREW_TAP_DISPATCH_TOKEN not set on fork; skipping tap dispatch."
+            echo "Homebrew tap notification is not configured."
             exit 0
           fi
 
-          echo "Dispatching openbitfun-release-published for ${RELEASE_TAG} to GCWing/homebrew-tap"
+          TAP_REPOSITORY="${TAP_REPOSITORY:-GCWing/homebrew-tap}"
+          [[ "$TAP_REPOSITORY" =~ ^[a-zA-Z0-9-]+/[a-zA-Z0-9._-]+$ &&
+             "${TAP_REPOSITORY#*/}" != . && "${TAP_REPOSITORY#*/}" != .. ]] || {
+            echo "::error::HOMEBREW_TAP_REPOSITORY must be an owner/repository pair."
+            exit 1
+          }
+          echo "Dispatching openbitfun-release-published for ${RELEASE_TAG} to ${TAP_REPOSITORY}"
           PAYLOAD="$(jq -cn --arg tag_name "${RELEASE_TAG}" '{
             event_type: "openbitfun-release-published",
             client_payload: {
@@ -295,5 +301,5 @@ jobs:
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/GCWing/homebrew-tap/dispatches \
+            "${GITHUB_API_URL}/repos/${TAP_REPOSITORY}/dispatches" \
             -d "$PAYLOAD"

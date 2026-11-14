@@ -95,7 +95,7 @@ jobs:
       upload_artifacts: true
       # Fork validation is intentionally cache-read-only. Only the upstream
       # repository may seed long-lived Nightly caches.
-      cache_write: ${{ github.repository_owner == 'GCWing' }}
+      cache_write: ${{ github.repository_id == '1147866277' }}
 
   # ── Publish nightly pre-release ────────────────────────────────────
   publish-nightly:
@@ -169,6 +169,9 @@ jobs:
           push: true
           provenance: false
           sbom: false
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
           build-args: |
             VERSION=${{ needs.check-changes.outputs.nightly_version }}
             REVISION=${{ github.sha }}

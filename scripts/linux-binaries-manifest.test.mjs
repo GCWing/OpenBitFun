@@ -206,6 +206,52 @@ test('release sync pins Relay and Linux metadata to the updater release during l
   ]);
 });
 
+test('the release mirror copies signed Relay descriptors from both official namespaces unchanged', (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'openbitfun-relay-mirror-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  for (const [namespace, version, accepted] of [
+    ['gcwing', '1.0.10', true], ['openbitfun', '1.0.10', true],
+    ['openbitfun', '1.0.9', false], ['unrelated-owner', '1.0.10', false],
+  ]) {
+    const mirror = fs.mkdtempSync(path.join(temp, `${namespace}-`));
+    fs.mkdirSync(path.join(mirror, '1.0.10'));
+    const descriptor = JSON.stringify({ schema_version: 1, version, tag: `v${version}`,
+      image: `ghcr.io/${namespace}/openbitfun-relay-server`, digest: `sha256:${'a'.repeat(64)}` });
+    const result = spawnSync('bash', ['-c', `
+      source "$SYNC_SCRIPT"
+      VERSION=1.0.10
+      VERSION_DIR="$WEBSITE_RELEASE_DIR/$VERSION"
+      curl() {
+        local output
+        while [ "$#" -gt 1 ]; do
+          if [ "$1" = -o ]; then output="$2"; shift; fi
+          shift
+        done
+        case "$1" in
+          *.sig) printf 'original signature' > "$output" ;;
+          *) printf '%s' "$DESCRIPTOR" > "$output"; printf 200 ;;
+        esac
+      }
+      mirror_relay_image_descriptor
+    `], {
+      cwd: repoRoot, encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, SYNC_SCRIPT: path.join(repoRoot, 'scripts/openbitfun-release-sync.sh'),
+        OPENBITFUN_RELEASE_CHANNEL: 'stable', WEBSITE_RELEASE_DIR: mirror, DESCRIPTOR: descriptor },
+    });
+    assert.equal(result.status, accepted ? 0 : 1, `${namespace} ${version}: ${result.stderr}`);
+    for (const dir of [mirror, path.join(mirror, '1.0.10')]) {
+      const image = path.join(dir, 'relay-image.json');
+      if (accepted) {
+        assert.equal(fs.readFileSync(image, 'utf8'), descriptor);
+        assert.equal(fs.readFileSync(`${image}.sig`, 'utf8'), 'original signature');
+      } else {
+        assert.equal(fs.existsSync(image), false);
+        assert.equal(fs.existsSync(`${image}.sig`), false);
+      }
+    }
+  }
+});
+
 test('openbitfun sync mirrors the website installer from the exact updater release', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'openbitfun-windows-installer-mirror-'));
   const versionDir = path.join(temp, 'release', '1.2.3');

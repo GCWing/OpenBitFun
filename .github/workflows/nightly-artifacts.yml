@@ -72,7 +72,7 @@ jobs:
       OPENBITFUN_RELEASE_CHANNEL: nightly
       # Nightly does not publish a Tauri latest-v1.json feed yet. Preserve its
       # existing stable updater endpoints until that publishing path exists.
-      TAURI_UPDATER_ENDPOINT: https://github.com/GCWing/OpenBitFun/releases/latest/download/latest-v1.json
+      TAURI_UPDATER_ENDPOINT: https://github.com/openBitFun/OpenBitFun/releases/latest/download/latest-v1.json
       TAURI_UPDATER_FALLBACK_ENDPOINT: https://openbitfun.com/release/latest-v1.json
       # Nightly relay archives are signed too (linux-binaries.yml receives the
       # key), so nightly Desktop needs the same trust root to verify them.

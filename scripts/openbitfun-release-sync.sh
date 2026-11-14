@@ -48,11 +48,11 @@ RELEASE_CHANNEL="${OPENBITFUN_RELEASE_CHANNEL:-stable}"
 case "$RELEASE_CHANNEL" in
   stable)
     CHANNEL_PATH=""
-    GITHUB_RELEASE_ROOT="https://github.com/GCWing/OpenBitFun/releases/latest/download"
+    GITHUB_RELEASE_ROOT="https://github.com/openBitFun/OpenBitFun/releases/latest/download"
     ;;
   beta)
     CHANNEL_PATH="/beta"
-    GITHUB_RELEASE_ROOT="https://github.com/GCWing/OpenBitFun/releases/download/channel-v1-beta"
+    GITHUB_RELEASE_ROOT="https://github.com/openBitFun/OpenBitFun/releases/download/channel-v1-beta"
     ;;
   *)
     echo "Unsupported OPENBITFUN_RELEASE_CHANNEL: $RELEASE_CHANNEL" >&2
@@ -477,7 +477,10 @@ import json, re, sys
 with open(sys.argv[1], encoding="utf-8") as f:
     data = json.load(f)
 assert data.get("schema_version") == 1
-assert data.get("image") == "ghcr.io/gcwing/openbitfun-relay-server"
+assert data.get("image") in {
+    "ghcr.io/openbitfun/openbitfun-relay-server",
+    "ghcr.io/gcwing/openbitfun-relay-server",
+}
 assert re.fullmatch(r"sha256:[0-9a-f]{64}", data.get("digest", ""))
 print(data["version"])
 PY

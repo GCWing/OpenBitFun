@@ -15,7 +15,7 @@ use tauri_plugin_updater::UpdaterExt;
 /// `scripts/desktop-tauri-build.mjs`, which bakes the same pair into the bundle.
 const GITHUB_UPDATER_ENDPOINT: &str = match option_env!("OPENBITFUN_UPDATER_PRIMARY_ENDPOINT") {
     Some(endpoint) => endpoint,
-    None => "https://github.com/GCWing/OpenBitFun/releases/latest/download/latest-v1.json",
+    None => "https://github.com/openBitFun/OpenBitFun/releases/latest/download/latest-v1.json",
 };
 const OPENBITFUN_UPDATER_ENDPOINT: &str = match option_env!("OPENBITFUN_UPDATER_FALLBACK_ENDPOINT")
 {

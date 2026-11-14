@@ -1079,7 +1079,7 @@ test('nightly orchestrates the shared build before the separately privileged pub
     build_linux_binaries: true,
     build_relay_image: true,
     upload_artifacts: true,
-    cache_write: "${{ github.repository_owner == 'GCWing' }}",
+    cache_write: "${{ github.repository_id == '1147866277' }}",
   });
   assert.deepEqual(publish.needs, ['check-changes', 'build-artifacts']);
   assert.match(publish.if, /inputs\.build_only != true/);
@@ -1368,6 +1368,7 @@ test('nightly publishes and verifies the Relay image in the current repository o
     publish?.with?.tags,
     `${image}:${'${{ env.NIGHTLY_TAG }}'}\n${image}:${'${{ steps.nightly-image-meta.outputs.asset_version }}'}\n`,
   );
+  assert.match(publish?.with?.labels ?? '', /org\.opencontainers\.image\.source=\$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}/);
   assert.equal(
     smoke?.run,
     `bash scripts/relay/smoke-image.sh \\\n  "${image}@\${IMAGE_DIGEST}"\n`,
@@ -1506,7 +1507,7 @@ test('Desktop packaging keeps beta identity explicit and stable-safe', () => {
   const prepareStep = workflow.jobs.prepare.steps.find(
     (step) => step.name === 'Resolve version metadata',
   );
-  assert.match(prepareStep.run, /GITHUB_REPOSITORY.*GCWing\/OpenBitFun/);
+  assert.match(prepareStep.run, /GITHUB_REPOSITORY_ID.*1147866277/);
   assert.match(prepareStep.run, /merge-base --is-ancestor/);
   assert.match(prepareStep.run, /rev-parse --verify --quiet/);
 
@@ -1515,7 +1516,7 @@ test('Desktop packaging keeps beta identity explicit and stable-safe', () => {
     packageJob.env.OPENBITFUN_RELEASE_CHANNEL,
     '${{ needs.prepare.outputs.release_channel }}',
   );
-  assert.match(packageJob.env.TAURI_UPDATER_ENDPOINT, /github\.repository/);
+  assert.match(packageJob.env.TAURI_UPDATER_ENDPOINT, /github\.repository_id != '1147866277'/);
   assert.match(packageJob.env.TAURI_UPDATER_ENDPOINT, /channel-v1-beta/);
   assert.ok(packageJob.env.TAURI_UPDATER_ENDPOINT.includes("format('https://github.com/{0}/releases/latest/download/latest-v1.json', github.repository)"));
   assert.equal(packageJob.env.TAURI_UPDATER_ENDPOINT, packageJob.env.TAURI_UPDATER_FALLBACK_ENDPOINT);
@@ -1554,6 +1555,8 @@ test('Desktop packaging keeps beta identity explicit and stable-safe', () => {
   );
 
   const uploadSteps = workflow.jobs['upload-release-assets'].steps;
+  assert.equal(uploadSteps.find((step) => step.name === 'Request openbitfun mirror sync').if,
+    "github.repository_id == '1147866277'");
   const release = uploadSteps.find((step) => step.name === 'Upload to release');
   assert.equal(
     release.env.RELEASE_PRERELEASE,
@@ -1670,7 +1673,7 @@ test('stable and beta publication require every producer, while artifact-only ru
   const steps = jobs['upload-release-assets'].steps;
   for (const name of [
     'Download Linux binary artifacts', 'Download Relay image descriptor',
-    'Generate Linux binaries manifest', 'Stage release assets',
+    'Generate Linux binaries manifest', 'Verify staged Relay image descriptor', 'Stage release assets',
     'Verify published Linux binaries manifest', 'Verify published Relay image descriptor',
   ]) {
     assert.equal(steps.find((step) => step.name === name)?.if, name.startsWith('Download') ? '${{ !inputs.artifact_run_ids }}' : undefined, name);
@@ -2022,12 +2025,16 @@ test('Relay image rebuild resolves the release tag instead of the newer workflow
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const tagSha = 'a'.repeat(40);
   const headSha = 'b'.repeat(40);
-  for (const checkoutRef of ['', 'newer-branch']) {
-    const output = path.join(root, `output-${checkoutRef || 'tag'}`);
+  for (const [checkoutRef, protectedHistory, failure] of [
+    ['', 'yes', null], ['newer-branch', 'yes', /not requested commit/],
+    ['', 'no', /not part of the protected main history/],
+  ]) {
+    const output = path.join(root, `output-${checkoutRef || 'tag'}-${protectedHistory}`);
     const result = spawnSync('bash', ['-c', `
       git() {
         case "$1" in
-          fetch|merge-base) return 0 ;;
+          fetch) return 0 ;;
+          merge-base) [[ "$PROTECTED_HISTORY" == yes ]] ;;
           rev-parse)
             case "\${!#}" in
               'v1.0.0^{commit}') echo "$TAG_SHA" ;;
@@ -2041,19 +2048,98 @@ test('Relay image rebuild resolves the release tag instead of the newer workflow
       env: {
         ...process.env,
         GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_SHA: headSha,
-        GITHUB_REPOSITORY: 'GCWing/OpenBitFun', GITHUB_OUTPUT: output,
+        GITHUB_REPOSITORY: 'openBitFun/OpenBitFun', GITHUB_REPOSITORY_ID: '1147866277', GITHUB_OUTPUT: output,
         INPUT_TAG_NAME: 'v1.0.0', INPUT_CHECKOUT_REF: checkoutRef,
         INPUT_RELEASE_CHANNEL: 'stable', INPUT_UPLOAD_TO_RELEASE: 'true',
-        INPUT_RELAY_IMAGE_ONLY: 'true', TAG_SHA: tagSha,
+        INPUT_RELAY_IMAGE_ONLY: 'true', TAG_SHA: tagSha, PROTECTED_HISTORY: protectedHistory,
       },
     });
-    if (checkoutRef) {
+    if (failure) {
       assert.notEqual(result.status, 0);
-      assert.match(result.stderr, /not requested commit/);
+      assert.match(result.stderr, failure);
     } else {
       assert.equal(result.status, 0, result.stderr);
       assert.match(readFileSync(output, 'utf8'), new RegExp(`checkout_ref=${tagSha}`));
     }
+  }
+});
+
+test('Desktop finalization selects the Windows updater format from the release source', {
+  skip: process.platform === 'win32',
+}, () => {
+  const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows/desktop-package.yml'), 'utf8'));
+  const step = workflow.jobs['upload-release-assets'].steps.find((entry) => entry.name === 'Collect updater assets');
+  assert.equal(step.env.RELEASE_SOURCE, '${{ needs.prepare.outputs.checkout_ref }}');
+  for (const [ref, grepStatus, modern] of [['old-tag', '1', false], ['new-tag', '0', true], ['unknown', '128', false]]) {
+    const result = spawnSync('bash', ['-c', `
+      git() {
+        [[ "$*" == "grep -q OPENBITFUN_MAINTENANCE_V1 $RELEASE_SOURCE -- OpenBitFun-Installer/src-tauri/src/installer/commands.rs" ]] || return 128
+        return "$GREP_STATUS"
+      }
+      node() { printf '%s\n' "$@"; }
+      ${step.run.replaceAll('${{ needs.prepare.outputs.version }}', '1.0.10')}
+    `], {
+      cwd: repoRoot, encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, RELEASE_SOURCE: ref, GREP_STATUS: grepStatus, REQUIRED_UPDATER_PLATFORMS: 'windows-x86_64' },
+    });
+    assert.equal(result.status, grepStatus === '128' ? 1 : 0, result.stderr);
+    assert.equal(result.stdout.includes('--windows-installer-dir\nrelease-manual-assets\n'), modern);
+  }
+});
+
+test('CLI dispatches only to a configured Homebrew tap or the historical token-only destination', {
+  skip: process.platform === 'win32' || spawnSync('jq', ['--version'], { windowsHide: true }).status !== 0,
+}, () => {
+  const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows/cli-package.yml'), 'utf8'));
+  const step = workflow.jobs['upload-release-assets'].steps.find((entry) => entry.name === 'Notify homebrew-tap (post-publication)');
+  assert.equal(step.env.TAP_REPOSITORY, '${{ vars.HOMEBREW_TAP_REPOSITORY }}');
+  for (const [tap, token, status, destination] of [
+    ['', '', 0, ''], ['openBitFun/homebrew-tap', '', 1, ''],
+    ['openBitFun/homebrew-tap', 'fixture', 0, 'openBitFun/homebrew-tap'],
+    ['', 'fixture', 0, 'GCWing/homebrew-tap'], ['../bad!tap', 'fixture', 1, ''],
+  ]) {
+    const result = spawnSync('bash', ['-c', `curl() { printf 'request %s\n' "$@"; }\n${step.run}`], {
+      cwd: repoRoot, encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, TAP_REPOSITORY: tap, GH_TOKEN: token,
+        GITHUB_API_URL: 'https://api.github.com', RELEASE_TAG: 'v1.0.10' },
+    });
+    assert.equal(result.status, status, result.stderr);
+    const url = result.stdout.split('\n').find((line) => line.startsWith('request https://'));
+    assert.equal(url, destination ? `request https://api.github.com/repos/${destination}/dispatches` : undefined);
+  }
+});
+
+test('Relay descriptor validation allows pre-transfer images only for official artifact recovery', {
+  skip: process.platform === 'win32' || spawnSync('jq', ['--version'], { windowsHide: true }).status !== 0,
+}, (t) => {
+  const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows/desktop-package.yml'), 'utf8'));
+  const steps = workflow.jobs['upload-release-assets'].steps;
+  const validation = steps.find((step) => step.name === 'Verify staged Relay image descriptor');
+  assert.ok(steps.indexOf(validation) < steps.findIndex((step) => step.name === 'Upload to release'));
+  const build = workflow.jobs['publish-relay-image'].steps.find((step) => step.name === 'Build and push multi-platform image');
+  assert.match(build.with.labels, /org\.opencontainers\.image\.source=\$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}/);
+  const root = mkdtempSync(path.join(tmpdir(), 'openbitfun-release-descriptor-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(path.join(root, 'relay-image-assets'));
+  writeFileSync(path.join(root, 'relay-image-assets/relay-image.json.sig'), 'signature fixture');
+  for (const [owner, repoId, runIds, namespace, version, accepted] of [
+    ['openBitFun', '1147866277', '', 'openbitfun', '1.0.10', true],
+    ['openBitFun', '1147866277', '123', 'gcwing', '1.0.10', true],
+    ['openBitFun', '1147866277', '', 'gcwing', '1.0.10', false],
+    ['openBitFun', '1147866277', '123', 'gcwing', '1.0.9', false],
+    ['fork', '1234567', '123', 'gcwing', '1.0.10', false],
+    ['fork', '1234567', '', 'fork', '1.0.10', true],
+  ]) {
+    writeFileSync(path.join(root, 'relay-image-assets/relay-image.json'), JSON.stringify({
+      schema_version: 1, version, tag: `v${version}`, image: `ghcr.io/${namespace}/openbitfun-relay-server`,
+      digest: `sha256:${'a'.repeat(64)}`, platforms: ['linux/amd64', 'linux/arm64'],
+    }));
+    const result = spawnSync('bash', ['-c', validation.run], {
+      cwd: root, encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, GITHUB_REPOSITORY_OWNER: owner, GITHUB_REPOSITORY_ID: repoId,
+        ARTIFACT_RUN_IDS: runIds, RELEASE_TAG: 'v1.0.10', RELEASE_VERSION: '1.0.10' },
+    });
+    assert.equal(result.status, accepted ? 0 : 1, `${owner}/${namespace} ${version} (${runIds}): ${result.stderr}`);
   }
 });
 
@@ -2162,7 +2248,7 @@ test('nightly and beta use the shared build-version projection', () => {
   assert.equal(artifacts.jobs.package.env.OPENBITFUN_RELEASE_CHANNEL, 'nightly');
   assert.equal(
     artifacts.jobs.package.env.TAURI_UPDATER_ENDPOINT,
-    'https://github.com/GCWing/OpenBitFun/releases/latest/download/latest-v1.json',
+    'https://github.com/openBitFun/OpenBitFun/releases/latest/download/latest-v1.json',
   );
   assert.equal(
     artifacts.jobs.package.env.TAURI_UPDATER_FALLBACK_ENDPOINT,
