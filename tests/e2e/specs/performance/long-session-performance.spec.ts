@@ -15,7 +15,8 @@ const switchOnly = protocol.suite === 'streaming-switch';
 const scrollOnly = protocol.suite === 'streaming-scroll';
 const jumpOnly = protocol.suite === 'streaming-jump';
 const openOnly = protocol.suite === 'first-open';
-const controlled = switchOnly || scrollOnly || jumpOnly || openOnly;
+const btwOnly = protocol.suite === 'btw-scroll';
+const controlled = switchOnly || scrollOnly || jumpOnly || openOnly || btwOnly;
 const page = new LongSessionPerformancePage();
 let model: Awaited<ReturnType<typeof createLongSessionModel>>;
 let workspaceId: string;
@@ -29,14 +30,14 @@ const save = () => {
   writeFileSync(join(evidence, 'summary.csv'), csv); writeFileSync(join(evidence, 'report.html'), html);
 };
 
-async function sample(state: string, scenario: string, sessionId: string, action: () => Promise<unknown>) {
+async function sample(state: string, scenario: string, sessionId: string, action: () => Promise<unknown>, streamMarker = sessionId) {
   const row: Record<string, any> = { state, scenario, sessionId, index: report.samples.length, valid: false };
   report.samples.push(row); save();
   try {
     // Restoring a large runtime history can outlast startup notifications or user focus changes.
     // Establish the required starting condition outside the timed window; changes during it still fail.
     await page.focusMainWindow();
-    row.streamBefore = state === 'streaming' ? model.snapshot(sessionId) : null;
+    row.streamBefore = state === 'streaming' ? model.snapshot(streamMarker) : null;
     row.before = await page.snapshot(sessionId);
     await action();
     const probe = row.probe = await page.collect();
@@ -49,7 +50,7 @@ async function sample(state: string, scenario: string, sessionId: string, action
     }
     row.frames = frameMetrics(probe.times, probe.actionAt, probe.endAt);
     row.after = await page.snapshot(sessionId);
-    row.streamAfter = state === 'streaming' ? model.snapshot(sessionId) : null;
+    row.streamAfter = state === 'streaming' ? model.snapshot(streamMarker) : null;
     assert.equal(probe.timedOut, false, 'Target never became usable');
     assert.equal(probe.visibility, 'visible', 'Hidden WebView cannot establish visible-window performance');
     assert.equal(probe.visibilityChanged, false, 'Visibility changed during measurement');
@@ -96,7 +97,7 @@ async function openMeasured(state: string, scenario: string, id: string) {
 async function startSwitchProfile() {
   const port = process.env.OPENBITFUN_LONG_SESSION_CDP_PORT;
   if (!port) return async () => {};
-  const profileName = openOnly ? `open-${report.samples.length}` : scrollOnly ? `scroll-${report.samples.length}` : jumpOnly ? `jump-${report.samples.length}` : 'switch';
+  const profileName = openOnly ? `open-${report.samples.length}` : scrollOnly || btwOnly ? `scroll-${report.samples.length}` : jumpOnly ? `jump-${report.samples.length}` : 'switch';
   const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as Array<{ type: string; url: string; webSocketDebuggerUrl: string }>;
   const target = targets.find(value => value.type === 'page' && value.url.includes('index.html') && !value.url.includes('openbitfunWindow='));
   assert.ok(target, 'Main WebView CDP target missing');
@@ -179,9 +180,11 @@ describe('Desktop long-session performance matrix', () => {
     save();
   });
 
-  afterEach(function () {
+  afterEach(async function () {
     if (this.currentTest?.state === 'failed') {
       report.failures.push(this.currentTest.err?.stack || this.currentTest.title); save();
+      await browser.saveScreenshot(join(evidence, 'failure.png')).catch(() => undefined);
+      writeFileSync(join(evidence, 'failure-dom.txt'), await browser.execute(() => document.body.innerText).catch(String));
     }
   });
 
@@ -190,7 +193,7 @@ describe('Desktop long-session performance matrix', () => {
       await page.cancelMeasurement();
       report.modelErrors = model?.errors ?? [];
       if (report.modelErrors.length) report.failures.push(...report.modelErrors);
-      report.contentReadyChecksPassed = report.failures.length === 0 && report.samples.length === (openOnly ? 2 * protocol.sessionsPerState : scrollOnly ? 2 * protocol.scrollAreas.length * protocol.repeats : switchOnly || jumpOnly ? protocol.repeats : 2 * (2 + protocol.repeats + 2 + protocol.repeats))
+      report.contentReadyChecksPassed = report.failures.length === 0 && report.samples.length === (btwOnly ? 6 * protocol.repeats : openOnly ? 2 * protocol.sessionsPerState : scrollOnly ? 2 * protocol.scrollAreas.length * protocol.repeats : switchOnly || jumpOnly ? protocol.repeats : 2 * (2 + protocol.repeats + 2 + protocol.repeats))
         && report.samples.every((row: { valid: boolean }) => row.valid);
       report.functionalPassed = report.contentReadyChecksPassed && (!jumpOnly || report.jumpLandingChecksPassed === true);
       const budgets = report.samples.filter((row: { valid: boolean }) => row.valid).map((row: any) => ({ index: row.index,
@@ -204,7 +207,99 @@ describe('Desktop long-session performance matrix', () => {
     } finally { await model?.close(); }
   });
 
-  for (const state of controlled && !openOnly ? ['streaming'] : ['static', 'streaming']) {
+  if (btwOnly) it('scrolls both panes while the parent and a real BTW session stream', async () => {
+    const mainId = 'perf-live-000', childMarker = 'perf-btw';
+    await page.invoke('restore_session_with_turns', { sessionId: mainId, workspaceId, workspacePath: workspace });
+    await page.prepareSession(mainId);
+    await page.activateSession(mainId);
+    await page.enterDraft(`/btw LONG_SESSION_STREAM:${childMarker}`);
+    assert.ok((await page.draftText()).includes(`LONG_SESSION_STREAM:${childMarker}`), 'BTW draft was not entered');
+    await $('[data-testid="chat-input-send-btn"]').click();
+    await $('.btw-session-panel__body').waitForDisplayed({ timeout: 30_000 });
+    const childId = await $('.btw-session-panel__body').getAttribute('data-flowchat-selection-root');
+    assert.ok(childId);
+    await browser.waitUntil(() => !!model.snapshot(childMarker)?.connected, { timeout: 60_000, interval: 100 });
+    await page.invoke('start_dialog_turn', { sessionId: mainId, workspaceId, workspacePath: workspace,
+      agentType: 'agentic', turnId: tail('streaming', mainId), userInput: `LONG_SESSION_STREAM:${mainId}` });
+    const markers = [mainId, childMarker];
+    await browser.waitUntil(() => !!model.snapshot(mainId)?.connected, { timeout: 60_000, interval: 100 });
+    for (const id of markers) model.release(id, protocol.initialParagraphs, protocol.seedIntervalMs);
+    await browser.waitUntil(() => markers.every(id => model.snapshot(id)?.emitted === protocol.initialParagraphs), { timeout: 30_000, interval: 100 });
+    const main = `[data-testid="flowchat-container"][data-session-id="${mainId}"] [data-flowchat-scroller]`;
+    const child = `.btw-session-panel__body[data-flowchat-selection-root="${childId}"]`;
+    report.btw = { mainId, childId, childMarker };
+    const latest = async (selector: string, id: string, marker: string, count: number) => {
+      const button = selector === main
+        ? '[data-openbitfun-product-component="scroll-to-latest-bar"][data-openbitfun-product-part="root"][data-visible="true"]'
+        : '.btw-session-panel__scroll-to-bottom[data-visible="true"]';
+      if (await $(button).isDisplayed().catch(() => false)) await $(button).click();
+      await browser.waitUntil(() => browser.execute((selector: string, text: string) => {
+        const scroll = document.querySelector<HTMLElement>(selector)!;
+        const bounds = scroll.getBoundingClientRect();
+        return [...scroll.querySelectorAll('.virtual-item-wrapper')].some(row => {
+          const rect = row.getBoundingClientRect();
+          return rect.bottom > bounds.top && rect.top < bounds.bottom && row.textContent?.includes(text);
+        });
+      }, selector, `Live ${marker} paragraph ${count - 1}:`), { timeout: 30_000, interval: 100, timeoutMsg: `Latest paragraph missing in ${id}` });
+      await page.settle();
+    };
+    for (let cycle = 0; cycle < protocol.repeats; cycle++) {
+      for (const area of ['main-live', 'main-history', 'btw-live']) for (const direction of [-1, 1]) {
+        const expected = protocol.initialParagraphs + report.samples.length * protocol.paragraphsPerScroll;
+        for (const marker of markers) assert.equal(model.snapshot(marker)?.emitted, expected);
+        await latest(main, mainId, mainId, expected); await latest(child, childId, childMarker, expected);
+        const selector = area === 'btw-live' ? child : main;
+        if (area === 'main-history') await jump('streaming', mainId, protocol.turns, tail('streaming', mainId), false);
+        if (direction > 0) await page.wheelPane(selector, -protocol.wheelDelta, protocol.scrollSteps);
+        await page.settle();
+        const beforeStreams = markers.map(id => model.snapshot(id));
+        const stopProfile = await startSwitchProfile();
+        try {
+          const sessionId = area === 'btw-live' ? childId : mainId;
+          await sample('streaming', `continuous-scroll-${area}-${direction < 0 ? 'up' : 'down'}`, sessionId, async () => {
+            await page.arm({ sessionId, scrollerSelector: selector, wheelCount: protocol.scrollSteps });
+            for (const marker of markers) model.release(marker, protocol.paragraphsPerScroll);
+            await page.wheelPane(selector, direction * protocol.wheelDelta, protocol.scrollSteps);
+          }, area === 'btw-live' ? childMarker : mainId);
+        } finally { await stopProfile(); }
+        const afterStreams = markers.map(id => model.snapshot(id));
+        afterStreams.forEach((stream, index) => {
+          assert.ok(stream?.connected && !stream.finished && stream.emitted > beforeStreams[index]!.emitted, 'Both streams must advance during scrolling');
+          assert.ok(Date.now() - stream.lastEmittedAt < 500, 'Both streams must remain fresh throughout scrolling');
+        });
+        await page.settle();
+        const reading = await page.paneAnchor(selector);
+        const distanceFromTail = await browser.execute((selector: string) => {
+          const scroller = document.querySelector<HTMLElement>(selector)!;
+          return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+        }, selector);
+        const heldStreams = markers.map(id => model.snapshot(id));
+        heldStreams.forEach(stream => assert.ok(stream!.emitted < expected + protocol.paragraphsPerScroll,
+          'Reading-position validation requires further output in both panes'));
+        await browser.waitUntil(() => markers.every(id => model.snapshot(id)?.emitted === expected + protocol.paragraphsPerScroll), { timeout: 30_000, interval: 100 });
+        await page.settle();
+        const still = await page.paneAnchor(selector);
+        assert.ok(reading.key);
+        if (distanceFromTail > 120) {
+          assert.equal(still.key, reading.key, 'Streaming changed the reading row');
+          assert.ok(Math.abs(still.offset - reading.offset) < 8, 'Streaming displaced the reading position');
+        }
+        const panes = await Promise.all([page.snapshot(mainId), page.snapshot(childId)]);
+        panes.forEach(pane => assert.ok(pane.exists && pane.rows! > 0 && pane.rows! < 90, 'Both panes must retain bounded transcript DOM'));
+        Object.assign(report.samples.at(-1), { beforeStreams, afterStreams, heldStreams, distanceFromTail, panes, reading, still }); save();
+      }
+    }
+    const finalCount = protocol.initialParagraphs + report.samples.length * protocol.paragraphsPerScroll;
+    await latest(main, mainId, mainId, finalCount); await latest(child, childId, childMarker, finalCount);
+    await browser.saveScreenshot(join(evidence, 'btw-panes.png'));
+    for (const marker of markers) model.finish(marker);
+    await browser.waitUntil(() => browser.execute((selectors: string[], markers: string[]) => selectors.every((selector, index) =>
+      document.querySelector(selector)?.textContent?.includes(`LONG_SESSION_COMPLETE:${markers[index]}`)), [main, child], markers),
+    { timeout: 30_000, interval: 100, timeoutMsg: 'Both panes must render their completed response' });
+    report.btw.completedResponsesVisible = true;
+  });
+
+  for (const state of btwOnly ? [] : controlled && !openOnly ? ['streaming'] : ['static', 'streaming']) {
     it(`measures first entry, switching, continuous scroll and turn jumps while ${state}`, async () => {
       const sessions = scrollOnly || jumpOnly ? ids(state).slice(0, 1) : ids(state);
       if (state === 'streaming') {

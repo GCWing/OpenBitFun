@@ -37,20 +37,21 @@ describe('shared native scrollbar presentation', () => {
 
     expect(interactionRules).toContain('(pointer: fine) and (forced-colors: none)');
     expect(interactionRules).toContain(
-      ':not(:hover, :focus-visible, :has(:focus-visible), [data-openbitfun-scrollbar-visibility="always"])',
+      ':not(:hover, :focus-visible, [data-openbitfun-scrollbar-visibility="always"])',
     );
+    expect(interactionRules).toContain(':where(:not(:focus-within), :root[data-openbitfun-focus-visible="false"], :root[data-openbitfun-focus-visible="false"] *)');
     expect(interactionRules).toContain('background: transparent;');
     expect(interactionRules).toContain('scrollbar-color: transparent transparent;');
     expect(interactionRules).not.toMatch(/(?:overflow|width|height|display|scrollbar-gutter)\s*:/);
     expect(hoverRules).toContain('@media (hover: hover) and (pointer: fine) and (forced-colors: none)');
     expect(hoverRules).toMatch(
-      /\[data-openbitfun-scrollbar-visibility="hover"\]:not\(:hover, :focus-visible, :has\(:focus-visible\)\)\s*\{\s*scrollbar-width:\s*none;/,
+      /\[data-openbitfun-scrollbar-visibility="hover"\]:not\(:hover, :focus-visible\):where\(:not\(:focus-within\), :root\[data-openbitfun-focus-visible="false"\], :root\[data-openbitfun-focus-visible="false"\] \*\)\s*\{\s*scrollbar-width:\s*none;/,
     );
     expect(hoverRules).toMatch(
-      /\[data-openbitfun-scrollbar-visibility="hover"\]:not\(:hover, :focus-visible, :has\(:focus-visible\)\)::-webkit-scrollbar\s*\{\s*display:\s*none;/,
+      /\[data-openbitfun-scrollbar-visibility="hover"\]:not\(:hover, :focus-visible\):where\(:not\(:focus-within\), :root\[data-openbitfun-focus-visible="false"\], :root\[data-openbitfun-focus-visible="false"\] \*\)::-webkit-scrollbar\s*\{\s*display:\s*none;/,
     );
     expect(hoverRules).not.toMatch(/(?:overflow(?:-[xy])?|scrollbar-gutter)\s*:/);
-    expect(stylesheet).not.toMatch(/\.is-scrolling|:focus-within|!important/);
+    expect(stylesheet).not.toMatch(/\.is-scrolling|:has\(|!important/);
   });
 
   it('guards standard width and color together so Safari 18 keeps the WebKit path', () => {

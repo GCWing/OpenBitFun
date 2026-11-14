@@ -1,5 +1,6 @@
-import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
+import { useEffect, useRef, type CSSProperties, type HTMLAttributes, type ReactNode } from "react";
 import { classNames } from "../../internal/classNames";
+import { retainScrollbarFocus } from "../../internal/scrollbarFocus";
 import styles from "./ThemeRoot.module.css";
 
 export type ColorScheme = "light" | "dark";
@@ -28,6 +29,10 @@ export function ThemeRoot({
   tokenOverrides,
   ...props
 }: ThemeRootProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (rootRef.current) return retainScrollbarFocus(rootRef.current.ownerDocument);
+  }, []);
   const mergedStyle = {
     ...style,
     ...tokenOverrides,
@@ -36,6 +41,7 @@ export function ThemeRoot({
   return (
     <div
       {...props}
+      ref={rootRef}
       className={classNames(styles.root, className)}
       data-openbitfun-design-system-root=""
       data-color-scheme={colorScheme}

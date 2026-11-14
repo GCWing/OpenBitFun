@@ -181,21 +181,21 @@
 
       /* Keep the mounting shell from showing through or doubling the tint.
          Preserve layout so startup readiness and measurements still complete. */
-      #root:has(+ #openbitfun-startup-overlay:not(.openbitfun-startup-overlay--exiting)) {
+      #root[data-startup-stage="loading"] {
         visibility: hidden;
       }
 
       /* The startup mark owns the visible pixels until the handoff completes. */
-      #root:has(+ #openbitfun-startup-overlay) [data-startup-logo-target],
-      #root:has(+ #openbitfun-startup-overlay) [data-startup-reveal] {
+      #root[data-startup-stage] [data-startup-logo-target],
+      #root[data-startup-stage] [data-startup-reveal] {
         opacity: 0;
       }
 
-      #root:has(+ .openbitfun-startup-overlay--exiting) [data-startup-reveal] {
+      #root:is([data-startup-stage="exiting"], [data-startup-stage="handoff"]) [data-startup-reveal] {
         animation: openbitfun-startup-content-enter 0.2s ease-out both;
       }
 
-      #root:has(+ .openbitfun-startup-overlay--handoff) [data-startup-reveal] {
+      #root[data-startup-stage="handoff"] [data-startup-reveal] {
         animation-duration: 0.24s;
         animation-delay: 0.18s;
       }
@@ -371,7 +371,7 @@
 
       @media (prefers-reduced-motion: reduce) {
         #openbitfun-startup-overlay.openbitfun-startup-overlay--exiting,
-        #root:has(+ .openbitfun-startup-overlay--exiting) [data-startup-reveal] {
+        #root:is([data-startup-stage="exiting"], [data-startup-stage="handoff"]) [data-startup-reveal] {
           animation-duration: 0.12s;
           animation-delay: 0s;
         }
@@ -435,7 +435,7 @@
 
   <body>
     <script type="module" src="/src/main.tsx"></script>
-    <div id="root"></div>
+    <div id="root" data-startup-stage="loading"></div>
     <div id="openbitfun-startup-overlay">
       <div class="splash-screen">
         <div
@@ -476,11 +476,13 @@
         var messages = window.__OPENBITFUN_RESOLVE_BOOTSTRAP_MESSAGES__();
         var locale = window.__OPENBITFUN_RESOLVE_BOOTSTRAP_LOCALE__();
         var startupOverlay = document.getElementById('openbitfun-startup-overlay');
+        var startupRoot = document.getElementById('root');
         document.documentElement.setAttribute('lang', locale);
 
         if (isPetWindow) {
           document.body.classList.add('openbitfun-pet-preload-body');
           if (startupOverlay) startupOverlay.remove();
+          if (startupRoot) startupRoot.removeAttribute('data-startup-stage');
           var root = document.getElementById('root');
           if (root) {
             root.innerHTML = '<div class="openbitfun-pet-preload"><div class="openbitfun-pet-preload__sprite" aria-hidden="true"></div><span class="openbitfun-sr-only"></span></div>';
@@ -493,6 +495,7 @@
         if (isDesktopCardWindow) {
           document.body.classList.add('openbitfun-desktop-card-preload-body');
           if (startupOverlay) startupOverlay.remove();
+          if (startupRoot) startupRoot.removeAttribute('data-startup-stage');
           return;
         }
 

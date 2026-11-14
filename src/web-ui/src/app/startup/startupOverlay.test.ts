@@ -19,20 +19,28 @@ afterEach(() => {
 });
 
 describe('startupOverlay', () => {
+  it('releases startup state when the overlay has already been removed', async () => {
+    document.body.innerHTML = '<div id="root" data-startup-stage="loading"></div>';
+    await hideStartupOverlay();
+    expect(document.getElementById('root')?.hasAttribute('data-startup-stage')).toBe(false);
+  });
+
   it('removes the existing startup overlay when its exit animation completes', async () => {
     vi.useFakeTimers();
-    document.body.innerHTML = '<div id="openbitfun-startup-overlay"></div>';
+    document.body.innerHTML = '<div id="root" data-startup-stage="loading"></div><div id="openbitfun-startup-overlay"></div>';
 
     const hidden = hideStartupOverlay();
 
     const overlay = document.getElementById('openbitfun-startup-overlay');
     expect(overlay?.classList.contains('openbitfun-startup-overlay--exiting')).toBe(true);
     expect(overlay?.getAttribute('aria-hidden')).toBe('true');
+    expect(document.getElementById('root')?.getAttribute('data-startup-stage')).toBe('exiting');
 
     overlay?.dispatchEvent(new Event('animationend'));
     await hidden;
 
     expect(isStartupOverlayPresent()).toBe(false);
+    expect(document.getElementById('root')?.hasAttribute('data-startup-stage')).toBe(false);
   });
 
   it('releases startup-control focus before hiding the exiting overlay', async () => {
@@ -61,7 +69,7 @@ describe('startupOverlay', () => {
 
   it('falls back to a timer when the exit animation event is not delivered', async () => {
     vi.useFakeTimers();
-    document.body.innerHTML = '<div id="openbitfun-startup-overlay"></div>';
+    document.body.innerHTML = '<div id="root" data-startup-stage="loading"></div><div id="openbitfun-startup-overlay"></div>';
 
     const hidden = hideStartupOverlay();
 
@@ -72,6 +80,7 @@ describe('startupOverlay', () => {
     await hidden;
 
     expect(isStartupOverlayPresent()).toBe(false);
+    expect(document.getElementById('root')?.hasAttribute('data-startup-stage')).toBe(false);
   });
 
   it('tracks elapsed time from the static overlay first paint', () => {
@@ -87,7 +96,7 @@ describe('startupOverlay', () => {
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => window.setTimeout(callback, 16));
     vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id));
     document.body.innerHTML = `
-      <div id="root"><section>
+      <div id="root" data-startup-stage="loading"><section>
         <span data-startup-logo-target aria-hidden="true"></span>
         <span data-startup-reveal>OpenBitFun</span>
       </section></div>
@@ -120,6 +129,7 @@ describe('startupOverlay', () => {
     expect(mark.style.width).toBe('119px');
     expect(target.isConnected).toBe(true);
     expect(overlay.classList.contains('openbitfun-startup-overlay--handoff')).toBe(true);
+    expect(document.getElementById('root')?.getAttribute('data-startup-stage')).toBe('handoff');
     expect(animate).toHaveBeenCalledWith([
       expect.objectContaining({ transform: 'translate(0px, 0px) scale(1, 1)' }),
       expect.objectContaining({ transform: `translate(-160px, -40px) scale(${size / 119}, ${size / 119})` }),
@@ -147,6 +157,7 @@ describe('startupOverlay', () => {
     await vi.runAllTimersAsync();
     await hidden;
     expect(isStartupOverlayPresent()).toBe(false);
+    expect(document.getElementById('root')?.hasAttribute('data-startup-stage')).toBe(false);
   });
 
   it('restores the static mark if the WebView cannot create the animation', async () => {
@@ -167,11 +178,13 @@ describe('startupOverlay', () => {
     if (reason === 'cancel') reject();
     await vi.advanceTimersByTimeAsync(16);
     expect(overlay.classList.contains('openbitfun-startup-overlay--handoff')).toBe(true);
+    expect(document.getElementById('root')?.getAttribute('data-startup-stage')).toBe('handoff');
     expect(overlay.classList.contains('openbitfun-startup-overlay--interrupted')).toBe(true);
     expect(animation.cancel).toHaveBeenCalledOnce();
     overlay.dispatchEvent(new Event('animationend'));
     await hidden;
     expect(isStartupOverlayPresent()).toBe(false);
+    expect(document.getElementById('root')?.hasAttribute('data-startup-stage')).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -181,6 +194,7 @@ describe('startupOverlay', () => {
     await vi.advanceTimersByTimeAsync(520);
     await hidden;
     expect(isStartupOverlayPresent()).toBe(false);
+    expect(document.getElementById('root')?.hasAttribute('data-startup-stage')).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -191,6 +205,7 @@ describe('startupOverlay', () => {
     document.dispatchEvent(new Event('visibilitychange'));
     await hidden;
     expect(isStartupOverlayPresent()).toBe(false);
+    expect(document.getElementById('root')?.hasAttribute('data-startup-stage')).toBe(false);
     expect(animation.cancel).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
   });

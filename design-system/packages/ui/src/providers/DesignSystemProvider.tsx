@@ -1,4 +1,5 @@
-import { useContext, useMemo, type ReactNode } from "react";
+import { useContext, useEffect, useMemo, type ReactNode } from "react";
+import { retainScrollbarFocus } from "../internal/scrollbarFocus";
 import { ApplicationTitleTooltips, ApplicationTitleTooltipsContext } from "./ApplicationTitleTooltips";
 import type {
   ColorScheme,
@@ -42,6 +43,7 @@ export function DesignSystemProvider({
   nativeTooltipPolicy = "native",
 }: DesignSystemProviderProps) {
   const ownerDocument = resolvePortalTarget(portalHost)?.ownerDocument;
+  useEffect(() => ownerDocument && retainScrollbarFocus(ownerDocument), [ownerDocument]);
   const layerStack = getOverlayLayerStack(ownerDocument);
   const inheritedTitlePolicy = useContext(ApplicationTitleTooltipsContext);
   const applicationTitles = inheritedTitlePolicy || nativeTooltipPolicy === "application";

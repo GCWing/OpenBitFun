@@ -42,7 +42,7 @@ for (const [key, value] of Object.entries(options)) {
   if (!(budget ? Number.isFinite(value) : Number.isInteger(value)) || value < (key === 'toolItems' ? 0 : budget ? Number.MIN_VALUE : 1)) throw new Error(`Invalid ${key}`);
 }
 if (options.turns < 8 || options.paragraphChars < 32) throw new Error('Need at least 8 turns and 32 paragraph characters');
-if (!['matrix', 'first-open', 'streaming-switch', 'streaming-scroll', 'streaming-jump'].includes(options.suite)) throw new Error('Unknown performance suite');
+if (!['matrix', 'first-open', 'streaming-switch', 'streaming-scroll', 'streaming-jump', 'btw-scroll'].includes(options.suite)) throw new Error('Unknown performance suite');
 if (!['all', 'live', 'history'].includes(options.scrollArea)) throw new Error('Unknown scroll area');
 const nativeProfile = process.env.OPENBITFUN_E2E_NATIVE_PROFILE || 'debug';
 if (!['debug', 'release-fast'].includes(nativeProfile)) throw new Error('Use a debug or release-fast devtools build');
@@ -92,6 +92,15 @@ if (options.suite === 'streaming-jump') Object.assign(report.protocol, {
   readiness: 'visible requested-turn content; user-message landing is recorded separately',
   landingValidation: 'user-message visible at readiness and stable after continued output',
 });
+if (options.suite === 'btw-scroll') Object.assign(report.protocol, {
+  version: 2, states: ['streaming'], staticBeforeStreaming: false,
+  scenarios: ['continuous-scroll-main-live-up', 'continuous-scroll-main-live-down',
+    'continuous-scroll-main-history-up', 'continuous-scroll-main-history-down',
+    'continuous-scroll-btw-live-up', 'continuous-scroll-btw-live-down'],
+  initialParagraphs: 512, seedIntervalMs: 2, paragraphsPerScroll: 192, controlledStreams: true,
+  childHistory: 'New transient session opened through /btw; seeded with 512 live paragraphs',
+  postMeasurementReaderChecks: true, completionChecks: 'Both panes render the model completion marker',
+});
 if (options.scenario === MULTI_TOOL_TEMPLATE.id) report.protocol.template = MULTI_TOOL_TEMPLATE;
 const save = async (data = report) => {
   const rendered = renderReport(data);
@@ -124,9 +133,9 @@ try {
   report.sourceCommit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: repo, windowsHide: true })).stdout.trim();
   report.sourceDirty = Boolean((await exec('git', ['status', '--porcelain'], { cwd: repo, windowsHide: true })).stdout.trim());
   const fixtures = [];
-  for (const prefix of ['perf-static', 'perf-live', 'perf-parking']) {
+  for (const prefix of options.suite === 'btw-scroll' ? ['perf-live', 'perf-parking'] : ['perf-static', 'perf-live', 'perf-parking']) {
     const isParking = prefix === 'perf-parking';
-    const count = isParking ? 1 : options.suite === 'first-open' ? options.repeats : 2;
+    const count = isParking || options.suite === 'btw-scroll' ? 1 : options.suite === 'first-open' ? options.repeats : 2;
     const turns = isParking ? 1 : options.turns;
     const parking = isParking && options.scenario === MULTI_TOOL_TEMPLATE.id;
     const result = await exec(process.execPath, [path.join(repo, 'tests/e2e/scripts/generate-long-session-fixture.mjs'),
