@@ -2,6 +2,8 @@
 
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { createInstance, type i18n as I18nApi } from 'i18next';
+import { I18nextProvider } from 'react-i18next';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -10,7 +12,10 @@ vi.mock('./settingsRegistry', () => {
   const icon = () => null;
   const pages = [
     { id: 'application.general', categoryId: 'application', labelKey: 'General' },
-    { id: 'application.appearance', categoryId: 'application', labelKey: 'Appearance' },
+    {
+      id: 'application.appearance', categoryId: 'application', labelKey: 'Appearance',
+      searchPhrases: [{ namespace: 'settings/appearance', key: 'themeKeyword' }],
+    },
     {
       id: 'application.pet', categoryId: 'application', labelKey: 'Pet & assistant',
       descriptionKey: 'Desktop pet and realtime voice calls',
@@ -34,11 +39,6 @@ vi.mock('./settingsRegistry', () => {
   };
 });
 
-vi.mock('react-i18next', () => {
-  const t = (key: string) => key;
-  const i18n = { language: 'en-US', getFixedT: () => t };
-  return { useTranslation: () => ({ t, i18n }) };
-});
 vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }));
@@ -57,8 +57,27 @@ import {
 describe('SettingsNav shared component composition', () => {
   let container: HTMLDivElement;
   let root: Root;
+  let i18n: I18nApi;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    i18n = createInstance();
+    await i18n.init({
+      lng: 'en-US',
+      fallbackLng: 'en-US',
+      ns: ['settings', 'shared'],
+      resources: {
+        'en-US': {
+          settings: {
+            Application: 'Application', General: 'General', Appearance: 'Appearance',
+            'Pet & assistant': 'Pet & assistant', Pet: 'Pet', 'Realtime voice calls': 'Realtime voice calls',
+            'Desktop pet and realtime voice calls': 'Desktop pet and realtime voice calls', Models: 'Models',
+          },
+          shared: { features: { settings: 'Settings' } },
+        },
+        'zh-CN': { settings: { Appearance: '外观' }, 'settings/appearance': { themeKeyword: '配色' } },
+      },
+    });
+    vi.spyOn(i18n, 'getFixedT');
     vi.useFakeTimers();
     vi.mocked(preloadSettingsPage).mockReset().mockResolvedValue(undefined);
     resetSettingsDraftRegistryForTests();
@@ -66,7 +85,7 @@ describe('SettingsNav shared component composition', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    act(() => root.render(<SettingsNav />));
+    act(() => root.render(<I18nextProvider i18n={i18n}><SettingsNav /></I18nextProvider>));
   });
 
   afterEach(() => {
@@ -95,7 +114,7 @@ describe('SettingsNav shared component composition', () => {
     const header = nav.querySelector(':scope > [data-openbitfun-part="header"]')!;
     const viewport = nav.querySelector('[data-openbitfun-component="scroll-area"]')!;
     const content = viewport.querySelector('[data-openbitfun-part="content"]')!;
-    expect(nav.getAttribute('aria-label')).toBe('shared:features.settings');
+    expect(nav.getAttribute('aria-label')).toBe('Settings');
     expect(header.querySelector('input')).not.toBeNull();
     expect(viewport.contains(header)).toBe(false);
     expect(content.classList.contains('openbitfun-settings-nav__content')).toBe(true);
@@ -151,6 +170,45 @@ describe('SettingsNav shared component composition', () => {
     expect(input.value).toBe('');
     expect(container.querySelectorAll('[data-testid="settings-nav-page"]')).toHaveLength(4);
     expect(container.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it('defers indexing until search and reuses the index after clearing', async () => {
+    const phraseLookups = () => vi.mocked(i18n.getFixedT).mock.calls
+      .filter(([, namespace]) => namespace === 'settings/appearance');
+    const appearance = container.querySelector<HTMLButtonElement>('[data-settings-page="application.appearance"]')!;
+
+    await act(async () => appearance.click());
+    await search('   ');
+    expect(phraseLookups()).toHaveLength(0);
+
+    await act(async () => { i18n.addResourceBundle('en-US', 'settings/appearance', { themeKeyword: 'palette' }); });
+    expect(phraseLookups()).toHaveLength(0);
+    const input = await search('palette');
+    expect(container.querySelector('[role="option"]')?.textContent).toContain('Appearance');
+    expect(phraseLookups()).toHaveLength(1);
+
+    act(() => pressKey(input, 'Escape'));
+    await search('palette');
+    expect(phraseLookups()).toHaveLength(1);
+  });
+
+  it('refreshes an active search when indexed translations change', async () => {
+    await search('palette');
+    expect(container.querySelector('[role="option"]')).toBeNull();
+    await act(async () => { i18n.addResourceBundle('en-US', 'settings/appearance', { themeKeyword: 'palette' }); });
+    expect(container.querySelector('[role="option"]')?.textContent).toContain('Appearance');
+
+    const lookupCount = vi.mocked(i18n.getFixedT).mock.calls.length;
+    act(() => i18n.addResourceBundle('en-US', 'unrelated', { label: 'Palette' }));
+    expect(i18n.getFixedT).toHaveBeenCalledTimes(lookupCount);
+
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    expect(container.querySelector('[role="option"]')).toBeNull();
+    await search('配色');
+    expect(container.querySelector('[role="option"]')?.textContent).toContain('外观');
+
+    act(() => i18n.removeResourceBundle('zh-CN', 'settings/appearance'));
+    expect(container.querySelector('[role="option"]')).toBeNull();
   });
 
   it('keeps unsaved markers outside navigation and search-result text', async () => {
