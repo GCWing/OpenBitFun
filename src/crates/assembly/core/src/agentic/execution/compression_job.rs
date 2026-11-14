@@ -222,6 +222,19 @@ impl CompressionJob {
             &self.reminders.ordered_reminders(),
         )
         .await?;
+        // The summary request is a fresh one-shot call; signed thinking from
+        // another endpoint, credential, or older build is rejected by the
+        // provider (e.g. Anthropic "Invalid `signature` in `thinking` block").
+        let stripped = crate::infrastructure::ai::channel_client_source::ChannelClientSource::project_replay_for_client(
+            &mut messages,
+            &self.client,
+        );
+        if stripped > 0 {
+            info!(
+                "Projected incompatible model history for compression: session_id={}, turn_id={}, stripped_messages={}",
+                self.session_id, self.turn_id, stripped
+            );
+        }
         messages.push(AIMessage::user(self.compressor.build_compact_prompt()));
         super::super::compression_request::request_summary(
             self.client.clone(),
