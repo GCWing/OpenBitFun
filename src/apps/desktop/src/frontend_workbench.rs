@@ -1032,6 +1032,8 @@ impl FrontendWorkbenchManager {
                         tauri::http::StatusCode::OK
                     })
                     .header(tauri::http::header::CONTENT_TYPE, asset.content_type)
+                    // Wry otherwise derives this from the empty 304/HEAD body.
+                    .header(tauri::http::header::CONTENT_LENGTH, asset.bytes.len())
                     .header(tauri::http::header::CACHE_CONTROL, asset.cache_control)
                     .header(tauri::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
                 if let Some(etag) = asset.etag {
@@ -2657,6 +2659,7 @@ mod tests {
         let first = conditional_protocol_response(&manager, path, "\"stale\"");
         assert_eq!(first.status(), tauri::http::StatusCode::OK);
         assert_eq!(first.body(), b"export const version = 1;");
+        assert_eq!(first.headers()[tauri::http::header::CONTENT_LENGTH], "25");
         assert_eq!(
             first.headers()[tauri::http::header::CACHE_CONTROL],
             REVALIDATE_CACHE_CONTROL
@@ -2671,10 +2674,34 @@ mod tests {
             let response = conditional_protocol_response(&manager, path, &condition);
             assert_eq!(response.status(), tauri::http::StatusCode::NOT_MODIFIED);
             assert!(response.body().is_empty());
+            assert_eq!(
+                response.headers()[tauri::http::header::CONTENT_LENGTH],
+                "25"
+            );
             assert_eq!(response.headers()[tauri::http::header::ETAG], etag);
             assert_eq!(
                 response.headers()[tauri::http::header::CACHE_CONTROL],
                 REVALIDATE_CACHE_CONTROL
+            );
+        }
+
+        for (condition, status) in [
+            ("\"stale\"", tauri::http::StatusCode::OK),
+            (etag, tauri::http::StatusCode::NOT_MODIFIED),
+        ] {
+            let response = manager.protocol_response(
+                tauri::http::Request::builder()
+                    .method(tauri::http::Method::HEAD)
+                    .uri(format!("openbitfun-ui://localhost{path}"))
+                    .header(tauri::http::header::IF_NONE_MATCH, condition)
+                    .body(Vec::new())
+                    .unwrap(),
+            );
+            assert_eq!(response.status(), status);
+            assert!(response.body().is_empty());
+            assert_eq!(
+                response.headers()[tauri::http::header::CONTENT_LENGTH],
+                "25"
             );
         }
 
