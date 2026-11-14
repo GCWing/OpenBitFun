@@ -244,7 +244,6 @@ describe('sessionMetadata', () => {
       title: 'flow-chat:session.new',
       titleSource: 'i18n',
       titleI18nKey: 'flow-chat:session.new',
-      workspaceSessionNumber: 2,
       titleStatus: undefined,
     });
 

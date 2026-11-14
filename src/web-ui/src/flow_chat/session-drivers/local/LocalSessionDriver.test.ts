@@ -149,25 +149,21 @@ describe('localSessionDriver conversation creation', () => {
 
   it('opens an assistant session before its title metadata is synchronized', async () => {
     const { initializeSessionTitleMetadata } = await import('../../services/sessionTitleMetadata');
-    let finishTitle!: (descriptor: unknown) => void;
+    let finishTitle!: (descriptor: Awaited<ReturnType<typeof initializeSessionTitleMetadata>>) => void;
     vi.mocked(initializeSessionTitleMetadata).mockImplementationOnce(() => new Promise(resolve => {
-      finishTitle = resolve as (descriptor: unknown) => void;
+      finishTitle = resolve;
     }));
     const descriptor = { text: 'New chat', source: 'i18n' as const, key: 'flow-chat:session.new' };
-    let state = { sessions: new Map<string, any>() };
-    const createSession = vi.fn((id: string) => {
-      state = { sessions: new Map(state.sessions).set(id, { sessionId: id, titleSource: 'i18n' }) };
-    });
-    const setState = vi.fn((update: (current: typeof state) => typeof state) => { state = update(state); });
+    const createSession = vi.fn();
     await expect(localSessionDriver.createSession(
-      { flowChatStore: { createSession, setState } } as any,
+      { flowChatStore: { createSession } } as any,
       { ...seed('Claw'), titleDescriptor: descriptor },
     )).resolves.toBe('host-session');
     expect(createSession).toHaveBeenCalledTimes(1);
     expect(createSession.mock.calls[0].at(-1)).toBe(descriptor);
 
-    finishTitle({ ...descriptor, workspaceSessionNumber: 3 });
-    await vi.waitFor(() => expect(state.sessions.get('host-session')?.workspaceSessionNumber).toBe(3));
+    expect(initializeSessionTitleMetadata).toHaveBeenCalledWith('host-session', descriptor, 'project', expect.anything());
+    finishTitle(descriptor);
   });
 
   it('preserves an explicit single-model choice even when a default pool exists', async () => {

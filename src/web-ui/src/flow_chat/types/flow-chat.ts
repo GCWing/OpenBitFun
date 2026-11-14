@@ -441,7 +441,6 @@ export interface Session {
   titleI18nKey?: string;
   titleI18nParams?: Record<string, unknown>;
   /** Host-assigned display slot, occupied only while this session has its default title. */
-  workspaceSessionNumber?: number;
   titleStatus?: 'generating' | 'generated' | 'failed';
   /**
    * In-memory canonical working set for this session.

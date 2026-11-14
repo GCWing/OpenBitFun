@@ -16,7 +16,6 @@ import { Icon, OverflowText, TabGroup, type TabGroupItem } from '@openbitfun/ui'
 import { useSceneTabNavigation } from './useSceneTabNavigation';
 import { useSceneManager } from '../../hooks/useSceneManager';
 import { useSessionTabLabels } from '../../hooks/useSessionTabLabels';
-import { SessionTitleNumber } from '@/flow_chat/components/SessionTitleNumber';
 import { isSceneTabClosable } from '../../scenes/registry';
 import { useContentResourceStore } from '../../workbench/contentResourceStore';
 import { dropSessionTabOnWorkbench, isSessionTabDrag, type WorkbenchTabDropTarget } from '../../workbench/canvasTabTransfer';
@@ -260,15 +259,14 @@ const SceneBar: React.FC<SceneBarProps> = ({
     const translatedLabel = def.labelKey ? t(def.labelKey) : def.label;
     const sessionLabel = sessionLabels[tab.id];
     const displayLabel = sessionLabel?.title || translatedLabel;
-    const closeLabel = t('sceneBar.closeTab', { label: sessionLabel?.number ? `${displayLabel} ${sessionLabel.number}` : displayLabel });
+    const closeLabel = t('sceneBar.closeTab', { label: displayLabel });
     const closable = isSceneTabClosable(def);
 
     items.push({
       value: tab.id,
       label: displayLabel,
       tabProps: groupLabel ? { 'aria-describedby': groupLabel } : undefined,
-      labelSuffix: sessionLabel?.number || tab.pinned || (tab.contentId && (resources[tab.contentId]?.isDirty || resources[tab.contentId]?.fileMissing)) ? <>
-        {sessionLabel?.number && <SessionTitleNumber number={sessionLabel.number} />}
+      labelSuffix: tab.pinned || (tab.contentId && (resources[tab.contentId]?.isDirty || resources[tab.contentId]?.fileMissing)) ? <>
         {tab.pinned && <Pin size={12} aria-label={tComponents('tabs.unpin')} />}
         {tab.contentId && resources[tab.contentId]?.isDirty && <span aria-label={tComponents('tabs.unsaved')}>•</span>}
         {tab.contentId && resources[tab.contentId]?.fileMissing && <CircleAlert size={12} aria-label={tComponents('tabs.fileDeleted')} />}

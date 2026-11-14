@@ -169,15 +169,9 @@ export async function materializeSessionDraft(context: FlowChatContext, sessionI
       const created = context.flowChatStore.getState().sessions.get(sessionId)!;
       const descriptor = createDefaultSessionTitleDescriptor((key, options) => i18nService.t(key, options));
       if (created.titleSource === 'i18n') {
-        const title = await initializeSessionTitleMetadata(sessionId, descriptor,
+        await initializeSessionTitleMetadata(sessionId, descriptor,
           requireSessionOwningWorkspaceId(created), scope);
         scope.assertCurrent('initialize draft title');
-        context.flowChatStore.setState(state => {
-          const current = state.sessions.get(sessionId);
-          return current ? { ...state, sessions: new Map(state.sessions).set(sessionId, {
-            ...current, workspaceSessionNumber: title.workspaceSessionNumber,
-          }) } : state;
-        });
       }
     }
     const ready = context.flowChatStore.getState().sessions.get(sessionId);

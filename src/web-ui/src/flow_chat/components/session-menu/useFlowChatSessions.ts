@@ -16,8 +16,6 @@ import type { FlowChatState, Session } from '../../types/flow-chat';
 import { compareSessionsForDisplay } from '../../utils/sessionOrdering';
 import { resolveSessionTitle } from '../../utils/sessionTitle';
 import { i18nService } from '@/infrastructure/i18n';
-import { sessionTitleNumbers } from '../../utils/sessionTitlePresentation';
-import { useSessionTitleNumbers } from '../../hooks/useSessionTitleNumbers';
 
 /** How many recent sessions the session menu offers. */
 export const RECENT_SESSION_LIMIT = 10;
@@ -29,13 +27,10 @@ export interface FlowChatSessionsSnapshot {
   trackedSession: Session | undefined;
   sessionTitle: string;
   sessions: Session[];
-  titleNumbers: Map<string, string>;
 }
 
 export function resolveDisplayTitle(session: Session | undefined): string {
-  const title = resolveSessionTitle(session, (key, options) => i18nService.t(key, options));
-  const number = session ? sessionTitleNumbers(flowChatStore.getState().sessions.values()).get(session.sessionId) : undefined;
-  return number === undefined ? title : `${title} ${i18nService.formatNumber(number, { minimumIntegerDigits: 2, useGrouping: false })}`;
+  return resolveSessionTitle(session, (key, options) => i18nService.t(key, options));
 }
 
 export function useFlowChatSessions(
@@ -58,7 +53,6 @@ export function useFlowChatSessions(
     [state, trackedSessionId],
   );
 
-  const titleNumbers = useSessionTitleNumbers(state.sessions);
   const sessionTitle = resolveDisplayTitle(activeSession);
 
   const sessions = useMemo(
@@ -75,6 +69,5 @@ export function useFlowChatSessions(
     trackedSession,
     sessionTitle,
     sessions,
-    titleNumbers,
   };
 }

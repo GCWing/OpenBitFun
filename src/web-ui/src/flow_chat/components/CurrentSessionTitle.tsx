@@ -6,8 +6,6 @@ import { FlowChatState, Session } from '../types/flow-chat';
 import { OverflowText, Tooltip, Icon } from '@openbitfun/ui';
 import { i18nService } from '@/infrastructure/i18n';
 import { resolveSessionTitle } from '../utils/sessionTitle';
-import { useSessionTitleNumbers } from '../hooks/useSessionTitleNumbers';
-import { SessionTitleNumber } from './SessionTitleNumber';
 import './CurrentSessionTitle.scss';
 
 interface CurrentSessionTitleProps {
@@ -43,7 +41,6 @@ const CurrentSessionTitle: React.FC<CurrentSessionTitleProps> = ({ onCreateSessi
   };
 
   const title = getSessionTitle(activeSession);
-  const titleNumbers = useSessionTitleNumbers(flowChatState.sessions);
 
   const handleCreateSession = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -57,7 +54,6 @@ const CurrentSessionTitle: React.FC<CurrentSessionTitleProps> = ({ onCreateSessi
   return (
     <div data-openbitfun-component="current-session-title" data-openbitfun-part="root" className="openbitfun-current-session-title">
       <OverflowText data-openbitfun-component="current-session-title" data-openbitfun-part="title" className="openbitfun-current-session-title__text">{title}</OverflowText>
-      <SessionTitleNumber number={activeSession ? titleNumbers.get(activeSession.sessionId) : undefined} />
       <Tooltip content={newSessionLabel} placement="bottom">
         <button
           data-openbitfun-component="current-session-title"
