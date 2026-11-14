@@ -34,6 +34,23 @@ pnpm --dir tests/e2e test
 
 ## Long-session performance
 
+The concurrent BTW workload is available with
+`node tests/e2e/scripts/run-long-session-performance.mjs --suite btw-scroll --scenario multi-tool --repeats 2`.
+The parent retains the complete 200-turn / 100-tools-per-turn template. A real
+`/btw` submission creates a transient child, and both real runtime streams use
+the private SSE model. Each starts with 512 Markdown paragraphs; every measured
+phase delivers 192 more to each stream at 90 ms intervals. The six phases scroll
+up/down through the primary live output, primary tool-heavy history, and child
+live output. Wheel steps, batch size, viewport, frontend/native hashes and raw
+RAF intervals are retained with the result. Sidebar activation includes the
+pointerdown sequence required by the production sidebar. This is embedded
+WebDriver wheel delivery, not OS trackpad inertia or compositor FPS. The child
+has no historical tool-call fixture. Runs assert fresh concurrent streams,
+reading stability during subsequent output, bounded DOM residency in both panes,
+and visibility of the final paragraph after returning to latest. Use the same
+protocol and native binary for baseline/candidate comparisons; profiling changes
+timing and must remain separate. No remote scenario is exercised.
+
 Build the desktop host and production frontend, then run from the repository root:
 
 ```powershell

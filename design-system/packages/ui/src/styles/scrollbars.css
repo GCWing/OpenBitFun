@@ -49,15 +49,17 @@
    * Hide only for a primary mouse/trackpad. Touch keeps a discoverable native
    * thumb, and forced colors keeps the operating system's accessibility cues.
    * Keyboard focus reveals its viewport without latching ordinary mouse focus.
+   * A document focus flag avoids a relational selector on every descendant.
+   * CSS-only consumers conservatively keep focused viewports discoverable.
    * Scroll events (including streaming output) do not reveal an idle viewport.
    */
   @media (hover: hover) and (pointer: fine) and (forced-colors: none) {
-    :where([data-openbitfun-design-system-root], [data-openbitfun-design-system-root] *, [data-openbitfun-scrollbar-visibility]):where(:not(:hover, :focus-visible, :has(:focus-visible), [data-openbitfun-scrollbar-visibility="always"]))::-webkit-scrollbar-thumb {
+    :where([data-openbitfun-design-system-root], [data-openbitfun-design-system-root] *, [data-openbitfun-scrollbar-visibility]):where(:not(:hover, :focus-visible, [data-openbitfun-scrollbar-visibility="always"])):where(:not(:focus-within), :root[data-openbitfun-focus-visible="false"], :root[data-openbitfun-focus-visible="false"] *)::-webkit-scrollbar-thumb {
       background: transparent;
     }
 
     @supports (scrollbar-color: transparent transparent) {
-      :where([data-openbitfun-design-system-root], [data-openbitfun-design-system-root] *, [data-openbitfun-scrollbar-visibility]):where(:not(:hover, :focus-visible, :has(:focus-visible), [data-openbitfun-scrollbar-visibility="always"])) {
+      :where([data-openbitfun-design-system-root], [data-openbitfun-design-system-root] *, [data-openbitfun-scrollbar-visibility]):where(:not(:hover, :focus-visible, [data-openbitfun-scrollbar-visibility="always"])):where(:not(:focus-within), :root[data-openbitfun-focus-visible="false"], :root[data-openbitfun-focus-visible="false"] *) {
         scrollbar-color: transparent transparent;
       }
     }
@@ -66,11 +68,11 @@
   /* Opt-in hover viewports release idle tracks instead of only hiding paint.
      Native overflow still owns whether a track is needed when revealed. */
   @media (hover: hover) and (pointer: fine) and (forced-colors: none) {
-    [data-openbitfun-scrollbar-visibility="hover"]:not(:hover, :focus-visible, :has(:focus-visible)) {
+    [data-openbitfun-scrollbar-visibility="hover"]:not(:hover, :focus-visible):where(:not(:focus-within), :root[data-openbitfun-focus-visible="false"], :root[data-openbitfun-focus-visible="false"] *) {
       scrollbar-width: none;
     }
 
-    [data-openbitfun-scrollbar-visibility="hover"]:not(:hover, :focus-visible, :has(:focus-visible))::-webkit-scrollbar {
+    [data-openbitfun-scrollbar-visibility="hover"]:not(:hover, :focus-visible):where(:not(:focus-within), :root[data-openbitfun-focus-visible="false"], :root[data-openbitfun-focus-visible="false"] *)::-webkit-scrollbar {
       display: none;
     }
   }

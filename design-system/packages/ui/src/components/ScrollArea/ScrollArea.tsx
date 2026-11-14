@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useRef, type HTMLAttributes } from "react";
 import { classNames } from "../../internal/classNames";
+import { retainScrollbarFocus } from "../../internal/scrollbarFocus";
 import styles from "./ScrollArea.module.css";
 
 export type ScrollAreaOrientation = "vertical" | "horizontal" | "both";
@@ -31,6 +32,9 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(
     ...props
   }, ref) {
     const viewportRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+      if (viewportRef.current) return retainScrollbarFocus(viewportRef.current.ownerDocument);
+    }, []);
     const setViewportRef = useCallback((viewport: HTMLDivElement | null) => {
       viewportRef.current = viewport;
       if (typeof ref === "function") ref(viewport);

@@ -15,7 +15,7 @@ export interface LongSessionProbe {
     longTasks: Array<{ startTime: number; durationMs: number }> };
   scrollPositions?: Array<{ time: number; top: number }>;
 }
-interface ProbeOptions { sessionId: string; turnId?: string; selector?: string; wheelCount?: number; collectRows?: boolean; collectMilestones?: boolean;
+interface ProbeOptions { sessionId: string; scrollerSelector?: string; turnId?: string; selector?: string; wheelCount?: number; collectRows?: boolean; collectMilestones?: boolean;
   postReadyMs?: number; checkAnchor?: boolean; }
 type ProbeHost = Window & { __longSessionProbe?: {
   result: Partial<LongSessionProbe>; done: boolean; dispose: () => void;
@@ -23,6 +23,48 @@ type ProbeHost = Window & { __longSessionProbe?: {
 
 /** Measures the production transcript; no Vite imports or product store mutations. */
 export class LongSessionPerformancePage extends FlowChatScrollPage {
+  async activateSession(id: string) {
+    await $(this.sessionSelector(id)).scrollIntoView();
+    // The embedded click endpoint emits MouseEvent only; sidebar activation starts at pointerdown.
+    await browser.execute((selector: string) => {
+      const node = document.querySelector<HTMLElement>(selector)!;
+      const rect = node.getBoundingClientRect();
+      const init = { bubbles: true, cancelable: true, clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2, button: 0 };
+      node.dispatchEvent(new PointerEvent('pointerdown', { ...init, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 1 }));
+      node.dispatchEvent(new MouseEvent('mousedown', { ...init, buttons: 1 }));
+      node.dispatchEvent(new PointerEvent('pointerup', { ...init, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      node.dispatchEvent(new MouseEvent('mouseup', init)); node.click();
+    }, this.sessionSelector(id));
+    await browser.waitUntil(() => browser.execute((id: string) => {
+      const root = document.querySelector(`[data-testid="flowchat-container"][data-session-id="${id}"]`);
+      return !!root?.querySelector('[data-open-viewport-settled="true"]')
+        && !root.querySelector('.history-session-loading:not([data-history-loading-phase="idle"])');
+    }, id), { timeout: 30_000, interval: 100 });
+  }
+
+  async wheelPane(selector: string, delta: number, count: number) {
+    const position = await browser.execute((selector: string) => {
+      const rect = document.querySelector(selector)!.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 3) };
+    }, selector);
+    await browser.performActions([{ type: 'wheel', id: 'btw-wheel', actions: Array.from({ length: count }, () => ({
+      type: 'scroll', origin: 'viewport', ...position, deltaX: 0, deltaY: delta, duration: 24,
+    })) }]);
+    await browser.releaseActions();
+  }
+
+  async paneAnchor(selector: string) {
+    return browser.execute((selector: string) => {
+      const scroll = document.querySelector<HTMLElement>(selector)!;
+      const top = scroll.getBoundingClientRect().top;
+      const row = [...scroll.querySelectorAll<HTMLElement>('.virtual-item-wrapper')].find(row => {
+        const rect = row.getBoundingClientRect(); return rect.bottom > top && rect.top < top + scroll.clientHeight && rect.height > 0;
+      });
+      return { key: row?.dataset.virtualItemKey, offset: row ? row.getBoundingClientRect().top - top : 0 };
+    }, selector);
+  }
+
   async returnToLatest(sessionId: string, paragraph: number) {
     const selector = '[data-openbitfun-product-component="scroll-to-latest-bar"][data-openbitfun-product-part="root"][data-visible="true"]';
     if (await $(selector).isExisting()) await $(selector).click();
@@ -77,7 +119,7 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
       };
       const taskObserver = result.longTasksSupported ? new PerformanceObserver(list => recordTasks(list.getEntries())) : undefined;
       taskObserver?.observe({ type: 'longtask' });
-      const scroller = () => document.querySelector<HTMLElement>(`[data-testid="flowchat-container"][data-session-id="${options.sessionId}"] [data-flowchat-scroller]`);
+      const scroller = () => document.querySelector<HTMLElement>(options.scrollerSelector ?? `[data-testid="flowchat-container"][data-session-id="${options.sessionId}"] [data-flowchat-scroller]`);
       let rowObserver: MutationObserver | undefined;
       if (options.collectRows) {
         result.rowChurn = { added: {}, removed: {} }; result.rowBatches = []; result.scrollPositions = [];
@@ -104,7 +146,7 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
       const changed = () => { result.visibilityChanged ||= document.visibilityState !== result.visibility; result.focusChanged ||= document.hasFocus() !== result.focus; };
       const input = (event: Event) => {
         if (!(event.target instanceof Element)) return;
-        const match = options.wheelCount ? event.type === 'wheel' && event.target.closest('[data-flowchat-scroller]')
+        const match = options.wheelCount ? event.type === 'wheel' && scroller()?.contains(event.target)
           : options.selector && event.target.closest(options.selector);
         if (!match) return;
         if (result.actionAt === undefined) { result.actionAt = performance.now(); result.inputType = event.type; result.beforeTop = scroller()?.scrollTop ?? 0; }
@@ -211,8 +253,9 @@ export class LongSessionPerformancePage extends FlowChatScrollPage {
 
   async snapshot(id: string) {
     return browser.execute((id: string) => {
-      const root = document.querySelector(`[data-testid="flowchat-container"][data-session-id="${id}"]`);
-      const scroll = root?.querySelector<HTMLElement>('[data-flowchat-scroller]');
+      const root = document.querySelector(`[data-testid="flowchat-container"][data-session-id="${id}"]`)
+        ?? document.querySelector(`[data-flowchat-selection-root="${id}"].btw-session-panel__body`);
+      const scroll = root?.matches('.btw-session-panel__body') ? root as HTMLElement : root?.querySelector<HTMLElement>('[data-flowchat-scroller]');
       return { sessionId: id, exists: !!root, scrollTop: scroll?.scrollTop, scrollHeight: scroll?.scrollHeight,
         clientHeight: scroll?.clientHeight, rows: root?.querySelectorAll('.virtual-item-wrapper').length,
         clientWidth: scroll?.clientWidth, domNodes: root?.querySelectorAll('*').length, documentNodes: document.querySelectorAll('*').length,

@@ -110,6 +110,7 @@ function waitForOverlayExitAnimation(overlay: HTMLElement, handoff: LogoHandoff 
       if (frame !== undefined) window.cancelAnimationFrame(frame);
       // Remove first so cancelling a filled animation cannot flash its origin.
       overlay.remove();
+      document.getElementById('root')?.removeAttribute('data-startup-stage');
       activeHandoff?.animation.cancel();
       resolve();
     }
@@ -170,6 +171,7 @@ function waitForOverlayExitAnimation(overlay: HTMLElement, handoff: LogoHandoff 
 export function hideStartupOverlay(): Promise<void> {
   const overlay = getOverlay();
   if (!overlay) {
+    document.getElementById('root')?.removeAttribute('data-startup-stage');
     return Promise.resolve();
   }
 
@@ -183,6 +185,9 @@ export function hideStartupOverlay(): Promise<void> {
   });
   pendingExits.set(overlay, exited);
   overlay.classList.add(EXIT_CLASS);
+  // Startup owns this state directly; a root :has() would invalidate unrelated
+  // transcript descendants whenever virtualized or streaming DOM changes.
+  document.getElementById('root')?.setAttribute('data-startup-stage', handoff ? 'handoff' : 'exiting');
   // Static startup window controls can still own focus when the React shell
   // becomes ready. Release that focus before hiding the overlay from the
   // accessibility tree, then make the exiting surface non-interactive so it

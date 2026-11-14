@@ -235,6 +235,7 @@ describe('startup preload shell', () => {
 
     expect(dom.window.document.body.classList.contains('openbitfun-pet-preload-body')).toBe(true);
     expect(dom.window.document.getElementById('openbitfun-startup-overlay')).toBeNull();
+    expect(dom.window.document.getElementById('root')?.hasAttribute('data-startup-stage')).toBe(false);
     expect(dom.window.document.querySelector('.openbitfun-pet-preload__sprite')).not.toBeNull();
     expect(dom.window.document.querySelector('.splash-screen__logo')).toBeNull();
     expect(dom.window.document.querySelector('.openbitfun-sr-only')?.textContent).toBe('Loading companion...');
@@ -259,6 +260,7 @@ describe('startup preload shell', () => {
 
     expect(dom.window.document.body.classList.contains('openbitfun-desktop-card-preload-body')).toBe(true);
     expect(dom.window.document.getElementById('openbitfun-startup-overlay')).toBeNull();
+    expect(dom.window.document.getElementById('root')?.hasAttribute('data-startup-stage')).toBe(false);
     expect(dom.window.document.querySelector('.openbitfun-pet-preload')).toBeNull();
     dom.window.close();
   });

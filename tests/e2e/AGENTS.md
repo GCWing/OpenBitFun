@@ -52,6 +52,16 @@ Keep failed evidence; compare matching workloads/native profiles and avoid
 concurrent builds. RAF is not compositor FPS. This is local desktop coverage;
 none of the four remote scenarios is exercised.
 
+For concurrent primary/BTW streaming and scrolling, use
+`node tests/e2e/scripts/run-long-session-performance.mjs --suite btw-scroll --scenario multi-tool --repeats 2`.
+It opens a real `/btw` child from a 200-turn, 100-tool-calls-per-turn parent,
+seeds both live responses with 512 paragraphs, then measures both directions
+in primary live/history content and the BTW live transcript. The child is a new
+transient conversation, not a second persisted 200-turn fixture. Both streams
+must advance during each phase; subsequent output must preserve a reading
+anchor, both DOM windows stay bounded, and return-to-latest must reach the
+final paragraph. Keep ordinary acceptance runs separate from CDP diagnostics.
+
 For historical FlowChat scroll continuity, build Desktop and current frontend
 assets, then run:
 

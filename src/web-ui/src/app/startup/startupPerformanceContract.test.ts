@@ -9,6 +9,12 @@ function readSource(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8').replace(/\r\n?/g, '\n');
 }
 
+it('does not make the app root a relational selector subject after startup', () => {
+  const html = readSource('../../../index.html');
+  expect(html).not.toContain('#root:has(');
+  expect(html).toContain('id="root" data-startup-stage="loading"');
+});
+
 function dynamicImportSpecifiers(source: string): string[] {
   return Array.from(
     source.matchAll(/import\(\s*(['"])(.*?)\1\s*\)/g),

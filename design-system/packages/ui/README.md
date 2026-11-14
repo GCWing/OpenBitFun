@@ -259,7 +259,12 @@ or contains visible keyboard focus. Leaving the viewport hides it; scrolling
 from streaming output does not reveal an unattended panel. Touch surfaces retain
 visible native thumbs, and forced colors retains system accessibility colors.
 Tracks stay transparent. Only color changes, so hover never changes viewport
-width, overflow, or scrollbar gutters.
+width, overflow, or scrollbar gutters. `DesignSystemProvider`, `ThemeRoot`, and
+standalone `ScrollArea` share one document focus subscription. It reads native
+`:focus-visible` after input/focus changes; streaming and scrolling do not write
+focus state. This avoids applying `:has()` to every descendant of the theme root.
+CSS-only consumers without these React owners keep `:focus-within` viewports
+visible as a conservative keyboard-accessibility fallback.
 
 `ScrollArea` keeps `scrollbarVisibility="auto"` as the default. `always` keeps
 the thumb visible and reserves a scrolling track; `hidden` deliberately hides
