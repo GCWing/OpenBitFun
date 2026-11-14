@@ -166,10 +166,9 @@ test('openbitfun sync mirrors both products and their checksums', () => {
   assert.match(syncScript, /WEBSITE_RELEASE_DIR.*linux-binaries-v1\.json/);
   assert.match(syncScript, /mirror_dispatch_macos_cli_archives/);
   assert.match(syncScript, /x86_64-apple-darwin aarch64-apple-darwin/);
-  assert.match(syncScript, /WEBSITE_RELEASE_DIR.*relay-image\.json/);
 });
 
-test('release sync pins Relay and Linux metadata to the updater release during latest rotation', (t) => {
+test('release sync pins Linux metadata to the updater release during latest rotation', (t) => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'openbitfun-release-metadata-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const urls = path.join(temp, 'urls');
@@ -178,7 +177,6 @@ test('release sync pins Relay and Linux metadata to the updater release during l
     source "$SYNC_SCRIPT"
     flock() { return 0; }
     curl() { printf '%s' "$TEST_LATEST_JSON"; }
-    mirror_relay_image_descriptor() { printf '%s\\n' "$GITHUB_RELAY_IMAGE_URL" >> "$TEST_URLS"; }
     mirror_linux_binaries() { printf '%s\\n' "$GITHUB_LINUX_BINARIES_URL" >> "$TEST_URLS"; }
     mirror_dispatch_macos_cli_archives() { :; }
     download_asset() { :; }
@@ -202,54 +200,8 @@ test('release sync pins Relay and Linux metadata to the updater release during l
   });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(fs.readFileSync(urls, 'utf8').trim().split('\n'), [
-    `${releaseBase}/relay-image.json`, `${releaseBase}/linux-binaries-v1.json`,
+    `${releaseBase}/linux-binaries-v1.json`,
   ]);
-});
-
-test('the release mirror copies signed Relay descriptors from both official namespaces unchanged', (t) => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'openbitfun-relay-mirror-'));
-  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
-  for (const [namespace, version, accepted] of [
-    ['gcwing', '1.0.10', true], ['openbitfun', '1.0.10', true],
-    ['openbitfun', '1.0.9', false], ['unrelated-owner', '1.0.10', false],
-  ]) {
-    const mirror = fs.mkdtempSync(path.join(temp, `${namespace}-`));
-    fs.mkdirSync(path.join(mirror, '1.0.10'));
-    const descriptor = JSON.stringify({ schema_version: 1, version, tag: `v${version}`,
-      image: `ghcr.io/${namespace}/openbitfun-relay-server`, digest: `sha256:${'a'.repeat(64)}` });
-    const result = spawnSync('bash', ['-c', `
-      source "$SYNC_SCRIPT"
-      VERSION=1.0.10
-      VERSION_DIR="$WEBSITE_RELEASE_DIR/$VERSION"
-      curl() {
-        local output
-        while [ "$#" -gt 1 ]; do
-          if [ "$1" = -o ]; then output="$2"; shift; fi
-          shift
-        done
-        case "$1" in
-          *.sig) printf 'original signature' > "$output" ;;
-          *) printf '%s' "$DESCRIPTOR" > "$output"; printf 200 ;;
-        esac
-      }
-      mirror_relay_image_descriptor
-    `], {
-      cwd: repoRoot, encoding: 'utf8', windowsHide: true,
-      env: { ...process.env, SYNC_SCRIPT: path.join(repoRoot, 'scripts/openbitfun-release-sync.sh'),
-        OPENBITFUN_RELEASE_CHANNEL: 'stable', WEBSITE_RELEASE_DIR: mirror, DESCRIPTOR: descriptor },
-    });
-    assert.equal(result.status, accepted ? 0 : 1, `${namespace} ${version}: ${result.stderr}`);
-    for (const dir of [mirror, path.join(mirror, '1.0.10')]) {
-      const image = path.join(dir, 'relay-image.json');
-      if (accepted) {
-        assert.equal(fs.readFileSync(image, 'utf8'), descriptor);
-        assert.equal(fs.readFileSync(`${image}.sig`, 'utf8'), 'original signature');
-      } else {
-        assert.equal(fs.existsSync(image), false);
-        assert.equal(fs.existsSync(`${image}.sig`), false);
-      }
-    }
-  }
 });
 
 test('openbitfun sync mirrors the website installer from the exact updater release', () => {
