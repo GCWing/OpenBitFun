@@ -228,7 +228,7 @@ CI 负责 workspace 级检查、真实产品 feature 组合、跨平台、完整
 
 ### 7.1 Hosted CI 关键路径与缓存
 
-- 日常 Rust/CLI 验证保留 Linux、Windows 和 macOS 三个平台，macOS 固定使用标准 Intel macOS 15 runner（`macos-15-intel`），避免默认标签的架构迁移和 ARM64 托管资源池分配失败阻塞 OS 契约验证。CLI 与 Rust 使用相同平台矩阵，缓存键区分 Intel。这提供 macOS x64 原生测试证据，不代表 Apple Silicon 运行验证；ARM64/x64 发布目标仍由发布 workflow 的矩阵拥有。
+- 日常 Rust/CLI 验证保留 Linux、Windows 和 macOS 三个平台，macOS 固定使用标准 Apple Silicon macOS 15 runner（`macos-15`），缩短 PR 的阻塞路径。CLI 与 Rust 使用相同平台矩阵，Rust 缓存键必须区分 runner 架构。日常验证提供 Apple Silicon 原生测试证据；macOS x64 仍由发布和 Nightly workflow 的矩阵拥有。
 - 验证 job 只依赖自身的编译期前置条件。Tauri `check`/`test` 只要求配置中的前端和资源目录存在时，Rust job 自行创建空目录，不等待或传递可发布前端产物；真实静态资源仍由前端构建和产品打包 owner 负责。
 - Rust/CLI 影响分类必须保守且 fail-closed：只有活动路径全部位于 `src/web-ui/**` 时才允许跳过 Rust 与 CLI matrix；仓库根目录/`docs/**` 的 Markdown 和 `png/**` 可作为已知中性伴随路径。其他嵌套 Markdown 可能是 `include_str!`/`include_bytes!` 输入，workflow 不得宽泛忽略全部 Markdown。空变更、非法或不可用 diff range、Rust/build 输入、CI 脚本、其他产品 surface 和所有未识别路径都必须运行完整验证，不能依赖易漏维护的“已知 Rust 目录”名单。PR 使用 base/head 的 merge-base range，只分类 PR 自身改动；`main` push 使用事件 before/head 的 direct range，保留 force-push 或回退提交的实际影响。
 - “纯 Web”前提必须是可执行边界：影响分类 job 在计算 diff 前，从 Git 跟踪文件列表扫描全仓 `.rs`（包括 workspace 外 Installer 和根 build script）。除逐行精确登记的既有测试 fixture 外，非注释 Rust 源码不得出现 `web-ui` 路径 token；因此 `include_dir!`、编译嵌入、分段 `PathBuf::join` 和间接路径变量都会在分类前失败。Frontend job 同时显式运行边界 contract tests 和真实 repository boundary check；跨 surface 的命令注册和调用分别由 owner 测试看护。新增类似源码读取时应修复所有权，而不是给影响分类器追加隐式例外。
