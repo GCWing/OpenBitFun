@@ -133,7 +133,7 @@ describe('I18nService shared namespace contract', () => {
     expect(secondNumber).toBe(firstNumber);
   });
 
-  it('resolves the display time zone once per locale instead of once per render', async () => {
+  it('resolves the display time zone once per cached formatter', async () => {
     vi.stubGlobal('document', {
       documentElement: { setAttribute: vi.fn() },
     });
@@ -158,6 +158,26 @@ describe('I18nService shared namespace contract', () => {
     expect(resolvedOptions.mock.calls.length).toBeGreaterThan(resolutionsAfterFirstCall);
     resolvedOptions.mockRestore();
     vi.unstubAllGlobals();
+  });
+
+  it('refreshes the resolved display time zone when the date formatter expires', () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      vi.stubEnv('TZ', 'UTC');
+      const service = new I18nService();
+      expect(service.getResolvedTimeZone()).toBe('UTC');
+
+      vi.stubEnv('TZ', 'America/Los_Angeles');
+      clock.mockReturnValue(now + 29_999);
+      expect(service.getResolvedTimeZone()).toBe('UTC');
+
+      clock.mockReturnValue(now + 30_000);
+      expect(service.getResolvedTimeZone()).toBe('America/Los_Angeles');
+    } finally {
+      clock.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 
   it('does not cache options with custom prototypes', () => {
