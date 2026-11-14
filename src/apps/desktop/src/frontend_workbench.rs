@@ -110,6 +110,16 @@ struct BundledFrontendSource {
     root: PathBuf,
 }
 
+const NO_STORE_CACHE_CONTROL: &str = "no-store, max-age=0";
+const REVALIDATE_CACHE_CONTROL: &str = "private, no-cache";
+
+struct ProtocolAsset {
+    bytes: Vec<u8>,
+    content_type: &'static str,
+    cache_control: &'static str,
+    etag: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BundledFrontendManifest {
@@ -981,7 +991,7 @@ impl FrontendWorkbenchManager {
             return tauri::http::Response::builder()
                 .status(tauri::http::StatusCode::OK)
                 .header(tauri::http::header::CONTENT_TYPE, "text/css; charset=utf-8")
-                .header(tauri::http::header::CACHE_CONTROL, "no-store, max-age=0")
+                .header(tauri::http::header::CACHE_CONTROL, NO_STORE_CACHE_CONTROL)
                 .body(BOOTSTRAP_THEME_CSS.to_vec())
                 .unwrap_or_else(|_| tauri::http::Response::new(Vec::new()));
         }
@@ -992,18 +1002,49 @@ impl FrontendWorkbenchManager {
                     tauri::http::header::CONTENT_TYPE,
                     "text/html; charset=utf-8",
                 )
-                .header(tauri::http::header::CACHE_CONTROL, "no-store, max-age=0")
+                .header(tauri::http::header::CACHE_CONTROL, NO_STORE_CACHE_CONTROL)
                 .body(CONFIRMATION_HTML.to_vec())
                 .unwrap_or_else(|_| tauri::http::Response::new(Vec::new()));
         }
         match self.read_protocol_asset(request_path) {
-            Ok((bytes, content_type)) => tauri::http::Response::builder()
-                .status(tauri::http::StatusCode::OK)
-                .header(tauri::http::header::CONTENT_TYPE, content_type)
-                .header(tauri::http::header::CACHE_CONTROL, "no-store, max-age=0")
-                .header(tauri::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-                .body(bytes)
-                .unwrap_or_else(|_| tauri::http::Response::new(Vec::new())),
+            Ok(asset) => {
+                let not_modified = matches!(
+                    *request.method(),
+                    tauri::http::Method::GET | tauri::http::Method::HEAD
+                ) && asset.etag.as_ref().is_some_and(|etag| {
+                    request
+                        .headers()
+                        .get_all(tauri::http::header::IF_NONE_MATCH)
+                        .iter()
+                        .filter_map(|value| value.to_str().ok())
+                        .flat_map(|value| value.split(','))
+                        .map(str::trim)
+                        .any(|value| {
+                            value == "*" || value.strip_prefix("W/").unwrap_or(value) == etag
+                        })
+                });
+                let mut response = tauri::http::Response::builder()
+                    .status(if not_modified {
+                        tauri::http::StatusCode::NOT_MODIFIED
+                    } else {
+                        tauri::http::StatusCode::OK
+                    })
+                    .header(tauri::http::header::CONTENT_TYPE, asset.content_type)
+                    .header(tauri::http::header::CACHE_CONTROL, asset.cache_control)
+                    .header(tauri::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+                if let Some(etag) = asset.etag {
+                    response = response.header(tauri::http::header::ETAG, etag);
+                }
+                response
+                    .body(
+                        if not_modified || request.method() == tauri::http::Method::HEAD {
+                            Vec::new()
+                        } else {
+                            asset.bytes
+                        },
+                    )
+                    .unwrap_or_else(|_| tauri::http::Response::new(Vec::new()))
+            }
             Err(error) if matches!(request_path, "" | "/" | "/index.html") => {
                 log::error!("Serving immutable frontend recovery page: error={error}");
                 tauri::http::Response::builder()
@@ -1012,7 +1053,7 @@ impl FrontendWorkbenchManager {
                         tauri::http::header::CONTENT_TYPE,
                         "text/html; charset=utf-8",
                     )
-                    .header(tauri::http::header::CACHE_CONTROL, "no-store, max-age=0")
+                    .header(tauri::http::header::CACHE_CONTROL, NO_STORE_CACHE_CONTROL)
                     .body(RECOVERY_HTML.to_vec())
                     .unwrap_or_else(|_| tauri::http::Response::new(Vec::new()))
             }
@@ -1022,13 +1063,13 @@ impl FrontendWorkbenchManager {
                     tauri::http::header::CONTENT_TYPE,
                     "text/plain; charset=utf-8",
                 )
-                .header(tauri::http::header::CACHE_CONTROL, "no-store, max-age=0")
+                .header(tauri::http::header::CACHE_CONTROL, NO_STORE_CACHE_CONTROL)
                 .body(error.into_bytes())
                 .unwrap_or_else(|_| tauri::http::Response::new(Vec::new())),
         }
     }
 
-    fn read_protocol_asset(&self, request_path: &str) -> Result<(Vec<u8>, &'static str), String> {
+    fn read_protocol_asset(&self, request_path: &str) -> Result<ProtocolAsset, String> {
         let decoded = urlencoding::decode(request_path)
             .map_err(|_| "Invalid frontend asset path encoding".to_string())?;
         let relative = decoded.trim_start_matches('/');
@@ -1056,6 +1097,7 @@ impl FrontendWorkbenchManager {
         };
         validate_revision_id(&served_revision)?;
         let root = self.asset_root(&served_revision, relative_path)?;
+        let packaged_source = self.is_bundled_source_root(&root)?;
         let canonical_root = root
             .canonicalize()
             .map_err(|error| format!("Frontend root is unavailable: {error}"))?;
@@ -1073,9 +1115,34 @@ impl FrontendWorkbenchManager {
             return Err("Frontend asset path escaped the active revision".to_string());
         }
         let content_type = content_type_for(&canonical_candidate);
+        // Packaged assets and legacy full-tree customizations share URLs. Even
+        // hashed names must revalidate across activation, rollback and upgrade;
+        // a fresh immutable response would bypass the new revision entirely.
+        let cacheable = packaged_source
+            && canonical_candidate
+                .strip_prefix(&canonical_root)
+                .is_ok_and(is_content_hashed_bundle_asset);
         fs::read(&canonical_candidate)
-            .map(|bytes| (bytes, content_type))
+            .map(|bytes| ProtocolAsset {
+                etag: cacheable.then(|| format!("\"{:x}\"", Sha256::digest(&bytes))),
+                bytes,
+                content_type,
+                cache_control: if cacheable {
+                    REVALIDATE_CACHE_CONTROL
+                } else {
+                    NO_STORE_CACHE_CONTROL
+                },
+            })
             .map_err(|error| format!("Failed to read frontend asset: {error}"))
+    }
+
+    fn is_bundled_source_root(&self, root: &Path) -> Result<bool, String> {
+        Ok(self
+            .bundled_source
+            .lock()
+            .map_err(lock_error)?
+            .as_ref()
+            .is_some_and(|source| source.root == root))
     }
 
     fn load_state(&self) -> FrontendWorkbenchState {
@@ -1684,6 +1751,32 @@ fn validate_revision_id(value: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Vite emits build output as `assets/<name>-<hash>.<ext>` with an 8-character
+/// content hash. Public files copied into `assets/<dir>/` keep their own names
+/// and are not covered.
+fn is_content_hashed_bundle_asset(relative: &Path) -> bool {
+    const HASH_LEN: usize = 8;
+    let mut components = relative.components();
+    let (Some(Component::Normal(directory)), Some(Component::Normal(file)), None) =
+        (components.next(), components.next(), components.next())
+    else {
+        return false;
+    };
+    if directory != "assets" {
+        return false;
+    }
+    let Some((stem, extension)) = file.to_str().and_then(|file| file.rsplit_once('.')) else {
+        return false;
+    };
+    let stem = stem.as_bytes();
+    !extension.is_empty()
+        && stem.len() > HASH_LEN
+        && stem[stem.len() - HASH_LEN - 1] == b'-'
+        && stem[stem.len() - HASH_LEN..]
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
 fn content_type_for(path: &Path) -> &'static str {
     match path.extension().and_then(|extension| extension.to_str()) {
         Some("html") => "text/html; charset=utf-8",
@@ -1780,14 +1873,17 @@ mod tests {
             Some(revision)
         );
         assert_eq!(
-            upgraded.read_protocol_asset("/assets/app.js").unwrap().0,
+            upgraded
+                .read_protocol_asset("/assets/app.js")
+                .unwrap()
+                .bytes,
             b"product v2"
         );
         assert_eq!(
             upgraded
                 .read_protocol_asset("/openbitfun-creation.css")
                 .unwrap()
-                .0,
+                .bytes,
             b"/* user design */"
         );
         assert!(upgraded.revision_dir(revision).is_dir());
@@ -2479,5 +2575,234 @@ mod tests {
         assert!(body.contains("--openbitfun-color-surface-canvas"));
         assert!(body.contains("--openbitfun-color-status-danger-content"));
         assert!(!body.contains("--openbitfun-appearance-token-"));
+    }
+
+    fn protocol_cache_control(manager: &FrontendWorkbenchManager, path: &str) -> String {
+        let request = tauri::http::Request::builder()
+            .uri(format!("openbitfun-ui://localhost{path}"))
+            .body(Vec::new())
+            .expect("request");
+        let response = manager.protocol_response(request);
+        assert_eq!(response.status(), tauri::http::StatusCode::OK, "{path}");
+        response
+            .headers()
+            .get(tauri::http::header::CACHE_CONTROL)
+            .and_then(|value| value.to_str().ok())
+            .expect("cache-control header")
+            .to_string()
+    }
+
+    #[test]
+    fn hashed_bundle_asset_names_match_vite_output_only() {
+        for name in [
+            "assets/index-BSfB8JR0.js",
+            "assets/macbook-air-hero--JR023m1.png",
+            "assets/pdf.worker.min-wgc6bjNh.mjs",
+            "assets/HarmonyOS_Sans_SC-BKicpBgU.ttf",
+        ] {
+            assert!(is_content_hashed_bundle_asset(Path::new(name)), "{name}");
+        }
+        for name in [
+            "index.html",
+            "assets/app.js",
+            "assets/README.md",
+            "assets/index-BSfB8JR0",
+            "assets/appearance/openbitfun-default-preview@4x.png",
+            "assets/appearance/preview-12345678.png",
+            "monaco-editor/vs/loader-12345678.js",
+            "openbitfun-creation.js",
+        ] {
+            assert!(!is_content_hashed_bundle_asset(Path::new(name)), "{name}");
+        }
+    }
+
+    #[test]
+    fn protocol_caches_only_hashed_assets_served_from_the_packaged_bundle() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let manager = overlay_manager(root.path(), "installed product");
+        let packaged = root.path().join("packaged");
+        fs::write(packaged.join("assets/index-BSfB8JR0.js"), "export {};").expect("chunk");
+        fs::create_dir_all(packaged.join("assets/appearance")).expect("public directory");
+        fs::write(
+            packaged.join("assets/appearance/preview-12345678.png"),
+            "png",
+        )
+        .expect("public asset");
+
+        assert_eq!(
+            protocol_cache_control(&manager, "/assets/index-BSfB8JR0.js"),
+            REVALIDATE_CACHE_CONTROL
+        );
+        for path in [
+            "/index.html",
+            "/assets/app.js",
+            "/assets/appearance/preview-12345678.png",
+        ] {
+            assert_eq!(
+                protocol_cache_control(&manager, path),
+                NO_STORE_CACHE_CONTROL,
+                "{path}"
+            );
+        }
+
+        // Overlay customizations keep serving product chunks from the packaged
+        // bundle, while their own editable files must revalidate.
+        let overlay = "creative-overlay";
+        let overlay_root = manager.revision_dir(overlay);
+        fs::create_dir_all(&overlay_root).expect("overlay root");
+        fs::write(overlay_root.join(overrides::CSS), "/* edited */").expect("overlay css");
+        fs::write(overlay_root.join(overrides::JS), "export default 1").expect("overlay js");
+        overrides::write_manifest(&overlay_root).expect("overlay manifest");
+        manager.state.lock().expect("state").active_revision = Some(overlay.to_string());
+        assert_eq!(
+            protocol_cache_control(&manager, "/assets/index-BSfB8JR0.js"),
+            REVALIDATE_CACHE_CONTROL
+        );
+        assert_eq!(
+            protocol_cache_control(&manager, &format!("/{}", overrides::JS)),
+            NO_STORE_CACHE_CONTROL
+        );
+
+        // Legacy full-tree customizations may rewrite a hashed file in place.
+        let legacy = "creative-legacy";
+        write_frontend(&manager.revision_dir(legacy), "legacy");
+        fs::write(
+            manager
+                .revision_dir(legacy)
+                .join("assets/index-BSfB8JR0.js"),
+            "export const edited = true;",
+        )
+        .expect("edited chunk");
+        manager.state.lock().expect("state").active_revision = Some(legacy.to_string());
+        assert_eq!(
+            protocol_cache_control(&manager, "/assets/index-BSfB8JR0.js"),
+            NO_STORE_CACHE_CONTROL
+        );
+    }
+
+    fn conditional_protocol_response(
+        manager: &FrontendWorkbenchManager,
+        path: &str,
+        etag: &str,
+    ) -> tauri::http::Response<Vec<u8>> {
+        manager.protocol_response(
+            tauri::http::Request::builder()
+                .uri(format!("openbitfun-ui://localhost{path}"))
+                .header(tauri::http::header::IF_NONE_MATCH, etag)
+                .body(Vec::new())
+                .expect("conditional request"),
+        )
+    }
+
+    #[test]
+    fn protocol_revalidates_packaged_bytes_and_never_caches_mutable_pages() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let manager = overlay_manager(root.path(), "installed product");
+        let path = "/assets/index-BSfB8JR0.js";
+        let file = root.path().join("packaged/assets/index-BSfB8JR0.js");
+        fs::write(&file, "export const version = 1;").expect("chunk");
+
+        let first = conditional_protocol_response(&manager, path, "\"stale\"");
+        assert_eq!(first.status(), tauri::http::StatusCode::OK);
+        assert_eq!(first.body(), b"export const version = 1;");
+        assert_eq!(
+            first.headers()[tauri::http::header::CACHE_CONTROL],
+            REVALIDATE_CACHE_CONTROL
+        );
+        let etag = first.headers()[tauri::http::header::ETAG].to_str().unwrap();
+        for condition in [
+            etag.to_string(),
+            format!("W/{etag}"),
+            format!("\"stale\", {etag}"),
+            "*".to_string(),
+        ] {
+            let response = conditional_protocol_response(&manager, path, &condition);
+            assert_eq!(response.status(), tauri::http::StatusCode::NOT_MODIFIED);
+            assert!(response.body().is_empty());
+            assert_eq!(response.headers()[tauri::http::header::ETAG], etag);
+            assert_eq!(
+                response.headers()[tauri::http::header::CACHE_CONTROL],
+                REVALIDATE_CACHE_CONTROL
+            );
+        }
+
+        // Mutable and bootstrap URLs always return their current content.
+        for page in [
+            "/index.html",
+            "/bootstrap-theme.css",
+            "/frontend-update-confirm.html",
+        ] {
+            let response = conditional_protocol_response(&manager, page, "*");
+            assert_eq!(response.status(), tauri::http::StatusCode::OK);
+            assert!(!response.body().is_empty());
+            assert!(!response.headers().contains_key(tauri::http::header::ETAG));
+            assert_eq!(
+                response.headers()[tauri::http::header::CACHE_CONTROL],
+                NO_STORE_CACHE_CONTROL
+            );
+        }
+
+        // A replacement with the same filename must not reuse earlier bytes.
+        fs::write(&file, "export const version = 2;").expect("replacement chunk");
+        let replacement = conditional_protocol_response(&manager, path, etag);
+        assert_eq!(replacement.status(), tauri::http::StatusCode::OK);
+        assert_eq!(replacement.body(), b"export const version = 2;");
+        assert_ne!(replacement.headers()[tauri::http::header::ETAG], etag);
+        fs::remove_file(file).expect("remove chunk");
+        let missing = conditional_protocol_response(&manager, path, etag);
+        assert_eq!(missing.status(), tauri::http::StatusCode::NOT_FOUND);
+        assert_eq!(
+            missing.headers()[tauri::http::header::CACHE_CONTROL],
+            NO_STORE_CACHE_CONTROL
+        );
+    }
+
+    #[test]
+    fn cached_bundle_revalidates_during_legacy_preview_activation_and_rollback() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let manager = overlay_manager(root.path(), "installed product");
+        let path = "/assets/index-BSfB8JR0.js";
+        fs::write(
+            root.path().join("packaged/assets/index-BSfB8JR0.js"),
+            "original",
+        )
+        .expect("chunk");
+        let cached = conditional_protocol_response(&manager, path, "\"stale\"");
+        let etag = cached.headers()[tauri::http::header::ETAG]
+            .to_str()
+            .unwrap();
+        let bundled = manager.state.lock().unwrap().active_revision.clone();
+        let legacy = "creative-legacy";
+        write_frontend(&manager.revision_dir(legacy), "legacy");
+        fs::write(
+            manager
+                .revision_dir(legacy)
+                .join("assets/index-BSfB8JR0.js"),
+            "edited",
+        )
+        .expect("legacy chunk");
+        manager.state.lock().unwrap().pending = Some(PendingFrontendRevision {
+            revision_id: legacy.to_string(),
+            ..Default::default()
+        });
+
+        for phase in ["preview", "active"] {
+            let response = conditional_protocol_response(&manager, path, etag);
+            assert_eq!(response.status(), tauri::http::StatusCode::OK, "{phase}");
+            assert_eq!(response.body(), b"edited", "{phase}");
+            assert_eq!(
+                response.headers()[tauri::http::header::CACHE_CONTROL],
+                NO_STORE_CACHE_CONTROL
+            );
+            assert!(!response.headers().contains_key(tauri::http::header::ETAG));
+            let mut state = manager.state.lock().unwrap();
+            state.pending = None;
+            state.active_revision = Some(legacy.to_string());
+        }
+        manager.state.lock().unwrap().active_revision = bundled;
+        assert_eq!(
+            conditional_protocol_response(&manager, path, etag).status(),
+            tauri::http::StatusCode::NOT_MODIFIED
+        );
     }
 }

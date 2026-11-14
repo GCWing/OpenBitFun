@@ -1,4 +1,3 @@
-import JSZip from 'jszip';
 import type { AppearanceRegistry } from '../registry/AppearanceRegistry';
 import { assertValidAppearancePackage } from './AppearancePackageValidator';
 import type {
@@ -89,6 +88,8 @@ export class AppearancePackageParser {
       throw new Error(`Appearance archive must be between 1 byte and ${MAX_ARCHIVE_BYTES} bytes`);
     }
     this.assertSafeZipMetadata(source);
+    // Package import is a user action; keep the archive reader out of the startup bundle.
+    const { default: JSZip } = await import('jszip');
     const zip = await JSZip.loadAsync(source, { checkCRC32: true });
     const files = Object.values(zip.files).filter(file => !file.dir);
     if (files.length === 0 || files.length > MAX_ENTRIES) {

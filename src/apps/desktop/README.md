@@ -17,6 +17,11 @@ so newly exposed edges retain the page color while WebKit catches up. The sideba
 keeps its native material. Theme changes and sidebar geometry update this paint;
 translucent or image-backed scene surfaces retain their original composition.
 
+To compare WebView rendering cost without the native sidebar material on macOS
+and Windows, start the app with `OPENBITFUN_NATIVE_WINDOW_MATERIAL=0`. The main
+window then uses the opaque fallback that Windows builds before 22H2 already use;
+the default is unchanged.
+
 ## Model selection and smart routing
 
 **Release availability:** smart mode is not available in this release. The GUI

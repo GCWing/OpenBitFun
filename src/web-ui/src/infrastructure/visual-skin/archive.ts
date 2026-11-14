@@ -1,4 +1,4 @@
-import { ZipReader, Uint8ArrayReader, type FileEntry } from '@zip.js/zip.js';
+import type { FileEntry, ZipReader } from '@zip.js/zip.js';
 
 export const MAX_SKIN_EXPANDED_BYTES = 48 * 1024 * 1024;
 export const MAX_SKIN_MANIFEST_BYTES = 512 * 1024;
@@ -12,7 +12,9 @@ export class SkinArchive {
   private constructor(private readonly reader: ZipReader<Uint8Array>) {}
 
   static async open(source: ArrayBuffer): Promise<SkinArchive> {
-    const reader = new ZipReader(new Uint8ArrayReader(new Uint8Array(source)), {
+    // Skin import is a user action; keep the archive reader out of the startup bundle.
+    const zip = await import('@zip.js/zip.js');
+    const reader = new zip.ZipReader(new zip.Uint8ArrayReader(new Uint8Array(source)), {
       useWebWorkers: false, checkSignature: true, checkOverlappingEntry: true,
     });
     const archive = new SkinArchive(reader);
