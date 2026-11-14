@@ -4,8 +4,8 @@
 #
 # Flow:
 #   1. Fetch the selected channel's latest-v1.json from GitHub
-#   2. Mirror the signed Relay image descriptor and Linux binary manifest FIRST
-#      (small trust metadata must not queue behind ~700 MB of Desktop packages)
+#   2. Mirror the Linux binary manifest FIRST (small trust metadata must not
+#      queue behind ~700 MB of Desktop packages)
 #   3. If that version is already published, prune to KEEP_VERSIONS and stop
 #   4. Otherwise download the new version, rewrite manifests, then prune
 #
@@ -61,7 +61,6 @@ case "$RELEASE_CHANNEL" in
 esac
 GITHUB_LATEST_JSON_URL="${GITHUB_RELEASE_ROOT}/latest-v1.json"
 GITHUB_LINUX_BINARIES_URL="${GITHUB_RELEASE_ROOT}/linux-binaries-v1.json"
-GITHUB_RELAY_IMAGE_URL="${GITHUB_RELEASE_ROOT}/relay-image.json"
 OPENBITFUN_BASE_URL="https://openbitfun.com/release${CHANNEL_PATH}"
 # The mirror deliberately lives outside the website checkout. It used to be
 # OpenBitFun-Website/dist/release, but `npm run build` empties dist/, so every
@@ -381,9 +380,9 @@ PY
     rm -f "${WEBSITE_RELEASE_DIR}/linux-binaries-v1.json"
     log "Linux binaries manifest is not present in the latest release yet; Desktop mirror only."
   else
-    # Transient failure. Keep whatever is already published: CLI self-update and
-    # one-click Relay deploy both fall back to this file, so a single flaky run
-    # must not take it offline for the next 10 minutes.
+    # Transient failure. Keep whatever is already published: CLI self-update
+    # falls back to this file, so a single flaky run must not take it offline
+    # for the next 10 minutes.
     log "WARN: Linux binaries manifest unreachable this run; keeping the published mirror."
   fi
 }
@@ -440,70 +439,6 @@ mirror_dispatch_macos_cli_archives() {
   if [ -n "$checksum_list" ]; then
     printf '%s' "$checksum_list" | verify_mirrored_checksums || exit 1
   fi
-}
-
-# Mirror the signed, digest-pinned container descriptor before large Desktop
-# assets. The mirror is not trusted: Desktop verifies relay-image.json.sig with
-# its compiled-in minisign key before sending the digest to a customer server.
-mirror_relay_image_descriptor() {
-  local descriptor_tmp signature_tmp status descriptor_version
-  descriptor_tmp="${VERSION_DIR}/relay-image.json.part"
-  signature_tmp="${VERSION_DIR}/relay-image.json.sig.part"
-  rm -f "$descriptor_tmp" "$signature_tmp"
-
-  status="$(curl -sSL \
-    --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
-    -o "$descriptor_tmp" -w '%{http_code}' "$GITHUB_RELAY_IMAGE_URL" || echo 000)"
-  if [ "$status" = "404" ]; then
-    log "Relay image descriptor is not present in the latest release yet."
-    rm -f "$descriptor_tmp"
-    return 0
-  fi
-  if [ "$status" != "200" ]; then
-    log "WARN: relay-image.json unreachable (HTTP $status); keeping any existing versioned copy."
-    rm -f "$descriptor_tmp"
-    return 0
-  fi
-  if ! curl -fsSL --retry "$MAX_RETRIES" --retry-delay "$RETRY_DELAY" \
-    --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
-    -o "$signature_tmp" "${GITHUB_RELAY_IMAGE_URL}.sig"; then
-    log "WARN: relay-image.json.sig unreachable; refusing to publish an unsigned descriptor."
-    rm -f "$descriptor_tmp" "$signature_tmp"
-    return 0
-  fi
-
-  descriptor_version="$("$PYTHON" - "$descriptor_tmp" <<'PY'
-import json, re, sys
-with open(sys.argv[1], encoding="utf-8") as f:
-    data = json.load(f)
-assert data.get("schema_version") == 1
-assert data.get("image") in {
-    "ghcr.io/openbitfun/openbitfun-relay-server",
-    "ghcr.io/gcwing/openbitfun-relay-server",
-}
-assert re.fullmatch(r"sha256:[0-9a-f]{64}", data.get("digest", ""))
-print(data["version"])
-PY
-)" || {
-    log "ERROR: relay-image.json failed its schema/repository/digest checks"
-    rm -f "$descriptor_tmp" "$signature_tmp"
-    return 1
-  }
-  if [ "$descriptor_version" != "$VERSION" ]; then
-    log "ERROR: Relay image descriptor version $descriptor_version does not match Desktop version $VERSION"
-    rm -f "$descriptor_tmp" "$signature_tmp"
-    return 1
-  fi
-
-  mv "$descriptor_tmp" "${VERSION_DIR}/relay-image.json"
-  mv "$signature_tmp" "${VERSION_DIR}/relay-image.json.sig"
-  publish_file_atomically \
-    "${VERSION_DIR}/relay-image.json" \
-    "${WEBSITE_RELEASE_DIR}/relay-image.json"
-  publish_file_atomically \
-    "${VERSION_DIR}/relay-image.json.sig" \
-    "${WEBSITE_RELEASE_DIR}/relay-image.json.sig"
-  log "Published signed Relay image descriptor for $VERSION"
 }
 
 # ── Main ───────────────────────────────────────────────────────
@@ -564,7 +499,6 @@ print(bases.pop())
     exit 1
   }
 
-  GITHUB_RELAY_IMAGE_URL="${RELEASE_ASSET_BASE_URL}/relay-image.json"
   GITHUB_LINUX_BINARIES_URL="${RELEASE_ASSET_BASE_URL}/linux-binaries-v1.json"
 
   INSTALLER_METADATA=$(printf '%s' "$LATEST_JSON" | "$PYTHON" -c "
@@ -599,10 +533,9 @@ if entry:
   VERSION_DIR="${WEBSITE_RELEASE_DIR}/${VERSION}"
   mkdir -p "$VERSION_DIR"
 
-  # 4. Stable owns the CLI/Relay floating manifests. The first beta slice only
+  # 4. Stable owns the CLI floating manifests. The first beta slice only
   # mirrors Desktop updater and installer assets under /release/beta.
   if [ "$RELEASE_CHANNEL" = "stable" ]; then
-    mirror_relay_image_descriptor
     mirror_linux_binaries
     mirror_dispatch_macos_cli_archives
   else
