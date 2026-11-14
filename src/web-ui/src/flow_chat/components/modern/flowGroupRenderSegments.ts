@@ -30,7 +30,7 @@ export function estimateFlowGroupItemsHeight(items: readonly FlowItem[]): number
 /**
  * Stable append boundaries keep reasoning beside its successor and capsule runs together.
  * When `previous` segments are provided, settled prefix segments are reused verbatim by reference,
- * and the growing trailing segment is incrementally updated, enabling high-frequency streaming reuse.
+ * while changed segments get new snapshots so retained render callbacks remain consistent.
  */
 export function buildFlowGroupRenderSegments(
   items: readonly FlowItem[],
@@ -44,7 +44,7 @@ export function buildFlowGroupRenderSegments(
     const segIdx = segments.length;
     const reusable = previous?.[segIdx];
 
-    // Case 1: Closed settled segment where member items are completely unchanged by reference
+    // Reuse only segments whose members are completely unchanged by reference.
     if (
       reusable &&
       reusable.startIndex === start &&
@@ -54,25 +54,7 @@ export function buildFlowGroupRenderSegments(
     ) {
       segments.push(reusable);
     }
-    // Case 2: Live/growing trailing segment where items share the same key & prefix
-    else if (
-      reusable &&
-      reusable.startIndex === start &&
-      reusable.key === members[0]?.id &&
-      (
-        // Either identical length with replaced streaming tail object
-        (reusable.items.length === members.length &&
-          reusable.items.slice(0, -1).every((it, idx) => it === members[idx])) ||
-        // Or growing by appended items
-        (reusable.items.length <= members.length &&
-          reusable.items.every((it, idx) => it === members[idx]))
-      )
-    ) {
-      reusable.items = members;
-      reusable.estimatedHeightPx = estimateFlowGroupItemsHeight(members);
-      segments.push(reusable);
-    }
-    // Case 3: Fresh segment
+    // Changed members must not mutate a snapshot held by a committed render.
     else {
       segments.push({
         key: members[0]?.id ?? `seg-${start}`,
