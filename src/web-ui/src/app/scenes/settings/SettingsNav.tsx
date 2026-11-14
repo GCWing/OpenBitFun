@@ -136,7 +136,12 @@ function useSettingsSearchIndex(t: SettingsT, i18n: I18nApi, hasSearched: boolea
   }, [hasSearched, languages, store]);
 
   return useMemo(
-    () => hasSearched ? buildSettingsSearchIndex(t, i18n) : [],
+    () => {
+      // i18next mutates its resource store without changing the i18n identity.
+      // Resource events must invalidate the cached search index.
+      void resourcesRevision;
+      return hasSearched ? buildSettingsSearchIndex(t, i18n) : [];
+    },
     [hasSearched, i18n, resourcesRevision, t],
   );
 }

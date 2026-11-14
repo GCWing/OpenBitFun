@@ -5,7 +5,8 @@ import { ArrowUpRight } from "lucide-react";
 import { Fragment } from "react";
 import { z } from "zod/v4";
 import { Glyph } from "./glyph";
-import { inline, MarkdownBlocks } from "./markdown";
+import { MarkdownBlocks } from './markdown';
+import { inline } from './inlineMarkdown';
 import { children, color, cx, fg, webUrl } from "./style";
 
 const str = (value: unknown) => (value == null ? "" : String(value));

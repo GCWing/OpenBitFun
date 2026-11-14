@@ -2,6 +2,8 @@ import { downloadTextFileInBrowser } from '@/shared/utils/browserDownload';
 
 export function safeHtmlFileName(title: string): string {
   let stem = title.trim().replace(/\.html?$/i, '')
+    // Windows filenames must replace C0 control characters as well as reserved punctuation.
+    // eslint-disable-next-line no-control-regex
     .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-')
     .slice(0, 96).replace(/[.\s]+$/g, '').trim();
   if (!stem) stem = 'OpenBitFun';

@@ -16,7 +16,7 @@ export function registerLatexLanguage(monaco: typeof Monaco): void {
     indentationRules: { increaseIndentPattern: /\\begin\{(?!document)[^}]+\}|\{\s*$/, decreaseIndentPattern: /^\s*(\\end\{|\})/ },
   });
   monaco.languages.setMonarchTokensProvider('latex', {
-    tokenizer: { root: [[/\\(?:[A-Za-z@]+|.)/, 'keyword'], [/%.*$/, 'comment'], [/\$\$?/, 'delimiter'], [/[{}\[\]]/, '@brackets']] },
+    tokenizer: { root: [[/\\(?:[A-Za-z@]+|.)/, 'keyword'], [/%.*$/, 'comment'], [/\$\$?/, 'delimiter'], [/[{}[\]]/, '@brackets']] },
   });
   monaco.languages.registerCompletionItemProvider('latex', {
     triggerCharacters: ['\\', '{', ','],

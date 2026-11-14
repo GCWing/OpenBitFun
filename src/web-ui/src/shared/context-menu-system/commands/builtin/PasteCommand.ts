@@ -46,13 +46,11 @@ export class PasteCommand extends BaseCommand {
         return await this.executeForTextInput(context as TextInputContext);
       }
       
-      let text: string;
-
       const clipboardText = await readClipboardText();
       if (clipboardText === null) {
         return this.failure(t('errors:contextMenu.clipboardUnavailable'));
       }
-      text = clipboardText;
+      const text = clipboardText;
 
       if (!text) {
         return this.failure(t('errors:contextMenu.clipboardEmpty'));

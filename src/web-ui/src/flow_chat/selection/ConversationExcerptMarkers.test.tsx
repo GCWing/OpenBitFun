@@ -3,7 +3,8 @@ import { act, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationExcerptContext } from '@/shared/types/context';
-import { ConversationExcerptMarkers, useConversationExcerptMarkers } from './ConversationExcerptMarkers';
+import { ConversationExcerptMarkers } from './ConversationExcerptMarkers';
+import { useConversationExcerptMarkers } from './useConversationExcerptMarkers';
 import { ConversationExcerptSourceContext } from './conversationExcerptSourceContext';
 
 vi.mock('./ConversationExcerptAttachments', () => ({ ConversationExcerptPreview: () => null }));

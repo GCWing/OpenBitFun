@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { buildDesktopCardSrcDoc, DESKTOP_CARD_WIDGET_CSS } from './DesktopCardCustomFrame';
+import { buildDesktopCardSrcDoc, DESKTOP_CARD_WIDGET_CSS } from './desktopCardSrcDoc';
 
 const TOOL_SOURCE = readFileSync(
   new URL('../../../../../../src/crates/assembly/core/src/agentic/tools/implementations/desktop_card_tool.rs', import.meta.url),

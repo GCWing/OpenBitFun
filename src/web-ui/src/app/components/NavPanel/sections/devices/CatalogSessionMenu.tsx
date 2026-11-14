@@ -23,33 +23,10 @@ import { sessionWorktreeRootPath } from '@/flow_chat/utils/sessionWorktree';
 import { useSideAnchoredPopoverPosition } from '@/shared/utils/useSideAnchoredPopoverPosition';
 import ArchivedSessionMenuItems from '../sessions/ArchivedSessionMenuItems';
 import SessionDeleteMenuItem from '../sessions/SessionDeleteMenuItem';
-import { activateDeviceSlot, runDeviceSessionAction, type DeviceSessionAction } from './openOnDevice';
+import { activateDeviceSlot, type DeviceSessionAction } from './openOnDevice';
 import type { BackgroundActions } from './BackgroundSessionList';
 import type { SidebarDeviceSlot } from './useSidebarDevices';
-
-/** Intent key of a catalog session action; the row shows progress while it runs. */
-export const catalogSessionActionKey = (sessionId: string, kind: string) => `session-action:${sessionId}:${kind}`;
-
-const FAILURE_KEYS: Partial<Record<DeviceSessionAction['kind'], string>> = {
-  duplicate: 'nav.sessions.duplicateFailed',
-  'open-worktree': 'nav.sessions.openWorktreeWorkspaceFailed',
-  'reveal-storage': 'nav.sessions.openStorageDirectoryFailed',
-};
-
-export function runCatalogSessionAction(
-  actions: BackgroundActions,
-  peer: ReturnType<typeof usePeerDeviceModeOptional>,
-  slot: SidebarDeviceSlot,
-  sessionId: string,
-  action: DeviceSessionAction,
-  t: (key: string, options?: Record<string, unknown>) => string,
-): void {
-  actions.run(
-    catalogSessionActionKey(sessionId, action.kind),
-    () => runDeviceSessionAction(peer, slot, sessionId, action, t),
-    FAILURE_KEYS[action.kind] ?? 'nav.devices.sessionActionFailed',
-  );
-}
+import { catalogSessionActionKey, runCatalogSessionAction } from './catalogSessionActions';
 
 export const CatalogSessionMenu: React.FC<{
   slot: SidebarDeviceSlot;

@@ -3,7 +3,8 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
 import { TimelineContentBlock } from './TimelineContentBlock';
-import { FlowChatReaderProvider, FlowChatReaderState, useFlowChatReaderValue } from './readerState';
+import { FlowChatReaderState, useFlowChatReaderValue } from './readerState';
+import { FlowChatReaderProvider } from './FlowChatReaderProvider';
 import type { VirtualItem } from '../types/flow-chat-projection';
 
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string) => key, formatNumber: String }) }));

@@ -1,7 +1,8 @@
 import { useFlowChatVirtualizer } from '../modern/useFlowChatVirtualizer';
 import { useFlowChatViewportOwner } from '../modern/useFlowChatViewportOwner';
 import { estimateFlowItemHeight } from '../modern/virtualItemHeightEstimators';
-import { FlowChatReaderProvider, useFlowChatReaderScope, useFlowChatReaderValue } from '../../timeline/readerState';
+import { useFlowChatReaderScope, useFlowChatReaderValue } from '../../timeline/readerState';
+import { FlowChatReaderProvider } from '../../timeline/FlowChatReaderProvider';
 import { useEmbeddedTimelineFollow } from '../../timeline/useEmbeddedTimelineFollow';
 import { useTimelineInteraction } from '../../timeline/useTimelineInteraction';
 import { TimelineMutationBoundary } from '../../timeline/TimelineMutationBoundary';

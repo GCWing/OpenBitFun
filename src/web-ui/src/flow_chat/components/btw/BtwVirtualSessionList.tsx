@@ -16,7 +16,7 @@ import { resolveExcerptRange } from '../../selection/flowChatSelection';
 import { resolveFlowChatFocusTarget } from '../modern/flowChatFocusTarget';
 import { useFlowChatContext } from '../modern/FlowChatContext';
 import { useConversationTimeline } from '../../timeline/useConversationTimeline';
-import { FlowChatReaderProvider } from '../../timeline/readerState';
+import { FlowChatReaderProvider } from '../../timeline/FlowChatReaderProvider';
 import { useTimelineInteraction } from '../../timeline/useTimelineInteraction';
 import { TimelineMutationBoundary } from '../../timeline/TimelineMutationBoundary';
 import { findTimelineBlockIndex } from '../../timeline/document';

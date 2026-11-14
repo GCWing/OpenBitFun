@@ -10,7 +10,8 @@ import { ModelThinkingDisplay } from './ModelThinkingDisplay';
 import { latestReasoningSummaryPreview } from '../utils/reasoningSummaryPresentation';
 import { openThinkingPanel } from '../services/openThinkingPanel';
 import { FlowChatContext } from '../components/modern/FlowChatContext';
-import { FlowChatReaderProvider, FlowChatReaderState } from '../timeline/readerState';
+import { FlowChatReaderState } from '../timeline/readerState';
+import { FlowChatReaderProvider } from '../timeline/FlowChatReaderProvider';
 import { activateSurface, getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 
 vi.mock('../utils/reasoningSummaryPresentation', { spy: true });

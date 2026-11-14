@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { Portal } from "@openbitfun/ui";
 import { getAppearanceOverlayHost } from "@/infrastructure/appearance/runtime/AppearanceOverlayHost";
 import { z } from "zod/v4";
-import { inline } from "./markdown";
+import { inline } from './inlineMarkdown';
 import { children, cx } from "./style";
 
 const str = (value: unknown) => (value == null ? "" : String(value));

@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { FlowChatCardReaderProvider } from '../timeline/readerState';
+import { FlowChatCardReaderProvider } from '../timeline/FlowChatReaderProvider';
 import { ToolCapsulePresentationProvider } from '@openbitfun/ui/flow-chat';
 import { getToolCardComponent } from '../tool-cards';
 import { DefaultToolCard } from '../tool-cards/DefaultToolCard';

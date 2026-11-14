@@ -147,5 +147,3 @@ export const SvgText = defineComponent({
     </text>
   ),
 });
-
-export const svgComponents = [Svg, Circle, Ellipse, Rect, Line, Path, Polyline, Polygon, G, SvgText];

@@ -1,7 +1,7 @@
 import type { GenUIDesignSpec } from './genUIContract';
 import type { GenUIRenderDiagnostic } from './genUIRenderDiagnostics';
 import GenUIHtmlDocument from './GenUIHtmlDocument';
-import type { GenUIHtmlBridge } from './GenUIHtmlDocument';
+import type { GenUIHtmlBridge } from './genUIHtmlSource';
 import GenUIOpenUIDocument from './genUIOpenUI';
 import type { GenUIOpenUIActionEvent, GenUIOpenUIToolProvider } from './genUIOpenUI';
 import type { GenUILibrary } from './genUILibrary';

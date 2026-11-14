@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { canReadSavedOpenCodeQuota } from './openCodeQuotaEligibility';
 import { Button } from '@openbitfun/ui';
 import { ConfigPageRow } from '@/infrastructure/config/components/common';
 import type { AIModelConfig } from '@/infrastructure/config/types';
@@ -8,13 +9,6 @@ import { useI18n } from '@/infrastructure/i18n';
 import { SubscriptionQuotaPanel } from './SubscriptionQuotaPanel';
 
 let observationEpoch = 0;
-
-export function canReadSavedOpenCodeQuota(draft: Partial<AIModelConfig>, saved?: AIModelConfig): saved is AIModelConfig & { id: string } {
-  return !!saved?.id && isOpenCodeApiKeyConfig(saved) && isOpenCodeApiKeyConfig(draft)
-    && draft.id === saved.id && draft.base_url === saved.base_url
-    && draft.api_key === saved.api_key
-    && JSON.stringify(draft.custom_headers || {}) === JSON.stringify(saved.custom_headers || {});
-}
 
 export function OpenCodeModelQuota({ draft, saved, active, supported }: {
   draft: Partial<AIModelConfig>; saved?: AIModelConfig; active: boolean; supported: boolean;
